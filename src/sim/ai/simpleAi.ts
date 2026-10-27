@@ -245,6 +245,8 @@ export class SimpleAi {
   private goBy = 0;
   /** Going for the ball (not just taking up a position). */
   private chasing = false;
+  /** Standing set at the spot (moves again only once the spot is well away). */
+  private set = false;
   /** The tick's start time (a field: a double argument would be boxed). */
   private nowT = 0;
 
@@ -262,7 +264,16 @@ export class SimpleAi {
     this.goBy = 0;
     this.chasing = false;
     const left = by > 0 ? by - now : 1e9;
-    if (d < (left < 0.6 ? 0.04 : 0.12)) return;
+    // Set: stay put until the spot has moved well away (the formation spot follows the ball; chasing every
+    // few centimetres of it is a stop-start shuffle real players don't do). Going for the ball, close in, the
+    // feet still adjust.
+    if (chase && left < 0.6) {
+      if (d < 0.04) return;
+    } else if (d < (this.set ? 0.35 : 0.12)) {
+      this.set = true;
+      return;
+    }
+    this.set = false;
     const t = p.tune;
     p.qx = dx / d;
     p.qz = dz / d;

@@ -4,7 +4,7 @@ import { MatchSim, PH_RALLY, PH_SETUP, PH_OVER, E_HIT, E_POINT, E_WALL, E_FLOOR 
 import { InputFrame, BTN_DRIVE, BTN_PRECISION, BTN_OVERHEAD, BTN_POWER } from '../../src/sim/input.ts';
 import { SHOT_SMASH, SHOT_BANDEJA, SHOT_VIBORA } from '../../src/sim/contact/shots.ts';
 import { DT } from '../../src/sim/core/constants.ts';
-import { WHY_EXIT_AFTER_BOUNCE } from '../../src/sim/rules/rally.ts';
+import { WHY_EXIT_AFTER_BOUNCE, WHY_OUT, WHY_WALL_BEFORE_BOUNCE } from '../../src/sim/rules/rally.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
 
 /**
@@ -222,6 +222,8 @@ describe('overheads', () => {
             vib = false;
           } else if (e.kind === E_POINT) {
             if (e.team === 0 && e.a === WHY_EXIT_AFTER_BOUNCE) res.outAfterBounce++;
+            // A lob going long (into the back wall or over it) is let go: it wins the point, it isn't one to take.
+            if (lob === 1 && (e.a === WHY_WALL_BEFORE_BOUNCE || e.a === WHY_OUT)) res.lobs--;
             lob = -1;
           }
         }
