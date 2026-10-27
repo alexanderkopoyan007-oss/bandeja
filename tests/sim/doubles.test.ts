@@ -169,9 +169,8 @@ describe('deciding point', () => {
 });
 
 describe('AI playing styles', () => {
-  function shots(style: string): Record<string, number> {
-    const m = new MatchSim({ seed: 7, doubles: true, human: [false, false, false, false], aiStyle: [style, style, style, style] });
-    const out: Record<string, number> = { all: 0 };
+  function shots(style: string, seed = 7, out: Record<string, number> = { all: 0 }): Record<string, number> {
+    const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false], aiStyle: [style, style, style, style] });
     let seen = 0;
     for (let i = 0; i < 120 * 400; i++) {
       m.step(NONE);
@@ -189,8 +188,9 @@ describe('AI playing styles', () => {
   it('El Muro lobs far more than Martillo; La Serpiente turns more overheads into víboras', () => {
     const muro = shots('muro');
     const martillo = shots('martillo');
-    const serpiente = shots('serpiente');
-    const reloj = shots('reloj');
+    // Overheads are rare (20-35 a run), so the víbora share pools three seeds; one seed is a coin toss.
+    const serpiente = shots('serpiente', 3, shots('serpiente', 2, shots('serpiente')));
+    const reloj = shots('reloj', 3, shots('reloj', 2, shots('reloj')));
     const share = (s: Record<string, number>, k: string) => (s[k] ?? 0) / s.all!;
     expect(share(muro, 'lob')).toBeGreaterThan(1.5 * share(martillo, 'lob'));
     const vib = (s: Record<string, number>) => (s.vibora ?? 0) / ((s.vibora ?? 0) + (s.bandeja ?? 0) + (s.smash ?? 0));

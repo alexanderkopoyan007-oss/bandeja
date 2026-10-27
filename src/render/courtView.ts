@@ -2,7 +2,7 @@
 // frame (posts, rails, door frames, clamps) and the net. Rendering only reads the sim.
 // Draw calls stay low: glass and mesh are each one merged mesh, the whole frame is one instanced mesh.
 import * as THREE from 'three/webgpu';
-import { uv, vec2, float, fract, min, max, fwidth, smoothstep, mix, saturate, color } from 'three/tsl';
+import { uv, vec2, float, fract, min, max, fwidth, smoothstep, mix, saturate, color, length } from 'three/tsl';
 import {
   Court, SURF_GLASS, SURF_MESH,
   WALL_BACK_NEAR, WALL_BACK_FAR, WALL_SIDE_LEFT, WALL_SIDE_RIGHT, type Panel,
@@ -17,7 +17,7 @@ const RAIL = 0.05;
  * and when a cell shrinks below a couple of pixels it fades to the average coverage, so the fence never
  * shimmers or forms moire patterns at a distance.
  */
-export function wireMaterial(cell: number, wire: number, diamond: boolean, tint: number, strength: number): THREE.MeshBasicNodeMaterial {
+export function wireMaterial(cell: number, wire: number, diamond: boolean, tint: number, strength: number, knot = 0): THREE.MeshBasicNodeMaterial {
   const p = uv().div(cell);
   const q = diamond ? vec2(p.x.add(p.y), p.x.sub(p.y)).mul(0.70710678) : p;
   const f = fract(q);
@@ -26,8 +26,15 @@ export function wireMaterial(cell: number, wire: number, diamond: boolean, tint:
   const w = float(wn * 0.5);
   const fw = fwidth(q);
   const cov = vec2(1, 1).sub(smoothstep(w.sub(fw), w.add(fw), d));
-  const line = max(cov.x, cov.y);
-  const avg = 1 - (1 - wn) * (1 - wn);
+  let line = max(cov.x, cov.y);
+  let avg = 1 - (1 - wn) * (1 - wn);
+  if (knot > 0) {
+    // Knots: a round blob where the cords cross, `knot` metres across.
+    const k = float((knot / cell) * 0.5);
+    const kf = max(fw.x, fw.y);
+    line = max(line, float(1).sub(smoothstep(k.sub(kf), k.add(kf), length(d))));
+    avg += Math.PI * (knot / cell) * (knot / cell) * 0.25;
+  }
   const far = saturate(max(fw.x, fw.y).mul(2.5).sub(0.6));
   // Unlit: the wires are thin and dark, so lighting them changes nothing visible, and the fence covers a lot
   // of screen; a lit transparent material here cost more than half the frame at 4K.
@@ -94,40 +101,7 @@ export function buildCourtView(court: Court): THREE.Group {
   buildFrame(court, frame);
   g.add(frame.mesh());
 
-  // Net: knotted cord in 4.5 cm squares, white tape on top.
-  const segs = 40;
-  const pos: number[] = [];
-  const uvs: number[] = [];
-  for (let i = 0; i <= segs; i++) {
-    const x = -halfW + (i / segs) * def.width;
-    const h = court.netHeightAt(x);
-    pos.push(x, 0, 0, x, h, 0);
-    uvs.push(x + halfW, 0, x + halfW, h);
-  }
-  const idx: number[] = [];
-  for (let i = 0; i < segs; i++) {
-    const a = i * 2;
-    idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
-  }
-  const netGeo = new THREE.BufferGeometry();
-  netGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  netGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  netGeo.setIndex(idx);
-  netGeo.computeVertexNormals();
-  const net = new THREE.Mesh(netGeo, wireMaterial(0.045, 0.004, false, 0x0d0e10, 1));
-  net.renderOrder = 4;
-  g.add(net);
-  const bandPts: THREE.Vector3[] = [];
-  for (let i = 0; i <= segs; i++) {
-    const x = -halfW + (i / segs) * def.width;
-    bandPts.push(new THREE.Vector3(x, court.netHeightAt(x) - 0.028, 0));
-  }
-  const band = new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(bandPts), 64, 0.028, 6, false),
-    new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.7 }),
-  );
-  band.castShadow = true;
-  g.add(band);
+  // The net itself is render/netView.ts (it moves with the ball).
   return g;
 }
 
@@ -186,8 +160,20 @@ function buildFrame(court: Court, f: FrameBuilder): void {
       }
     }
   }
-  // Net posts.
-  for (const x of [-halfW, halfW]) f.box(x, def.net.postHeight / 2, 0, def.net.postSize, def.net.postHeight, def.net.postSize);
+  // Net posts: square tube on a base plate, a cap with the cable eye, and the winder on the right-hand post
+  // (a housing outside the court with a crank handle).
+  const ps = def.net.postSize;
+  const ph = def.net.postHeight;
+  for (const x of [-halfW, halfW]) {
+    f.box(x, ph / 2, 0, ps, ph, ps);
+    f.box(x, ph + 0.008, 0, ps + 0.012, 0.016, ps + 0.012);
+    f.box(x, 0.005, 0, ps + 0.1, 0.01, ps + 0.1);
+  }
+  const wx = halfW + ps / 2;
+  f.box(wx + 0.03, 0.62, 0, 0.06, 0.13, 0.07);
+  f.box(wx + 0.068, 0.62, 0, 0.016, 0.016, 0.016);
+  f.box(wx + 0.076, 0.62, 0.035, 0.012, 0.012, 0.07);
+  f.box(wx + 0.09, 0.62, 0.07, 0.03, 0.014, 0.014);
 }
 
 /** Two clamps per glass joint (frameless courts hold the panels with clamps, not posts). */

@@ -8,5 +8,10 @@
   "mesh":   { "name": "Welded metal mesh",   "e0": 0.48, "eSlope": 0.008, "eMin": 0.20, "mu": 0.45, "grip": 0.00, "jitterDeg": 12,  "speedJitter": 0.18 },
   "seam":   { "name": "Glass join / frame",  "e0": 0.70, "eSlope": 0.010, "eMin": 0.35, "mu": 0.40, "grip": 0.05, "jitterDeg": 22,  "speedJitter": 0.12 },
   "net":    { "name": "Net",                 "e0": 0.12, "eSlope": 0.000, "eMin": 0.05, "mu": 0.90, "grip": 0.00, "jitterDeg": 8,   "speedJitter": 0.20 },
+  "post":   { "name": "Net post (steel)",    "e0": 0.62, "eSlope": 0.006, "eMin": 0.35, "mu": 0.30, "grip": 0.05, "jitterDeg": 1.0, "speedJitter": 0.02 },
+  "netGive": {
+    "//": "The net body is a tensioned mesh that gives: the ball pushes it back like a damped spring. omega: natural frequency (rad/s) in the middle of the net at mid-height, rising towards the posts, the tape and the floor as 1/sqrt(give), give = (1 - (x/halfW)^2) * 4u(1-u) with u = height / net height, floored at minGive. zeta: damping ratio (0.55 sends back about 12% of the speed). grab: how fast the mesh stops the ball sliding along it and its spin (1/s). spread: random variation of omega and zeta per catch.",
+    "omega": 39, "zeta": 0.55, "grab": 25, "minGive": 0.06, "spread": 0.1
+  },
   "seamWidth": 0.035
 }

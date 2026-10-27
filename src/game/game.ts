@@ -4,6 +4,7 @@ import { MatchSim, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import { InputFrame } from '../sim/input.ts';
 import { buildCourtView } from '../render/courtView.ts';
+import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
@@ -43,6 +44,7 @@ export class Game {
   readonly scene = new THREE.Scene();
   readonly cam: BroadcastCamera;
   readonly ball: BallView;
+  readonly net: NetView;
   readonly players: PlayerView[];
   readonly assists: AssistView;
   readonly kb: KeyboardInput;
@@ -81,6 +83,8 @@ export class Game {
     Object.assign(sun.shadow.camera, { left: -13, right: 13, top: 13, bottom: -13, near: 2, far: 40 });
     this.scene.add(sun);
     this.scene.add(buildCourtView(court));
+    this.net = new NetView(court, this.sim.world.spec.radius);
+    this.scene.add(this.net.group);
 
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
@@ -240,6 +244,7 @@ export class Game {
 
     const frameDt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
     this.ball.update(this.sim, alpha, team);
+    this.net.update(this.sim, this.ball.mesh.position, renderTime);
     for (let i = 0; i < this.players.length; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
     this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
     const who = this.opts.autoplay ? -1 : human;

@@ -1,6 +1,6 @@
 // Builds the fixed world for a match from the JSON data files.
 import { Court, type CourtDef } from './court/court.ts';
-import { BallWorld, type BallSpec, type Environment, type SurfaceSpec, type SurfaceTable } from './ball/ball.ts';
+import { BallWorld, type BallSpec, type Environment, type NetGiveSpec, type SurfaceSpec, type SurfaceTable } from './ball/ball.ts';
 import standard from '../../data/courts/standard.json' with { type: 'json' };
 import panoramic from '../../data/courts/panoramic.json' with { type: 'json' };
 import singles from '../../data/courts/singles-narrow.json' with { type: 'json' };
@@ -23,7 +23,9 @@ export interface WorldOptions {
   env?: Partial<Environment>;
 }
 
-const surfaces = surfaceData as unknown as Record<string, SurfaceSpec> & { seamWidth: number };
+const surfaces = surfaceData as unknown as Record<string, SurfaceSpec>;
+const netGive = (surfaceData as unknown as { netGive: NetGiveSpec }).netGive;
+const seamWidth = (surfaceData as unknown as { seamWidth: number }).seamWidth;
 
 export function surfaceTable(): SurfaceTable {
   return {
@@ -31,7 +33,9 @@ export function surfaceTable(): SurfaceTable {
     mesh: surfaces.mesh!,
     seam: surfaces.seam!,
     net: surfaces.net!,
-    seamWidth: surfaces.seamWidth,
+    post: surfaces.post!,
+    netGive,
+    seamWidth,
   };
 }
 

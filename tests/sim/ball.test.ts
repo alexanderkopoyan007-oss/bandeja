@@ -191,14 +191,17 @@ describe('no tunnelling', () => {
       for (let t = 0; t < 0.5; t += DT) {
         const zBefore = b.pos.z;
         const yBefore = b.pos.y;
+        const caught = b.inNet;
         b.step(w, DT, rng);
         let netHit = false;
         for (let k = 0; k < b.eventCount; k++) {
           const kind = b.events[k]!.kind;
           if (kind === HIT_NET || kind === HIT_NETCORD) netHit = true;
         }
+        // A ball caught in the net bulges it past the line, but never far, and always comes back out.
+        if (caught || b.inNet) expect(Math.abs(b.pos.z)).toBeLessThan(0.7);
         // Crossing the net plane below the tape without a net contact would be tunnelling.
-        if (!b.outside && Math.sign(zBefore) !== Math.sign(b.pos.z) && !netHit && Math.abs(b.pos.x) < 5) {
+        if (!b.outside && Math.sign(zBefore) !== Math.sign(b.pos.z) && !netHit && !caught && !b.inNet && Math.abs(b.pos.x) < 5) {
           const h = w.court.netHeightAt(b.pos.x);
           expect(Math.min(yBefore, b.pos.y)).toBeGreaterThan(h - 0.2);
         }

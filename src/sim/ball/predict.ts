@@ -9,6 +9,8 @@ export const PRED_MAX = 480; // 4 s at 120 Hz
 export const PF_WALL = 1;
 export const PF_EXIT = 2;
 export const PF_FLOOR = 4;
+/** The ball is caught in the net (nobody can play it there, even where it bulges past the line). */
+export const PF_NET = 8;
 
 export class Prediction {
   readonly t = new Float64Array(PRED_MAX);
@@ -53,6 +55,7 @@ export class Prediction {
         else if (e.kind === HIT_WALL) { walls++; flags |= PF_WALL; }
         else if (e.kind === LEFT_COURT) flags |= PF_EXIT;
       }
+      if (g.inNet) flags |= PF_NET;
       this.write(i, now + i * DT, g, bounces, walls, flags);
       if (bounces >= maxBounces || (flags & PF_EXIT) !== 0 || g.rolling) { i++; break; }
     }

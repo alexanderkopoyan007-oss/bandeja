@@ -1,6 +1,6 @@
 // MatchSim: the whole deterministic match. step(inputs) advances one 120 Hz tick.
 // Rendering, audio and UI read its state and its event ring; nothing outside the sim writes to it.
-import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, LEFT_COURT, type BallWorld } from './ball/ball.ts';
+import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, HIT_POST, LEFT_COURT, type BallWorld } from './ball/ball.ts';
 import { Prediction, PF_FLOOR, PF_WALL } from './ball/predict.ts';
 import { Rng } from './core/rng.ts';
 import { DT, TEAM_NEAR } from './core/constants.ts';
@@ -316,6 +316,7 @@ export class MatchSim {
     this.ball.spin.set(0, 0, 0);
     this.ball.outside = false;
     this.ball.rolling = false;
+    this.ball.clearNet();
   }
 
   // ---- main step -----------------------------------------------------------------------------
@@ -427,8 +428,10 @@ export class MatchSim {
         }
         case HIT_NET:
         case HIT_NETCORD:
+        case HIT_POST:
+          // The posts are part of the net: where the ball lands decides it.
           this.rally.onNet();
-          this.emitAt(E_NET, t, e.kind === HIT_NETCORD ? 1 : 0, 0, e.speed, e.x, e.y, e.z);
+          this.emitAt(E_NET, t, e.kind === HIT_NETCORD ? 1 : e.kind === HIT_POST ? 2 : 0, 0, e.speed, e.x, e.y, e.z);
           recompute = true;
           break;
         case LEFT_COURT: {
@@ -440,7 +443,8 @@ export class MatchSim {
         }
       }
     }
-    this.rally.onBallZ(b.pos.z);
+    // Caught in the net the ball can bulge past the net line; it has not crossed.
+    if (!b.inNet) this.rally.onBallZ(b.pos.z);
     if (recompute && (this.phase === PH_RALLY || this.phase === PH_TOSS)) {
       this.pred.compute(this.world, b, tStart + dt, this.phase === PH_RALLY ? this.rally.bounces : this.tossBounces, 2,
         this.wallsSinceBounce, flags);
@@ -918,7 +922,7 @@ export class MatchSim {
     const t = p.tune;
     const legal = serving
       ? this.tossBounces === 1
-      : b.pos.z * s > 0 && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0)
+      : b.pos.z * s > 0 && !b.inNet && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0)
         // The serve is returned by the receiver, not the partner (8.1).
         && !(this.rally.isServe && i !== this.score.receiverPlayer());
     if (!legal || d > t.reachMax + 0.25 || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15 || this.rally.over) {
@@ -1118,6 +1122,7 @@ export class MatchSim {
     const b = this.ball;
     h.num(this.tick).num(this.time).num(this.phase).num(this.serveNo).num(this.wallsSinceBounce);
     h.num(b.pos.x).num(b.pos.y).num(b.pos.z).num(b.vel.x).num(b.vel.y).num(b.vel.z).num(b.spin.x).num(b.spin.y).num(b.spin.z);
+    h.num(b.inNet ? 1 : 0).num(b.netSide).num(b.netW).num(b.netZeta).num(b.rolling ? 1 : 0).num(b.outside ? 1 : 0);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
         .num(p.aimTouched ? 1 : 0);

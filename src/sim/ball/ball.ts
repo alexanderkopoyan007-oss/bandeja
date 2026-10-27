@@ -1,5 +1,6 @@
 // Padel ball physics: flight (gravity, drag, Magnus, spin decay, wind), swept collisions with the
-// court (floor, glass, mesh, openings, net and net cord), and spin-aware bounces.
+// court (floor, glass, mesh, openings, net posts and net cord), spin-aware bounces, and a net body that gives
+// (the ball is caught by a tensioned mesh, solved in closed form while it is in it).
 import { V3 } from '../core/v3.ts';
 import { Rng } from '../core/rng.ts';
 import { GRAVITY } from '../core/constants.ts';
@@ -28,11 +29,23 @@ export interface SurfaceSpec {
   speedJitter: number;
 }
 
+/** How the net body gives (data/surfaces.json, netGive). */
+export interface NetGiveSpec {
+  omega: number;
+  zeta: number;
+  grab: number;
+  minGive: number;
+  spread: number;
+}
+
 export interface SurfaceTable {
   glass: SurfaceSpec;
   mesh: SurfaceSpec;
   seam: SurfaceSpec;
+  /** The net tape (cord): a rigid bounce. The net body gives (netGive). */
   net: SurfaceSpec;
+  post: SurfaceSpec;
+  netGive: NetGiveSpec;
   seamWidth: number;
 }
 
@@ -57,6 +70,7 @@ export const HIT_WALL = 2;
 export const HIT_NET = 3;
 export const HIT_NETCORD = 4;
 export const LEFT_COURT = 5;
+export const HIT_POST = 6;
 
 export interface ContactEvent {
   kind: number;
@@ -124,6 +138,15 @@ export class Ball {
   outside = false;
   /** Resting/rolling on the floor (no more bounces). */
   rolling = false;
+  /**
+   * Caught in the net: the mesh is pushed back where the ball is and acts on it as a damped spring along z.
+   * While caught the ball's centre can be past the net line (the net bulges), but it is still on its own side.
+   */
+  inNet = false;
+  /** The side the ball came into the net from (+1 / -1), and the net's frequency (rad/s) and damping there. */
+  netSide = 1;
+  netW = 0;
+  netZeta = 0;
 
   readonly events: ContactEvent[] = [];
   eventCount = 0;
@@ -140,7 +163,16 @@ export class Ball {
     this.spin.copy(b.spin);
     this.outside = b.outside;
     this.rolling = b.rolling;
+    this.inNet = b.inNet;
+    this.netSide = b.netSide;
+    this.netW = b.netW;
+    this.netZeta = b.netZeta;
     return this;
+  }
+
+  /** Let go of any net catch (the ball is being put somewhere or struck). */
+  clearNet(): void {
+    this.inNet = false;
   }
 
   /**
@@ -157,6 +189,14 @@ export class Ball {
     let remaining = dt;
     let elapsed = 0;
     for (let iter = 0; iter < MAX_CONTACTS_PER_STEP && remaining > 1e-9; iter++) {
+      if (this.inNet) {
+        this.span = remaining;
+        this.at = elapsed;
+        this.netStep(world, rng);
+        elapsed += this.used;
+        remaining -= this.used;
+        continue;
+      }
       this.integrate(world, remaining, p1, v1, w1);
       const f = this.findContact(world, p1, flightOnly);
       if (f < 0) {
@@ -216,6 +256,13 @@ export class Ball {
     v.set(v.x * k, 0, v.z * k);
     this.pos.addScaled(v, dt);
     this.pos.y = world.spec.radius;
+    // A rolling ball stops against the net and rolls back off it a little.
+    const r0 = world.spec.radius;
+    if (!this.outside && abs(this.pos.x) < world.court.halfW && abs(this.pos.z) < r0 && this.pos.z * v.z < 0) {
+      const side = this.pos.z - v.z * dt >= 0 ? 1 : -1;
+      this.pos.z = side * r0;
+      v.z = -0.2 * v.z;
+    }
     // Rolling without slipping.
     const r = world.spec.radius;
     this.spin.set(v.z / r, 0, -v.x / r);
@@ -259,8 +306,9 @@ export class Ball {
       const zl = c.halfL - r;
       if (p.z > zl && q.z <= zl) { this.cand = (zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_NEAR); }
       if (p.z < -zl && q.z >= -zl) { this.cand = (-zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_FAR); }
-      // Net body and tape.
+      // Net body and tape, and the posts.
       this.tryNet(c, p);
+      this.tryPost(c, p);
     }
     return this.best <= 1 ? this.best : -1;
   }
@@ -336,6 +384,34 @@ export class Ball {
     }
   }
 
+  /** Net posts: vertical steel tubes at the ends of the net, centred on the side wall lines. */
+  private tryPost(c: Court, p: V3): void {
+    const q = this.pos;
+    const net = c.def.net;
+    const R = net.postSize * 0.5 + this.radius;
+    const dx = p.x - q.x;
+    const dz = p.z - q.z;
+    const A = dx * dx + dz * dz;
+    if (A < 1e-12) return;
+    for (let k = -1; k <= 1; k += 2) {
+      const fx = q.x - k * c.halfW;
+      const fz = q.z;
+      const C = fx * fx + fz * fz - R * R;
+      if (C <= 0) continue;
+      const B = 2 * (fx * dx + fz * dz);
+      const disc = B * B - 4 * A * C;
+      if (disc < 0) continue;
+      const f = (-B - sqrt(disc)) / (2 * A);
+      if (f < 0 || f >= this.best) continue;
+      if (q.y + (p.y - q.y) * f > net.postHeight + this.radius) continue;
+      this.best = f;
+      this.hitKind = HIT_POST;
+      this.hitSurface = SURF_NET;
+      this.hitWall = -1;
+      n.set((fx + dx * f) / R, 0, (fz + dz * f) / R);
+    }
+  }
+
   private resolve(world: BallWorld, rng: Rng | null, t: number): void {
     const c = world.court;
     let surf: SurfaceSpec = world.floor;
@@ -353,31 +429,182 @@ export class Ball {
         if (this.hitSeam < world.surfaces.seamWidth * 0.5 && this.hitSurface === SURF_GLASS) surf = world.surfaces.seam;
         break;
       }
-      case HIT_NET:
       case HIT_NETCORD:
         surf = world.surfaces.net;
         break;
+      case HIT_POST:
+        surf = world.surfaces.post;
+        break;
+      case HIT_NET: {
+        // Into the net body: caught by the mesh, no bounce here (netStep takes over).
+        const vn = this.vel.dot(n);
+        this.enterNet(world, rng);
+        this.record(t, vn, this.pos.z);
+        return;
+      }
     }
     const vnBefore = this.vel.dot(n);
     this.bounce(world, surf, rng, this.hitKind === HIT_NETCORD);
     // Keep the ball just off the surface.
     this.pos.addScaled(n, 1e-6);
-
-    if (this.eventCount < MAX_EVENTS) {
-      const e = this.events[this.eventCount++]!;
-      e.kind = this.hitKind;
-      e.surface = this.hitSurface;
-      e.wall = this.hitWall;
-      e.t = t;
-      e.x = this.pos.x;
-      e.y = this.pos.y;
-      e.z = this.pos.z;
-      e.speed = -vnBefore;
-    }
+    this.record(t, vnBefore, this.pos.z);
     if (this.hitKind === HIT_FLOOR && this.vel.y < 0.25) {
       this.rolling = true;
       this.vel.y = 0;
       this.pos.y = world.spec.radius;
+    }
+  }
+
+  /** Write the contact just resolved to `events` (z given apart: a bounce inside the net is on its own side). */
+  private record(t: number, vnBefore: number, z: number): void {
+    if (this.eventCount >= MAX_EVENTS) return;
+    const e = this.events[this.eventCount++]!;
+    e.kind = this.hitKind;
+    e.surface = this.hitSurface;
+    e.wall = this.hitWall;
+    e.t = t;
+    e.x = this.pos.x;
+    e.y = this.pos.y;
+    e.z = z;
+    e.speed = -vnBefore;
+  }
+
+  // ---- the net body gives -------------------------------------------------------------------
+  //
+  // Along z the mesh is a damped spring whose stiffness depends on where it was hit (soft in the middle, stiff
+  // near the posts, the tape and the floor), so the ball's penetration d = r - side * z follows
+  // d'' = -w^2 d - 2 zeta w d', solved exactly per tick. Along the net the mesh grabs the ball: its sliding
+  // velocity and spin die away at the rate `grab`, under gravity. The catch ends when the mesh has pushed the
+  // ball back out (d back to 0), or it rises over the top; a bounce on the floor inside the net stays inside.
+  // Exact event times are found by bisection on the closed form. All values pass through fields: doubles
+  // passed to non-inlined methods would be boxed, and this runs every tick a ball is in the net.
+
+  /** Time left in the step (in), time used (out), time into the step at the start (for events). */
+  private span = 0;
+  private used = 0;
+  private at = 0;
+  private tau = 0;
+  // Catch state at the start of netStep, and the closed form at tau.
+  private d0 = 0;
+  private dv0 = 0;
+  private x0 = 0;
+  private y0 = 0;
+  private vx0 = 0;
+  private vy0 = 0;
+  private rd = 0;
+  private rdv = 0;
+  private rx = 0;
+  private ry = 0;
+  private rvx = 0;
+  private rvy = 0;
+
+  private enterNet(world: BallWorld, rng: Rng | null): void {
+    const c = world.court;
+    const g = world.surfaces.netGive;
+    const x = this.pos.x;
+    const u = clamp(this.pos.y / c.netHeightAt(x), 0, 1);
+    const fx = max(0, 1 - (x * x) / (c.halfW * c.halfW));
+    const give = max(g.minGive, fx * 4 * u * (1 - u));
+    let w = g.omega / sqrt(give);
+    let z = g.zeta;
+    if (rng && g.spread > 0) {
+      w *= 1 + g.spread * clamp(rng.normal(), -2, 2);
+      z *= 1 + g.spread * clamp(rng.normal(), -2, 2);
+    }
+    this.netW = w;
+    this.netZeta = clamp(z, 0.1, 0.95);
+    this.netSide = n.z > 0 ? 1 : -1;
+    this.inNet = true;
+  }
+
+  /** The catch `tau` seconds after the start of netStep (reads d0.. and the spring, writes rd..). */
+  private netAt(world: BallWorld): void {
+    const t = this.tau;
+    const w = this.netW;
+    const z = this.netZeta;
+    const wd = w * sqrt(1 - z * z);
+    const e = exp(-z * w * t);
+    const cs = cos(wd * t);
+    const sn = sin(wd * t);
+    const A = this.d0;
+    const B = (this.dv0 + z * w * A) / wd;
+    this.rd = e * (A * cs + B * sn);
+    this.rdv = e * ((B * wd - z * w * A) * cs - (A * wd + z * w * B) * sn);
+    const b = world.surfaces.netGive.grab;
+    const eb = exp(-b * t);
+    const gb = GRAVITY / b;
+    this.rvx = this.vx0 * eb;
+    this.rx = this.x0 + (this.vx0 * (1 - eb)) / b;
+    const k = this.vy0 + gb;
+    this.rvy = k * eb - gb;
+    this.ry = this.y0 + (k * (1 - eb)) / b - gb * t;
+  }
+
+  /** What ends or interrupts the catch at the current closed form: 0 none, 1 out, 2 floor, 3 over the top. */
+  private netEvent(world: BallWorld): number {
+    if (this.rd <= 0 && this.rdv < 0) return 1;
+    if (this.ry < this.radius) return 2;
+    if (this.ry > world.court.netHeightAt(this.rx) - NET_TAPE_RADIUS && this.rvy > 0) return 3;
+    return 0;
+  }
+
+  /** Advance inside the net for up to `span` seconds; sets `used`. */
+  private netStep(world: BallWorld, rng: Rng | null): void {
+    const r = world.spec.radius;
+    this.radius = r;
+    const s = this.netSide;
+    this.d0 = r - s * this.pos.z;
+    this.dv0 = -s * this.vel.z;
+    this.x0 = this.pos.x;
+    this.y0 = this.pos.y;
+    this.vx0 = this.vel.x;
+    this.vy0 = this.vel.y;
+    this.tau = this.span;
+    this.netAt(world);
+    let ev = this.netEvent(world);
+    if (ev !== 0) {
+      // The first moment something happens, to well under a microsecond.
+      let lo = 0;
+      let hi = this.span;
+      for (let k = 0; k < 16; k++) {
+        this.tau = (lo + hi) * 0.5;
+        this.netAt(world);
+        if (this.netEvent(world) !== 0) hi = this.tau;
+        else lo = this.tau;
+      }
+      this.tau = hi;
+      this.netAt(world);
+      ev = this.netEvent(world);
+    }
+    const t = this.tau;
+    this.used = t;
+    this.pos.set(this.rx, this.ry, s * (r - this.rd));
+    this.vel.set(this.rvx, this.rvy, -s * this.rdv);
+    this.spin.scale(exp(-world.surfaces.netGive.grab * t));
+    if (ev === 1) {
+      // Pushed back out of the net.
+      this.pos.z = s * r;
+      this.inNet = false;
+    } else if (ev === 2) {
+      // On the floor inside the net: a bounce, still caught. For the rules it is on the side it came from.
+      this.pos.y = r;
+      n.set(0, 1, 0);
+      this.hitKind = HIT_FLOOR;
+      this.hitSurface = SURF_FLOOR;
+      this.hitWall = -1;
+      const vn = this.vel.y;
+      this.bounce(world, world.floor, rng, false);
+      this.record(this.at + t, vn, s * max(s * this.pos.z, 1e-3));
+      if (this.vel.y < 0.25) {
+        // Dead in the net: it drops out and rolls off it.
+        this.inNet = false;
+        this.rolling = true;
+        this.pos.set(this.pos.x, r, s * r);
+        this.vel.set(this.vel.x * 0.3, 0, s * 0.15);
+      }
+    } else if (ev === 3) {
+      // Up over the top of the net.
+      this.inNet = false;
     }
   }
 

@@ -1,7 +1,7 @@
 // Contact windows: stretches of the predicted ball path a player standing at (px, pz) can reach.
 // The ideal moment in each window is the best-placed sample (comfortable reach, good height).
 // When the swing is released, the window whose ideal moment is nearest is the one being judged.
-import type { Prediction } from '../ball/predict.ts';
+import { PF_NET, type Prediction } from '../ball/predict.ts';
 import type { PlayerTuning } from '../player/player.ts';
 import { abs, sqrt } from '../core/smath.ts';
 
@@ -63,7 +63,7 @@ export function findWindows(
     const dx = x - px;
     const dz = z - pz;
     const d = sqrt(dx * dx + dz * dz);
-    const legal = z * side > 0.05 && b <= bouncesAllowed && !(mustBounce && b === 0);
+    const legal = z * side > 0.05 && b <= bouncesAllowed && !(mustBounce && b === 0) && (pred.flags[i]! & PF_NET) === 0;
     // The ball reaches the body here: it hits the player, so nothing after this can be played from here.
     if (legal && d < t.bodyRadius + 0.035 && y < t.height) break;
     const ok = legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight;

@@ -108,6 +108,7 @@ export class ShotSolver {
     g.spin.copy(w);
     g.outside = false;
     g.rolling = false;
+    g.clearNet();
     this.netY = NaN;
     let z0 = p.z;
     let y0 = p.y;
@@ -383,6 +384,7 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   }
   out.speed = ball.vel.length();
   ball.rolling = false;
+  ball.clearNet();
 }
 
 /**
