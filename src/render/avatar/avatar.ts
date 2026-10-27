@@ -91,6 +91,12 @@ const FADE = 0.35;
 const PREP = 0.28;
 /** Share of the shoulder turn taken by the whole body (the rest is the spine). */
 const BODY_TURN = 0.35;
+/** Extra turn to the racket side while the ball goes past to the glass (rad), and how fast it comes and goes (s). */
+const WALL_TURN = 1.0;
+const WALL_EASE = 0.2;
+/** How far the head turns from the chest to watch the ball (rad), and the neck's share of it. */
+const LOOK_YAW = 1.25;
+const NECK_SHARE = 0.4;
 
 /** Fingers of the racket hand, curled round the grip (rad, per joint). */
 const GRIP: Array<[string, number]> = [
@@ -155,6 +161,11 @@ export class Avatar {
   // Bones by role.
   private readonly hips: THREE.Bone;
   private readonly spine: THREE.Bone[];
+  private readonly neck: THREE.Bone;
+  private readonly head: THREE.Bone;
+  /** Rest world rotations (model space), inverted: a bone's facing is its rotation away from these, applied to +z. */
+  private readonly chestRestInv = new THREE.Quaternion();
+  private readonly headRestInv = new THREE.Quaternion();
   private readonly armR: THREE.Bone[];
   private readonly armL: THREE.Bone[];
   private readonly legL: THREE.Bone[];
@@ -208,6 +219,12 @@ export class Avatar {
   /** The stance yaw as a rotation (model to world). */
   private readonly stanceQ = new THREE.Quaternion();
   private stanceS = 0;
+  /** Turned side-on to the glass while the ball goes past it (0..1), towards which side, and whether to. */
+  private wall = 0;
+  private wallWant = 0;
+  private hand = 1;
+  /** Weight of watching the ball with the head. */
+  private look = 0;
   /** Hips pushed towards a ball out of reach (world x, z). */
   private reachX = 0;
   private reachZ = 0;
@@ -246,6 +263,12 @@ export class Avatar {
     const b = (n: string): THREE.Bone => this.bones[asset.bone(n)]!;
     this.hips = b('Hips');
     this.spine = [b('Spine'), b('Spine1'), b('Spine2')];
+    this.neck = b('Neck');
+    this.head = b('Head');
+    asset.restWorld[asset.bone('Spine2')]!.decompose(v1, this.chestRestInv, v2);
+    this.chestRestInv.invert();
+    asset.restWorld[asset.bone('Head')]!.decompose(v1, this.headRestInv, v2);
+    this.headRestInv.invert();
     this.armR = [b('RightArm'), b('RightForeArm'), b('RightHand')];
     this.armL = [b('LeftArm'), b('LeftForeArm'), b('LeftHand')];
     this.legL = [b('LeftUpLeg'), b('LeftLeg'), b('LeftFoot')];
@@ -432,6 +455,11 @@ export class Avatar {
       }
       const tp = this.planned(sim, idx);
       this.hasCon = tp >= 0;
+      // Off the back glass: side-on to the racket side while the ball, on this side, still goes towards it.
+      const side = sim.side(p.team);
+      if (st.valid) this.hand = st.hand;
+      this.wallWant = st.valid && st.afterWall && this.swingS === 0 && sim.phase === PH_RALLY
+        && sim.ball.pos.z * side > 0 && sim.ball.vel.z * side > 0.3 ? 1 : 0;
       if (this.swingS === 0) {
         // Re-aimed while the plan changes (the ball may cross to the other side); a change of stroke blends
         // over from wherever the racket is rather than jumping.
@@ -448,6 +476,7 @@ export class Avatar {
       if (this.hasCon && tp - t < LEAD) this.swingS = Math.max(this.swingS, Math.min(HOVER, 1 - (tp - t) / LEAD));
     }
     // Release (a whiff at release goes straight to recover): finish the swing at the contact moment.
+    if (sw !== SW_CHARGE) this.wallWant = 0;
     const released = (sw === SW_COMMITTED && this.lastSwing !== SW_COMMITTED)
       || (sw === SW_RECOVER && this.lastSwing === SW_CHARGE);
     if (released) {
@@ -615,12 +644,13 @@ export class Avatar {
     // Stance: the sim faces the ball; a stroke squares up to the net and turns the shoulders instead
     // (last frame's stroke weight: the stroke below reads this frame).
     const net = sim.side(p.team) > 0 ? 0 : Math.PI;
-    this.yaw = p.facing + wrapAngle(net - p.facing) * this.w;
+    this.yaw = p.facing + wrapAngle(net - this.hand * WALL_TURN * this.wall - p.facing) * this.w;
     const ys = this.yaw + Math.PI;
     this.stanceC = Math.cos(ys);
     this.stanceS = Math.sin(ys);
     this.stanceQ.setFromAxisAngle(UP, ys);
     this.updateStroke(sim, p, idx, t);
+    this.wall += (this.wallWant - this.wall) * (dt > 0 ? 1 - Math.exp(-dt / WALL_EASE) : 0);
     const turn = this.kyaw * this.w;
     const yRoot = ys + turn * BODY_TURN;
     this.root.rotation.y = yRoot;
@@ -656,8 +686,48 @@ export class Avatar {
     const want = on ? 0.85 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
     this.ready += (want - this.ready) * (dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
 
+    this.look += ((on ? 1 : 0) - this.look) * (dt > 0 ? 1 - Math.exp(-dt / 0.25) : 0);
+    if (this.look >= 0.01) this.watchBall(sim);
+
     if (this.w > 0 || this.splitDrop > 0) this.solveLegs();
     if (this.w > 0 || this.ready >= 0.01) this.solveArms();
+  }
+
+  /**
+   * Turn the neck and head to watch the ball, as far as a neck turns from the chest. Facings are read off the
+   * bones themselves (the clip may already have the head turned), so this only adds what is missing.
+   */
+  private watchBall(sim: MatchSim): void {
+    const b = sim.ball.pos;
+    const hm = this.head.matrixWorld.elements;
+    const dx = b.x - hm[12]!, dy = b.y - hm[13]!, dz = b.z - hm[14]!;
+    const want = Math.atan2(dx, dz);
+    const elev = Math.atan2(dy, Math.sqrt(dx * dx + dz * dz));
+    worldQuat(this.spine[2]!, q1).multiply(this.chestRestInv);
+    v1.x = 0; v1.y = 0; v1.z = 1;
+    v1.applyQuaternion(q1);
+    const chest = Math.atan2(v1.x, v1.z);
+    worldQuat(this.head, q1).multiply(this.headRestInv);
+    v1.x = 0; v1.y = 0; v1.z = 1;
+    v1.applyQuaternion(q1);
+    const hy = Math.atan2(v1.x, v1.z);
+    const hp = Math.asin(Math.max(-1, Math.min(1, v1.y)));
+    const rel = Math.max(-LOOK_YAW, Math.min(LOOK_YAW, wrapAngle(want - chest)));
+    const yaw = wrapAngle(chest + rel - hy) * this.look;
+    const pitch = (Math.max(-0.8, Math.min(0.7, elev)) - hp) * this.look;
+    // Positive turns about the facing's left axis look down.
+    const fy = hy + yaw;
+    v2.x = Math.cos(fy); v2.y = 0; v2.z = -Math.sin(fy);
+    q2.setFromAxisAngle(UP, yaw * NECK_SHARE);
+    q3.setFromAxisAngle(v2, -pitch * NECK_SHARE);
+    q2.premultiply(q3);
+    rotateWorld(this.neck, q2);
+    this.neck.updateMatrixWorld(true);
+    q2.setFromAxisAngle(UP, yaw * (1 - NECK_SHARE));
+    q3.setFromAxisAngle(v2, -pitch * (1 - NECK_SHARE));
+    q2.premultiply(q3);
+    rotateWorld(this.head, q2);
+    this.head.updateMatrixWorld(true);
   }
 
   /** Reaction clips on the upper body while the ball is dead after a point. */

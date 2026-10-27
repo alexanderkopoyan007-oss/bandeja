@@ -91,7 +91,8 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
     - Allocation: no `for...of`, no destructuring, no three helpers that take doubles in the per-frame paths (V8 boxes them); `alloc avatars` measures 2 minor GCs per 100k ticks with four bodies.
     - After a point the player whose shot ended it reacts on the upper body (fist pump if their pair won, hands to the head if not; `MatchSim.pointWinner`). Split step: a 6 cm hop as the opponent strikes, landing on bent knees with the feet planted.
     - Groundstroke variants by the shot key (`p.shot`): slice (high to low, face open, low forward finish), lob (big lift, face open, high finish), drop (short and soft). Opening the face rolls the racket about its handle.
-    - Still to do in M2: lunge clip for the widest balls, wall play (turning to the glass), foot planting while turning in place, left-handers (mirror).
+    - Wall play: while a ball the player will take off their own back glass is on their side and still going towards the glass, the stance turns side-on to the racket side (`WALL_TURN` 1 rad on top of the backswing's shoulder turn), easing back as it comes off. Everyone watches the ball during points: neck and head turn towards it (up to 1.25 rad from the chest, read off the bones, so the clip's own head turn is kept); measured median 0.1° off the ball.
+    - Still to do in M2: lunge clip for the widest balls, foot planting while turning in place, left-handers (mirror).
   - Clips downloaded 2026-10-27 (in `assets-src/mixamo/`, what each one is in `docs/mixamo.md`). Mixamo has no tennis or padel strokes, so every stroke is authored in code on the Y Bot rig (owner's OK).
 - [ ] **M3** Doubles, partner/opponent AI, full rules, padel-specific shots
   - Started 2026-10-27, while M2 waited on the Mixamo downloads. Doubles is the default game; `?mode=singles` keeps one against one.

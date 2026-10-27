@@ -31,7 +31,7 @@ The strokes are authored procedurally on the Y Bot rig, with the user's OK, sinc
 - forehand and backhand (drive, topspin, slice), the volley and the underarm serve
 - bandeja, víbora and smash
 - the ready position between shots
-- still to come: wall play (turning to take the ball off the glass)
+- wall play (turning side-on while the ball goes past to the glass) and watching the ball with the head
 
 Each is a set of key poses for the racket and the free hand (`src/render/avatar/strokes.ts`), reached with two-bone IK over the locomotion clips and timed so the racket meets the ball on the sim's contact moment.
 
