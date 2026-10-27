@@ -415,6 +415,7 @@ export class MatchSim {
   private stepBall(dt: number, tStart: number): void {
     const b = this.ball;
     b.step(this.world, dt, this.rng);
+    if (b.wearDirty) b.applyWear(this.world);
     if (b.coupled) this.ballCoupled = true;
     let recompute = false;
     let flags = 0;

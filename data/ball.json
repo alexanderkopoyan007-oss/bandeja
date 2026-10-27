@@ -1,5 +1,5 @@
 {
-  "//": "FIP: diameter 6.35-6.77 cm, mass 56.0-59.4 g, 2.54 m drop must bounce 135-145 cm (altitude ball 122-135 cm above 1000 m). dragCoefficient: free-flight C_D of new felt balls, 0.507 +- 0.024 at 14-30 m/s whatever the spin (Cross & Lindsey, 128 shots; wind tunnels read 15-20% high). spinDecayPerM: k in dw/dt = -k w v (spin decay is linear in spin x speed, James & Haake 2008); k estimated from golf's ~4%/s at 60 m/s and felt balls decaying about six times faster, so a ball loses about 0.5% of its spin per metre flown at sea level (scaled by air density). wear: the match ball's nap fluffs up and its pressure leaks with every impact (each counts (normal speed / 15 m/s)^2, at most 3). dragFluff: used balls fly with 4.1% more drag than new ones (Hawk-Eye, 9,200 Davis Cup first serves: C_D 0.603 used vs 0.579 new), reached over fluffImpacts (in AI doubles a point is about 15 weighted impacts, so the nap is fluffed up within the first set, as a tennis ball is by its 9-game change). pressureLoss: the fraction of restitution lost over pressureImpacts (padel balls lose pressure and soften in play, IBV endurance test of 10 brands for Testfakta; no measured curve, so this is tuning: a 150-point match, about 2,200 weighted impacts, takes the 2.54 m drop from about 140 to 136 cm).",
+  "//": "FIP: diameter 6.35-6.77 cm, mass 56.0-59.4 g, 2.54 m drop must bounce 135-145 cm (altitude ball 122-135 cm above 1000 m). dragCoefficient: free-flight C_D of new felt balls, 0.507 +- 0.024 at 14-30 m/s whatever the spin (Cross & Lindsey, 128 shots; wind tunnels read 15-20% high). spinDecayPerM: k in dw/dt = -k w v (spin decay is linear in spin x speed, James & Haake 2008); k estimated from golf's ~4%/s at 60 m/s and felt balls decaying about six times faster, so a ball loses about 0.5% of its spin per metre flown at sea level (scaled by air density). wear: the match ball's nap fluffs up with every impact (each counts (normal speed / 15 m/s)^2, at most 3), reaching its used state over fluffImpacts. dragFluff: used balls fly with 4.1% more drag than new ones (Hawk-Eye, 9,200 Davis Cup first serves: C_D 0.603 used vs 0.579 new); in AI doubles a point is about 15 weighted impacts, so the nap is fluffed up within the first set. muGain, eGain: padel balls after 666 machine strokes (IBV for Testfakta 2023, 8 brands) gripped the court 2-7% more (mean 4.4%) and bounced 0.7-2.8% higher in the drop test (about +1% restitution), softer and slower off the court only through the friction. Nobody has measured pressure loss within a match (FIP only caps the drop-test change after 9 simulated games at 4 cm), so the ball doesn't go flat during a match.",
   "standard": {
     "name": "Standard ball",
     "mass": 0.0577,
@@ -8,7 +8,7 @@
     "inertiaFactor": 0.55,
     "spinDecayPerM": 0.005,
     "restitutionScale": 1.0,
-    "wear": { "dragFluff": 0.041, "fluffImpacts": 300, "pressureLoss": 0.03, "pressureImpacts": 3500 }
+    "wear": { "dragFluff": 0.041, "fluffImpacts": 300, "muGain": 0.044, "eGain": 0.0095 }
   },
   "altitude": {
     "name": "Altitude ball (lower pressure, for venues above 1000 m)",
@@ -18,6 +18,6 @@
     "inertiaFactor": 0.55,
     "spinDecayPerM": 0.005,
     "restitutionScale": 0.96,
-    "wear": { "dragFluff": 0.041, "fluffImpacts": 300, "pressureLoss": 0.03, "pressureImpacts": 3500 }
+    "wear": { "dragFluff": 0.041, "fluffImpacts": 300, "muGain": 0.044, "eGain": 0.0095 }
   }
 }

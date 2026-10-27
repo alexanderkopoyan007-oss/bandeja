@@ -8,9 +8,10 @@ import { makeWorld, type FloorName } from '../setup.ts';
 import { DT } from '../core/constants.ts';
 import { Rng } from '../core/rng.ts';
 import { WALL_BACK_NEAR, WALL_BACK_FAR, WALL_SIDE_LEFT, WALL_SIDE_RIGHT, SURF_GLASS, SURF_MESH } from '../court/court.ts';
+import { atan2, cos, max, PI, sin } from '../core/smath.ts';
 
 /** rpm to rad/s. */
-export const RPM = (2 * Math.PI) / 60;
+export const RPM = (2 * PI) / 60;
 
 export interface LabShot {
   id: string;
@@ -58,6 +59,9 @@ export interface LabContact {
   rollOut: number;
   /** Angle between the outgoing path and the mirror of the incoming one (deg): the bounce's scatter. */
   deflect: number;
+  /** Kinetic energy per kg before and after, translation plus spin (J/kg). */
+  energyIn: number;
+  energyOut: number;
 }
 
 export interface LabRun {
@@ -73,7 +77,7 @@ export interface LabRun {
 /** The lab's shots. The near back wall is z = +10, the right side wall x = +5. */
 export function labShots(): LabShot[] {
   const r = 0.0328;
-  const deg = Math.PI / 180;
+  const deg = PI / 180;
   const shots: LabShot[] = [];
   // Floor: the FIP drop test, then oblique bounces from grazing to steep at 20 m/s.
   shots.push({ id: 'drop-hard', group: 'floor', label: 'FIP drop test, 2.54 m onto a hard floor', floor: 'hard', pos: [0, 2.54 + r, 3], vel: [0, 0, 0], spin: [0, 0, 0], contacts: 2 });
@@ -82,14 +86,14 @@ export function labShots(): LabShot[] {
     const s = 20;
     shots.push({
       id: `floor-${a}`, group: 'floor', label: `Turf, 20 m/s flat at ${a}° to the floor`,
-      pos: [0, r + 0.1, 5 - 0.1 / Math.tan(a * deg)], vel: [0, -s * Math.sin(a * deg), s * Math.cos(a * deg)], spin: [0, 0, 0], contacts: 1, secs: 0.5,
+      pos: [0, r + 0.1, 5 - 0.1 / (sin(a * deg) / cos(a * deg))], vel: [0, -s * sin(a * deg), s * cos(a * deg)], spin: [0, 0, 0], contacts: 1, secs: 0.5,
     });
   }
   // Typical rally balls landing (speed at the bounce, angle, spin).
   const land = (id: string, label: string, s: number, a: number, rpm: number): void => {
     shots.push({
-      id, group: 'floor', label, pos: [0, r + 0.1, 4 - 0.1 / Math.tan(a * deg)],
-      vel: [0, -s * Math.sin(a * deg), s * Math.cos(a * deg)], spin: [rpm * RPM, 0, 0], contacts: 1, secs: 0.6,
+      id, group: 'floor', label, pos: [0, r + 0.1, 4 - 0.1 / (sin(a * deg) / cos(a * deg))],
+      vel: [0, -s * sin(a * deg), s * cos(a * deg)], spin: [rpm * RPM, 0, 0], contacts: 1, secs: 0.6,
     });
   };
   land('land-flat', 'Flat drive landing, 20 m/s at 12°', 20, 12, 0);
@@ -98,12 +102,19 @@ export function labShots(): LabShot[] {
   land('land-lob', 'Lob landing, 12 m/s at 60°, 1,000 rpm top', 12, 60, 1000);
   land('land-turf-random', 'Flat drive on turf, the sand\'s scatter (200 runs)', 20, 12, 0);
   shots[shots.length - 1]!.runs = 200;
+  // The court-pace test (ITF; IBV ran it on padel balls for Testfakta at 70 km/h): fired at 16 deg with no spin,
+  // mu = (vx in - vx out) / ((1 + e) vy in), CPR = 100 (1 - mu) + 150 (0.81 - e).
+  shots.push({
+    id: 'cpr-turf', group: 'floor', label: 'Court pace test: 70 km/h at 16° onto turf (padel balls: CPR 36-50, mu 0.57-0.62)',
+    pos: [0, r + 0.1, 4 - 0.1 * cos(16 * deg) / sin(16 * deg)], vel: [0, -19.44 * sin(16 * deg), 19.44 * cos(16 * deg)], spin: [0, 0, 0],
+    contacts: 1, secs: 0.5,
+  });
 
   // Back glass: balls that bounce at 7-8.6 m and go into the near back glass, the way rallies play it.
   const deep = (id: string, label: string, z: number, s: number, a: number, rpm: number, x = 0.5, extra?: Partial<LabShot>): void => {
     shots.push({
-      id, group: 'back glass', label, pos: [x, r + 0.1, z - 0.1 / Math.tan(a * deg)],
-      vel: [0, -s * Math.sin(a * deg), s * Math.cos(a * deg)], spin: [rpm * RPM, 0, 0], contacts: 3, secs: 3, ...extra,
+      id, group: 'back glass', label, pos: [x, r + 0.1, z - 0.1 / (sin(a * deg) / cos(a * deg))],
+      vel: [0, -s * sin(a * deg), s * cos(a * deg)], spin: [rpm * RPM, 0, 0], contacts: 3, secs: 3, ...extra,
     });
   };
   deep('glass-flat', 'Flat drive, bounce at 7 m, into the back glass', 7, 20, 12, 0);
@@ -111,20 +122,30 @@ export function labShots(): LabShot[] {
   deep('glass-slice', 'Slice, bounce at 7.5 m, 2,000 rpm back (should die off the glass)', 7.5, 17, 10, -2000);
   deep('glass-lob', 'Deep lob, bounce at 8.6 m, 60°, 1,000 rpm top', 8.6, 12, 60, 1000);
   deep('glass-smash', 'Smash, bounce at 6 m, 28 m/s at 35° (por tres?)', 6, 28, 35, 1500);
+  // Restitution against impact speed, straight into the glass (no bounce first).
+  for (const v of [3, 7, 13, 20, 30]) {
+    shots.push({ id: `glass-cor-${v}`, group: 'back glass', label: `Straight into the glass at ${v} m/s`, pos: [0.5, 1.2, 9.9 - r], vel: [0, 0, v], spin: [0, 0, 0], contacts: 1, secs: 0.3 });
+  }
   shots.push({ id: 'glass-direct', group: 'back glass', label: 'Straight into the glass at 1.2 m, 25 m/s, no bounce', pos: [0.5, 1.2, 9.5], vel: [0, -0.5, 25], spin: [0, 0, 0], contacts: 2 });
 
   // Side glass: a cross-court ball after its bounce; a víbora's sidespin.
+  // The court-pace test against the side glass (30 m/s at 16 deg): felt on smooth glazed tile reads SPR 65.5.
+  shots.push({
+    id: 'spr-glass', group: 'side glass', label: 'Court pace test against the side glass: 30 m/s at 16° (glazed tile: SPR 65.5, mu 0.35)',
+    pos: [5 - r - 0.1, 1.0, 7 - 0.1 * cos(16 * deg) / sin(16 * deg)], vel: [30 * sin(16 * deg), 0, 30 * cos(16 * deg)], spin: [0, 0, 0],
+    contacts: 1, secs: 0.2,
+  });
   shots.push({ id: 'side-cross', group: 'side glass', label: 'Cross-court, bounce at (3.8, 7.6), into the right side glass', pos: [3.8 - 0.06, r + 0.1, 7.6 - 0.06], vel: [9, -4, 12], spin: [0, 0, 0], contacts: 3 });
   shots.push({ id: 'side-vibora-in', group: 'side glass', label: 'Víbora sidespin into the side glass, 2,000 rpm (kicks along)', pos: [3.8 - 0.06, r + 0.1, 7.6 - 0.06], vel: [9, -4, 12], spin: [0, 2000 * RPM, 0], contacts: 3 });
   shots.push({ id: 'side-vibora-out', group: 'side glass', label: 'Same, sidespin the other way (checks up)', pos: [3.8 - 0.06, r + 0.1, 7.6 - 0.06], vel: [9, -4, 12], spin: [0, -2000 * RPM, 0], contacts: 3 });
 
   // Mesh: the side mesh near the net (no glass 4-10 m from the back) and the back mesh above the glass.
-  shots.push({ id: 'mesh-side', group: 'mesh', label: 'Side mesh at 1.5 m high, 18 m/s at 40° (300 runs)', pos: [4.6, 1.5, 2.6], vel: [18 * Math.sin(40 * deg), 0, 18 * Math.cos(40 * deg)], spin: [0, 0, 0], runs: 300, contacts: 2 });
+  shots.push({ id: 'mesh-side', group: 'mesh', label: 'Side mesh at 1.5 m high, 18 m/s at 40° (300 runs)', pos: [4.6, 1.5, 2.6], vel: [18 * sin(40 * deg), 0, 18 * cos(40 * deg)], spin: [0, 0, 0], runs: 300, contacts: 2 });
   shots.push({ id: 'mesh-back', group: 'mesh', label: 'Back mesh above the glass, 20 m/s straight in (300 runs)', pos: [0.5, 3.4, 9.5], vel: [0, 0.4, 20], spin: [0, 0, 0], runs: 300, contacts: 2 });
 
   // Corners: back glass then side glass; the foot of the back wall (rincón).
   shots.push({ id: 'corner-back-side', group: 'corner', label: 'Into the back-right corner after a bounce: back glass then side', pos: [3.4, r + 0.1, 7.6], vel: [5.5, -3.2, 15], spin: [0, 0, 0], contacts: 4 });
-  shots.push({ id: 'corner-rincon', group: 'corner', label: 'Landing at the foot of the back glass (rincón), 20 m/s at 30°', pos: [0.5, r + 0.1, 10 - r - 0.004 - 0.1 / Math.tan(30 * deg)], vel: [0, -20 * Math.sin(30 * deg), 20 * Math.cos(30 * deg)], spin: [0, 0, 0], contacts: 3, runs: 1 });
+  shots.push({ id: 'corner-rincon', group: 'corner', label: 'Landing at the foot of the back glass (rincón), 20 m/s at 30°', pos: [0.5, r + 0.1, 10 - r - 0.004 - 0.1 / (sin(30 * deg) / cos(30 * deg))], vel: [0, -20 * sin(30 * deg), 20 * cos(30 * deg)], spin: [0, 0, 0], contacts: 3, runs: 1 });
 
   // Joins: a seam between back glass panels, the glass/mesh line on the back wall, the side wall's step and its
   // glass/mesh edge.
@@ -163,7 +184,7 @@ export function runShot(shot: LabShot, world: BallWorld, rng: Rng | null): LabRu
         continue;
       }
       out.contacts.push(measure(ev.kind, ev.surface, ev.wall, t - h + ev.t, ev.x, ev.y, ev.z, [vx, vy, vz], [wx, wy, wz],
-        [b.vel.x, b.vel.y, b.vel.z], [b.spin.x, b.spin.y, b.spin.z], r));
+        [b.vel.x, b.vel.y, b.vel.z], [b.spin.x, b.spin.y, b.spin.z], r, world.spec.inertiaFactor * r * r));
     }
     if (out.contacts.length >= maxC || b.outside || b.rolling) {
       if (b.rolling) out.end = 'rolling';
@@ -192,7 +213,7 @@ const len = (a: number[]): number => Math.sqrt(dot(a, a));
 
 function measure(
   kind: number, surface: number, wall: number, t: number, x: number, y: number, z: number,
-  vIn: number[], wIn: number[], vOut: number[], wOut: number[], r: number,
+  vIn: number[], wIn: number[], vOut: number[], wOut: number[], r: number, kI: number,
 ): LabContact {
   const n = normalOf(kind, wall);
   const vnIn = dot(vIn, n);
@@ -218,15 +239,17 @@ function measure(
   // Deflection: the outgoing path against the mirror of the incoming one (works for straight-in hits too).
   const mir = [vIn[0]! - 2 * vnIn * n[0], vIn[1]! - 2 * vnIn * n[1], vIn[2]! - 2 * vnIn * n[2]];
   const lo = len(vOut) * len(mir);
-  const deflect = lo > 1e-6 ? (Math.acos(Math.max(-1, Math.min(1, dot(mir, vOut) / lo))) * 180) / Math.PI : 0;
+  const deflect = lo > 1e-6 ? (atan2(len(cross(mir, vOut)), dot(mir, vOut)) * 180) / PI : 0;
   return {
     kind, surface, wall, t, x, y, z, n,
     speedIn: len(vIn), speedOut: len(vOut), vnIn: -vnIn, vnOut, vtIn, vtOut,
+    energyIn: 0.5 * dot(vIn, vIn) + 0.5 * kI * dot(wIn, wIn),
+    energyOut: 0.5 * dot(vOut, vOut) + 0.5 * kI * dot(wOut, wOut),
     en: vnIn < 0 ? vnOut / -vnIn : 0,
     // (Undefined for a straight-in hit: reported as NaN below 2 m/s of incoming slide.)
     tKept: vtIn > 2 ? dot(vOut, tdir) / vtIn : NaN,
-    angIn: (Math.atan2(-vnIn, vtIn) * 180) / Math.PI,
-    angOut: (Math.atan2(vnOut, vtOut) * 180) / Math.PI,
+    angIn: (atan2(-vnIn, vtIn) * 180) / PI,
+    angOut: (atan2(vnOut, vtOut) * 180) / PI,
     ex: Math.abs(uIn) > 0.05 ? -uOut / uIn : 0,
     rollIn: dot(wIn, axis) / RPM,
     rollOut: dot(wOut, axis) / RPM,
@@ -240,6 +263,8 @@ export interface ShotSummary {
   run: LabRun;
   /** Over the random runs: mean and spread of the first wall/floor contact the shot is about. */
   stats?: { n: number; en: [number, number]; tKept: [number, number]; deflect: [number, number]; angOut: [number, number] };
+  /** Court-pace tests (cpr-/spr- shots): the ITF numbers of the key contact. */
+  itf?: { mu: number; e: number; cpr: number; spr: number };
   /** Back glass: how the ball comes off it. */
   glass?: { heightAtGlass: number; speedIntoGlass: number; speedOff: number; enGlass: number; apexAfterGlass: number; comesBack: number; heightAt1m: number };
 }
@@ -250,7 +275,7 @@ export function keyContact(shot: LabShot, run: LabRun): LabContact | undefined {
   return run.contacts.find((c) => c.kind === HIT_WALL);
 }
 
-const mean = (a: number[]): number => a.reduce((s, v) => s + v, 0) / Math.max(1, a.length);
+const mean = (a: number[]): number => a.reduce((s, v) => s + v, 0) / max(1, a.length);
 const sd = (a: number[]): number => { const m = mean(a); return Math.sqrt(mean(a.map((v) => (v - m) ** 2))); };
 
 export function summarize(shot: LabShot, worlds: Map<string, BallWorld>): ShotSummary {
@@ -270,6 +295,13 @@ export function summarize(shot: LabShot, worlds: Map<string, BallWorld>): ShotSu
       if (Number.isFinite(c.tKept)) tk.push(c.tKept);
     }
     out.stats = { n: en.length, en: [mean(en), sd(en)], tKept: tk.length ? [mean(tk), sd(tk)] : [NaN, NaN], deflect: [mean(df), sd(df)], angOut: [mean(ao), sd(ao)] };
+  }
+  if (shot.id.startsWith('cpr-') || shot.id.startsWith('spr-')) {
+    const c = keyContact(shot, run);
+    if (c) {
+      const mu = (c.vtIn - c.vtOut) / ((1 + c.en) * c.vnIn);
+      out.itf = { mu, e: c.en, cpr: 100 * (1 - mu) + 150 * (0.81 - c.en), spr: 100 * (1 - mu) };
+    }
   }
   if (shot.group === 'back glass' || shot.id === 'corner-back-side') {
     const g = run.contacts.find((c) => c.kind === HIT_WALL && c.wall === WALL_BACK_NEAR && c.surface === SURF_GLASS);

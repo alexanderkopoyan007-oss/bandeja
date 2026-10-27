@@ -4,7 +4,7 @@ import standard from '../../data/courts/standard.json' with { type: 'json' };
 import panoramic from '../../data/courts/panoramic.json' with { type: 'json' };
 import singles from '../../data/courts/singles-narrow.json' with { type: 'json' };
 
-const hit: ZoneHit = { kind: 0, seamDist: 0 };
+const hit: ZoneHit = { kind: 0, seamDist: 0, joinDist: 0 };
 
 describe('standard court (FIP variant 1)', () => {
   const c = new Court(standard as CourtDef);
@@ -45,10 +45,19 @@ describe('standard court (FIP variant 1)', () => {
     expect(c.sideZone(2.0, 1.0, hit).kind).toBe(SURF_MESH);
   });
 
-  it('reports seams near glass joins and corners', () => {
-    expect(c.backZone(-3.01, 1.5, hit).seamDist).toBeLessThan(0.02);
-    expect(c.backZone(4.99, 1.5, hit).seamDist).toBeLessThan(0.02);
-    expect(c.sideZone(8.0, 1.0, hit).seamDist).toBeLessThan(0.01);
+  it('tells flush glass joins from frames; corners are neither', () => {
+    // Back glass panel joins are glass against glass; the glass top meets the mesh panel's frame.
+    expect(c.backZone(-3.01, 1.5, hit).joinDist).toBeLessThan(0.02);
+    expect(hit.seamDist).toBeGreaterThan(0.9);
+    expect(c.backZone(-3.01, 2.99, hit).seamDist).toBeLessThan(0.02);
+    // The corner with the side wall is two walls, not a seam.
+    expect(c.backZone(4.99, 1.5, hit).seamDist).toBeGreaterThan(0.9);
+    expect(hit.joinDist).toBeGreaterThan(0.9);
+    // Side wall 2 m from the back: the 3 m panel against the 2 m one below 2 m, against the mesh above it.
+    expect(c.sideZone(8.0, 1.0, hit).joinDist).toBeLessThan(0.01);
+    expect(c.sideZone(8.0, 2.5, hit).seamDist).toBeLessThan(0.01);
+    // 4 m from the back the glass ends against mesh: a frame edge.
+    expect(c.sideZone(6.0, 1.0, hit).seamDist).toBeLessThan(0.01);
     expect(c.backZone(0, 1.5, hit).seamDist).toBeGreaterThan(0.9);
   });
 });

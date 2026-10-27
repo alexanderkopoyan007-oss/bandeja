@@ -28,6 +28,7 @@ for (const s of res) {
     const g = s.glass;
     extra.push(`glass at ${f(g.heightAtGlass)} m, ${f(g.speedIntoGlass, 1)}→${f(g.speedOff, 1)} m/s, e_n ${f(g.enGlass)}, apex after ${f(g.apexAfterGlass)} m, comes back ${f(g.comesBack, 1)} m, height 1 m out ${f(g.heightAt1m)} m`);
   }
+  if (s.itf) extra.push(`court pace: mu ${f(s.itf.mu)}, e ${f(s.itf.e)}, CPR ${f(s.itf.cpr, 1)}, SPR ${f(s.itf.spr, 1)}`);
   if (s.stats) {
     const st = s.stats;
     extra.push(`${st.n} runs: e_n ${f(st.en[0])} ± ${f(st.en[1])}, tangential kept ${f(st.tKept[0])} ± ${f(st.tKept[1])}, deflection ${f(st.deflect[0], 1)} ± ${f(st.deflect[1], 1)}°`);
@@ -37,6 +38,6 @@ for (const s of res) {
 }
 mkdirSync('docs/lab', { recursive: true });
 writeFileSync(`docs/lab/ball-lab-${tag}.md`, lines.join('\n') + '\n');
-const json = res.map((s: ShotSummary) => ({ id: s.shot.id, contacts: s.run.contacts, apexAfter: s.run.apexAfter, end: s.run.end, stats: s.stats, glass: s.glass }));
+const json = res.map((s: ShotSummary) => ({ id: s.shot.id, contacts: s.run.contacts, apexAfter: s.run.apexAfter, end: s.run.end, stats: s.stats, glass: s.glass, itf: s.itf }));
 writeFileSync(`docs/lab/ball-lab-${tag}.json`, JSON.stringify(json, null, 1));
 console.log(lines.join('\n'));

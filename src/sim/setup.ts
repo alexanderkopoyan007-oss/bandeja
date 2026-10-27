@@ -29,6 +29,7 @@ export interface WorldOptions {
 const surfaces = surfaceData as unknown as Record<string, SurfaceSpec>;
 const netGive = (surfaceData as unknown as { netGive: NetGiveSpec }).netGive;
 const seamWidth = (surfaceData as unknown as { seamWidth: number }).seamWidth;
+const joinWidth = (surfaceData as unknown as { joinWidth: number }).joinWidth;
 const netClothSpec = (surfaceData as unknown as { netCloth: NetClothSpec }).netCloth;
 
 export function surfaceTable(): SurfaceTable {
@@ -36,10 +37,12 @@ export function surfaceTable(): SurfaceTable {
     glass: surfaces.glass!,
     mesh: surfaces.mesh!,
     seam: surfaces.seam!,
+    glassJoin: surfaces.glassJoin!,
     net: surfaces.net!,
     post: surfaces.post!,
     netGive,
     seamWidth,
+    joinWidth,
   };
 }
 

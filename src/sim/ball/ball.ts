@@ -26,8 +26,9 @@ export interface BallSpec {
 export interface BallWearSpec {
   dragFluff: number;
   fluffImpacts: number;
-  pressureLoss: number;
-  pressureImpacts: number;
+  /** Friction and restitution gained as the nap fluffs up (fractions, reached with the drag). */
+  muGain: number;
+  eGain: number;
 }
 
 export interface SurfaceSpec {
@@ -53,11 +54,14 @@ export interface SurfaceTable {
   glass: SurfaceSpec;
   mesh: SurfaceSpec;
   seam: SurfaceSpec;
+  /** A flush join between two glass panels. */
+  glassJoin: SurfaceSpec;
   /** The net tape (cord): a rigid bounce. The net body gives (netGive). */
   net: SurfaceSpec;
   post: SurfaceSpec;
   netGive: NetGiveSpec;
   seamWidth: number;
+  joinWidth: number;
 }
 
 export interface Environment {
@@ -142,7 +146,7 @@ const n = new V3();
 const u = new V3();
 const jt = new V3();
 const rc = new V3();
-const zone: ZoneHit = { kind: 0, seamDist: 0 };
+const zone: ZoneHit = { kind: 0, seamDist: 0, joinDist: 0 };
 
 export class Ball {
   readonly pos = new V3();
@@ -171,11 +175,14 @@ export class Ball {
   wears = false;
   /** Impacts so far, each weighted by (normal speed / 15 m/s)^2 (at most 3). */
   wear = 0;
-  /** Drag and restitution against a new ball (the nap fluffs up, the pressure leaks). */
+  /** Drag, restitution and friction against a new ball (the nap fluffs up). */
   dragScale = 1;
   eScale = 1;
+  muScale = 1;
   /** Normal speed of the impact being added by wearImpact() (a field: a double argument would be boxed). */
   wearV = 0;
+  /** A bounce has counted wear that applyWear() hasn't turned into drag/restitution/friction yet. */
+  wearDirty = false;
 
   readonly events: ContactEvent[] = [];
   eventCount = 0;
@@ -223,6 +230,7 @@ export class Ball {
     this.wear = b.wear;
     this.dragScale = b.dragScale;
     this.eScale = b.eScale;
+    this.muScale = b.muScale;
   }
 
   /** A new ball (fresh from the tube). */
@@ -230,6 +238,7 @@ export class Ball {
     this.wear = 0;
     this.dragScale = 1;
     this.eScale = 1;
+    this.muScale = 1;
   }
 
   /** Wear from an impact at normal speed wearV (racket, floor or wall); only the match ball wears. */
@@ -237,9 +246,21 @@ export class Ball {
     if (!this.wears) return;
     const q = this.wearV / 15;
     this.wear += q * q < 3 ? q * q : 3;
+    this.applyWear(world);
+  }
+
+  /**
+   * Bring drag, restitution and friction up to the wear counted so far. Bounces only count (the exp() here,
+   * inlined into every Ball.step tree, pushed V8 over its inlining budget in about half of all runs and the
+   * vector calls left out boxed their doubles); MatchSim.stepBall applies it after each step.
+   */
+  applyWear(world: BallWorld): void {
+    this.wearDirty = false;
     const w = world.spec.wear;
-    this.dragScale = 1 + w.dragFluff * (1 - exp(-this.wear / w.fluffImpacts));
-    this.eScale = 1 - w.pressureLoss * (1 - exp(-this.wear / w.pressureImpacts));
+    const f = 1 - exp(-this.wear / w.fluffImpacts);
+    this.dragScale = 1 + w.dragFluff * f;
+    this.eScale = 1 + w.eGain * f;
+    this.muScale = 1 + w.muGain * f;
   }
 
   /** Let go of any net catch (the ball is being put somewhere or struck). */
@@ -528,17 +549,25 @@ export class Ball {
     const x = q.x + (p.x - q.x) * f;
     const y = q.y + (p.y - q.y) * f;
     const z = q.z + (p.z - q.z) * f;
-    if (wall === WALL_BACK_NEAR || wall === WALL_BACK_FAR) c.backZone(x, y, zone);
-    else c.sideZone(z, y, zone);
+    c.qy = y;
+    if (wall === WALL_BACK_NEAR || wall === WALL_BACK_FAR) {
+      c.qu = x;
+      c.backZoneAt(zone);
+    } else {
+      c.qu = z;
+      c.sideZoneAt(zone);
+    }
     if (zone.kind === SURF_OPEN) return;
     this.hitKind = HIT_WALL;
     this.hitWall = wall;
     this.hitSurface = zone.kind;
     this.hitSeam = zone.seamDist;
+    this.hitJoin = zone.joinDist;
     this.best = f;
   }
 
   private hitSeam = 0.5;
+  private hitJoin = 0.5;
 
   private tryNet(c: Court, p: V3): void {
     const r = this.radius;
@@ -634,8 +663,11 @@ export class Ball {
         else if (this.hitWall === WALL_BACK_NEAR) n.set(0, 0, -1);
         else n.set(0, 0, 1);
         const base = this.hitSurface === SURF_GLASS ? world.surfaces.glass : world.surfaces.mesh;
+        // Frames (mesh posts, the mesh panel's frame on the glass top, door edges) are irregular; a flush join
+        // between two glass panels is nearly a plain bounce (FIP wants joins flush and the rebound uniform).
         surf = this.hitSeam < world.surfaces.seamWidth && c.def.frame === 'posts' ? world.surfaces.seam : base;
         if (this.hitSeam < world.surfaces.seamWidth * 0.5 && this.hitSurface === SURF_GLASS) surf = world.surfaces.seam;
+        else if (surf === base && this.hitSurface === SURF_GLASS && this.hitJoin < world.surfaces.joinWidth) surf = world.surfaces.glassJoin;
         break;
       }
       case HIT_NETCORD:
@@ -856,8 +888,11 @@ export class Ball {
     const vn = this.vel.dot(n);
     if (vn >= 0) return; // moving away already
     let e = clamp(s.e0 - s.eSlope * -vn, s.eMin, s.e0) * spec.restitutionScale * this.eScale;
-    this.wearV = -vn;
-    this.wearImpact(world);
+    if (this.wears) {
+      const q = -vn / 15;
+      this.wear += q * q < 3 ? q * q : 3;
+      this.wearDirty = true;
+    }
     if (cord) e = max(e, 0.3);
     if (rng && s.speedJitter > 0) e *= 1 - s.speedJitter * rng.next();
 
@@ -872,7 +907,7 @@ export class Ball {
     const kGrip = ((1 + s.grip) * m * alpha) / (1 + alpha);
     jt.copy(u).scale(-kGrip);
     const jtl = jt.length();
-    const jmax = s.mu * jn;
+    const jmax = s.mu * this.muScale * jn;
     if (jtl > jmax && jtl > 0) jt.scale(jmax / jtl);
 
     // Apply.

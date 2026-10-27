@@ -116,6 +116,22 @@ measured against published data, and lands with tests that check the model again
   points are won between the 5th and 11th second (WPT Masters Finals, 1,527 rallies).
 
 ### Walls
+- **Glass is a near-rigid wall.** FIP and the LTA specify 10-12 mm toughened glass (EN 12150-1) with flush joins.
+  The point impedance of a 12 mm panel takes 1-2% of the ball's energy, so its restitution is about 0.985 of a
+  rigid wall's (derived; the panel's first mode, about 11 Hz, is far below the 4 ms contact).
+- **Friction against glass.** No padel measurement exists. Felt on smooth glazed tile in the ITF court-pace test
+  reads SPR 65.5, a friction of about 0.35; concrete walls read 0.56-0.60 (Dignall 2004). The game's glass: 0.35,
+  and the lab's SPR test against it reads 64.9.
+- **Restitution against impact speed** is the ball's own: pressurised tennis balls on a rigid surface fall from
+  about 0.80 at 3 m/s to 0.60 at 20 m/s (Dignall 2004). Every hard surface in the game uses that slope
+  (0.0115 per m/s); the glass reads 0.80 at 3 m/s and 0.61 at 20 m/s in the lab.
+- **Joins and frames.** FIP wants joins flush and the rebound uniform; the LTA warns that rebound is irregular
+  where glass and mesh aren't flush. So a flush glass-glass join is nearly a plain bounce in the game (about 2°
+  of scatter), while frames (mesh posts, the mesh panel's frame along the glass top, door edges) stay irregular
+  (about 20°). The wall-to-wall corner is two walls, not a seam.
+- **Mesh.** Nothing is measured. FIP: welded mesh, 50 x 50 mm, 2-4 mm wire, horizontal wires inside; FIP and NIDE
+  call its rebound irregular. About 4 kg/m2 against 30 for glass; a 66 mm ball sinks about 9 mm into a cell
+  (derived). The game's mesh numbers are tuning (see OPEN_QUESTIONS.md).
 - **Glass vs concrete.** Glass gives faster, longer and more accelerated rebounds than concrete. Ball type matters
   more for speed and distance, and the wall for angle and acceleration; Dunlop balls bounce faster and longer
   than Head. (Gea García et al. 2021, *Int. J. Perf. Analysis in Sport*, doi 10.1080/24748668.2021.1875778)
@@ -132,9 +148,17 @@ measured against published data, and lands with tests that check the model again
   25° (about 3,900 rpm on hard).
 
 ### Turf
-- **No independent padel data.** Nothing published measures rebound or friction against sand infill.
-- **Cranfield (2010), on tennis-style sand-filled turf.** Adding infill hardens the surface, lowers the rebound
-  and reduces rotational resistance, and deceleration stops rising above about 10 kg/m².
-  ([Cranfield](https://dspace.lib.cranfield.ac.uk/handle/1826/6466))
-- **The game stays calibrated to the FIP drop test** and keeps the turf's friction and grip as tuning values,
-  labelled as such.
+- **Standards.** The Spanish padel standard UNE 41958 IN (in the CSD's NIDE sheet) asks for vertical ball
+  rebound of at least 80% of a rigid floor's, force reduction of 20% or more, and 2-3 mm of fibre above the sand.
+  Padel turf as built: 12-15 mm pile, 15-20 kg/m2 of rounded silica (0.2-0.8 mm).
+  ([NIDE](https://www.ucm.es/data/cont/media/www/pag-5081/Normativa%20NIDE%20%20-%20FINAL%20-.pdf); tenders from
+  Zaragoza and Andalucía, Composan data sheet.)
+- **Measured on sand-filled turf (tennis).** Vertical drop: 100.7% of concrete's rebound, COR 0.775 vs 0.772
+  (Hamilton 2000, in Dignall's 2004 thesis); the Berlin artificial athlete reads it almost rigid for a ball.
+- **Padel balls on a padel court (IBV for Testfakta, 2023, 8 brands).** Court-pace test at 70 km/h: friction
+  0.57-0.62, CPR 36-50. After 666 machine strokes every ball gripped 2-7% more, bounced 0.7-2.8% higher in the
+  drop test, and was 2-31% softer.
+  ([table](https://www.testfakta.se/sites/default/files/2023-08/Tabell_Padelbollar%28230810_0%29.pdf))
+- **In the game (Phase 1, 2026-10-27).** Turf restitution equals the hard floor's, and the sand's scatter takes
+  the average drop rebound to about 97% of hard. Friction 0.59; the lab's court-pace test reads friction 0.59 and
+  CPR 44.7. The ball's friction rises 4.4% and its restitution 1% as the nap fluffs up.

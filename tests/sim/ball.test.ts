@@ -24,7 +24,7 @@ function run(world: BallWorld, ball: Ball, maxT: number, rng: Rng | null = null,
   return out;
 }
 
-function dropTest(world: BallWorld, wear = 0): number {
+function dropTest(world: BallWorld, wear = 0, rng: Rng | null = null): number {
   const b = new Ball();
   if (wear > 0) {
     // Wear it as a match would: impacts of 15 m/s (each counts 1).
@@ -34,7 +34,7 @@ function dropTest(world: BallWorld, wear = 0): number {
     b.wears = false;
   }
   b.pos.set(0, 2.54 + world.spec.radius, 3); // bottom of the ball at 2.54 m
-  const r = run(world, b, 3, null, (_b, n) => n >= 2);
+  const r = run(world, b, 3, rng, (_b, n) => n >= 2);
   // FIP measures the bounce to the bottom of the ball.
   return r.maxYAfterFirstBounce - world.spec.radius;
 }
@@ -50,9 +50,17 @@ describe('FIP drop test (2.54 m onto a hard surface)', () => {
     expect(h).toBeGreaterThan(1.22);
     expect(h).toBeLessThan(1.35);
   });
-  it('turf and clay bounce lower than hard court', () => {
+  it('sand-filled turf bounces almost like a hard floor: 80-101% of its drop rebound (UNE 41958 IN; Hamilton 2000)', () => {
     const hard = dropTest(makeWorld({ floor: 'hard' }));
-    expect(dropTest(makeWorld({ floor: 'turf' }))).toBeLessThan(hard);
+    const turf = makeWorld({ floor: 'turf' });
+    const rng = new Rng(7);
+    let sum = 0;
+    for (let k = 0; k < 60; k++) sum += dropTest(turf, 0, rng);
+    const ratio = sum / 60 / hard;
+    expect(ratio).toBeGreaterThan(0.8);
+    expect(ratio).toBeLessThan(1.01);
+    // and a little lower on average than hard: the sand takes some of it.
+    expect(ratio).toBeLessThan(0.995);
     expect(dropTest(makeWorld({ floor: 'clay' }))).toBeLessThan(hard);
   });
 });
@@ -68,12 +76,20 @@ describe('ball wear over a match', () => {
     expect(b.dragScale).toBeLessThan(1.045);
   });
 
-  it('the pressure leaks: a 150-point match takes the drop test down about 4 cm, still a ball', () => {
+  it('after 666 strokes a ball grips 2-7% more and bounces 0.7-2.8% higher (IBV for Testfakta 2023, 8 brands)', () => {
     const w = makeWorld({ floor: 'hard' });
     const fresh = dropTest(w);
-    const used = dropTest(w, 150 * 15);
-    expect(fresh - used).toBeGreaterThan(0.025);
-    expect(fresh - used).toBeLessThan(0.06);
+    const used = dropTest(w, 666);
+    expect(used / fresh - 1).toBeGreaterThan(0.007);
+    expect(used / fresh - 1).toBeLessThan(0.028);
+    const b = new Ball();
+    b.wears = true;
+    b.wearV = 15;
+    for (let i = 0; i < 666; i++) b.wearImpact(w);
+    expect(b.muScale - 1).toBeGreaterThan(0.02);
+    expect(b.muScale - 1).toBeLessThan(0.07);
+    // and stays a ball within FIP's durability limit (drop test within 4 cm after 9 simulated games) all match.
+    expect(dropTest(w, 150 * 15) - fresh).toBeLessThan(0.04);
   });
 
   it('only the match ball wears; predictions copy its state', () => {
@@ -87,6 +103,7 @@ describe('ball wear over a match', () => {
     const g = new Ball().copyFrom(b);
     expect(g.wear).toBe(b.wear);
     expect(g.dragScale).toBe(b.dragScale);
+    expect(g.muScale).toBe(b.muScale);
     expect(g.wears).toBe(false);
   });
 });
