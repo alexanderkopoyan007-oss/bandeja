@@ -28,5 +28,6 @@ Search each term and take the closest match. If two look similar, download both 
 | 12 | lunge, or stretching / reaching | `lunge.fbx` | Stretched shots |
 | 13 | victory / fist pump | `celebrate.fbx` | Winning a point |
 | 14 | disappointed / defeated | `dejected.fbx` | Losing a point |
+| 15 | tennis volley, or a short punch / block (optional) | `volley.fbx` | Net volleys; doubles is mostly played at the net. Skip it if nothing fits |
 
 About an hour in total. Padel-specific motion (víbora, wall play, the underarm serve) is not on Mixamo; it is built procedurally on top of these clips.
