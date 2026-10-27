@@ -28,6 +28,8 @@ export interface Family {
   loop: number;
   /** Crouch for low balls (0: none, overheads). */
   crouch: number;
+  /** Shortest forward swing, as a share of the avatar's MIN_SWING (a volley is a quick punch). */
+  punch: number;
 }
 
 const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
@@ -53,6 +55,7 @@ export const FOREHAND: Family = {
   dip: 0.28,
   loop: 0.1,
   crouch: 1,
+  punch: 1,
 };
 
 export const BACKHAND: Family = {
@@ -64,6 +67,7 @@ export const BACKHAND: Family = {
   dip: 0.22,
   loop: 0.05,
   crouch: 1,
+  punch: 1,
 };
 
 export const OVERHEAD: Family = {
@@ -76,6 +80,7 @@ export const OVERHEAD: Family = {
   dip: -0.05,
   loop: 0.38,
   crouch: 0,
+  punch: 1,
 };
 
 /** Smash: same trophy and contact, but the racket comes right down past the left hip. */
@@ -95,6 +100,7 @@ export const SERVE: Family = {
   dip: 0.12,
   loop: 0,
   crouch: 0.6,
+  punch: 1,
 };
 
 /** A volley is a short punch: the backswing and follow-through pulled most of the way in towards contact. */
@@ -106,7 +112,7 @@ function volley(f: Family, name: string): Family {
     yaw: k.yaw + (f.contact.yaw - k.yaw) * u,
     off: k.off.clone(),
   });
-  return { ...f, name, back: shrink(f.back, 0.55), finish: shrink(f.finish, 0.6), dip: f.dip * 0.2, loop: 0, crouch: 0.8 };
+  return { ...f, name, back: shrink(f.back, 0.55), finish: shrink(f.finish, 0.6), dip: f.dip * 0.2, loop: 0, crouch: 0.8, punch: 0.5 };
 }
 
 export const VOLLEY_FH = volley(FOREHAND, 'volley-fh');

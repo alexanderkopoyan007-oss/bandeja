@@ -5,7 +5,7 @@ import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../../sim/match.ts';
 import { PH_DEAD, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
-import { MOD_POWER, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH } from '../../sim/contact/shots.ts';
+import { MOD_POWER, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
@@ -180,6 +180,9 @@ export class Avatar {
   private tRel = 0;
   private tCon = 0;
   private relW = 1;
+  /** The stroke changed at the release: the swing blends over from the backswing it had. */
+  private relBlend = false;
+  private prevBounces = 0;
   private relS = 0;
   private swingS = 0;
   private fadeStart = 0;
@@ -429,10 +432,18 @@ export class Avatar {
       }
       const tp = this.planned(sim, idx);
       this.hasCon = tp >= 0;
-      if (t - this.prepStart < PREP || this.swingS === 0) {
+      if (this.swingS === 0) {
+        // Re-aimed while the plan changes (the ball may cross to the other side); a change of stroke blends
+        // over from wherever the racket is rather than jumping.
         if (!this.hasCon) this.conW.set(sim.ball.pos.x, sim.ball.pos.y, sim.ball.pos.z);
         const hand = st.valid ? st.hand : this.handOf(sim, p, this.conW);
-        this.fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand);
+        const fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand);
+        if (fam !== this.fam && t - this.prepStart > 0.03) {
+          this.snapshot();
+          this.prepStart = t;
+          this.prepFromW = this.w;
+        }
+        this.fam = fam;
       }
       if (this.hasCon && tp - t < LEAD) this.swingS = Math.max(this.swingS, Math.min(HOVER, 1 - (tp - t) / LEAD));
     }
@@ -442,17 +453,26 @@ export class Avatar {
     if (released) {
       if (this.st !== ST_PREP) { this.snapshot(); this.swingS = 0; }
       this.tRel = t;
+      this.relBlend = false;
       this.relS = this.swingS;
       this.relW = this.st === ST_PREP ? this.w : 0;
       // Released and struck within one tick (the AI often lets go right at the ball): the hit is the contact.
       this.hasCon = sw === SW_COMMITTED || hit;
       if (hit) this.conW.set(p.lastContact.x, p.lastContact.y, p.lastContact.z);
       else if (this.hasCon) this.predAt(sim, p.contactTime, this.conW);
-      if (this.hasCon) {
-        this.fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley,
-          this.handOf(sim, p, this.conW));
+      // A forward swing already under way keeps its stroke. Otherwise the stroke is picked for the contact the
+      // sim is actually taking, which can be far from the plan (an AI turns a planned groundstroke into a reflex
+      // volley at the body), and a backswing built for another stroke blends over into it.
+      if (this.hasCon && (this.st !== ST_PREP || this.swingS === 0)) {
+        const fresh = !st.valid || Math.abs(st.t - (hit ? p.lastContactTime : p.contactTime)) > 0.12;
+        const vol = fresh
+          ? (hit ? this.prevBounces : sim.rally.bounces) === 0 && (p.shot === SHOT_DRIVE || p.shot === SHOT_SLICE)
+          : st.volley;
+        const fam = this.pickFamily(sim, p, idx, this.conW, !fresh && st.overhead, vol, fresh ? this.handOf(sim, p, this.conW) : st.hand);
+        if (this.st === ST_PREP && fam !== this.fam) { this.snapshot(); this.relBlend = true; }
+        this.fam = fam;
       }
-      this.tCon = Math.max(hit ? p.lastContactTime : this.hasCon ? p.contactTime : t, t + (1 - this.relS) * MIN_SWING);
+      this.tCon = Math.max(hit ? p.lastContactTime : this.hasCon ? p.contactTime : t, t + (1 - this.relS) * MIN_SWING * this.fam.punch);
       this.st = ST_SWING;
     } else if (this.st === ST_SWING && sw === SW_COMMITTED) {
       this.predAt(sim, p.contactTime, this.conW);
@@ -466,6 +486,7 @@ export class Avatar {
     // A backswing dropped without a swing (the partner took the ball): let go from where it is.
     if (this.st === ST_PREP && sw !== SW_CHARGE) this.fadeOut(t, this.w);
     this.lastSwing = sw;
+    this.prevBounces = sim.rally.bounces;
 
     const f = this.fam;
     if (this.st === ST_PREP) {
@@ -476,8 +497,9 @@ export class Avatar {
       this.w = this.prepFromW + (1 - this.prepFromW) * u;
     } else if (this.st === ST_SWING) {
       if (t < this.tCon) {
-        const s = this.relS + (1 - this.relS) * clamp01((t - this.tRel) / (this.tCon - this.tRel));
-        this.swingKey(s);
+        const g = clamp01((t - this.tRel) / (this.tCon - this.tRel));
+        this.swingKey(this.relS + (1 - this.relS) * g);
+        if (this.relBlend) this.blendFrom(smoothstep(0, 0.7, g));
         this.w = this.relW + (1 - this.relW) * smoothstep(0, 0.06, t - this.tRel);
       } else if (t < this.tCon + FOLLOW) {
         // Follow-through, slowing down, carrying on through the ball before wrapping round.

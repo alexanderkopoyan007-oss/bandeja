@@ -68,9 +68,9 @@ describe('avatar', () => {
     const lag = hits.map((h) => Math.abs(h.at)).sort((x, y) => x - y);
     const lq = (f: number) => lag[Math.floor(f * (lag.length - 1))]!;
     process.stderr.write(`visual contact vs sim contact (s): median ${lq(0.5).toFixed(3)} p90 ${lq(0.9).toFixed(3)} max ${lq(1).toFixed(3)}\n`);
-    expect(q(0.5)).toBeLessThan(0.08);
+    expect(q(0.5)).toBeLessThan(0.05);
     expect(q(0.9)).toBeLessThan(0.25);
     expect(lq(0.5)).toBeLessThan(0.02);
-    expect(lq(0.9)).toBeLessThan(0.05);
+    expect(lq(0.9)).toBeLessThan(0.035);
   });
 });
