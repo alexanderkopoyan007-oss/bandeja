@@ -109,6 +109,9 @@ const STEP_YAW = 0.55;
 const STEP_TIME = 0.15;
 const STEP_LIFT = 0.05;
 const STEP_SNAP = 0.7;
+/** Lunge: a planned contact further than LUNGE_FROM (m, flat) from the racket shoulder steps the foot on its side out. */
+const LUNGE_FROM = 0.9;
+const LUNGE_MAX = 0.55;
 
 /** Fingers of the racket hand ('Right' or 'Left' in front), curled round the grip (rad, per joint). */
 const GRIP: Array<[string, number]> = [
@@ -892,6 +895,20 @@ export class Avatar {
       this.stepT[0] = -1;
       this.stepT[1] = -1;
       this.planted = true;
+    }
+    // Lunge: a stroke's contact wide of the racket shoulder moves where the foot on that side wants to be.
+    if (this.hasCon && (this.st === ST_PREP || this.st === ST_SWING)) {
+      const sh = this.armRacket[0]!.matrixWorld.elements;
+      const dx = this.conW.x - sh[12]!, dz = this.conW.z - sh[14]!;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      const out = Math.min(LUNGE_MAX, Math.max(0, d - LUNGE_FROM) * 1.3);
+      if (out > 0.04) {
+        // The model's left (+x) in world: which side of the body the ball is on.
+        const left = dx * Math.cos(yaw) - dz * Math.sin(yaw) > 0;
+        const A = left ? this.footL : this.footR;
+        A.x += (dx / d) * out;
+        A.z += (dz / d) * out;
+      }
     }
     // Which foot is furthest from where the animation wants it (scaled so a turn counts like a distance).
     let worst = -1, worstE = 1;
