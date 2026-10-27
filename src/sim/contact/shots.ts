@@ -31,6 +31,8 @@ export interface ShotShape {
   depth: number;
   speedMax: number;
   errorScale: number;
+  /** Full pace: hit at the contact's top speed, elevation chosen for the distance (kill smash). */
+  pace?: boolean;
 }
 
 interface ModSpec { netClear: number; speed: number; error: number }
@@ -227,6 +229,27 @@ export class ShotSolver {
   }
 
   /**
+   * Full pace: the speed is the contact's cap and only the elevation is solved for the landing distance (the
+   * net is a check, not a target). False if that would not clear the tape by `minClear`: from deep in the
+   * court a full-pace smash skims the net, so the caller takes pace off instead (as players do).
+   */
+  solvePace(p: V3, tx: number, tz: number, rpm: number, cap: number, minClear: number, outV: V3, outW: V3): boolean {
+    this.evals = 0;
+    const dx = tx - p.x;
+    const dz = tz - p.z;
+    const dist = sqrt(dx * dx + dz * dz);
+    dir.set(dx / dist, 0, dz / dist);
+    ShotSolver.spinFor(rpm, dir.x, dir.z, outW);
+    const crosses = (p.z > 0) !== (tz > 0);
+    const f0 = crosses ? p.z / (p.z - tz) : 0.5;
+    const want = crosses ? this.world.court.netHeightAt(p.x + dx * f0) : 0;
+    if (!this.distanceAt(p, cap, outW, dist, want, crosses)) return false;
+    if (crosses && this.eN < minClear) return false;
+    this.launch(this.ns, this.nth, outV);
+    return true;
+  }
+
+  /**
    * Find the clean launch from contact point p to land on (tx, tz), clearing the net by `clear` metres,
    * with topspin `rpm`. Newton's method on (speed, elevation), started from the exact vacuum trajectory
    * through the net point and the landing point. If the contact cannot produce the needed speed (`cap`),
@@ -321,7 +344,11 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
     * (1 - 0.18 * req.moving) * (1 - 0.25 * req.stretch);
 
   const clear = shape.netClear * mod.netClear;
-  out.reachable = solver.solve(ball.pos, req.targetX, req.targetZ, shape.spinRpm * req.spinScale * (0.7 + 0.3 * q), clear, cap, ball.vel, ball.spin);
+  const rpm = shape.spinRpm * req.spinScale * (0.7 + 0.3 * q);
+  // Pace shots keep a safer margin over the tape: full pace when that clears it, else as fast as clears it.
+  const paceClear = clear + 0.25;
+  out.reachable = (shape.pace === true && solver.solvePace(ball.pos, req.targetX, req.targetZ, rpm, cap, paceClear, ball.vel, ball.spin))
+    || solver.solve(ball.pos, req.targetX, req.targetZ, rpm, shape.pace === true ? paceClear : clear, cap, ball.vel, ball.spin);
   out.idealX = req.targetX;
   out.idealZ = req.targetZ;
 

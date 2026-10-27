@@ -4,6 +4,7 @@ import { MatchSim, PH_RALLY, PH_SETUP, PH_OVER, E_HIT, E_POINT, E_WALL, E_FLOOR 
 import { InputFrame, BTN_DRIVE, BTN_PRECISION, BTN_OVERHEAD, BTN_POWER } from '../../src/sim/input.ts';
 import { SHOT_SMASH, SHOT_BANDEJA } from '../../src/sim/contact/shots.ts';
 import { DT } from '../../src/sim/core/constants.ts';
+import { WHY_EXIT_AFTER_BOUNCE } from '../../src/sim/rules/rally.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
 
 /**
@@ -159,9 +160,9 @@ describe('aiming', () => {
 
 describe('overheads', () => {
   /** Goes to the net after each shot (that draws lobs) and holds the overhead key when a lob comes. */
-  function lobs(power: boolean) {
-    const res = { lobs: 0, overheads: 0, high: 0, smashes: 0 };
-    for (let seed = 1; seed <= 3; seed++) {
+  function lobs(power: boolean, seeds = 3) {
+    const res = { lobs: 0, overheads: 0, high: 0, smashes: 0, speeds: [] as number[], outAfterBounce: 0 };
+    for (let seed = 1; seed <= seeds; seed++) {
       const m = new MatchSim({ seed, human: [true, false], firstServer: 1, autoTiming: true, assist: 0.45, timingScale: 1.5 });
       const f = new InputFrame();
       let seen = 0;
@@ -197,10 +198,13 @@ describe('overheads', () => {
             if (lob === 1 && (e.a === SHOT_SMASH || e.a === SHOT_BANDEJA)) {
               res.overheads++;
               if (e.y >= 2.0) res.high++;
-              if (e.a === SHOT_SMASH) res.smashes++;
+              if (e.a === SHOT_SMASH) { res.smashes++; res.speeds.push(e.c); }
             }
             lob = -1;
-          } else if (e.kind === E_POINT) lob = -1;
+          } else if (e.kind === E_POINT) {
+            if (e.team === 0 && e.a === WHY_EXIT_AFTER_BOUNCE) res.outAfterBounce++;
+            lob = -1;
+          }
         }
       }
     }
@@ -215,9 +219,12 @@ describe('overheads', () => {
     expect(r.smashes).toBe(0);
   });
 
-  it('with power held the overhead is a smash', () => {
-    const r = lobs(true);
-    expect(r.lobs).toBeGreaterThan(20);
+  it('with power held the overhead is a smash, fast enough to leave the court', () => {
+    const r = lobs(true, 8);
+    expect(r.lobs).toBeGreaterThan(50);
     expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
+    const sorted = r.speeds.slice().sort((a, b) => a - b);
+    expect(sorted[sorted.length >> 1]! * 3.6).toBeGreaterThan(140); // median km/h
+    expect(r.outAfterBounce).toBeGreaterThan(0); // por tres / por cuatro (rare at Good timing: ~3 in 8 matches' worth)
   });
 });

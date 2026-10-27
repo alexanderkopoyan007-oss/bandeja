@@ -87,8 +87,11 @@ const SERVE_HAND_HEIGHT = 0.95;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
-/** Default aim depth (fraction of the half) for the overhead key. */
-const OVERHEAD_AIM_DEPTH = 0.76;
+/** Default aim depth (fraction of the half) for the overhead key: deep for a bandeja, mid-court for a smash. */
+const OVERHEAD_AIM_DEPTH = 0.8;
+/** Untouched smash target: clear the tape by this much on a straight line, but land no shorter than this. */
+const SMASH_NET_MARGIN = 0.45;
+const SMASH_MIN_DEPTH = 3.2;
 /** Windows are searched from this far back, so a release just after the ideal is still judged against it. */
 const RELEASE_LOOKBACK = 0.3;
 
@@ -470,6 +473,22 @@ export class MatchSim {
   /** Move the aim target with the keys (or put it under the mouse), kept inside a sensible landing area. */
   private steerAim(p: Player, f: InputFrame, s: number, serve: boolean): void {
     const c = this.world.court;
+    if (f.aimAbs || abs(f.moveX) + abs(f.moveY) > 0.1) p.aimTouched = true;
+    else if (!p.aimTouched && !serve && p.shot === SHOT_BANDEJA) {
+      // An overhead target nobody has steered follows the shot: deep for a bandeja; for a smash (Space) the
+      // shortest landing that a full-pace straight line from the planned contact clears the net with margin.
+      // Near the net that is mid-court, and the steep bounce can leave the court; from deep it lands deeper.
+      if ((f.held & BTN_POWER) !== 0) {
+        const st = this.stand[p.team]!;
+        const back = abs(st.valid ? st.bz : p.pos.z);
+        const h = st.valid ? st.by : p.tune.overheadIdealHeight;
+        const over = c.netHeightAt(0) + SMASH_NET_MARGIN;
+        const far = c.halfL - 2.0;
+        p.aimZ = -s * (h > over + 0.2 ? clamp((over * back) / (h - over), SMASH_MIN_DEPTH, far) : far);
+      } else {
+        p.aimZ = -s * OVERHEAD_AIM_DEPTH * c.halfL;
+      }
+    }
     if (f.aimAbs) {
       p.aimX = f.aimTX;
       p.aimZ = f.aimTZ;
@@ -509,10 +528,10 @@ export class MatchSim {
     p.grade = -1;
     if (this.phase === PH_RALLY && !this.ai[team]) {
       // Each rally shot starts aimed down the middle at the shot's natural depth; the keys move it from there.
-      // Overheads start a little shorter than a bandeja's natural depth, so a smash (power) isn't long.
       const depth = shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot);
       p.aimX = 0;
       p.aimZ = -this.side(team) * depth * this.world.court.halfL;
+      p.aimTouched = false;
     }
   }
 
@@ -831,7 +850,8 @@ export class MatchSim {
     h.num(this.tick).num(this.time).num(this.phase).num(this.serveNo).num(this.wallsSinceBounce);
     h.num(b.pos.x).num(b.pos.y).num(b.pos.z).num(b.vel.x).num(b.vel.y).num(b.vel.z).num(b.spin.x).num(b.spin.y).num(b.spin.z);
     for (const p of this.players) {
-      h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ);
+      h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
+        .num(p.aimTouched ? 1 : 0);
     }
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     const st: number[] = [];

@@ -46,6 +46,8 @@ export class Player {
   aimZ = 0;
   /** The aim target is live this tick (charging for an incoming ball, or setting up a serve). */
   aiming = false;
+  /** The player has steered the aim since pressing (until then an overhead's target follows Space). */
+  aimTouched = false;
 
   splitUntil = 0;
   /** Right-handed = 1, left-handed = -1. */
@@ -148,7 +150,8 @@ export class Player {
   writeState(out: number[]): void {
     out.push(this.pos.x, this.pos.z, this.vel.x, this.vel.z, this.facing, this.swing, this.shot, this.mod,
       this.chargeStart, this.release, this.contactTime, this.timingDelta, this.grade, this.recoverUntil,
-      this.handSide, this.splitUntil, this.lastContactTime, this.lastContact.x, this.lastContact.y, this.lastContact.z);
+      this.handSide, this.splitUntil, this.lastContactTime, this.lastContact.x, this.lastContact.y, this.lastContact.z,
+      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0);
   }
 
   readState(s: number[], i: number): number {
@@ -157,6 +160,7 @@ export class Player {
     this.chargeStart = s[i++]!; this.release = s[i++]!; this.contactTime = s[i++]!; this.timingDelta = s[i++]!;
     this.grade = s[i++]!; this.recoverUntil = s[i++]!; this.handSide = s[i++]!; this.splitUntil = s[i++]!;
     this.lastContactTime = s[i++]!; this.lastContact.x = s[i++]!; this.lastContact.y = s[i++]!; this.lastContact.z = s[i++]!;
+    this.aimX = s[i++]!; this.aimZ = s[i++]!; this.aiming = s[i++]! === 1; this.aimTouched = s[i++]! === 1;
     return i;
   }
 }

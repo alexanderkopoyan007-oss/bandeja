@@ -2,7 +2,7 @@
 import * as THREE from 'three/webgpu';
 import { MatchSim, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
-import { InputFrame } from '../sim/input.ts';
+import { InputFrame, BTN_POWER } from '../sim/input.ts';
 import { buildCourtView } from '../render/courtView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
 import { KeyboardInput } from './input/keyboard.ts';
@@ -57,6 +57,7 @@ export class Game {
   private readonly ndc = new THREE.Vector2();
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly hit = new THREE.Vector3();
+  private readonly ballScreen = new THREE.Vector3();
   private mouseAim: boolean;
 
   constructor(opts: GameOptions, renderer: THREE.WebGPURenderer, hudRoot: HTMLElement) {
@@ -208,9 +209,20 @@ export class Game {
     this.ball.update(this.sim, alpha, human);
     for (let i = 0; i < 2; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
     this.cam.update(this.sim, human, this.ball.mesh.position.x, now / 1000);
-    this.assists.update(this.sim, this.opts.autoplay ? -1 : human, this.ball.mesh.position, this.cam.camera, renderTime,
+    const who = this.opts.autoplay ? -1 : human;
+    const frameDt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
+    this.assists.update(this.sim, who, now / 1000, frameDt, this.kb.held, this.cam.camera.position);
+    this.hud.update(this.sim, who, now / 1000);
+    // The timing cue is drawn in screen space around the ball, with a marker floating over the aim target.
+    const me = who >= 0 ? this.sim.players[who]! : null;
+    if (me && me.aiming) {
+      const ap = this.ballScreen.set(me.aimX, 0, me.aimZ).project(this.cam.camera);
+      this.hud.cue.aimAt(((ap.x + 1) / 2) * innerWidth, ((1 - ap.y) / 2) * innerHeight, ap.z < 1,
+        (this.kb.held & BTN_POWER) !== 0);
+    } else this.hud.cue.aimAt(0, 0, false, false);
+    const bp = this.ballScreen.copy(this.ball.mesh.position).project(this.cam.camera);
+    this.hud.cue.update(this.sim, who, ((bp.x + 1) / 2) * innerWidth, ((1 - bp.y) / 2) * innerHeight, bp.z < 1, renderTime,
       this.opts.match.timingScale ?? 1, now / 1000);
-    this.hud.update(this.sim, this.opts.autoplay ? -1 : human, now / 1000);
 
     this.renderer.render(this.scene, this.cam.camera);
     const info = this.renderer.info.render;
