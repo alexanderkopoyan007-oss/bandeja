@@ -372,10 +372,11 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   ball.vel.scale(max(0.3, 1 + rng.normal() * sSpeed));
   ball.spin.scale(clamp(1 + rng.normal() * (0.08 + 0.2 * bad), 0.2, 1.6));
   if (q < 0.2) {
-    // Frame shot: the ball comes off the edge.
-    ball.vel.scale(0.55 + 0.25 * rng.next());
+    // Frame shot: the ball comes off the edge popped up and wild (a short sitter, out, or into the net from a
+    // low contact), not driven into the hitter's own court. The speed cap above already took the weak contact.
+    ball.vel.scale(0.85 + 0.15 * rng.next());
     rotateYaw(ball.vel, rng.normal() * 9 * deg);
-    rotatePitch(ball.vel, rng.normal() * 6 * deg);
+    rotatePitch(ball.vel, (2 + 6 * rng.next()) * deg);
     ball.spin.scale(0.3);
   }
   out.speed = ball.vel.length();

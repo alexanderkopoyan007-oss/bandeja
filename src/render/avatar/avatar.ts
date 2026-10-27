@@ -846,18 +846,25 @@ export class Avatar {
 
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */
   private solveLegs(): void {
-    // How far the racket would fall short of the key at full stretch: the hips go that way, up to 40 cm.
+    // How far the arm would fall short of where the key puts the wrist: the hips go that way (up to 40 cm out,
+    // down up to 30 cm for a ball below the shoulder, the knees taking the drop; up to 12 cm for one above
+    // the reach, onto the toes or off the ground).
     this.toWorld(this.kp, v1);
+    this.quatToWorld(this.kq, q2);
+    q3.multiplyQuaternions(q2, this.grip.qInv);
+    v3.copy(this.grip.pos).applyQuaternion(q3);
     v2.setFromMatrixPosition(this.armRacket[0]!.matrixWorld);
-    const dx = v1.x - v2.x, dz = v1.z - v2.z;
+    const dx = v1.x - v3.x - v2.x, dy = v1.y - v3.y - v2.y, dz = v1.z - v3.z - v2.z;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const short = len > 1e-3 ? Math.max(0, len - this.armLen * 0.96) * this.w : 0;
     const dh = Math.sqrt(dx * dx + dz * dz);
-    const short = Math.max(0, dh - 0.95) * this.w;
-    const push = Math.min(0.4, short);
+    const push = dh > 1e-3 ? Math.min(0.4, (short * dh) / len) : 0;
     this.reachX = dh > 1e-3 ? (dx / dh) * push : 0;
     this.reachZ = dh > 1e-3 ? (dz / dh) * push : 0;
-    const drop = this.crouch + push * 0.35 + this.splitDrop;
+    const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) : 0;
+    const drop = this.crouch + push * 0.35 + down + this.splitDrop - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
     const plant = this.plantW >= 0.01;
-    if (drop < 0.005 && push < 0.005 && !plant) return;
+    if (drop < 0.005 && drop > -0.005 && push < 0.005 && !plant) return;
 
     this.footL.setFromMatrixPosition(this.legL[2]!.matrixWorld);
     this.footR.setFromMatrixPosition(this.legR[2]!.matrixWorld);

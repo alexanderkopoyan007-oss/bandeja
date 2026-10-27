@@ -56,7 +56,8 @@ function play(seed: number, seconds: number): Log {
 }
 
 describe('doubles', () => {
-  const a = play(7, 600);
+  // Long enough for six service games now that rallies run longer (median 8 shots a point).
+  const a = play(7, 900);
 
   it('is deterministic', () => {
     const run = (seed: number) => {

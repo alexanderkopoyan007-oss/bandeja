@@ -315,7 +315,7 @@ export class SimpleAi {
   private difficulty(m: MatchSim, height: number, afterWall: boolean): number {
     const v = m.ball.vel;
     const speed = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-    return 1 + 0.9 * clamp((speed - 12) / 14, 0, 1.6) + (afterWall ? 0.45 : 0) + (height < 0.5 ? 0.5 : 0);
+    return 1 + 0.55 * clamp((speed - 12) / 14, 0, 1.6) + (afterWall ? 0.3 : 0) + (height < 0.5 ? 0.3 : 0);
   }
 
   /** The predicted path climbs well above head height over our half before it bounces: a lob. */
