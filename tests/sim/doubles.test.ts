@@ -94,8 +94,9 @@ describe('doubles', () => {
 });
 
 describe('a human with an AI partner', () => {
-  // A human-like bot as player 0: holds drive for the balls the pair gives it (auto timing releases), serves in
-  // turn, and otherwise keeps its side of the court at the back. The AI partner (player 2) plays the rest.
+  // A human-like bot as player 0: holds drive for the balls the pair gives it (auto timing releases) and serves in
+  // turn; it never moves by itself, so the positioning assist and the formation assist place it. The AI partner
+  // (player 2) plays the rest.
   function playHuman(seed: number, seconds: number) {
     const m = new MatchSim({ seed, doubles: true, human: [true, false, false, false], autoTiming: true, assist: 0.45, timingScale: 1.5 });
     const f = new InputFrame();
@@ -108,21 +109,12 @@ describe('a human with an AI partner', () => {
     for (let i = 0; i < seconds * 120; i++) {
       f.clear();
       const p = m.players[0]!;
-      const mate = m.players[2]!;
       if (holding && p.swing !== SW_CHARGE) { f.push(false, BTN_DRIVE, m.time); holding = false; }
       const serve = m.phase === PH_SETUP && m.score.serverPlayer() === 0 && m.time > m.phaseUntil + 0.2;
       const ours = m.phase === PH_RALLY && m.rally.hitter === 1 && m.taker[0] === 0;
       if (!holding && p.swing === SW_IDLE && (serve || ours)) {
         f.push(true, BTN_DRIVE, m.time);
         holding = true;
-      }
-      if (!p.aiming && m.phase === PH_RALLY && !ours) {
-        const s = m.side(0);
-        const lane = p.pos.x - mate.pos.x >= 0 ? 1 : -1;
-        const dx = lane * 2.5 - p.pos.x;
-        const dz = s * 7.2 - p.pos.z;
-        const d = Math.hypot(dx, dz);
-        if (d > 0.3) { f.moveX = (dx / d) * s; f.moveY = (-dz / d) * s; }
       }
       f.held = holding ? BTN_DRIVE : 0;
       m.step(frames);
@@ -137,7 +129,13 @@ describe('a human with an AI partner', () => {
           waiting = false;
           pending = e.team === 1;
         }
-        if (e.kind === E_POINT) { out.points++; pending = false; waiting = false; }
+        if (e.kind === E_POINT) {
+          // The opponents' shot ended in the net or out before it reached us: not a ball we had to play.
+          if (waiting && e.team === 0) out.given--;
+          out.points++;
+          pending = false;
+          waiting = false;
+        }
       }
     }
     return out;
@@ -150,6 +148,6 @@ describe('a human with an AI partner', () => {
     expect(r.hits[0]).toBeGreaterThan(20);
     expect(r.hits[2]).toBeGreaterThan(20);
     expect(r.given).toBeGreaterThan(20);
-    expect(r.returned / r.given).toBeGreaterThan(0.8);
+    expect(r.returned / r.given).toBeGreaterThan(0.9);
   });
 });

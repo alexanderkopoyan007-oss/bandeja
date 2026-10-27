@@ -18,6 +18,7 @@ import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows 
 import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
+import { formationSpot, type Spot } from './player/formation.ts';
 import { SimpleAi } from './ai/simpleAi.ts';
 import { makeWorld, type WorldOptions } from './setup.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
@@ -93,6 +94,8 @@ const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
 /** Default aim depth (fraction of the half) for the overhead key: deep for a bandeja, mid-court for a smash. */
 const OVERHEAD_AIM_DEPTH = 0.8;
+/** Untouched víbora target: cross-court, this deep (fraction of the half), into the side glass. */
+const VIBORA_AIM_DEPTH = 0.68;
 /** Untouched smash target: clear the tape by this much on a straight line, but land no shorter than this. */
 const SMASH_NET_MARGIN = 0.45;
 const SMASH_MIN_DEPTH = 3.2;
@@ -482,6 +485,15 @@ export class MatchSim {
       this.assist(p, f, keysAim);
       dx += this.assistX;
       dz += this.assistZ;
+    } else if (human && this.doubles && assistOn && this.phase === PH_RALLY && p.swing !== SW_CHARGE
+      && abs(f.moveX) + abs(f.moveY) < 0.1) {
+      // Doubles, not our ball and no keys held: take up the pair's formation as the AI partner does (keys
+      // always win; ?assist=0 turns this off).
+      formationSpot(this, i, this.rally.hitter !== team && this.rally.hitter >= 0, this.form);
+      this.arriveK = this.cfg.assist ?? p.tune.positioningAssist;
+      this.arrive(p);
+      dx += this.assistX;
+      dz += this.assistZ;
     }
 
     // Button events in time order.
@@ -652,15 +664,32 @@ export class MatchSim {
     const k = full ? 1 : (this.cfg.assist ?? p.tune.positioningAssist);
     const st = this.stand[p.index]!;
     if (k <= 0 || !st.valid) return;
-    const dx = st.x - p.pos.x;
-    const dz = st.z - p.pos.z;
-    const d = sqrt(dx * dx + dz * dz);
-    if (d < 0.05) return;
     const pushing = !full && abs(f.moveX) + abs(f.moveY) > 0.1 ? 0.55 : 1;
-    // Arrive, don't overshoot: ask only for the speed the player can still brake from within the distance left
-    // (running past the spot puts the body in the ball's line).
+    this.form.x = st.x;
+    this.form.z = st.z;
+    this.arriveK = k * pushing;
+    this.arrive(p);
+  }
+
+  /** Where arrive() steers to, and how hard (fields, not arguments: V8 boxes doubles passed to calls). */
+  private readonly form: Spot = { x: 0, z: 0 };
+  private arriveK = 0;
+
+  /**
+   * Steer towards `form` at strength `arriveK` into assistX/assistZ. Arrive, don't overshoot: ask only for the
+   * speed the player can still brake from within the distance left (running past the spot puts the body in the
+   * ball's line).
+   */
+  private arrive(p: Player): void {
+    this.assistX = 0;
+    this.assistZ = 0;
+    const k = this.arriveK;
+    const dx = this.form.x - p.pos.x;
+    const dz = this.form.z - p.pos.z;
+    const d = sqrt(dx * dx + dz * dz);
+    if (d < 0.05 || k <= 0) return;
     const t = p.tune;
-    const g = k * pushing * min(1, sqrt(2 * t.brake * 0.7 * d) / t.maxSpeed);
+    const g = k * min(1, sqrt(2 * t.brake * 0.7 * d) / t.maxSpeed);
     this.assistX = (dx / d) * g;
     this.assistZ = (dz / d) * g;
   }
@@ -680,6 +709,10 @@ export class MatchSim {
         const over = c.netHeightAt(0) + SMASH_NET_MARGIN;
         const far = c.halfL - 2.0;
         p.aimZ = -s * (h > over + 0.2 ? clamp((over * back) / (h - over), SMASH_MIN_DEPTH, far) : far);
+      } else if ((f.held & BTN_PRECISION) !== 0) {
+        // Víbora: cross-court into the side glass.
+        p.aimX = (p.pos.x > 0 ? -1 : 1) * (c.halfW - 0.9);
+        p.aimZ = -s * VIBORA_AIM_DEPTH * c.halfL;
       } else {
         p.aimZ = -s * OVERHEAD_AIM_DEPTH * c.halfL;
       }

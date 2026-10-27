@@ -9,6 +9,7 @@ import { abs, clamp, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import { findWindows, makeWindows } from '../contact/windows.ts';
 import { makeStandPlan, planStand } from '../player/positioning.ts';
+import { formationSpot, type Spot } from '../player/formation.ts';
 import { SW_IDLE, SW_CHARGE, type Player } from '../player/player.ts';
 import { SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_BANDEJA } from '../contact/shots.ts';
 
@@ -17,8 +18,6 @@ const PH_TOSS = 1;
 const PH_RALLY = 2;
 
 /** Formation depths (m from the net): at the net, and back by the glass. */
-const UP_Z = 3.1;
-const BACK_Z = 7.5;
 
 export class SimpleAi {
   /** Player number (team + 2 * slot). */
@@ -47,6 +46,7 @@ export class SimpleAi {
   vibora = false;
   private readonly wins = makeWindows();
   private readonly st = makeStandPlan();
+  private readonly spot: Spot = { x: 0, z: 0 };
 
   constructor(index: number, level: number) {
     this.index = index;
@@ -185,45 +185,12 @@ export class SimpleAi {
     }
   }
 
-  /**
-   * Doubles positioning: parallel with the partner. Up at the net after an attacking shot from the front
-   * half or a deep lob, back by the glass otherwise; while the partner plays the ball, mirror their depth.
-   * Each player keeps their lane (left or right of the pair) and the pair slides towards the ball.
-   */
+  /** Doubles: take up the pair's formation (shared with the human's positioning assist). */
   private formation(m: MatchSim, f: InputFrame, p: Player, s: number, coming: boolean): void {
-    const c = m.world.court;
-    const mate = m.players[this.index ^ 2]!;
-    const lane = (p.pos.x - mate.pos.x) * s > 0 ? 1 : (p.pos.x - mate.pos.x) * s < 0 ? -1 : this.index < 2 ? 1 : -1;
-    let up: boolean;
-    if (coming) {
-      // Partner is on it: match their depth (where they will play it from).
-      up = abs(mate.pos.z) < 5.2;
-    } else if (m.lastStrikeTeam === this.team && m.lastStrikePlayer >= 0) {
-      // Our ball is going over. The serving pair takes the net; otherwise the striker's decision (an AI decides
-      // as it picks its shot), or for a human striker: up after a shot from the front part of the court or a
-      // lob that gets past the opponents.
-      const striker = m.players[m.lastStrikePlayer]!;
-      const intent = m.intentUp[this.team]!;
-      up = m.rally.shots === 1 || this.deepLob(m, s) || (intent >= 0 ? intent === 1 : abs(striker.lastContact.z) < 6.6);
-    } else {
-      up = abs(p.pos.z) < 5.2;
-    }
-    const bx = m.ball.pos.x;
-    const x = clamp(lane * s * c.halfW * 0.45 + 0.3 * bx, p.minX + 0.3, p.maxX - 0.3);
-    this.goX = x;
-    this.goZ = s * (up ? UP_Z : BACK_Z);
+    formationSpot(m, this.index, coming, this.spot);
+    this.goX = this.spot.x;
+    this.goZ = this.spot.z;
     this.drift(f, p, s);
-  }
-
-  /** Our ball is a lob that will get over the opponents and land deep: follow it in. */
-  private deepLob(m: MatchSim, s: number): boolean {
-    const pr = m.pred;
-    let top = 0;
-    for (let i = 0; i < pr.n; i++) {
-      if (pr.bounces[i]! > 0) return top > 4.5 && abs(pr.z[i]!) > 7.5 && pr.z[i]! * s < 0;
-      if (pr.y[i]! > top) top = pr.y[i]!;
-    }
-    return false;
   }
 
   /** Watch the ball come in from where we actually are, and time the release off that window. */
