@@ -21,7 +21,8 @@ import { makeStandPlan, planStand, type StandPlan } from './player/positioning.t
 import { formationSpot, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
 import { SimpleAi } from './ai/simpleAi.ts';
-import { makeWorld, type WorldOptions } from './setup.ts';
+import { makeWorld, makeNetCloth, type WorldOptions } from './setup.ts';
+import type { NetCloth } from './court/netCloth.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 
 // Phases
@@ -119,6 +120,9 @@ export class MatchSim {
   readonly score: Score;
   readonly rally = new Rally();
   readonly ball = new Ball();
+  /** The net as cloth: solved with the ball near it, on its own while it still moves. */
+  readonly net: NetCloth;
+  private ballCoupled = false;
   /** 2 (singles) or 4 (doubles) players; team = index & 1, partner = index ^ 2. */
   readonly players: Player[];
   readonly doubles: boolean;
@@ -171,6 +175,8 @@ export class MatchSim {
     this.doubles = cfg.doubles === true;
     const n = this.doubles ? 4 : 2;
     this.world = makeWorld(cfg.world);
+    this.net = makeNetCloth(this.world);
+    this.ball.cloth = this.net;
     this.solver = new ShotSolver(this.world);
     this.score = new Score(cfg.format ?? DEFAULT_FORMAT, cfg.firstServer ?? 0, this.doubles);
     this.rng = new Rng(cfg.seed);
@@ -329,6 +335,8 @@ export class MatchSim {
     this.prevBall.x = this.ball.pos.x;
     this.prevBall.y = this.ball.pos.y;
     this.prevBall.z = this.ball.pos.z;
+    this.net.beginTick();
+    this.ballCoupled = false;
     for (let i = 0; i < n; i++) {
       this.prevPlayers[i]!.x = this.players[i]!.pos.x;
       this.prevPlayers[i]!.z = this.players[i]!.pos.z;
@@ -385,6 +393,9 @@ export class MatchSim {
       if (this.phase === PH_RALLY || this.phase === PH_TOSS) this.checkBodies();
     }
 
+    // The net keeps moving after the ball has gone (or while it is dead in hand).
+    if (!this.ballCoupled && this.net.awake) this.net.freeTick();
+
     this.time = t1;
     this.tick++;
 
@@ -403,6 +414,7 @@ export class MatchSim {
   private stepBall(dt: number, tStart: number): void {
     const b = this.ball;
     b.step(this.world, dt, this.rng);
+    if (b.coupled) this.ballCoupled = true;
     let recompute = false;
     let flags = 0;
     for (let i = 0; i < b.eventCount; i++) {
@@ -443,8 +455,8 @@ export class MatchSim {
         }
       }
     }
-    // Caught in the net the ball can bulge past the net line; it has not crossed.
-    if (!b.inNet) this.rally.onBallZ(b.pos.z);
+    // Caught in the net, or under a pocket of it, the ball can be past the net line without having crossed.
+    if (!b.inNet) this.rally.onBallZ(b.sideZ);
     if (recompute && (this.phase === PH_RALLY || this.phase === PH_TOSS)) {
       this.pred.compute(this.world, b, tStart + dt, this.phase === PH_RALLY ? this.rally.bounces : this.tossBounces, 2,
         this.wallsSinceBounce, flags);
@@ -922,7 +934,7 @@ export class MatchSim {
     const t = p.tune;
     const legal = serving
       ? this.tossBounces === 1
-      : b.pos.z * s > 0 && !b.inNet && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0)
+      : b.sideZ * s > 0 && !b.inNet && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0)
         // The serve is returned by the receiver, not the partner (8.1).
         && !(this.rally.isServe && i !== this.score.receiverPlayer());
     if (!legal || d > t.reachMax + 0.25 || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15 || this.rally.over) {
@@ -1122,7 +1134,8 @@ export class MatchSim {
     const b = this.ball;
     h.num(this.tick).num(this.time).num(this.phase).num(this.serveNo).num(this.wallsSinceBounce);
     h.num(b.pos.x).num(b.pos.y).num(b.pos.z).num(b.vel.x).num(b.vel.y).num(b.vel.z).num(b.spin.x).num(b.spin.y).num(b.spin.z);
-    h.num(b.inNet ? 1 : 0).num(b.netSide).num(b.netW).num(b.netZeta).num(b.rolling ? 1 : 0).num(b.outside ? 1 : 0);
+    h.num(b.inNet ? 1 : 0).num(b.netSide).num(b.sideZ).num(b.netW).num(b.netZeta).num(b.rolling ? 1 : 0).num(b.outside ? 1 : 0);
+    this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
         .num(p.aimTouched ? 1 : 0);

@@ -11,7 +11,20 @@
   "post":   { "name": "Net post (steel)",    "e0": 0.62, "eSlope": 0.006, "eMin": 0.35, "mu": 0.30, "grip": 0.05, "jitterDeg": 1.0, "speedJitter": 0.02 },
   "netGive": {
     "//": "The net body is a tensioned mesh that gives: the ball pushes it back like a damped spring. omega: natural frequency (rad/s) in the middle of the net at mid-height, rising towards the posts, the tape and the floor as 1/sqrt(give), give = (1 - (x/halfW)^2) * 4u(1-u) with u = height / net height, floored at minGive. zeta: damping ratio (0.55 sends back about 12% of the speed). grab: how fast the mesh stops the ball sliding along it and its spin (1/s). spread: random variation of omega and zeta per catch.",
-    "omega": 39, "zeta": 0.55, "grab": 25, "minGive": 0.06, "spread": 0.1
+    "omega": 39, "zeta": 0.55, "grab": 8, "minGive": 0.06, "spread": 0.1
+  },
+  "netCloth": {
+    "//": "The net as cloth (src/sim/court/netCloth.ts). FIP: 10 m long, 0.88 m at the centre and 0.92 m at the ends, steel cable up to 1 cm inside a white tape 5-6.3 cm. Real nets: 3 mm polypropylene/polyethylene twine in 45 mm squares (about 220 g/m2, so about 2 kg of netting), 5 mm PVC-coated steel cable; with the netting hanging on it the cable sags 4 cm at about 1 kN. Twine EA about 7 kN; one link spans 1.5 cords. The bottom edge is a cord in a PVC binding laced to the posts at the floor (about 60 g/m with the binding). cordCd/solidity give the twine's air drag (solidity 2 x 3 mm / 45 mm). damping is knot friction. Contact: the netting grips (friction) and gives almost nothing back; the tape band kicks a little more; the cable more again. Substeps keep the ball under maxTravel per substep.",
+    "cols": 80, "rows": 8,
+    "bodyMass": 2.0, "cableMassPerM": 0.13,
+    "cordCompliance": 6.5e-6, "cableTension": 1000, "rowTension": 10, "bottomTension": 300, "bottomMassPerM": 0.06, "rowStretch": 1.04, "rowDamping": 0.5, "cableDamping": 0.5,
+    "cordCd": 1.2, "solidity": 0.133, "damping": 6,
+    "cableBelowTop": 0.012, "tapeHeight": 0.057, "bottomGap": 0.004,
+    "substeps": 4, "freeSubsteps": 2, "maxSubsteps": 8, "maxTravel": 0.05,
+    "restitution": 0.04, "friction": 0.55, "grab": 8,
+    "tapeRestitution": 0.15,
+    "cableRadius": 0.012, "cableRestitution": 0.3, "cableFriction": 0.6,
+    "sleepSpeed": 0.02, "sleepTime": 0.25
   },
   "seamWidth": 0.035
 }

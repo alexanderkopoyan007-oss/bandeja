@@ -83,7 +83,7 @@ export class Game {
     Object.assign(sun.shadow.camera, { left: -13, right: 13, top: 13, bottom: -13, near: 2, far: 40 });
     this.scene.add(sun);
     this.scene.add(buildCourtView(court));
-    this.net = new NetView(court, this.sim.world.spec.radius);
+    this.net = new NetView(this.sim.net);
     this.scene.add(this.net.group);
 
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9);
@@ -244,7 +244,7 @@ export class Game {
 
     const frameDt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
     this.ball.update(this.sim, alpha, team);
-    this.net.update(this.sim, this.ball.mesh.position, renderTime);
+    this.net.update(this.sim, alpha);
     for (let i = 0; i < this.players.length; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
     this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
     const who = this.opts.autoplay ? -1 : human;

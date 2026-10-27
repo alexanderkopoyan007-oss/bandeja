@@ -111,9 +111,11 @@ describe('bounces', () => {
         const I = w.inertia;
         for (let t = 0; t < 2; t += DT) {
           const ke0 = 0.5 * m * b.vel.lengthSq() + 0.5 * I * b.spin.lengthSq() + m * 9.81 * b.pos.y;
+          const caught = b.inNet;
           b.step(w, DT, rng);
           const ke1 = 0.5 * m * b.vel.lengthSq() + 0.5 * I * b.spin.lengthSq() + m * 9.81 * b.pos.y;
-          if (b.eventCount > 0 && b.events[0]!.kind !== LEFT_COURT) {
+          // (In the net the ball gets back what the netting stored; that is not the bounce's doing.)
+          if (b.eventCount > 0 && b.events[0]!.kind !== LEFT_COURT && !caught && !b.inNet) {
             expect(ke1).toBeLessThanOrEqual(ke0 * 1.001 + 1e-4);
           }
         }

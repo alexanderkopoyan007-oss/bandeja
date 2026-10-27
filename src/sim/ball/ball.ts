@@ -3,12 +3,13 @@
 // (the ball is caught by a tensioned mesh, solved in closed form while it is in it).
 import { V3 } from '../core/v3.ts';
 import { Rng } from '../core/rng.ts';
-import { GRAVITY } from '../core/constants.ts';
-import { abs, clamp, cos, exp, max, pow, sin, sqrt, PI } from '../core/smath.ts';
+import { GRAVITY, DT } from '../core/constants.ts';
+import { abs, clamp, cos, exp, max, min, pow, sin, sqrt, PI } from '../core/smath.ts';
 import {
   Court, SURF_GLASS, SURF_MESH, SURF_OPEN, SURF_FLOOR, SURF_NET,
   WALL_BACK_NEAR, WALL_BACK_FAR, WALL_SIDE_LEFT, WALL_SIDE_RIGHT, type ZoneHit,
 } from '../court/court.ts';
+import type { NetCloth } from '../court/netCloth.ts';
 
 export interface BallSpec {
   mass: number;
@@ -145,11 +146,34 @@ export class Ball {
   inNet = false;
   /** The side the ball came into the net from (+1 / -1), and the net's frequency (rad/s) and damping there. */
   netSide = 1;
+  /**
+   * z for the rules: the ball's z, except near the net, where it says which side of the netting the ball is
+   * really on (netSide; a pocket in the cloth carries the ball past the line without it crossing).
+   */
+  sideZ = 0;
   netW = 0;
   netZeta = 0;
 
   readonly events: ContactEvent[] = [];
   eventCount = 0;
+
+  /**
+   * The match's net as cloth (only the live match ball has one; predictions and solver ghosts keep the rigid
+   * net with its closed-form catch). Near the net the ball and the cloth are solved together in substeps.
+   */
+  cloth: NetCloth | null = null;
+  /** True when the last step was solved with the cloth. */
+  coupled = false;
+  /** Seconds since the ball last touched the netting or the cable. */
+  private sinceTouch = 1;
+  /** Step length and event-time offset for fly() / roll() (fields: doubles passed as arguments get boxed). */
+  private flyDt = 0;
+  private flyAt = 0;
+  private flyEnd = 0;
+  private stepDt = DT;
+  private exitAt = 0;
+  private intDt = 0;
+  private resolveAt = 0;
 
   constructor() {
     for (let i = 0; i < MAX_EVENTS; i++) {
@@ -165,6 +189,7 @@ export class Ball {
     this.rolling = b.rolling;
     this.inNet = b.inNet;
     this.netSide = b.netSide;
+    this.sideZ = b.sideZ;
     this.netW = b.netW;
     this.netZeta = b.netZeta;
     return this;
@@ -173,6 +198,7 @@ export class Ball {
   /** Let go of any net catch (the ball is being put somewhere or struck). */
   clearNet(): void {
     this.inNet = false;
+    this.sinceTouch = 1;
   }
 
   /**
@@ -182,14 +208,35 @@ export class Ball {
    */
   step(world: BallWorld, dt: number, rng: Rng | null, flightOnly = false): void {
     this.eventCount = 0;
-    if (this.rolling) {
-      this.roll(world, dt);
+    // Away from the net its side is just the sign of z (near it, stepCoupled tracks it: only over the cable or
+    // round the posts can it change).
+    if (!this.coupled && !this.inNet && this.pos.z !== 0) this.netSide = this.pos.z > 0 ? 1 : -1;
+    this.coupled = false;
+    const cl = this.cloth;
+    if (cl !== null && !flightOnly && this.nearNet(world, cl)) {
+      this.stepDt = dt;
+      this.stepCoupled(world, rng, cl);
       return;
     }
-    let remaining = dt;
-    let elapsed = 0;
+    this.flyDt = dt;
+    this.flyAt = 0;
+    if (this.rolling) this.roll(world);
+    else {
+      this.fly(world, rng, flightOnly);
+      if (!flightOnly) {
+        this.exitAt = this.flyEnd;
+        this.checkExit(world);
+      }
+    }
+    this.sideZ = this.pos.z;
+  }
+
+  /** Free flight for flyDt from event time flyAt, with every contact except a cloth net's. */
+  private fly(world: BallWorld, rng: Rng | null, flightOnly: boolean): void {
+    let remaining = this.flyDt;
+    let elapsed = this.flyAt;
     for (let iter = 0; iter < MAX_CONTACTS_PER_STEP && remaining > 1e-9; iter++) {
-      if (this.inNet) {
+      if (this.inNet && this.cloth === null) {
         this.span = remaining;
         this.at = elapsed;
         this.netStep(world, rng);
@@ -197,23 +244,126 @@ export class Ball {
         remaining -= this.used;
         continue;
       }
-      this.integrate(world, remaining, p1, v1, w1);
-      const f = this.findContact(world, p1, flightOnly);
-      if (f < 0) {
+      this.intDt = remaining;
+      this.integrate(world, p1, v1, w1);
+      if (!this.findContact(world, p1, flightOnly)) {
         this.pos.copy(p1);
         this.vel.copy(v1);
         this.spin.copy(w1);
         break;
       }
       // Move to the contact point (linear within the step), resolve the bounce, continue.
+      const f = this.best;
       this.pos.lerpOf(this.pos, p1, f);
       this.vel.lerpOf(this.vel, v1, f);
       this.spin.lerpOf(this.spin, w1, f);
       elapsed += f * remaining;
-      this.resolve(world, rng, elapsed);
+      this.resolveAt = elapsed;
+      this.resolve(world, rng);
       remaining *= 1 - f;
     }
-    if (!flightOnly) this.checkExit(world, elapsed);
+    this.flyEnd = elapsed;
+  }
+
+  /** Close enough to the net (or still in it) that the cloth must be solved with the ball this step. */
+  private nearNet(world: BallWorld, cl: NetCloth): boolean {
+    if (this.inNet || this.sinceTouch < 0.1) return true;
+    if (this.outside) return false;
+    const p = this.pos;
+    const v = this.vel;
+    const c = world.court;
+    const r = world.spec.radius;
+    if (abs(p.x) > c.halfW + 0.15) return false;
+    if (p.y - r > c.def.net.heightPost + 0.06 - min(0, v.y) * this.stepDt) return false;
+    const reach = (cl.awake ? 0.9 : 0.04) + r + abs(v.z) * DT + 0.02;
+    return abs(p.z) < reach;
+  }
+
+  /**
+   * One step solved together with the cloth net, in substeps short enough that the ball moves at most a few
+   * centimetres in each: the ball flies (floor, walls and posts as usual), then the cloth and the ball's contact
+   * with it are solved. Contacts with the netting or the cable are reported once per touch.
+   */
+  private stepCoupled(world: BallWorld, rng: Rng | null, cl: NetCloth): void {
+    this.coupled = true;
+    const r = world.spec.radius;
+    const c = world.court;
+    cl.bw = 1 / world.spec.mass;
+    cl.br = r;
+    cl.balpha = world.spec.inertiaFactor;
+    cl.bvx = this.vel.x;
+    cl.bvy = this.vel.y;
+    cl.bvz = this.vel.z;
+    const S = cl.substepsFor();
+    const h = this.stepDt / S;
+    cl.h = h;
+    const grab = exp(-cl.spec.grab * h);
+    const p = this.pos;
+    for (let k = 0; k < S; k++) {
+      const e0 = this.eventCount;
+      this.flyDt = h;
+      this.flyAt = k * h;
+      if (this.rolling) this.roll(world);
+      else this.fly(world, rng, false);
+      // Which side of the net the ball is on can only change over the cable or beyond the posts.
+      if (abs(p.x) >= c.halfW || p.y - r > cl.cableY(p.x) + cl.spec.cableRadius) {
+        const zc = abs(p.x) < c.halfW ? cl.cableZ(p.x) : 0;
+        if (p.z !== zc) this.netSide = p.z > zc ? 1 : -1;
+      }
+      cl.side = this.netSide;
+      cl.bx = p.x;
+      cl.by = p.y;
+      cl.bz = p.z;
+      cl.bvx = this.vel.x;
+      cl.bvy = this.vel.y;
+      cl.bvz = this.vel.z;
+      cl.bsx = this.spin.x;
+      cl.bsy = this.spin.y;
+      cl.bsz = this.spin.z;
+      cl.coupledSubstep();
+      p.set(cl.bx, cl.by, cl.bz);
+      this.vel.set(cl.bvx, cl.bvy, cl.bvz);
+      this.spin.set(cl.bsx, cl.bsy, cl.bsz);
+      const touched = cl.touchBody || cl.touchCable;
+      if (touched) {
+        if (this.sinceTouch > 0.08) {
+          this.hitKind = cl.touchBody ? HIT_NET : HIT_NETCORD;
+          this.hitSurface = SURF_NET;
+          this.hitWall = -1;
+          this.recT = this.flyAt + h;
+          this.recVn = -cl.touchSpeed;
+          this.recZ = p.z;
+          this.record();
+        }
+        this.sinceTouch = 0;
+      } else this.sinceTouch += h;
+      if (cl.touchBody) {
+        // In the netting: it grips the ball, and the ball is on its side of the net whatever its z says.
+        this.spin.scale(grab);
+        if (!this.inNet) {
+          this.inNet = true;
+          this.netW = world.surfaces.netGive.omega; // for predictions, which use the rigid net
+          this.netZeta = world.surfaces.netGive.zeta;
+        }
+      }
+      // A bounce on the floor in or under a pocket of the net is on the side the ball is on.
+      for (let i = e0; i < this.eventCount; i++) {
+        const e = this.events[i]!;
+        if (e.kind === HIT_FLOOR && this.netSide * e.z < 1e-3) e.z = this.netSide * 1e-3;
+      }
+      if (this.inNet) {
+        if (this.sinceTouch > 0.06) {
+          // Clear of the netting for a moment and back on its own side of it (or up over the cable): out.
+          if (p.y - r > cl.cableY(p.x) || abs(p.x) >= c.halfW) this.inNet = false;
+          else if (this.netSide * (p.z - cl.surfaceZ()) > r + 0.02) this.inNet = false;
+        }
+      }
+    }
+    cl.endCoupledTick();
+    this.exitAt = this.stepDt;
+    this.checkExit(world);
+    const az = abs(p.z);
+    this.sideZ = this.netSide * (az > 1e-3 ? az : 1e-3);
   }
 
   // ---- flight -------------------------------------------------------------------------------
@@ -238,7 +388,8 @@ export class Ball {
   }
 
   /** Midpoint (RK2) integration of position/velocity; exponential spin decay. */
-  private integrate(world: BallWorld, dt: number, pOut: V3, vOut: V3, wOut: V3): void {
+  private integrate(world: BallWorld, pOut: V3, vOut: V3, wOut: V3): void {
+    const dt = this.intDt;
     this.accel(world, this.vel, this.spin, a0);
     vMid.copy(this.vel).addScaled(a0, dt * 0.5);
     this.accel(world, vMid, this.spin, a1);
@@ -248,7 +399,8 @@ export class Ball {
     wOut.copy(this.spin).scale(decay);
   }
 
-  private roll(world: BallWorld, dt: number): void {
+  private roll(world: BallWorld): void {
+    const dt = this.flyDt;
     const v = this.vel;
     const s = sqrt(v.x * v.x + v.z * v.z);
     const decel = 0.8 * dt;
@@ -258,7 +410,7 @@ export class Ball {
     this.pos.y = world.spec.radius;
     // A rolling ball stops against the net and rolls back off it a little.
     const r0 = world.spec.radius;
-    if (!this.outside && abs(this.pos.x) < world.court.halfW && abs(this.pos.z) < r0 && this.pos.z * v.z < 0) {
+    if (this.cloth === null && !this.outside && abs(this.pos.x) < world.court.halfW && abs(this.pos.z) < r0 && this.pos.z * v.z < 0) {
       const side = this.pos.z - v.z * dt >= 0 ? 1 : -1;
       this.pos.z = side * r0;
       v.z = -0.2 * v.z;
@@ -266,7 +418,8 @@ export class Ball {
     // Rolling without slipping.
     const r = world.spec.radius;
     this.spin.set(v.z / r, 0, -v.x / r);
-    this.checkExit(world, 0);
+    this.exitAt = 0;
+    this.checkExit(world);
   }
 
   // ---- collisions ---------------------------------------------------------------------------
@@ -280,11 +433,11 @@ export class Ball {
   private cand = 0;
   private best = 2;
 
-  /** Earliest contact fraction along pos -> p (0..1), or -1. Records what was hit. */
+  /** Is there a contact along pos -> p? The earliest one's fraction (0..1) is left in `best`, with what was hit. */
   /** Ball radius for the contact helpers (read through a field: a double argument would be boxed). */
   private radius = 0.0328;
 
-  private findContact(world: BallWorld, p: V3, flightOnly: boolean): number {
+  private findContact(world: BallWorld, p: V3, flightOnly: boolean): boolean {
     const r = world.spec.radius;
     this.radius = r;
     const c = world.court;
@@ -306,11 +459,11 @@ export class Ball {
       const zl = c.halfL - r;
       if (p.z > zl && q.z <= zl) { this.cand = (zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_NEAR); }
       if (p.z < -zl && q.z >= -zl) { this.cand = (-zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_FAR); }
-      // Net body and tape, and the posts.
-      this.tryNet(c, p);
+      // Net body and tape (a cloth net is solved apart), and the posts.
+      if (this.cloth === null) this.tryNet(c, p);
       this.tryPost(c, p);
     }
-    return this.best <= 1 ? this.best : -1;
+    return this.best <= 1;
   }
 
   private tryWall(c: Court, p: V3, wall: number): void {
@@ -412,7 +565,8 @@ export class Ball {
     }
   }
 
-  private resolve(world: BallWorld, rng: Rng | null, t: number): void {
+  /** Bounce off what findContact hit, at time resolveAt in the step. */
+  private resolve(world: BallWorld, rng: Rng | null): void {
     const c = world.court;
     let surf: SurfaceSpec = world.floor;
     switch (this.hitKind) {
@@ -437,17 +591,21 @@ export class Ball {
         break;
       case HIT_NET: {
         // Into the net body: caught by the mesh, no bounce here (netStep takes over).
-        const vn = this.vel.dot(n);
+        this.recVn = this.vel.dot(n);
         this.enterNet(world, rng);
-        this.record(t, vn, this.pos.z);
+        this.recT = this.resolveAt;
+        this.recZ = this.pos.z;
+        this.record();
         return;
       }
     }
-    const vnBefore = this.vel.dot(n);
+    this.recVn = this.vel.dot(n);
     this.bounce(world, surf, rng, this.hitKind === HIT_NETCORD);
     // Keep the ball just off the surface.
     this.pos.addScaled(n, 1e-6);
-    this.record(t, vnBefore, this.pos.z);
+    this.recT = this.resolveAt;
+    this.recZ = this.pos.z;
+    this.record();
     if (this.hitKind === HIT_FLOOR && this.vel.y < 0.25) {
       this.rolling = true;
       this.vel.y = 0;
@@ -455,18 +613,26 @@ export class Ball {
     }
   }
 
-  /** Write the contact just resolved to `events` (z given apart: a bounce inside the net is on its own side). */
-  private record(t: number, vnBefore: number, z: number): void {
+  // record()'s time, normal speed before the contact and z (fields: doubles passed as arguments get boxed).
+  private recT = 0;
+  private recVn = 0;
+  private recZ = 0;
+
+  /**
+   * Write the contact just resolved to `events`: at recT, normal speed recVn before it, at z recZ (given apart:
+   * a bounce inside the net is on its own side).
+   */
+  private record(): void {
     if (this.eventCount >= MAX_EVENTS) return;
     const e = this.events[this.eventCount++]!;
     e.kind = this.hitKind;
     e.surface = this.hitSurface;
     e.wall = this.hitWall;
-    e.t = t;
+    e.t = this.recT;
     e.x = this.pos.x;
     e.y = this.pos.y;
-    e.z = z;
-    e.speed = -vnBefore;
+    e.z = this.recZ;
+    e.speed = -this.recVn;
   }
 
   // ---- the net body gives -------------------------------------------------------------------
@@ -592,9 +758,11 @@ export class Ball {
       this.hitKind = HIT_FLOOR;
       this.hitSurface = SURF_FLOOR;
       this.hitWall = -1;
-      const vn = this.vel.y;
+      this.recVn = this.vel.y;
       this.bounce(world, world.floor, rng, false);
-      this.record(this.at + t, vn, s * max(s * this.pos.z, 1e-3));
+      this.recT = this.at + t;
+      this.recZ = s * max(s * this.pos.z, 1e-3);
+      this.record();
       if (this.vel.y < 0.25) {
         // Dead in the net: it drops out and rolls off it.
         this.inNet = false;
@@ -660,7 +828,8 @@ export class Ball {
     if (vn2 < 0.05) this.vel.addScaled(n, 0.05 - vn2);
   }
 
-  private checkExit(world: BallWorld, t: number): void {
+  /** Mark the ball outside the court once it leaves it (event at time exitAt in the step). */
+  private checkExit(world: BallWorld): void {
     if (this.outside) return;
     const c = world.court;
     const p = this.pos;
@@ -671,7 +840,7 @@ export class Ball {
         e.kind = LEFT_COURT;
         e.surface = SURF_OPEN;
         e.wall = abs(p.z) > c.halfL ? (p.z > 0 ? WALL_BACK_NEAR : WALL_BACK_FAR) : p.x > 0 ? WALL_SIDE_RIGHT : WALL_SIDE_LEFT;
-        e.t = t;
+        e.t = this.exitAt;
         e.x = p.x; e.y = p.y; e.z = p.z;
         e.speed = 0;
       }

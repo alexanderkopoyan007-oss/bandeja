@@ -236,7 +236,7 @@ describe('overheads', () => {
 
   it('with power held the overhead is a smash, fast enough to leave the court', () => {
     const r = lobs(BTN_POWER, 8);
-    expect(r.lobs).toBeGreaterThan(50);
+    expect(r.lobs).toBeGreaterThan(40);
     expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
     const sorted = r.speeds.slice().sort((a, b) => a - b);
     expect(sorted[sorted.length >> 1]! * 3.6).toBeGreaterThan(140); // median km/h

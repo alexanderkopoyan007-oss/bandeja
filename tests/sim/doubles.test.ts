@@ -188,12 +188,17 @@ describe('AI playing styles', () => {
   it('El Muro lobs far more than Martillo; La Serpiente turns more overheads into víboras', () => {
     const muro = shots('muro');
     const martillo = shots('martillo');
-    // Overheads are rare (20-35 a run), so the víbora share pools three seeds; one seed is a coin toss.
-    const serpiente = shots('serpiente', 3, shots('serpiente', 2, shots('serpiente')));
-    const reloj = shots('reloj', 3, shots('reloj', 2, shots('reloj')));
+    // Overheads are rare (20-35 a run), so the víbora share pools five seeds; one seed is a coin toss.
+    const pool = (style: string) => {
+      let acc = shots(style);
+      for (const seed of [2, 3, 4, 5]) acc = shots(style, seed, acc);
+      return acc;
+    };
+    const serpiente = pool('serpiente');
+    const reloj = pool('reloj');
     const share = (s: Record<string, number>, k: string) => (s[k] ?? 0) / s.all!;
     expect(share(muro, 'lob')).toBeGreaterThan(1.5 * share(martillo, 'lob'));
     const vib = (s: Record<string, number>) => (s.vibora ?? 0) / ((s.vibora ?? 0) + (s.bandeja ?? 0) + (s.smash ?? 0));
     expect(vib(serpiente)).toBeGreaterThan(1.4 * vib(reloj));
-  });
+  }, 120_000);
 });

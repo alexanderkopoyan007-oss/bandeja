@@ -1,216 +1,224 @@
-// The net: knotted black cord with a white tape over the cable, moving with the ball.
-// - A ball caught in the net (the sim's `Ball.inNet`) pushes a pocket into it: the net surface at the ball is the
-//   ball's far face, spread by a bell that widens with depth, pinned at the posts, held up by the cable.
-// - When the ball comes out, the net keeps going and rings down with the same spring the sim used for the catch
-//   (`Ball.netW`, `Ball.netZeta`).
-// - A ball off the tape (E_NET a=1), a post (a=2) or, weaker, the body (a=0) sets the tape shaking.
-// One vertex displacement drives both meshes, from uniforms set once a frame. Rendering only reads the sim.
+// The net, drawn from the sim's cloth (src/sim/court/netCloth.ts): every knot the physics moves, the picture
+// moves. The knots (about 100 x 10, one every 10 cm) go into a small float texture each frame, blended between
+// the last two ticks; a finer grid samples it in the vertex shader with Catmull-Rom interpolation, so the
+// netting bends smoothly between knots. The tape is a ribbon on the cable row, tilting with the netting under
+// it. Knotted black cord in 4.5 cm squares with a black binding (the wire pattern sits in rest-space metres,
+// so the squares stretch and fold with the cloth). Rendering only reads the sim.
 import * as THREE from 'three/webgpu';
-import { Fn, attribute, positionLocal, uniform, exp, abs, float, vec3, mix, smoothstep, saturate, max, select, uv } from 'three/tsl';
-import type { Court } from '../sim/court/court.ts';
-import { E_NET, type MatchSim } from '../sim/match.ts';
+import { attribute, textureLoad, ivec2, int, floor, clamp, vec3, normalize, max, smoothstep, uv } from 'three/tsl';
+import type { MatchSim } from '../sim/match.ts';
+import type { NetCloth } from '../sim/court/netCloth.ts';
 import { wireMaterial } from './courtView.ts';
 
 type Node<T extends string> = THREE.Node<T>;
 
-const NX = 125; // 8 cm columns: the pocket is at least 16 cm across
-const NY = 14;
-const TAPE_R = 0.028; // tape: 5.6 cm tall over the cable
-const TAPE_FLAT = 0.22; // and about 1.2 cm thick
-const PIN = 0.35; // the net is free to move this far from the posts
-const WOBBLE_FOR = 1.5; // seconds a released net rings before it is left at rest
+const SUB_X = 3; // render vertices per knot gap along the net
+const SUB_Y = 3; // and down it
+const TAPE_ABOVE = 0.012; // tape top above the cable centre (the top of the net)
+const TAPE_THICK = 0.006; // half thickness of the tape
 
 export class NetView {
   readonly group = new THREE.Group();
-  /** x, y of the pocket's centre, z offset of the net there (amplitude), width (sigma). */
-  private readonly bulge = uniform(new THREE.Vector4(0, 0.4, 0, 0.3));
-  /** x of the tape shake, z and y offsets, width. */
-  private readonly tape = uniform(new THREE.Vector4(0, 0, 0, 1.4));
-  private readonly halfW: number;
-  private readonly radius: number;
-  private seen = 0;
-  // The catch in progress, and the ring-down after it.
-  private wasIn = false;
-  private side = 1;
-  private bx = 0;
-  private by = 0.4;
-  private depth = 0;
-  private peak = 0;
-  private relT = -1;
-  private relD = 0;
-  private relV = 0;
-  private w = 39;
-  private zeta = 0.55;
-  // The tape shake.
-  private tapeT = -1;
-  private tapeA = 0;
-  private tapeX = 0;
-  private tapeDir = 1;
+  private readonly cloth: NetCloth;
+  private readonly data: Float32Array;
+  private readonly tex: THREE.DataTexture;
+  private synced = false;
 
-  private readonly court: Court;
+  constructor(cloth: NetCloth) {
+    this.cloth = cloth;
+    const nx = cloth.nx;
+    const ny = cloth.rows + 1;
+    this.data = new Float32Array(nx * ny * 4);
+    this.tex = new THREE.DataTexture(this.data, nx, ny, THREE.RGBAFormat, THREE.FloatType);
+    this.tex.magFilter = THREE.NearestFilter;
+    this.tex.minFilter = THREE.NearestFilter;
+    this.tex.generateMipmaps = false;
+    this.fill(1);
 
-  constructor(court: Court, radius: number) {
-    this.court = court;
-    this.halfW = court.halfW;
-    this.radius = radius;
-    const W = court.def.width;
-
-    // Net body: a grid fine enough to bend. UVs in metres for the wire pattern; `netRel` is the height as a
-    // fraction of the net there (0 at the floor, 1 at the cable).
-    const pos = new Float32Array((NX + 1) * (NY + 1) * 3);
-    const uvs = new Float32Array((NX + 1) * (NY + 1) * 2);
-    const rel = new Float32Array((NX + 1) * (NY + 1));
+    // Netting: a fine grid in knot coordinates (gu along, gv down); uv in rest-space metres for the pattern.
+    const cols = cloth.cols;
+    const rows = cloth.rows;
+    const RX = cols * SUB_X;
+    const RY = rows * SUB_Y;
+    const n = (RX + 1) * (RY + 1);
+    const gu = new Float32Array(n);
+    const gv = new Float32Array(n);
+    const pos = new Float32Array(n * 3);
+    const uvs = new Float32Array(n * 2);
+    const rest = cloth.rest;
     let k = 0;
-    for (let i = 0; i <= NX; i++) {
-      const x = -this.halfW + (i / NX) * W;
-      const h = court.netHeightAt(x);
-      for (let j = 0; j <= NY; j++) {
-        const v = j / NY;
-        pos[k * 3] = x; pos[k * 3 + 1] = v * h; pos[k * 3 + 2] = 0;
-        uvs[k * 2] = x + this.halfW; uvs[k * 2 + 1] = v * h;
-        rel[k] = v;
+    for (let i = 0; i <= RX; i++) {
+      for (let j = 0; j <= RY; j++) {
+        const u = i / SUB_X;
+        const v = j / SUB_Y;
+        gu[k] = u;
+        gv[k] = v;
+        // Rest position (for the bounds and the pattern): bilinear in the rest knots.
+        const i0 = Math.min(cols - 1, Math.floor(u));
+        const j0 = Math.min(rows - 1, Math.floor(v));
+        const fu = u - i0;
+        const fv = v - j0;
+        for (let c = 0; c < 3; c++) {
+          const a = rest[(j0 * nx + i0) * 3 + c]!;
+          const b = rest[(j0 * nx + i0 + 1) * 3 + c]!;
+          const d = rest[((j0 + 1) * nx + i0) * 3 + c]!;
+          const e = rest[((j0 + 1) * nx + i0 + 1) * 3 + c]!;
+          pos[k * 3 + c] = (a * (1 - fu) + b * fu) * (1 - fv) + (d * (1 - fu) + e * fu) * fv;
+        }
+        uvs[k * 2] = pos[k * 3]! + cloth.halfW;
+        uvs[k * 2 + 1] = pos[k * 3 + 1]!;
         k++;
       }
     }
     const idx: number[] = [];
-    for (let i = 0; i < NX; i++) {
-      for (let j = 0; j < NY; j++) {
-        const a = i * (NY + 1) + j;
-        const b = a + NY + 1;
+    for (let i = 0; i < RX; i++) {
+      for (let j = 0; j < RY; j++) {
+        const a = i * (RY + 1) + j;
+        const b = a + RY + 1;
         idx.push(a, b, a + 1, a + 1, b, b + 1);
       }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-    geo.setAttribute('netRel', new THREE.BufferAttribute(rel, 1));
+    geo.setAttribute('gu', new THREE.BufferAttribute(gu, 1));
+    geo.setAttribute('gv', new THREE.BufferAttribute(gv, 1));
     geo.setIndex(idx);
-
-    // Knotted cord in 4.5 cm squares, with a black binding down the ends and along the bottom.
     const mat = wireMaterial(0.045, 0.0032, false, 0x0d0e10, 1, 0.009);
-    const u = uv();
-    const bind = max(
-      smoothstep(0.03, 0.02, u.y),
-      max(smoothstep(0.035, 0.025, u.x), smoothstep(W - 0.035, W - 0.025, u.x)),
-    );
+    // Binding: black tape down both ends and along the bottom edge.
+    const W = cloth.halfW * 2;
+    const t = uv();
+    const bind = max(smoothstep(0.03, 0.02, t.y), max(smoothstep(0.035, 0.025, t.x), smoothstep(W - 0.035, W - 0.025, t.x)));
     mat.opacityNode = max(mat.opacityNode as Node<'float'>, bind);
-    mat.positionNode = positionLocal.add(this.displace(attribute('netRel', 'float')));
+    mat.positionNode = this.sample(attribute('gu', 'float'), attribute('gv', 'float'));
     const net = new THREE.Mesh(geo, mat);
     net.renderOrder = 4;
-    net.frustumCulled = false; // the pocket moves it out of its bounds
+    net.frustumCulled = false;
     this.group.add(net);
 
-    // Tape: a flattened tube along the cable, moved by the same displacement as the top of the net.
-    const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 40; i++) {
-      const x = -this.halfW + (i / 40) * W;
-      pts.push(new THREE.Vector3(x, court.netHeightAt(x) - TAPE_R, 0));
+    // Tape: per sample along the cable, a front and a back face and a top, from TAPE_ABOVE over the cable down
+    // the tape's height along the netting.
+    const TS = cols * SUB_X;
+    const tu: number[] = [];
+    const side: number[] = [];
+    const down: number[] = [];
+    const tpos: number[] = [];
+    const tnrm: number[] = [];
+    const tidx: number[] = [];
+    const corners: Array<[number, number, number, number, number]> = [
+      // side, down, normal x y z
+      [1, 0, 0, 0, 1], [1, 1, 0, 0, 1], [-1, 0, 0, 0, -1], [-1, 1, 0, 0, -1], [1, 0, 0, 1, 0], [-1, 0, 0, 1, 0],
+    ];
+    for (let i = 0; i <= TS; i++) {
+      const u = i / SUB_X;
+      const i0 = Math.min(cols - 1, Math.floor(u));
+      const f = u - i0;
+      const y = rest[i0 * 3 + 1]! * (1 - f) + rest[(i0 + 1) * 3 + 1]! * f;
+      const x = rest[i0 * 3]! * (1 - f) + rest[(i0 + 1) * 3]! * f;
+      for (const [s, d, nx_, ny_, nz_] of corners) {
+        tu.push(u);
+        side.push(s);
+        down.push(d);
+        tpos.push(x, y + TAPE_ABOVE - d * cloth.spec.tapeHeight, s * TAPE_THICK);
+        tnrm.push(nx_, ny_, nz_);
+      }
     }
-    const tapeGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 200, TAPE_R, 8, false);
-    tapeGeo.scale(1, 1, TAPE_FLAT);
-    // Height fractions like the net's, so the cord under the tape moves exactly with it.
-    const tp = tapeGeo.getAttribute('position');
-    const tapeRel = new Float32Array(tp.count);
-    for (let i = 0; i < tp.count; i++) tapeRel[i] = Math.min(1, tp.getY(i) / court.netHeightAt(tp.getX(i)));
-    tapeGeo.setAttribute('netRel', new THREE.BufferAttribute(tapeRel, 1));
-    const tapeMat = new THREE.MeshStandardNodeMaterial({ color: 0xf5f5f5, roughness: 0.7 });
-    tapeMat.positionNode = positionLocal.add(this.displace(attribute('netRel', 'float')));
-    const tape = new THREE.Mesh(tapeGeo, tapeMat);
+    for (let i = 0; i < TS; i++) {
+      const a = i * 6;
+      const b = a + 6;
+      tidx.push(a, a + 1, b, b, a + 1, b + 1); // front
+      tidx.push(a + 2, b + 2, a + 3, a + 3, b + 2, b + 3); // back
+      tidx.push(a + 4, b + 4, a + 5, a + 5, b + 4, b + 5); // top
+    }
+    const tgeo = new THREE.BufferGeometry();
+    tgeo.setAttribute('position', new THREE.Float32BufferAttribute(tpos, 3));
+    tgeo.setAttribute('normal', new THREE.Float32BufferAttribute(tnrm, 3));
+    tgeo.setAttribute('gu', new THREE.Float32BufferAttribute(tu, 1));
+    tgeo.setAttribute('side', new THREE.Float32BufferAttribute(side, 1));
+    tgeo.setAttribute('down', new THREE.Float32BufferAttribute(down, 1));
+    tgeo.setIndex(tidx);
+    const tmat = new THREE.MeshStandardNodeMaterial({ color: 0xf5f5f5, roughness: 0.7, side: THREE.DoubleSide });
+    const g = attribute('gu', 'float');
+    const cable = this.sample(g, 0);
+    const below = this.sample(g, 1);
+    const dir = normalize(below.sub(cable));
+    const top = cable.sub(dir.mul(TAPE_ABOVE));
+    const tapeLen = cloth.spec.tapeHeight;
+    tmat.positionNode = top
+      .add(dir.mul(attribute('down', 'float').mul(tapeLen)))
+      .add(vec3(0, 0, attribute('side', 'float').mul(TAPE_THICK)));
+    const tape = new THREE.Mesh(tgeo, tmat);
     tape.castShadow = true;
     tape.frustumCulled = false;
     this.group.add(tape);
   }
 
-  /** Offset of a point of the net (local position, height fraction `rel`). */
-  private displace(rel: Node<'float'>) {
-    const B = this.bulge;
-    const T = this.tape;
-    const hw = this.halfW;
-    return Fn(() => {
-      const p = positionLocal;
-      const edge = saturate(float(hw).sub(abs(p.x)).div(PIN));
-      // The pocket: a bell around the ball, longer below it (the bottom of the net is loose) than above it (the
-      // cable holds the top); the cable moves about a third as much as the cord.
-      const dx = p.x.sub(B.x);
-      const dy = p.y.sub(B.y);
-      const sy = select(dy.lessThan(0), B.w.mul(1.4), B.w.mul(0.75));
-      const g = exp(dx.mul(dx).div(B.w.mul(B.w)).add(dy.mul(dy).div(sy.mul(sy))).negate());
-      const held = mix(float(1), float(0.35), smoothstep(0.7, 1, rel));
-      const pocket = B.z.mul(g).mul(edge).mul(held);
-      // The tape shake, carried down into the top half of the net.
-      const tx = p.x.sub(T.x);
-      const tg = exp(tx.mul(tx).div(T.w.mul(T.w)).negate()).mul(edge).mul(smoothstep(0.45, 1, rel));
-      return vec3(0, T.z.mul(tg), pocket.add(T.y.mul(tg)));
-    })();
-  }
-
-  /** Once a frame, after the ball view: `ball` is the rendered ball position, `t` the render's sim time. */
-  update(sim: MatchSim, ball: THREE.Vector3, t: number): void {
-    const b = sim.ball;
-    const r = this.radius;
-    let z = 0;
-    if (b.inNet) {
-      // The net's surface at the ball is the ball's far face, while that is past the net's line.
-      if (!this.wasIn) { this.peak = 0; this.relT = -1; }
-      this.side = b.netSide;
-      this.w = b.netW;
-      this.zeta = b.netZeta;
-      this.bx = ball.x;
-      this.by = ball.y;
-      const face = ball.z - this.side * r;
-      z = this.side * face < 0 ? face : 0;
-      this.depth = z;
-      this.peak = Math.max(this.peak, Math.abs(z));
-    } else if (this.wasIn) {
-      // Out of the net: it carries on with the ball's speed (or, if the ball rolled over the top, springs back
-      // from where it was) and rings down.
-      this.relT = sim.time - 1 / 120;
-      this.relD = this.depth;
-      this.relV = this.side * b.pos.z > 0 ? b.vel.z : 0;
+  /** Smooth position on the cloth at knot coordinates (gu along, gv down): Catmull-Rom over 4 x 4 knots. */
+  private sample(gu: Node<'float'>, gv: Node<'float'> | number) {
+    const cols = this.cloth.cols;
+    const rows = this.cloth.rows;
+    const v = typeof gv === 'number' ? null : gv;
+    const iu = floor(gu);
+    const tu = gu.sub(iu);
+    const wu = catmullRom(tu);
+    let ivn: Node<'float'> | null = null;
+    let wv: Array<Node<'float'>> | null = null;
+    if (v) {
+      ivn = floor(v);
+      wv = catmullRom(v.sub(ivn));
     }
-    this.wasIn = b.inNet;
-    if (!b.inNet && this.relT >= 0) {
-      const s = t - this.relT;
-      if (s > WOBBLE_FOR) this.relT = -1;
-      else if (s > 0) {
-        const w = this.w;
-        const wd = w * Math.sqrt(1 - this.zeta * this.zeta);
-        const e = Math.exp(-this.zeta * w * s);
-        z = e * (this.relD * Math.cos(wd * s) + ((this.relV + this.zeta * w * this.relD) / wd) * Math.sin(wd * s));
-        // The first moments after release: never draw the net through a ball that is still against it.
-        const face = ball.z - this.side * r;
-        if (Math.abs(ball.x - this.bx) < 0.3 && this.side * face < this.side * z) z = face;
-      } else z = this.relD;
-    }
-    // The pocket's amplitude is the offset at the ball divided by what the pins and the cable take off there.
-    const c = this.court;
-    const edge = Math.min(1, Math.max(0.25, (this.halfW - Math.abs(this.bx)) / PIN));
-    const rel = Math.min(1, Math.max(0, this.by / c.netHeightAt(this.bx)));
-    const q = Math.min(1, Math.max(0, (rel - 0.7) / 0.3));
-    const held = 1 - 0.65 * q * q * (3 - 2 * q);
-    this.bulge.value.set(this.bx, this.by, z / (edge * held), 0.16 + 1.0 * this.peak);
-
-    // Tape: a decaying shake from the latest net contact.
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
-      this.seen++;
-      if (e.seq < 0 || e.kind !== E_NET) continue;
-      const k = e.a === 1 ? 0.0032 : e.a === 2 ? 0.0012 : 0.0008;
-      this.tapeA = Math.min(0.05, k * e.c);
-      this.tapeX = e.x;
-      this.tapeT = e.time;
-      this.tapeDir = e.z > 0 ? -1 : 1; // pushed the way the ball was going
-    }
-    let tz = 0;
-    let ty = 0;
-    if (this.tapeT >= 0) {
-      const s = t - this.tapeT;
-      if (s > 1.2) this.tapeT = -1;
-      else if (s > 0) {
-        tz = this.tapeDir * this.tapeA * Math.exp(-s / 0.3) * Math.sin(2 * Math.PI * 7 * s);
-        ty = 0.4 * this.tapeA * Math.exp(-s / 0.2) * Math.sin(2 * Math.PI * 11 * s);
+    let acc: Node<'vec3'> = vec3(0, 0, 0);
+    for (let b = 0; b < (v ? 4 : 1); b++) {
+      const y = v ? int(clamp(ivn!.add(b - 1), 0, rows)) : int(gv as number);
+      let row: Node<'vec3'> = vec3(0, 0, 0);
+      for (let a = 0; a < 4; a++) {
+        const x = int(clamp(iu.add(a - 1), 0, cols));
+        row = row.add(textureLoad(this.tex, ivec2(x, y)).xyz.mul(wu[a]!));
       }
+      acc = v ? acc.add(row.mul(wv![b]!)) : row;
     }
-    this.tape.value.set(this.tapeX, tz, ty, 1.4);
+    return acc;
   }
+
+  /** Write knot positions blended `alpha` of the way from the last tick to this one. */
+  private fill(alpha: number): void {
+    const c = this.cloth;
+    const p = c.pos;
+    const q = c.prev;
+    const d = this.data;
+    const n = c.n;
+    for (let i = 0; i < n; i++) {
+      const k = i * 3;
+      const o = i * 4;
+      d[o] = q[k]! + (p[k]! - q[k]!) * alpha;
+      d[o + 1] = q[k + 1]! + (p[k + 1]! - q[k + 1]!) * alpha;
+      d[o + 2] = q[k + 2]! + (p[k + 2]! - q[k + 2]!) * alpha;
+      d[o + 3] = 1;
+    }
+    this.tex.needsUpdate = true;
+  }
+
+  /** Once a frame: the knots as they are at the render time (alpha between the last two ticks). */
+  update(_sim: MatchSim, alpha: number): void {
+    const c = this.cloth;
+    if (c.awake) {
+      this.fill(alpha);
+      this.synced = false;
+    } else if (!this.synced) {
+      this.fill(1);
+      this.synced = true;
+    }
+  }
+}
+
+/** Catmull-Rom weights for the four taps around a fraction t. */
+function catmullRom(t: Node<'float'>): Array<Node<'float'>> {
+  const t2 = t.mul(t);
+  const t3 = t2.mul(t);
+  return [
+    t3.negate().add(t2.mul(2)).sub(t).mul(0.5),
+    t3.mul(3).sub(t2.mul(5)).add(2).mul(0.5),
+    t3.mul(-3).add(t2.mul(4)).add(t).mul(0.5),
+    t3.sub(t2).mul(0.5),
+  ];
 }
