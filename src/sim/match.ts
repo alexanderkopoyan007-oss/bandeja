@@ -81,6 +81,8 @@ export interface MatchConfig {
   aiLevel?: [number, number];
   /** AI playing style per player (keys of data/ai.json); missing entries play the neutral default. */
   aiStyle?: string[];
+  /** Left-handed players, by player number. */
+  lefty?: boolean[];
   /** Widens timing windows (accessibility). */
   timingScale?: number;
   /** Positioning assist strength 0..1 for human players. */
@@ -183,6 +185,7 @@ export class MatchSim {
     this.prevPlayers = [];
     for (let i = 0; i < n; i++) {
       this.players.push(new Player(i, DEFAULT_TUNING));
+      if (cfg.lefty?.[i]) this.players[i]!.handed = -1;
       this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, styleOf(cfg.aiStyle?.[i])));
       this.aiFrames.push(new InputFrame());
       this.stand.push(makeStandPlan());

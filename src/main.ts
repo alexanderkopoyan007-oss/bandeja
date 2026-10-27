@@ -56,6 +56,8 @@ async function start(): Promise<void> {
       human: Array.from({ length: n }, (_, i) => !autoplay && i === 0),
       aiLevel: [num('ai', 0.55), num('ai', 0.55)],
       aiStyle: styles,
+      // Left-handers by player number: ?lefty=0,3
+      lefty: Array.from({ length: n }, (_, i) => (params.get('lefty') ?? '').split(',').includes(String(i))),
       // Defaults are forgiving; ?timing=1 is the strict "pro" window, ?autotime=1 fires a held swing for you.
       timingScale: num('timing', 1.5),
       assist: num('assist', 0.45),

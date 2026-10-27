@@ -11,7 +11,8 @@ import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import {
-  BACKHAND, BH_DROP, BH_LOB, BH_SLICE, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, BH_DROP, BH_LOB, BH_SLICE, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
+  leftFamily,
   type Family, type Key,
 } from './strokes.ts';
 
@@ -72,6 +73,7 @@ function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion): void {
 
 /** The free arm's elbow hangs down and back. */
 const OFF_POLE = new THREE.Vector3(0.5, 0.75, -0.3);
+const OFF_POLE_LEFT = new THREE.Vector3(-0.5, 0.75, -0.3);
 
 // Stroke timeline (render side).
 const ST_NONE = 0;
@@ -98,14 +100,26 @@ const WALL_EASE = 0.2;
 const LOOK_YAW = 1.25;
 const NECK_SHARE = 0.4;
 
-/** Fingers of the racket hand, curled round the grip (rad, per joint). */
+/** Fingers of the racket hand ('Right' or 'Left' in front), curled round the grip (rad, per joint). */
 const GRIP: Array<[string, number]> = [
-  ['RightHandIndex1', 0.95], ['RightHandIndex2', 1.2], ['RightHandIndex3', 0.8],
-  ['RightHandMiddle1', 1.1], ['RightHandMiddle2', 1.3], ['RightHandMiddle3', 0.85],
-  ['RightHandRing1', 1.2], ['RightHandRing2', 1.3], ['RightHandRing3', 0.85],
-  ['RightHandPinky1', 1.3], ['RightHandPinky2', 1.25], ['RightHandPinky3', 0.85],
-  ['RightHandThumb1', 0.3], ['RightHandThumb2', 0.45], ['RightHandThumb3', 0.35],
+  ['HandIndex1', 0.95], ['HandIndex2', 1.2], ['HandIndex3', 0.8],
+  ['HandMiddle1', 1.1], ['HandMiddle2', 1.3], ['HandMiddle3', 0.85],
+  ['HandRing1', 1.2], ['HandRing2', 1.3], ['HandRing3', 0.85],
+  ['HandPinky1', 1.3], ['HandPinky2', 1.25], ['HandPinky3', 0.85],
+  ['HandThumb1', 0.3], ['HandThumb2', 0.45], ['HandThumb3', 0.35],
 ];
+
+/** How one hand holds the racket. */
+interface Grip {
+  hand: THREE.Bone;
+  /** The racket's origin (face centre) and rotation in the hand's frame. */
+  pos: THREE.Vector3;
+  q: THREE.Quaternion;
+  qInv: THREE.Quaternion;
+  /** Gripping fingers: bone index and the local rotation (x, y, z, w) that curls it round the handle. */
+  bones: number[];
+  quats: Float32Array;
+}
 
 export function makeRacket(): THREE.Group {
   const racket = new THREE.Group();
@@ -170,13 +184,14 @@ export class Avatar {
   private readonly armL: THREE.Bone[];
   private readonly legL: THREE.Bone[];
   private readonly legR: THREE.Bone[];
-  /** Gripping fingers: bone index and the local rotation (x, y, z, w) that curls it round the handle. */
-  private readonly gripBone: number[] = [];
-  private readonly gripQ: Float32Array;
-  /** The racket's origin (face centre) and rotation in the hand's frame. */
-  private readonly racketPos = new THREE.Vector3();
-  private readonly racketQ = new THREE.Quaternion();
-  private readonly racketQInv = new THREE.Quaternion();
+  /** Right-handed 1, left-handed -1 (the player's), and what follows from it: which arm holds the racket. */
+  private handed = 1;
+  private armRacket: THREE.Bone[];
+  private armFree: THREE.Bone[];
+  private readonly grips: Grip[];
+  private grip: Grip;
+  private readyKey: Key = READY;
+  private offPole = OFF_POLE;
 
   // Stroke state.
   private st = ST_NONE;
@@ -285,17 +300,28 @@ export class Avatar {
       for (let j = i; j >= 0; j = asset.bones[j]!.parent) if (j === spineIdx) { this.upper[i] = 1; break; }
     }
 
-    // The hand's frame at rest (T-pose): fingers F, thumb side T, palm normal N.
     const rw = asset.restWorld;
     const bp = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(rw[asset.bone(n)]!);
     this.armLen = bp('RightArm').distanceTo(bp('RightForeArm')) + bp('RightForeArm').distanceTo(bp('RightHand'));
-    const hand = rw[asset.bone('RightHand')]!;
-    const at = (n: string, out: THREE.Vector3): THREE.Vector3 => out.setFromMatrixPosition(rw[asset.bone(n)]!);
-    const ph = at('RightHand', new THREE.Vector3());
-    const F = at('RightHandMiddle1', new THREE.Vector3()).sub(ph).normalize();
-    const T = at('RightHandThumb2', new THREE.Vector3()).sub(ph);
+    this.grips = [this.makeGrip(asset, 'Right', 1), this.makeGrip(asset, 'Left', -1)];
+    this.grip = this.grips[0]!;
+    this.armRacket = this.armR;
+    this.armFree = this.armL;
+    this.racket = makeRacket();
+    this.setHanded(1);
+  }
+
+  /** The grip for one hand; `hs` is +1 for the right, -1 for the left (the mirror image). */
+  private makeGrip(asset: PlayerAsset, side: string, hs: number): Grip {
+    // The hand's frame at rest (T-pose): fingers F, thumb side T, palm normal N.
+    const rw = asset.restWorld;
+    const at = (n: string, out: THREE.Vector3): THREE.Vector3 => out.setFromMatrixPosition(rw[asset.bone(side + n)]!);
+    const hand = rw[asset.bone(side + 'Hand')]!;
+    const ph = at('Hand', new THREE.Vector3());
+    const F = at('HandMiddle1', new THREE.Vector3()).sub(ph).normalize();
+    const T = at('HandThumb2', new THREE.Vector3()).sub(ph);
     T.addScaledVector(F, -T.dot(F)).normalize();
-    const N = new THREE.Vector3().crossVectors(T, F).normalize();
+    const N = new THREE.Vector3().crossVectors(T, F).multiplyScalar(hs).normalize();
     // Handshake grip: the racket runs on from the hand, tilted 30 degrees to the thumb side, strings parallel
     // to the palm; the handle sits in the fist just off the palm, gripped 27 cm below the face centre.
     const A = F.clone().multiplyScalar(Math.cos(0.52)).addScaledVector(T, Math.sin(0.52)).normalize();
@@ -304,25 +330,43 @@ export class Avatar {
     const origin = ph.clone().addScaledVector(F, 0.085).addScaledVector(N, 0.035).addScaledVector(A, 0.27);
     const mr = new THREE.Matrix4().makeBasis(X, A, Nf).setPosition(origin);
     const local = hand.clone().invert().multiply(mr);
-    local.decompose(this.racketPos, this.racketQ, v1);
-    this.racketQInv.copy(this.racketQ).invert();
-    this.racket = makeRacket();
-    this.racket.position.copy(this.racketPos);
-    this.racket.quaternion.copy(this.racketQ);
-    this.armR[2]!.add(this.racket);
+    const g: Grip = {
+      hand: this.bones[asset.bone(side + 'Hand')]!,
+      pos: new THREE.Vector3(), q: new THREE.Quaternion(), qInv: new THREE.Quaternion(),
+      bones: [], quats: new Float32Array(GRIP.length * 4),
+    };
+    local.decompose(g.pos, g.q, v1);
+    g.qInv.copy(g.q).invert();
 
-    // Finger curl: about F x N in model space (moves a finger towards the palm), turned into each bone's frame.
+    // Finger curl: about F x N in model space (moves a finger towards the palm; N is already the mirrored palm
+    // normal for the left hand, which turns the axis the way a mirrored rotation needs), in each bone's frame.
     const K = new THREE.Vector3().crossVectors(F, N).normalize();
-    this.gripQ = new Float32Array(GRIP.length * 4);
     GRIP.forEach(([name, ang], k) => {
-      const i = asset.bone(name);
+      const i = asset.bone(side + name);
       const restW = new THREE.Quaternion();
       rw[i]!.decompose(v1, restW, v2);
       const axis = K.clone().applyQuaternion(restW.invert());
       const q = new THREE.Quaternion().fromArray(asset.bones[i]!.quat).multiply(new THREE.Quaternion().setFromAxisAngle(axis, ang));
-      this.gripBone.push(i);
-      q.toArray(this.gripQ, k * 4);
+      g.bones.push(i);
+      q.toArray(g.quats, k * 4);
     });
+    return g;
+  }
+
+  /** Switch the racket hand (the sim's `handed`): racket, grip, arms and stroke keys all follow. */
+  private setHanded(h: number): void {
+    this.handed = h;
+    this.grip = this.grips[h > 0 ? 0 : 1]!;
+    this.armRacket = h > 0 ? this.armR : this.armL;
+    this.armFree = h > 0 ? this.armL : this.armR;
+    this.readyKey = h > 0 ? READY : READY_LEFT;
+    this.offPole = h > 0 ? OFF_POLE : OFF_POLE_LEFT;
+    this.grip.hand.add(this.racket);
+    this.racket.position.copy(this.grip.pos);
+    this.racket.quaternion.copy(this.grip.q);
+    this.fam = h > 0 ? FOREHAND : leftFamily(FOREHAND);
+    this.st = ST_NONE;
+    this.w = 0;
   }
 
   // ---- stance frame (model space of the feet, without the shoulder turn) ----
@@ -346,6 +390,12 @@ export class Avatar {
   // ---- strokes ----
 
   private pickFamily(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number): Family {
+    const f = this.pickRight(sim, p, idx, c, overhead, volley, hand);
+    return this.handed > 0 ? f : leftFamily(f);
+  }
+
+  /** The stroke for a right-hander (`hand` +1 forehand, -1 backhand). */
+  private pickRight(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number): Family {
     if (sim.phase <= PH_TOSS && sim.score.serverPlayer() === idx) return SERVE;
     if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || p.mod === MOD_POWER ? SMASH : OVERHEAD;
     if (volley) return hand > 0 ? VOLLEY_FH : VOLLEY_BH;
@@ -637,6 +687,7 @@ export class Avatar {
 
   /** `t`: the interpolated sim time being drawn. Animation runs on its steps, in step with the sim. */
   update(sim: MatchSim, p: Player, idx: number, alpha: number, t: number): void {
+    if (p.handed !== this.handed) this.setHanded(p.handed);
     const dt = this.lastT < 0 ? 0 : Math.min(0.1, Math.max(0, t - this.lastT));
     this.lastT = t;
     const pp = sim.prevPlayers[idx]!;
@@ -644,7 +695,7 @@ export class Avatar {
     // Stance: the sim faces the ball; a stroke squares up to the net and turns the shoulders instead
     // (last frame's stroke weight: the stroke below reads this frame).
     const net = sim.side(p.team) > 0 ? 0 : Math.PI;
-    this.yaw = p.facing + wrapAngle(net - this.hand * WALL_TURN * this.wall - p.facing) * this.w;
+    this.yaw = p.facing + wrapAngle(net - this.hand * this.handed * WALL_TURN * this.wall - p.facing) * this.w;
     const ys = this.yaw + Math.PI;
     this.stanceC = Math.cos(ys);
     this.stanceS = Math.sin(ys);
@@ -665,9 +716,10 @@ export class Avatar {
     // Pose -> bones, with the racket hand gripping.
     const q = this.pose.q;
     for (let i = 0; i < this.nb; i++) this.bones[i]!.quaternion.set(q[i * 4]!, q[i * 4 + 1]!, q[i * 4 + 2]!, q[i * 4 + 3]!);
-    const gq = this.gripQ;
-    for (let k = 0; k < this.gripBone.length; k++) {
-      this.bones[this.gripBone[k]!]!.quaternion.set(gq[k * 4]!, gq[k * 4 + 1]!, gq[k * 4 + 2]!, gq[k * 4 + 3]!);
+    const gq = this.grip.quats;
+    const gb = this.grip.bones;
+    for (let k = 0; k < gb.length; k++) {
+      this.bones[gb[k]!]!.quaternion.set(gq[k * 4]!, gq[k * 4 + 1]!, gq[k * 4 + 2]!, gq[k * 4 + 3]!);
     }
     const h = this.pose.hips;
     this.hips.position.set(h[0]!, h[1]!, h[2]!);
@@ -771,7 +823,7 @@ export class Avatar {
   private solveLegs(): void {
     // How far the racket would fall short of the key at full stretch: the hips go that way, up to 40 cm.
     this.toWorld(this.kp, v1);
-    v2.setFromMatrixPosition(this.armR[0]!.matrixWorld);
+    v2.setFromMatrixPosition(this.armRacket[0]!.matrixWorld);
     const dx = v1.x - v2.x, dz = v1.z - v2.z;
     const dh = Math.sqrt(dx * dx + dz * dz);
     const short = Math.max(0, dh - 0.95) * this.w;
@@ -805,14 +857,15 @@ export class Avatar {
   /** Racket arm to the key (blended with the animation by the stroke weight), free hand to its key. */
   private solveArms(): void {
     const w = this.w;
-    const ua = this.armR[0]!, fa = this.armR[1]!, hand = this.armR[2]!;
+    const ua = this.armRacket[0]!, fa = this.armRacket[1]!, hand = this.armRacket[2]!;
+    const ready = this.readyKey;
     // Where the animation has the racket, pulled to the ready position, then to the stroke's key (world).
     this.racket.updateMatrixWorld();
     v1.setFromMatrixPosition(this.racket.matrixWorld);
     worldQuat(this.racket, q1);
     if (this.ready > 0) {
-      this.toWorld(READY.p, v2);
-      this.quatToWorld(READY.q, q2);
+      this.toWorld(ready.p, v2);
+      this.quatToWorld(ready.q, q2);
       BL.u = this.ready;
       lerpV(v1, v2);
       nlerpQ(q1, q2);
@@ -823,8 +876,8 @@ export class Avatar {
     lerpV(v1, v2);
     nlerpQ(q1, q2);
     // Hand = racket rotation without the grip; wrist = racket centre minus the grip offset.
-    q3.multiplyQuaternions(q1, this.racketQInv);
-    this.tgt.copy(this.racketPos).applyQuaternion(q3);
+    q3.multiplyQuaternions(q1, this.grip.qInv);
+    this.tgt.copy(this.grip.pos).applyQuaternion(q3);
     this.tgt.subVectors(v1, this.tgt);
     // Out of the arm's reach: bend the upper body towards it (up to 30 degrees), pivoting at the spine's base.
     const mu = ua.matrixWorld.elements;
@@ -849,7 +902,7 @@ export class Avatar {
         base.updateMatrixWorld(true);
       }
     }
-    v3.copy(READY.pole);
+    v3.copy(ready.pole);
     BL.u = w;
     lerpV(v3, this.kpole);
     this.toWorld(v3, this.pole);
@@ -858,17 +911,17 @@ export class Avatar {
     hand.updateMatrixWorld(true);
 
     // Free hand.
-    const ul = this.armL[0]!, fl = this.armL[1]!, hl = this.armL[2]!;
+    const ul = this.armFree[0]!, fl = this.armFree[1]!, hl = this.armFree[2]!;
     v1.setFromMatrixPosition(hl.matrixWorld);
     if (this.ready > 0) {
-      this.toWorld(READY.off, v2);
+      this.toWorld(ready.off, v2);
       BL.u = this.ready;
       lerpV(v1, v2);
     }
     this.toWorld(this.koff, v2);
     BL.u = w * 0.85;
     lerpV(v1, v2);
-    this.toWorld(OFF_POLE, this.pole);
+    this.toWorld(this.offPole, this.pole);
     twoBoneIK(ul, fl, hl, v1, this.pole);
   }
 }

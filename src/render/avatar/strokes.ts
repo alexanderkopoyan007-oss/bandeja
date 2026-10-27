@@ -177,3 +177,39 @@ export const BH_DROP = variant(BACKHAND, 1, 'drop');
  * hand on the throat. Held during rallies (let go when sprinting).
  */
 export const READY: Key = key(v(-0.12, 1.22, 0.42), v(0.15, 0.75, 0.55), v(-1, 0, 0.15), v(-0.45, 0.85, -0.1), 0, v(0.02, 1.1, 0.4));
+
+// ---- left-handers: every key mirrored across the body's centre plane (model x -> -x) ----
+
+function mirrorKey(k: Key): Key {
+  return {
+    p: v(-k.p.x, k.p.y, k.p.z),
+    // A rotation seen in a mirror: (x, y, z, w) -> (x, -y, -z, w).
+    q: new THREE.Quaternion(k.q.x, -k.q.y, -k.q.z, k.q.w),
+    pole: v(-k.pole.x, k.pole.y, k.pole.z),
+    yaw: -k.yaw,
+    off: v(-k.off.x, k.off.y, k.off.z),
+  };
+}
+
+function mirrorFamily(f: Family): Family {
+  return {
+    ...f,
+    name: `${f.name}-left`,
+    back: mirrorKey(f.back),
+    contact: mirrorKey(f.contact),
+    finish: mirrorKey(f.finish),
+    low: f.low && new THREE.Quaternion(f.low.x, -f.low.y, -f.low.z, f.low.w),
+  };
+}
+
+const LEFT = new Map<Family, Family>();
+for (const f of [FOREHAND, BACKHAND, OVERHEAD, SMASH, SERVE, VOLLEY_FH, VOLLEY_BH, FH_SLICE, FH_LOB, FH_DROP, BH_SLICE, BH_LOB, BH_DROP]) {
+  LEFT.set(f, mirrorFamily(f));
+}
+
+/** The left-hander's version of a family. */
+export function leftFamily(f: Family): Family {
+  return LEFT.get(f)!;
+}
+
+export const READY_LEFT: Key = mirrorKey(READY);
