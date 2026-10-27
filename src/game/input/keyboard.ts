@@ -1,6 +1,6 @@
 // Keyboard + mouse input with exact timestamps. Key events carry event.timeStamp (performance.now() time base),
 // so a release is judged at the moment it happened, not when the next frame polls it.
-import { BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP, BTN_POWER, BTN_PRECISION } from '../../sim/input.ts';
+import { BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION } from '../../sim/input.ts';
 
 export interface TimedButton { press: boolean; button: number; ts: number }
 
@@ -10,6 +10,7 @@ const BUTTON_KEYS: Record<string, number> = {
   KeyL: BTN_SLICE,
   KeyI: BTN_LOB,
   KeyU: BTN_DROP,
+  KeyO: BTN_OVERHEAD,
   Space: BTN_POWER,
   ShiftLeft: BTN_PRECISION,
   ShiftRight: BTN_PRECISION,

@@ -148,7 +148,7 @@ export class SimpleAi {
   /** Watch the ball come in from where we actually are, and time the release off that window. */
   private trackRelease(m: MatchSim, s: number): void {
     const p = m.players[this.team]!;
-    const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3);
+    const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3, false);
     let best = -1;
     for (let i = 0; i < n; i++) {
       if (best < 0 || abs(this.wins[i]!.ideal - this.idealT) < abs(this.wins[best]!.ideal - this.idealT)) best = i;

@@ -7,6 +7,8 @@ export const BTN_LOB = 1 << 3;
 export const BTN_DROP = 1 << 4;
 export const BTN_POWER = 1 << 5;
 export const BTN_PRECISION = 1 << 6;
+/** Overhead: bandeja, or smash with power held. Holding it for a lob plans to take the ball in the air. */
+export const BTN_OVERHEAD = 1 << 7;
 
 /** Shot buttons in SHOT_* order (drive, topspin, slice, lob, drop). */
 export const SHOT_BUTTONS = [BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP] as const;

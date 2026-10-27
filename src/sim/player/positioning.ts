@@ -3,7 +3,7 @@
 // which contact you are going for. Pure sim code, allocation-free.
 import type { Prediction } from '../ball/predict.ts';
 import type { Player } from './player.ts';
-import { heightCost, nearImpact } from '../contact/windows.ts';
+import { heightCost, nearImpact, overheadCost } from '../contact/windows.ts';
 import { abs, clamp, sqrt } from '../core/smath.ts';
 
 export interface StandPlan {
@@ -22,6 +22,8 @@ export interface StandPlan {
   afterWall: boolean;
   /** The planned contact is before the bounce. */
   volley: boolean;
+  /** Planned as an overhead (the player is holding the overhead key). */
+  overhead: boolean;
   /** The player can get there in time (false: the best try, out of time). */
   inTime: boolean;
   /** Prediction version the plan was made from. */
@@ -29,7 +31,7 @@ export interface StandPlan {
 }
 
 export function makeStandPlan(): StandPlan {
-  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, bz: 0, hand: 1, afterWall: false, volley: false, inTime: false, version: -1 };
+  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, inTime: false, version: -1 };
 }
 
 /** Margin kept between the ball's path and the body (on top of the body radius). */
@@ -43,9 +45,12 @@ const GLASS_BAND = 1.7;
  * there are rejected (the ball would hit the player). `side` is the player's half (+1 / -1).
  * `keep` >= 0 is the contact moment already planned: it is preferred (a plan that keeps changing its mind has
  * the player running back and forth), and with `only` set nothing else is considered (close to contact).
+ * `overhead`: the player is holding the overhead key: plan to take the ball high, in the air if need be,
+ * standing under it with the ball just in front and to the racket side.
  */
 export function planStand(
   pr: Prediction, p: Player, side: number, now: number, mustBounce: boolean, out: StandPlan, keep: number, only: boolean,
+  overhead: boolean,
 ): boolean {
   const t = p.tune;
   const backZ = side > 0 ? p.maxZ : -p.minZ; // depth of the back limit (just in front of the glass)
@@ -60,6 +65,10 @@ export function planStand(
   let fbSlack = -1e9;
   out.valid = false;
   out.version = pr.version;
+  out.overhead = overhead;
+  const lateral = overhead ? t.overheadReach : t.reachComfort;
+  const behind = overhead ? 0.3 : 0.12;
+  const yMax = overhead ? t.contactMaxHeight - 0.05 : 2.6;
   for (let i = 0; i < pr.n; i++) {
     const ti = pr.t[i]!;
     const kept = keep >= 0 && abs(ti - keep) <= 0.15;
@@ -68,13 +77,14 @@ export function planStand(
     const y = pr.y[i]!;
     const z = pr.z[i]!;
     const b = pr.bounces[i]!;
-    if (z * side < 0.3 || b > 1 || (mustBounce && b === 0) || y < 0.3 || y > 2.6) continue;
+    if (z * side < 0.3 || b > 1 || (mustBounce && b === 0) || y < 0.3 || y > yMax) continue;
     if (nearImpact(pr, i)) continue;
-    const fhX = x - side * p.handed * t.reachComfort;
-    const bhX = x + side * p.handed * t.reachComfort;
-    const useFh = abs(fhX - p.pos.x) <= abs(bhX - p.pos.x) + 0.6;
+    const fhX = x - side * p.handed * lateral;
+    const bhX = x + side * p.handed * lateral;
+    // Overheads are hit on the racket side (a backhand overhead is a last resort).
+    const useFh = overhead || abs(fhX - p.pos.x) <= abs(bhX - p.pos.x) + 0.6;
     const sx = clamp(useFh ? fhX : bhX, p.minX, p.maxX);
-    const sz = clamp(z + side * 0.12, p.minZ, p.maxZ);
+    const sz = clamp(z + side * behind, p.minZ, p.maxZ);
     const dx = sx - p.pos.x;
     const dz = sz - p.pos.z;
     const dist = sqrt(dx * dx + dz * dz);
@@ -82,13 +92,15 @@ export function planStand(
     const slack = ti - now - (dist / t.maxSpeed + (dist > 0.4 ? (kept ? 0.15 : 0.3) : 0.05));
     const afterWall = pr.walls[i]! > 0 && b === 1;
     if (slack >= 0) {
-      let cost = heightCost(y, t.overheadHeight) + 0.03 * (ti - now);
-      // Heading into the back glass and already deep: let it come off the glass instead.
-      if (wallIdx >= 0 && i < wallIdx && b === 1 && abs(z) > backZ - GLASS_BAND) cost += 0.6;
-      if (afterWall) cost -= 0.1;
+      let cost = (overhead ? overheadCost(y, t) : heightCost(y, t.overheadHeight)) + 0.03 * (ti - now);
       if (kept) cost -= 0.35;
-      // Volleying from the back of the court is rarely the right read.
-      if (b === 0 && abs(p.pos.z) > 6.5) cost += 0.4;
+      if (!overhead) {
+        // Heading into the back glass and already deep: let it come off the glass instead.
+        if (wallIdx >= 0 && i < wallIdx && b === 1 && abs(z) > backZ - GLASS_BAND) cost += 0.6;
+        if (afterWall) cost -= 0.1;
+        // Volleying from the back of the court is rarely the right read.
+        if (b === 0 && abs(p.pos.z) > 6.5) cost += 0.4;
+      }
       if (cost < bestCost && clearOfBall(pr, now, i, sx, sz, t.height, t.bodyRadius)) {
         bestCost = cost;
         found = true;

@@ -7,7 +7,7 @@ import {
 import { REASON_TEXT } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_PERFECT, G_GOOD, G_EARLY, G_LATE } from '../sim/contact/timing.ts';
 import { SW_CHARGE } from '../sim/player/player.ts';
-import { SHOT_KEYS } from '../sim/contact/shots.ts';
+import { SHOT_KEYS, SHOT_BANDEJA } from '../sim/contact/shots.ts';
 
 const CSS = `
 #hud .bug { position: absolute; left: 16px; top: 16px; background: rgba(10,12,16,.82); border-radius: 6px; overflow: hidden;
@@ -39,6 +39,16 @@ const CSS = `
   color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
 `;
 
+/** The predicted path climbs well above head height over our half before it bounces: a lob. */
+function isLob(sim: MatchSim, team: number): boolean {
+  const pr = sim.pred;
+  const s = sim.side(team);
+  for (let i = 0; i < pr.n && pr.bounces[i]! === sim.rally.bounces && pr.bounces[i]! === 0; i++) {
+    if (pr.z[i]! * s > 1.5 && pr.y[i]! > 2.3) return true;
+  }
+  return false;
+}
+
 const GRADE_COLORS = ['#ff5a4f', '#ffb13b', '#8fe36b', '#5ff2ff', '#ffb13b', '#ff5a4f'];
 
 export class Hud {
@@ -52,6 +62,8 @@ export class Hud {
   private readonly help: HTMLElement;
   private readonly ms: HTMLElement;
   private readonly hint: HTMLElement;
+  private lobVersion = -1;
+  private lob = false;
   private readonly cache = new Map<HTMLElement, string>();
   private seen = 0;
   private gradeUntil = 0;
@@ -94,6 +106,7 @@ export class Hud {
     this.help = root.appendChild(el('div', 'help'));
     this.help.innerHTML =
       '<b>WASD</b> move &nbsp; <b>J</b> drive &nbsp; <b>K</b> topspin &nbsp; <b>L</b> slice &nbsp; <b>I</b> lob &nbsp; <b>U</b> drop<br>' +
+      '<b>O</b> overhead for lobs: bandeja, with <b>Space</b> a smash.<br>' +
       'Hold a shot key as the ball comes: <b>WASD then aims</b> the yellow target and you run to the ball by yourself.<br>' +
       '<b>Release</b> when the closing ring meets the ring on the ball. Serve: A/D aims, press to drop, release to hit.<br>' +
       '<b>Space</b> power &nbsp; <b>Shift</b> precision &nbsp; <b>M</b> mouse aim &nbsp; <b>P</b> pro mode &nbsp; <b>F3</b> debug &nbsp; <b>H</b> hide';
@@ -159,11 +172,21 @@ export class Hud {
       }
     }
     this.meter.style.opacity = show ? '1' : '0';
-    // Teach the glass: when the plan is to let the ball come off the wall, say so.
-    const st = humanTeam >= 0 ? sim.stand[humanTeam]! : null;
-    const glass = !!st && !this.pro && st.valid && st.afterWall && sim.phase === PH_RALLY;
-    this.set(this.hint, glass ? 'Off the glass' : this.hint.textContent ?? '');
-    this.hint.style.opacity = glass ? '1' : '0';
+    // Teach the court: a lob coming (the overhead key), the overhead you are holding, or a ball to play off the glass.
+    let hint = '';
+    if (humanTeam >= 0 && !this.pro && sim.phase === PH_RALLY && sim.rally.hitter >= 0 && sim.rally.hitter !== humanTeam) {
+      const p = sim.players[humanTeam]!;
+      const st = sim.stand[humanTeam]!;
+      if (sim.pred.version !== this.lobVersion) {
+        this.lobVersion = sim.pred.version;
+        this.lob = isLob(sim, humanTeam);
+      }
+      if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Overhead: bandeja · hold Space to smash';
+      else if (this.lob) hint = 'Lob · hold O for an overhead';
+      else if (st.valid && st.afterWall) hint = 'Off the glass';
+    }
+    if (hint) this.set(this.hint, hint);
+    this.hint.style.opacity = hint ? '1' : '0';
     if (humanTeam >= 0 && sim.phase === PH_SETUP && sim.score.serverTeam() === humanTeam && now > this.callUntil) {
       this.showCall('Your serve: A/D aims, press a shot key to drop the ball, release to hit', now, 0.05);
     }

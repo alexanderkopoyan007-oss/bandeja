@@ -16,6 +16,8 @@
     "contactMinHeight": 0.12,
     "contactMaxHeight": 2.75,
     "overheadHeight": 1.85,
+    "overheadIdealHeight": 2.35,
+    "overheadReach": 0.4,
     "recoverTime": 0.35,
     "positioningAssist": 0.3
   },

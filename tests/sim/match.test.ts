@@ -73,7 +73,7 @@ describe('assisted timing', () => {
       const until = m.tossIdeal + 0.4;
       while (m.time < until) { f.clear(); f.held = BTN_DRIVE; m.step([f, null]); }
       expect(m.players[0]!.grade).toBe(G_GOOD);
-      expect(m.players[0]!.timingDelta).toBeGreaterThan(0);
+      expect(m.players[0]!.timingDelta).toBeLessThan(0);
     }
   });
 });

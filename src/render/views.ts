@@ -4,6 +4,7 @@ import type { MatchSim } from '../sim/match.ts';
 import { PH_RALLY, PH_TOSS } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
 import { PF_FLOOR } from '../sim/ball/predict.ts';
+import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
 
 const BALL_COLOR = 0xdff23b;
 const TEAM_COLORS = [0xff7a45, 0x35c9a8];
@@ -167,7 +168,11 @@ export class PlayerView {
     const fwd = -s;
     const hand = p.handSide * p.handed;
     this.ready.set(x + 0.32 * s * hand, 1.0, z + 0.25 * fwd);
-    const back = v1.set(x + 0.55 * s * hand, 1.15, z - 0.35 * fwd);
+    // Overhead key: the racket loads up above and behind the head (trophy position) instead of at the waist.
+    const overhead = p.shot === SHOT_BANDEJA;
+    const back = overhead
+      ? v1.set(x + 0.3 * s * hand, 2.05, z - 0.2 * fwd)
+      : v1.set(x + 0.55 * s * hand, 1.15, z - 0.35 * fwd);
     const tgt = v2;
     if (p.swing === SW_CHARGE) {
       tgt.copy(back);

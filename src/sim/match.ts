@@ -16,7 +16,7 @@ import {
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
-import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION } from './input.ts';
+import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { SimpleAi } from './ai/simpleAi.ts';
 import { makeWorld, type WorldOptions } from './setup.ts';
@@ -87,6 +87,8 @@ const SERVE_HAND_HEIGHT = 0.95;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
+/** Default aim depth (fraction of the half) for the overhead key. */
+const OVERHEAD_AIM_DEPTH = 0.76;
 /** Windows are searched from this far back, so a release just after the ideal is still judged against it. */
 const RELEASE_LOOKBACK = 0.3;
 
@@ -374,12 +376,14 @@ export class MatchSim {
       // (the player may be heading somewhere else), and once the planned moment has gone by. The planned contact
       // is preferred so the plan doesn't flip between options; close to contact it is the only one considered,
       // so the ring and the spot never jump to another bounce at the last moment.
-      const live = st.valid && t0 < st.t + 0.1;
+      // Holding the overhead key plans the ball high (in the air for a lob); switching modes plans afresh.
+      const overhead = this.goingOverhead(p);
+      const live = st.valid && t0 < st.t + 0.1 && st.overhead === overhead;
       const close = live && st.t - t0 < 0.35;
       if (this.pred.version !== st.version || !live || (!close && (this.tick & 7) === 0)) {
         const keep = live ? st.t : -1;
-        if (!(close && planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, true))) {
-          planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, false);
+        if (!(close && planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, true, overhead))) {
+          planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, false, overhead);
         }
       }
     } else {
@@ -404,7 +408,8 @@ export class MatchSim {
     // Button events in time order.
     for (let i = 0; i < f.evCount; i++) {
       const e = f.ev[i]!;
-      const shot = SHOT_BUTTONS.indexOf(e.button as never);
+      // The overhead key is held as a bandeja; it becomes a smash at contact if power is held.
+      const shot = e.button === BTN_OVERHEAD ? SHOT_BANDEJA : SHOT_BUTTONS.indexOf(e.button as never);
       if (shot < 0) continue;
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
       if (e.press) this.press(team, shot, max(e.t, t0));
@@ -413,9 +418,11 @@ export class MatchSim {
     // Assisted timing: still holding when the ideal moment arrives, the swing goes off by itself.
     if (this.cfg.autoTiming && !this.ai[team] && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
       const ideal = this.autoIdeal(team);
-      // Released just outside Perfect, so it always grades Good whatever the timing scale.
-      const late = (TIMING.perfect + 0.35 * (TIMING.good - TIMING.perfect)) * (this.cfg.timingScale ?? 1);
-      if (ideal >= 0 && ideal + late < t0 + DT) this.releaseSwing(team, ideal + late, f);
+      // Released just before Perfect, so it grades Good whatever the timing scale. Early rather than late: an
+      // early swing still meets the ball at the ideal moment (an overhead stays high, a ball at the body is
+      // met in front), a late one meets it late.
+      const early = (TIMING.perfect + 0.35 * (TIMING.good - TIMING.perfect)) * (this.cfg.timingScale ?? 1);
+      if (ideal >= 0 && ideal - early < t0 + DT) this.releaseSwing(team, max(t0, ideal - early), f);
     }
     // Safety: a swing held far too long releases itself.
     if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) this.releaseSwing(team, t0, f);
@@ -434,6 +441,11 @@ export class MatchSim {
   private wallsSinceBounce = 0;
   private assistX = 0;
   private assistZ = 0;
+
+  /** The player is holding (or has just released) the overhead key. */
+  private goingOverhead(p: Player): boolean {
+    return p.shot === SHOT_BANDEJA && (p.swing === SW_CHARGE || p.swing === SW_COMMITTED);
+  }
 
   /** Pull towards the planned hitting spot: light while the player steers, full while the keys are aiming. */
   private assist(p: Player, f: InputFrame, full: boolean): void {
@@ -497,8 +509,10 @@ export class MatchSim {
     p.grade = -1;
     if (this.phase === PH_RALLY && !this.ai[team]) {
       // Each rally shot starts aimed down the middle at the shot's natural depth; the keys move it from there.
+      // Overheads start a little shorter than a bandeja's natural depth, so a smash (power) isn't long.
+      const depth = shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot);
       p.aimX = 0;
-      p.aimZ = -this.side(team) * this.solverDepth(shot) * this.world.court.halfL;
+      p.aimZ = -this.side(team) * depth * this.world.court.halfL;
     }
   }
 
@@ -554,7 +568,8 @@ export class MatchSim {
     // Rally: judge against the window whose ideal moment is nearest the release.
     const s = this.side(team);
     const mustBounce = this.rally.isServe;
-    const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK);
+    const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
+      p.shot === SHOT_BANDEJA);
     let w: ContactWindow | null = null;
     for (let i = 0; i < n; i++) {
       const c = this.windows[i]!;
@@ -645,7 +660,11 @@ export class MatchSim {
     // Which shot actually comes out: overheads and volleys are picked from the situation.
     let shot = p.shot;
     if (serving) shot = SHOT_SERVE;
-    else if (b.pos.y >= t.overheadHeight && shot !== SHOT_LOB && shot !== SHOT_DROP) shot = shot === SHOT_SLICE ? SHOT_BANDEJA : SHOT_SMASH;
+    else if (p.shot === SHOT_BANDEJA) {
+      // Overhead key: a bandeja, or a smash with power held. A ball that has dropped too low is sliced instead.
+      if (b.pos.y >= t.overheadHeight - 0.3) shot = p.mod === MOD_POWER ? SHOT_SMASH : SHOT_BANDEJA;
+      else shot = this.rally.bounces === 0 ? SHOT_VOLLEY : SHOT_SLICE;
+    } else if (b.pos.y >= t.overheadHeight && shot !== SHOT_LOB && shot !== SHOT_DROP) shot = shot === SHOT_SLICE ? SHOT_BANDEJA : SHOT_SMASH;
     else if (this.rally.bounces === 0 && (shot === SHOT_DRIVE || shot === SHOT_SLICE)) shot = SHOT_VOLLEY;
 
     // Target.
@@ -801,7 +820,8 @@ export class MatchSim {
     if (this.phase !== PH_RALLY || this.rally.hitter === team) return 0;
     // Same look-back as the release is judged with: windows must include the moments just gone, or the ideal
     // of a window you are already in slides forward with the clock and the cue never closes.
-    return findWindows(this.pred, p.pos.x, p.pos.z, this.side(team), this.rally.isServe, 1, p.tune, out, this.time - RELEASE_LOOKBACK);
+    return findWindows(this.pred, p.pos.x, p.pos.z, this.side(team), this.rally.isServe, 1, p.tune, out, this.time - RELEASE_LOOKBACK,
+      this.goingOverhead(p));
   }
 
   /** Fingerprint of the full sim state (determinism checks). */

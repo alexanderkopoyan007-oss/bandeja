@@ -1,7 +1,8 @@
 // Playing as the human with the assists: balls off the glass, a cue that holds still, and aiming that lands.
 import { describe, it, expect } from 'vitest';
 import { MatchSim, PH_RALLY, PH_SETUP, PH_OVER, E_HIT, E_POINT, E_WALL, E_FLOOR } from '../../src/sim/match.ts';
-import { InputFrame, BTN_DRIVE, BTN_PRECISION } from '../../src/sim/input.ts';
+import { InputFrame, BTN_DRIVE, BTN_PRECISION, BTN_OVERHEAD, BTN_POWER } from '../../src/sim/input.ts';
+import { SHOT_SMASH, SHOT_BANDEJA } from '../../src/sim/contact/shots.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
 
@@ -153,5 +154,70 @@ describe('aiming', () => {
     }
     expect(n).toBeGreaterThan(10);
     expect(errs / n).toBeLessThan(0.8);
+  });
+});
+
+describe('overheads', () => {
+  /** Goes to the net after each shot (that draws lobs) and holds the overhead key when a lob comes. */
+  function lobs(power: boolean) {
+    const res = { lobs: 0, overheads: 0, high: 0, smashes: 0 };
+    for (let seed = 1; seed <= 3; seed++) {
+      const m = new MatchSim({ seed, human: [true, false], firstServer: 1, autoTiming: true, assist: 0.45, timingScale: 1.5 });
+      const f = new InputFrame();
+      let seen = 0;
+      let held = 0;
+      let lob = -1; // -1 no ball coming, 0 groundstroke, 1 lob
+      for (let i = 0; i < 150 * 120 && m.phase !== PH_OVER; i++) {
+        f.clear();
+        const p = m.players[0]!;
+        const s = m.side(0);
+        if (held && p.swing !== SW_CHARGE) { f.push(false, held, m.time); held = 0; }
+        const serve = m.phase === PH_SETUP && m.score.serverTeam() === 0 && m.time > m.phaseUntil + 0.2;
+        if (!held && p.swing === SW_IDLE && (serve || (m.phase === PH_RALLY && m.rally.hitter === 1 && lob >= 0))) {
+          held = lob === 1 && !serve ? BTN_OVERHEAD : BTN_DRIVE;
+          f.push(true, held, m.time);
+        }
+        if (!p.aiming && m.phase === PH_RALLY && m.rally.hitter === 0) {
+          const dx = -p.pos.x;
+          const dz = s * 3.2 - p.pos.z;
+          const d = Math.hypot(dx, dz);
+          if (d > 0.3) { f.moveX = (dx / d) * s; f.moveY = (-dz / d) * s; }
+        }
+        f.held = held | (power ? BTN_POWER : 0);
+        m.step([f, null]);
+        for (; seen < m.eventSeq; seen++) {
+          const e = m.events[seen % m.events.length]!;
+          if (e.kind === E_HIT && e.team === 1) {
+            let top = 0;
+            const pr = m.pred;
+            for (let k = 0; k < pr.n && pr.bounces[k]! === 0; k++) if (pr.z[k]! * s > 1.5) top = Math.max(top, pr.y[k]!);
+            lob = top > 2.3 ? 1 : 0;
+            if (lob) res.lobs++;
+          } else if (e.kind === E_HIT && e.team === 0) {
+            if (lob === 1 && (e.a === SHOT_SMASH || e.a === SHOT_BANDEJA)) {
+              res.overheads++;
+              if (e.y >= 2.0) res.high++;
+              if (e.a === SHOT_SMASH) res.smashes++;
+            }
+            lob = -1;
+          } else if (e.kind === E_POINT) lob = -1;
+        }
+      }
+    }
+    return res;
+  }
+
+  it('holding O for a lob takes it in the air, high, as a bandeja', () => {
+    const r = lobs(false);
+    expect(r.lobs).toBeGreaterThan(20);
+    expect(r.overheads / r.lobs).toBeGreaterThan(0.85);
+    expect(r.high / r.overheads).toBeGreaterThan(0.85);
+    expect(r.smashes).toBe(0);
+  });
+
+  it('with power held the overhead is a smash', () => {
+    const r = lobs(true);
+    expect(r.lobs).toBeGreaterThan(20);
+    expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
   });
 });
