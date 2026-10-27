@@ -431,7 +431,8 @@ export class AssistView {
     if (ideal < 0 || (!charging && sim.phase !== PH_TOSS && sim.phase !== PH_RALLY)) return;
     const left = ideal - renderTime;
     if (left > APPROACH_SHOW || left < -0.15) return;
-    const k = timingScale;
+    // The shot's own windows (a volley is easier to time than a víbora), times the timing setting.
+    const k = charging || sim.phase === PH_TOSS ? sim.windowScale(human) : timingScale;
     const a = Math.abs(left);
     const reach = sim.focusInReach;
     const col = !reach ? C_OFF : a <= TIMING.perfect * k ? C_PERFECT : a <= TIMING.good * k ? C_GOOD : C_WHITE;

@@ -842,16 +842,19 @@ export class Avatar {
     blendMasked(this.pose, tmp, this.upper);
   }
 
-  /** The split step: up 6 cm for the first 45% of it, then a 5 cm knee bend on landing. */
+  /**
+   * The split step: a ballistic hop for the sim's airborne time (g T^2 / 8 high: 2.5 cm for 142 ms), then a 5 cm
+   * knee bend as the landing loads the legs.
+   */
   private splitStep(p: Player, t: number): void {
-    const left = p.splitUntil - t;
+    const u = t - p.splitAt;
     const len = p.tune.splitStepTime;
+    const air = p.tune.splitStepAir;
     this.lift = 0;
     this.splitDrop = 0;
-    if (left <= 0 || left > len) return;
-    const u = 1 - left / len;
-    if (u < 0.45) this.lift = 0.06 * Math.sin((Math.PI * u) / 0.45);
-    else this.splitDrop = 0.05 * Math.sin((Math.PI * (u - 0.45)) / 0.55);
+    if (u < 0 || u >= len) return;
+    if (u < air) this.lift = 4.905 * u * (air - u);
+    else this.splitDrop = 0.05 * Math.sin((Math.PI * (u - air)) / (len - air));
   }
 
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */

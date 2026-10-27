@@ -171,6 +171,8 @@ export class Hud {
 
   /** Size the meter's Good/Perfect zones to the timing windows (meter spans +-0.25 s). */
   setTiming(scale: number): void {
+    if (scale === this.timingShown) return;
+    this.timingShown = scale;
     const span = 0.5;
     const set = (e: HTMLElement, half: number): void => {
       const w = Math.min(100, ((2 * half * scale) / span) * 100);
@@ -180,6 +182,8 @@ export class Hud {
     set(this.zones[0]!, TIMING.good);
     set(this.zones[1]!, TIMING.perfect);
   }
+
+  private timingShown = -1;
 
   toggleHelp(): void {
     this.help.style.display = this.help.style.display === 'none' ? '' : 'none';
@@ -229,6 +233,8 @@ export class Hud {
       const p = sim.players[human]!;
       const ideal = sim.focusIdeal(human);
       if (ideal >= 0 && (p.swing === SW_CHARGE || sim.phase === PH_TOSS)) {
+        // The zones follow the shot being timed (each shot has its own windows).
+        this.setTiming(sim.windowScale(human));
         const d = sim.time - ideal; // negative = before ideal
         const frac = Math.min(1, Math.max(0, 0.5 + d / 0.5));
         this.mark.style.left = `${(frac * 100).toFixed(1)}%`;
