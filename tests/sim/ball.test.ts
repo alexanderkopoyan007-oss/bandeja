@@ -168,6 +168,35 @@ describe('bounces', () => {
     return { vz: -e.vz, vy: e.vy };
   };
 
+  it('oblique bounces follow the grip-slip regimes of a felt ball (Cross, Physics Today 2008)', () => {
+    // Below about 20 degrees the ball slides all through the bounce (tangential COR negative); above it the
+    // ball grips, keeps a fixed fraction of its horizontal speed, and leaves with e_x +0.1 to +0.3 (sand-filled
+    // turf a little below). The spin it picks up peaks at the change and falls at steeper angles.
+    for (const floor of ['hard', 'turf'] as const) {
+      const w = makeWorld({ floor });
+      const r = w.spec.radius;
+      const res: Array<{ ex: number; fx: number; rpm: number }> = [];
+      for (const deg of [10, 25, 40, 60]) {
+        const a = (deg * Math.PI) / 180;
+        const b = new Ball();
+        b.pos.set(0, r + 0.0005, 3);
+        b.vel.set(0, -20 * Math.sin(a), -20 * Math.cos(a));
+        const e = run(w, b, 0.05, null, (_b, n) => n >= 1).events[0]!;
+        const vx0 = 20 * Math.cos(a);
+        const vx = -e.vz;
+        res.push({ ex: -(vx - -b.spin.x * r) / vx0, fx: vx / vx0, rpm: (-b.spin.x * 60) / (2 * Math.PI) });
+      }
+      expect(res[0]!.ex).toBeLessThan(0);
+      for (const k of [1, 2, 3]) {
+        expect(res[k]!.ex).toBeGreaterThan(0.05);
+        expect(res[k]!.ex).toBeLessThan(0.3);
+        expect(Math.abs(res[k]!.fx - res[1]!.fx)).toBeLessThan(0.02);
+      }
+      expect(res[1]!.rpm).toBeGreaterThan(res[2]!.rpm);
+      expect(res[2]!.rpm).toBeGreaterThan(res[3]!.rpm);
+    }
+  });
+
   it('topspin kicks forward, slice skids and stays low', () => {
     const top = afterFloor(-250);
     const flat = afterFloor(0);

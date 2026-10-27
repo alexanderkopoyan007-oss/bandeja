@@ -16,8 +16,10 @@ measured against published data, and lands with tests that check the model again
      55° and slide at 25°; smash median about 138 km/h against 133 for semi-pros.
 3. **Ball flight.** Done 2026-10-27: free-flight drag of a new ball (0.507), spin decay proportional to ω·v
    (k = 0.005/m), ball wear over a match (nap fluff +4.1% drag from Hawk-Eye; pressure loss as tuning).
-4. **Bounce.** Grip/slip with the floor (turf with sand infill), glass vs concrete walls, mesh, seams; spin through
-   every bounce.
+4. **Bounce.** Checked 2026-10-27: the impulse model (restitution falling with normal speed, sliding friction,
+   grip with a tangential COR) already gives a felt ball's grip-slip regimes (below). A test holds it to them.
+   Still open: concrete walls (a classic club court; glass is faster, longer and livelier, Gea García 2021, no
+   numbers published) and the floor-wall corner (rincón).
 5. **Player physics.** Acceleration and braking on turf, split step, reaction time, fatigue over a match,
    collisions between partners, touching the net, and reach against the racket's length.
 6. **Rules completeness.** Ball lodged in the mesh or on top of a wall, out-of-court play.
@@ -95,6 +97,17 @@ measured against published data, and lands with tests that check the model again
 - **Glass vs concrete.** Glass gives faster, longer and more accelerated rebounds than concrete. Ball type matters
   more for speed and distance, and the wall for angle and acceleration; Dunlop balls bounce faster and longer
   than Head. (Gea García et al. 2021, *Int. J. Perf. Analysis in Sport*, doi 10.1080/24748668.2021.1875778)
+
+### Bounce of a felt ball (tennis data; nothing padel-specific is published)
+- Sliding friction: clay up to 0.9 at low angles, grass 0.5–0.6. Vertical COR about 0.75 on hard courts,
+  0.6–0.75 on grass, about 0.85 on clay.
+- Below about 20° to the surface the ball slides all through the bounce (tangential COR e_x negative). Above it,
+  the ball can grip; the horizontal speed then drops by a fixed fraction whatever the angle, and it leaves with
+  e_x +0.1 to +0.3. The spin picked up rises with angle while sliding and falls above about 20°.
+  ([Cross, *Tennis physics, anyone?*, Physics Today 2008](https://physicstoday.aip.org/quick-study/tennis-physics-anyone))
+- In the game, at 20 m/s: hard court slides below 20° (e_x −0.5 at 10°), grips above with 59% of the horizontal
+  speed kept and e_x 0.15; turf grips above about 20° with 62% kept and e_x 0.08 (the sand); spin peaks near
+  25° (about 3,900 rpm on hard).
 
 ### Turf
 - **No independent padel data.** Nothing published measures rebound or friction against sand infill.
