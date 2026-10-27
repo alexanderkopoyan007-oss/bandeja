@@ -35,6 +35,16 @@ export function heightCost(y: number, overhead: number): number {
   return 0.35 + (y - overhead) * 0.3;
 }
 
+/**
+ * Cost of a volley at height y: a punch between the waist and the shoulders is the comfortable one; below the
+ * tape it has to be lifted (a low volley), above the shoulders it turns into a high volley.
+ */
+export function volleyCost(y: number): number {
+  if (y < 0.8) return (0.8 - y) * 1.4;
+  if (y <= 1.45) return 0;
+  return (y - 1.45) * 0.7;
+}
+
 /** Cost of taking the ball overhead at height y: best around the ideal overhead height, poor below it. */
 export function overheadCost(y: number, t: PlayerTuning): number {
   if (y >= t.overheadHeight) return abs(y - t.overheadIdealHeight) * 0.8;
@@ -45,11 +55,13 @@ export function overheadCost(y: number, t: PlayerTuning): number {
  * Fill `out` with up to MAX_WINDOWS windows for a player at (px, pz) on half `side`.
  * `mustBounce`: the ball may not be volleyed (receiving a serve). `overhead`: the player is going for an
  * overhead, so each window's ideal moment is the best overhead contact, not the most comfortable groundstroke.
+ * `volley`: the player is holding the volley key, so a window before the bounce has its ideal at the best volley
+ * height (windows after the bounce stay legal: a volley planned too late is blocked off the bounce instead).
  * Returns the window count.
  */
 export function findWindows(
   pred: Prediction, px: number, pz: number, side: number, mustBounce: boolean, bouncesAllowed: number,
-  t: PlayerTuning, out: ContactWindow[], fromTime: number, overhead = false,
+  t: PlayerTuning, out: ContactWindow[], fromTime: number, overhead = false, volley = false,
 ): number {
   let count = 0;
   let open = false;
@@ -69,7 +81,8 @@ export function findWindows(
     const ok = legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight;
     if (ok) {
       // A ball touching the floor or glass right now is not where anyone means to hit it.
-      const cost = (overhead ? abs(d - t.overheadReach) + overheadCost(y, t) : abs(d - t.reachComfort) + heightCost(y, t.overheadHeight))
+      const cost = (overhead ? abs(d - t.overheadReach) + overheadCost(y, t)
+        : abs(d - t.reachComfort) + (volley && b === 0 ? volleyCost(y) : heightCost(y, t.overheadHeight)))
         + (nearImpact(pred, i) ? 0.5 : 0);
       if (!open) {
         if (count >= MAX_WINDOWS) break;

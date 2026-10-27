@@ -23,6 +23,24 @@ export interface GameOptions {
   mouseAim: boolean;
   /** The animated player body (M2); null: the M1 capsules. */
   avatar: PlayerAsset | null;
+  /**
+   * Render the present instead of one tick behind it (the sim runs up to one tick ahead of the clock and the
+   * render interpolates back to now). Saves one tick (8.3 ms) of input-to-screen latency; `?runahead=0` is the
+   * old way.
+   */
+  runAhead?: boolean;
+}
+
+/** One button event's trip to the screen, performance.now() ms (tools/latency.mjs reads these). */
+export interface LatencySample {
+  /** The key event's timestamp. */
+  ts: number;
+  /** The frame that handed it to the sim. */
+  used: number;
+  /** Render submitted for the first frame whose render time is at or past the event. */
+  shown: number;
+  /** The GPU finished that frame (WebGPU only; 0 otherwise). */
+  gpu: number;
 }
 
 /** Numbers the perf tool reads from the page. */
@@ -54,6 +72,10 @@ export class Game {
   readonly aimMarker: THREE.Mesh;
   private mouseOnCourt = false;
   readonly probe: PerfProbe = { frames: [], sims: [], works: [], drawCalls: 0, triangles: 0, backend: '', points: 0 };
+  /** Input latency samples (one per button event; allocates only on key events). */
+  readonly latency: LatencySample[] = [];
+  private latFirst = 0;
+  private frameNow = 0;
 
   private epoch = 0;
   private hiddenAt = -1;
@@ -190,6 +212,7 @@ export class Game {
       if (e.ts >= endMs) break;
       f.push(e.press, e.button, Math.max(0, (e.ts - this.epoch) / 1000));
       this.kb.head++;
+      if (this.latency.length < 4000) this.latency.push({ ts: e.ts, used: this.frameNow, shown: 0, gpu: 0 });
     }
     void t0;
     if (this.mouseAim && this.mouseOnCourt) {
@@ -202,6 +225,27 @@ export class Game {
 
   private readonly inputs: Array<InputFrame | null>;
 
+  /** Latency probe: events whose moment this frame's render time has reached are on screen from this frame. */
+  private markShown(renderMs: number): void {
+    const t = performance.now();
+    let any = false;
+    for (let k = this.latFirst; k < this.latency.length; k++) {
+      const l = this.latency[k]!;
+      if (l.shown === 0 && l.ts <= renderMs) { l.shown = t; any = true; }
+    }
+    while (this.latFirst < this.latency.length && this.latency[this.latFirst]!.shown > 0) this.latFirst++;
+    const dev = (this.renderer.backend as { device?: { queue: { onSubmittedWorkDone(): Promise<void> } } }).device;
+    if (any && dev) {
+      void dev.queue.onSubmittedWorkDone().then(() => {
+        const g = performance.now();
+        for (let k = this.latency.length - 1; k >= 0 && k >= this.latFirst - 64; k--) {
+          const l = this.latency[k]!;
+          if (l.shown === t) l.gpu = g;
+        }
+      });
+    }
+  }
+
   /** The human's team (the camera's end); team 0 with autoplay. */
   get team(): number {
     return this.opts.autoplay ? 0 : this.sim.players[this.opts.human]!.team;
@@ -209,19 +253,26 @@ export class Game {
 
   private tick(): void {
     const now = performance.now();
+    this.frameNow = now;
     const simNow = (now - this.epoch) / 1000;
     const s0 = performance.now();
     let n = 0;
     const human = this.opts.autoplay ? 0 : this.opts.human;
     const team = this.team;
-    while (this.sim.time + DT <= simNow && n < MAX_TICKS_PER_FRAME) {
+    // Run-ahead: step until the sim is at or just past now and draw now, between the last two ticks. Otherwise
+    // step up to now and draw one tick behind it. Either way the render blends two real sim states, and a key
+    // event inside the newest tick is handed to it with its exact time.
+    const ahead = this.opts.runAhead !== false;
+    while ((ahead ? this.sim.time < simNow : this.sim.time + DT <= simNow) && n < MAX_TICKS_PER_FRAME) {
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
       this.sim.step(this.inputs);
       n++;
     }
     if (n === MAX_TICKS_PER_FRAME) this.epoch = now - this.sim.time * 1000; // drop a backlog rather than spiral
     const simMs = performance.now() - s0;
-    const alpha = Math.min(1, Math.max(0, (simNow - this.sim.time) / DT));
+    const alpha = ahead
+      ? Math.min(1, Math.max(0, 1 - (this.sim.time - simNow) / DT))
+      : Math.min(1, Math.max(0, (simNow - this.sim.time) / DT));
     const renderTime = this.sim.time - DT + alpha * DT;
 
     // Mouse aim: project the pointer onto the opponent's half. The faint marker is the pointer; while a shot can
@@ -253,6 +304,7 @@ export class Game {
     this.hud.update(this.sim, who, now / 1000);
 
     this.renderer.render(this.scene, this.cam.camera);
+    if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);
     const info = this.renderer.info.render;
     this.probe.drawCalls = info.drawCalls;
     this.probe.triangles = info.triangles;

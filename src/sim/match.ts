@@ -16,7 +16,7 @@ import {
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
-import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD } from './input.ts';
+import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { formationSpot, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
@@ -494,12 +494,19 @@ export class MatchSim {
       // so the ring and the spot never jump to another bounce at the last moment.
       // Holding the overhead key plans the ball high (in the air for a lob); switching modes plans afresh.
       const overhead = this.goingOverhead(p);
-      const live = st.valid && t0 < st.t + 0.1 && st.overhead === overhead;
+      // Holding the volley key plans the ball in the air; with no volley in reach it plans as usual (and the
+      // contact turns into a block off the bounce).
+      const volleyKey = this.goingVolley(p);
+      const live = st.valid && t0 < st.t + 0.1 && st.overhead === overhead && st.volleyKey === volleyKey;
       const close = live && st.t - t0 < 0.35;
       if (this.pred.version !== st.version || !live || (!close && (this.tick & 7) === 0)) {
         const keep = live ? st.t : -1;
-        if (!(close && planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, true, overhead))) {
-          planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, false, overhead);
+        if (!(close && planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, true, overhead, volleyKey))) {
+          planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, false, overhead, volleyKey);
+          if (volleyKey && !(st.valid && st.inTime && st.volley)) {
+            planStand(this.pred, p, s, t0, this.rally.isServe, st, -1, false, overhead, false);
+            st.volleyKey = true;
+          }
         }
       }
     } else {
@@ -534,7 +541,8 @@ export class MatchSim {
     for (let k = 0; k < f.evCount; k++) {
       const e = f.ev[k]!;
       // The overhead key is held as a bandeja; it becomes a smash at contact if power is held.
-      const shot = e.button === BTN_OVERHEAD ? SHOT_BANDEJA : SHOT_BUTTONS.indexOf(e.button as never);
+      const shot = e.button === BTN_OVERHEAD ? SHOT_BANDEJA : e.button === BTN_VOLLEY ? SHOT_VOLLEY
+        : SHOT_BUTTONS.indexOf(e.button as never);
       if (shot < 0) continue;
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
       if (e.press) this.press(i, shot, max(e.t, t0));
@@ -689,6 +697,11 @@ export class MatchSim {
   /** The player is holding (or has just released) the overhead key. */
   private goingOverhead(p: Player): boolean {
     return p.shot === SHOT_BANDEJA && (p.swing === SW_CHARGE || p.swing === SW_COMMITTED);
+  }
+
+  /** The player is holding (or has just released) the volley key. */
+  private goingVolley(p: Player): boolean {
+    return p.shot === SHOT_VOLLEY && (p.swing === SW_CHARGE || p.swing === SW_COMMITTED);
   }
 
   /** Pull towards the planned hitting spot: light while the player steers, full while the keys are aiming. */
@@ -860,7 +873,7 @@ export class MatchSim {
     const s = this.side(team);
     const mustBounce = this.rally.isServe;
     const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
-      p.shot === SHOT_BANDEJA);
+      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY);
     let w: ContactWindow | null = null;
     for (let k = 0; k < n; k++) {
       const c = this.windows[k]!;
@@ -960,6 +973,11 @@ export class MatchSim {
       // Overhead key: a bandeja, a smash with power held, a víbora with precision held. A ball that has dropped
       // too low is sliced instead.
       if (b.pos.y >= t.overheadHeight - 0.3) shot = p.mod === MOD_POWER ? SHOT_SMASH : p.mod === MOD_PRECISION ? SHOT_VIBORA : SHOT_BANDEJA;
+      else shot = this.rally.bounces === 0 ? SHOT_VOLLEY : SHOT_SLICE;
+    } else if (p.shot === SHOT_VOLLEY) {
+      // Volley key: a punch volley in the air (Space: flat and hard, by the power modifier); a ball above the
+      // head is met as an overhead, and a ball that has bounced after all is blocked back as a short slice.
+      if (b.pos.y >= t.overheadHeight) shot = p.mod === MOD_POWER ? SHOT_SMASH : SHOT_BANDEJA;
       else shot = this.rally.bounces === 0 ? SHOT_VOLLEY : SHOT_SLICE;
     } else if (b.pos.y >= t.overheadHeight && shot !== SHOT_LOB && shot !== SHOT_DROP) shot = shot === SHOT_SLICE ? SHOT_BANDEJA : SHOT_SMASH;
     else if (this.rally.bounces === 0 && (shot === SHOT_DRIVE || shot === SHOT_SLICE)) shot = SHOT_VOLLEY;
@@ -1137,7 +1155,7 @@ export class MatchSim {
     // Same look-back as the release is judged with: windows must include the moments just gone, or the ideal
     // of a window you are already in slides forward with the clock and the cue never closes.
     return findWindows(this.pred, p.pos.x, p.pos.z, this.side(team), this.rally.isServe, 1, p.tune, out, this.time - RELEASE_LOOKBACK,
-      this.goingOverhead(p));
+      this.goingOverhead(p), this.goingVolley(p));
   }
 
   /** Fingerprint of the full sim state (determinism checks). */

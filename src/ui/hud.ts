@@ -8,7 +8,7 @@ import {
 import { REASON_TEXT, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/contact/timing.ts';
 import { SW_CHARGE } from '../sim/player/player.ts';
-import { SHAPES, SHOT_BANDEJA } from '../sim/contact/shots.ts';
+import { SHAPES, SHOT_BANDEJA, SHOT_VOLLEY } from '../sim/contact/shots.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 
 const TIMING = tuning.timing;
@@ -161,6 +161,7 @@ export class Hud {
     this.help.innerHTML = keys(
       '[W][A][S][D] move &nbsp; [J] drive &nbsp; [K] topspin (with [Shift] a chiquita) &nbsp; [L] slice &nbsp; [I] lob &nbsp; [U] drop<br>' +
       '[O] overhead for lobs: a bandeja; with [Space] a smash that can leave the court; with [Shift] a víbora<br>' +
+      '[N] volley: take it in the air and punch it; with [Space] flat and hard; [U] in the air is a drop volley<br>' +
       'Hold a shot key as the ball comes: WASD then aims the target and you run to the ball yourself<br>' +
       'Release when the closing ring meets the ring on the ball. Serve: [A]/[D] aims, press to drop, release to hit<br>' +
       'Doubles: you are the ringed player; your partner calls the balls on their side, holding a shot key takes it<br>' +
@@ -249,6 +250,7 @@ export class Hud {
       const partners = sim.doubles && sim.taker[team] === (human ^ 2) && p.swing !== SW_CHARGE;
       if (partners) hint = sim.rally.isServe ? 'Partner receives' : 'Partner\'s ball · hold a shot key to take it';
       else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Bandeja · hold [Space] to smash, [Shift] for a víbora';
+      else if (p.shot === SHOT_VOLLEY && p.swing === SW_CHARGE) hint = st.valid && st.volley ? 'Volley · hold [Space] to punch it flat' : 'Out of reach in the air · it will be blocked off the bounce';
       else if (this.lob) hint = 'Lob coming · hold [O] for an overhead';
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }
