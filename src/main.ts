@@ -76,6 +76,7 @@ async function start(): Promise<void> {
     pro: params.get('pro') === '1',
     mouseAim: params.get('aim') === 'mouse',
     runAhead: params.get('runahead') !== '0',
+    sound: params.get('sound') !== '0',
     avatar: await avatar,
   }, renderer, document.getElementById('hud')!);
   // Exposed before the warm-up: tools that step the game themselves don't need it (and a hidden tab stalls it).

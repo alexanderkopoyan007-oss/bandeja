@@ -65,6 +65,11 @@ export class KeyboardInput {
     if (down) this.onKey?.(e.code, e);
   }
 
+  /** A button event from another device (the gamepad), into the same timestamped queue. */
+  inject(press: boolean, button: number, ts: number): void {
+    this.push(press, button, ts);
+  }
+
   private push(press: boolean, button: number, ts: number): void {
     const q = this.queue[this.tail % QUEUE]!;
     q.press = press;

@@ -7,6 +7,9 @@ import { buildCourtView } from '../render/courtView.ts';
 import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
 import { KeyboardInput } from './input/keyboard.ts';
+import { GamepadInput } from './input/gamepad.ts';
+import { Sound } from '../audio/sound.ts';
+import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
 import { Hud } from '../ui/hud.ts';
 import { DebugOverlay } from '../ui/debug.ts';
@@ -29,6 +32,8 @@ export interface GameOptions {
    * old way.
    */
   runAhead?: boolean;
+  /** Hit sounds (`?sound=0` turns them off). */
+  sound?: boolean;
 }
 
 /** One button event's trip to the screen, performance.now() ms (tools/latency.mjs reads these). */
@@ -66,6 +71,9 @@ export class Game {
   readonly players: PlayerView[];
   readonly assists: AssistView;
   readonly kb: KeyboardInput;
+  readonly pad: GamepadInput;
+  readonly sound = new Sound();
+  readonly feedback: Feedback;
   readonly hud: Hud;
   readonly debug: DebugOverlay;
   readonly frame = new InputFrame();
@@ -126,6 +134,13 @@ export class Game {
     this.scene.add(this.aimMarker);
 
     this.kb = new KeyboardInput(window);
+    this.pad = new GamepadInput(window);
+    this.sound.enabled = opts.sound !== false && !opts.autoplay;
+    // Audio may only start from a gesture.
+    const unlock = (): void => this.sound.unlock();
+    addEventListener('keydown', unlock);
+    addEventListener('pointerdown', unlock);
+    this.feedback = new Feedback(this.sound, this.pad, this.cam);
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
     // Score rows name the players: YOU, and each AI by its playing style.
     const who = (i: number, short: boolean): string => {
@@ -201,9 +216,11 @@ export class Game {
     const f = this.frame;
     f.clear();
     this.kb.axes(this.axes);
-    f.moveX = this.axes.x;
-    f.moveY = this.axes.y;
-    f.held = this.kb.held;
+    // The pad's stick, when it is pushed, wins over the keys.
+    const pad = this.pad.x !== 0 || this.pad.y !== 0;
+    f.moveX = pad ? this.pad.x : this.axes.x;
+    f.moveY = pad ? this.pad.y : this.axes.y;
+    f.held = this.kb.held | this.pad.held;
     // Button events that happened before the end of this tick, with their exact sim times.
     const endMs = this.epoch + t1 * 1000;
     const q = this.kb.queue;
@@ -263,6 +280,10 @@ export class Game {
     // step up to now and draw one tick behind it. Either way the render blends two real sim states, and a key
     // event inside the newest tick is handed to it with its exact time.
     const ahead = this.opts.runAhead !== false;
+    if (this.pad.connected) {
+      this.pad.poll(this.kb, now);
+      if (this.pad.held !== 0) this.sound.unlock();
+    }
     while ((ahead ? this.sim.time < simNow : this.sim.time + DT <= simNow) && n < MAX_TICKS_PER_FRAME) {
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
       this.sim.step(this.inputs);
@@ -302,6 +323,7 @@ export class Game {
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt);
     this.hud.update(this.sim, who, now / 1000);
+    this.feedback.update(this.sim, who, renderTime, now);
 
     this.renderer.render(this.scene, this.cam.camera);
     if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);

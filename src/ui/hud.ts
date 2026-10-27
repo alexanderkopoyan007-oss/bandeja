@@ -165,7 +165,8 @@ export class Hud {
       'Hold a shot key as the ball comes: WASD then aims the target and you run to the ball yourself<br>' +
       'Release when the closing ring meets the ring on the ball. Serve: [A]/[D] aims, press to drop, release to hit<br>' +
       'Doubles: you are the ringed player; your partner calls the balls on their side, holding a shot key takes it<br>' +
-      '[Space] power &nbsp; [Shift] precision &nbsp; [M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide',
+      '[Space] power &nbsp; [Shift] precision &nbsp; [M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide<br>' +
+      'Gamepad: stick moves &nbsp; A drive &nbsp; X topspin &nbsp; B slice &nbsp; Y lob &nbsp; d-pad drop &nbsp; LB volley &nbsp; RB overhead &nbsp; RT power &nbsp; LT precision',
     );
   }
 
