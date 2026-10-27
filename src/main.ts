@@ -37,6 +37,12 @@ async function start(): Promise<void> {
       return null;
     });
   await renderer.init();
+  if (params.get('lab') === 'ball') {
+    // The ball test lab (src/game/ballLabScene.ts) instead of a match.
+    const { startBallLab } = await import('./game/ballLabScene.ts');
+    await startBallLab(renderer, document.getElementById('hud')!);
+    return;
+  }
 
   const game = new Game({
     match: {
