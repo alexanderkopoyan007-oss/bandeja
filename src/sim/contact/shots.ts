@@ -59,6 +59,8 @@ export interface ShotRequest {
   power: number;
   /** Racket/player control multiplier (1 = average; higher = smaller errors). */
   control: number;
+  /** Multiplies the shot's spin (serves: flat / slice / kick by key). The launch is solved with it. */
+  spinScale: number;
 }
 
 export interface ShotResult {
@@ -319,7 +321,7 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
     * (1 - 0.18 * req.moving) * (1 - 0.25 * req.stretch);
 
   const clear = shape.netClear * mod.netClear;
-  out.reachable = solver.solve(ball.pos, req.targetX, req.targetZ, shape.spinRpm * (0.7 + 0.3 * q), clear, cap, ball.vel, ball.spin);
+  out.reachable = solver.solve(ball.pos, req.targetX, req.targetZ, shape.spinRpm * req.spinScale * (0.7 + 0.3 * q), clear, cap, ball.vel, ball.spin);
   out.idealX = req.targetX;
   out.idealZ = req.targetZ;
 

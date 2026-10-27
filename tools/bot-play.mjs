@@ -28,8 +28,6 @@ const result = await page.evaluate(async (secs) => {
   let scheduled = false;
   let pressedAt = 0;
   const down = () => { key('keydown', 'KeyJ'); holding = true; scheduled = false; pressedAt = performance.now(); };
-  const wins = [];
-  for (let i = 0; i < 4; i++) wins.push({ start: 0, end: 0, ideal: 0, idealIdx: 0, volley: false, afterWall: false, height: 0 });
   const end = performance.now() + secs * 1000;
   while (performance.now() < end) {
     const sim = g.sim;
@@ -52,14 +50,12 @@ const result = await page.evaluate(async (secs) => {
       const at = wall(sim.tossIdeal);
       setTimeout(() => { key('keyup', 'KeyJ'); holding = false; }, Math.max(0, at - performance.now()));
     }
-    // Rally: hold early, release at the best window's ideal moment.
+    // Rally: hold early, release on the moment the timing ring closes (the sim's focus ideal).
     if (sim.phase === 2 && sim.rally.hitter === 1) {
       if (!holding && p.swing === 0) down();
-      const n = sim.windowsFor(0, wins);
-      if (holding && n > 0 && !scheduled) {
-        let best = wins[0];
-        for (let i = 1; i < n; i++) if (wins[i].ideal < best.ideal) best = wins[i];
-        const at = wall(best.ideal);
+      const ideal = sim.focusIdeal(0);
+      if (holding && ideal > 0 && sim.focusInReach && !scheduled) {
+        const at = wall(ideal);
         if (at - performance.now() < 120) {
           scheduled = true;
           setTimeout(() => { key('keyup', 'KeyJ'); holding = false; }, Math.max(0, at - performance.now()));

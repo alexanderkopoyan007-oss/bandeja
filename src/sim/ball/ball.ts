@@ -234,8 +234,12 @@ export class Ball {
   private best = 2;
 
   /** Earliest contact fraction along pos -> p (0..1), or -1. Records what was hit. */
+  /** Ball radius for the contact helpers (read through a field: a double argument would be boxed). */
+  private radius = 0.0328;
+
   private findContact(world: BallWorld, p: V3, flightOnly: boolean): number {
     const r = world.spec.radius;
+    this.radius = r;
     const c = world.court;
     const q = this.pos;
     this.best = 2;
@@ -256,7 +260,7 @@ export class Ball {
       if (p.z > zl && q.z <= zl) { this.cand = (zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_NEAR); }
       if (p.z < -zl && q.z >= -zl) { this.cand = (-zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_FAR); }
       // Net body and tape.
-      this.tryNet(c, p, r);
+      this.tryNet(c, p);
     }
     return this.best <= 1 ? this.best : -1;
   }
@@ -280,7 +284,8 @@ export class Ball {
 
   private hitSeam = 0.5;
 
-  private tryNet(c: Court, p: V3, r: number): void {
+  private tryNet(c: Court, p: V3): void {
+    const r = this.radius;
     const q = this.pos;
     // Net body: centre crosses z = +-r while below the tape.
     for (let s = -1; s <= 1; s += 2) {

@@ -46,6 +46,7 @@ export class Game {
   readonly debug: DebugOverlay;
   readonly frame = new InputFrame();
   readonly aimMarker: THREE.Mesh;
+  private mouseOnCourt = false;
   readonly probe: PerfProbe = { frames: [], sims: [], works: [], drawCalls: 0, triangles: 0, backend: '', points: 0 };
 
   private epoch = 0;
@@ -84,7 +85,7 @@ export class Game {
     this.assists.enabled = !opts.pro;
     this.aimMarker = new THREE.Mesh(
       new THREE.RingGeometry(0.22, 0.3, 32),
-      new THREE.MeshBasicMaterial({ color: 0xf4d03f, transparent: true, opacity: 0.8, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: 0xf4d03f, transparent: true, opacity: 0.3, depthWrite: false }),
     );
     this.aimMarker.rotation.x = -Math.PI / 2;
     this.aimMarker.position.y = 0.005;
@@ -159,7 +160,7 @@ export class Game {
       this.kb.head++;
     }
     void t0;
-    if (this.mouseAim && this.aimMarker.visible) {
+    if (this.mouseAim && this.mouseOnCourt) {
       f.aimAbs = true;
       f.aimTX = this.aimMarker.position.x;
       f.aimTZ = this.aimMarker.position.z;
@@ -186,8 +187,10 @@ export class Game {
     const alpha = Math.min(1, Math.max(0, (simNow - this.sim.time) / DT));
     const renderTime = this.sim.time - DT + alpha * DT;
 
-    // Mouse aim: project the pointer onto the opponent's half.
+    // Mouse aim: project the pointer onto the opponent's half. The faint marker is the pointer; while a shot can
+    // be aimed the sim's target (drawn by the assist view) sits under it instead.
     this.aimMarker.visible = false;
+    this.mouseOnCourt = false;
     if (this.mouseAim && this.kb.mouseActive && !this.opts.autoplay) {
       this.ndc.set(this.kb.mouseX, this.kb.mouseY);
       this.ray.setFromCamera(this.ndc, this.cam.camera);
@@ -197,7 +200,8 @@ export class Game {
         const x = Math.max(-c.halfW + 0.3, Math.min(c.halfW - 0.3, this.hit.x));
         const z = -s * Math.max(0.6, Math.min(c.halfL - 0.3, -s * this.hit.z));
         this.aimMarker.position.set(x, 0.005, z);
-        this.aimMarker.visible = true;
+        this.aimMarker.visible = !this.sim.players[human]!.aiming;
+        this.mouseOnCourt = true;
       }
     }
 
@@ -205,7 +209,7 @@ export class Game {
     for (let i = 0; i < 2; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
     this.cam.update(this.sim, human, this.ball.mesh.position.x, now / 1000);
     this.assists.update(this.sim, this.opts.autoplay ? -1 : human, this.ball.mesh.position, this.cam.camera, renderTime,
-      this.opts.match.timingScale ?? 1);
+      this.opts.match.timingScale ?? 1, now / 1000);
     this.hud.update(this.sim, this.opts.autoplay ? -1 : human, now / 1000);
 
     this.renderer.render(this.scene, this.cam.camera);

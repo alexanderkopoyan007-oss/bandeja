@@ -31,15 +31,19 @@ export class Prediction {
 
   private readonly ghost = new Ball();
 
-  compute(world: BallWorld, ball: Ball, now: number, bouncesSoFar: number, maxBounces = 2): void {
+  /**
+   * `wallsSoFar`: walls touched since the last bounce (a path re-predicted after the glass is still "off the
+   * glass"). `startFlags`: contacts in the tick that ended at `now`, so sample 0 is marked as an impact.
+   */
+  compute(world: BallWorld, ball: Ball, now: number, bouncesSoFar: number, maxBounces = 2, wallsSoFar = 0, startFlags = 0): void {
     const g = this.ghost.copyFrom(ball);
     this.start = now;
     this.version++;
     let bounces = bouncesSoFar;
-    let walls = 0;
+    let walls = wallsSoFar;
     let i = 0;
     // Sample 0 is the current state.
-    this.write(0, now, g, bounces, walls, 0);
+    this.write(0, now, g, bounces, walls, startFlags);
     for (i = 1; i < PRED_MAX; i++) {
       g.step(world, DT, null);
       let flags = 0;

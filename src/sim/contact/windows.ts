@@ -58,7 +58,8 @@ export function findWindows(
     const legal = z * side > 0.05 && b <= bouncesAllowed && !(mustBounce && b === 0);
     const ok = legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight;
     if (ok) {
-      const cost = abs(d - t.reachComfort) + heightCost(y, t.overheadHeight);
+      // A ball touching the floor or glass right now is not where anyone means to hit it.
+      const cost = abs(d - t.reachComfort) + heightCost(y, t.overheadHeight) + (nearImpact(pred, i) ? 0.5 : 0);
       if (!open) {
         if (count >= MAX_WINDOWS) break;
         const w = out[count++]!;
@@ -89,4 +90,12 @@ export function findWindows(
     }
   }
   return count;
+}
+
+/** The ball touches the floor or a wall within 50 ms of sample i. */
+export function nearImpact(pred: Prediction, i: number): boolean {
+  const a = i < 6 ? 0 : i - 6;
+  const b = i + 6 < pred.n ? i + 6 : pred.n - 1;
+  for (let j = a; j <= b; j++) if ((pred.flags[j]! & 5) !== 0) return true;
+  return false;
 }

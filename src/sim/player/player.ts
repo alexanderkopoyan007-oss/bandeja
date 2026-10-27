@@ -2,10 +2,14 @@
 // and the swing state machine (charge -> committed -> recover).
 import { V3 } from '../core/v3.ts';
 import { clamp, sqrt, atan2 } from '../core/smath.ts';
+import { DT } from '../core/constants.ts';
 import tuningData from '../../../data/tuning.json' with { type: 'json' };
 
 export type PlayerTuning = typeof tuningData.player;
 export const DEFAULT_TUNING: PlayerTuning = tuningData.player;
+
+/** How fast a player turns to face the ball (rad/s). */
+const FACE_RATE = 7;
 
 export const SW_IDLE = 0;
 export const SW_CHARGE = 1;
@@ -37,6 +41,12 @@ export class Player {
   readonly lastContact = new V3();
   lastContactTime = -10;
 
+  /** Shot target on the opponent's half (world x, z), steered while charging and used at release. */
+  aimX = 0;
+  aimZ = 0;
+  /** The aim target is live this tick (charging for an incoming ball, or setting up a serve). */
+  aiming = false;
+
   splitUntil = 0;
   /** Right-handed = 1, left-handed = -1. */
   handed = 1;
@@ -64,11 +74,25 @@ export class Player {
    * Move towards desired world-space velocity direction (dx, dz) in -1..1 (magnitude = intent).
    * Acceleration is split into along-track (accel/brake) and cross-track (turning) limits.
    */
-  move(dx: number, dz: number, dt: number, now: number): void {
+  /** Movement wish for this tick (world axes, length <= 1) and the tick's start time; set before move(). */
+  driveX = 0;
+  driveZ = 0;
+  clock = 0;
+
+  /**
+   * Advance one tick towards driveX/driveZ. Inputs come through fields, not arguments: doubles passed to a
+   * function V8 doesn't inline are boxed, and this runs for every player every tick.
+   */
+  move(): void {
+    const dt = DT;
+    const now = this.clock;
+    let dx = this.driveX;
+    let dz = this.driveZ;
     const t = this.tune;
     let len = sqrt(dx * dx + dz * dz);
     if (len > 1) { dx /= len; dz /= len; len = 1; }
-    const top = t.maxSpeed * (this.swing === SW_CHARGE || this.swing === SW_COMMITTED ? t.chargingSpeedScale : 1);
+    // Holding a shot key is preparation, done on the run; only the swing itself slows the feet.
+    const top = t.maxSpeed * (this.swing === SW_COMMITTED ? t.chargingSpeedScale : 1);
     const wantX = dx * top;
     const wantZ = dz * top;
     let ax = (wantX - this.vel.x) / dt;
@@ -105,12 +129,13 @@ export class Player {
   }
 
   /** Turn the body to face a point (render reads `facing`). */
-  faceTowards(x: number, z: number, rate: number, dt: number): void {
-    const want = atan2(-(x - this.pos.x), -(z - this.pos.z));
+  /** Turn towards a point (the ball) at the turning rate, one tick. */
+  faceTowards(at: V3): void {
+    const want = atan2(-(at.x - this.pos.x), -(at.z - this.pos.z));
     let d = want - this.facing;
     while (d > Math.PI) d -= 2 * Math.PI;
     while (d < -Math.PI) d += 2 * Math.PI;
-    this.facing += clamp(d, -rate * dt, rate * dt);
+    this.facing += clamp(d, -FACE_RATE * DT, FACE_RATE * DT);
   }
 
   /** Split-step: a small hop timed with the opponent's strike gives a quicker first step. */

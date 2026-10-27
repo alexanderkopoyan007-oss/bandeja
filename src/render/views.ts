@@ -1,10 +1,9 @@
 // Ball, players, assists and the broadcast camera. Everything here only reads the sim.
 import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../sim/match.ts';
-import { PH_RALLY } from '../sim/match.ts';
+import { PH_RALLY, PH_TOSS } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
 import { PF_FLOOR } from '../sim/ball/predict.ts';
-import { makeWindows } from '../sim/contact/windows.ts';
 
 const BALL_COLOR = 0xdff23b;
 const TEAM_COLORS = [0xff7a45, 0x35c9a8];
@@ -227,61 +226,180 @@ export class BroadcastCamera {
   }
 }
 
+/** A flat ring whose radius and line width are set every frame (constant on-screen thickness). */
+class RingStrip {
+  readonly mesh: THREE.Mesh;
+  readonly mat: THREE.MeshBasicMaterial;
+  private readonly pos: Float32Array;
+  private readonly attr: THREE.BufferAttribute;
+  private readonly cs: Float32Array;
+  private readonly sn: Float32Array;
+  private readonly seg: number;
+
+  constructor(seg: number, color: number) {
+    this.seg = seg;
+    this.cs = new Float32Array(seg + 1);
+    this.sn = new Float32Array(seg + 1);
+    for (let i = 0; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      this.cs[i] = Math.cos(a);
+      this.sn[i] = Math.sin(a);
+    }
+    this.pos = new Float32Array((seg + 1) * 2 * 3);
+    const idx: number[] = [];
+    for (let i = 0; i < seg; i++) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    const g = new THREE.BufferGeometry();
+    this.attr = new THREE.BufferAttribute(this.pos, 3);
+    g.setAttribute('position', this.attr);
+    g.setIndex(idx);
+    this.mat = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+    });
+    this.mesh = new THREE.Mesh(g, this.mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 10;
+    this.mesh.visible = false;
+  }
+
+  set(r: number, w: number): void {
+    const p = this.pos;
+    const ri = Math.max(0, r - w);
+    for (let i = 0, k = 0; i <= this.seg; i++) {
+      p[k++] = this.cs[i]! * ri; p[k++] = this.sn[i]! * ri; p[k++] = 0;
+      p[k++] = this.cs[i]! * r; p[k++] = this.sn[i]! * r; p[k++] = 0;
+    }
+    this.attr.needsUpdate = true;
+  }
+}
+
+// Sizes in radians of view angle, so the cue looks the same near and far (~1400 px per radian at 1080p).
+const TARGET_R = 0.0115;
+const APPROACH_RATE = 0.11; // per second before the ideal moment
+const APPROACH_SHOW = 0.6; // seconds before the ideal moment the approaching ring appears
+const LINE_W = 0.0022;
+
+const C_WHITE = 0xffffff;
+const C_GOOD = 0x8fe36b;
+const C_PERFECT = 0x5ff2ff;
+const C_OFF = 0xffc04a;
+const C_BAD = 0xff5a4a;
+const C_AIM = 0xffd84a;
+const GRADE_HEX = [C_BAD, C_OFF, C_GOOD, C_PERFECT, C_OFF, C_BAD];
+
 /**
- * Timing and positioning cues (hidden in Pro mode):
- * - a ring around the ball that closes in as the ideal contact moment approaches and lights up inside the
- *   Good / Perfect windows, so the moment to release is right where you are already looking;
- * - a spot on the floor showing where to stand for the incoming ball.
+ * Cues for the human player.
+ * - Timing (hidden in Pro mode): a fixed target ring on the ball and an approaching ring that meets it at the
+ *   ideal moment. Green inside Good, cyan inside Perfect; dim orange while the planned contact is still out
+ *   of reach. On release the target ring flashes the grade.
+ * - Positioning (hidden in Pro mode): a spot where to stand (orange when you will struggle to get there).
+ * - Aim (always): the shot's target on the far court while it can be steered.
  */
 export class AssistView {
-  readonly ring: THREE.Mesh;
+  private readonly approach = new RingStrip(64, C_WHITE);
+  private readonly target = new RingStrip(48, C_WHITE);
   readonly spot: THREE.Mesh;
-  private readonly ringMat: THREE.MeshBasicMaterial;
-  private readonly wins = makeWindows();
+  private readonly spotMat: THREE.MeshBasicMaterial;
+  readonly aim: THREE.Group;
+  private readonly aimMat: THREE.MeshBasicMaterial;
   enabled = true;
 
   constructor(scene: THREE.Scene) {
-    this.ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
-    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48), this.ringMat);
-    this.ring.renderOrder = 10;
-    this.ring.visible = false;
-    scene.add(this.ring);
-    this.spot = new THREE.Mesh(
-      new THREE.RingGeometry(0.16, 0.22, 32),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false }),
-    );
+    scene.add(this.approach.mesh, this.target.mesh);
+    this.spotMat = new THREE.MeshBasicMaterial({ color: C_WHITE, transparent: true, opacity: 0.45, depthWrite: false });
+    this.spot = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.22, 32), this.spotMat);
     this.spot.rotation.x = -Math.PI / 2;
     this.spot.renderOrder = 1;
     this.spot.visible = false;
     scene.add(this.spot);
+
+    this.aimMat = new THREE.MeshBasicMaterial({ color: C_AIM, transparent: true, opacity: 0.9, depthWrite: false });
+    this.aim = new THREE.Group();
+    // Big enough to read at the far baseline (20 m away and seen at a grazing angle).
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.64, 48), this.aimMat);
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.12, 24), this.aimMat);
+    const fill = new THREE.Mesh(
+      new THREE.CircleGeometry(0.5, 48),
+      new THREE.MeshBasicMaterial({ color: C_AIM, transparent: true, opacity: 0.18, depthWrite: false }),
+    );
+    for (const m of [fill, ring, dot]) {
+      m.rotation.x = -Math.PI / 2;
+      m.renderOrder = 2;
+      this.aim.add(m);
+    }
+    this.aim.position.y = 0.007;
+    this.aim.visible = false;
+    scene.add(this.aim);
   }
 
-  update(sim: MatchSim, human: number, ball: THREE.Vector3, camera: THREE.Camera, renderTime: number, timingScale: number): void {
-    this.ring.visible = false;
+  update(
+    sim: MatchSim, human: number, ball: THREE.Vector3, camera: THREE.Camera, renderTime: number, timingScale: number,
+    now: number,
+  ): void {
+    this.approach.mesh.visible = false;
+    this.target.mesh.visible = false;
     this.spot.visible = false;
-    if (!this.enabled || human < 0) return;
+    this.aim.visible = false;
+    if (human < 0) return;
+    const p = sim.players[human]!;
+
+    // Aim target: while it can be steered.
+    if (p.aiming) {
+      this.aim.position.x = p.aimX;
+      this.aim.position.z = p.aimZ;
+      const pulse = 1 + 0.06 * Math.sin(now * 9);
+      this.aim.scale.set(pulse, pulse, pulse);
+      this.aim.visible = true;
+    }
+    if (!this.enabled) return;
+
     const st = sim.stand[human]!;
     if (st.valid && sim.phase === PH_RALLY) {
       this.spot.position.set(st.x, 0.006, st.z);
+      this.spotMat.color.setHex(st.inTime ? C_WHITE : C_OFF);
       this.spot.visible = true;
     }
-    const n = sim.windowsFor(human, this.wins);
-    let ideal = -1;
-    for (let i = 0; i < n; i++) {
-      const w = this.wins[i]!;
-      if (w.ideal >= renderTime - 0.15 && (ideal < 0 || w.ideal < ideal)) ideal = w.ideal;
+
+    const d = camera.position.distanceTo(ball);
+    const lw = d * LINE_W;
+    const tr = d * TARGET_R;
+    // Just released: flash the grade on the target ring.
+    const sinceRelease = renderTime - p.release;
+    if (p.grade >= 0 && sinceRelease >= 0 && sinceRelease < 0.35) {
+      this.target.set(tr * (1 + sinceRelease * 1.6), lw * 1.6);
+      this.target.mat.color.setHex(GRADE_HEX[p.grade] ?? C_WHITE);
+      this.target.mat.opacity = 1 - sinceRelease / 0.35;
+      this.place(this.target.mesh, ball, camera);
+      return;
     }
-    if (ideal < 0) return;
+    const charging = p.swing === SW_CHARGE;
+    const ideal = sim.focusIdeal(human);
+    if (ideal < 0 || (!charging && sim.phase !== PH_TOSS && sim.phase !== PH_RALLY)) return;
     const dt = ideal - renderTime;
-    if (dt > 0.7) return;
+    if (dt > APPROACH_SHOW || dt < -0.15) return;
     const k = timingScale;
-    const r = 0.07 + Math.max(0, dt) * 0.85;
-    this.ring.scale.set(r, r, r);
-    this.ring.position.copy(ball);
-    this.ring.quaternion.copy(camera.quaternion);
     const a = Math.abs(dt);
-    this.ringMat.color.setHex(a <= 0.025 * k ? 0x5ff2ff : a <= 0.06 * k ? 0x8fe36b : 0xffffff);
-    this.ringMat.opacity = dt < 0 ? Math.max(0, 0.9 + dt * 6) : 0.9;
-    this.ring.visible = true;
+    const reach = sim.focusInReach;
+    const col = !reach ? C_OFF : a <= 0.025 * k ? C_PERFECT : a <= 0.06 * k ? C_GOOD : C_WHITE;
+    const fade = dt < 0 ? Math.max(0, 1 + dt / 0.15) : 1;
+
+    this.target.set(tr, lw);
+    this.target.mat.color.setHex(col);
+    this.target.mat.opacity = (reach ? 0.75 : 0.35) * fade;
+    this.place(this.target.mesh, ball, camera);
+    if (dt > 0) {
+      this.approach.set(tr + d * APPROACH_RATE * dt, lw);
+      this.approach.mat.color.setHex(col);
+      this.approach.mat.opacity = (reach ? 0.95 : 0.4) * Math.min(1, (APPROACH_SHOW - dt) / 0.12);
+      this.place(this.approach.mesh, ball, camera);
+    }
+  }
+
+  private place(m: THREE.Mesh, ball: THREE.Vector3, camera: THREE.Camera): void {
+    m.position.copy(ball);
+    m.quaternion.copy(camera.quaternion);
+    m.visible = true;
   }
 }

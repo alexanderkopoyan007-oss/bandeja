@@ -6,7 +6,6 @@ import {
 } from '../sim/match.ts';
 import { REASON_TEXT } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_PERFECT, G_GOOD, G_EARLY, G_LATE } from '../sim/contact/timing.ts';
-import { makeWindows } from '../sim/contact/windows.ts';
 import { SW_CHARGE } from '../sim/player/player.ts';
 import { SHOT_KEYS } from '../sim/contact/shots.ts';
 
@@ -32,6 +31,10 @@ const CSS = `
 #hud .help { position: absolute; right: 16px; bottom: 16px; background: rgba(10,12,16,.7); border-radius: 6px; padding: 10px 12px;
   font: 12px/1.6 ui-sans-serif, system-ui; color: #cfd6dc; }
 #hud .help b { color: #fff; font-weight: 600; }
+#hud .ms { position: absolute; left: 50%; bottom: 102px; transform: translateX(-50%); font: 600 12px/1 ui-sans-serif, system-ui;
+  color: #e6ebef; opacity: 0; transition: opacity .25s; letter-spacing: .04em; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+#hud .hint { position: absolute; left: 50%; bottom: 176px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
+  color: #bfe9ff; opacity: 0; transition: opacity .2s; letter-spacing: .06em; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0,0,0,.7); }
 #hud .shot { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
   color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
 `;
@@ -47,11 +50,12 @@ export class Hud {
   private readonly mark: HTMLElement;
   private readonly shot: HTMLElement;
   private readonly help: HTMLElement;
+  private readonly ms: HTMLElement;
+  private readonly hint: HTMLElement;
   private readonly cache = new Map<HTMLElement, string>();
   private seen = 0;
   private gradeUntil = 0;
   private callUntil = 0;
-  private readonly wins = makeWindows();
   pro = false;
   private readonly zones: HTMLElement[] = [];
 
@@ -85,10 +89,13 @@ export class Hud {
     this.meter.append(good, perf);
     this.zones.push(good, perf);
     this.mark = this.meter.appendChild(el('div', 'mark'));
+    this.ms = root.appendChild(el('div', 'ms'));
+    this.hint = root.appendChild(el('div', 'hint'));
     this.help = root.appendChild(el('div', 'help'));
     this.help.innerHTML =
       '<b>WASD</b> move &nbsp; <b>J</b> drive &nbsp; <b>K</b> topspin &nbsp; <b>L</b> slice &nbsp; <b>I</b> lob &nbsp; <b>U</b> drop<br>' +
-      'Hold a shot key, <b>release</b> as the ball arrives. Direction keys at release aim.<br>' +
+      'Hold a shot key as the ball comes: <b>WASD then aims</b> the yellow target and you run to the ball by yourself.<br>' +
+      '<b>Release</b> when the closing ring meets the ring on the ball. Serve: A/D aims, press to drop, release to hit.<br>' +
       '<b>Space</b> power &nbsp; <b>Shift</b> precision &nbsp; <b>M</b> mouse aim &nbsp; <b>P</b> pro mode &nbsp; <b>F3</b> debug &nbsp; <b>H</b> hide';
   }
 
@@ -136,26 +143,29 @@ export class Hud {
       if (e.seq < 0) continue;
       this.onEvent(sim, e, humanTeam, now);
     }
-    if (now > this.gradeUntil) { this.grade.style.opacity = '0'; this.shot.style.opacity = '0'; }
+    if (now > this.gradeUntil) { this.grade.style.opacity = '0'; this.shot.style.opacity = '0'; this.ms.style.opacity = '0'; }
     if (now > this.callUntil) this.call.style.opacity = '0';
 
     // Timing meter: where "now" sits relative to the best upcoming contact moment.
     let show = false;
     if (humanTeam >= 0 && !this.pro && (sim.phase === PH_RALLY || sim.phase === PH_TOSS)) {
       const p = sim.players[humanTeam]!;
-      const n = sim.windowsFor(humanTeam, this.wins);
-      if (n > 0 && (p.swing === SW_CHARGE || sim.phase === PH_TOSS)) {
-        let best = this.wins[0]!;
-        for (let i = 1; i < n; i++) if (Math.abs(this.wins[i]!.ideal - sim.time) < Math.abs(best.ideal - sim.time)) best = this.wins[i]!;
-        const d = sim.time - best.ideal; // negative = before ideal
+      const ideal = sim.focusIdeal(humanTeam);
+      if (ideal >= 0 && (p.swing === SW_CHARGE || sim.phase === PH_TOSS)) {
+        const d = sim.time - ideal; // negative = before ideal
         const frac = Math.min(1, Math.max(0, 0.5 + d / 0.5));
         this.mark.style.left = `${(frac * 100).toFixed(1)}%`;
         show = true;
       }
     }
     this.meter.style.opacity = show ? '1' : '0';
+    // Teach the glass: when the plan is to let the ball come off the wall, say so.
+    const st = humanTeam >= 0 ? sim.stand[humanTeam]! : null;
+    const glass = !!st && !this.pro && st.valid && st.afterWall && sim.phase === PH_RALLY;
+    this.set(this.hint, glass ? 'Off the glass' : this.hint.textContent ?? '');
+    this.hint.style.opacity = glass ? '1' : '0';
     if (humanTeam >= 0 && sim.phase === PH_SETUP && sim.score.serverTeam() === humanTeam && now > this.callUntil) {
-      this.showCall('Your serve: press a shot key to drop the ball, release to hit', now, 0.05);
+      this.showCall('Your serve: A/D aims, press a shot key to drop the ball, release to hit', now, 0.05);
     }
   }
 
@@ -170,9 +180,14 @@ export class Hud {
       case E_SWING:
       case E_WHIFF:
         if (e.team === human && !this.pro && e.b >= 0) {
-          this.set(this.grade, e.kind === E_WHIFF && e.b !== G_EARLY && e.b !== G_LATE ? `${GRADE_TEXT[e.b]} · miss` : GRADE_TEXT[e.b]!);
-          this.grade.style.color = GRADE_COLORS[e.b]!;
+          const outOfReach = e.kind === E_WHIFF && e.x > 0;
+          this.set(this.grade, outOfReach ? 'Out of reach'
+            : e.kind === E_WHIFF && e.b !== G_EARLY && e.b !== G_LATE ? `${GRADE_TEXT[e.b]} · miss` : GRADE_TEXT[e.b]!);
+          this.grade.style.color = outOfReach ? '#ffb13b' : GRADE_COLORS[e.b]!;
           this.grade.style.opacity = '1';
+          const ms = Math.round(Math.abs(e.c) * 1000);
+          this.set(this.ms, outOfReach ? `${e.x.toFixed(1)} m away: get to the spot first` : ms === 0 ? 'spot on' : `${ms} ms ${e.c < 0 ? 'early' : 'late'}`);
+          this.ms.style.opacity = '1';
           this.gradeUntil = now + 0.9;
         }
         break;
