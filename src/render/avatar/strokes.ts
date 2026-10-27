@@ -113,6 +113,60 @@ export const VOLLEY_FH = volley(FOREHAND, 'volley-fh');
 export const VOLLEY_BH = volley(BACKHAND, 'volley-bh');
 
 /**
+ * Groundstroke variants by shot. `side` is -1 for the forehand (racket side -x), +1 for the backhand.
+ * - Slice: racket back high, swung high to low with the face open, finishing low and forward.
+ * - Lob: a big low-to-high lift with the face open, finishing high in front.
+ * - Drop (dejada): a short, soft swing with the face open.
+ */
+function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop'): Family {
+  const open = (k: Key, up: number): Key => {
+    // Open the face (strings looking up): roll the racket about its handle. Forehand and backhand roll
+    // opposite ways, since the racket points opposite ways.
+    const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(k.q);
+    return { ...k, q: new THREE.Quaternion().setFromAxisAngle(axis, -up * side).multiply(k.q) };
+  };
+  if (kind === 'slice') {
+    return {
+      ...f, name: `${f.name}-slice`,
+      back: { ...f.back, p: f.back.p.clone().add(v(0, 0.28, 0)) },
+      contact: open(f.contact, 0.45),
+      low: f.low && open({ ...f.contact, q: f.low }, 0.45).q,
+      finish: key(v(side * -0.05, 1.0, 0.68), v(side * 0.55, -0.25, 0.8), v(0, 0.55, 0.85), v(side * 0.3, 1.0, 0.4), f.contact.yaw - side * 0.35, f.finish.off),
+      dip: -0.12,
+      loop: 0.05,
+    };
+  }
+  if (kind === 'lob') {
+    return {
+      ...f, name: `${f.name}-lob`,
+      back: { ...f.back, p: f.back.p.clone().add(v(0, -0.18, 0)) },
+      contact: open(f.contact, 0.6),
+      low: f.low && open({ ...f.contact, q: f.low }, 0.6).q,
+      finish: key(v(side * 0.15, 1.9, 0.5), v(side * -0.1, 0.9, 0.4), v(0, 0.2, 1), v(side * 0.5, 1.5, 0.3), f.contact.yaw - side * 0.2, f.finish.off),
+      dip: 0.38,
+      loop: 0.1,
+    };
+  }
+  const shrink = (k: Key, u: number): Key => ({ ...k, p: k.p.clone().lerp(f.contact.p, u), pole: k.pole.clone().lerp(f.contact.pole, u) });
+  return {
+    ...f, name: `${f.name}-drop`,
+    back: shrink(f.back, 0.45),
+    contact: open(f.contact, 0.55),
+    low: f.low && open({ ...f.contact, q: f.low }, 0.55).q,
+    finish: shrink({ ...f.finish, q: open(f.contact, 0.7).q }, 0.65),
+    dip: 0.05,
+    loop: 0,
+  };
+}
+
+export const FH_SLICE = variant(FOREHAND, -1, 'slice');
+export const FH_LOB = variant(FOREHAND, -1, 'lob');
+export const FH_DROP = variant(FOREHAND, -1, 'drop');
+export const BH_SLICE = variant(BACKHAND, 1, 'slice');
+export const BH_LOB = variant(BACKHAND, 1, 'lob');
+export const BH_DROP = variant(BACKHAND, 1, 'drop');
+
+/**
  * Ready position between shots: the racket up in front of the chest, head up, edge towards the net, the free
  * hand on the throat. Held during rallies (let go when sprinting).
  */

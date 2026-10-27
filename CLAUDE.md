@@ -90,7 +90,8 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
     - A stroke squares the body to the net and turns the shoulders (35% whole body, 65% spine) instead of the sim's face-the-ball yaw. The racket hand grips (fingers curled about the palm axis); the racket is a child of the hand bone.
     - Allocation: no `for...of`, no destructuring, no three helpers that take doubles in the per-frame paths (V8 boxes them); `alloc avatars` measures 2 minor GCs per 100k ticks with four bodies.
     - After a point the player whose shot ended it reacts on the upper body (fist pump if their pair won, hands to the head if not; `MatchSim.pointWinner`). Split step: a 6 cm hop as the opponent strikes, landing on bent knees with the feet planted.
-    - Still to do in M2: lunge clip for the widest balls, wall play (turning to the glass), foot planting while turning in place, left-handers (mirror), lobs/drops with their own finish.
+    - Groundstroke variants by the shot key (`p.shot`): slice (high to low, face open, low forward finish), lob (big lift, face open, high finish), drop (short and soft). Opening the face rolls the racket about its handle.
+    - Still to do in M2: lunge clip for the widest balls, wall play (turning to the glass), foot planting while turning in place, left-handers (mirror).
   - Clips downloaded 2026-10-27 (in `assets-src/mixamo/`, what each one is in `docs/mixamo.md`). Mixamo has no tennis or padel strokes, so every stroke is authored in code on the Y Bot rig (owner's OK).
 - [ ] **M3** Doubles, partner/opponent AI, full rules, padel-specific shots
   - Started 2026-10-27, while M2 waited on the Mixamo downloads. Doubles is the default game; `?mode=singles` keeps one against one.

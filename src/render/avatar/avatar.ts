@@ -5,12 +5,15 @@ import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../../sim/match.ts';
 import { PH_DEAD, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
-import { MOD_POWER, SHOT_SMASH } from '../../sim/contact/shots.ts';
+import { MOD_POWER, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
-import { BACKHAND, FOREHAND, OVERHEAD, READY, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH, type Family, type Key } from './strokes.ts';
+import {
+  BACKHAND, BH_DROP, BH_LOB, BH_SLICE, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
+  type Family, type Key,
+} from './strokes.ts';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const AXIS_Y = new THREE.Vector3(0, 1, 0);
@@ -320,6 +323,10 @@ export class Avatar {
     if (sim.phase <= PH_TOSS && sim.score.serverPlayer() === idx) return SERVE;
     if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || p.mod === MOD_POWER ? SMASH : OVERHEAD;
     if (volley) return hand > 0 ? VOLLEY_FH : VOLLEY_BH;
+    const sh = p.shot;
+    if (sh === SHOT_SLICE) return hand > 0 ? FH_SLICE : BH_SLICE;
+    if (sh === SHOT_LOB) return hand > 0 ? FH_LOB : BH_LOB;
+    if (sh === SHOT_DROP) return hand > 0 ? FH_DROP : BH_DROP;
     return hand > 0 ? FOREHAND : BACKHAND;
   }
 
@@ -500,7 +507,7 @@ export class Avatar {
     }
     // Low balls: bend the knees (contact or plan height), scaled by the stroke's weight.
     const cy = this.hasCon ? this.conW.y : 1;
-    this.crouch = f.crouch * Math.min(0.22, Math.max(0, (0.95 - cy) * 0.45)) * this.w;
+    this.crouch = f.crouch * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) * this.w;
   }
 
   /** Pull the blended key back towards the snapshot: u = 0 is the snapshot, 1 the key as it is. */
