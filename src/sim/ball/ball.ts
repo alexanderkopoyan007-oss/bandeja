@@ -167,6 +167,8 @@ const sv = new V3();
 const sw = new V3();
 const rv = new V3();
 const rw = new V3();
+/** A junction's velocity after its first surface alone: the flight to the second. */
+const va = new V3();
 // The surface normal before bounce() tilts it.
 const n0 = new V3();
 
@@ -226,6 +228,11 @@ export class Ball {
   private exitAt = 0;
   private intDt = 0;
   private resolveAt = 0;
+  /**
+   * A junction flies the ball on to its second surface (see junction()); when that flight runs past the end of the
+   * step, the ball is this far ahead of the clock and the next step starts this far in (s, at most a few ms).
+   */
+  ahead = 0;
 
   constructor() {
     for (let i = 0; i < MAX_EVENTS; i++) {
@@ -244,6 +251,7 @@ export class Ball {
     this.sideZ = b.sideZ;
     this.netW = b.netW;
     this.netZeta = b.netZeta;
+    this.ahead = b.ahead;
     this.copyWear(b);
     return this;
   }
@@ -326,6 +334,14 @@ export class Ball {
     let remaining = this.flyDt;
     let elapsed = this.flyAt;
     for (let iter = 0; iter < MAX_CONTACTS_PER_STEP && remaining > 1e-9; iter++) {
+      // A junction's flight to its second surface has already covered this much of the step.
+      if (this.ahead > 0) {
+        const u = this.ahead < remaining ? this.ahead : remaining;
+        this.ahead -= u;
+        remaining -= u;
+        elapsed += u;
+        if (remaining <= 1e-9) break;
+      }
       if (this.inNet && this.cloth === null) {
         this.span = remaining;
         this.at = elapsed;
@@ -834,8 +850,17 @@ export class Ball {
     }
     if ((this.hitKind === HIT_FLOOR || this.jKind === HIT_FLOOR) && this.vel.y < 0.25) {
       this.rolling = true;
+      this.ahead = 0;
       this.vel.y = 0;
       this.pos.y = world.spec.radius;
+      // Rolling without slipping from here: the friction impulse that stops the slip trades speed for spin
+      // (v' = (v + alpha r w x n) / (1 + alpha)); setting w = v/r alone would add up to alpha of the energy.
+      const r = world.spec.radius;
+      const al = world.spec.inertiaFactor;
+      const w = this.spin;
+      this.vel.x = (this.vel.x - al * r * w.z) / (1 + al);
+      this.vel.z = (this.vel.z + al * r * w.x) / (1 + al);
+      w.set(this.vel.z / r, 0, -this.vel.x / r);
       // A ball that low bounces again at once (under 3 mm, within 50 ms): that is its next bounce for the rules.
       this.hitKind = HIT_FLOOR;
       this.hitSurface = SURF_FLOOR;
@@ -915,12 +940,16 @@ export class Ball {
     if (w <= this.jW) return;
     if (kind === HIT_WALL) {
       // What is there where the ball meets that wall (an opening lets it through).
+      // At most a contact time on, and never below the floor (a ball coming down meets the wall at its foot).
       const c = world.court;
       const q = this.pos;
       const v = this.vel;
-      c.qy = q.y + v.y * t2;
-      if (wall === WALL_BACK_NEAR || wall === WALL_BACK_FAR) { c.qu = q.x + v.x * t2; c.backZoneAt(zone); }
-      else { c.qu = q.z + v.z * t2; c.sideZoneAt(zone); }
+      const t = t2 < J.contactTime ? t2 : J.contactTime;
+      const y = q.y + v.y * t;
+      const r = world.spec.radius;
+      c.qy = y > r ? y : r;
+      if (wall === WALL_BACK_NEAR || wall === WALL_BACK_FAR) { c.qu = q.x + v.x * t; c.backZoneAt(zone); }
+      else { c.qu = q.z + v.z * t; c.sideZoneAt(zone); }
       if (zone.kind === SURF_OPEN) return;
       this.jSurface = zone.kind;
       this.jSeam = zone.seamDist;
@@ -937,6 +966,7 @@ export class Ball {
   /** Both bounces of a junction, the first surface's material given (n: its normal). */
   private junction(world: BallWorld, rng: Rng | null, sA: SurfaceSpec): void {
     nA.copy(n);
+    const J = world.surfaces.junction;
     // The second surface's material, through the same fields the first used.
     const kA = this.hitKind, wA = this.hitWall, sfA = this.hitSurface, seamA = this.hitSeam, joinA = this.hitJoin;
     let sB: SurfaceSpec = world.floor;
@@ -956,10 +986,15 @@ export class Ball {
     const vnB = this.vel.dot(nB);
     sv.copy(this.vel);
     sw.copy(this.spin);
-    this.eJ = 1 - world.surfaces.junction.loss * w;
+    // The nick's extra loss goes with how much of the squeeze the second surface takes: a ball drifting into the
+    // glass as it lands barely feels it, one driven into the corner is squeezed by both.
+    const aA = -vnA, aB = -vnB;
+    const share = aA > aB ? (aA > 1e-9 ? aB / aA : 0) : aB > 1e-9 ? aA / aB : 0;
+    this.eJ = 1 - J.loss * w * (share > 0 ? share : 0);
     // First surface, then the second.
     n.copy(nA);
     this.bounce(world, sA, rng, false);
+    va.copy(this.vel);
     n.copy(nB);
     this.bounce(world, sB, rng, false);
     rv.copy(this.vel);
@@ -978,25 +1013,54 @@ export class Ball {
     const a = 1 - 0.5 * w;
     this.vel.lerpOf(this.vel, rv, a);
     this.spin.lerpOf(this.spin, rw, a);
-    // Leaving both.
+    // Leaving both. The second surface's friction can turn the ball back into the first: it bounces off it again.
     let d = this.vel.dot(nA);
+    if (d < 0) {
+      n.copy(nA);
+      this.bounce(world, sA, rng, false);
+      d = this.vel.dot(nA);
+    }
     if (d < 0.05) this.vel.addScaled(nA, 0.05 - d);
     d = this.vel.dot(nB);
-    if (d < 0.05) this.vel.addScaled(nB, 0.05 - d);
+    if (d < 0) this.vel.addScaled(nB, -d);
     n.copy(nA);
-    this.pos.addScaled(nA, 1e-6);
-    // Both contacts, at this instant. A wall-then-floor nick counts as landing first (FIP: good in the corner).
+    // The first contact, here.
+    const floorFirst = this.jKind === HIT_FLOOR && this.jGap < J.nickGap;
     this.recT = this.resolveAt;
     this.recZ = this.pos.z;
-    const floorFirst = this.jKind === HIT_FLOOR && this.jGap < world.surfaces.junction.nickGap;
     this.vnB = vnB;
-    if (floorFirst) this.recordJ();
     this.hitKind = kA;
     this.hitWall = wA;
     this.hitSurface = sfA;
     this.recVn = vnA;
-    this.record();
-    if (!floorFirst) this.recordJ();
+    if (!floorFirst) this.record();
+    // Then the flight on to the second, as the first surface alone sends it: B is met gap / approach later
+    // (capped: a ball barely closing on B is barely changed by it). Without this the second bounce would land
+    // early by that time, and the path would jump by up to v * contact time where the junction gives way to two
+    // separate bounces. Under gravity (energy stays put); drag over a few ms is left out.
+    const appr = -va.dot(nB);
+    let tau = appr > 1e-6 ? this.jGap / appr : 0;
+    const cap = 3 * J.contactTime;
+    if (tau > cap) tau = cap;
+    this.pos.addScaled(va, tau);
+    this.pos.y -= 0.5 * GRAVITY * tau * tau;
+    this.vel.y -= GRAVITY * tau;
+    this.pos.addScaled(nA, 1e-6);
+    this.pos.addScaled(nB, 1e-6);
+    const r = world.spec.radius;
+    if (this.pos.y < r) this.pos.y = r;
+    this.ahead = tau;
+    // A wall-then-floor nick counts as landing first (FIP: good in the corner), both at the first contact.
+    if (!floorFirst) this.recT = this.resolveAt + tau;
+    this.recZ = this.pos.z;
+    this.recordJ();
+    if (floorFirst) {
+      this.hitKind = kA;
+      this.hitWall = wA;
+      this.hitSurface = sfA;
+      this.recVn = vnA;
+      this.record();
+    }
     this.hitKind = kA;
     this.hitWall = wA;
     this.hitSurface = sfA;
@@ -1149,6 +1213,12 @@ export class Ball {
     this.used = t;
     this.pos.set(this.rx, this.ry, s * (r - this.rd));
     this.vel.set(this.rvx, this.rvy, -s * this.rdv);
+    // The netting ends at the posts: a caught ball sliding along it stops against one.
+    const xm = world.court.halfW - world.court.def.net.postSize * 0.5 - r;
+    if (this.pos.x > xm || this.pos.x < -xm) {
+      this.pos.x = this.pos.x > 0 ? xm : -xm;
+      if (this.pos.x * this.vel.x > 0) this.vel.x = -0.3 * this.vel.x;
+    }
     FIO[0] = -world.surfaces.netGive.grab * t;
     expF();
     this.spin.scale(FIO[0]!);
@@ -1273,7 +1343,7 @@ export class Ball {
     if (this.outside) return;
     const c = world.court;
     const p = this.pos;
-    if (abs(p.x) > c.halfW + 0.05 || abs(p.z) > c.halfL + 0.05 || p.y > 12) {
+    if (abs(p.x) > c.halfW || abs(p.z) > c.halfL || p.y > 12) {
       this.outside = true;
       if (this.eventCount < MAX_EVENTS) {
         const e = this.events[this.eventCount++]!;

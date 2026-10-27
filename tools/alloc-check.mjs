@@ -32,7 +32,7 @@ if (process.argv[2] === '--child') {
   const make = (seed) => doubles
     ? new MatchSim({ seed, doubles, human: [false, false, false, false] })
     : new MatchSim({ seed, human: [false, false] });
-  let m = make(1);
+  let m = make(Number(process.env.ALLOC_SEED ?? 1));
   const inputs = doubles ? [null, null, null, null] : [null, null];
   // Warm-up: let V8 optimise every path (serves, rallies, faults, games, sets).
   for (let i = 0; i < 60000; i++) {

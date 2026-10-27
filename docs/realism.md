@@ -136,7 +136,10 @@ measured against published data, and lands with tests that check the model again
   exact nick (tuning: squash's nick is dead, and a padel ball in the rincón comes out low). Before, contacts were
   instants and a 4 mm shift flipped a rincón ball between 4.1 m high landing past the net and 1.1 m high landing
   8 m out; now the result changes smoothly with where it lands (1.6 m high in the nick). A nick within 5 mm of the
-  floor counts as landing first for the rules (FIP: a ball in the corner where wall meets floor is good).
+  floor counts as landing first for the rules (FIP: a ball in the corner where wall meets floor is good). The
+  extra loss goes with the second surface's share of the squeeze (a ball drifting into the glass as it lands
+  barely feels it), and the ball is flown on to the second surface before its bounce there, so the path is
+  continuous where the junction gives way to two separate bounces.
 - **Edges.** Wall tops, the vertical edge where the enclosure steps down, and door posts and lintels are lines a
   ball can clip (a cylinder of the ball's radius): a ball passing a centimetre over the back wall is knocked up,
   one 4 cm over it is gone. Frames bounce as frames; a frameless glass top as glass.

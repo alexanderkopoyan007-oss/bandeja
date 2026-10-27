@@ -7,6 +7,7 @@ import { makeWorld } from '../../src/sim/setup.ts';
 import { Rng } from '../../src/sim/core/rng.ts';
 import { Ball, HIT_FLOOR, HIT_WALL, LEFT_COURT } from '../../src/sim/ball/ball.ts';
 import { DT } from '../../src/sim/core/constants.ts';
+import { SURF_MESH } from '../../src/sim/court/court.ts';
 import { MatchSim } from '../../src/sim/match.ts';
 
 const lab = new Map<string, ShotSummary>();
@@ -213,6 +214,90 @@ describe('ball lab: junctions, edges and rolling', () => {
     }
     // In the nick it comes out low (squash's nick is dead; a padel ball in the rincón comes out low).
     expect(rincon(0).apexAfter).toBeLessThan(2);
+  });
+
+  it('...and its path, not just its height, is continuous where the junction gives way to two bounces', () => {
+    // Where the ball is 0.25 s after it lands: the second bounce lands when the ball really reaches the glass.
+    const at = (mm: number): number[] => {
+      const a = 30 * deg;
+      const b = new Ball();
+      b.pos.set(0.5, r + 0.1, 10 - r - 0.1 / Math.tan(a) + mm / 1000);
+      b.vel.set(0, -20 * Math.sin(a), 20 * Math.cos(a));
+      let t0 = -1;
+      for (let k = 0; k < 240; k++) {
+        b.step(turf, DT, null);
+        if (t0 < 0 && b.eventCount > 0) t0 = k;
+        if (t0 >= 0 && k - t0 >= 30) break;
+      }
+      return [b.pos.x, b.pos.y, b.pos.z];
+    };
+    // Before: 11.5 cm between two offsets 0.1 mm apart at the window's far edge (about 70 mm).
+    let prev = at(40);
+    for (let mm = 40.1; mm <= 110; mm += 0.1) {
+      const p = at(mm);
+      expect(Math.hypot(p[0]! - prev[0]!, p[1]! - prev[1]!, p[2]! - prev[2]!)).toBeLessThan(0.04);
+      prev = p;
+    }
+  });
+
+  it('a ball drifting into the glass as it lands barely feels it (the nick takes energy by the share of the squeeze)', () => {
+    const hard = makeWorld({ floor: 'hard' });
+    const apex = (vz: number): number => {
+      const b = new Ball();
+      const tFall = Math.sqrt((2 * 1.5) / 9.81);
+      b.pos.set(0.5, r + 1.5, 10 - r - 0.002 - vz * tFall);
+      b.vel.set(0, 0, vz);
+      let top = 0, after = false;
+      for (let k = 0; k < 240; k++) {
+        b.step(hard, DT, null);
+        if (b.eventCount > 0) after = true;
+        if (after) top = Math.max(top, b.pos.y);
+        if (after && b.vel.y < 0 && top > 0.2) break;
+      }
+      return top;
+    };
+    // Before: 0.926 m with no drift, 0.474 m with 0.1 mm/s.
+    const still = apex(0);
+    expect(Math.abs(apex(1e-4) - still)).toBeLessThan(0.01);
+    expect(Math.abs(apex(0.05) - still)).toBeLessThan(0.03);
+    // Driven in harder, the squeeze takes more.
+    expect(apex(1)).toBeLessThan(apex(0.3));
+  });
+
+  it('the second surface of a junction is what is there at the foot of the wall (mesh, not the glass above it)', () => {
+    // Beside the side mesh (|z| 1.1-6 m on the standard court) a ball coming down meets mesh.
+    const b = new Ball();
+    b.pos.set(4.9622, 0.1, 2.9);
+    b.vel.set(0.3, -6, 3);
+    let wall = -1;
+    for (let k = 0; k < 10 && wall < 0; k++) {
+      b.step(turf, DT, null);
+      for (let e = 0; e < b.eventCount; e++) if (b.events[e]!.kind === HIT_WALL) wall = b.events[e]!.surface;
+    }
+    expect(wall).toBe(SURF_MESH);
+  });
+
+  it('starting to roll trades speed for spin (no energy appears from nowhere)', () => {
+    const b = new Ball();
+    b.pos.set(3.2478, 0.0361, -9.5198);
+    b.vel.set(1.643, -0.041, -14.029);
+    b.spin.set(47.6, 33.2, 85.1);
+    const I = turf.inertia / turf.spec.mass;
+    const E = (): number => 0.5 * b.vel.lengthSq() + 0.5 * I * b.spin.lengthSq() + 9.81 * b.pos.y;
+    const e0 = E();
+    for (let k = 0; k < 3; k++) b.step(turf, DT, null);
+    expect(b.rolling).toBe(true);
+    expect(E()).toBeLessThan(e0);
+  });
+
+  it('a ball caught in the rigid net (predictions) stops at the post, it never slides through it out of the court', () => {
+    const b = new Ball();
+    b.pos.set(4.2815, 0.0446, -0.3);
+    b.vel.set(15.201, 1.159, 6.599);
+    for (let k = 0; k < 240; k++) {
+      b.step(turf, DT, null);
+      expect(Math.abs(b.pos.x)).toBeLessThan(5);
+    }
   });
 
   it('a ball in the nick lands first for the rules (FIP: good in the corner where wall meets floor)', () => {

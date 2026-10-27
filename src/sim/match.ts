@@ -323,6 +323,7 @@ export class MatchSim {
     this.ball.spin.set(0, 0, 0);
     this.ball.outside = false;
     this.ball.rolling = false;
+    this.ball.ahead = 0;
     this.ball.clearNet();
   }
 
@@ -1145,7 +1146,7 @@ export class MatchSim {
     const b = this.ball;
     h.num(this.tick).num(this.time).num(this.phase).num(this.serveNo).num(this.wallsSinceBounce);
     h.num(b.pos.x).num(b.pos.y).num(b.pos.z).num(b.vel.x).num(b.vel.y).num(b.vel.z).num(b.spin.x).num(b.spin.y).num(b.spin.z);
-    h.num(b.inNet ? 1 : 0).num(b.netSide).num(b.sideZ).num(b.netW).num(b.netZeta).num(b.rolling ? 1 : 0).num(b.outside ? 1 : 0)
+    h.num(b.inNet ? 1 : 0).num(b.netSide).num(b.sideZ).num(b.netW).num(b.netZeta).num(b.rolling ? 1 : 0).num(b.outside ? 1 : 0).num(b.ahead)
       .num(b.wear);
     this.net.hashInto(h);
     for (const p of this.players) {

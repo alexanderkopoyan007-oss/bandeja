@@ -80,6 +80,7 @@ export function makeNetCloth(world: BallWorld): NetCloth {
       b.spin.set(k === 4 ? 200 : 0, 0, 0);
       b.clearNet();
       b.rolling = false;
+      b.ahead = 0;
       for (let i = 0; i < 90; i++) {
         net.beginTick();
         b.step(world, DT, null);

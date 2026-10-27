@@ -41,3 +41,9 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   or more.
 - **Frames.** The irregular bounce off frames (22° random normal) is tuning; it depends on each court's
   construction (tube sections, how flush the mesh is).
+
+- **A second surface met just after a bounce** (Phase 1 review round 2): the junction looks for a second surface
+  along the incoming path. When the first bounce's friction turns the ball into the glass (heavy spin at the foot
+  of the wall), the glass is met 0.5-5 ms later as a separate contact, and the floor can follow 1 ms after it,
+  which the rules count as a second bounce. In real play such a ball is pinned in the rincón and unplayable, so
+  the point goes to the hitter either way; left as it is.

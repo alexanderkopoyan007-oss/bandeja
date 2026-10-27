@@ -58,11 +58,13 @@ better-looking, more realistic court. Every decision and the reason for it goes 
 - **Clay friction 0.80 → 0.70** (Cross 2010 measured tennis clay at 0.70). Clay stays a fantasy surface.
 - **Mesh: unchanged.** No data exists; the numbers stay tuning and are listed in OPEN_QUESTIONS.md.
 - **Gameplay effect** (AI doubles, 24 seeds x 300 s, `tools/point-mix.ts`, before = b2985de, after = the review
-  fixes below): 360 → 328 points, median rally 9 → 10 shots, untouched winners (double bounce) 48.6 → 43.9%,
-  own-side errors 44.2 → 49.1%, balls hitting an opponent 1.4 → 3.7% (12 points; for Phase 4, the AI's
-  positioning against a livelier ball). Both moves are towards the pros (winners 34-42%, errors about 60%). The
-  first write-up quoted 12 seeds measured on a build before the wear move (173 points, 48/45/5%); at that commit
-  12 seeds gave 156 points, median 11, 53/40/4%: a one-tick change swings 12 seeds by 10%, hence 24.
+  fixes below, round 2 included): 360 → 317 points, median rally 9 → 11 shots, untouched winners (double bounce)
+  48.6 → 47.0%, own-side errors 44.2 → 46.1%, balls hitting an opponent 1.4 → 2.5% (8 points; for Phase 4).
+  Both moves are towards the pros (winners 34-42%, errors about 60%), and small. Corrected after the Phase 2
+  verifier: this line first said 328 points, 43.9/49.1%, median 10, 3.7%, which no commit reproduces (round 1's
+  commit, 97611af, gives 321, 47.0/45.8%, median 11, 2.8% on two runs); those figures came from a build in
+  between. The first write-up before that quoted 12 seeds on an older build still (173 points, 48/45/5%): a
+  one-tick change swings 12 seeds by 10%, hence 24.
 - **A test threshold moved**: La Serpiente's víbora share among overheads was required to be 1.4x El Relojero's;
   with her víbora chance saturating near 1 it came out 1.36 after the tuning (the behaviour holds, the factor was
   empirical), so the bar is 1.25. The net test that counts points lost in the netting pools 24 seeds instead of 16:
@@ -102,6 +104,40 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     wear after a minute of play.
   - Docs corrected: IBV's 10 balls, the smash attribution, the gameplay numbers, the lab's 38 shots, stale
     pressure-loss text, the racket's worn-ball comment.
+- **Review round 2** (fresh-eyes, read-only, 6 seeds x 300 s of doubles: junctions are rare in AI play, about 1
+  per 1,445 floor bounces, so these mostly matter to a human playing near the glass). Fixed:
+  - *A kiss of the glass took half the floor bounce* (high): the nick's extra loss (30%) went with how close to
+    simultaneous the two contacts were, not with how hard the second surface was met, so a ball drifting into the
+    glass at 0.1 mm/s as it landed bounced to 0.47 m instead of 0.93 m. The loss now scales with the second
+    surface's share of the squeeze (smaller over larger normal approach speed): the drift case bounces to 0.927 m,
+    a down-the-line drive grazing the side glass keeps its height, a ball driven into the foot of the glass still
+    loses more (lab test: drift 0, 0.1 mm/s, 5 cm/s, 0.3 and 1 m/s).
+  - *The second surface's material was read at the wrong point* (medium): extrapolated with the pre-bounce
+    velocity it was below the floor (the side wall's mesh section read as the glass above it: a glass bounce
+    instead of mesh, and a serve beside the side mesh not called a fault, 7.1.e) or tens of centimetres along a
+    slow wall. It is now read at most a contact time on and never below the floor.
+  - *The path jumped at the edge of the junction window* (medium): the second bounce was applied at the first
+    contact's instant, up to a contact time before the ball reached the second surface, so 0.1 mm of offset
+    moved the ball 11.5 cm a quarter-second later. The junction now flies the ball on to the second surface (as
+    the first bounce alone sends it, under gravity) and records the second contact when it gets there; when that
+    flight runs past the step, the ball is that far ahead of the clock and the next step starts that far in
+    (`Ball.ahead`, hashed and copied). Worst jump per 0.1 mm across the window: 2.5-6 cm (the ordinary sensitivity
+    of a bounce at that speed; test: under 4 cm for the rincón shot from 40 to 110 mm).
+  - *The junction's clamp could kill a ball* (low): when the second surface's friction turned the ball back into
+    the first, its normal speed was set to 0.05 m/s; it now bounces off the first surface again.
+  - *Starting to roll added energy* (low, after the point): spin was set to v/r without slowing the ball, up to
+    alpha (0.55) of its kinetic energy from nothing. The friction impulse that stops the slip is now applied:
+    v' = (v + alpha r w x n)/(1 + alpha), the spin set to match. (A real ball skids to that state over a few
+    tenths of a second; it gets there at once. Same end state.)
+  - *A ball caught in the rigid net slid through the post* (low, predictions and solver ghosts only; the match
+    ball's cloth already stops it): the catch now stops at the post.
+  - *A 5 cm band beyond each wall counted as inside* (low, about 1 in 60k fuzzed balls): a ball whose centre is
+    past a wall's plane (over the top or through an opening) is outside.
+  - Left open: a second surface reached only after the first bounce (spin turning the ball into the glass) is
+    still two contacts (OPEN_QUESTIONS.md). Clay keeps a 1° tilt, so a flat drive's height on clay varies about
+    10% (clay is a fantasy surface). The rigid net's catch logs no extra bounce for a dying ball (predictions only).
+  - Allocation: the match content changes with the physics, so GC counts move by match; four seeds of singles,
+    before 4/12/4/4, after 5/5/5/8 (`ALLOC_SEED=` picks the seed in `tools/alloc-check.mjs`). Budget 10.
 - **A second V8 trap: exp() calls.** With the junction code, singles allocated in about one run in six (13-30 GCs
   per 100k ticks). `--no-concurrent-recompilation` made it repeat every run (15), and the heap profile showed
   smath's `exp` wrapper not inlined into `Ball.integrate` (spin decay) and `Player.runTime`: its argument and
