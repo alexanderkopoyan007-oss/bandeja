@@ -2,7 +2,7 @@
 // relative to where the player looks, braking and turning held by the shoe's grip), split-step, and the swing
 // state machine (charge -> committed -> recover).
 import { V3 } from '../core/v3.ts';
-import { clamp, sqrt, atan2, sin, cos, exp } from '../core/smath.ts';
+import { clamp, sqrt, atan2, sin, cos, expF, FIO } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import tuningData from '../../../data/tuning.json' with { type: 'json' };
 
@@ -205,14 +205,19 @@ export class Player {
     // Solve dn = s - k (1 - e^-s) for s = time / tau (Newton from the from-rest closed form's neighbourhood).
     let s = sqrt(dn * (dn + 2));
     for (let i = 0; i < 3; i++) {
-      const e = exp(-s);
+      // (expF, not exp: no double crosses a call here, whatever V8 inlines; the planner runs this a lot.)
+      FIO[0] = -s;
+      expF();
+      const e = FIO[0]!;
       const f = s - k * (1 - e) - dn;
       const fp = 1 - k * e;
       s -= f / (fp > 0.05 ? fp : 0.05);
       if (s < 0) s = 0;
     }
     this.runT = extra + s * tau;
-    this.runV = vT - (vT - v0) * exp(-s);
+    FIO[0] = -s;
+    expF();
+    this.runV = vT - (vT - v0) * FIO[0]!;
   }
 
   /** Turn the body to face a point (render reads `facing`). */

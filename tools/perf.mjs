@@ -9,7 +9,9 @@ const secs = Number(process.argv[2] ?? 30);
 const PORT = 4190;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
+// OUTDIR=<dir> serves another build than dist/ (to measure one commit while dist/ is in use).
+const outDir = process.env.OUTDIR ? ['--outDir', process.env.OUTDIR] : [];
+const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort', ...outDir], { stdio: 'pipe' });
 await new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error('preview server did not start')), 20000);
   server.stdout.on('data', (d) => { if (String(d).includes(String(PORT))) { clearTimeout(t); resolve(); } });

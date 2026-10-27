@@ -15,11 +15,29 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   and back mesh.
 - **Off-the-back-glass trajectories.** A topspin drive bounced 3 m from the glass comes off it at chest height a
   metre out and would land 11.6 m back (past the net) if nobody touched it; a slice dies 2.4 m out. These follow
-  from the friction and spin, but no study has filmed them. Settled by: broadcast or phone video of wall play.
+  from the friction and spin, but no study has filmed them (the floor gives the drive about 4,100 rpm of forward
+  spin, which the glass turns into about 5 m/s upwards; with that spin taken away it would come back 5.3 m, and
+  real balls may lose more spin at the glass). Settled by: broadcast or phone video of wall play.
 - **Pressure loss within a match.** Unmeasured. The one measurement (IBV/Testfakta, 666 strokes) shows rebound
   rising slightly, FIP only caps the change at 4 cm after 9 simulated games, and retail claims of balls going flat
   in 1.5-6 h are unsourced. The game's ball doesn't lose pressure during a match.
-- **Turf scatter.** The sand's random 3% speed loss and 2.5° normal jitter are tuning; no measurement of bounce
-  scatter on padel turf exists.
+- **Turf scatter.** The sand's scatter is tuning: a 2° sideways turn of the rebound, a 0.3° tilt and up to 3%
+  speed loss, so the ball's line wanders about 1.7° while its bounce height stays within a few per cent. No
+  measurement of bounce scatter on padel turf exists, and whether sand changes bounce height more than this
+  (dead spots where the sand is thin) is unknown. Settled by: high-speed video of drives landing on padel turf.
+- **The rincón and the corners.** A ball reaching the floor and the glass (or two walls) within a contact time
+  (4 ms, from tennis) is solved as one squeeze, with up to 30% extra loss in the exact nick (tuning). How a padel
+  ball really comes out of the rincón, and how dead the exact nick is, isn't measured. Settled by: slow-motion
+  video of balls landing at the foot of the glass.
+- **Worn ball off the racket.** The ball's restitution rises about 1% as it wears (IBV, off the court); the
+  racket is assumed to see the same rise.
+- **Real balls drop higher than the game's.** IBV's new balls dropped 141-153 cm (mean about 147, some above
+  FIP's 145 cm cap); the game's ball drops 140.6 cm, inside FIP. Whether to move it towards 145 is open: nothing
+  says which brand the game's ball is.
+- **Sources not read in full.** Dignall's thesis (0.80 → 0.60 restitution, Hamilton's 100.7%, glazed-tile SPR
+  65.5) is over the fetch limit and was quoted from the research agent's notes; Cross 2010's clay friction 0.70
+  is not in the abstract (Cross 2008 also gives clay e_y about 0.85, above hard, while the game keeps clay below
+  hard: clay is a fantasy surface). The NIDE sheet is a scan; a Walloon padel sheet also asks for rebound of 80%
+  or more.
 - **Frames.** The irregular bounce off frames (22° random normal) is tuning; it depends on each court's
   construction (tube sections, how flush the mesh is).

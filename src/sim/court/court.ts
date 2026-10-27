@@ -27,6 +27,12 @@ export const SURF_FLOOR = 3;
 export const SURF_NET = 4;
 
 // Wall ids
+/** Edge axes (Court.edges). */
+export const EDGE_X = 0;
+export const EDGE_Y = 1;
+export const EDGE_Z = 2;
+export const EDGE_STRIDE = 8;
+
 export const WALL_BACK_NEAR = 0; // z = +halfL
 export const WALL_BACK_FAR = 1; // z = -halfL
 export const WALL_SIDE_LEFT = 2; // x = -halfW
@@ -64,6 +70,13 @@ export class Court {
   /** Per seam: below this height it is a flush glass-to-glass join, above it a frame (0: a frame all the way). */
   readonly seamJoinBelow: number[][];
   readonly panels: Panel[];
+  /**
+   * Free edges a ball can clip: wall tops, the vertical edge where the enclosure steps down, door posts and
+   * lintels. Packed EDGE_STRIDE numbers each: axis (EDGE_X/Y/Z), the line's two fixed coordinates (X: y, z;
+   * Y: x, z; Z: x, y), its range along the axis, the material just inside it (SURF_GLASS or SURF_MESH: a mesh
+   * panel's frame or a door frame) and the wall.
+   */
+  readonly edges: number[];
 
   constructor(def: CourtDef) {
     this.def = def;
@@ -77,6 +90,8 @@ export class Court {
     this.buildBack(WALL_BACK_FAR);
     this.buildSide(WALL_SIDE_LEFT);
     this.buildSide(WALL_SIDE_RIGHT);
+    this.edges = [];
+    this.buildEdges();
   }
 
   /** Height of the top of the net at lateral position x (parabolic sag between the posts). */
@@ -201,6 +216,49 @@ export class Court {
         for (let d = last.from + 2; d < last.to - 0.01; d += 2) {
           seams.push(sign * (hl - d));
           below.push(0);
+        }
+      }
+    }
+  }
+
+  private edge(axis: number, a: number, b: number, lo: number, hi: number, kind: number, wall: number): void {
+    if (hi - lo > 1e-6) this.edges.push(axis, a, b, lo, hi, kind, wall, 0);
+  }
+
+  private buildEdges(): void {
+    const hw = this.halfW;
+    const hl = this.halfL;
+    const bw = this.def.backWall;
+    const topKind = (glass: number, top: number): number => (top > glass ? SURF_MESH : SURF_GLASS);
+    // Back wall tops, along x.
+    this.edge(EDGE_X, bw.top, hl, -hw, hw, topKind(bw.glassHeight, bw.top), WALL_BACK_NEAR);
+    this.edge(EDGE_X, bw.top, -hl, -hw, hw, topKind(bw.glassHeight, bw.top), WALL_BACK_FAR);
+    const segs = this.def.sideWall.segments;
+    for (const wall of [WALL_SIDE_LEFT, WALL_SIDE_RIGHT]) {
+      const x = wall === WALL_SIDE_RIGHT ? hw : -hw;
+      for (const sign of [1, -1]) {
+        for (let k = 0; k < segs.length; k++) {
+          const sg = segs[k]!;
+          const zA = sign * (hl - sg.from);
+          const zB = sign * (hl - sg.to);
+          // The segment's top, along z.
+          this.edge(EDGE_Z, x, sg.top, Math.min(zA, zB), Math.max(zA, zB), topKind(sg.glassHeight, sg.top), wall);
+          // Where the enclosure steps down from the previous segment: a vertical edge between the two tops.
+          if (k > 0 && segs[k - 1]!.top !== sg.top) {
+            const prev = segs[k - 1]!;
+            const hi = prev.top > sg.top ? prev : sg;
+            this.edge(EDGE_Y, x, zA, Math.min(prev.top, sg.top), hi.top, topKind(hi.glassHeight, hi.top), wall);
+          }
+        }
+      }
+      // Door frames: the posts either side and the lintel (the mesh above the opening).
+      for (const o of this.openings) {
+        for (const sign of [1, -1]) {
+          const z1 = sign * o.z1;
+          this.edge(EDGE_Y, x, z1, 0, o.height, SURF_MESH, wall);
+          if (o.z0 > 0) this.edge(EDGE_Y, x, sign * o.z0, 0, o.height, SURF_MESH, wall);
+          const lo = o.z0 > 0 ? sign * o.z0 : 0;
+          this.edge(EDGE_Z, x, o.height, Math.min(lo, z1), Math.max(lo, z1), SURF_MESH, wall);
         }
       }
     }

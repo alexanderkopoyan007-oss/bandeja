@@ -76,18 +76,18 @@ describe('ball wear over a match', () => {
     expect(b.dragScale).toBeLessThan(1.045);
   });
 
-  it('after 666 strokes a ball grips 2-7% more and bounces 0.7-2.8% higher (IBV for Testfakta 2023, 8 brands)', () => {
+  it('after 666 strokes a ball grips 2-11% more and bounces 0.7-4.9% higher (IBV for Testfakta 2023, 10 balls)', () => {
     const w = makeWorld({ floor: 'hard' });
     const fresh = dropTest(w);
     const used = dropTest(w, 666);
     expect(used / fresh - 1).toBeGreaterThan(0.007);
-    expect(used / fresh - 1).toBeLessThan(0.028);
+    expect(used / fresh - 1).toBeLessThan(0.049);
     const b = new Ball();
     b.wears = true;
     b.wearV = 15;
     for (let i = 0; i < 666; i++) b.wearImpact(w);
     expect(b.muScale - 1).toBeGreaterThan(0.02);
-    expect(b.muScale - 1).toBeLessThan(0.07);
+    expect(b.muScale - 1).toBeLessThan(0.11);
     // and stays a ball within FIP's durability limit (drop test within 4 cm after 9 simulated games) all match.
     expect(dropTest(w, 150 * 15) - fresh).toBeLessThan(0.04);
   });

@@ -1,6 +1,6 @@
 // Builds the fixed world for a match from the JSON data files.
 import { Court, type CourtDef } from './court/court.ts';
-import { BallWorld, type BallSpec, type Environment, type NetGiveSpec, type SurfaceSpec, type SurfaceTable } from './ball/ball.ts';
+import { BallWorld, type BallSpec, type Environment, type JunctionSpec, type NetGiveSpec, type SurfaceSpec, type SurfaceTable } from './ball/ball.ts';
 import { NetCloth, type NetClothSpec } from './court/netCloth.ts';
 import { Ball } from './ball/ball.ts';
 import { DT } from './core/constants.ts';
@@ -30,6 +30,7 @@ const surfaces = surfaceData as unknown as Record<string, SurfaceSpec>;
 const netGive = (surfaceData as unknown as { netGive: NetGiveSpec }).netGive;
 const seamWidth = (surfaceData as unknown as { seamWidth: number }).seamWidth;
 const joinWidth = (surfaceData as unknown as { joinWidth: number }).joinWidth;
+const junction = (surfaceData as unknown as { junction: JunctionSpec }).junction;
 const netClothSpec = (surfaceData as unknown as { netCloth: NetClothSpec }).netCloth;
 
 export function surfaceTable(): SurfaceTable {
@@ -43,6 +44,7 @@ export function surfaceTable(): SurfaceTable {
     netGive,
     seamWidth,
     joinWidth,
+    junction,
   };
 }
 

@@ -233,7 +233,8 @@ describe('overheads', () => {
   }
 
   it('holding O for a lob takes it in the air, high, as a bandeja', () => {
-    const r = lobs(0, 5);
+    // 8 matches: about 30 lobs (5 gave 20-25, too few for the 85% bars below).
+    const r = lobs(0, 8);
     expect(r.lobs).toBeGreaterThan(20);
     expect(r.overheads / r.lobs).toBeGreaterThan(0.85);
     expect(r.high / r.overheads).toBeGreaterThan(0.85);
@@ -241,7 +242,8 @@ describe('overheads', () => {
   });
 
   it('with power held the overhead is a smash, fast enough to leave the court', () => {
-    const r = lobs(BTN_POWER, 12);
+    // 16 matches: about 50 lobs (12 gave 36-45 depending on the ball's tuning).
+    const r = lobs(BTN_POWER, 16);
     expect(r.lobs).toBeGreaterThan(40);
     expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
     const sorted = r.speeds.slice().sort((a, b) => a - b);
@@ -253,7 +255,8 @@ describe('overheads', () => {
   });
 
   it('with precision held the overhead is a víbora: sidespin, between bandeja and smash pace, and it lands in', () => {
-    const r = lobs(BTN_PRECISION, 4);
+    // 12 matches: about 50 víboras (4 gave 13, where one ball decides the 80% bar).
+    const r = lobs(BTN_PRECISION, 12);
     const b = lobs(0, 4);
     const med = (a: number[]) => a.slice().sort((x, y) => x - y)[a.length >> 1]!;
     expect(r.viboras / r.lobs).toBeGreaterThan(0.85);

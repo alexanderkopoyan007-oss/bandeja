@@ -11,6 +11,12 @@ export function cos(x: number): number { IO[0] = x; cosIO(); return IO[0]!; }
 export function atan(x: number): number { IO[0] = x; atanIO(); return IO[0]!; }
 export function atan2(y: number, x: number): number { IO[0] = y; IO[1] = x; atan2IO(); return IO[0]!; }
 export function exp(x: number): number { IO[0] = x; expIO(); return IO[0]!; }
+/**
+ * exp() with no double crossing a call: `FIO[0] = x; expF(); FIO[0]` is e^x. For hot paths whose caller may be
+ * past V8's inlining budget: exp() itself is then a real call, its argument and result each boxed (16 bytes a
+ * call; the ball's spin decay alone made 30 MB of garbage per 100k ticks that way).
+ */
+export { IO as FIO, expIO as expF };
 export function log(x: number): number { IO[0] = x; logIO(); return IO[0]!; }
 export function pow(x: number, y: number): number { IO[0] = x; IO[1] = y; powIO(); return IO[0]!; }
 export function sqrt(x: number): number { return Math.sqrt(x); } // IEEE-exact everywhere

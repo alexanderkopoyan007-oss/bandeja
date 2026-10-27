@@ -97,7 +97,10 @@ export class Racket {
     this.cone = (spec.friction / sqrt(1 + spec.friction * spec.friction)) * 0.98;
   }
 
-  /** The ball's restitution against a new one (a worn ball has lost pressure; Ball.eScale). */
+  /**
+   * The ball's restitution against a new one (Ball.eScale: a worn ball bounces about 1% higher off the court, IBV;
+   * that the strings see the same rise is an assumption, OPEN_QUESTIONS.md).
+   */
   eScale = 1;
 
   /** True COR of ball on face at approach speed u (m/s). */

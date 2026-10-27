@@ -15,7 +15,7 @@ measured against published data, and lands with tests that check the model again
    - Checked: ACOR 0.50 at 17 m/s and 0.37–0.41 at 29 m/s; curvature along and across the face; grip above about
      55° and slide at 25°; smash median about 138 km/h against 133 for semi-pros.
 3. **Ball flight.** Done 2026-10-27: free-flight drag of a new ball (0.507), spin decay proportional to ω·v
-   (k = 0.005/m), ball wear over a match (nap fluff +4.1% drag from Hawk-Eye; pressure loss as tuning).
+   (k = 0.005/m), ball wear over a match (nap fluff +4.1% drag from Hawk-Eye; friction and rebound rise as IBV measured; no pressure loss within a match).
 4. **Bounce.** Checked 2026-10-27: the impulse model (restitution falling with normal speed, sliding friction,
    grip with a tangential COR) already gives a felt ball's grip-slip regimes (below). A test holds it to them.
    Still open: concrete walls (a classic club court; glass is faster, longer and livelier, Gea García 2021, no
@@ -129,6 +129,17 @@ measured against published data, and lands with tests that check the model again
   where glass and mesh aren't flush. So a flush glass-glass join is nearly a plain bounce in the game (about 2°
   of scatter), while frames (mesh posts, the mesh panel's frame along the glass top, door edges) stay irregular
   (about 20°). The wall-to-wall corner is two walls, not a seam.
+- **Junctions: the rincón and the corners.** A felt ball is in contact with a rigid surface for about 4 ms and
+  squashes about a centimetre at rally speed (tennis: Brody, Cross & Lindsey 2002). So a ball that reaches the
+  floor and the glass, or two walls, within that is squeezed by both at once: the game solves the two bounces
+  together (averaged over both orders, weighted by how close to simultaneous), with up to 30% extra loss in the
+  exact nick (tuning: squash's nick is dead, and a padel ball in the rincón comes out low). Before, contacts were
+  instants and a 4 mm shift flipped a rincón ball between 4.1 m high landing past the net and 1.1 m high landing
+  8 m out; now the result changes smoothly with where it lands (1.6 m high in the nick). A nick within 5 mm of the
+  floor counts as landing first for the rules (FIP: a ball in the corner where wall meets floor is good).
+- **Edges.** Wall tops, the vertical edge where the enclosure steps down, and door posts and lintels are lines a
+  ball can clip (a cylinder of the ball's radius): a ball passing a centimetre over the back wall is knocked up,
+  one 4 cm over it is gone. Frames bounce as frames; a frameless glass top as glass.
 - **Mesh.** Nothing is measured. FIP: welded mesh, 50 x 50 mm, 2-4 mm wire, horizontal wires inside; FIP and NIDE
   call its rebound irregular. About 4 kg/m2 against 30 for glass; a 66 mm ball sinks about 9 mm into a cell
   (derived). The game's mesh numbers are tuning (see OPEN_QUESTIONS.md).
@@ -155,10 +166,14 @@ measured against published data, and lands with tests that check the model again
   Zaragoza and Andalucía, Composan data sheet.)
 - **Measured on sand-filled turf (tennis).** Vertical drop: 100.7% of concrete's rebound, COR 0.775 vs 0.772
   (Hamilton 2000, in Dignall's 2004 thesis); the Berlin artificial athlete reads it almost rigid for a ball.
-- **Padel balls on a padel court (IBV for Testfakta, 2023, 8 brands).** Court-pace test at 70 km/h: friction
-  0.57-0.62, CPR 36-50. After 666 machine strokes every ball gripped 2-7% more, bounced 0.7-2.8% higher in the
-  drop test, and was 2-31% softer.
+- **Padel balls on a padel court (IBV for Testfakta, 2023, 10 balls).** Court-pace test at 70 km/h (the angle
+  isn't published; the lab assumes the ITF's 16°): friction 0.56-0.62, CPR 36-50. After 666 machine strokes every
+  ball gripped 2-11% more (mean 4.7%), bounced 0.7-4.9% higher in the drop test, and was 2-31% softer. New balls
+  dropped 141-153 cm (mean about 147, some above FIP's 145); the game's ball drops 140.6 cm, inside FIP.
   ([table](https://www.testfakta.se/sites/default/files/2023-08/Tabell_Padelbollar%28230810_0%29.pdf))
-- **In the game (Phase 1, 2026-10-27).** Turf restitution equals the hard floor's, and the sand's scatter takes
-  the average drop rebound to about 97% of hard. Friction 0.59; the lab's court-pace test reads friction 0.59 and
-  CPR 44.7. The ball's friction rises 4.4% and its restitution 1% as the nap fluffs up.
+- **In the game (Phase 1, 2026-10-27).** Turf restitution equals the hard floor's, and the sand's random speed
+  loss takes the average drop rebound to about 97% of hard. The sand's scatter is sideways (a 2° turn of the
+  rebound about the normal), so bounce height stays within a few per cent (tuning; nothing measured). Friction
+  0.59; the lab's court-pace test reads CPR 44.7 (at 16° the ball slides through the contact, so the friction
+  reads back as put in: only the restitution half of CPR is an independent check). The ball's friction rises
+  4.7% and its restitution 1% as the nap fluffs up.

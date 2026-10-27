@@ -4,9 +4,9 @@
 import { V3 } from '../core/v3.ts';
 import { Rng } from '../core/rng.ts';
 import { GRAVITY, DT } from '../core/constants.ts';
-import { abs, clamp, cos, exp, max, min, pow, sin, sqrt, PI } from '../core/smath.ts';
+import { abs, clamp, cos, exp, expF, FIO, max, min, pow, sin, sqrt, PI } from '../core/smath.ts';
 import {
-  Court, SURF_GLASS, SURF_MESH, SURF_OPEN, SURF_FLOOR, SURF_NET,
+  Court, SURF_GLASS, SURF_MESH, SURF_OPEN, SURF_FLOOR, SURF_NET, EDGE_X, EDGE_Y, EDGE_STRIDE,
   WALL_BACK_NEAR, WALL_BACK_FAR, WALL_SIDE_LEFT, WALL_SIDE_RIGHT, type ZoneHit,
 } from '../court/court.ts';
 import type { NetCloth } from '../court/netCloth.ts';
@@ -39,6 +39,16 @@ export interface SurfaceSpec {
   grip: number;
   jitterDeg: number;
   speedJitter: number;
+  /** Random sideways turn of the rebound about the surface normal (sd, degrees). */
+  turnDeg: number;
+}
+
+/** Two surfaces met at once: floor and wall, or a corner (data/surfaces.json, junction). */
+export interface JunctionSpec {
+  contactTime: number;
+  gap: number;
+  loss: number;
+  nickGap: number;
 }
 
 /** How the net body gives (data/surfaces.json, netGive). */
@@ -62,6 +72,7 @@ export interface SurfaceTable {
   netGive: NetGiveSpec;
   seamWidth: number;
   joinWidth: number;
+  junction: JunctionSpec;
 }
 
 export interface Environment {
@@ -86,6 +97,8 @@ export const HIT_NET = 3;
 export const HIT_NETCORD = 4;
 export const LEFT_COURT = 5;
 export const HIT_POST = 6;
+/** A free edge (a wall top, a door frame): internal, reported as HIT_WALL. */
+const HIT_EDGE = 7;
 
 export interface ContactEvent {
   kind: number;
@@ -147,6 +160,15 @@ const u = new V3();
 const jt = new V3();
 const rc = new V3();
 const zone: ZoneHit = { kind: 0, seamDist: 0, joinDist: 0 };
+// Junctions: the second surface's normal, the first's, and the state before / after one order of the two bounces.
+const nB = new V3();
+const nA = new V3();
+const sv = new V3();
+const sw = new V3();
+const rv = new V3();
+const rw = new V3();
+// The surface normal before bounce() tilts it.
+const n0 = new V3();
 
 export class Ball {
   readonly pos = new V3();
@@ -329,6 +351,8 @@ export class Ball {
       this.resolveAt = elapsed;
       this.resolve(world, rng);
       remaining *= 1 - f;
+      // Dead on the floor: roll() takes over next step (the rest of this one, under a tick, is not rolled).
+      if (this.rolling) break;
     }
     this.flyEnd = elapsed;
   }
@@ -365,7 +389,9 @@ export class Ball {
     const S = cl.substepsFor();
     const h = this.stepDt / S;
     cl.h = h;
-    const grab = exp(-cl.spec.grab * h);
+    FIO[0] = -cl.spec.grab * h;
+    expF();
+    const grab = FIO[0]!;
     const p = this.pos;
     for (let k = 0; k < S; k++) {
       const e0 = this.eventCount;
@@ -472,7 +498,13 @@ export class Ball {
     const rx = vMid.x - env.windX;
     const rz = vMid.z - env.windZ;
     const s = sqrt(rx * rx + vMid.y * vMid.y + rz * rz);
-    wOut.copy(this.spin).scale(exp(-world.kSpin * s * dt));
+    // (expF, not exp: no double crosses a call here, whatever V8 inlines.)
+    FIO[0] = -world.kSpin * s * dt;
+    expF();
+    const k = FIO[0]!;
+    wOut.x = this.spin.x * k;
+    wOut.y = this.spin.y * k;
+    wOut.z = this.spin.z * k;
   }
 
   private roll(world: BallWorld): void {
@@ -491,11 +523,56 @@ export class Ball {
       this.pos.z = side * r0;
       v.z = -0.2 * v.z;
     }
+    // Walls: a rolling ball comes back off glass or mesh at its foot (an opening lets it through).
+    if (!this.outside) {
+      const c = world.court;
+      const xl = c.halfW - r0;
+      const zl = c.halfL - r0;
+      const p = this.pos;
+      if (abs(p.x) > xl && p.x * v.x > 0) {
+        c.qu = p.z;
+        c.qy = r0;
+        c.sideZoneAt(zone);
+        if (zone.kind !== SURF_OPEN) {
+          p.x = p.x > 0 ? xl : -xl;
+          this.rollWall(world, p.x > 0 ? WALL_SIDE_RIGHT : WALL_SIDE_LEFT);
+          v.x = -v.x * this.rollE;
+        }
+      }
+      if (abs(p.z) > zl && p.z * v.z > 0) {
+        c.qu = p.x;
+        c.qy = r0;
+        c.backZoneAt(zone);
+        if (zone.kind !== SURF_OPEN) {
+          p.z = p.z > 0 ? zl : -zl;
+          this.rollWall(world, p.z > 0 ? WALL_BACK_NEAR : WALL_BACK_FAR);
+          v.z = -v.z * this.rollE;
+        }
+      }
+    }
     // Rolling without slipping.
     const r = world.spec.radius;
     this.spin.set(v.z / r, 0, -v.x / r);
     this.exitAt = 0;
     this.checkExit(world);
+  }
+
+  /** Restitution for rollWall's bounce (a field: see `best`). */
+  private rollE = 0;
+
+  /** A rolling ball meets a wall (zone: what is there): record it and set rollE for the normal speed. */
+  private rollWall(world: BallWorld, wall: number): void {
+    const s = zone.kind === SURF_GLASS ? world.surfaces.glass : world.surfaces.mesh;
+    wallNormal(wall, n);
+    const vn = this.vel.dot(n);
+    this.rollE = clamp(s.e0 - s.eSlope * -vn, s.eMin, s.e0);
+    this.hitKind = HIT_WALL;
+    this.hitWall = wall;
+    this.hitSurface = zone.kind;
+    this.recVn = vn;
+    this.recT = this.flyAt + this.flyDt;
+    this.recZ = this.pos.z;
+    this.record();
   }
 
   // ---- collisions ---------------------------------------------------------------------------
@@ -520,9 +597,10 @@ export class Ball {
     const q = this.pos;
     this.best = 2;
 
-    // Floor (everywhere, inside or outside the court).
-    if (p.y < r && q.y >= r - 1e-9) {
-      const f = (q.y - r) / (q.y - p.y);
+    // Floor (everywhere, inside or outside the court); a ball already below it and still going down (pushed
+    // there by something else) bounces at once.
+    if (p.y < r && (q.y >= r - 1e-9 || this.vel.y < 0)) {
+      const f = q.y >= r ? (q.y - r) / (q.y - p.y) : 0;
       if (f < this.best) { this.best = f; this.hitKind = HIT_FLOOR; this.hitSurface = SURF_FLOOR; this.hitWall = -1; }
     }
 
@@ -538,8 +616,53 @@ export class Ball {
       // Net body and tape (a cloth net is solved apart), and the posts.
       if (this.cloth === null) this.tryNet(c, p);
       this.tryPost(c, p);
+      // Wall tops and door frames, near the walls only.
+      const m = 0.5;
+      if (abs(p.x) > c.halfW - m || abs(p.z) > c.halfL - m || abs(q.x) > c.halfW - m || abs(q.z) > c.halfL - m) this.tryEdges(c, p);
     }
     return this.best <= 1;
+  }
+
+  /**
+   * Free edges (Court.edges): the ball's centre path against each edge line, a cylinder of the ball's radius
+   * (quadratic in f, as the net tape). A wall's face test only covers balls whose centre meets it below its top;
+   * one passing just over the top, or through a door within a radius of its frame, clips the edge.
+   */
+  private tryEdges(c: Court, p: V3): void {
+    const q = this.pos;
+    const r = this.radius;
+    const E = c.edges;
+    for (let i = 0; i < E.length; i += EDGE_STRIDE) {
+      const axis = E[i]!;
+      const a = E[i + 1]!;
+      const b = E[i + 2]!;
+      // (s, t): the two coordinates across the edge; `al` along it.
+      let s0 = 0, t0 = 0, ds = 0, dt = 0, al0 = 0, dal = 0;
+      if (axis === EDGE_X) { s0 = q.y - a; t0 = q.z - b; ds = p.y - q.y; dt = p.z - q.z; al0 = q.x; dal = p.x - q.x; }
+      else if (axis === EDGE_Y) { s0 = q.x - a; t0 = q.z - b; ds = p.x - q.x; dt = p.z - q.z; al0 = q.y; dal = p.y - q.y; }
+      else { s0 = q.x - a; t0 = q.y - b; ds = p.x - q.x; dt = p.y - q.y; al0 = q.z; dal = p.z - q.z; }
+      const C = s0 * s0 + t0 * t0 - r * r;
+      if (C <= 0) continue;
+      const B = 2 * (s0 * ds + t0 * dt);
+      if (B >= 0) continue;
+      const A = ds * ds + dt * dt;
+      const disc = B * B - 4 * A * C;
+      if (disc < 0) continue;
+      const f = (-B - sqrt(disc)) / (2 * A);
+      if (f < 0 || f >= this.best) continue;
+      const al = al0 + dal * f;
+      if (al < E[i + 3]! || al > E[i + 4]!) continue;
+      this.best = f;
+      this.hitKind = HIT_EDGE;
+      this.hitSurface = E[i + 5]!;
+      this.hitWall = E[i + 6]!;
+      const ss = s0 + ds * f;
+      const tt = t0 + dt * f;
+      const l = sqrt(ss * ss + tt * tt);
+      if (axis === EDGE_X) n.set(0, ss / l, tt / l);
+      else if (axis === EDGE_Y) n.set(ss / l, 0, tt / l);
+      else n.set(ss / l, tt / l, 0);
+    }
   }
 
   private tryWall(c: Court, p: V3, wall: number): void {
@@ -651,30 +774,30 @@ export class Ball {
 
   /** Bounce off what findContact hit, at time resolveAt in the step. */
   private resolve(world: BallWorld, rng: Rng | null): void {
-    const c = world.court;
     let surf: SurfaceSpec = world.floor;
+    let flat = true;
     switch (this.hitKind) {
       case HIT_FLOOR:
         n.set(0, 1, 0);
+        if (this.pos.y < world.spec.radius) this.pos.y = world.spec.radius;
         break;
-      case HIT_WALL: {
-        if (this.hitWall === WALL_SIDE_RIGHT) n.set(-1, 0, 0);
-        else if (this.hitWall === WALL_SIDE_LEFT) n.set(1, 0, 0);
-        else if (this.hitWall === WALL_BACK_NEAR) n.set(0, 0, -1);
-        else n.set(0, 0, 1);
-        const base = this.hitSurface === SURF_GLASS ? world.surfaces.glass : world.surfaces.mesh;
-        // Frames (mesh posts, the mesh panel's frame on the glass top, door edges) are irregular; a flush join
-        // between two glass panels is nearly a plain bounce (FIP wants joins flush and the rebound uniform).
-        surf = this.hitSeam < world.surfaces.seamWidth && c.def.frame === 'posts' ? world.surfaces.seam : base;
-        if (this.hitSeam < world.surfaces.seamWidth * 0.5 && this.hitSurface === SURF_GLASS) surf = world.surfaces.seam;
-        else if (surf === base && this.hitSurface === SURF_GLASS && this.hitJoin < world.surfaces.joinWidth) surf = world.surfaces.glassJoin;
+      case HIT_WALL:
+        wallNormal(this.hitWall, n);
+        surf = this.wallSurface(world);
         break;
-      }
+      case HIT_EDGE:
+        // n was set by tryEdges. A frameless glass top is polished glass; anything else is a frame.
+        surf = this.hitSurface === SURF_GLASS ? world.surfaces.glass : world.surfaces.seam;
+        this.hitKind = HIT_WALL;
+        flat = false;
+        break;
       case HIT_NETCORD:
         surf = world.surfaces.net;
+        flat = false;
         break;
       case HIT_POST:
         surf = world.surfaces.post;
+        flat = false;
         break;
       case HIT_NET: {
         // Into the net body: caught by the mesh, no bounce here (netStep takes over).
@@ -687,17 +810,206 @@ export class Ball {
       }
     }
     this.recVn = this.vel.dot(n);
-    this.bounce(world, surf, rng, this.hitKind === HIT_NETCORD);
-    // Keep the ball just off the surface.
-    this.pos.addScaled(n, 1e-6);
-    this.recT = this.resolveAt;
-    this.recZ = this.pos.z;
-    this.record();
-    if (this.hitKind === HIT_FLOOR && this.vel.y < 0.25) {
+    this.jW = 0;
+    // A second surface within 20 cm (a contact time at 50 m/s) of a flat contact: is it a junction?
+    if (flat) {
+      const c = world.court;
+      const q = this.pos;
+      const m = 0.2 + world.spec.radius;
+      const nearSide = abs(q.x) > c.halfW - m;
+      const nearBack = abs(q.z) > c.halfL - m;
+      const back = this.hitWall === WALL_BACK_NEAR || this.hitWall === WALL_BACK_FAR;
+      const near = this.hitKind === HIT_FLOOR ? nearSide || nearBack : q.y < m || (back ? nearSide : nearBack);
+      if (near) this.findJunction(world);
+    }
+    if (this.jW > 0) {
+      this.junction(world, rng, surf);
+    } else {
+      this.bounce(world, surf, rng, this.hitKind === HIT_NETCORD);
+      // Keep the ball just off the surface.
+      this.pos.addScaled(n, 1e-6);
+      this.recT = this.resolveAt;
+      this.recZ = this.pos.z;
+      this.record();
+    }
+    if ((this.hitKind === HIT_FLOOR || this.jKind === HIT_FLOOR) && this.vel.y < 0.25) {
       this.rolling = true;
       this.vel.y = 0;
       this.pos.y = world.spec.radius;
+      // A ball that low bounces again at once (under 3 mm, within 50 ms): that is its next bounce for the rules.
+      this.hitKind = HIT_FLOOR;
+      this.hitSurface = SURF_FLOOR;
+      this.hitWall = -1;
+      this.recVn = 0;
+      this.record();
     }
+    this.jKind = 0;
+  }
+
+  /** The material under a wall contact (hitSurface, hitSeam, hitJoin): glass, a flush glass join, a frame or mesh. */
+  private wallSurface(world: BallWorld): SurfaceSpec {
+    const S = world.surfaces;
+    const base = this.hitSurface === SURF_GLASS ? S.glass : S.mesh;
+    // Frames (mesh posts, the mesh panel's frame on the glass top, door edges) are irregular; a flush join
+    // between two glass panels is nearly a plain bounce (FIP wants joins flush and the rebound uniform).
+    let surf = this.hitSeam < S.seamWidth && world.court.def.frame === 'posts' ? S.seam : base;
+    if (this.hitSeam < S.seamWidth * 0.5 && this.hitSurface === SURF_GLASS) surf = S.seam;
+    else if (surf === base && this.hitSurface === SURF_GLASS && this.hitJoin < S.joinWidth) surf = S.glassJoin;
+    return surf;
+  }
+
+  // ---- junctions: floor and wall, or two walls, at once ---------------------------------------
+  //
+  // Contacts are instants, so a ball meeting the foot of the glass, or a corner, would bounce off one surface and
+  // then the other, and which came first would flip on a millimetre: 12 m back or 8. A real ball is in contact
+  // for about 4 ms and squashes about a centimetre, so when the second surface is reached within that, it is
+  // squeezed by both: the two bounces are solved in both orders and averaged, weighted by how close to
+  // simultaneous they are (jW: 1 together, 0 a contact time or a gap apart), with extra loss in the nick.
+
+  /** The second surface: kind (0 none), wall, material, normal (nB) and closeness (jW). Fields: see `best`. */
+  private jKind = 0;
+  private jWall = -1;
+  private jSurface = 0;
+  private jSeam = 0.5;
+  private jJoin = 0.5;
+  private jW = 0;
+  private jGap = 0;
+  /** Candidate for considerJunction: gap to the surface's contact plane (m) and approach speed (m/s). */
+  private cg = 0;
+  private ca = 0;
+  /** Extra restitution factor for bounce() (1 outside a junction). */
+  private eJ = 1;
+
+  private findJunction(world: BallWorld): void {
+    const c = world.court;
+    const r = world.spec.radius;
+    const q = this.pos;
+    const v = this.vel;
+    this.jW = 0;
+    this.jKind = 0;
+    const kind = this.hitKind;
+    const wall = this.hitWall;
+    if (kind !== HIT_FLOOR && v.y < 0) {
+      this.cg = q.y - r;
+      this.ca = -v.y;
+      this.considerJunction(world, HIT_FLOOR, -1);
+    }
+    if (this.outside) return;
+    if (kind === HIT_FLOOR || wall === WALL_BACK_NEAR || wall === WALL_BACK_FAR) {
+      if (v.x > 0) { this.cg = c.halfW - r - q.x; this.ca = v.x; this.considerJunction(world, HIT_WALL, WALL_SIDE_RIGHT); }
+      else if (v.x < 0) { this.cg = q.x + c.halfW - r; this.ca = -v.x; this.considerJunction(world, HIT_WALL, WALL_SIDE_LEFT); }
+    }
+    if (kind === HIT_FLOOR || wall === WALL_SIDE_LEFT || wall === WALL_SIDE_RIGHT) {
+      if (v.z > 0) { this.cg = c.halfL - r - q.z; this.ca = v.z; this.considerJunction(world, HIT_WALL, WALL_BACK_NEAR); }
+      else if (v.z < 0) { this.cg = q.z + c.halfL - r; this.ca = -v.z; this.considerJunction(world, HIT_WALL, WALL_BACK_FAR); }
+    }
+  }
+
+  private considerJunction(world: BallWorld, kind: number, wall: number): void {
+    const J = world.surfaces.junction;
+    const gap = this.cg > 0 ? this.cg : 0;
+    const t2 = gap / this.ca;
+    const wt = 1 - t2 / J.contactTime;
+    const wg = 1 - gap / J.gap;
+    const w = wt > wg ? wt : wg;
+    if (w <= this.jW) return;
+    if (kind === HIT_WALL) {
+      // What is there where the ball meets that wall (an opening lets it through).
+      const c = world.court;
+      const q = this.pos;
+      const v = this.vel;
+      c.qy = q.y + v.y * t2;
+      if (wall === WALL_BACK_NEAR || wall === WALL_BACK_FAR) { c.qu = q.x + v.x * t2; c.backZoneAt(zone); }
+      else { c.qu = q.z + v.z * t2; c.sideZoneAt(zone); }
+      if (zone.kind === SURF_OPEN) return;
+      this.jSurface = zone.kind;
+      this.jSeam = zone.seamDist;
+      this.jJoin = zone.joinDist;
+    } else {
+      this.jSurface = SURF_FLOOR;
+    }
+    this.jW = w;
+    this.jKind = kind;
+    this.jWall = wall;
+    this.jGap = gap;
+  }
+
+  /** Both bounces of a junction, the first surface's material given (n: its normal). */
+  private junction(world: BallWorld, rng: Rng | null, sA: SurfaceSpec): void {
+    nA.copy(n);
+    // The second surface's material, through the same fields the first used.
+    const kA = this.hitKind, wA = this.hitWall, sfA = this.hitSurface, seamA = this.hitSeam, joinA = this.hitJoin;
+    let sB: SurfaceSpec = world.floor;
+    if (this.jKind === HIT_FLOOR) nB.set(0, 1, 0);
+    else {
+      wallNormal(this.jWall, nB);
+      this.hitSurface = this.jSurface;
+      this.hitSeam = this.jSeam;
+      this.hitJoin = this.jJoin;
+      sB = this.wallSurface(world);
+      this.hitSurface = sfA;
+      this.hitSeam = seamA;
+      this.hitJoin = joinA;
+    }
+    const w = this.jW;
+    const vnA = this.recVn;
+    const vnB = this.vel.dot(nB);
+    sv.copy(this.vel);
+    sw.copy(this.spin);
+    this.eJ = 1 - world.surfaces.junction.loss * w;
+    // First surface, then the second.
+    n.copy(nA);
+    this.bounce(world, sA, rng, false);
+    n.copy(nB);
+    this.bounce(world, sB, rng, false);
+    rv.copy(this.vel);
+    rw.copy(this.spin);
+    const wear = this.wear;
+    // The other way round (wear counted once: from the first order).
+    this.vel.copy(sv);
+    this.spin.copy(sw);
+    n.copy(nB);
+    this.bounce(world, sB, rng, false);
+    n.copy(nA);
+    this.bounce(world, sA, rng, false);
+    this.wear = wear;
+    this.eJ = 1;
+    // Averaged: all the first order when the second surface is a contact time away, half and half together.
+    const a = 1 - 0.5 * w;
+    this.vel.lerpOf(this.vel, rv, a);
+    this.spin.lerpOf(this.spin, rw, a);
+    // Leaving both.
+    let d = this.vel.dot(nA);
+    if (d < 0.05) this.vel.addScaled(nA, 0.05 - d);
+    d = this.vel.dot(nB);
+    if (d < 0.05) this.vel.addScaled(nB, 0.05 - d);
+    n.copy(nA);
+    this.pos.addScaled(nA, 1e-6);
+    // Both contacts, at this instant. A wall-then-floor nick counts as landing first (FIP: good in the corner).
+    this.recT = this.resolveAt;
+    this.recZ = this.pos.z;
+    const floorFirst = this.jKind === HIT_FLOOR && this.jGap < world.surfaces.junction.nickGap;
+    this.vnB = vnB;
+    if (floorFirst) this.recordJ();
+    this.hitKind = kA;
+    this.hitWall = wA;
+    this.hitSurface = sfA;
+    this.recVn = vnA;
+    this.record();
+    if (!floorFirst) this.recordJ();
+    this.hitKind = kA;
+    this.hitWall = wA;
+    this.hitSurface = sfA;
+  }
+
+  /** Record the junction's second contact (normal speed before it: vnB, a field: see `best`). */
+  private vnB = 0;
+  private recordJ(): void {
+    this.hitKind = this.jKind;
+    this.hitWall = this.jWall;
+    this.hitSurface = this.jSurface;
+    this.recVn = this.vnB;
+    this.record();
   }
 
   // record()'s time, normal speed before the contact and z (fields: doubles passed as arguments get boxed).
@@ -776,7 +1088,9 @@ export class Ball {
     const w = this.netW;
     const z = this.netZeta;
     const wd = w * sqrt(1 - z * z);
-    const e = exp(-z * w * t);
+    FIO[0] = -z * w * t;
+    expF();
+    const e = FIO[0]!;
     const cs = cos(wd * t);
     const sn = sin(wd * t);
     const A = this.d0;
@@ -784,7 +1098,9 @@ export class Ball {
     this.rd = e * (A * cs + B * sn);
     this.rdv = e * ((B * wd - z * w * A) * cs - (A * wd + z * w * B) * sn);
     const b = world.surfaces.netGive.grab;
-    const eb = exp(-b * t);
+    FIO[0] = -b * t;
+    expF();
+    const eb = FIO[0]!;
     const gb = GRAVITY / b;
     this.rvx = this.vx0 * eb;
     this.rx = this.x0 + (this.vx0 * (1 - eb)) / b;
@@ -833,7 +1149,9 @@ export class Ball {
     this.used = t;
     this.pos.set(this.rx, this.ry, s * (r - this.rd));
     this.vel.set(this.rvx, this.rvy, -s * this.rdv);
-    this.spin.scale(exp(-world.surfaces.netGive.grab * t));
+    FIO[0] = -world.surfaces.netGive.grab * t;
+    expF();
+    this.spin.scale(FIO[0]!);
     if (ev === 1) {
       // Pushed back out of the net.
       this.pos.z = s * r;
@@ -870,10 +1188,15 @@ export class Ball {
     const m = spec.mass;
     const alpha = spec.inertiaFactor;
 
-    // Random deflection of the normal (mesh, seams, turf).
+    n0.copy(n);
+    // Random tilt of the normal (mesh, seams, a little on floors), never more than half the angle the ball comes
+    // in at: past that a glancing ball would be leaving through the tilted surface (no impulse) and meet the real
+    // one again at once.
     if (rng && s.jitterDeg > 0) {
       const ang = (s.jitterDeg * PI) / 180;
-      const a = rng.normal() * ang * 0.5;
+      const vl = this.vel.length();
+      const lim = vl > 1e-6 ? (0.5 * -this.vel.dot(n)) / vl : 0;
+      const a = clamp(rng.normal() * ang * 0.5, -lim, lim);
       const b = rng.next() * 2 * PI;
       // Two tangents of n.
       if (abs(n.y) < 0.9) tmp.set(0, 1, 0); else tmp.set(1, 0, 0);
@@ -886,8 +1209,8 @@ export class Ball {
     }
 
     const vn = this.vel.dot(n);
-    if (vn >= 0) return; // moving away already
-    let e = clamp(s.e0 - s.eSlope * -vn, s.eMin, s.e0) * spec.restitutionScale * this.eScale;
+    if (vn >= 0) { n.copy(n0); return; } // moving away already
+    let e = clamp(s.e0 - s.eSlope * -vn, s.eMin, s.e0) * spec.restitutionScale * this.eScale * this.eJ;
     if (this.wears) {
       const q = -vn / 15;
       this.wear += q * q < 3 ? q * q : 3;
@@ -915,9 +1238,34 @@ export class Ball {
     tmp.crossOf(rc, jt);
     this.spin.addScaled(tmp, 1 / world.inertia);
 
-    // Never leave travelling into the surface (possible after jitter on a grazing hit).
+    // The sand's scatter: the whole rebound (velocity and spin) turned about the real normal, so the ball's line
+    // is skewed and its height kept.
+    if (rng && s.turnDeg > 0) {
+      const phi = (clamp(rng.normal(), -3, 3) * s.turnDeg * PI) / 180;
+      this.rotC = cos(phi);
+      this.rotS = sin(phi);
+      this.rotateAbout(this.vel, n0);
+      this.rotateAbout(this.spin, n0);
+    }
+    n.copy(n0);
+    // Never leave travelling into the surface.
     const vn2 = this.vel.dot(n);
     if (vn2 < 0.05) this.vel.addScaled(n, 0.05 - vn2);
+  }
+
+  /** Cosine and sine for rotateAbout (fields: see `best`). */
+  private rotC = 1;
+  private rotS = 0;
+
+  /** Rotate v about the unit axis k by the angle in rotC / rotS (Rodrigues). */
+  private rotateAbout(v: V3, k: V3): void {
+    const c = this.rotC;
+    const s = this.rotS;
+    const d = (v.x * k.x + v.y * k.y + v.z * k.z) * (1 - c);
+    const x = v.x * c + (k.y * v.z - k.z * v.y) * s + k.x * d;
+    const y = v.y * c + (k.z * v.x - k.x * v.z) * s + k.y * d;
+    const z = v.z * c + (k.x * v.y - k.y * v.x) * s + k.z * d;
+    v.set(x, y, z);
   }
 
   /** Mark the ball outside the court once it leaves it (event at time exitAt in the step). */
@@ -938,6 +1286,14 @@ export class Ball {
       }
     }
   }
+}
+
+/** A wall's normal into the court. */
+function wallNormal(wall: number, out: V3): void {
+  if (wall === WALL_SIDE_RIGHT) out.set(-1, 0, 0);
+  else if (wall === WALL_SIDE_LEFT) out.set(1, 0, 0);
+  else if (wall === WALL_BACK_NEAR) out.set(0, 0, -1);
+  else out.set(0, 0, 1);
 }
 
 export { SURF_GLASS, SURF_MESH, SURF_FLOOR, SURF_NET, SURF_OPEN };
