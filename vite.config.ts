@@ -11,5 +11,7 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // Sim tests fly whole matches; CI runners are a few times slower than a desktop.
+    testTimeout: 60_000,
   },
 });
