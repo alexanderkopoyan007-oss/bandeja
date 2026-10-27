@@ -80,7 +80,7 @@ export class Game {
     this.scene.add(sun);
     this.scene.add(buildCourtView(court));
 
-    this.cam = new BroadcastCamera(innerWidth / innerHeight);
+    this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i));
@@ -138,6 +138,8 @@ export class Game {
   }
 
   resize(): void {
+    // A collapsed or hidden embed can report a 0 x 0 window: keep the last size rather than a NaN camera.
+    if (!innerWidth || !innerHeight) return;
     this.renderer.setSize(innerWidth, innerHeight);
     this.cam.camera.aspect = innerWidth / innerHeight;
     this.cam.camera.updateProjectionMatrix();

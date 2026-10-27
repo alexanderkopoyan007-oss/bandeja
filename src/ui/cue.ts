@@ -75,8 +75,8 @@ export class TimingCue {
 
   /** Where the aim target is on screen this frame (`on` false: not aiming). */
   aimAt(x: number, y: number, on: boolean, power: boolean): void {
-    this.aimOn = on;
-    if (on) {
+    this.aimOn = on && Number.isFinite(x) && Number.isFinite(y);
+    if (this.aimOn) {
       this.aimX = x;
       this.aimY = y;
       this.aimPower = power;
@@ -100,8 +100,11 @@ export class TimingCue {
     sim: MatchSim, human: number, bx: number, by: number, onScreen: boolean, renderTime: number, timingScale: number,
     now: number,
   ): void {
-    this.ballX = bx;
-    this.ballY = by;
+    // A degenerate camera (0 x 0 window) projects to NaN: draw nothing rather than throw every frame.
+    if (Number.isFinite(bx) && Number.isFinite(by)) {
+      this.ballX = bx;
+      this.ballY = by;
+    } else onScreen = false;
     const g = this.g;
     const burst = now - this.burstAt < BURST;
     let ring = false;
