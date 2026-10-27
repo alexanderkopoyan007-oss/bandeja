@@ -7,7 +7,7 @@ import {
 import { REASON_TEXT, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE } from '../sim/contact/timing.ts';
 import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
-import { SHOT_KEYS, SHOT_BANDEJA } from '../sim/contact/shots.ts';
+import { SHAPES, SHOT_BANDEJA } from '../sim/contact/shots.ts';
 import { TimingCue, GRADE_CSS } from './cue.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 
@@ -189,7 +189,7 @@ export class Hud {
     this.help = root.appendChild(el('div', 'help'));
     this.help.innerHTML = keys(
       '[W][A][S][D] move &nbsp; [J] drive &nbsp; [K] topspin &nbsp; [L] slice &nbsp; [I] lob &nbsp; [U] drop<br>' +
-      '[O] overhead for lobs: a bandeja, with [Space] a smash that can leave the court<br>' +
+      '[O] overhead for lobs: a bandeja; with [Space] a smash that can leave the court; with [Shift] a víbora<br>' +
       'Hold a shot key as the ball comes: WASD then aims the target and you run to the ball yourself<br>' +
       'Release when the closing ring meets the ring on the ball. Serve: [A]/[D] aims, press to drop, release to hit<br>' +
       'Doubles: you are the ringed player; your partner calls the balls on their side, holding a shot key takes it<br>' +
@@ -282,7 +282,7 @@ export class Hud {
       // Doubles: the partner has called it. Holding a shot key takes it anyway.
       const partners = sim.doubles && sim.taker[team] === (human ^ 2) && p.swing !== SW_CHARGE;
       if (partners) hint = sim.rally.isServe ? 'Partner receives' : 'Partner\'s ball · hold a shot key to take it';
-      else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Bandeja · hold [Space] to smash';
+      else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Bandeja · hold [Space] to smash, [Shift] for a víbora';
       else if (this.lob) hint = 'Lob coming · hold [O] for an overhead';
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }
@@ -337,7 +337,7 @@ export class Hud {
         break;
       case E_HIT:
         if (human >= 0 && e.player === human) {
-          this.set(this.shotChip, `${SHOT_KEYS[e.a]} · <b>${(e.c * 3.6).toFixed(0)}</b> km/h`, true);
+          this.set(this.shotChip, `${SHAPES[e.a]!.name} · <b>${(e.c * 3.6).toFixed(0)}</b> km/h`, true);
           this.toggle(this.chips, 'on', true);
           this.chipsUntil = now + 1.4;
         }

@@ -4,7 +4,7 @@
 // In doubles it only goes for balls the match assigns to it (MatchSim.taker); otherwise it plays in
 // formation with its partner: both at the net or both back, each covering a lane, shifted to the ball.
 import type { MatchSim } from '../match.ts';
-import { InputFrame, SHOT_BUTTONS, BTN_OVERHEAD, BTN_POWER } from '../input.ts';
+import { InputFrame, SHOT_BUTTONS, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION } from '../input.ts';
 import { abs, clamp, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import { findWindows, makeWindows } from '../contact/windows.ts';
@@ -43,6 +43,8 @@ export class SimpleAi {
   /** The current plan takes a lob in the air (overhead key), and hits it as a smash (power held). */
   overhead = false;
   smash = false;
+  /** The overhead is a víbora (precision held at release). */
+  vibora = false;
   private readonly wins = makeWindows();
   private readonly st = makeStandPlan();
 
@@ -171,6 +173,7 @@ export class SimpleAi {
       if (this.pressed && !this.released && p.swing === SW_CHARGE && t1 > this.releaseAt) {
         this.aimAbs(f);
         if (p.shot === SHOT_BANDEJA && this.smash) f.held |= BTN_POWER;
+        else if (p.shot === SHOT_BANDEJA && this.vibora) f.held |= BTN_PRECISION;
         // Release the button that is actually held (the plan may have been revised since the press).
         f.push(false, button(p.shot), max(t0, this.releaseAt));
         this.released = true;
@@ -357,6 +360,8 @@ export class SimpleAi {
     const r = m.aiRng.next();
     this.shot = SHOT_BANDEJA;
     this.smash = (depth < 6 && height > 2.2 && r < 0.3 + 0.45 * this.level) || (depth < 4.5 && r < 0.8);
+    // Not a smash: the better players turn some into víboras (into the side glass, more pace than a bandeja).
+    this.vibora = !this.smash && depth < 7 && m.aiRng.next() < 0.15 + 0.35 * this.level;
     if (m.doubles) m.intentUp[this.team] = 1; // keep the net
     this.chooseTarget(m);
   }
@@ -371,6 +376,7 @@ export class SimpleAi {
     const opp = this.nearestOpponent(m);
     const r = m.aiRng.next();
     this.smash = false;
+    this.vibora = false;
     if (m.doubles) {
       this.chooseDoublesShot(m, r, height, volley, depth);
       this.chooseTarget(m);
@@ -474,7 +480,11 @@ export class SimpleAi {
     const up = this.opponentsUp(m);
     let x: number;
     let depth: number;
-    if (this.shot === SHOT_BANDEJA && this.smash) {
+    if (this.shot === SHOT_BANDEJA && this.vibora) {
+      // Into the side glass, deep enough that it comes off low towards the back.
+      x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.8 + 0.2 * rng.next());
+      depth = 6.4 + 1.2 * rng.next();
+    } else if (this.shot === SHOT_BANDEJA && this.smash) {
       // Flat and hard towards a side (it can kick off the side glass and out: por tres) or through the middle.
       x = rng.next() < 0.65 ? (rng.next() < 0.5 ? -1 : 1) * spread * (0.6 + 0.3 * rng.next()) : (a.pos.x + b.pos.x) * 0.5;
       depth = 4.6 + 1.6 * rng.next();

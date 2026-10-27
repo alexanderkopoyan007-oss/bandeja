@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { MatchSim, PH_RALLY, PH_SETUP, PH_OVER, E_HIT, E_POINT, E_WALL, E_FLOOR } from '../../src/sim/match.ts';
 import { InputFrame, BTN_DRIVE, BTN_PRECISION, BTN_OVERHEAD, BTN_POWER } from '../../src/sim/input.ts';
-import { SHOT_SMASH, SHOT_BANDEJA } from '../../src/sim/contact/shots.ts';
+import { SHOT_SMASH, SHOT_BANDEJA, SHOT_VIBORA } from '../../src/sim/contact/shots.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { WHY_EXIT_AFTER_BOUNCE } from '../../src/sim/rules/rally.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
@@ -160,14 +160,19 @@ describe('aiming', () => {
 
 describe('overheads', () => {
   /** Goes to the net after each shot (that draws lobs) and holds the overhead key when a lob comes. */
-  function lobs(power: boolean, seeds = 3) {
-    const res = { lobs: 0, overheads: 0, high: 0, smashes: 0, speeds: [] as number[], outAfterBounce: 0 };
+  /** `mod`: the modifier held with the overhead key (power: smash, precision: víbora). */
+  function lobs(mod: number, seeds = 3) {
+    const res = {
+      lobs: 0, overheads: 0, high: 0, smashes: 0, speeds: [] as number[], outAfterBounce: 0,
+      viboras: 0, viboraSpeeds: [] as number[], viboraSpin: [] as number[], viboraIn: 0, bandejaSpeeds: [] as number[],
+    };
     for (let seed = 1; seed <= seeds; seed++) {
       const m = new MatchSim({ seed, human: [true, false], firstServer: 1, autoTiming: true, assist: 0.45, timingScale: 1.5 });
       const f = new InputFrame();
       let seen = 0;
       let held = 0;
       let lob = -1; // -1 no ball coming, 0 groundstroke, 1 lob
+      let vib = false; // a víbora is in the air: where does it land?
       for (let i = 0; i < 150 * 120 && m.phase !== PH_OVER; i++) {
         f.clear();
         const p = m.players[0]!;
@@ -184,7 +189,7 @@ describe('overheads', () => {
           const d = Math.hypot(dx, dz);
           if (d > 0.3) { f.moveX = (dx / d) * s; f.moveY = (-dz / d) * s; }
         }
-        f.held = held | (power ? BTN_POWER : 0);
+        f.held = held | mod;
         m.step([f, null]);
         for (; seen < m.eventSeq; seen++) {
           const e = m.events[seen % m.events.length]!;
@@ -195,12 +200,22 @@ describe('overheads', () => {
             lob = top > 2.3 ? 1 : 0;
             if (lob) res.lobs++;
           } else if (e.kind === E_HIT && e.team === 0) {
-            if (lob === 1 && (e.a === SHOT_SMASH || e.a === SHOT_BANDEJA)) {
+            if (lob === 1 && (e.a === SHOT_SMASH || e.a === SHOT_BANDEJA || e.a === SHOT_VIBORA)) {
               res.overheads++;
               if (e.y >= 2.0) res.high++;
               if (e.a === SHOT_SMASH) { res.smashes++; res.speeds.push(e.c); }
+              if (e.a === SHOT_BANDEJA) res.bandejaSpeeds.push(e.c);
+              if (e.a === SHOT_VIBORA) {
+                res.viboras++;
+                res.viboraSpeeds.push(e.c);
+                res.viboraSpin.push(Math.abs(m.ball.spin.y));
+                vib = true;
+              }
             }
             lob = -1;
+          } else if (e.kind === E_FLOOR && vib) {
+            if (e.z * s < 0 && Math.abs(e.x) < m.world.court.halfW && Math.abs(e.z) < m.world.court.halfL) res.viboraIn++;
+            vib = false;
           } else if (e.kind === E_POINT) {
             if (e.team === 0 && e.a === WHY_EXIT_AFTER_BOUNCE) res.outAfterBounce++;
             lob = -1;
@@ -212,7 +227,7 @@ describe('overheads', () => {
   }
 
   it('holding O for a lob takes it in the air, high, as a bandeja', () => {
-    const r = lobs(false);
+    const r = lobs(0);
     expect(r.lobs).toBeGreaterThan(20);
     expect(r.overheads / r.lobs).toBeGreaterThan(0.85);
     expect(r.high / r.overheads).toBeGreaterThan(0.85);
@@ -220,11 +235,21 @@ describe('overheads', () => {
   });
 
   it('with power held the overhead is a smash, fast enough to leave the court', () => {
-    const r = lobs(true, 8);
+    const r = lobs(BTN_POWER, 8);
     expect(r.lobs).toBeGreaterThan(50);
     expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
     const sorted = r.speeds.slice().sort((a, b) => a - b);
     expect(sorted[sorted.length >> 1]! * 3.6).toBeGreaterThan(140); // median km/h
     expect(r.outAfterBounce).toBeGreaterThan(0); // por tres / por cuatro (rare at Good timing: ~3 in 8 matches' worth)
+  });
+
+  it('with precision held the overhead is a víbora: sidespin, between bandeja and smash pace, and it lands in', () => {
+    const r = lobs(BTN_PRECISION, 4);
+    const b = lobs(0, 4);
+    const med = (a: number[]) => a.slice().sort((x, y) => x - y)[a.length >> 1]!;
+    expect(r.viboras / r.lobs).toBeGreaterThan(0.85);
+    expect(r.viboraIn / r.viboras).toBeGreaterThan(0.8);
+    expect(med(r.viboraSpeeds)).toBeGreaterThan(med(b.bandejaSpeeds));
+    expect(med(r.viboraSpin)).toBeGreaterThan(100); // rad/s, about 1000 rpm or more
   });
 });

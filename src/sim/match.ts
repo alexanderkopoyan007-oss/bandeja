@@ -12,7 +12,7 @@ import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
 import { Player, SW_IDLE, SW_CHARGE, SW_COMMITTED, SW_RECOVER, DEFAULT_TUNING } from './player/player.ts';
 import {
   ShotSolver, strike, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
-  SHOT_BANDEJA, SHOT_VOLLEY, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
+  SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
@@ -883,8 +883,9 @@ export class MatchSim {
     let shot = p.shot;
     if (serving) shot = SHOT_SERVE;
     else if (p.shot === SHOT_BANDEJA) {
-      // Overhead key: a bandeja, or a smash with power held. A ball that has dropped too low is sliced instead.
-      if (b.pos.y >= t.overheadHeight - 0.3) shot = p.mod === MOD_POWER ? SHOT_SMASH : SHOT_BANDEJA;
+      // Overhead key: a bandeja, a smash with power held, a víbora with precision held. A ball that has dropped
+      // too low is sliced instead.
+      if (b.pos.y >= t.overheadHeight - 0.3) shot = p.mod === MOD_POWER ? SHOT_SMASH : p.mod === MOD_PRECISION ? SHOT_VIBORA : SHOT_BANDEJA;
       else shot = this.rally.bounces === 0 ? SHOT_VOLLEY : SHOT_SLICE;
     } else if (b.pos.y >= t.overheadHeight && shot !== SHOT_LOB && shot !== SHOT_DROP) shot = shot === SHOT_SLICE ? SHOT_BANDEJA : SHOT_SMASH;
     else if (this.rally.bounces === 0 && (shot === SHOT_DRIVE || shot === SHOT_SLICE)) shot = SHOT_VOLLEY;
@@ -910,7 +911,8 @@ export class MatchSim {
     }
 
     r.shot = shot;
-    r.mod = p.mod;
+    // Precision picked the víbora; it does not also scale it.
+    r.mod = shot === SHOT_VIBORA ? MOD_NONE : p.mod;
     r.quality = gradeQuality(p.grade);
     r.timingDelta = p.timingDelta;
     r.handSide = dx * s * p.handed >= 0 ? 1 : -1;
@@ -959,6 +961,7 @@ export class MatchSim {
       case SHOT_DROP: return 0.2;
       case SHOT_SMASH: return 0.75;
       case SHOT_BANDEJA: return 0.86;
+      case SHOT_VIBORA: return 0.78;
       case SHOT_VOLLEY: return 0.7;
       default: return 0.75;
     }

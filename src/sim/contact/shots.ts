@@ -17,8 +17,10 @@ export const SHOT_SERVE = 5;
 export const SHOT_SMASH = 6;
 export const SHOT_BANDEJA = 7;
 export const SHOT_VOLLEY = 8;
+/** Overhead with slice and sidespin, aimed into the side glass (overhead key + precision). */
+export const SHOT_VIBORA = 9;
 
-export const SHOT_KEYS = ['drive', 'topspin', 'slice', 'lob', 'drop', 'serve', 'smash', 'bandeja', 'volley'] as const;
+export const SHOT_KEYS = ['drive', 'topspin', 'slice', 'lob', 'drop', 'serve', 'smash', 'bandeja', 'volley', 'vibora'] as const;
 
 export const MOD_NONE = 0;
 export const MOD_POWER = 1;
@@ -33,6 +35,8 @@ export interface ShotShape {
   errorScale: number;
   /** Full pace: hit at the contact's top speed, elevation chosen for the distance (kill smash). */
   pace?: boolean;
+  /** Sidespin (rpm), curving the ball towards the side it is aimed at (víbora). */
+  sideRpm?: number;
 }
 
 interface ModSpec { netClear: number; speed: number; error: number }
@@ -351,6 +355,7 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
     || solver.solve(ball.pos, req.targetX, req.targetZ, rpm, shape.pace === true ? paceClear : clear, cap, ball.vel, ball.spin);
   out.idealX = req.targetX;
   out.idealZ = req.targetZ;
+  if (shape.sideRpm) addSidespin(solver, ball, req, (shape.sideRpm * 2 * PI) / 60 * (0.7 + 0.3 * q));
 
   // Error model (angles in radians).
   const err = shape.errorScale * mod.error / req.control;
@@ -375,6 +380,26 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   }
   out.speed = ball.vel.length();
   ball.rolling = false;
+}
+
+/**
+ * Sidespin about the vertical, curving the ball towards the side wall nearest the target, then the launch is
+ * turned (two passes of free flight) so the curve still ends on the target. Per strike, not per tick.
+ */
+function addSidespin(solver: ShotSolver, ball: Ball, req: ShotRequest, w: number): void {
+  const tdx = req.targetX - ball.pos.x;
+  const tdz = req.targetZ - ball.pos.z;
+  // Magnus pushes along spin x velocity: a spin wy on a ball travelling along z moves it by wy * vz in x.
+  ball.spin.y = w * (req.targetX >= 0 ? 1 : -1) * (tdz >= 0 ? 1 : -1);
+  const want = atan2(tdx, tdz);
+  for (let k = 0; k < 2; k++) {
+    solver.fly(ball.pos, ball.vel, ball.spin);
+    const got = atan2(solver.landX - ball.pos.x, solver.landZ - ball.pos.z);
+    let a = got - want;
+    if (a > PI) a -= 2 * PI;
+    else if (a < -PI) a += 2 * PI;
+    rotateYaw(ball.vel, a);
+  }
 }
 
 function rotateYaw(v: V3, a: number): void {
