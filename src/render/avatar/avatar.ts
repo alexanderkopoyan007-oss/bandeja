@@ -10,6 +10,7 @@ import type { StandPlan } from '../../sim/player/positioning.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
+import { Inertializer, InertN, InertQ } from './inertia.ts';
 import {
   BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
@@ -50,8 +51,32 @@ function bezier(a: THREE.Vector3, c: THREE.Vector3, b: THREE.Vector3, t: number,
   );
 }
 
-/** Blend weight for lerpV / nlerpQ, in a field: V8 boxes a double passed to a call it doesn't inline. */
-const BL = { u: 0 };
+/**
+ * The way a limb bends in the pose as it is (before IK): from the line root -> end out to the middle joint, as a
+ * unit vector into `out`, with a little of `fx, fz` (forward) so a straight limb still has a side to bend to.
+ * A pole there keeps the IK's elbow or knee where the animation had it: switching the IK on or off doesn't snap it.
+ */
+function bendDir(a: THREE.Bone, m: THREE.Bone, e: THREE.Bone, fx: number, fy: number, fz: number, out: THREE.Vector3): void {
+  const A = a.matrixWorld.elements, M = m.matrixWorld.elements, E = e.matrixWorld.elements;
+  const lx = E[12]! - A[12]!, ly = E[13]! - A[13]!, lz = E[14]! - A[14]!;
+  const mx = M[12]! - A[12]!, my = M[13]! - A[13]!, mz = M[14]! - A[14]!;
+  const ll = lx * lx + ly * ly + lz * lz;
+  const t = ll > 1e-9 ? (mx * lx + my * ly + mz * lz) / ll : 0;
+  let bx = mx - lx * t + fx * 0.004, by = my - ly * t + fy * 0.004, bz = mz - lz * t + fz * 0.004;
+  const bl = Math.sqrt(bx * bx + by * by + bz * bz);
+  if (bl < 1e-9) { bx = fx; by = fy; bz = fz; } else { bx /= bl; by /= bl; bz /= bl; }
+  out.set(bx, by, bz);
+}
+const bendL = new THREE.Vector3();
+const bendR = new THREE.Vector3();
+const bendA = new THREE.Vector3();
+const bendF = new THREE.Vector3();
+
+/**
+ * Blend weight for lerpV / nlerpQ, in a field: V8 boxes a double passed to a call it doesn't inline. `hemi`: which
+ * way round nlerpQ goes (+1 / -1), kept by the caller between frames.
+ */
+const BL = { u: 0, hemi: 1 };
 
 /** a = lerp(a, b, BL.u). */
 function lerpV(a: THREE.Vector3, b: THREE.Vector3): void {
@@ -61,11 +86,24 @@ function lerpV(a: THREE.Vector3, b: THREE.Vector3): void {
   a.z += (b.z - a.z) * u;
 }
 
-/** a = nlerp(a, b, BL.u) on the short arc (for blending poses, close enough to slerp). */
+/** q, or -q (the same rotation), whichever is nearer `prev`; prev = the result. */
+function alignQ(q: THREE.Quaternion, prev: THREE.Quaternion): void {
+  if (q.x * prev.x + q.y * prev.y + q.z * prev.z + q.w * prev.w < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+  prev.copy(q);
+}
+
+/**
+ * a = nlerp(a, b, BL.u) (for blending poses, close enough to slerp), the way round BL.hemi says. The short way is
+ * picked again only near the blend's ends, where both ways give the same rotation: switching mid-blend, when the
+ * two rotations are about 180 degrees apart, would flip the result (the racket turned over in one frame). The way
+ * round is also re-picked when it has become the long way by far (b moved a long way mid-blend). Both inputs must
+ * be continuous from frame to frame (alignQ): a quaternion read off a matrix can change sign at will.
+ */
 function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion): void {
   const u = BL.u;
   const d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-  const s = d < 0 ? -u : u;
+  if (u < 0.02 || u > 0.98 || BL.hemi * d < -0.7) BL.hemi = d < 0 ? -1 : 1;
+  const s = BL.hemi * u;
   const x = a.x * (1 - u) + b.x * s, y = a.y * (1 - u) + b.y * s, z = a.z * (1 - u) + b.z * s, w = a.w * (1 - u) + b.w * s;
   const l = 1 / Math.sqrt(x * x + y * y + z * z + w * w);
   a.set(x * l, y * l, z * l, w * l);
@@ -112,6 +150,19 @@ const STEP_SNAP = 0.7;
 /** Lunge: a planned contact further than LUNGE_FROM (m, flat) from the racket shoulder steps the foot on its side out. */
 const LUNGE_FROM = 0.9;
 const LUNGE_MAX = 0.55;
+
+/**
+ * How fast each joint can turn (deg/s), for inertialization: a target moving faster than 1.25x this in a frame is a
+ * jump, smoothed over. Peak speeds people reach: tennis serve, world-class players (Fleisig et al. 2003, mean + 2 SD):
+ * pelvis 620, upper torso 1110, shoulder internal rotation 3600, elbow extension 2050, wrist 3990; sprinting knee
+ * about 1500, hip 900; ankle 1200 (estimate); head turns about 700. Joints not listed: 1000 (the shoulder girdle).
+ */
+const JOINT_LIMITS: Record<string, number> = {
+  Hips: 620, Spine: 1110, Spine1: 1110, Spine2: 1110, Neck: 700, Head: 700,
+  LeftShoulder: 1000, RightShoulder: 1000, LeftArm: 3600, RightArm: 3600, LeftForeArm: 2050, RightForeArm: 2050,
+  LeftHand: 3990, RightHand: 3990, LeftUpLeg: 900, RightUpLeg: 900, LeftLeg: 1500, RightLeg: 1500,
+  LeftFoot: 1200, RightFoot: 1200, LeftToeBase: 1200, RightToeBase: 1200,
+};
 
 /** Fingers of the racket hand ('Right' or 'Left' in front), curled round the grip (rad, per joint). */
 const GRIP: Array<[string, number]> = [
@@ -276,6 +327,36 @@ export class Avatar {
   private readonly lean = new THREE.Quaternion();
   /** Shoulder to wrist, arm straight (m). */
   private readonly armLen: number;
+  /**
+   * Pops smoothed over (see inertia.ts): the clip pose before IK, the head after looking, the stance's facing, the
+   * stroke's key and weight, the hips' drop and reach. `inertial = false` shows the raw pose (QA comparisons).
+   */
+  inertial = true;
+  /** Which filters run (QA only): 1 clip pose, 2 head, 4 facing, 8 key, 16 weight, 32 hips. */
+  static inertMask = 63;
+  private readonly inertia: Inertializer;
+  private readonly inertiaSkip: Uint8Array;
+  private readonly headInertia: Inertializer;
+  private readonly headSkip: Uint8Array;
+  private readonly yawI = new InertN(1, (1.25 * 620 * Math.PI) / 180);
+  private readonly kpI = new InertN(3, 10);
+  private readonly kqI = new InertQ((1500 * Math.PI) / 180);
+  private readonly kpoleI = new InertN(3, 6);
+  private readonly koffI = new InertN(3, 8);
+  private readonly kyawI = new InertN(1, (1.25 * 1110 * Math.PI) / 180);
+  private readonly wI = new InertN(1, 30);
+  private readonly dropI = new InertN(1, 1.5);
+  private lastRootX = 0;
+  private lastRootZ = 0;
+  /** Which way round the racket's rotation blends go (see nlerpQ). */
+  private hemiReady = 1;
+  private hemiKey = 1;
+  /** Last frame's blend inputs, to keep their signs continuous. */
+  private readonly prevFkQ = new THREE.Quaternion();
+  private readonly prevReadyQ = new THREE.Quaternion();
+  private readonly prevKeyQ = new THREE.Quaternion();
+  /** What is left of a smoothing offset each frame: 1, or less so it reaches zero at the contact moment. */
+  private keepCon = 1;
 
   constructor(asset: PlayerAsset, color: number) {
     this.nb = asset.bones.length;
@@ -326,6 +407,20 @@ export class Avatar {
     const bp = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(rw[asset.bone(n)]!);
     this.armLen = bp('RightArm').distanceTo(bp('RightForeArm')) + bp('RightForeArm').distanceTo(bp('RightHand'));
     this.grips = [this.makeGrip(asset, 'Right', 1), this.makeGrip(asset, 'Left', -1)];
+    const lim = new Float64Array(this.nb);
+    this.inertiaSkip = new Uint8Array(this.nb);
+    for (let i = 0; i < this.nb; i++) {
+      const l = JOINT_LIMITS[asset.bones[i]!.name];
+      lim[i] = l === undefined ? 0 : (1.25 * l * Math.PI) / 180;
+      this.inertiaSkip[i] = l === undefined ? 1 : 0;
+    }
+    this.inertia = new Inertializer(lim);
+    this.headInertia = new Inertializer(lim);
+    this.headSkip = new Uint8Array(this.nb).fill(1);
+    this.headSkip[asset.bone('Neck')] = 0;
+    this.headSkip[asset.bone('Head')] = 0;
+    this.yawI.wrapAngle = true;
+    this.kyawI.wrapAngle = true;
     this.grip = this.grips[0]!;
     this.armRacket = this.armR;
     this.armFree = this.armL;
@@ -640,6 +735,8 @@ export class Avatar {
     } else if (this.st === ST_NONE) {
       this.w = 0;
     }
+    this.keepCon = this.st === ST_SWING && t < this.tCon ? (this.tCon - t) / (this.tCon - t + this.dt) : 1;
+    if (this.inertial && (Avatar.inertMask & 24) !== 0) this.smoothKey(t);
     // Low balls: bend the knees (contact or plan height), scaled by the stroke's weight.
     const cy = this.hasCon ? this.conW.y : 1;
     this.crouch = f.crouch * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) * this.w;
@@ -731,6 +828,18 @@ export class Avatar {
     // (last frame's stroke weight: the stroke below reads this frame).
     const net = sim.side(p.team) > 0 ? 0 : Math.PI;
     this.yaw = p.facing + wrapAngle(net - this.hand * this.handed * WALL_TURN * this.wall - p.facing) * this.w;
+    // A cut (placed for the next point) starts every filter afresh.
+    const rx = this.root.position.x - this.lastRootX, rz = this.root.position.z - this.lastRootZ;
+    this.lastRootX = this.root.position.x;
+    this.lastRootZ = this.root.position.z;
+    if (rx * rx + rz * rz > 0.25) this.resetInertia();
+    // The body turns no faster than a person turns (the sim faces the ball at once, even one that has just passed).
+    if (this.inertial && (Avatar.inertMask & 4) !== 0) {
+      this.yawI.in[0] = this.yaw;
+      this.yawI.step(dt);
+      this.yaw = this.yawI.out[0]!;
+    }
+    this.dt = dt;
     const ys = this.yaw + Math.PI;
     this.stanceC = Math.cos(ys);
     this.stanceS = Math.sin(ys);
@@ -741,7 +850,6 @@ export class Avatar {
     const yRoot = ys + turn * BODY_TURN;
     this.root.rotation.y = yRoot;
 
-    this.dt = dt;
     this.yRoot = yRoot;
     this.locomote(p);
     this.reaction(sim, idx, t);
@@ -766,6 +874,8 @@ export class Avatar {
       q2.setFromAxisAngle(AXIS_X, lean);
       for (let k = 0; k < 3; k++) this.spine[k]!.quaternion.multiply(q1).multiply(q2);
     }
+    // The clip pose (locomotion, reactions, the shoulder turn) carried on smoothly through any jump, before IK.
+    if (this.inertial && (Avatar.inertMask & 1) !== 0) this.inertia.apply(this.bones, this.hips.position, this.inertiaSkip, dt);
     this.root.updateMatrixWorld(true);
 
     // Ready position while a point is on (and for the receiver waiting for the serve), not at a sprint.
@@ -778,8 +888,76 @@ export class Avatar {
 
     this.plantW += (1 - smoothstep(0.25, 0.7, this.sp) - this.plantW) * (dt > 0 ? 1 - Math.exp(-dt / 0.08) : 0);
     if (this.plantW < 0.01) this.planted = false;
-    if (this.w > 0 || this.splitDrop > 0 || this.plantW >= 0.01) this.solveLegs();
+    this.solveLegs();
     if (this.w > 0 || this.ready >= 0.01) this.solveArms();
+
+    // The head after looking (the ball can move faster than a head turns).
+    if (this.inertial && (Avatar.inertMask & 2) !== 0) {
+      this.headInertia.apply(this.bones, null, this.headSkip, dt);
+      this.neck.updateMatrixWorld(true);
+    }
+  }
+
+  private resetInertia(): void {
+    this.inertia.reset();
+    this.headInertia.reset();
+    this.yawI.reset();
+    this.kpI.reset();
+    this.kqI.reset();
+    this.kpoleI.reset();
+    this.koffI.reset();
+    this.kyawI.reset();
+    this.wI.reset();
+    this.dropI.reset();
+  }
+
+  /**
+   * The stroke's key and weight, carried on smoothly through a jump (a stroke picked again at the release, the
+   * contact moved by a new plan). Any offset is gone by the contact: the racket still meets the ball.
+   */
+  private smoothKey(t: number): void {
+    const dt = this.dt;
+    // The forward swing (it starts during the charge, timed to the plan) moves fast by design.
+    const fast = (this.st === ST_SWING && t < this.tCon + 0.03) || (this.st === ST_PREP && this.swingS > 0);
+    if ((Avatar.inertMask & 8) === 0) { this.smoothW(dt, this.st === ST_SWING && t < this.tCon ? (this.tCon - t) / (this.tCon - t + dt) : 1); return; }
+    const keep = this.st === ST_SWING && t < this.tCon ? (this.tCon - t) / (this.tCon - t + dt) : 1;
+    const P = this.kpI;
+    P.limit = fast ? 45 : 10;
+    P.keep = keep;
+    P.in[0] = this.kp.x; P.in[1] = this.kp.y; P.in[2] = this.kp.z;
+    P.step(dt);
+    this.kp.set(P.out[0]!, P.out[1]!, P.out[2]!);
+    const Q = this.kqI;
+    Q.limit = fast ? (5000 * Math.PI) / 180 : (1500 * Math.PI) / 180;
+    Q.keep = keep;
+    Q.in.copy(this.kq);
+    Q.step(dt);
+    this.kq.copy(Q.out);
+    const L = this.kpoleI;
+    L.limit = fast ? 30 : 6;
+    L.keep = keep;
+    L.in[0] = this.kpole.x; L.in[1] = this.kpole.y; L.in[2] = this.kpole.z;
+    L.step(dt);
+    this.kpole.set(L.out[0]!, L.out[1]!, L.out[2]!);
+    const O = this.koffI;
+    O.in[0] = this.koff.x; O.in[1] = this.koff.y; O.in[2] = this.koff.z;
+    O.step(dt);
+    this.koff.set(O.out[0]!, O.out[1]!, O.out[2]!);
+    const Y = this.kyawI;
+    Y.keep = keep;
+    Y.in[0] = this.kyaw;
+    Y.step(dt);
+    this.kyaw = Y.out[0]!;
+    this.smoothW(dt, keep);
+  }
+
+  private smoothW(dt: number, keep: number): void {
+    if ((Avatar.inertMask & 16) === 0) return;
+    const W = this.wI;
+    W.keep = keep;
+    W.in[0] = this.w;
+    W.step(dt);
+    this.w = Math.min(1, Math.max(0, W.out[0]!));
   }
 
   /**
@@ -877,9 +1055,20 @@ export class Avatar {
     this.reachX = dh > 1e-3 ? (dx / dh) * push : 0;
     this.reachZ = dh > 1e-3 ? (dz / dh) * push : 0;
     const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) : 0;
-    const drop = this.crouch + push * 0.35 + down + this.splitDrop - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
+    // The knees bend no faster than a body drops (the crouch jumped when the stroke or its contact changed). The
+    // reach follows the stroke's key, which is smoothed already.
+    let crouch = this.crouch;
+    if (this.inertial && (Avatar.inertMask & 32) !== 0) {
+      const D = this.dropI;
+      D.keep = this.keepCon;
+      D.in[0] = crouch;
+      D.step(this.dt);
+      crouch = D.out[0]!;
+    }
+    const drop = crouch + push * 0.35 + down + this.splitDrop - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
     const plant = this.plantW >= 0.01;
-    if (drop < 0.005 && drop > -0.005 && push < 0.005 && !plant) return;
+    const pushed = Math.abs(this.reachX) + Math.abs(this.reachZ);
+    if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant) return;
 
     this.footL.setFromMatrixPosition(this.legL[2]!.matrixWorld);
     this.footR.setFromMatrixPosition(this.legR[2]!.matrixWorld);
@@ -888,15 +1077,19 @@ export class Avatar {
     if (plant) this.plantFeet();
     // Hips are a child of the (turned) model: move them in its frame.
     const c = Math.cos(this.root.rotation.y), s = Math.sin(this.root.rotation.y);
+    // How the knees bend in the clip, before the hips move.
+    bendDir(this.legL[0]!, this.legL[1]!, this.legL[2]!, s, 0, c, bendL);
+    bendDir(this.legR[0]!, this.legR[1]!, this.legR[2]!, s, 0, c, bendR);
     this.hips.position.x += this.reachX * c - this.reachZ * s;
     this.hips.position.z += this.reachX * s + this.reachZ * c;
     this.hips.position.y -= drop;
     this.hips.updateMatrixWorld(true);
-    // Knees bend forward over the toes.
+    // Knees bend the way the clip bends them.
     for (let side = 0; side < 2; side++) {
       const leg = side === 0 ? this.legL : this.legR;
+      const bd = side === 0 ? bendL : bendR;
       v3.setFromMatrixPosition(leg[1]!.matrixWorld);
-      this.pole.set(v3.x + s * 0.8, v3.y, v3.z + c * 0.8);
+      this.pole.set(v3.x + bd.x * 0.8, v3.y + bd.y * 0.8, v3.z + bd.z * 0.8);
       twoBoneIK(leg[0]!, leg[1]!, leg[2]!, side === 0 ? this.footL : this.footR, this.pole);
       setWorldQuat(leg[2]!, side === 0 ? this.footQL : this.footQR);
       leg[2]!.updateMatrixWorld(true);
@@ -989,18 +1182,25 @@ export class Avatar {
     this.racket.updateMatrixWorld();
     v1.setFromMatrixPosition(this.racket.matrixWorld);
     worldQuat(this.racket, q1);
+    alignQ(q1, this.prevFkQ);
     if (this.ready > 0) {
       this.toWorld(ready.p, v2);
       this.quatToWorld(ready.q, q2);
+      alignQ(q2, this.prevReadyQ);
       BL.u = this.ready;
       lerpV(v1, v2);
+      BL.hemi = this.hemiReady;
       nlerpQ(q1, q2);
+      this.hemiReady = BL.hemi;
     }
     this.toWorld(this.kp, v2);
     this.quatToWorld(this.kq, q2);
+    alignQ(q2, this.prevKeyQ);
     BL.u = w;
     lerpV(v1, v2);
+    BL.hemi = this.hemiKey;
     nlerpQ(q1, q2);
+    this.hemiKey = BL.hemi;
     // Hand = racket rotation without the grip; wrist = racket centre minus the grip offset.
     q3.multiplyQuaternions(q1, this.grip.qInv);
     this.tgt.copy(this.grip.pos).applyQuaternion(q3);
@@ -1032,6 +1232,14 @@ export class Avatar {
     BL.u = w;
     lerpV(v3, this.kpole);
     this.toWorld(v3, this.pole);
+    // As the stroke and the ready position let go, the elbow goes back to where the clip bends it.
+    const ik = Math.max(this.ready, w);
+    if (ik < 1) {
+      bendDir(ua, fa, hand, 0, -1, 0, bendA);
+      v2.setFromMatrixPosition(fa.matrixWorld).addScaledVector(bendA, 0.5);
+      BL.u = 1 - ik;
+      lerpV(this.pole, v2);
+    }
     twoBoneIK(ua, fa, hand, this.tgt, this.pole);
     setWorldQuat(hand, q3);
     hand.updateMatrixWorld(true);
@@ -1048,6 +1256,13 @@ export class Avatar {
     BL.u = w * 0.85;
     lerpV(v1, v2);
     this.toWorld(this.offPole, this.pole);
+    const ikF = Math.max(this.ready, w * 0.85);
+    if (ikF < 1) {
+      bendDir(ul, fl, hl, 0, -1, 0, bendF);
+      v2.setFromMatrixPosition(fl.matrixWorld).addScaledVector(bendF, 0.5);
+      BL.u = 1 - ikF;
+      lerpV(this.pole, v2);
+    }
     twoBoneIK(ul, fl, hl, v1, this.pole);
   }
 }
