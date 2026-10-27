@@ -30,8 +30,9 @@ Mixamo has no tennis or padel clips at all, so the strokes are not taken from it
 The strokes are authored procedurally on the Y Bot rig, with the user's OK, since nothing on Mixamo fits:
 - forehand and backhand (drive, topspin, slice), the volley and the underarm serve
 - bandeja, víbora and smash
-- wall play (turning to take the ball off the glass)
+- the ready position between shots
+- still to come: wall play (turning to take the ball off the glass)
 
-They are keyframed in code against the rig's bones, time-warped so contact lands exactly on the sim's contact moment, and blended over the locomotion clips from the hips up.
+Each is a set of key poses for the racket and the free hand (`src/render/avatar/strokes.ts`), reached with two-bone IK over the locomotion clips and timed so the racket meets the ball on the sim's contact moment.
 
-To swap in better clips later (your own, or from a video-to-mocap tool), drop the FBX in with the same file name and rebuild.
+To swap in better clips later (your own, or from a video-to-mocap tool), drop the FBX in with the same file name and run `npm run assets` (it writes `public/assets/player.bnz`, which is what gets committed).

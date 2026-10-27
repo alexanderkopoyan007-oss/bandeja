@@ -4,6 +4,7 @@ import { MODE_ADVANTAGE, MODE_GOLDEN, MODE_STAR, FINAL_NORMAL } from './sim/rule
 import type { FloorName } from './sim/setup.ts';
 import { Rng } from './sim/core/rng.ts';
 import { STYLE_KEYS } from './sim/ai/styles.ts';
+import { loadPlayerAsset, type PlayerAsset } from './render/avatar/asset.ts';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number): number => {
@@ -29,6 +30,12 @@ async function start(): Promise<void> {
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.AgXToneMapping;
   document.body.appendChild(renderer.domElement);
+  // The player body loads alongside the renderer; ?avatar=0 (or a failed load) plays with the M1 capsules.
+  const avatar = params.get('avatar') === '0' ? Promise.resolve(null)
+    : loadPlayerAsset(new URL('assets/player.bnz', document.baseURI).href).catch((err: unknown): PlayerAsset | null => {
+      console.warn('player body not loaded, using capsules:', err);
+      return null;
+    });
   await renderer.init();
 
   const game = new Game({
@@ -60,10 +67,12 @@ async function start(): Promise<void> {
     forceWebGL: params.get('backend') === 'webgl',
     pro: params.get('pro') === '1',
     mouseAim: params.get('aim') === 'mouse',
+    avatar: await avatar,
   }, renderer, document.getElementById('hud')!);
+  // Exposed before the warm-up: tools that step the game themselves don't need it (and a hidden tab stalls it).
+  (window as unknown as { __bandeja: Game }).__bandeja = game;
   await game.warmUp();
   game.start();
-  (window as unknown as { __bandeja: Game }).__bandeja = game;
 }
 
 start().catch((err: unknown) => {

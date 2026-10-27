@@ -6,6 +6,7 @@ import { InputFrame, BTN_POWER } from '../sim/input.ts';
 import { buildCourtView } from '../render/courtView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
 import { KeyboardInput } from './input/keyboard.ts';
+import type { PlayerAsset } from '../render/avatar/asset.ts';
 import { Hud } from '../ui/hud.ts';
 import { DebugOverlay } from '../ui/debug.ts';
 
@@ -19,6 +20,8 @@ export interface GameOptions {
   forceWebGL: boolean;
   pro: boolean;
   mouseAim: boolean;
+  /** The animated player body (M2); null: the M1 capsules. */
+  avatar: PlayerAsset | null;
 }
 
 /** Numbers the perf tool reads from the page. */
@@ -83,7 +86,7 @@ export class Game {
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
-    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i));
+    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar));
     if (!opts.autoplay) this.players[opts.human]!.markYou();
     this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
     this.assists = new AssistView(this.scene);
@@ -162,7 +165,11 @@ export class Game {
     }
     this.epoch = performance.now() - this.sim.time * 1000;
     this.renderer.setAnimationLoop(() => this.tick());
+    this.running = true;
   }
+
+  /** start() has run (tools wait for this; the page exposes the game before its warm-up). */
+  running = false;
 
   private buildInput(t0: number, t1: number): InputFrame | null {
     if (this.opts.autoplay) return null;
@@ -232,11 +239,11 @@ export class Game {
       }
     }
 
+    const frameDt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
     this.ball.update(this.sim, alpha, team);
     for (let i = 0; i < this.players.length; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
     this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
     const who = this.opts.autoplay ? -1 : human;
-    const frameDt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
     this.assists.update(this.sim, who, now / 1000, frameDt, this.kb.held, this.cam.camera.position);
     this.hud.update(this.sim, who, now / 1000);
     // The timing cue is drawn in screen space around the ball, with a marker floating over the aim target.

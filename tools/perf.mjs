@@ -34,7 +34,7 @@ async function run(name, { dpr, throttle, unlimited }) {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
   }
   await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}`, { waitUntil: 'load' });
-  await page.waitForFunction(() => window.__bandeja, { timeout: 30000 });
+  await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 3000)); // settle after warm-up
   await page.evaluate(() => { const p = window.__bandeja.probe; p.frames.length = 0; p.sims.length = 0; p.works.length = 0; });
   await new Promise((r) => setTimeout(r, secs * 1000));

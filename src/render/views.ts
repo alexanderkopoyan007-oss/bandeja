@@ -7,6 +7,8 @@ import { PF_FLOOR } from '../sim/ball/predict.ts';
 import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
 import { BTN_POWER, BTN_PRECISION } from '../sim/input.ts';
 import { decal, makeAimTexture, makeSpotTexture, makeSpreadTexture } from './decals.ts';
+import { Avatar, makeRacket } from './avatar/avatar.ts';
+import type { PlayerAsset } from './avatar/asset.ts';
 
 const BALL_COLOR = 0xdff23b;
 // By player number (team + 2 * slot): each pair in its colour, the partner a lighter shade of it.
@@ -115,12 +117,23 @@ export class BallView {
 }
 
 export class PlayerView {
-  readonly root = new THREE.Group();
-  readonly body: THREE.Mesh;
-  readonly racket = new THREE.Group();
+  /** At the player's feet. */
+  readonly root: THREE.Group;
+  /** The animated body; null when the asset didn't load (then a capsule stands in, as in M1). */
+  readonly avatar: Avatar | null;
+  private readonly body: THREE.Mesh | null = null;
+  private readonly racket: THREE.Group | null = null;
   private readonly ready = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, idx: number) {
+  constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null) {
+    if (asset) {
+      this.avatar = new Avatar(asset, PLAYER_COLORS[idx]!);
+      this.root = this.avatar.root;
+      scene.add(this.root);
+      return;
+    }
+    this.avatar = null;
+    this.root = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: PLAYER_COLORS[idx], roughness: 0.75 });
     this.body = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 1.2, 6, 14), mat);
     this.body.position.y = 0.8;
@@ -138,21 +151,7 @@ export class PlayerView {
     nose.position.set(0, 1.7, -0.12);
     this.root.add(nose);
     scene.add(this.root);
-
-    const face = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.13, 0.13, 0.03, 24),
-      new THREE.MeshStandardMaterial({ color: 0x1d1f24, roughness: 0.4, metalness: 0.2 }),
-    );
-    face.rotation.x = Math.PI / 2;
-    face.scale.set(1, 1, 1.12);
-    face.castShadow = true;
-    this.racket.add(face);
-    const handle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.016, 0.016, 0.2, 10),
-      new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.6 }),
-    );
-    handle.position.y = -0.24;
-    this.racket.add(handle);
+    this.racket = makeRacket();
     scene.add(this.racket);
   }
 
@@ -169,6 +168,12 @@ export class PlayerView {
   }
 
   update(sim: MatchSim, p: Player, idx: number, alpha: number, renderTime: number): void {
+    if (this.avatar) {
+      this.avatar.update(sim, p, idx, alpha, renderTime);
+      return;
+    }
+    const body = this.body!;
+    const racket = this.racket!;
     const pp = sim.prevPlayers[idx]!;
     const x = pp.x + (p.pos.x - pp.x) * alpha;
     const z = pp.z + (p.pos.z - pp.z) * alpha;
@@ -176,7 +181,7 @@ export class PlayerView {
     this.root.rotation.y = p.facing;
     // Lean into acceleration a little.
     const sp = p.speed();
-    this.body.rotation.x = -Math.min(0.15, sp * 0.02);
+    body.rotation.x = -Math.min(0.15, sp * 0.02);
 
     // Racket: ready position, backswing while charging, swing through the contact point, follow-through.
     const s = sim.side(p.team);
@@ -203,8 +208,8 @@ export class PlayerView {
     } else {
       tgt.copy(this.ready);
     }
-    this.racket.position.lerp(tgt, p.swing === SW_COMMITTED || p.swing === SW_RECOVER ? 1 : 0.35);
-    this.racket.lookAt(this.racket.position.x, this.racket.position.y, this.racket.position.z + fwd);
+    racket.position.lerp(tgt, p.swing === SW_COMMITTED || p.swing === SW_RECOVER ? 1 : 0.35);
+    racket.lookAt(racket.position.x, racket.position.y, racket.position.z + fwd);
   }
 }
 

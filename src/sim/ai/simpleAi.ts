@@ -8,7 +8,7 @@ import { InputFrame, SHOT_BUTTONS, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION } from
 import { abs, clamp, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import { findWindows, makeWindows } from '../contact/windows.ts';
-import { makeStandPlan, planStand } from '../player/positioning.ts';
+import { makeStandPlan, planStand, type StandPlan } from '../player/positioning.ts';
 import { formationSpot, type Spot } from '../player/formation.ts';
 import { styleOf, type AiStyle } from './styles.ts';
 import { SW_IDLE, SW_CHARGE, type Player } from '../player/player.ts';
@@ -47,6 +47,10 @@ export class SimpleAi {
   vibora = false;
   private readonly wins = makeWindows();
   private readonly st = makeStandPlan();
+  /** The contact this AI is set up for (the renderer times the swing to it). */
+  get standPlan(): Readonly<StandPlan> {
+    return this.st;
+  }
   private readonly spot: Spot = { x: 0, z: 0 };
 
   readonly style: AiStyle;

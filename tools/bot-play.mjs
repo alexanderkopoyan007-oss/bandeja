@@ -15,7 +15,7 @@ const page = await browser.newPage();
 await page.setViewport({ width: 1280, height: 720 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto(url, { waitUntil: 'load' });
-await page.waitForFunction(() => window.__bandeja, { timeout: 30000 });
+await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
 
 const result = await page.evaluate(async (secs) => {
   const g = window.__bandeja;

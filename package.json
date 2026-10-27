@@ -12,6 +12,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.sim.json",
     "alloc": "node tools/alloc-check.mjs",
+    "assets": "node tools/assets/build-player.mjs",
     "perf": "bash tools/one-chrome.sh node tools/perf.mjs"
   },
   "dependencies": {
