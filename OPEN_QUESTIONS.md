@@ -47,3 +47,19 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   of the wall), the glass is met 0.5-5 ms later as a separate contact, and the floor can follow 1 ms after it,
   which the rules count as a second bounce. In real play such a ball is pinned in the rincón and unplayable, so
   the point goes to the hitter either way; left as it is.
+
+## Phase 2 (game feel)
+- **Display latency on the owner's machine.** `tools/latency.mjs` measures key → sim → frame drawn → GPU done in
+  headless Chrome; the last step to light on the panel (compositor, display scan-out) isn't measurable from a
+  page. Settled by: a 240 fps phone video of a key press and the screen (or the owner's feel of `?runahead=0`
+  against the default).
+- **Racket sound.** Synthesised and tuned by ear; no recording of a padel ball on a padel racket was analysed
+  (sweet spot vs frame). Settled by: recordings (Phase 6), the owner's `/reference/audio` if it appears.
+- **Timing window sizes.** The base windows (Perfect ±25 ms) come from screen-tapping precision (about 12 ms SD)
+  and the per-shot multipliers from face angular speed (radii estimated). Whether they feel right is the owner's
+  call after playing: the `?timing=` setting scales them all.
+- **Split-step pre-load and build-up.** `startFrom` 0.2, `startRamp` 0.3 s and `splitPreload` 0.3 s are fitted
+  so the split-step's gain matches the tennis data (Uzu, Nieminen); padel-specific measurements of the split-step
+  don't exist.
+- **The camera kick.** Broadcast cameras don't shake on a smash; the brief asked for a camera response, so it is
+  a small push-in and jolt. Whether to keep it is the owner's call.

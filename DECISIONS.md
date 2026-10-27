@@ -145,3 +145,61 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   directly (`FIO[0] = x; expF(); FIO[0]`), as do the net's and the cloth step's; no double crosses a call there.
   Singles 3-5, doubles 6-7, avatars 4-5 over 6 runs (budget 10); the junction search is skipped more than 20 cm
   from a second surface.
+
+## Phase 2: game feel
+- **Values live in FEEL.md.** Every feel number (timing windows, volley reach, movement, split-step, sound,
+  rumble, camera) is listed there with where it lives and why; this section is the decisions and what they did.
+- **Input latency: render the present, not one tick behind.** The sim already took key events at their exact
+  timestamps (a release is judged when it happened), but the render drew between the last two ticks *behind*
+  now, adding a tick (8.3 ms) before a key's effect could be seen. The loop now steps until the sim is at or just
+  past now and blends back to now (`?runahead=0` restores the old loop). `tools/latency.mjs` measures key → used
+  by the sim → frame drawn → GPU done in both modes (results: FEEL.md).
+- **The volley gets its own key (N), as the owner asked.** Holding it plans the incoming ball in the air
+  (`planStand(volleyKey)`) with a volley's comfortable height (waist to shoulder) and a reach band instead of set
+  feet: volleys are played on the move, met with a reach or a step. A volley planned too late is blocked off the
+  bounce. The first version planned volleys like groundstrokes (stop, set the feet) and most were late; the
+  reach band fixed it. Its test moved from singles to doubles: a net player in singles faces passing shots 2.4-3.2 m
+  wide, which no volley plan should chase. Result (5 seeds x 120 s): a doubles net player takes 79% of balls in
+  the air with N against 47% with the drive key, and loses no more points on its own shots (0 against 1).
+- **Each shot has its own timing windows.** The tolerance of a contact is how far the face turns per millisecond,
+  so the windows scale with the square root of the face's angular speed against the drive's (capped): a punch
+  volley 1.35x, a lob 1.15x, a bandeja 0.85x, a smash 0.72x, a víbora 0.65x (FEEL.md has the table). The cue
+  ring, the HUD's timing meter and auto-timing all use the shot the release is heading for (`windowScale`),
+  including the modifier being held (`Player.heldMod`, hashed).
+- **The split-step is real, and a standstill is heavy.** The old split-step was a 1.35x acceleration boost for
+  0.35 s. The data say otherwise: the hop is airborne about 142 ms (no grip), and its value is getting going, not
+  extra acceleration (a 1.35x boost would need 14.5 m/s², past what the shoe's grip allows). Now force builds from
+  20% to full over 0.3 s from a static stance, the airborne hop gives no push, and the landing pre-loads the legs
+  (no build-up for 0.3 s after it). Calibrated (scratch scripts, then `tests/sim/splitstep.test.ts`): a target
+  1-2.5 m away is reached 108-117 ms sooner with the split-step (measured: 104 ms, Uzu 2009; 13.1%, Nieminen 2014),
+  feet start about 280 ms after the opponent's contact (tennis: 266-311 ms). The planner adds the build-up and
+  remaining airtime to its run times (within 40 ms of the simulated arrival, tested). The avatar's hop is the
+  ballistic 2.5 cm for 142 ms (was a 6 cm lift).
+- **Two V8 traps on the way.** A tuning field read only on a rare branch had no type feedback there, and reaching
+  it deoptimised `move()` mid-rally: every tuning value `move()` and `startLag()` use is read up front. And a
+  double returned from `startLag()` would be boxed: it writes a field (`lagT`). The singles allocation spikes
+  that remained were the Phase 1 exp() trap (fixed there).
+- **An AI bug, found by a test: modifiers stayed held all match.** The AI's input frame is reused and
+  `InputFrame.clear()` leaves `held` alone (a keyboard sets it each frame), so after an AI's first smash it held
+  power for every later shot, and after a víbora, precision. The styles test caught it when the split-step changed
+  where overheads are taken: every style's overheads had drifted to víboras (El Relojero 53%, La Serpiente 55%),
+  so the style made no difference. `SimpleAi.think` now clears its held bits each tick. La Serpiente plays víboras
+  on 33% of her overheads, El Relojero 8%; the test's bar goes back to 1.4x (Phase 1 had lowered it to 1.25 on this
+  bug's account).
+- **Test samples enlarged, not bars lowered** (overheads in `assist.test.ts`): 5 matches gave 20-25 lobs for an 85%
+  bar, 4 gave 13 víboras for an 80% one, 12 gave 36-45 smashes against a 40-lob floor; now 8, 12 and 16 matches.
+  One bar moved on purpose: a víbora lands in 79% of the time over 30 matches with the test's assist (it was over
+  80% before it had the tightest timing window of any shot), so the bar is 72%.
+- **Hit feedback.** Racket sound by contact quality (WebAudio, synthesised: a centred hit short and bright, a
+  mistimed one duller with a frame knock; loudness by ball speed; played at the event's exact time), a camera kick
+  on smashes (up to 1.2° of push-in and a 2 cm jolt over a third of a second), and gamepad support with rumble
+  (a crisp tap for a clean hit, a buzz for a mishit, a thump for a smash). The timing readout (grade and ms
+  early/late) was already there and is unchanged; the owner asked not to restyle the cues without seeing them.
+  All tuning by ear and feel (FEEL.md); Phase 6 does the full soundscape.
+- **Gameplay effect** (AI doubles, 24 seeds x 300 s, `tools/point-mix.ts`; Phase 1 after its review fixes → Phase
+  2): 328 → 297 points, median rally 10 → 11 shots, untouched winners 43.9 → 56.2%, own-side errors 49.1 →
+  36.0%, balls on an opponent 3.7 → 3.4%. That moves away from the pros (winners 34-42%, errors about 60%). Taken
+  apart: without the split-step model 54.9/39.0%, without the AI fix 54.4/38.0%. The shift is the per-shot
+  windows: volleys are a quarter of all shots and now get 1.35x the drive's window, so the AI misses fewer. The
+  AI's timing spread is a stand-in until Phase 4 calibrates its errors against pro match statistics; the windows
+  are for the player's hands.
