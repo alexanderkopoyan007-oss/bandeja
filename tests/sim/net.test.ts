@@ -163,7 +163,7 @@ describe('net cloth', () => {
   it('rules: a ball into the net loses the point for the hitter, even while it bulges past the line', () => {
     let netPoints = 0;
     let bulged = 0;
-    for (const seed of [1, 2, 3, 4, 5, 6]) {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false] });
       let seen = 0;
       let hitter = -1;

@@ -1,11 +1,16 @@
 // Racket–ball contact. A shot is chosen as a target + shape (net clearance, spin, depth); the solver finds
-// the launch that flies there under the real flight model, the contact physics caps the speed that is
-// possible, and the error model perturbs the launch from timing, footwork, stretch and modifiers.
+// the launch that flies there under the real flight model, within the ball speed the swing can give (the
+// racket's speed, the incoming ball and the face's restitution). The racket model (racket.ts) turns that launch
+// into the swing that makes it (face angle, face velocity, where on the face); the errors are made in the swing
+// (path, face, speed, contact point, from timing, footwork, stretch and modifiers) and the impact physics turns
+// them into the ball that really leaves: a late swing pushes it, an open face lifts it and adds backspin, a ball
+// off the axis twists the face and loses pace, one off the face hits the frame.
 import { Ball, HIT_FLOOR, type BallWorld } from '../ball/ball.ts';
 import { V3 } from '../core/v3.ts';
 import { Rng } from '../core/rng.ts';
 import { DT } from '../core/constants.ts';
 import { abs, atan, atan2, clamp, cos, max, min, sin, sqrt, PI } from '../core/smath.ts';
+import { Racket, RACKETS, faceHalfWidth } from './racket.ts';
 import shotData from '../../../data/shots.json' with { type: 'json' };
 
 export const SHOT_DRIVE = 0;
@@ -33,17 +38,42 @@ export interface ShotShape {
   netClear: number;
   spinRpm: number;
   depth: number;
-  speedMax: number;
+  /** Face speed at the impact point (m/s) on a perfect, full swing. */
+  racketMax: number;
+  /** Planned impact point, from the tip of the racket (m). */
+  impact: number;
   errorScale: number;
   /** Full pace: hit at the contact's top speed, elevation chosen for the distance (kill smash). */
   pace?: boolean;
   /** Sidespin (rpm), curving the ball towards the side it is aimed at (víbora). */
   sideRpm?: number;
+  /** Short of face speed, spin is given up down to this fraction of spinRpm before pace (default 0.3). */
+  spinFloor?: number;
 }
 
 interface ModSpec { netClear: number; speed: number; error: number }
 
-const data = shotData as unknown as Record<string, ShotShape> & { modifiers: { power: ModSpec; precision: ModSpec } };
+/** Swing error parameters (data/shots.json `swing`): [base, bad, moving, stretch] spreads. */
+interface SwingSpec {
+  pathYaw: number[];
+  pathPitch: number[];
+  faceOpen: number[];
+  faceYaw: number[];
+  speed: number[];
+  contactAlong: number[];
+  contactAcross: number[];
+  timingYaw: number;
+  timingAlong: number;
+  edgeMin: number;
+  edgeRand: number;
+  frameSpeed: number;
+  frameSpeedRand: number;
+  frameYaw: number;
+  framePitch: number[];
+}
+
+const data = shotData as unknown as Record<string, ShotShape> & { modifiers: { power: ModSpec; precision: ModSpec }; swing: SwingSpec };
+const SW = data.swing;
 export const SHAPES: ShotShape[] = SHOT_KEYS.map((k) => data[k]!);
 const MODS: ModSpec[] = [{ netClear: 1, speed: 1, error: 1 }, data.modifiers.power, data.modifiers.precision];
 
@@ -69,12 +99,24 @@ export interface ShotRequest {
   control: number;
   /** Multiplies the shot's spin (serves: flat / slice / kick by key). The launch is solved with it. */
   spinScale: number;
+  /** Where the hitter's body is (x, z): the racket reaches from it to the ball. */
+  bodyX: number;
+  bodyZ: number;
 }
 
 export interface ShotResult {
   /** Did the clean solve reach the target within the speed the contact allowed? */
   reachable: boolean;
   speed: number;
+  /** The swing: face speed at the impact point (m/s), apparent COR, where on the face, and a frame hit. */
+  racketSpeed?: number;
+  /** Face speed the swing could reach, and what the clean shot needed of it. */
+  faceCap?: number;
+  faceNeed?: number;
+  ea?: number;
+  fromTip?: number;
+  across?: number;
+  frame?: boolean;
   /** Ideal (pre-error) landing point, for debug/assists. */
   idealX: number;
   idealZ: number;
@@ -86,6 +128,7 @@ const tmpV = new V3();
 
 export class ShotSolver {
   readonly world: BallWorld;
+  readonly racket: Racket;
   // Results of the last fly().
   landX = 0;
   landZ = 0;
@@ -94,6 +137,7 @@ export class ShotSolver {
 
   constructor(world: BallWorld) {
     this.world = world;
+    this.racket = new Racket(RACKETS.standard!, world.spec.mass, world.spec.radius, world.spec.inertiaFactor);
   }
 
   /**
@@ -310,13 +354,27 @@ export class ShotSolver {
       this.launch(s, th, outV);
       return ok;
     }
-    // Not enough contact speed: up to 6 degrees of extra lift to carry the distance, else it falls short.
+    // Not enough contact speed: up to 6 degrees of extra lift to carry the distance. Failing that, a player with
+    // no pace left loops it: the lowest launch that still clears the net (and carries furthest), a short ball.
     const thMax = th + (6 * PI) / 180;
     let lo = th;
     let hi = thMax;
     this.eval(p, cap, hi, outW, dist, want, crosses);
     if (this.eR < 0) {
-      this.launch(cap, hi, outV);
+      let best = hi;
+      let bestR = this.eR;
+      if (crosses) {
+        const tape = want - clear + 0.05;
+        let ok = this.eN + clear >= 0.05;
+        for (let k = 1; k <= 12 && (!ok || this.eR < 0); k++) {
+          const t2 = hi + ((3 * PI) / 180) * k;
+          this.eval(p, cap, t2, outW, dist, want, crosses);
+          const clears = this.eN >= tape - want;
+          if (clears && (!ok || this.eR > bestR)) { best = t2; bestR = this.eR; ok = true; }
+          if (ok && this.eR >= 0) break;
+        }
+      }
+      this.launch(cap, best, outV);
       return false;
     }
     for (let i = 0; i < 10; i++) {
@@ -334,55 +392,151 @@ export class ShotSolver {
   }
 }
 
+const vin = new V3();
+const win = new V3();
+const wantV = new V3();
+const wantW = new V3();
+const faceN = new V3();
+const faceV = new V3();
+const gotV = new V3();
+const gotW = new V3();
+const axis = new V3();
+const hor = new V3();
+
 /**
- * Contact model: pick the speed cap from shape, modifier, quality and body position, solve the clean shot,
- * then apply the error model. Writes the ball's new velocity and spin.
+ * Contact model: the face speed the swing can reach (shape, modifier, timing, body position), the ball speed
+ * that gives off this incoming ball, the clean shot within it, the swing that makes it, the swing's errors,
+ * and the impact. Writes the ball's new velocity and spin.
  */
 export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rng, out: ShotResult): void {
   const shape = SHAPES[req.shot]!;
   const mod = MODS[req.mod]!;
+  const rk = solver.racket;
   const q = req.quality;
+  const bad = 1 - q;
+  vin.copy(ball.vel);
+  win.copy(ball.spin);
 
-  // Sweet spot: poorer timing and stretching move contact towards the edge of the face.
-  const off = clamp(abs(rng.normal()) * (0.04 + 0.32 * (1 - q) + 0.2 * req.stretch), 0, 1);
-  const sweet = 1 - 0.45 * off * off;
+  const tdx = req.targetX - ball.pos.x;
+  const tdz = req.targetZ - ball.pos.z;
+  const tdl = sqrt(tdx * tdx + tdz * tdz);
+  // The racket's long axis: across the shot towards the side of the body the ball is on (the head drops for a
+  // low ball), up for overheads.
+  const overhead = req.shot === SHOT_SMASH || req.shot === SHOT_BANDEJA || req.shot === SHOT_VIBORA;
+  if (overhead || tdl < 1e-6) axis.set(0, 1, 0);
+  else {
+    let lx = -tdz / tdl;
+    let lz = tdx / tdl;
+    const side = (ball.pos.x - req.bodyX) * lx + (ball.pos.z - req.bodyZ) * lz;
+    if (side < 0 || (side === 0 && req.handSide < 0)) { lx = -lx; lz = -lz; }
+    axis.set(lx, -clamp((0.95 - ball.pos.y) * 0.9, 0, 0.8), lz);
+  }
+
+  // Face speed the swing can reach, and the ball speed that gives head on off this ball at the planned point.
   const lowBall = ball.pos.y < 0.45 ? 0.75 + 0.55 * ball.pos.y : 1;
-  const cap = shape.speedMax * mod.speed * req.power * (0.55 + 0.45 * q) * sweet * lowBall
+  const vCap = shape.racketMax * mod.speed * req.power * (0.7 + 0.3 * q) * lowBall
     * (1 - 0.18 * req.moving) * (1 - 0.25 * req.stretch);
+  const along = tdl > 1e-6 ? max(0, -(vin.x * tdx + vin.z * tdz) / tdl) : 0;
+  const ea0 = rk.acor(vCap + along, shape.impact, 0);
+  let cap = ea0 * along + (1 + ea0) * vCap;
 
   const clear = shape.netClear * mod.netClear;
-  const rpm = shape.spinRpm * req.spinScale * (0.7 + 0.3 * q);
+  let rpm = shape.spinRpm * req.spinScale * (0.7 + 0.3 * q);
   // Pace shots keep a safer margin over the tape: full pace when that clears it, else as fast as clears it.
   const paceClear = clear + 0.25;
-  out.reachable = (shape.pace === true && solver.solvePace(ball.pos, req.targetX, req.targetZ, rpm, cap, paceClear, ball.vel, ball.spin))
-    || solver.solve(ball.pos, req.targetX, req.targetZ, rpm, shape.pace === true ? paceClear : clear, cap, ball.vel, ball.spin);
+  // Swing errors (spreads here: the swing is made for the contact this hitter usually gets).
+  const err = shape.errorScale * mod.error / req.control;
+  const mv = req.moving;
+  const st = req.stretch;
+  const spread = (c: number[]) => c[0]! + c[1]! * bad + (c[2] ?? 0) * mv + (c[3] ?? 0) * st;
+  const sAlong = spread(SW.contactAlong) * err;
+  const sAcross = spread(SW.contactAcross) * err;
+  rk.spreadAlong = sAlong;
+  rk.spreadAcross = q < 0.2 ? 0 : sAcross;
+
+  // Solve, find the swing. If it needs more face speed than there is (spin costs speed), take pace off; if the
+  // face cannot give the spin the flight was solved with (friction), solve the flight again with what it gives.
+  for (let pass = 0; pass < 5; pass++) {
+    ball.vel.copy(vin);
+    out.reachable = (shape.pace === true && solver.solvePace(ball.pos, req.targetX, req.targetZ, rpm, cap, paceClear, ball.vel, ball.spin))
+      || solver.solve(ball.pos, req.targetX, req.targetZ, rpm, shape.pace === true ? paceClear : clear, cap, ball.vel, ball.spin);
+    if (shape.sideRpm) addSidespin(solver, ball, req, (shape.sideRpm * 2 * PI) / 60 * (0.7 + 0.3 * q));
+    wantV.copy(ball.vel);
+    wantW.copy(ball.spin);
+    rk.swing(vin, win, wantV, wantW, axis, shape.impact, faceN, faceV);
+    const need = faceV.length();
+    out.faceNeed = need;
+    let again = false;
+    if (need > vCap * 1.03) {
+      // Not enough face speed: brushing for spin costs face speed whatever the pace, so a player takes spin off
+      // first and pace only once there is little spin left to give.
+      if (abs(rpm) > (shape.spinFloor ?? 0.3) * abs(shape.spinRpm * req.spinScale) + 50) rpm *= max(0.4, (vCap / need) * 0.9);
+      else cap *= (vCap / need) * 0.99;
+      again = true;
+    }
+    if (rk.spinLimited && tdl > 1e-6) {
+      // The top/back spin the face really gives (about the axis the solver spins the ball on).
+      rk.impact(vin, win, faceN, faceV, axis, shape.impact, 0, gotV, gotW);
+      const got = ((gotW.x * tdz - gotW.z * tdx) / tdl) * (60 / (2 * PI));
+      if (abs(got - rpm) > 0.05 * abs(rpm) + 30) {
+        rpm = got;
+        again = true;
+      }
+    }
+    if (!again) break;
+  }
   out.idealX = req.targetX;
   out.idealZ = req.targetZ;
-  if (shape.sideRpm) addSidespin(solver, ball, req, (shape.sideRpm * 2 * PI) / 60 * (0.7 + 0.3 * q));
 
-  // Error model (angles in radians).
-  const err = shape.errorScale * mod.error / req.control;
-  const bad = 1 - q;
-  const deg = PI / 180;
-  const sYaw = (0.5 + 4.0 * bad + 1.5 * req.moving + 2.5 * req.stretch) * err * deg;
-  const sPitch = (0.3 + 2.4 * bad + 0.9 * req.moving + 1.5 * req.stretch) * err * deg;
-  const sSpeed = (0.015 + 0.07 * bad) * err;
-  // Early pulls the ball across the hitter's body, late pushes it the other way.
-  const bias = clamp(req.timingDelta / 0.11, -2, 2) * 2.2 * deg * req.handSide;
+  // Swing errors.
+  const deg = (PI / 180) * err;
+  // Early pulls the swing across the hitter's body, late pushes it the other way.
+  const tim = clamp(req.timingDelta / 0.11, -2, 2);
+  const yaw = tim * SW.timingYaw * (PI / 180) * req.handSide + rng.normal() * spread(SW.pathYaw) * deg;
+  const pitch = rng.normal() * spread(SW.pathPitch) * deg;
+  // The whole swing turned: face and path together.
+  rotateYaw(faceN, yaw);
+  rotateYaw(faceV, yaw);
+  hor.set(faceN.z, 0, -faceN.x); // horizontal, square to the face's heading
+  const hl = hor.length();
+  if (hl > 1e-6) {
+    hor.scale(1 / hl);
+    rotateAbout(faceN, hor, pitch);
+    rotateAbout(faceV, hor, pitch);
+    // The face alone against the path: more open or closed, turned a little.
+    rotateAbout(faceN, hor, rng.normal() * spread(SW.faceOpen) * deg);
+  }
+  rotateYaw(faceN, rng.normal() * spread(SW.faceYaw) * deg);
+  faceV.scale(max(0.3, 1 + rng.normal() * (SW.speed[0]! + SW.speed[1]! * bad) * err));
 
-  rotateYaw(ball.vel, bias + rng.normal() * sYaw);
-  rotatePitch(ball.vel, rng.normal() * sPitch);
-  ball.vel.scale(max(0.3, 1 + rng.normal() * sSpeed));
-  ball.spin.scale(clamp(1 + rng.normal() * (0.08 + 0.2 * bad), 0.2, 1.6));
+  // Where on the face: early meets the ball nearer the tip; too early / too late at the edge or the frame.
+  let fromTip = shape.impact + tim * SW.timingAlong + rng.normal() * sAlong;
+  let across = rng.normal() * sAcross;
   if (q < 0.2) {
-    // Frame shot: the ball comes off the edge popped up and wild (a short sitter, out, or into the net from a
-    // low contact), not driven into the hitter's own court. The speed cap above already took the weak contact.
-    ball.vel.scale(0.85 + 0.15 * rng.next());
-    rotateYaw(ball.vel, rng.normal() * 9 * deg);
-    rotatePitch(ball.vel, (2 + 6 * rng.next()) * deg);
+    const sg = rng.next() < 0.5 ? -1 : 1;
+    across = sg * (SW.edgeMin + SW.edgeRand * abs(rng.normal()));
+  }
+  const spec = rk.spec;
+  const frame = fromTip < 0.005 || fromTip > spec.headLength - 0.005 || abs(across) > faceHalfWidth(spec, fromTip);
+  if (frame) {
+    // On the frame: the ball meets it at the face's edge, comes off weak, popped up and wild.
+    fromTip = clamp(fromTip, 0.01, spec.headLength - 0.01);
+    across = clamp(across, -faceHalfWidth(spec, fromTip), faceHalfWidth(spec, fromTip));
+  }
+  rk.impact(vin, win, faceN, faceV, axis, fromTip, across, ball.vel, ball.spin);
+  if (frame) {
+    ball.vel.scale(SW.frameSpeed + SW.frameSpeedRand * rng.next());
+    rotateYaw(ball.vel, rng.normal() * SW.frameYaw * (PI / 180));
+    rotatePitch(ball.vel, (SW.framePitch[0]! + (SW.framePitch[1]! - SW.framePitch[0]!) * rng.next()) * (PI / 180));
     ball.spin.scale(0.3);
   }
   out.speed = ball.vel.length();
+  out.racketSpeed = faceV.length();
+  out.faceCap = vCap;
+  out.ea = rk.ea;
+  out.fromTip = fromTip;
+  out.across = across;
+  out.frame = frame;
   ball.rolling = false;
   ball.clearNet();
 }
@@ -414,6 +568,17 @@ function rotateYaw(v: V3, a: number): void {
   const z = v.x * s + v.z * c;
   v.x = x;
   v.z = z;
+}
+
+/** Rotate v by angle a about the unit axis k (Rodrigues). */
+function rotateAbout(v: V3, k: V3, a: number): void {
+  const c = cos(a);
+  const sn = sin(a);
+  const d = (k.x * v.x + k.y * v.y + k.z * v.z) * (1 - c);
+  const cx = k.y * v.z - k.z * v.y;
+  const cy = k.z * v.x - k.x * v.z;
+  const cz = k.x * v.y - k.y * v.x;
+  v.set(v.x * c + cx * sn + k.x * d, v.y * c + cy * sn + k.y * d, v.z * c + cz * sn + k.z * d);
 }
 
 function rotatePitch(v: V3, a: number): void {

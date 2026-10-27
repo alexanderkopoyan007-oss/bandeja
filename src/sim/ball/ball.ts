@@ -273,10 +273,10 @@ export class Ball {
     const v = this.vel;
     const c = world.court;
     const r = world.spec.radius;
-    if (abs(p.x) > c.halfW + 0.15) return false;
+    if ((p.x < 0 ? -p.x : p.x) > c.halfW + 0.15) return false;
     if (p.y - r > c.def.net.heightPost + 0.06 - min(0, v.y) * this.stepDt) return false;
-    const reach = (cl.awake ? 0.9 : 0.04) + r + abs(v.z) * DT + 0.02;
-    return abs(p.z) < reach;
+    const reach = (cl.awake ? 0.9 : 0.04) + r + (v.z < 0 ? -v.z : v.z) * DT + 0.02;
+    return (p.z < 0 ? -p.z : p.z) < reach;
   }
 
   /**
@@ -306,8 +306,11 @@ export class Ball {
       if (this.rolling) this.roll(world);
       else this.fly(world, rng, false);
       // Which side of the net the ball is on can only change over the cable or beyond the posts.
-      if (abs(p.x) >= c.halfW || p.y - r > cl.cableY(p.x) + cl.spec.cableRadius) {
-        const zc = abs(p.x) < c.halfW ? cl.cableZ(p.x) : 0;
+      cl.qx = p.x;
+      cl.cableAt();
+      const ax = p.x < 0 ? -p.x : p.x;
+      if (ax >= c.halfW || p.y - r > cl.cy + cl.spec.cableRadius) {
+        const zc = ax < c.halfW ? cl.cz : 0;
         if (p.z !== zc) this.netSide = p.z > zc ? 1 : -1;
       }
       cl.side = this.netSide;
@@ -354,7 +357,9 @@ export class Ball {
       if (this.inNet) {
         if (this.sinceTouch > 0.06) {
           // Clear of the netting for a moment and back on its own side of it (or up over the cable): out.
-          if (p.y - r > cl.cableY(p.x) || abs(p.x) >= c.halfW) this.inNet = false;
+          cl.qx = p.x;
+          cl.cableAt();
+          if (p.y - r > cl.cy || (p.x < 0 ? -p.x : p.x) >= c.halfW) this.inNet = false;
           else if (this.netSide * (p.z - cl.surfaceZ()) > r + 0.02) this.inNet = false;
         }
       }

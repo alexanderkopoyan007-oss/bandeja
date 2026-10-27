@@ -384,6 +384,19 @@ export class NetCloth {
     return this.pos[i * 3 + 2]! * (1 - t) + this.pos[(i + 1) * 3 + 2]! * t;
   }
 
+  /** In the hot paths: the cable at x = qx into cy, cz (fields: doubles in and out of a call get boxed). */
+  qx = 0;
+  cy = 0;
+  cz = 0;
+  cableAt(): void {
+    const f = (this.qx + this.halfW) / this.dx;
+    const i = clampI(f | 0, 0, this.cols - 1);
+    const t = f - i;
+    const p = this.pos;
+    this.cy = p[i * 3 + 1]! * (1 - t) + p[(i + 1) * 3 + 1]! * t;
+    this.cz = p[i * 3 + 2]! * (1 - t) + p[(i + 1) * 3 + 2]! * t;
+  }
+
   /**
    * Substeps for the coming tick with the ball at speed `ballSpeed` (read from bvx..): enough that the ball
    * moves at most maxTravel per substep.
@@ -691,7 +704,9 @@ export class NetCloth {
     const bx = this.bx;
     const by = this.by;
     if (bx <= -this.halfW || bx >= this.halfW) return false;
-    if (by >= this.cableY(bx)) return false; // above the cable: only the cable can touch it
+    this.qx = bx;
+    this.cableAt();
+    if (by >= this.cy) return false; // above the cable: only the cable can touch it
     // Column from x at rest, row from the knots' heights now, then nudge the column to where the knots are.
     let i = clampI(((bx + this.halfW) / this.dx) | 0, 0, this.cols - 1);
     let j = -1;
@@ -882,7 +897,10 @@ export class NetCloth {
     this.nx_ = Nx; this.ny_ = Ny; this.nz_ = Nz;
     this.cW = W;
     this.cMu = this.spec.friction * (this.lamBody / this.h + jn);
-    this.slip(rx, ry, rz);
+    this.srx = rx;
+    this.sry = ry;
+    this.srz = rz;
+    this.slip();
     this.applyBody(this.fx, this.fy, this.fz);
   }
 
@@ -898,7 +916,14 @@ export class NetCloth {
    * w x (-r N)), opposing the slip, at most cMu: into fx fy fz. Turns the ball's spin by the same impulse
    * (dw = (-r N) x J / I).
    */
-  private slip(rx: number, ry: number, rz: number): void {
+  private srx = 0;
+  private sry = 0;
+  private srz = 0;
+
+  private slip(): void {
+    const rx = this.srx;
+    const ry = this.sry;
+    const rz = this.srz;
     const Nx = this.nx_;
     const Ny = this.ny_;
     const Nz = this.nz_;
@@ -918,7 +943,8 @@ export class NetCloth {
     if (vt < 1e-6 || this.cMu <= 0) return;
     // A tangential impulse moves the contact point by (1/m + r^2/I) on the ball, plus the net's share.
     const Wt = this.cW + this.bw / this.balpha;
-    const j = min(vt / Wt, this.cMu) / vt;
+    const jw = vt / Wt;
+    const j = (jw < this.cMu ? jw : this.cMu) / vt;
     this.fx = -tx * j;
     this.fy = -ty * j;
     this.fz = -tz * j;
@@ -971,7 +997,10 @@ export class NetCloth {
     this.nx_ = Nx; this.ny_ = Ny; this.nz_ = Nz;
     this.cW = W;
     this.cMu = this.spec.cableFriction * (this.lamCable / this.h + jn);
-    this.slip(rx + Nx * jn * W, ry + Ny * jn * W, rz + Nz * jn * W);
+    this.srx = rx + Nx * jn * W;
+    this.sry = ry + Ny * jn * W;
+    this.srz = rz + Nz * jn * W;
+    this.slip();
     const jx = Nx * jn + this.fx;
     const jy = Ny * jn + this.fy;
     const jz = Nz * jn + this.fz;
@@ -987,7 +1016,12 @@ export class NetCloth {
   /** z of the netting at the ball's x-y (bx, by), or of the cable above it; 0 beyond the posts. */
   surfaceZ(): number {
     if (!this.awake) return 0;
-    if (!this.locate()) return this.bx > -this.halfW && this.bx < this.halfW ? this.cableZ(this.bx) : 0;
+    if (!this.locate()) {
+      if (this.bx <= -this.halfW || this.bx >= this.halfW) return 0;
+      this.qx = this.bx;
+      this.cableAt();
+      return this.cz;
+    }
     const p = this.pos;
     return this.wa * p[this.ta * 3 + 2]! + this.wb * p[this.tb * 3 + 2]! + this.wc * p[this.tc * 3 + 2]!;
   }

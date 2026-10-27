@@ -164,7 +164,7 @@ export class MatchSim {
   /** Scratch plans for deciding which partner takes the ball. */
   private readonly claim: StandPlan[];
   private readonly req: ShotRequest = {
-    shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1,
+    shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, bodyX: 0, bodyZ: 0,
   };
   private readonly res: ShotResult = { reachable: true, speed: 0, idealX: 0, idealZ: 0 };
   /** Aim captured at release, per player: relative (-1..1) or absolute. */
@@ -988,6 +988,8 @@ export class MatchSim {
     r.control = 1;
     // Serve spin follows the key (slice, kick, flat); it is solved with, so the serve still lands on its target.
     r.spinScale = serving ? (p.shot === SHOT_TOPSPIN ? -0.9 : p.shot === SHOT_DRIVE ? 0.15 : 1) : 1;
+    r.bodyX = p.pos.x;
+    r.bodyZ = p.pos.z;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
 

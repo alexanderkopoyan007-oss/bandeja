@@ -239,7 +239,10 @@ describe('overheads', () => {
     expect(r.lobs).toBeGreaterThan(40);
     expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
     const sorted = r.speeds.slice().sort((a, b) => a - b);
-    expect(sorted[sorted.length >> 1]! * 3.6).toBeGreaterThan(140); // median km/h
+    // Median km/h: radar on semi-professionals gives 133 unopposed (Rivilla-García et al. 2019); these are
+    // full-power smashes from a lob, so a little above.
+    expect(sorted[sorted.length >> 1]! * 3.6).toBeGreaterThan(128);
+    expect(sorted[sorted.length >> 1]! * 3.6).toBeLessThan(155);
     expect(r.outAfterBounce).toBeGreaterThan(0); // por tres / por cuatro (rare at Good timing: ~3 in 8 matches' worth)
   });
 

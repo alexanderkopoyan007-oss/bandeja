@@ -1,18 +1,27 @@
 {
-  "//": "Shot shapes. netClear: height above the tape at the net (m). spinRpm: + topspin, - backspin. depth: landing distance from the net as a fraction of the half. speedMax: m/s at a perfect, full contact. errorScale multiplies the error model. pace: hit at full speed and aimed by elevation alone (the net is just a check), as a kill smash is. sideRpm: sidespin that curves the ball towards the side it is aimed at (víbora); the launch is turned so it still lands on the target.",
-  "drive":   { "name": "Drive",     "netClear": 0.40, "spinRpm": 600,   "depth": 0.72, "speedMax": 29, "errorScale": 1.0 },
-  "topspin": { "name": "Topspin",   "netClear": 0.85, "spinRpm": 2300,  "depth": 0.78, "speedMax": 27, "errorScale": 1.0 },
-  "slice":   { "name": "Slice",     "netClear": 0.30, "spinRpm": -1900, "depth": 0.70, "speedMax": 24, "errorScale": 0.85 },
-  "lob":     { "name": "Lob",       "netClear": 5.60, "spinRpm": 500,   "depth": 0.90, "speedMax": 22, "errorScale": 1.1 },
-  "drop":    { "name": "Drop shot", "netClear": 0.30, "spinRpm": -1500, "depth": 0.20, "speedMax": 13, "errorScale": 1.2 },
-  "serve":   { "name": "Serve",     "netClear": 0.40, "spinRpm": -1300, "depth": 0.78, "speedMax": 21, "errorScale": 0.8 },
-  "smash":   { "name": "Smash",     "netClear": 0.20, "spinRpm": 300,   "depth": 0.50, "speedMax": 42, "errorScale": 1.25, "pace": true },
-  "bandeja": { "name": "Bandeja",   "netClear": 0.45, "spinRpm": -1300, "depth": 0.86, "speedMax": 26, "errorScale": 0.9 },
-  "volley":  { "name": "Volley",    "netClear": 0.25, "spinRpm": -600,  "depth": 0.70, "speedMax": 21, "errorScale": 0.9 },
-  "vibora":  { "name": "Víbora",    "netClear": 0.35, "spinRpm": -1500, "sideRpm": 1700, "depth": 0.78, "speedMax": 31, "errorScale": 1.05 },
-  "chiquita": { "name": "Chiquita", "netClear": 0.32, "spinRpm": 1900,  "depth": 0.33, "speedMax": 20, "errorScale": 0.75 },
+  "//": "Shot shapes. netClear: height above the tape at the net (m). spinRpm: + topspin, - backspin. depth: landing distance from the net as a fraction of the half. racketMax: speed of the face at the impact point (m/s) on a perfect, full swing; the ball leaves at ea v_in + (1 + ea) V along the face normal (src/sim/contact/racket.ts), so the same swing sends a harder incoming ball back faster. Set from the old ball-speed caps against a slow incoming ball (the most a player swings) (smash lowered: 137 km/h from a lob, semi-pros measured 133 km/h). impact: planned impact point from the tip (m; Viollaz: smash 83 mm, drive 128 mm, volley 146 mm). spinFloor: when the swing is short of face speed, spin goes first, down to this fraction of spinRpm (default 0.3), then pace; a chiquita is its spin. errorScale multiplies the error model. pace: hit at full speed and aimed by elevation alone (the net is just a check), as a kill smash is. sideRpm: sidespin that curves the ball towards the side it is aimed at (víbora); the launch is turned so it still lands on the target.",
+  "drive":   { "name": "Drive",     "netClear": 0.40, "spinRpm": 600,   "depth": 0.72, "racketMax": 19.1, "impact": 0.128, "errorScale": 1.0 },
+  "topspin": { "name": "Topspin",   "netClear": 0.85, "spinRpm": 2300,  "depth": 0.78, "racketMax": 19.5, "impact": 0.128, "errorScale": 1.0 },
+  "slice":   { "name": "Slice",     "netClear": 0.30, "spinRpm": -1900, "depth": 0.70, "racketMax": 17.8, "impact": 0.128, "errorScale": 0.85 },
+  "lob":     { "name": "Lob",       "netClear": 5.60, "spinRpm": 500,   "depth": 0.90, "racketMax": 13.5, "impact": 0.128, "errorScale": 1.1 },
+  "drop":    { "name": "Drop shot", "netClear": 0.30, "spinRpm": -1500, "depth": 0.20, "racketMax": 9.6, "impact": 0.14, "errorScale": 1.2 },
+  "serve":   { "name": "Serve",     "netClear": 0.40, "spinRpm": -1300, "depth": 0.78, "racketMax": 15.9, "impact": 0.128, "errorScale": 0.8 },
+  "smash":   { "name": "Smash",     "netClear": 0.20, "spinRpm": 300,   "depth": 0.50, "racketMax": 29.5, "impact": 0.083, "errorScale": 1.25, "pace": true },
+  "bandeja": { "name": "Bandeja",   "netClear": 0.45, "spinRpm": -1300, "depth": 0.86, "racketMax": 20.7, "impact": 0.083, "errorScale": 0.9 },
+  "volley":  { "name": "Volley",    "netClear": 0.25, "spinRpm": -600,  "depth": 0.70, "racketMax": 12.3, "impact": 0.146, "errorScale": 0.9 },
+  "vibora":  { "name": "Víbora",    "netClear": 0.35, "spinRpm": -1500, "sideRpm": 1700, "depth": 0.78, "racketMax": 25.2, "impact": 0.083, "errorScale": 1.05 },
+  "chiquita": { "name": "Chiquita", "netClear": 0.32, "spinRpm": 1900,  "depth": 0.33, "racketMax": 13.6, "impact": 0.128, "errorScale": 0.75, "spinFloor": 0.8 },
   "modifiers": {
     "power":     { "netClear": 0.75, "speed": 1.12, "error": 1.45 },
     "precision": { "netClear": 1.25, "speed": 0.86, "error": 0.6 }
+  },
+  "swing": {
+    "//": "Errors are made in the swing and pushed through the impact physics. Angles in degrees, contact offsets in metres on the face, all times errorScale x modifier error / control, with bad = 1 - timing quality. path: the whole swing turned (yaw, pitch); face: the face alone turned against the path (more or less open: spin and height change with it); speed: racket speed (fraction); contact: where on the face (along it from the planned point, across it from the long axis). timingYaw: degrees the swing is turned per 0.11 s early (pulled across the body) or late (pushed); timingAlong: metres the contact moves towards the tip per 0.11 s early. Too early / too late (quality < 0.2) meet the ball at least edgeMin off the axis: the edge or the frame. frame: a ball meeting the frame keeps frameSpeed of its pace (plus up to frameSpeedRand), turned at random by frameYaw and up by framePitch.",
+    "pathYaw": [0.4,  2.8,  1.1,  1.8], "pathPitch": [0.15,  1.0,  0.5,  0.8],
+    "faceOpen": [0.2,  0.9,  0.3,  0.5], "faceYaw": [0.15,  0.5,  0.15,  0.3],
+    "speed": [0.01,  0.04],
+    "contactAlong": [0.008,  0.025,  0.015,  0.02], "contactAcross": [0.0025,  0.01,  0.007,  0.01],
+    "timingYaw": 2.2, "timingAlong": 0.02, "edgeMin": 0.09, "edgeRand": 0.05,
+    "frameSpeed": 0.55, "frameSpeedRand": 0.2, "frameYaw": 9, "framePitch": [2, 8]
   }
 }

@@ -1,0 +1,12 @@
+{
+  "//": "Padel rackets as rigid bodies for the ball impact (src/sim/contact/racket.ts). Sources in docs/realism.md. FIP limits: 45.5 cm long, 26 cm wide, 38 mm thick. mass (kg), balance from the butt (m), iCm: moment of inertia about the centre of mass across the face (kg m^2), iPolar: about the long axis (twist). Both fitted so the free-racket apparent COR surface reproduces Viollaz & Viollaz (ISBS 2008): curvature -1.0e-5/mm^2 along the face (iCm 0.0075) and -4e-5/mm^2 across it (iPolar 0.0018) for a 360 g racket. e17: ball-racket COR at 17 m/s relative impact speed and eSlope its loss per m/s (ACOR 0.50 at 17 m/s and 0.39 at 29 m/s at its best point, conventional rackets), clamped to eMin..eMax. friction: sliding friction of the face (static COF of padel faces 0.14-0.93, TWU); tangentialE: how much of the contact point's slip reverses when the ball grips (tuning, tennis-ball order). dwell: contact time (s). twist: fraction of the face's rotation by the end of the contact that turns the ball (tuning). headLength/headWidth: the hitting face as an ellipse from the tip (m).",
+  "standard": {
+    "name": "All-round (round head, 360 g)",
+    "mass": 0.360, "length": 0.455, "balance": 0.265,
+    "iCm": 0.0075, "iPolar": 0.0018,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.35, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  }
+}
