@@ -102,3 +102,22 @@ export function normalize(acc: Pose): void {
   }
   if (totalW > 0) for (let k = 0; k < 3; k++) acc.hips[k] = acc.hips[k]! / totalW;
 }
+
+/** acc = nlerp(acc, src, src.w) for the bones where mask is set (an overlay on part of the body). */
+export function blendMasked(acc: Pose, src: Pose, mask: Uint8Array): void {
+  const u = src.w;
+  if (u <= 0) return;
+  const a = acc.q, b = src.q;
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] === 0) continue;
+    const k = i * 4;
+    const d = a[k]! * b[k]! + a[k + 1]! * b[k + 1]! + a[k + 2]! * b[k + 2]! + a[k + 3]! * b[k + 3]!;
+    const s = d < 0 ? -u : u;
+    const x = a[k]! * (1 - u) + b[k]! * s;
+    const y = a[k + 1]! * (1 - u) + b[k + 1]! * s;
+    const z = a[k + 2]! * (1 - u) + b[k + 2]! * s;
+    const w = a[k + 3]! * (1 - u) + b[k + 3]! * s;
+    const l = 1 / Math.sqrt(x * x + y * y + z * z + w * w);
+    a[k] = x * l; a[k + 1] = y * l; a[k + 2] = z * l; a[k + 3] = w * l;
+  }
+}

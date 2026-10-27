@@ -3,12 +3,12 @@
 // moment) and the racket in the right hand. Reads the sim only. Allocation-free per frame.
 import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../../sim/match.ts';
-import { PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
+import { PH_DEAD, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
 import { MOD_POWER, SHOT_SMASH } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
-import { Pose, accumulate, normalize, sampleClip, sampleCycle } from './pose.ts';
+import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import { BACKHAND, FOREHAND, OVERHEAD, READY, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH, type Family, type Key } from './strokes.ts';
 
@@ -126,7 +126,17 @@ export class Avatar {
   private readonly bones: THREE.Bone[];
   private readonly nb: number;
 
-  private readonly clips: { idle: Clip; cycle: Clip[] };
+  private readonly clips: { idle: Clip; cycle: Clip[]; celebrate: Clip; dejected: Clip };
+  /** Bones from the spine up (the reaction clips play on these over the legs' locomotion). */
+  private readonly upper: Uint8Array;
+  // Reaction after a point: the player whose shot ended it pumps a fist (won) or holds their head (lost).
+  private react: Clip | null = null;
+  private reactStart = 0;
+  private reactFrom = 0;
+  private lastPhase = -1;
+  // Split step: a small hop as the opponent strikes, landing with bent knees (feet kept planted).
+  private lift = 0;
+  private splitDrop = 0;
   private readonly cycleW = new Float64Array(5);
   private readonly pose: Pose;
   private readonly tmp: Pose;
@@ -237,7 +247,14 @@ export class Avatar {
     this.clips = {
       idle: asset.clip('idle'),
       cycle: [asset.clip('jog'), asset.clip('run'), asset.clip('strafeLeft'), asset.clip('runBack'), asset.clip('strafeRight')],
+      celebrate: asset.clip('celebrate'),
+      dejected: asset.clip('dejected'),
     };
+    this.upper = new Uint8Array(this.nb);
+    const spineIdx = asset.bone('Spine');
+    for (let i = 0; i < this.nb; i++) {
+      for (let j = i; j >= 0; j = asset.bones[j]!.parent) if (j === spineIdx) { this.upper[i] = 1; break; }
+    }
 
     // The hand's frame at rest (T-pose): fingers F, thumb side T, palm normal N.
     const rw = asset.restWorld;
@@ -582,6 +599,9 @@ export class Avatar {
     this.dt = dt;
     this.yRoot = yRoot;
     this.locomote(p);
+    this.reaction(sim, idx, t);
+    this.splitStep(p, t);
+    this.root.position.y = this.lift;
 
     // Pose -> bones, with the racket hand gripping.
     const q = this.pose.q;
@@ -607,9 +627,45 @@ export class Avatar {
     const want = on ? 0.85 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
     this.ready += (want - this.ready) * (dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
 
-    if (this.w <= 0 && this.ready < 0.01) return;
-    if (this.w > 0) this.solveLegs();
-    this.solveArms();
+    if (this.w > 0 || this.splitDrop > 0) this.solveLegs();
+    if (this.w > 0 || this.ready >= 0.01) this.solveArms();
+  }
+
+  /** Reaction clips on the upper body while the ball is dead after a point. */
+  private reaction(sim: MatchSim, idx: number, t: number): void {
+    const phase = sim.phase;
+    if (phase === PH_DEAD && this.lastPhase !== PH_DEAD) {
+      const won = sim.pointWinner;
+      this.react = null;
+      if (won >= 0 && sim.lastStrikePlayer === idx) {
+        const mine = (idx & 1) === won;
+        this.react = mine ? this.clips.celebrate : this.clips.dejected;
+        this.reactFrom = mine ? 0.4 : 0.9;
+        this.reactStart = t;
+      }
+    }
+    this.lastPhase = phase;
+    if (!this.react) return;
+    const rt = t - this.reactStart;
+    const w = smoothstep(0, 0.2, rt) * (1 - smoothstep(1.25, 1.55, rt)) * (phase === PH_DEAD ? 1 : 0);
+    if (rt > 1.6 || phase !== PH_DEAD) { this.react = null; return; }
+    const tmp = this.tmp;
+    tmp.t = this.reactFrom + rt;
+    sampleClip(this.react, tmp);
+    tmp.w = w;
+    blendMasked(this.pose, tmp, this.upper);
+  }
+
+  /** The split step: up 6 cm for the first 45% of it, then a 5 cm knee bend on landing. */
+  private splitStep(p: Player, t: number): void {
+    const left = p.splitUntil - t;
+    const len = p.tune.splitStepTime;
+    this.lift = 0;
+    this.splitDrop = 0;
+    if (left <= 0 || left > len) return;
+    const u = 1 - left / len;
+    if (u < 0.45) this.lift = 0.06 * Math.sin((Math.PI * u) / 0.45);
+    else this.splitDrop = 0.05 * Math.sin((Math.PI * (u - 0.45)) / 0.55);
   }
 
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */
@@ -623,7 +679,7 @@ export class Avatar {
     const push = Math.min(0.4, short);
     this.reachX = dh > 1e-3 ? (dx / dh) * push : 0;
     this.reachZ = dh > 1e-3 ? (dz / dh) * push : 0;
-    const drop = this.crouch + push * 0.35;
+    const drop = this.crouch + push * 0.35 + this.splitDrop;
     if (drop < 0.005 && push < 0.005) return;
 
     this.footL.setFromMatrixPosition(this.legL[2]!.matrixWorld);

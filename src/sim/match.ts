@@ -1037,6 +1037,11 @@ export class MatchSim {
 
   private pendingPointWinner = -1;
 
+  /** While the ball is dead after a point: the team that won it, else -1 (read by the renderer). */
+  get pointWinner(): number {
+    return this.phase === PH_DEAD ? this.pendingPointWinner : -1;
+  }
+
   private endRally(): void {
     const r = this.rally;
     this.phase = PH_DEAD;
