@@ -1,0 +1,12 @@
+{
+  "//": "e0: restitution at low impact speed; eSlope: loss per m/s of normal speed; eMin floor. mu: sliding friction. grip: how much contact-point velocity reverses when the ball grips (0 = rolls out, 0.3 = lively). jitterDeg: random deflection of the normal; speedJitter: random fraction of rebound speed lost.",
+  "hard":   { "name": "Concrete / acrylic",  "e0": 0.84, "eSlope": 0.010, "eMin": 0.45, "mu": 0.55, "grip": 0.15, "jitterDeg": 0.6, "speedJitter": 0.00 },
+  "turf":   { "name": "Artificial grass with sand infill", "e0": 0.80, "eSlope": 0.012, "eMin": 0.40, "mu": 0.62, "grip": 0.08, "jitterDeg": 2.5, "speedJitter": 0.03 },
+  "carpet": { "name": "Textile carpet",      "e0": 0.81, "eSlope": 0.011, "eMin": 0.42, "mu": 0.68, "grip": 0.10, "jitterDeg": 1.2, "speedJitter": 0.01 },
+  "clay":   { "name": "Clay (fantasy)",      "e0": 0.79, "eSlope": 0.012, "eMin": 0.40, "mu": 0.80, "grip": 0.05, "jitterDeg": 3.0, "speedJitter": 0.03 },
+  "glass":  { "name": "Tempered glass",      "e0": 0.80, "eSlope": 0.008, "eMin": 0.45, "mu": 0.30, "grip": 0.05, "jitterDeg": 0.3, "speedJitter": 0.00 },
+  "mesh":   { "name": "Welded metal mesh",   "e0": 0.48, "eSlope": 0.008, "eMin": 0.20, "mu": 0.45, "grip": 0.00, "jitterDeg": 12,  "speedJitter": 0.18 },
+  "seam":   { "name": "Glass join / frame",  "e0": 0.70, "eSlope": 0.010, "eMin": 0.35, "mu": 0.40, "grip": 0.05, "jitterDeg": 22,  "speedJitter": 0.12 },
+  "net":    { "name": "Net",                 "e0": 0.12, "eSlope": 0.000, "eMin": 0.05, "mu": 0.90, "grip": 0.00, "jitterDeg": 8,   "speedJitter": 0.20 },
+  "seamWidth": 0.035
+}

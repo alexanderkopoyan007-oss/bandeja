@@ -14,11 +14,12 @@ describe('sim purity', () => {
   const sim = files('src/sim');
   it('finds sim files', () => expect(sim.length).toBeGreaterThan(0));
   it.each(sim)('%s imports nothing from three, the DOM layer or Node', (f) => {
-    const src = readFileSync(f, 'utf8');
+    // Code only: comments may mention words like "window." in prose.
+    const src = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
     const imports = [...src.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]!);
     for (const i of imports) {
       expect(i, `${f} imports ${i}`).not.toMatch(/^(three|node:|fs|path)|\/(render|game|ui|audio|anim)\//);
     }
-    expect(src).not.toMatch(/\bMath\.random\b|\bDate\.now\b|\bperformance\.now\b|\bwindow\.|\bdocument\./);
+    expect(src).not.toMatch(/\bMath\.random\b|\bDate\.now\b|\bperformance\.now\b|\bwindow\.\w|\bdocument\.\w/);
   });
 });

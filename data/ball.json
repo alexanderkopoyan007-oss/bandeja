@@ -1,0 +1,21 @@
+{
+  "//": "FIP: diameter 6.35-6.77 cm, mass 56.0-59.4 g, 2.54 m drop must bounce 135-145 cm (altitude ball 122-135 cm above 1000 m).",
+  "standard": {
+    "name": "Standard ball",
+    "mass": 0.0577,
+    "radius": 0.0328,
+    "dragCoefficient": 0.55,
+    "inertiaFactor": 0.55,
+    "spinDecayTime": 5.0,
+    "restitutionScale": 1.0
+  },
+  "altitude": {
+    "name": "Altitude ball (lower pressure, for venues above 1000 m)",
+    "mass": 0.0577,
+    "radius": 0.0328,
+    "dragCoefficient": 0.55,
+    "inertiaFactor": 0.55,
+    "spinDecayTime": 5.0,
+    "restitutionScale": 0.96
+  }
+}

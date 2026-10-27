@@ -1,0 +1,16 @@
+{
+  "//": "Shot shapes. netClear: height above the tape at the net (m). spinRpm: + topspin, - backspin. depth: landing distance from the net as a fraction of the half. speedMax: m/s at a perfect, full contact. errorScale multiplies the error model.",
+  "drive":   { "name": "Drive",     "netClear": 0.40, "spinRpm": 600,   "depth": 0.72, "speedMax": 29, "errorScale": 1.0 },
+  "topspin": { "name": "Topspin",   "netClear": 0.85, "spinRpm": 2300,  "depth": 0.78, "speedMax": 27, "errorScale": 1.0 },
+  "slice":   { "name": "Slice",     "netClear": 0.30, "spinRpm": -1900, "depth": 0.70, "speedMax": 24, "errorScale": 0.85 },
+  "lob":     { "name": "Lob",       "netClear": 3.60, "spinRpm": 500,   "depth": 0.90, "speedMax": 22, "errorScale": 1.1 },
+  "drop":    { "name": "Drop shot", "netClear": 0.30, "spinRpm": -1500, "depth": 0.20, "speedMax": 13, "errorScale": 1.2 },
+  "serve":   { "name": "Serve",     "netClear": 0.40, "spinRpm": -1300, "depth": 0.78, "speedMax": 21, "errorScale": 0.8 },
+  "smash":   { "name": "Smash",     "netClear": 0.20, "spinRpm": 300,   "depth": 0.75, "speedMax": 36, "errorScale": 1.25 },
+  "bandeja": { "name": "Bandeja",   "netClear": 0.45, "spinRpm": -1300, "depth": 0.86, "speedMax": 22, "errorScale": 0.9 },
+  "volley":  { "name": "Volley",    "netClear": 0.25, "spinRpm": -600,  "depth": 0.70, "speedMax": 21, "errorScale": 0.9 },
+  "modifiers": {
+    "power":     { "netClear": 0.75, "speed": 1.12, "error": 1.45 },
+    "precision": { "netClear": 1.25, "speed": 0.86, "error": 0.6 }
+  }
+}
