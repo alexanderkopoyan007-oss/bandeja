@@ -60,7 +60,7 @@ function netPlay(seed: number, seconds: number, key: number, power = false): Tal
 
 const pool = (key: number, power = false): Tally => {
   const all: Tally = { hits: 0, volleys: 0, won: 0, lost: 0, bounced: 0 };
-  for (let seed = 1; seed <= 5; seed++) {
+  for (let seed = 1; seed <= 12; seed++) {
     const t = netPlay(seed, 120, key, power);
     all.hits += t.hits; all.volleys += t.volleys; all.won += t.won; all.lost += t.lost;
   }
@@ -77,9 +77,15 @@ describe('volley key', () => {
     expect(volley.volleys / volley.hits).toBeGreaterThan(drive.volleys / Math.max(1, drive.hits) + 0.1);
   });
 
-  it('the volleys land: the net player loses no more points on their own shots than with the drive key', () => {
+  it('the volleys land: under 5% of the net player\'s shots lose the point, about as with the drive key', () => {
+    // 12 matches: 5 gave 0 and 1 lost points, which proved nothing.
     const errV = volley.lost / Math.max(1, volley.hits);
     const errD = drive.lost / Math.max(1, drive.hits);
-    expect(errV).toBeLessThan(errD + 0.05);
+    process.stderr.write(`volley key: ${volley.hits} hits, ${volley.volleys} in the air, ${volley.lost} points lost on them; drive key: ${drive.hits} hits, ${drive.volleys} in the air, ${drive.lost} lost\n`);
+    // At Good timing errors are rare either way (3 of 162 with N, 1 of 174 with the drive key): the check is that
+    // volleys stay that safe, not a difference between the keys.
+    expect(volley.hits).toBeGreaterThan(120);
+    expect(errV).toBeLessThan(0.05);
+    expect(errV).toBeLessThan(errD + 0.03);
   });
 }, 300_000);

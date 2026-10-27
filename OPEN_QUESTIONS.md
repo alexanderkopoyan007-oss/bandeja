@@ -63,3 +63,9 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   don't exist.
 - **The camera kick.** Broadcast cameras don't shake on a smash; the brief asked for a camera response, so it is
   a small push-in and jolt. Whether to keep it is the owner's call.
+- **Sprint times.** The game's player covers 5 m forward in 1.56 s from a standstill and 1.45 s once moving. No
+  padel sprint time has been read: Portuguese national-tier players and the Kinesiology 8-week training study
+  both tested 5 m sprints, but their abstracts give no numbers. Settled by: the full texts' tables (5 m sprint
+  mean and how the timing gates were set up).
+- **Gamepad audio unlock.** A pad press may not count as a user gesture for starting audio in every browser; a
+  pad-only player may need one key or click before sound starts. Settled by: a test on the owner's pad.

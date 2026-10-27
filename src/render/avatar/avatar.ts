@@ -421,10 +421,12 @@ export class Avatar {
     if (sim.phase <= PH_TOSS && sim.score.serverPlayer() === idx) return SERVE;
     // An AI holds power or precision only as it lets go: its intent says which overhead or topspin it is.
     const ai = sim.ai[idx];
-    if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || p.mod === MOD_POWER || (ai !== null && ai !== undefined && ai.smash) ? SMASH : OVERHEAD;
+    // While the key is held the modifiers being held say it; from the release on, the ones it was released with.
+    const mod = p.swing === SW_CHARGE ? p.heldMod : p.mod;
+    if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || mod === MOD_POWER || (ai !== null && ai !== undefined && ai.smash) ? SMASH : OVERHEAD;
     if (volley) return hand > 0 ? VOLLEY_FH : VOLLEY_BH;
     const sh = p.shot;
-    if (sh === SHOT_TOPSPIN && (p.mod === MOD_PRECISION || (ai !== null && ai !== undefined && ai.chiquita))) return hand > 0 ? FH_CHIQUITA : BH_CHIQUITA;
+    if (sh === SHOT_TOPSPIN && (mod === MOD_PRECISION || (ai !== null && ai !== undefined && ai.chiquita))) return hand > 0 ? FH_CHIQUITA : BH_CHIQUITA;
     if (sh === SHOT_SLICE) return hand > 0 ? FH_SLICE : BH_SLICE;
     if (sh === SHOT_LOB) return hand > 0 ? FH_LOB : BH_LOB;
     if (sh === SHOT_DROP) return hand > 0 ? FH_DROP : BH_DROP;

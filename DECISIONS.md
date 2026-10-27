@@ -159,20 +159,28 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   feet: volleys are played on the move, met with a reach or a step. A volley planned too late is blocked off the
   bounce. The first version planned volleys like groundstrokes (stop, set the feet) and most were late; the
   reach band fixed it. Its test moved from singles to doubles: a net player in singles faces passing shots 2.4-3.2 m
-  wide, which no volley plan should chase. Result (5 seeds x 120 s): a doubles net player takes 79% of balls in
-  the air with N against 47% with the drive key, and loses no more points on its own shots (0 against 1).
+  wide, which no volley plan should chase. Result (12 seeds x 120 s): a doubles net player takes 80% of balls in
+  the air with N against 36% with the drive key, and under 5% of their shots lose the point either way (3 of 162
+  with N, 1 of 174 with the drive key; 5 seeds gave 0 and 1, which proved nothing).
 - **Each shot has its own timing windows.** The tolerance of a contact is how far the face turns per millisecond,
-  so the windows scale with the square root of the face's angular speed against the drive's (capped): a punch
-  volley 1.35x, a lob 1.15x, a bandeja 0.85x, a smash 0.72x, a víbora 0.65x (FEEL.md has the table). The cue
-  ring, the HUD's timing meter and auto-timing all use the shot the release is heading for (`windowScale`),
-  including the modifier being held (`Player.heldMod`, hashed).
+  so the windows scale with the square root of the face's angular speed against the drive's (capped at 1.35):
+  a punch volley 1.35x (the cap), a lob 1.19x, a bandeja 0.84x, a víbora 0.76x, a smash 0.71x; every value is
+  that derivation except the drop, held at 1.2 (a touch shot: depth control is its difficulty) (FEEL.md has the
+  table; the first version tuned a few round the derivation, the víbora down to 0.65, for no measured reason). The
+  cue ring, the HUD's timing meter and auto-timing all use the shot the release is heading for (`windowScale`),
+  including the modifier being held (`Player.heldMod`, hashed). Humans only for now: the AI's timing spread was
+  fitted with one window for every shot, and the per-shot windows moved its error mix away from the pros (below);
+  Phase 4 refits the AI with them on.
 - **The split-step is real, and a standstill is heavy.** The old split-step was a 1.35x acceleration boost for
   0.35 s. The data say otherwise: the hop is airborne about 142 ms (no grip), and its value is getting going, not
-  extra acceleration (a 1.35x boost would need 14.5 m/s², past what the shoe's grip allows). Now force builds from
+  extra acceleration (a 1.35x boost would need 11.5 m/s², past what the shoe's grip allows). Now force builds from
   20% to full over 0.3 s from a static stance, the airborne hop gives no push, and the landing pre-loads the legs
   (no build-up for 0.3 s after it). Calibrated (scratch scripts, then `tests/sim/splitstep.test.ts`): a target
-  1-2.5 m away is reached 108-117 ms sooner with the split-step (measured: 104 ms, Uzu 2009; 13.1%, Nieminen 2014),
-  feet start about 280 ms after the opponent's contact (tennis: 266-311 ms). The planner adds the build-up and
+  1-2.5 m away is reached 108-117 ms (11-16%) sooner with the split-step (measured: 104 ms, Uzu 2009; 13.1% over
+  2.70 m, Nieminen 2014, where the game gives about 10%); with a 170 ms decision the push starts 175 ms after the
+  opponent's contact, the feet have moved 1 cm by 225 ms and 5 cm by 283 ms (tennis, first foot movement:
+  266-311 ms). A human already pushing a direction when the opponent strikes doesn't hop (a forced hop would hold
+  their keys for 142 ms; the verifier measured them arriving 17-33 ms later than without it). The planner adds the build-up and
   remaining airtime to its run times (within 40 ms of the simulated arrival, tested). The avatar's hop is the
   ballistic 2.5 cm for 142 ms (was a 6 cm lift).
 - **Two V8 traps on the way.** A tuning field read only on a rare branch had no type feedback there, and reaching
@@ -188,18 +196,41 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   bug's account).
 - **Test samples enlarged, not bars lowered** (overheads in `assist.test.ts`): 5 matches gave 20-25 lobs for an 85%
   bar, 4 gave 13 víboras for an 80% one, 12 gave 36-45 smashes against a 40-lob floor; now 8, 12 and 16 matches.
-  One bar moved on purpose: a víbora lands in 79% of the time over 30 matches with the test's assist (it was over
-  80% before it had the tightest timing window of any shot), so the bar is 72%.
+  The víbora bar was first lowered to 72% on a wrong reading (that its narrow window made it miss); the verifier
+  found the misses were swings the 3 s "held too long" safety had let off by themselves, graded against nothing
+  (the bot, like the HUD's hint, holds O from the opponent's strike, and a lob can hang longer than 3 s). A held
+  swing now waits while its ball is still coming (released 0.25 s past the contact, or at 8 s); with assisted
+  timing all 131 víboras over 30 matches grade Good and land, and the bar is 90%.
 - **Hit feedback.** Racket sound by contact quality (WebAudio, synthesised: a centred hit short and bright, a
   mistimed one duller with a frame knock; loudness by ball speed; played at the event's exact time), a camera kick
   on smashes (up to 1.2° of push-in and a 2 cm jolt over a third of a second), and gamepad support with rumble
   (a crisp tap for a clean hit, a buzz for a mishit, a thump for a smash). The timing readout (grade and ms
   early/late) was already there and is unchanged; the owner asked not to restyle the cues without seeing them.
   All tuning by ear and feel (FEEL.md); Phase 6 does the full soundscape.
-- **Gameplay effect** (AI doubles, 24 seeds x 300 s, `tools/point-mix.ts`; Phase 1 after its review fixes → Phase
-  2): 328 → 297 points, median rally 10 → 11 shots, untouched winners 43.9 → 56.2%, own-side errors 49.1 →
-  36.0%, balls on an opponent 3.7 → 3.4%. That moves away from the pros (winners 34-42%, errors about 60%). Taken
-  apart: without the split-step model 54.9/39.0%, without the AI fix 54.4/38.0%. The shift is the per-shot
-  windows: volleys are a quarter of all shots and now get 1.35x the drive's window, so the AI misses fewer. The
-  AI's timing spread is a stand-in until Phase 4 calibrates its errors against pro match statistics; the windows
-  are for the player's hands.
+- **Verifier round** (independent, read-only; it re-ran every claim, the citations included). Fixed, beyond what
+  is written into the bullets above:
+  - *Run-ahead could strike the ball up to a tick late* (medium): a release arriving for a moment the sim had
+    already run past had its contact moved to the next tick (11-15% of releases at 60 Hz, 23-30% at 120 Hz, median
+    2.3 ms late, and anything in that tick, a body hit, already decided). While a swing is held, the tick holding
+    its contact now waits until now reaches it (`Game.tick`).
+  - *Gamepad timing* (medium): a pad's timestamp is its latest report of anything, so it is now kept between the
+    last poll and now (a stale value landed an event far in the past); triggers use their value with hysteresis
+    (held past 50%, let go below 40%) instead of `pressed`, which Chromium flips early in the travel.
+  - *Sprint text* (medium): "5 m from rest in about 1.3 s" was never true (1.45 s before Phase 2, 1.56 s with the
+    build-up). The acceleration stays (the match-data peaks are already below the game's); the text says what the
+    game does, and the padel sprint check is an open question.
+  - Low: the avatar picked smash or chiquita during the charge from the previous release's modifier (now the held
+    one); `splitAt`/`pushFrom` are hashed; the smash rumble is capped at its stated range and its comment matches
+    the code; the camera kick starts in the frame that shows the hit; citation labels (Brenner & Smeets' 5-7 ms
+    are untrained people; Miralles used WIMU Pro GNSS + LPS); split-step numbers restated (11-16% at 1-2.5 m, push
+    at 175 ms, 5 cm at 283 ms, 1.35 x 8.5 = 11.5 m/s²).
+  - Left: `focusHeight` can stay from an earlier window while the planned contact is still out of reach (the cue
+    shows the plan's moment then; harmless today); the HUD and cue call `focusIdeal`/`windowScale`, which write
+    sim scratch fields (no sim state); a pad press may not unlock audio (OPEN_QUESTIONS.md).
+- **Gameplay effect** (AI doubles, 24 seeds x 300 s, `tools/point-mix.ts`; Phase 1 after review round 2 → Phase 2
+  after the verifier's fixes): 317 → 331 points, median rally 11 → 10 shots, untouched winners 47.0 → 50.2%,
+  own-side errors 46.1 → 42.6%, balls on an opponent 2.5 → 3.0%. A small move away from the pros (winners 34-42%,
+  errors about 60%), left for Phase 4. The first write-up said 328 → 297 and 43.9 → 56.2% winners: its Phase 1
+  baseline didn't reproduce (see Phase 1), and most of the shift it found was the per-shot windows applied to the
+  AI (volleys, a third of all shots, got 1.35x the window, so the AI missed fewer). The windows now apply to humans
+  only until Phase 4 refits the AI's timing with them on.

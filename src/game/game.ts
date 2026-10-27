@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu';
 import { MatchSim, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import { InputFrame } from '../sim/input.ts';
+import { SW_CHARGE } from '../sim/player/player.ts';
 import { buildCourtView } from '../render/courtView.ts';
 import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
@@ -284,7 +285,12 @@ export class Game {
       this.pad.poll(this.kb, now);
       if (this.pad.held !== 0) this.sound.unlock();
     }
+    // ...except the tick that holds the contact a held swing is waiting for: a release that arrives for a moment
+    // the sim has already run past would meet the ball up to a tick late. That tick waits until now reaches it.
+    const hp = this.sim.players[human]!;
+    const hold = ahead && !this.opts.autoplay && hp.swing === SW_CHARGE ? this.sim.focusIdeal(human) : -1;
     while ((ahead ? this.sim.time < simNow : this.sim.time + DT <= simNow) && n < MAX_TICKS_PER_FRAME) {
+      if (hold >= this.sim.time && hold < this.sim.time + DT && this.sim.time + DT > simNow) break;
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
       this.sim.step(this.inputs);
       n++;
@@ -318,12 +324,14 @@ export class Game {
     this.ball.update(this.sim, alpha, team);
     this.net.update(this.sim, alpha);
     for (let i = 0; i < this.players.length; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
-    this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
     const who = this.opts.autoplay ? -1 : human;
+    // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last
+    // frame's camera, which is close enough).
+    this.feedback.update(this.sim, who, renderTime, now);
+    this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt);
     this.hud.update(this.sim, who, now / 1000);
-    this.feedback.update(this.sim, who, renderTime, now);
 
     this.renderer.render(this.scene, this.cam.camera);
     if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);

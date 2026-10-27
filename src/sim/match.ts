@@ -147,6 +147,8 @@ export class MatchSim {
   lastStrikeTime = -10;
   /** Doubles: which player of each team is going for the incoming ball (-1: none / not decided). */
   readonly taker = [-1, -1];
+  /** A human pushing the movement keys this tick (not aiming with them): they are going, so they don't hop. */
+  private readonly keysMove = new Uint8Array(4);
   /** Doubles: what an AI striker decided its pair does after its shot: 1 go up to the net, 0 stay back, -1 none. */
   readonly intentUp = [-1, -1];
   private readonly takerVersion = [-1, -1];
@@ -520,6 +522,7 @@ export class MatchSim {
     const assistOn = (this.cfg.assist ?? p.tune.positioningAssist) > 0;
     p.aiming = human && assistOn && (isServerSetup || (p.swing === SW_CHARGE && st.valid));
     const keysAim = p.aiming && !f.aimAbs;
+    this.keysMove[i] = human && !keysAim && abs(f.moveX) + abs(f.moveY) > 0.1 ? 1 : 0;
     let dx = keysAim || isServerSetup ? 0 : f.moveX * s;
     let dz = keysAim || isServerSetup ? 0 : -f.moveY * s;
     if (p.aiming) this.steerAim(p, f, s, isServerSetup);
@@ -558,8 +561,13 @@ export class MatchSim {
       const early = (TIMING.perfect + 0.35 * (TIMING.good - TIMING.perfect)) * this.windowScale(i);
       if (ideal >= 0 && ideal - early < t0 + DT) this.releaseSwing(i, max(t0, ideal - early), f);
     }
-    // Safety: a swing held far too long releases itself.
-    if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) this.releaseSwing(i, t0, f);
+    // Safety: a swing held far too long releases itself, unless the ball it waits for is still on its way (a
+    // lob pressed for at the opponent's strike can hang over 3 s before the overhead: those used to go off by
+    // themselves, graded against nothing). Past the contact by a margin, or held 8 s, it goes.
+    if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) {
+      const ideal = t0 - p.chargeStart > 8 ? -1 : this.focusIdeal(i);
+      if (ideal < 0 || t0 > ideal + 0.25) this.releaseSwing(i, t0, f);
+    }
 
     p.clock = t0;
     if (!isServerSetup && this.phase !== PH_DEAD) { p.driveX = dx; p.driveZ = dz; p.move(); }
@@ -889,7 +897,7 @@ export class MatchSim {
     let scale = this.ai[i] ? 1 : this.cfg.timingScale ?? 1;
 
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) {
-      scale *= SHAPES[SHOT_SERVE]!.timing ?? 1;
+      if (!this.ai[i]) scale *= SHAPES[SHOT_SERVE]!.timing ?? 1;
       const delta = t - this.tossIdeal;
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
@@ -919,9 +927,12 @@ export class MatchSim {
       return;
     }
     // Each shot has its own windows: a punch volley barely turns the face, a víbora brushes across the ball at speed.
-    this.shotHeight = w.height;
-    this.shotMod = p.mod;
-    scale *= SHAPES[this.shotFor(p, w.volley)]!.timing ?? 1;
+    // Humans only for now: the AI's timing spread was fitted with one window for every shot, and Phase 4 refits it.
+    if (!this.ai[i]) {
+      this.shotHeight = w.height;
+      this.shotMod = p.mod;
+      scale *= SHAPES[this.shotFor(p, w.volley)]!.timing ?? 1;
+    }
     const delta = t - w.ideal;
     p.timingDelta = delta;
     p.grade = gradeTiming(delta, TIMING, scale);
@@ -1083,9 +1094,10 @@ export class MatchSim {
     this.emitP(E_HIT, i, shot, p.grade, this.res.speed, b.pos.x, b.pos.y, b.pos.z);
     this.wallsSinceBounce = 0;
     this.pred.compute(this.world, b, this.time, 0);
-    // The opponents split-step as the ball is struck.
+    // The opponents split-step as the ball is struck (a human already pushing a direction goes instead: a forced hop
+    // would hold their keys for its airtime).
     for (let o = 1 - team; o < this.players.length; o += 2) {
-      if (this.players[o]!.trySplitStep(this.time)) this.emitP(E_SPLIT, o);
+      if (this.keysMove[o] === 0 && this.players[o]!.trySplitStep(this.time)) this.emitP(E_SPLIT, o);
     }
     this.taker[1 - team] = -1;
     this.takerVersion[1 - team] = -1;
@@ -1213,7 +1225,7 @@ export class MatchSim {
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
-        .num(p.aimTouched ? 1 : 0).num(p.heldMod);
+        .num(p.aimTouched ? 1 : 0).num(p.heldMod).num(p.splitAt).num(p.pushFrom);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);

@@ -65,7 +65,7 @@ export class Feedback {
       if (mine) {
         // A clean hit is a short, light tap on the high motor; a mistimed one a heavier, longer buzz on the low
         // one; a smash both, hard.
-        if (overhead) this.pad.rumble(0.55 + 0.3 * (e.c / 40), 0.6, 110, nowMs);
+        if (overhead) this.pad.rumble(0.55 + 0.3 * Math.min(1, e.c / 40), 0.6, 110, nowMs);
         else if (q >= 0.8) this.pad.rumble(0.05, 0.25 + 0.25 * Math.min(1, e.c / 30), 45, nowMs);
         else this.pad.rumble(0.35 * (1 - q) + 0.1, 0.1, 90, nowMs);
       }

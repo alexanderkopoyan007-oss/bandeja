@@ -34,6 +34,7 @@ export class GamepadInput {
   private index = -1;
   private readonly down: boolean[] = [];
   private rumbleUntil = 0;
+  private lastPoll = 0;
 
   constructor(target: Window) {
     target.addEventListener('gamepadconnected', (e) => {
@@ -59,14 +60,20 @@ export class GamepadInput {
     if (this.index < 0) return;
     const pad = navigator.getGamepads()[this.index];
     if (!pad || !pad.connected) return;
-    // A pad's timestamp is when it last changed; never in the future of this frame.
-    const ts = Math.min(now, pad.timestamp || now);
+    // A pad's timestamp is when it last reported anything (a moving stick included, so a button change can be
+    // stamped up to a report late); kept between the last poll and now, so a stale or odd value can't land an
+    // event far in the past.
+    const raw = pad.timestamp || now;
+    const ts = raw > now ? now : raw < this.lastPoll ? this.lastPoll : raw;
+    this.lastPoll = now;
     for (let k = 0; k < MAP.length; k++) {
       const m = MAP[k]!;
       const b = pad.buttons[m[0]];
       if (!b) continue;
-      // Triggers are analogue: past half-way counts as held.
-      const on = b.pressed || b.value > 0.5;
+      // Triggers are analogue (Chromium flips `pressed` early in their travel): held past half-way, let go below
+      // 40%, so a trigger resting near the line doesn't chatter.
+      const trigger = m[0] === 6 || m[0] === 7;
+      const on = trigger ? (this.down[m[0]] ? b.value > 0.4 : b.value > 0.5) : b.pressed;
       if (on === this.down[m[0]]) continue;
       this.down[m[0]] = on;
       const was = (this.held & m[1]) !== 0;
@@ -90,7 +97,7 @@ export class GamepadInput {
 
   /**
    * Rumble: `strong` (low-frequency motor, a heavy hit) and `weak` (high-frequency, a crisp one), 0..1, for `ms`.
-   * A new effect doesn't cut off a stronger one still playing.
+   * A new effect is dropped while another is still playing (the actuator would cut the first one off).
    */
   rumble(strong: number, weak: number, ms: number, now: number): void {
     if (this.index < 0) return;
