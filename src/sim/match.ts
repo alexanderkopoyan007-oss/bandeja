@@ -7,7 +7,7 @@ import { DT, TEAM_NEAR } from './core/constants.ts';
 import { Hasher } from './core/hash.ts';
 import { abs, clamp, max, min, sqrt } from './core/smath.ts';
 import { SURF_GLASS, WALL_SIDE_LEFT, WALL_SIDE_RIGHT } from './court/court.ts';
-import { Score, SIDE_RIGHT, DEFAULT_FORMAT, EV_GAME, EV_SET, EV_MATCH, EV_CHANGE_ENDS, type MatchFormat } from './rules/score.ts';
+import { Score, SIDE_RIGHT, SIDE_LEFT, DEFAULT_FORMAT, EV_GAME, EV_SET, EV_MATCH, EV_CHANGE_ENDS, type MatchFormat } from './rules/score.ts';
 import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
 import { Player, SW_IDLE, SW_CHARGE, SW_COMMITTED, SW_RECOVER, DEFAULT_TUNING } from './player/player.ts';
 import {
@@ -231,8 +231,17 @@ export class MatchSim {
     const rTeam = 1 - sTeam;
     for (const p of this.players) p.setHalf(this.side(p.team), c.halfW, c.halfL);
     if (sc.isDecidingPoint() && sc.decidingSide < 0) {
-      // Receivers choose the side for the golden/star point. Human receivers default to the right for now.
-      sc.decidingSide = this.teamHasHuman(rTeam) ? SIDE_RIGHT : this.aiRng.next() < 0.5 ? 0 : 1;
+      // Receivers choose the side for the golden/star point. In doubles that picks who receives: a pair with a
+      // human puts the human on it. A human alone (singles) takes the right for now; AI pairs choose at random.
+      let side = this.aiRng.next() < 0.5 ? SIDE_RIGHT : SIDE_LEFT;
+      if (this.teamHasHuman(rTeam)) {
+        side = SIDE_RIGHT;
+        if (this.doubles) {
+          const human = this.ai[rTeam] ? rTeam + 2 : rTeam;
+          side = (human >> 1) === sc.firstReceiverSlot[rTeam] ? SIDE_RIGHT : SIDE_LEFT;
+        }
+      }
+      sc.decidingSide = side;
     }
     const ss = this.side(sTeam);
     const sideSign = (sc.serveSide() === SIDE_RIGHT ? 1 : -1) * ss; // server's right is +x for the near half

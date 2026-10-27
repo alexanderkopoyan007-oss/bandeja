@@ -6,6 +6,7 @@ import { InputFrame, BTN_DRIVE } from '../../src/sim/input.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
 import { SHOT_SERVE } from '../../src/sim/contact/shots.ts';
 import { WHY_HIT_BODY_OPP, WHY_HIT_BODY_OWN } from '../../src/sim/rules/rally.ts';
+import { MODE_GOLDEN, DEFAULT_FORMAT } from '../../src/sim/rules/score.ts';
 
 const NONE = [null, null, null, null];
 
@@ -149,5 +150,19 @@ describe('a human with an AI partner', () => {
     expect(r.hits[2]).toBeGreaterThan(20);
     expect(r.given).toBeGreaterThan(20);
     expect(r.returned / r.given).toBeGreaterThan(0.9);
+  });
+});
+
+describe('deciding point', () => {
+  it('the receiving pair chooses who receives: a pair with a human puts the human on it', () => {
+    for (const human of [0, 2]) {
+      const cfg = { seed: 5, doubles: true, firstServer: 1, format: { ...DEFAULT_FORMAT, mode: MODE_GOLDEN } };
+      const m = new MatchSim({ ...cfg, human: [0, 1, 2, 3].map((i) => i === human) });
+      m.score.points[0] = 3;
+      m.score.points[1] = 3;
+      (m as unknown as { startPoint(): void }).startPoint();
+      expect(m.score.isDecidingPoint()).toBe(true);
+      expect(m.score.receiverPlayer()).toBe(human);
+    }
   });
 });
