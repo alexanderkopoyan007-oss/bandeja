@@ -360,8 +360,9 @@ export class MatchSim {
       const e = f.ev[i]!;
       const shot = SHOT_BUTTONS.indexOf(e.button as never);
       if (shot < 0) continue;
+      // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
       if (e.press) this.press(team, shot, max(e.t, t0));
-      else if (p.swing === SW_CHARGE && p.shot === shot) this.releaseSwing(team, max(e.t, t0), f);
+      else if (p.swing === SW_CHARGE && p.shot === shot) this.releaseSwing(team, e.t, f);
     }
     // Safety: a swing held far too long releases itself.
     if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) this.releaseSwing(team, t0, f);

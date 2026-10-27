@@ -31,3 +31,27 @@ describe('match', () => {
     expect(hits / points).toBeGreaterThan(3);
   });
 });
+
+describe('timing is judged on the exact input time', () => {
+  it('a release 3 ms after the ideal moment is graded with a 3 ms error, wherever it falls inside the tick', async () => {
+    const { InputFrame, BTN_DRIVE } = await import('../../src/sim/input.ts');
+    const { DT } = await import('../../src/sim/core/constants.ts');
+    for (const offset of [0.003, -0.004, 0.0101]) {
+      const m = new MatchSim({ seed: 3, human: [true, false], firstServer: 0 });
+      const f = new InputFrame();
+      // Wait out the pre-serve pause, then press to drop the ball.
+      while (m.time < m.phaseUntil + DT) { f.clear(); m.step([f, null]); }
+      f.clear();
+      f.push(true, BTN_DRIVE, m.time);
+      f.held = BTN_DRIVE;
+      m.step([f, null]);
+      const releaseAt = m.tossIdeal + offset;
+      // Step until the tick that contains the release time, then deliver it with its exact timestamp.
+      while (m.time + DT <= releaseAt) { f.clear(); f.held = BTN_DRIVE; m.step([f, null]); }
+      f.clear();
+      f.push(false, BTN_DRIVE, releaseAt);
+      m.step([f, null]);
+      expect(m.players[0]!.timingDelta).toBeCloseTo(offset, 9);
+    }
+  });
+});

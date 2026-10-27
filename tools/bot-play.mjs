@@ -1,0 +1,80 @@
+// Plays as the human through real keyboard events (dispatched in the page at precise times) to verify the
+// input path end to end: key timestamps -> sim time -> timing grade. With perfect scheduling, the graded
+// timing errors should be a few milliseconds, not a frame (33 ms in headless Chrome).
+// Usage: node tools/bot-play.mjs [url] [seconds]
+import puppeteer from 'puppeteer-core';
+
+const url = process.argv[2] ?? 'http://localhost:5190/?seed=5&assist=1';
+const secs = Number(process.argv[3] ?? 60);
+const browser = await puppeteer.launch({
+  executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  headless: true,
+  args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--disable-frame-rate-limit', '--disable-gpu-vsync'],
+});
+const page = await browser.newPage();
+await page.setViewport({ width: 1280, height: 720 });
+page.on('pageerror', (e) => console.log('[pageerror]', e.message));
+await page.goto(url, { waitUntil: 'load' });
+await page.waitForFunction(() => window.__bandeja, { timeout: 30000 });
+
+const result = await page.evaluate(async (secs) => {
+  const g = window.__bandeja;
+  const key = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true }));
+  const wall = (t) => g.epoch + t * 1000; // sim time -> performance.now()
+  const deltas = [];
+  const stats = { swings: 0, hits: 0, whiffs: 0, won: 0, lost: 0, grades: {} };
+  let seen = g.sim.eventSeq;
+  let holding = false;
+  let scheduled = false;
+  let pressedAt = 0;
+  const down = () => { key('keydown', 'KeyJ'); holding = true; scheduled = false; pressedAt = performance.now(); };
+  const wins = [];
+  for (let i = 0; i < 4; i++) wins.push({ start: 0, end: 0, ideal: 0, idealIdx: 0, volley: false, afterWall: false, height: 0 });
+  const end = performance.now() + secs * 1000;
+  while (performance.now() < end) {
+    const sim = g.sim;
+    const p = sim.players[0];
+    // Read new events.
+    while (seen < sim.eventSeq) {
+      const e = sim.events[seen % sim.events.length]; seen++;
+      if (e.team !== 0 && e.kind !== 5) continue;
+      if (e.kind === 16) { stats.swings++; deltas.push(e.c * 1000); stats.grades[e.b] = (stats.grades[e.b] ?? 0) + 1; }
+      if (e.kind === 1) stats.hits++;
+      if (e.kind === 11) stats.whiffs++;
+      if (e.kind === 5) { if (e.team === 0) stats.won++; else stats.lost++; }
+    }
+    // A press the sim ignored (e.g. still recovering): let go and try again.
+    if (p.swing === 0 && holding && !scheduled && performance.now() - pressedAt > 60) { key('keyup', 'KeyJ'); holding = false; }
+    // Serve.
+    if (sim.phase === 0 && sim.score.serverTeam() === 0 && !holding && sim.time > sim.phaseUntil) down();
+    if (sim.phase === 1 && holding && !scheduled && sim.score.serverTeam() === 0) {
+      scheduled = true;
+      const at = wall(sim.tossIdeal);
+      setTimeout(() => { key('keyup', 'KeyJ'); holding = false; }, Math.max(0, at - performance.now()));
+    }
+    // Rally: hold early, release at the best window's ideal moment.
+    if (sim.phase === 2 && sim.rally.hitter === 1) {
+      if (!holding && p.swing === 0) down();
+      const n = sim.windowsFor(0, wins);
+      if (holding && n > 0 && !scheduled) {
+        let best = wins[0];
+        for (let i = 1; i < n; i++) if (wins[i].ideal < best.ideal) best = wins[i];
+        const at = wall(best.ideal);
+        if (at - performance.now() < 120) {
+          scheduled = true;
+          setTimeout(() => { key('keyup', 'KeyJ'); holding = false; }, Math.max(0, at - performance.now()));
+        }
+      }
+    }
+    await new Promise((r) => setTimeout(r, 4));
+  }
+  return { deltas, stats };
+}, secs);
+await browser.close();
+
+const d = result.deltas.map(Math.abs).sort((a, b) => a - b);
+const pct = (p) => (d[Math.floor(d.length * p)] ?? 0).toFixed(1);
+console.log('human swings', result.stats.swings, 'hits', result.stats.hits, 'whiffs', result.stats.whiffs,
+  'points won', result.stats.won, 'lost', result.stats.lost);
+console.log('grades', result.stats.grades, '(0 too early .. 3 perfect .. 5 too late)');
+console.log(`|timing error| ms  p50 ${pct(0.5)}  p90 ${pct(0.9)}  max ${(d[d.length - 1] ?? 0).toFixed(1)}`);

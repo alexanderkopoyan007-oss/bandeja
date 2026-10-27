@@ -1,8 +1,10 @@
 // Minimal mutable 3-vector. Methods write into `this` so hot loops never allocate.
+// Fields are initialised with numbers on purpose: a bare `x: number;` becomes a class field that starts as
+// undefined, V8 then marks it as a tagged (mixed) field, and every double written to it allocates a box.
 export class V3 {
-  x: number;
-  y: number;
-  z: number;
+  x = 0;
+  y = 0;
+  z = 0;
 
   constructor(x = 0, y = 0, z = 0) {
     this.x = x;

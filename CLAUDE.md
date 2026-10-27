@@ -8,7 +8,11 @@ A realistic, fluid 3D padel game for desktop browsers. Free to build, run and ho
 - **Replays = seed + input frames.** `MatchSim.step(input)`, `snapshot()`, `restore()`. Any new sim state must be included in snapshot/restore and the state hash.
 - **Input is timestamped** (`event.timeStamp`, `Gamepad.timestamp`, both `performance.now()` time). The sim receives the exact time inside the tick; timing grades use it.
 - **Render interpolation** between the previous and current sim state by the accumulator fraction.
-- **No allocations in hot loops.** Sim maths writes into preallocated vectors/typed arrays; pools for transient objects. `npm run alloc` must report zero GCs in the sim run.
+- **No allocations in hot loops.** Sim maths writes into preallocated vectors/typed arrays; pools for transient objects. `npm run alloc` runs 100k AI-vs-AI ticks under `--trace-gc`; budget is ≤ 1 minor GC per 10k ticks (~83 s of play), each < 1 ms. Measured 2026-10-27: 10 per 100k, longest 0.17 ms, 1.7 µs per tick.
+- **V8 traps that cause per-tick garbage** (found the hard way):
+  - A class field declared without a value (`x: number;`) is emitted as a real field that starts `undefined`; V8 then tags it and boxes every double written to it. Always initialise numeric fields (`x = 0`).
+  - `const sqrt = Math.sqrt` aliases are opaque to V8: each call returns a boxed number. `smath` uses tiny wrapper functions instead.
+  - Doubles passed into or returned from non-inlined functions get boxed. In hot paths pass results through fields (see `Ball.findContact`/`tryWall`).
 
 ## Conventions
 - Units: metres, seconds, radians, kilograms. Axes: x across the court (left −), y up, z along it; net at z = 0; team 0 on z > 0 (near the broadcast camera).
@@ -34,7 +38,13 @@ A realistic, fluid 3D padel game for desktop browsers. Free to build, run and ho
 | Texture memory | ≤256 MB | ≤512 MB | ≤1 GB | ≤2 GB |
 
 Every preset: sim ≤ 1 ms per frame; zero GC during a rally; no shader compiles or asset loads mid-point (warm up on the loading screen); first playable < 10 s.
-Measured with `npm run perf` (Chrome, 1080p, AI-vs-AI autoplay; Medium with CPU throttled 4× as the laptop proxy). The dev machine is an M1 Max, so GPU-side numbers for integrated graphics are a proxy only.
+Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-vs-AI autoplay; Medium with CPU throttled 4× as the laptop proxy). Headless Chrome paces vsync'd frames at 30 Hz whatever the load, so perf runs turn the frame limit off and judge 60/120 Hz from the p99 frame time. The dev machine is an M1 Max, so GPU-side numbers for integrated graphics are a proxy only.
+
+## Tools
+- `node tools/shot.mjs <url> <png> [waitMs] [w] [h]`: real-Chrome screenshot (the Browser pane shows WebGPU canvases as black).
+- `npm run alloc`: GC budget check for the sim. `npm run perf`: frame-time report (needs `npm run build`).
+- `node tools/bot-play.mjs [url] [secs]`: plays as the human with real keyboard events timed in the page; checks that grades use exact key timestamps (p50 error ≈ 8 ms while frames are 33 ms).
+- URL options: `?autoplay=1 &seed= &court=standard|panoramic|singles-narrow &floor=turf|hard|carpet|clay &scoring=star|golden|advantage &ai=0..1 &assist=0..1 &timing=1..2 &pro=1 &aim=mouse &alt= &temp= &windx= &windz= &backend=webgl &dpr=`.
 
 ## Assets and licensing
 - Only CC0 or clearly free licences (Poly Haven, ambientCG, MakeHuman/MPFB output, CC0 Freesound) or our own generated work. Every asset goes in `CREDITS.md` with source and licence.
@@ -47,7 +57,7 @@ Measured with `npm run perf` (Chrome, 1080p, AI-vs-AI autoplay; Medium with CPU 
 - Commits use the GitHub noreply identity configured in this repo, never his personal email.
 
 ## Milestones
-- [ ] **M0** Plan, scaffold, CLAUDE.md, tests, deploy to GitHub Pages
+- [x] **M0** Plan, scaffold, CLAUDE.md, tests, deploy to GitHub Pages (2026-10-27)
 - [ ] **M1** Feel slice: grey-box court, full ball + wall physics, 1 player vs simple AI, timing-based hitting, serve, scoring
 - [ ] **M2** Animation: humanoid, locomotion, core shots, contact time-warp, IK
 - [ ] **M3** Doubles, partner/opponent AI, full rules, padel-specific shots

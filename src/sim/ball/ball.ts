@@ -228,64 +228,70 @@ export class Ball {
   private hitWall = -1;
   private hitSurface = 0;
 
+  /** Candidate contact fraction being tested, and the best so far (fields, not arguments: passing doubles
+   *  through non-inlined calls boxes them, which would allocate every tick). */
+  private cand = 0;
+  private best = 2;
+
   /** Earliest contact fraction along pos -> p (0..1), or -1. Records what was hit. */
   private findContact(world: BallWorld, p: V3, flightOnly: boolean): number {
     const r = world.spec.radius;
     const c = world.court;
     const q = this.pos;
-    let best = 2;
+    this.best = 2;
 
     // Floor (everywhere, inside or outside the court).
     if (p.y < r && q.y >= r - 1e-9) {
       const f = (q.y - r) / (q.y - p.y);
-      if (f < best) { best = f; this.hitKind = HIT_FLOOR; this.hitSurface = SURF_FLOOR; this.hitWall = -1; }
+      if (f < this.best) { this.best = f; this.hitKind = HIT_FLOOR; this.hitSurface = SURF_FLOOR; this.hitWall = -1; }
     }
 
     if (!this.outside && !flightOnly) {
       // Side walls.
       const xl = c.halfW - r;
-      if (p.x > xl && q.x <= xl) best = this.tryWall(c, best, (xl - q.x) / (p.x - q.x), p, WALL_SIDE_RIGHT);
-      if (p.x < -xl && q.x >= -xl) best = this.tryWall(c, best, (-xl - q.x) / (p.x - q.x), p, WALL_SIDE_LEFT);
+      if (p.x > xl && q.x <= xl) { this.cand = (xl - q.x) / (p.x - q.x); this.tryWall(c, p, WALL_SIDE_RIGHT); }
+      if (p.x < -xl && q.x >= -xl) { this.cand = (-xl - q.x) / (p.x - q.x); this.tryWall(c, p, WALL_SIDE_LEFT); }
       // Back walls.
       const zl = c.halfL - r;
-      if (p.z > zl && q.z <= zl) best = this.tryWall(c, best, (zl - q.z) / (p.z - q.z), p, WALL_BACK_NEAR);
-      if (p.z < -zl && q.z >= -zl) best = this.tryWall(c, best, (-zl - q.z) / (p.z - q.z), p, WALL_BACK_FAR);
-      // Net body: the ball's surface reaches the plane z = 0 below the tape.
-      best = this.tryNet(c, best, p, r);
+      if (p.z > zl && q.z <= zl) { this.cand = (zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_NEAR); }
+      if (p.z < -zl && q.z >= -zl) { this.cand = (-zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_FAR); }
+      // Net body and tape.
+      this.tryNet(c, p, r);
     }
-    return best <= 1 ? best : -1;
+    return this.best <= 1 ? this.best : -1;
   }
 
-  private tryWall(c: Court, best: number, f: number, p: V3, wall: number): number {
-    if (f >= best) return best;
+  private tryWall(c: Court, p: V3, wall: number): void {
+    const f = this.cand;
+    if (f >= this.best) return;
     const q = this.pos;
     const x = q.x + (p.x - q.x) * f;
     const y = q.y + (p.y - q.y) * f;
     const z = q.z + (p.z - q.z) * f;
     if (wall === WALL_BACK_NEAR || wall === WALL_BACK_FAR) c.backZone(x, y, zone);
     else c.sideZone(z, y, zone);
-    if (zone.kind === SURF_OPEN) return best;
+    if (zone.kind === SURF_OPEN) return;
     this.hitKind = HIT_WALL;
     this.hitWall = wall;
     this.hitSurface = zone.kind;
     this.hitSeam = zone.seamDist;
-    return f;
+    this.best = f;
   }
 
-  private hitSeam = 1;
+  private hitSeam = 0.5;
 
-  private tryNet(c: Court, best: number, p: V3, r: number): number {
+  private tryNet(c: Court, p: V3, r: number): void {
     const q = this.pos;
     // Net body: centre crosses z = +-r while below the tape.
     for (let s = -1; s <= 1; s += 2) {
       const plane = s * r; // approaching from the side where sign(z) = s
       if ((s > 0 && q.z >= plane && p.z < plane) || (s < 0 && q.z <= plane && p.z > plane)) {
         const f = (q.z - plane) / (q.z - p.z);
-        if (f < best) {
+        if (f < this.best) {
           const x = q.x + (p.x - q.x) * f;
           const y = q.y + (p.y - q.y) * f;
           if (abs(x) <= c.halfW && y < c.netHeightAt(x) - NET_TAPE_RADIUS) {
-            best = f;
+            this.best = f;
             this.hitKind = HIT_NET;
             this.hitSurface = SURF_NET;
             this.hitWall = -1;
@@ -310,8 +316,8 @@ export class Ball {
         const disc = B * B - 4 * A * C;
         if (disc >= 0) {
           const f = (-B - sqrt(disc)) / (2 * A);
-          if (f >= 0 && f < best) {
-            best = f;
+          if (f >= 0 && f < this.best) {
+            this.best = f;
             this.hitKind = HIT_NETCORD;
             this.hitSurface = SURF_NET;
             this.hitWall = -1;
@@ -323,7 +329,6 @@ export class Ball {
         }
       }
     }
-    return best;
   }
 
   private resolve(world: BallWorld, rng: Rng | null, t: number): void {
