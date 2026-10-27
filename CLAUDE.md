@@ -4,7 +4,7 @@ A realistic, fluid 3D padel game for desktop browsers. Free to build, run and ho
 
 ## Architecture rules (non-negotiable)
 - **`src/sim/` is pure TypeScript**: no DOM, no three, no Node. `tsconfig.sim.json` has `lib: ES2022` and no types, and `tests/sim/purity.test.ts` fails on any forbidden import. Rendering, animation, audio and UI only *read* sim state.
-- **Deterministic fixed step at 120 Hz.** Randomness only from the seeded RNG in `src/sim/core`. Never `Math.random`, `Date.now` or wall-clock time inside the sim. Trig/exp go through `smath` so they can be swapped for cross-browser-exact versions when online play arrives.
+- **Deterministic fixed step at 120 Hz, bit-exact on every machine.** Randomness only from the seeded RNG in `src/sim/core`. Never `Math.random`, `Date.now` or wall-clock time inside the sim. All transcendental maths goes through `smath`, which runs fdlibm ports (`core/fdlibm.ts`): engine `Math.sin/cos/atan/atan2/exp/log/pow` give different last bits on macOS arm64, Linux arm64 and Linux x64 (measured 2026-10-27; the same seed scored 12 points on a Mac and 7 on GitHub's runner). The purity test rejects engine transcendentals in `src/sim`; `tests/sim/smath.test.ts` holds a golden output-bit hash that CI recomputes on Linux. `node tools/det-probe.ts` prints per-function hashes and the sim hash every second, to diff between machines (all four agreed after the fix).
 - **Replays = seed + input frames.** `MatchSim.step(input)`, `snapshot()`, `restore()`. Any new sim state must be included in snapshot/restore and the state hash.
 - **Input is timestamped** (`event.timeStamp`, `Gamepad.timestamp`, both `performance.now()` time). The sim receives the exact time inside the tick; timing grades use it.
 - **Render interpolation** between the previous and current sim state by the accumulator fraction.
@@ -18,7 +18,7 @@ A realistic, fluid 3D padel game for desktop browsers. Free to build, run and ho
 - **V8 traps that cause per-tick garbage** (found the hard way):
   - A class field declared without a value (`x: number;`) is emitted as a real field that starts `undefined`; V8 then tags it and boxes every double written to it. Always initialise numeric fields (`x = 0`).
   - `const sqrt = Math.sqrt` aliases are opaque to V8: each call returns a boxed number. `smath` uses tiny wrapper functions instead.
-  - Doubles passed into or returned from non-inlined functions get boxed. In hot paths pass results through fields (see `Ball.findContact`/`tryWall`, `Player.driveX/driveZ/clock` + `move()`). Measured 2026-10-27 after that fix: 166 B/tick, 5 GCs per 100k ticks.
+  - Doubles passed into or returned from non-inlined functions get boxed (fdlibm passes its arguments and results through the `IO` Float64Array for this reason). In hot paths pass results through fields (see `Ball.findContact`/`tryWall`, `Player.driveX/driveZ/clock` + `move()`). Measured 2026-10-27 after that fix: 166 B/tick, 5 GCs per 100k ticks.
 
 ## Conventions
 - Units: metres, seconds, radians, kilograms. Axes: x across the court (left −), y up, z along it; net at z = 0; team 0 on z > 0 (near the broadcast camera).
