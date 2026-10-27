@@ -1,14 +1,14 @@
-// Broadcast-style score bug, the timing bar, shot chips, hints and calls (DOM overlay), plus the on-ball timing cue.
-// Text and classes only change when the underlying value changes, so the HUD costs next to nothing per frame.
+// Broadcast-style score bug, timing grade, the timing meter, hints and calls (DOM overlay); the timing rings on
+// the ball are drawn in the scene (render/views.ts). Text and classes only change when the underlying value
+// changes, so the HUD costs next to nothing per frame.
 import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import {
   E_HIT, E_SWING, E_WHIFF, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_ENDS, E_EXIT, PH_TOSS, PH_RALLY, PH_SETUP,
 } from '../sim/match.ts';
 import { REASON_TEXT, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
-import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE } from '../sim/contact/timing.ts';
-import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
+import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/contact/timing.ts';
+import { SW_CHARGE } from '../sim/player/player.ts';
 import { SHAPES, SHOT_BANDEJA } from '../sim/contact/shots.ts';
-import { TimingCue, GRADE_CSS } from './cue.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 
 const TIMING = tuning.timing;
@@ -29,41 +29,20 @@ const CSS = `
 #hud .dot { width: 6px; height: 6px; border-radius: 50%; margin-left: 6px; background: transparent; }
 #hud .dot.on { background: #f4d03f; }
 
-/* Timing bar: glass track, graded zones, a glowing needle, and where you released. */
-#hud .tbar { position: absolute; left: 50%; bottom: 66px; width: 380px; transform: translateX(-50%); opacity: 0;
-  transition: opacity .18s; }
-#hud .tbar.on { opacity: 1; }
-#hud .track { position: relative; height: 14px; border-radius: 8px; border: 1px solid var(--edge);
-  background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0) 60%), var(--glass);
-  box-shadow: inset 0 2px 4px rgba(0,0,0,.55), 0 8px 24px rgba(0,0,0,.35); backdrop-filter: blur(8px); }
-#hud .zone { position: absolute; top: 2px; bottom: 2px; border-radius: 6px; }
-#hud .zone.ok { background: linear-gradient(90deg, rgba(255,177,59,0), rgba(255,177,59,.38) 18%, rgba(255,177,59,.38) 82%, rgba(255,177,59,0)); }
-#hud .zone.good { background: linear-gradient(90deg, rgba(143,227,107,.35), rgba(143,227,107,.75) 30%, rgba(143,227,107,.75) 70%, rgba(143,227,107,.35)); }
-#hud .zone.perfect { background: linear-gradient(180deg, #b9fbff, var(--perfect)); box-shadow: 0 0 10px rgba(95,242,255,.85), 0 0 22px rgba(95,242,255,.45); }
-#hud .tbar.hot .zone.perfect { animation: hud-pulse .18s ease-in-out infinite alternate; }
-@keyframes hud-pulse { to { box-shadow: 0 0 16px rgba(95,242,255,1), 0 0 34px rgba(95,242,255,.7); } }
-#hud .tick { position: absolute; top: -3px; bottom: -3px; width: 1px; background: rgba(255,255,255,.35); }
-#hud .needle { position: absolute; top: -7px; width: 4px; height: 28px; margin-left: -2px; border-radius: 2px; background: #fff;
-  box-shadow: 0 0 6px #fff, 0 0 14px rgba(255,255,255,.7); }
-#hud .needle::after { content: ""; position: absolute; left: -4px; top: -6px; border: 6px solid transparent; border-top-color: #fff; border-bottom: 0; }
-#hud .rel { position: absolute; top: 1px; width: 10px; height: 10px; margin-left: -5px; transform: rotate(45deg); border-radius: 2px;
-  border: 2px solid currentColor; box-shadow: 0 0 8px currentColor; opacity: 0; transition: opacity .2s; }
-#hud .tlabels { display: flex; justify-content: space-between; margin-top: 9px; font: 700 10px/1 var(--display);
-  letter-spacing: .24em; color: rgba(255,255,255,.5); text-transform: uppercase; }
-#hud .tlabels .mid { color: rgba(95,242,255,.8); }
-
-/* After a shot: timing error and the shot itself. */
-#hud .chips { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; gap: 8px; opacity: 0;
-  transition: opacity .25s; }
-#hud .chips.on { opacity: 1; }
-#hud .chip { padding: 6px 12px 5px; border-radius: 999px; background: var(--glass); border: 1px solid var(--edge);
-  backdrop-filter: blur(8px); font: 700 13px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: #fff;
-  white-space: nowrap; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
-#hud .chip:empty { display: none; }
-#hud .chip b { font-weight: 800; }
+/* Timing grade, the shot, and the meter: where now sits against the contact moment. */
+#hud .grade { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); font: 800 26px/1 ui-sans-serif, system-ui;
+  letter-spacing: .06em; text-transform: uppercase; opacity: 0; transition: opacity .25s; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+#hud .meter { position: absolute; left: 50%; bottom: 82px; width: 260px; height: 10px; transform: translateX(-50%);
+  background: rgba(10,12,16,.6); border-radius: 5px; opacity: 0; transition: opacity .15s; }
+#hud .meter .zone { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+#hud .meter .mark { position: absolute; top: -3px; width: 3px; height: 16px; background: #fff; border-radius: 2px; }
+#hud .ms { position: absolute; left: 50%; bottom: 102px; transform: translateX(-50%); font: 600 12px/1 ui-sans-serif, system-ui;
+  color: #e6ebef; opacity: 0; transition: opacity .25s; letter-spacing: .04em; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+#hud .shot { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
+  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
 
 /* Hints: a glass pill with key caps. */
-#hud .hint { position: absolute; left: 50%; bottom: 122px; transform: translate(-50%, 6px); opacity: 0;
+#hud .hint { position: absolute; left: 50%; bottom: 176px; transform: translate(-50%, 6px); opacity: 0;
   transition: opacity .2s, transform .2s; padding: 8px 14px 7px; border-radius: 999px; background: var(--glass);
   border: 1px solid var(--edge); backdrop-filter: blur(8px); font: 700 14px/1 var(--display); letter-spacing: .1em;
   text-transform: uppercase; color: #e9f6ff; white-space: nowrap; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
@@ -106,8 +85,7 @@ function isLob(sim: MatchSim, team: number): boolean {
   return false;
 }
 
-/** Bar span either side of the ideal moment, seconds. */
-const BAR_SPAN = 0.25;
+const GRADE_COLORS = ['#ff5a4f', '#ffb13b', '#8fe36b', '#5ff2ff', '#ffb13b', '#ff5a4f'];
 
 /** Text with [X] key caps turned into styled keys (only our own strings go through here). */
 function keys(text: string): string {
@@ -116,45 +94,36 @@ function keys(text: string): string {
 
 export class Hud {
   readonly root: HTMLElement;
-  readonly cue: TimingCue;
   private readonly rows: HTMLElement[][] = [];
   private readonly call: HTMLElement;
   private readonly callTitle: HTMLElement;
   private readonly callSub: HTMLElement;
-  private readonly bar: HTMLElement;
-  private readonly needle: HTMLElement;
-  private readonly rel: HTMLElement;
+  private readonly grade: HTMLElement;
+  private readonly shot: HTMLElement;
+  private readonly meter: HTMLElement;
+  private readonly mark: HTMLElement;
   private readonly zones: HTMLElement[] = [];
-  private readonly chips: HTMLElement;
-  private readonly msChip: HTMLElement;
-  private readonly shotChip: HTMLElement;
+  private readonly ms: HTMLElement;
   private readonly help: HTMLElement;
   private readonly hint: HTMLElement;
   private lobVersion = -1;
   private lob = false;
   private readonly cache = new Map<HTMLElement, string>();
   private seen = 0;
-  private chipsUntil = 0;
+  private gradeUntil = 0;
   private callUntil = 0;
-  private relUntil = 0;
-  private barOn = false;
-  private barHot = false;
   private hintOn = false;
-  private _pro = false;
+  pro = false;
   // Where the ball last left the court (for por tres / por cuatro).
   private exitX = 0;
   private exitZ = 0;
   private exitDoor = false;
-
-  get pro(): boolean { return this._pro; }
-  set pro(v: boolean) { this._pro = v; this.cue.pro = v; }
 
   constructor(root: HTMLElement, names: [string, string], sets: number) {
     this.root = root;
     const style = document.createElement('style');
     style.textContent = CSS;
     document.head.appendChild(style);
-    this.cue = new TimingCue(root);
     const bug = el('div', 'bug');
     bug.style.setProperty('--sets', String(sets));
     // Doubles rows name two players.
@@ -175,19 +144,18 @@ export class Hud {
     this.callTitle = this.call.appendChild(el('div', 'title'));
     this.callSub = this.call.appendChild(el('div', 'sub'));
 
-    // Timing bar: ok / good / perfect zones (sized by setTiming), quarter ticks, the needle and the release marker.
-    this.bar = root.appendChild(el('div', 'tbar'));
-    const track = this.bar.appendChild(el('div', 'track'));
-    for (const z of ['ok', 'good', 'perfect']) this.zones.push(track.appendChild(el('div', `zone ${z}`)));
-    for (const f of [0.25, 0.75]) track.appendChild(el('div', 'tick')).style.left = `${f * 100}%`;
-    this.rel = track.appendChild(el('div', 'rel'));
-    this.needle = track.appendChild(el('div', 'needle'));
-    const labels = this.bar.appendChild(el('div', 'tlabels'));
-    labels.innerHTML = '<span>Early</span><span class="mid">Perfect</span><span>Late</span>';
-
-    this.chips = root.appendChild(el('div', 'chips'));
-    this.msChip = this.chips.appendChild(el('div', 'chip'));
-    this.shotChip = this.chips.appendChild(el('div', 'chip'));
+    this.grade = root.appendChild(el('div', 'grade'));
+    this.shot = root.appendChild(el('div', 'shot'));
+    this.meter = root.appendChild(el('div', 'meter'));
+    // Meter zones: perfect window in the middle, good either side (sized by setTiming).
+    const good = el('div', 'zone');
+    good.style.background = 'rgba(143,227,107,.55)';
+    const perf = el('div', 'zone');
+    perf.style.background = 'rgba(95,242,255,.9)';
+    this.meter.append(good, perf);
+    this.zones.push(good, perf);
+    this.mark = this.meter.appendChild(el('div', 'mark'));
+    this.ms = root.appendChild(el('div', 'ms'));
     this.hint = root.appendChild(el('div', 'hint'));
     this.help = root.appendChild(el('div', 'help'));
     this.help.innerHTML = keys(
@@ -200,16 +168,16 @@ export class Hud {
     );
   }
 
-  /** Size the bar's zones to the timing windows (the bar spans +-BAR_SPAN). */
+  /** Size the meter's Good/Perfect zones to the timing windows (meter spans +-0.25 s). */
   setTiming(scale: number): void {
+    const span = 0.5;
     const set = (e: HTMLElement, half: number): void => {
-      const w = Math.min(100, ((half * scale) / BAR_SPAN) * 100);
+      const w = Math.min(100, ((2 * half * scale) / span) * 100);
       e.style.left = `${50 - w / 2}%`;
       e.style.width = `${w}%`;
     };
-    set(this.zones[0]!, TIMING.ok);
-    set(this.zones[1]!, TIMING.good);
-    set(this.zones[2]!, TIMING.perfect);
+    set(this.zones[0]!, TIMING.good);
+    set(this.zones[1]!, TIMING.perfect);
   }
 
   toggleHelp(): void {
@@ -251,31 +219,26 @@ export class Hud {
       if (e.seq < 0) continue;
       this.onEvent(sim, e, human, team, now);
     }
-    if (now > this.chipsUntil) this.toggle(this.chips, 'on', false);
+    if (now > this.gradeUntil) { this.grade.style.opacity = '0'; this.shot.style.opacity = '0'; this.ms.style.opacity = '0'; }
     if (now > this.callUntil) this.toggle(this.call, 'on', false);
 
-    // Timing bar: where "now" sits relative to the contact moment the player is going for.
+    // Timing meter: where "now" sits relative to the best upcoming contact moment.
     let show = false;
-    let hot = false;
-    if (human >= 0 && !this._pro && (sim.phase === PH_RALLY || sim.phase === PH_TOSS)) {
+    if (human >= 0 && !this.pro && (sim.phase === PH_RALLY || sim.phase === PH_TOSS)) {
       const p = sim.players[human]!;
       const ideal = sim.focusIdeal(human);
-      if (ideal >= 0 && (p.swing === SW_CHARGE || sim.phase === PH_TOSS) && p.swing !== SW_COMMITTED) {
-        const d = sim.time - ideal; // negative = before the ideal
-        this.needle.style.left = `${(Math.min(1, Math.max(0, 0.5 + d / (2 * BAR_SPAN))) * 100).toFixed(1)}%`;
+      if (ideal >= 0 && (p.swing === SW_CHARGE || sim.phase === PH_TOSS)) {
+        const d = sim.time - ideal; // negative = before ideal
+        const frac = Math.min(1, Math.max(0, 0.5 + d / 0.5));
+        this.mark.style.left = `${(frac * 100).toFixed(1)}%`;
         show = true;
-        hot = sim.focusInReach && Math.abs(d) <= TIMING.good * (sim.cfg.timingScale ?? 1);
       }
     }
-    // Keep the bar up briefly after a release so the marker can be read.
-    if (now < this.relUntil) show = true;
-    else this.rel.style.opacity = '0';
-    if (show !== this.barOn) { this.barOn = show; this.toggle(this.bar, 'on', show); }
-    if (hot !== this.barHot) { this.barHot = hot; this.toggle(this.bar, 'hot', hot); }
+    this.meter.style.opacity = show ? '1' : '0';
 
     // Teach the court: a lob coming (the overhead key), the overhead you are holding, or a ball to play off the glass.
     let hint = '';
-    if (human >= 0 && !this._pro && sim.phase === PH_RALLY && sim.rally.hitter >= 0 && sim.rally.hitter !== team) {
+    if (human >= 0 && !this.pro && sim.phase === PH_RALLY && sim.rally.hitter >= 0 && sim.rally.hitter !== team) {
       const p = sim.players[human]!;
       const st = sim.stand[human]!;
       if (sim.pred.version !== this.lobVersion) {
@@ -315,39 +278,28 @@ export class Hud {
     this.callUntil = now + dur;
   }
 
-  /** Release marker on the bar, in the grade's colour. */
-  private markRelease(delta: number, grade: number, now: number): void {
-    this.rel.style.left = `${(Math.min(1, Math.max(0, 0.5 + delta / (2 * BAR_SPAN))) * 100).toFixed(1)}%`;
-    this.rel.style.color = GRADE_CSS[grade]!;
-    this.rel.style.opacity = '1';
-    this.relUntil = now + 0.7;
-  }
-
   /** Your swings and shots are yours alone (`human`, a player); points, games and sets are the pair's (`team`). */
   private onEvent(sim: MatchSim, e: MatchEvent, human: number, team: number, now: number): void {
     switch (e.kind) {
       case E_SWING:
       case E_WHIFF:
-        if (human >= 0 && e.player === human && !this._pro && e.b >= 0) {
+        if (human >= 0 && e.player === human && !this.pro && e.b >= 0) {
           const outOfReach = e.kind === E_WHIFF && e.x > 0;
-          if (outOfReach) this.cue.flash('Out of reach', '#ffb13b', now);
-          else if (e.kind === E_WHIFF && e.b !== G_TOO_EARLY && e.b !== G_TOO_LATE) this.cue.flash(`${GRADE_TEXT[e.b]} · miss`, GRADE_CSS[e.b]!, now);
-          else this.cue.flash(GRADE_TEXT[e.b]!, GRADE_CSS[e.b]!, now);
-          if (!outOfReach) this.markRelease(e.c, e.b, now);
+          this.set(this.grade, outOfReach ? 'Out of reach'
+            : e.kind === E_WHIFF && e.b !== G_TOO_EARLY && e.b !== G_TOO_LATE ? `${GRADE_TEXT[e.b]} · miss` : GRADE_TEXT[e.b]!);
+          this.grade.style.color = outOfReach ? '#ffb13b' : GRADE_COLORS[e.b]!;
+          this.grade.style.opacity = '1';
           const ms = Math.round(Math.abs(e.c) * 1000);
-          this.set(this.msChip, outOfReach ? `<b>${e.x.toFixed(1)} m</b> away · get to the spot first`
-            : ms === 0 ? '<b>Spot on</b>' : `<b>${ms} ms</b> ${e.c < 0 ? 'early' : 'late'}`, true);
-          this.msChip.style.color = outOfReach ? '#ffb13b' : GRADE_CSS[e.b]!;
-          if (e.kind === E_WHIFF) this.set(this.shotChip, '');
-          this.toggle(this.chips, 'on', true);
-          this.chipsUntil = now + 1.4;
+          this.set(this.ms, outOfReach ? `${e.x.toFixed(1)} m away: get to the spot first` : ms === 0 ? 'spot on' : `${ms} ms ${e.c < 0 ? 'early' : 'late'}`);
+          this.ms.style.opacity = '1';
+          this.gradeUntil = now + 0.9;
         }
         break;
       case E_HIT:
         if (human >= 0 && e.player === human) {
-          this.set(this.shotChip, `${SHAPES[e.a]!.name} · <b>${(e.c * 3.6).toFixed(0)}</b> km/h`, true);
-          this.toggle(this.chips, 'on', true);
-          this.chipsUntil = now + 1.4;
+          this.set(this.shot, `${SHAPES[e.a]!.name} · ${(e.c * 3.6).toFixed(0)} km/h`);
+          this.shot.style.opacity = e.b === G_PERFECT || e.b === G_GOOD || !this.pro ? '1' : '0';
+          this.gradeUntil = now + 0.9;
         }
         break;
       case E_EXIT:

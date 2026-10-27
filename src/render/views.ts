@@ -1,15 +1,16 @@
 // Ball, players, assists and the broadcast camera. Everything here only reads the sim.
 import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../sim/match.ts';
-import { PH_RALLY } from '../sim/match.ts';
+import { PH_RALLY, PH_TOSS } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
 import { PF_FLOOR } from '../sim/ball/predict.ts';
 import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
-import { BTN_POWER, BTN_PRECISION } from '../sim/input.ts';
-import { decal, makeAimTexture, makeSpotTexture, makeSpreadTexture } from './decals.ts';
+import { decal, makeSpotTexture } from './decals.ts';
+import tuning from '../../data/tuning.json' with { type: 'json' };
 import { Avatar, makeRacket } from './avatar/avatar.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
 
+const TIMING = tuning.timing;
 const BALL_COLOR = 0xdff23b;
 // By player number (team + 2 * slot): each pair in its colour, the partner a lighter shade of it.
 const PLAYER_COLORS = [0xff7a45, 0x35c9a8, 0xffb48a, 0x8be3cf];
@@ -251,31 +252,92 @@ export class BroadcastCamera {
   }
 }
 
+/** A flat ring whose radius and line width are set every frame (constant on-screen thickness). */
+class RingStrip {
+  readonly mesh: THREE.Mesh;
+  readonly mat: THREE.MeshBasicMaterial;
+  private readonly pos: Float32Array;
+  private readonly attr: THREE.BufferAttribute;
+  private readonly cs: Float32Array;
+  private readonly sn: Float32Array;
+  private readonly seg: number;
+
+  constructor(seg: number, color: number) {
+    this.seg = seg;
+    this.cs = new Float32Array(seg + 1);
+    this.sn = new Float32Array(seg + 1);
+    for (let i = 0; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      this.cs[i] = Math.cos(a);
+      this.sn[i] = Math.sin(a);
+    }
+    this.pos = new Float32Array((seg + 1) * 2 * 3);
+    const idx: number[] = [];
+    for (let i = 0; i < seg; i++) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    const g = new THREE.BufferGeometry();
+    this.attr = new THREE.BufferAttribute(this.pos, 3);
+    g.setAttribute('position', this.attr);
+    g.setIndex(idx);
+    this.mat = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+    });
+    this.mesh = new THREE.Mesh(g, this.mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 10;
+    this.mesh.visible = false;
+  }
+
+  set(r: number, w: number): void {
+    const p = this.pos;
+    const ri = Math.max(0, r - w);
+    for (let i = 0, k = 0; i <= this.seg; i++) {
+      p[k++] = this.cs[i]! * ri; p[k++] = this.sn[i]! * ri; p[k++] = 0;
+      p[k++] = this.cs[i]! * r; p[k++] = this.sn[i]! * r; p[k++] = 0;
+    }
+    this.attr.needsUpdate = true;
+  }
+}
+
+// Sizes in radians of view angle, so the cue looks the same near and far (~1400 px per radian at 1080p).
+const TARGET_R = 0.0115;
+const APPROACH_RATE = 0.11; // per second before the ideal moment
+const APPROACH_SHOW = 0.6; // seconds before the ideal moment the approaching ring appears
+const LINE_W = 0.0022;
+
 const C_WHITE = 0xffffff;
 const C_LOCK = 0x8fe36b;
+const C_GOOD = 0x8fe36b;
+const C_PERFECT = 0x5ff2ff;
 const C_OFF = 0xffc04a;
+const C_BAD = 0xff5a4a;
 const C_AIM = 0xffd84a;
+const GRADE_HEX = [C_BAD, C_OFF, C_GOOD, C_PERFECT, C_OFF, C_BAD];
 
 /**
- * Floor cues for the human player (the timing cue on the ball is the 2D overlay in ui/cue.ts).
+ * Cues for the human player.
+ * - Timing (hidden in Pro mode): a fixed target ring on the ball and an approaching ring that meets it at the
+ *   ideal moment. Green inside Good, cyan inside Perfect; dim orange while the planned contact is still out
+ *   of reach. On release the target ring flashes the grade.
  * - Where to stand (hidden in Pro mode): a pool of light with a dashed ring that turns slowly, green once you
  *   are on it, amber when you will struggle to get there in time.
- * - Aim (always): a reticle on the far court while the shot can be steered, with a dashed spread circle that
- *   tightens with precision (Shift) and widens with power (Space), in proportion to the error model.
+ * - Aim (always): the shot's target on the far court while it can be steered.
  */
 export class AssistView {
+  private readonly approach = new RingStrip(64, C_WHITE);
+  private readonly target = new RingStrip(48, C_WHITE);
   private readonly spotRoot: THREE.Group;
   readonly spot: THREE.Mesh;
   private readonly spotMat: THREE.MeshBasicMaterial;
   readonly aim: THREE.Group;
-  private readonly reticle: THREE.Mesh;
-  private readonly spread: THREE.Mesh;
-  private readonly spreadMat: THREE.MeshBasicMaterial;
-  private spreadScale = 1;
+  private readonly aimMat: THREE.MeshBasicMaterial;
   private locked = 0;
   enabled = true;
 
   constructor(scene: THREE.Scene) {
+    scene.add(this.approach.mesh, this.target.mesh);
     this.spotRoot = new THREE.Group();
     this.spot = decal(makeSpotTexture(), 0.95, C_WHITE, 0.9);
     this.spotMat = this.spot.material as THREE.MeshBasicMaterial;
@@ -284,12 +346,21 @@ export class AssistView {
     this.spotRoot.visible = false;
     scene.add(this.spotRoot);
 
+    this.aimMat = new THREE.MeshBasicMaterial({ color: C_AIM, transparent: true, opacity: 0.9, depthWrite: false });
     this.aim = new THREE.Group();
-    this.reticle = decal(makeAimTexture(), 1.7, C_AIM, 1);
-    this.spread = decal(makeSpreadTexture(), 1.2, C_AIM, 0.55);
-    this.spreadMat = this.spread.material as THREE.MeshBasicMaterial;
-    this.aim.add(this.reticle, this.spread);
-    this.aim.position.y = 0.008;
+    // Big enough to read at the far baseline (20 m away and seen at a grazing angle).
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.64, 48), this.aimMat);
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.12, 24), this.aimMat);
+    const fill = new THREE.Mesh(
+      new THREE.CircleGeometry(0.5, 48),
+      new THREE.MeshBasicMaterial({ color: C_AIM, transparent: true, opacity: 0.18, depthWrite: false }),
+    );
+    for (const m of [fill, ring, dot]) {
+      m.rotation.x = -Math.PI / 2;
+      m.renderOrder = 2;
+      this.aim.add(m);
+    }
+    this.aim.position.y = 0.007;
     this.aim.visible = false;
     scene.add(this.aim);
   }
@@ -306,26 +377,23 @@ export class AssistView {
     g.scale.z = Math.min(3, Math.max(1, 0.6 / sinE));
   }
 
-  /** `held`: the human's held buttons (power / precision change the spread shown). `cam`: camera position. */
-  update(sim: MatchSim, human: number, now: number, dt: number, held: number, cam: THREE.Vector3): void {
+  update(
+    sim: MatchSim, human: number, ball: THREE.Vector3, camera: THREE.Camera, renderTime: number, timingScale: number,
+    now: number, dt: number,
+  ): void {
+    this.approach.mesh.visible = false;
+    this.target.mesh.visible = false;
     this.spotRoot.visible = false;
     this.aim.visible = false;
     if (human < 0) return;
     const p = sim.players[human]!;
 
+    // Aim target: while it can be steered.
     if (p.aiming) {
       this.aim.position.x = p.aimX;
       this.aim.position.z = p.aimZ;
-      this.foreshorten(this.aim, cam);
-      this.reticle.rotation.z = now * 0.6;
-      const pulse = 1 + 0.04 * Math.sin(now * 7);
-      this.reticle.scale.set(pulse, pulse, 1);
-      // Spread follows the modifier's error multiplier (precision 0.6, power 1.45), eased.
-      const want = (held & BTN_POWER) !== 0 ? 1.45 : (held & BTN_PRECISION) !== 0 ? 0.6 : 1;
-      this.spreadScale += (want - this.spreadScale) * Math.min(1, dt * 12);
-      this.spread.scale.set(this.spreadScale, this.spreadScale, 1);
-      this.spread.rotation.z = -now * 0.25;
-      this.spreadMat.color.setHex((held & BTN_POWER) !== 0 ? 0xff9a3c : C_AIM);
+      const pulse = 1 + 0.06 * Math.sin(now * 9);
+      this.aim.scale.set(pulse, pulse, pulse);
       this.aim.visible = true;
     }
     if (!this.enabled) return;
@@ -338,12 +406,52 @@ export class AssistView {
       this.locked = on ? Math.min(1, this.locked + dt * 6) : Math.max(0, this.locked - dt * 6);
       this.spotRoot.position.x = st.x;
       this.spotRoot.position.z = st.z;
-      this.foreshorten(this.spotRoot, cam);
+      this.foreshorten(this.spotRoot, camera.position);
       this.spot.rotation.z = now * 0.8;
       const sc = 1 + 0.05 * Math.sin(now * 5) - 0.12 * this.locked;
       this.spot.scale.set(sc, sc, 1);
       this.spotMat.color.setHex(!st.inTime ? C_OFF : this.locked > 0.5 ? C_LOCK : C_WHITE);
       this.spotRoot.visible = true;
     }
+
+    const d = camera.position.distanceTo(ball);
+    const lw = d * LINE_W;
+    const tr = d * TARGET_R;
+    // Just released: flash the grade on the target ring.
+    const sinceRelease = renderTime - p.release;
+    if (p.grade >= 0 && sinceRelease >= 0 && sinceRelease < 0.35) {
+      this.target.set(tr * (1 + sinceRelease * 1.6), lw * 1.6);
+      this.target.mat.color.setHex(GRADE_HEX[p.grade] ?? C_WHITE);
+      this.target.mat.opacity = 1 - sinceRelease / 0.35;
+      this.place(this.target.mesh, ball, camera);
+      return;
+    }
+    const charging = p.swing === SW_CHARGE;
+    const ideal = sim.focusIdeal(human);
+    if (ideal < 0 || (!charging && sim.phase !== PH_TOSS && sim.phase !== PH_RALLY)) return;
+    const left = ideal - renderTime;
+    if (left > APPROACH_SHOW || left < -0.15) return;
+    const k = timingScale;
+    const a = Math.abs(left);
+    const reach = sim.focusInReach;
+    const col = !reach ? C_OFF : a <= TIMING.perfect * k ? C_PERFECT : a <= TIMING.good * k ? C_GOOD : C_WHITE;
+    const fade = left < 0 ? Math.max(0, 1 + left / 0.15) : 1;
+
+    this.target.set(tr, lw);
+    this.target.mat.color.setHex(col);
+    this.target.mat.opacity = (reach ? 0.75 : 0.35) * fade;
+    this.place(this.target.mesh, ball, camera);
+    if (left > 0) {
+      this.approach.set(tr + d * APPROACH_RATE * left, lw);
+      this.approach.mat.color.setHex(col);
+      this.approach.mat.opacity = (reach ? 0.95 : 0.4) * Math.min(1, (APPROACH_SHOW - left) / 0.12);
+      this.place(this.approach.mesh, ball, camera);
+    }
+  }
+
+  private place(m: THREE.Mesh, ball: THREE.Vector3, camera: THREE.Camera): void {
+    m.position.copy(ball);
+    m.quaternion.copy(camera.quaternion);
+    m.visible = true;
   }
 }

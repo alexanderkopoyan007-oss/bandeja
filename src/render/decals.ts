@@ -1,4 +1,4 @@
-// Floor decals for the player cues, drawn once into canvas textures at start-up (no per-frame uploads).
+// Floor decal for the where-to-stand cue, drawn once into canvas textures at start-up (no per-frame uploads).
 // Textures are white with alpha so one texture serves every tint; meshes use additive blending, so on the
 // court they read as light on the surface rather than stickers on top of it.
 import * as THREE from 'three/webgpu';
@@ -52,64 +52,6 @@ export function makeSpotTexture(): THREE.CanvasTexture {
   g.beginPath();
   g.arc(m, m, S * 0.035, 0, Math.PI * 2);
   g.fill();
-  return texture(c);
-}
-
-/** Aim reticle: four corner brackets on a ring, crosshair ticks, a centre dot and a faint fill. */
-export function makeAimTexture(): THREE.CanvasTexture {
-  const S = 512;
-  const [c, g] = canvas(S);
-  const m = S / 2;
-  glowDisc(g, m, m * 0.62, 0.16, 0.02);
-  g.strokeStyle = 'rgba(255,255,255,1)';
-  g.lineCap = 'round';
-  // Bracket arcs at the diagonals.
-  g.lineWidth = S * 0.03;
-  for (let i = 0; i < 4; i++) {
-    const a = Math.PI / 4 + (i * Math.PI) / 2;
-    g.beginPath();
-    g.arc(m, m, m * 0.78, a - 0.42, a + 0.42);
-    g.stroke();
-  }
-  // Thin full ring inside.
-  g.lineWidth = S * 0.01;
-  g.globalAlpha = 0.7;
-  g.beginPath();
-  g.arc(m, m, m * 0.6, 0, Math.PI * 2);
-  g.stroke();
-  // Crosshair ticks on the axes.
-  g.globalAlpha = 1;
-  g.lineWidth = S * 0.018;
-  for (let i = 0; i < 4; i++) {
-    const a = (i * Math.PI) / 2;
-    const cx = Math.cos(a);
-    const sy = Math.sin(a);
-    g.beginPath();
-    g.moveTo(m + cx * m * 0.68, m + sy * m * 0.68);
-    g.lineTo(m + cx * m * 0.92, m + sy * m * 0.92);
-    g.stroke();
-  }
-  g.beginPath();
-  g.arc(m, m, S * 0.04, 0, Math.PI * 2);
-  g.fill();
-  return texture(c);
-}
-
-/** Shot spread: a dashed circle (scaled by the power / precision modifier). */
-export function makeSpreadTexture(): THREE.CanvasTexture {
-  const S = 256;
-  const [c, g] = canvas(S);
-  const m = S / 2;
-  g.strokeStyle = 'rgba(255,255,255,0.9)';
-  g.lineWidth = S * 0.018;
-  g.lineCap = 'round';
-  const n = 28;
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    g.beginPath();
-    g.arc(m, m, m * 0.94, a, a + (Math.PI * 2) / n * 0.5);
-    g.stroke();
-  }
   return texture(c);
 }
 

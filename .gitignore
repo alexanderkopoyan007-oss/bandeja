@@ -4,3 +4,6 @@ assets-src/
 tools/out/
 .DS_Store
 *.log
+
+# Local Claude Code launch config
+.claude/
