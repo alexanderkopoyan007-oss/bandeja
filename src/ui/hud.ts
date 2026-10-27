@@ -192,6 +192,7 @@ export class Hud {
       '[O] overhead for lobs: a bandeja, with [Space] a smash that can leave the court<br>' +
       'Hold a shot key as the ball comes: WASD then aims the target and you run to the ball yourself<br>' +
       'Release when the closing ring meets the ring on the ball. Serve: [A]/[D] aims, press to drop, release to hit<br>' +
+      'Doubles: you are the ringed player; your partner calls the balls on their side, holding a shot key takes it<br>' +
       '[Space] power &nbsp; [Shift] precision &nbsp; [M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide',
     );
   }
@@ -223,7 +224,9 @@ export class Hud {
     e.classList.toggle(cls, on);
   }
 
-  update(sim: MatchSim, humanTeam: number, now: number): void {
+  /** `human`: the human's player number, -1 with autoplay. */
+  update(sim: MatchSim, human: number, now: number): void {
+    const team = human >= 0 ? sim.players[human]!.team : -1;
     const sc = sim.score;
     const pts = sc.display();
     const server = sc.serverTeam();
@@ -243,7 +246,7 @@ export class Hud {
       const e = sim.events[this.seen % sim.events.length]!;
       this.seen++;
       if (e.seq < 0) continue;
-      this.onEvent(sim, e, humanTeam, now);
+      this.onEvent(sim, e, human, team, now);
     }
     if (now > this.chipsUntil) this.toggle(this.chips, 'on', false);
     if (now > this.callUntil) this.toggle(this.call, 'on', false);
@@ -251,9 +254,9 @@ export class Hud {
     // Timing bar: where "now" sits relative to the contact moment the player is going for.
     let show = false;
     let hot = false;
-    if (humanTeam >= 0 && !this._pro && (sim.phase === PH_RALLY || sim.phase === PH_TOSS)) {
-      const p = sim.players[humanTeam]!;
-      const ideal = sim.focusIdeal(humanTeam);
+    if (human >= 0 && !this._pro && (sim.phase === PH_RALLY || sim.phase === PH_TOSS)) {
+      const p = sim.players[human]!;
+      const ideal = sim.focusIdeal(human);
       if (ideal >= 0 && (p.swing === SW_CHARGE || sim.phase === PH_TOSS) && p.swing !== SW_COMMITTED) {
         const d = sim.time - ideal; // negative = before the ideal
         this.needle.style.left = `${(Math.min(1, Math.max(0, 0.5 + d / (2 * BAR_SPAN))) * 100).toFixed(1)}%`;
@@ -269,20 +272,23 @@ export class Hud {
 
     // Teach the court: a lob coming (the overhead key), the overhead you are holding, or a ball to play off the glass.
     let hint = '';
-    if (humanTeam >= 0 && !this._pro && sim.phase === PH_RALLY && sim.rally.hitter >= 0 && sim.rally.hitter !== humanTeam) {
-      const p = sim.players[humanTeam]!;
-      const st = sim.stand[humanTeam]!;
+    if (human >= 0 && !this._pro && sim.phase === PH_RALLY && sim.rally.hitter >= 0 && sim.rally.hitter !== team) {
+      const p = sim.players[human]!;
+      const st = sim.stand[human]!;
       if (sim.pred.version !== this.lobVersion) {
         this.lobVersion = sim.pred.version;
-        this.lob = isLob(sim, humanTeam);
+        this.lob = isLob(sim, team);
       }
-      if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Bandeja · hold [Space] to smash';
+      // Doubles: the partner has called it. Holding a shot key takes it anyway.
+      const partners = sim.doubles && sim.taker[team] === (human ^ 2) && p.swing !== SW_CHARGE;
+      if (partners) hint = sim.rally.isServe ? 'Partner receives' : 'Partner\'s ball · hold a shot key to take it';
+      else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Bandeja · hold [Space] to smash';
       else if (this.lob) hint = 'Lob coming · hold [O] for an overhead';
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }
     if (hint) this.set(this.hint, keys(hint), true);
     if (!!hint !== this.hintOn) { this.hintOn = !!hint; this.toggle(this.hint, 'on', this.hintOn); }
-    if (humanTeam >= 0 && sim.phase === PH_SETUP && sim.score.serverTeam() === humanTeam && now > this.callUntil) {
+    if (human >= 0 && sim.phase === PH_SETUP && sim.score.serverPlayer() === human && now > this.callUntil) {
       this.showCall('Your serve', keys('[A]/[D] aims · press a shot key to drop · release to hit'), '#ffd84a', now, 0.05);
     }
   }
@@ -309,11 +315,12 @@ export class Hud {
     this.relUntil = now + 0.7;
   }
 
-  private onEvent(sim: MatchSim, e: MatchEvent, human: number, now: number): void {
+  /** Your swings and shots are yours alone (`human`, a player); points, games and sets are the pair's (`team`). */
+  private onEvent(sim: MatchSim, e: MatchEvent, human: number, team: number, now: number): void {
     switch (e.kind) {
       case E_SWING:
       case E_WHIFF:
-        if (e.team === human && !this._pro && e.b >= 0) {
+        if (human >= 0 && e.player === human && !this._pro && e.b >= 0) {
           const outOfReach = e.kind === E_WHIFF && e.x > 0;
           if (outOfReach) this.cue.flash('Out of reach', '#ffb13b', now);
           else if (e.kind === E_WHIFF && e.b !== G_TOO_EARLY && e.b !== G_TOO_LATE) this.cue.flash(`${GRADE_TEXT[e.b]} · miss`, GRADE_CSS[e.b]!, now);
@@ -329,7 +336,7 @@ export class Hud {
         }
         break;
       case E_HIT:
-        if (e.team === human) {
+        if (human >= 0 && e.player === human) {
           this.set(this.shotChip, `${SHOT_KEYS[e.a]} · <b>${(e.c * 3.6).toFixed(0)}</b> km/h`, true);
           this.toggle(this.chips, 'on', true);
           this.chipsUntil = now + 1.4;
@@ -341,8 +348,8 @@ export class Hud {
         this.exitDoor = e.a === 1;
         break;
       case E_POINT: {
-        const who = human < 0 ? (e.team === 0 ? 'Near side' : 'Far side') : e.team === human ? 'Your point' : 'Their point';
-        const accent = human < 0 ? '#ffffff' : e.team === human ? '#8fe36b' : '#ff5a4f';
+        const who = team < 0 ? (e.team === 0 ? 'Near side' : 'Far side') : e.team === team ? 'Your point' : 'Their point';
+        const accent = team < 0 ? '#ffffff' : e.team === team ? '#8fe36b' : '#ff5a4f';
         if (e.a === WHY_EXIT_AFTER_BOUNCE) {
           // Out of the court after a good bounce: over the back fence is "por cuatro", over the side or out
           // through a door "por tres".
@@ -359,13 +366,13 @@ export class Hud {
         this.showCall('Let', 'Replay the serve', '#5ff2ff', now, 1.2);
         break;
       case E_GAME:
-        this.showCall(human < 0 ? 'Game' : e.team === human ? 'Game, you' : 'Game, opponent', '', '#ffd84a', now, 1.6);
+        this.showCall(team < 0 ? 'Game' : e.team === team ? 'Game, you' : sim.doubles ? 'Game, opponents' : 'Game, opponent', '', '#ffd84a', now, 1.6);
         break;
       case E_SET:
-        this.showCall(human < 0 ? 'Set' : e.team === human ? 'Set, you' : 'Set, opponent', '', '#ffd84a', now, 2);
+        this.showCall(team < 0 ? 'Set' : e.team === team ? 'Set, you' : sim.doubles ? 'Set, opponents' : 'Set, opponent', '', '#ffd84a', now, 2);
         break;
       case E_MATCH:
-        this.showCall('Game, set and match', human < 0 ? '' : e.team === human ? 'You win!' : 'Opponent wins', '#ffd84a', now, 1e9);
+        this.showCall('Game, set and match', team < 0 ? '' : e.team === team ? 'You win!' : sim.doubles ? 'Opponents win' : 'Opponent wins', '#ffd84a', now, 1e9);
         break;
       case E_ENDS:
         this.showCall('Change of ends', '', '#ffffff', now, 1.4);

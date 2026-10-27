@@ -823,6 +823,8 @@ export class MatchSim {
   focusIdeal(i: number): number {
     this.focusInReach = true;
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) return this.tossIdeal;
+    // Doubles: no cue for a ball the partner is taking (holding a shot key claims it, and then it is ours).
+    if (this.doubles && this.taker[this.players[i]!.team] !== i) return -1;
     const n = this.windowsFor(i, this.focusWins);
     const st = this.stand[i]!;
     let best = -1;

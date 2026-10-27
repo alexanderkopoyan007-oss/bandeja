@@ -35,23 +35,25 @@ const result = await page.evaluate(async (secs) => {
     // Read new events.
     while (seen < sim.eventSeq) {
       const e = sim.events[seen % sim.events.length]; seen++;
-      if (e.team !== 0 && e.kind !== 5) continue;
+      // Swings and hits are player 0's own; points are the pair's.
+      if (e.kind === 5) { if (e.team === 0) stats.won++; else stats.lost++; continue; }
+      if (e.player !== 0) continue;
       if (e.kind === 16) { stats.swings++; deltas.push(e.c * 1000); stats.grades[e.b] = (stats.grades[e.b] ?? 0) + 1; }
       if (e.kind === 1) stats.hits++;
       if (e.kind === 11) stats.whiffs++;
-      if (e.kind === 5) { if (e.team === 0) stats.won++; else stats.lost++; }
     }
     // A press the sim ignored (e.g. still recovering): let go and try again.
     if (p.swing === 0 && holding && !scheduled && performance.now() - pressedAt > 60) { key('keyup', 'KeyJ'); holding = false; }
     // Serve.
-    if (sim.phase === 0 && sim.score.serverTeam() === 0 && !holding && sim.time > sim.phaseUntil) down();
-    if (sim.phase === 1 && holding && !scheduled && sim.score.serverTeam() === 0) {
+    if (sim.phase === 0 && sim.score.serverPlayer() === 0 && !holding && sim.time > sim.phaseUntil) down();
+    if (sim.phase === 1 && holding && !scheduled && sim.score.serverPlayer() === 0) {
       scheduled = true;
       const at = wall(sim.tossIdeal);
       setTimeout(() => { key('keyup', 'KeyJ'); holding = false; }, Math.max(0, at - performance.now()));
     }
-    // Rally: hold early, release on the moment the timing ring closes (the sim's focus ideal).
-    if (sim.phase === 2 && sim.rally.hitter === 1) {
+    // Rally: hold early, release on the moment the timing ring closes (the sim's focus ideal). In doubles only
+    // the balls the pair gives player 0 (holding a key would claim the partner's).
+    if (sim.phase === 2 && sim.rally.hitter === 1 && (!sim.doubles || sim.taker[0] === 0)) {
       if (!holding && p.swing === 0) down();
       const ideal = sim.focusIdeal(0);
       if (holding && ideal > 0 && sim.focusInReach && !scheduled) {

@@ -9,7 +9,8 @@ import { BTN_POWER, BTN_PRECISION } from '../sim/input.ts';
 import { decal, makeAimTexture, makeSpotTexture, makeSpreadTexture } from './decals.ts';
 
 const BALL_COLOR = 0xdff23b;
-const TEAM_COLORS = [0xff7a45, 0x35c9a8];
+// By player number (team + 2 * slot): each pair in its colour, the partner a lighter shade of it.
+const PLAYER_COLORS = [0xff7a45, 0x35c9a8, 0xffb48a, 0x8be3cf];
 const TRAIL = 28;
 
 const v1 = new THREE.Vector3();
@@ -119,8 +120,8 @@ export class PlayerView {
   readonly racket = new THREE.Group();
   private readonly ready = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, team: number) {
-    const mat = new THREE.MeshStandardMaterial({ color: TEAM_COLORS[team], roughness: 0.75 });
+  constructor(scene: THREE.Scene, idx: number) {
+    const mat = new THREE.MeshStandardMaterial({ color: PLAYER_COLORS[idx], roughness: 0.75 });
     this.body = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 1.2, 6, 14), mat);
     this.body.position.y = 0.8;
     this.body.castShadow = true;
@@ -153,6 +154,18 @@ export class PlayerView {
     handle.position.y = -0.24;
     this.racket.add(handle);
     scene.add(this.racket);
+  }
+
+  /** A thin ring on the floor under the human's player, so you can tell yourself from your partner. */
+  markYou(): void {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.36, 0.42, 40),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.006;
+    ring.renderOrder = 1;
+    this.root.add(ring);
   }
 
   update(sim: MatchSim, p: Player, idx: number, alpha: number, renderTime: number): void {

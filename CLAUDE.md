@@ -18,7 +18,8 @@ A realistic, fluid 3D padel game for desktop browsers. Free to build, run and ho
 - **V8 traps that cause per-tick garbage** (found the hard way):
   - A class field declared without a value (`x: number;`) is emitted as a real field that starts `undefined`; V8 then tags it and boxes every double written to it. Always initialise numeric fields (`x = 0`).
   - `const sqrt = Math.sqrt` aliases are opaque to V8: each call returns a boxed number. `smath` uses tiny wrapper functions instead.
-  - Doubles passed into or returned from non-inlined functions get boxed (fdlibm passes its arguments and results through the `IO` Float64Array for this reason). In hot paths pass results through fields (see `Ball.findContact`/`tryWall`, `Player.driveX/driveZ/clock` + `move()`). Measured 2026-10-27 after that fix: 166 B/tick, 5 GCs per 100k ticks.
+  - Doubles passed into or returned from non-inlined functions get boxed (fdlibm passes its arguments and results through the `IO` Float64Array for this reason). In hot paths pass results through fields (see `Ball.findContact`/`tryWall`, `Player.driveX/driveZ/clock` + `move()`, `SimpleAi.goX/goZ` + `drift()`), read the clock inside (`think(m, f)`, `applyInput(i, f)`), and return sample indices, not times (`bodyHitIdx`). A function that used to be inlined can stop being inlined when its caller grows: the doubles refactor made `think(m, f, t0, t1)` box 4 numbers a tick. `npm run alloc` checks singles and doubles; measured 2026-10-27: 5 and 4 GCs per 100k ticks.
+  - Never reuse `i` for an inner loop inside a method whose parameter `i` is the player number (it sent AI presses to player 0).
 
 ## Conventions
 - Units: metres, seconds, radians, kilograms. Axes: x across the court (left −), y up, z along it; net at z = 0; team 0 on z > 0 (near the broadcast camera).
@@ -50,8 +51,8 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
 - **One headless Chrome at a time on this machine.** Run every Chrome-launching tool through `bash tools/one-chrome.sh <cmd>` (shares the lock/queue with the Meridian project's audit tools, which run in parallel sessions). Never `pkill` Chrome by pattern: other sessions' puppeteer Chromes look identical; stop only PIDs you started.
 - `bash tools/one-chrome.sh node tools/shot.mjs <url> <png> [waitMs] [w] [h]`: real-Chrome screenshot (the Browser pane shows WebGPU canvases as black).
 - `npm run alloc`: GC budget check for the sim. `npm run perf`: frame-time report (needs `npm run build`).
-- `bash tools/one-chrome.sh node tools/bot-play.mjs [url] [secs]`: plays as the human with real keyboard events timed in the page, releasing on `focusIdeal` (the ring's moment); checks that grades use exact key timestamps (p50 error ≈ 8 ms while frames are 33 ms).
-- URL options: `?autoplay=1 &seed= &court=standard|panoramic|singles-narrow &floor=turf|hard|carpet|clay &scoring=star|golden|advantage &ai=0..1 &assist=0..1 (default 0.45; 0 = keys always move, no aim target) &timing=1..2 (window scale, default 1.5; 1 = strict) &autotime=1 (a held swing fires itself, graded Good) &pro=1 &aim=mouse &alt= &temp= &windx= &windz= &backend=webgl &dpr=`.
+- `bash tools/one-chrome.sh node tools/bot-play.mjs [url] [secs]`: plays as the human (player 0) with real keyboard events timed in the page, releasing on `focusIdeal` (the ring's moment); in doubles it plays only the balls given to it. Checks that grades use exact key timestamps (p50 error ≈ 8 ms while frames are 33 ms).
+- URL options: `?mode=singles` (default doubles) `&autoplay=1 &seed= &court=standard|panoramic|singles-narrow &floor=turf|hard|carpet|clay &scoring=star|golden|advantage &ai=0..1 &assist=0..1 (default 0.45; 0 = keys always move, no aim target) &timing=1..2 (window scale, default 1.5; 1 = strict) &autotime=1 (a held swing fires itself, graded Good) &pro=1 &aim=mouse &alt= &temp= &windx= &windz= &backend=webgl &dpr=`.
 
 ## Assets and licensing
 - Only CC0 or clearly free licences (Poly Haven, ambientCG, MakeHuman/MPFB output, CC0 Freesound) or our own generated work. Every asset goes in `CREDITS.md` with source and licence.
@@ -80,6 +81,12 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
   - Not in M1 yet: receiver's choice of side on a deciding point is fixed to the right for humans; ball lodged in mesh / on top of a wall; out-of-court play (stretch); sound (M7).
 - [ ] **M2** Animation: humanoid, locomotion, core shots, contact time-warp, IK
 - [ ] **M3** Doubles, partner/opponent AI, full rules, padel-specific shots
+  - Started 2026-10-27 (M2 waits on the owner's Mixamo downloads, list in `docs/mixamo.md`). Doubles is the default game; `?mode=singles` keeps one against one.
+    - Players are numbered team + 2 * slot (team = i & 1, partner = i ^ 2); `MatchSim` runs 2 or 4 (`doubles: true`). The human is player 0 (`GameOptions.human`); the HUD takes the player for swings/shots and the team for points; the camera and bounce marker take the team.
+    - Serve order (`Score.serverSlot`): each pair's first server per set, alternating (6.9); the first receiver of each pair takes every first point of a game for the set (8.2–8.3); tie-break continues the rotation. Only the receiver returns the serve (8.1); a serve hitting the server's partner is a fault (7.1.d).
+    - Who takes the ball (`MatchSim.updateTakers`): the receiver for the serve; a human holding a shot key; else the shorter run (`planStand` cost), the forehand in the middle on near-ties, a margin before switching, and a partner standing in the ball's line plays it. The cue, spot and assisted timing only follow balls the human is taking (`focusIdeal` returns -1 for the partner's).
+    - AI pairs (`SimpleAi`): parallel formation (net 3.1 m / back 7.5 m, lanes), the striker sets the pair's `intentUp`, overheads and smashes picked by how many opponents are up, reflex blocks for a ball coming at the body (aimed before `bodyHitIdx`, late releases capped). Lab, 4 seeds × 300 s: median 7 shots a point, 46% of the time at the net, about 5% of points end on a player's body (was 30%).
+    - Next in M3: víbora, chiquita and the other padel shots; partner calls; tactics per opponent; receiver's choice of side on a deciding point.
 - [ ] **M4** Graphics: first arenas, lighting, post, quality presets, perf tuning
 - [ ] **M5** Character creator, ridiculous mode, rackets, cosmetics, roster
 - [ ] **M6** Career, tournament, academy, challenges, local multiplayer

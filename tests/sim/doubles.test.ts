@@ -1,7 +1,9 @@
 // Doubles: four players, the FIP serve rotation (6.9, 8.2-8.3), who may return the serve (8.1), and AI pairs that
 // actually play the game (both partners hit, few balls in the body).
 import { describe, expect, it } from 'vitest';
-import { MatchSim, E_POINT, E_HIT, E_TOSS, E_FAULT, E_LET } from '../../src/sim/match.ts';
+import { MatchSim, E_POINT, E_HIT, E_TOSS, E_FAULT, E_LET, PH_SETUP, PH_RALLY } from '../../src/sim/match.ts';
+import { InputFrame, BTN_DRIVE } from '../../src/sim/input.ts';
+import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
 import { SHOT_SERVE } from '../../src/sim/contact/shots.ts';
 import { WHY_HIT_BODY_OPP, WHY_HIT_BODY_OWN } from '../../src/sim/rules/rally.ts';
 
@@ -88,5 +90,66 @@ describe('doubles', () => {
   it('8.1: only the receiver returns the serve', () => {
     expect(a.returns).toBeGreaterThan(25);
     expect(a.wrongReturns).toBe(0);
+  });
+});
+
+describe('a human with an AI partner', () => {
+  // A human-like bot as player 0: holds drive for the balls the pair gives it (auto timing releases), serves in
+  // turn, and otherwise keeps its side of the court at the back. The AI partner (player 2) plays the rest.
+  function playHuman(seed: number, seconds: number) {
+    const m = new MatchSim({ seed, doubles: true, human: [true, false, false, false], autoTiming: true, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame();
+    const frames = [f, null, null, null];
+    const out = { hits: [0, 0, 0, 0], serves: 0, given: 0, returned: 0, points: 0 };
+    let holding = false;
+    let seen = 0;
+    let pending = false;
+    let waiting = false;
+    for (let i = 0; i < seconds * 120; i++) {
+      f.clear();
+      const p = m.players[0]!;
+      const mate = m.players[2]!;
+      if (holding && p.swing !== SW_CHARGE) { f.push(false, BTN_DRIVE, m.time); holding = false; }
+      const serve = m.phase === PH_SETUP && m.score.serverPlayer() === 0 && m.time > m.phaseUntil + 0.2;
+      const ours = m.phase === PH_RALLY && m.rally.hitter === 1 && m.taker[0] === 0;
+      if (!holding && p.swing === SW_IDLE && (serve || ours)) {
+        f.push(true, BTN_DRIVE, m.time);
+        holding = true;
+      }
+      if (!p.aiming && m.phase === PH_RALLY && !ours) {
+        const s = m.side(0);
+        const lane = p.pos.x - mate.pos.x >= 0 ? 1 : -1;
+        const dx = lane * 2.5 - p.pos.x;
+        const dz = s * 7.2 - p.pos.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.3) { f.moveX = (dx / d) * s; f.moveY = (-dz / d) * s; }
+      }
+      f.held = holding ? BTN_DRIVE : 0;
+      m.step(frames);
+      if (pending && m.taker[0] === 0) { out.given++; pending = false; waiting = true; }
+      while (seen < m.eventSeq) {
+        const e = m.events[seen % m.events.length]!;
+        seen++;
+        if (e.kind === E_HIT) {
+          out.hits[e.player]!++;
+          if (e.player === 0 && e.a === SHOT_SERVE) out.serves++;
+          if (e.player === 0 && waiting) out.returned++;
+          waiting = false;
+          pending = e.team === 1;
+        }
+        if (e.kind === E_POINT) { out.points++; pending = false; waiting = false; }
+      }
+    }
+    return out;
+  }
+
+  it('the human gets their share of the balls, serves in turn, and returns most of them', () => {
+    const r = playHuman(3, 600);
+    expect(r.points).toBeGreaterThan(15);
+    expect(r.serves).toBeGreaterThan(3);
+    expect(r.hits[0]).toBeGreaterThan(20);
+    expect(r.hits[2]).toBeGreaterThan(20);
+    expect(r.given).toBeGreaterThan(20);
+    expect(r.returned / r.given).toBeGreaterThan(0.8);
   });
 });

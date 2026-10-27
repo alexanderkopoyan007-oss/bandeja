@@ -13,7 +13,8 @@ const MAX_TICKS_PER_FRAME = 12;
 
 export interface GameOptions {
   match: MatchConfig;
-  humanTeam: number;
+  /** The human's player number (team + 2 * slot); ignored with autoplay. */
+  human: number;
   autoplay: boolean;
   forceWebGL: boolean;
   pro: boolean;
@@ -81,7 +82,10 @@ export class Game {
 
     this.cam = new BroadcastCamera(innerWidth / innerHeight);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
-    this.players = [new PlayerView(this.scene, 0), new PlayerView(this.scene, 1)];
+    this.players = [];
+    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i));
+    if (!opts.autoplay) this.players[opts.human]!.markYou();
+    this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
     this.assists = new AssistView(this.scene);
     this.assists.enabled = !opts.pro;
     this.aimMarker = new THREE.Mesh(
@@ -95,7 +99,11 @@ export class Game {
 
     this.kb = new KeyboardInput(window);
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
-    this.hud = new Hud(hudRoot, opts.autoplay ? ['AI', 'AI'] : ['YOU', 'AI'], sets);
+    const pair = this.sim.doubles;
+    const mine = opts.autoplay ? (pair ? 'AI · AI' : 'AI') : pair ? 'YOU · AI' : 'YOU';
+    const theirs = pair ? 'AI · AI' : 'AI';
+    const names: [string, string] = opts.autoplay || this.sim.players[opts.human]!.team === 0 ? [mine, theirs] : [theirs, mine];
+    this.hud = new Hud(hudRoot, names, sets);
     this.hud.pro = opts.pro;
     this.hud.setTiming(opts.match.timingScale ?? 1);
     this.ball.showTrail = !opts.pro;
@@ -134,7 +142,7 @@ export class Game {
 
   /** Compile every pipeline before the first point so nothing compiles mid-rally. */
   async warmUp(): Promise<void> {
-    this.cam.update(this.sim, this.opts.humanTeam, 0, 0);
+    this.cam.update(this.sim, this.team, 0, 0);
     await this.renderer.compileAsync(this.scene, this.cam.camera);
   }
 
@@ -169,17 +177,22 @@ export class Game {
     return f;
   }
 
-  private readonly inputs: Array<InputFrame | null> = [null, null];
+  private readonly inputs: Array<InputFrame | null>;
+
+  /** The human's team (the camera's end); team 0 with autoplay. */
+  get team(): number {
+    return this.opts.autoplay ? 0 : this.sim.players[this.opts.human]!.team;
+  }
 
   private tick(): void {
     const now = performance.now();
     const simNow = (now - this.epoch) / 1000;
     const s0 = performance.now();
     let n = 0;
-    const human = this.opts.humanTeam;
+    const human = this.opts.autoplay ? 0 : this.opts.human;
+    const team = this.team;
     while (this.sim.time + DT <= simNow && n < MAX_TICKS_PER_FRAME) {
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
-      this.inputs[1 - human] = null;
       this.sim.step(this.inputs);
       n++;
     }
@@ -197,7 +210,7 @@ export class Game {
       this.ray.setFromCamera(this.ndc, this.cam.camera);
       if (this.ray.ray.intersectPlane(this.ground, this.hit)) {
         const c = this.sim.world.court;
-        const s = this.sim.side(human);
+        const s = this.sim.side(team);
         const x = Math.max(-c.halfW + 0.3, Math.min(c.halfW - 0.3, this.hit.x));
         const z = -s * Math.max(0.6, Math.min(c.halfL - 0.3, -s * this.hit.z));
         this.aimMarker.position.set(x, 0.005, z);
@@ -206,9 +219,9 @@ export class Game {
       }
     }
 
-    this.ball.update(this.sim, alpha, human);
-    for (let i = 0; i < 2; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
-    this.cam.update(this.sim, human, this.ball.mesh.position.x, now / 1000);
+    this.ball.update(this.sim, alpha, team);
+    for (let i = 0; i < this.players.length; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
+    this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
     const who = this.opts.autoplay ? -1 : human;
     const frameDt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
     this.assists.update(this.sim, who, now / 1000, frameDt, this.kb.held, this.cam.camera.position);

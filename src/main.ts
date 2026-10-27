@@ -11,6 +11,9 @@ const num = (k: string, d: number): number => {
 
 async function start(): Promise<void> {
   const autoplay = params.get('autoplay') === '1';
+  // Doubles is padel; ?mode=singles plays one against one (not a FIP format).
+  const doubles = params.get('mode') !== 'singles';
+  const n = doubles ? 4 : 2;
   const mode = params.get('scoring');
   const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL: params.get('backend') === 'webgl' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, num('dpr', 2)));
@@ -35,7 +38,8 @@ async function start(): Promise<void> {
         gamesPerSet: num('games', 6),
         finalSet: FINAL_NORMAL,
       },
-      human: autoplay ? [false, false] : [true, false],
+      doubles,
+      human: Array.from({ length: n }, (_, i) => !autoplay && i === 0),
       aiLevel: [num('ai', 0.55), num('ai', 0.55)],
       // Defaults are forgiving; ?timing=1 is the strict "pro" window, ?autotime=1 fires a held swing for you.
       timingScale: num('timing', 1.5),
@@ -43,7 +47,7 @@ async function start(): Promise<void> {
       autoTiming: params.get('autotime') === '1',
       firstServer: num('server', 0),
     },
-    humanTeam: 0,
+    human: 0,
     autoplay,
     forceWebGL: params.get('backend') === 'webgl',
     pro: params.get('pro') === '1',
