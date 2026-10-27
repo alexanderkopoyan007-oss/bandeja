@@ -16,8 +16,18 @@ export interface BallSpec {
   radius: number;
   dragCoefficient: number;
   inertiaFactor: number;
-  spinDecayTime: number;
+  /** k in dw/dt = -k w v (per metre flown, at sea-level air). */
+  spinDecayPerM: number;
   restitutionScale: number;
+  wear: BallWearSpec;
+}
+
+/** How the match ball wears (data/ball.json). */
+export interface BallWearSpec {
+  dragFluff: number;
+  fluffImpacts: number;
+  pressureLoss: number;
+  pressureImpacts: number;
 }
 
 export interface SurfaceSpec {
@@ -101,6 +111,8 @@ export class BallWorld {
   readonly rho: number;
   readonly kDrag: number;
   readonly kLift: number;
+  /** Spin decay per metre of air flown through (spinDecayPerM scaled by air density). */
+  readonly kSpin: number;
   readonly inertia: number;
 
   constructor(spec: BallSpec, court: Court, floor: SurfaceSpec, surfaces: SurfaceTable, env: Environment) {
@@ -113,6 +125,7 @@ export class BallWorld {
     const area = PI * spec.radius * spec.radius;
     this.kDrag = (0.5 * this.rho * spec.dragCoefficient * area) / spec.mass;
     this.kLift = (0.5 * this.rho * area) / spec.mass;
+    this.kSpin = (spec.spinDecayPerM * this.rho) / SEA_LEVEL_AIR;
     this.inertia = spec.inertiaFactor * spec.mass * spec.radius * spec.radius;
   }
 }
@@ -154,6 +167,16 @@ export class Ball {
   netW = 0;
   netZeta = 0;
 
+  /** Only the match ball wears; predictions and solver ghosts copy its state. */
+  wears = false;
+  /** Impacts so far, each weighted by (normal speed / 15 m/s)^2 (at most 3). */
+  wear = 0;
+  /** Drag and restitution against a new ball (the nap fluffs up, the pressure leaks). */
+  dragScale = 1;
+  eScale = 1;
+  /** Normal speed of the impact being added by wearImpact() (a field: a double argument would be boxed). */
+  wearV = 0;
+
   readonly events: ContactEvent[] = [];
   eventCount = 0;
 
@@ -192,7 +215,31 @@ export class Ball {
     this.sideZ = b.sideZ;
     this.netW = b.netW;
     this.netZeta = b.netZeta;
+    this.copyWear(b);
     return this;
+  }
+
+  copyWear(b: Ball): void {
+    this.wear = b.wear;
+    this.dragScale = b.dragScale;
+    this.eScale = b.eScale;
+  }
+
+  /** A new ball (fresh from the tube). */
+  newBall(): void {
+    this.wear = 0;
+    this.dragScale = 1;
+    this.eScale = 1;
+  }
+
+  /** Wear from an impact at normal speed wearV (racket, floor or wall); only the match ball wears. */
+  wearImpact(world: BallWorld): void {
+    if (!this.wears) return;
+    const q = this.wearV / 15;
+    this.wear += q * q < 3 ? q * q : 3;
+    const w = world.spec.wear;
+    this.dragScale = 1 + w.dragFluff * (1 - exp(-this.wear / w.fluffImpacts));
+    this.eScale = 1 - w.pressureLoss * (1 - exp(-this.wear / w.pressureImpacts));
   }
 
   /** Let go of any net catch (the ball is being put somewhere or struck). */
@@ -379,7 +426,7 @@ export class Ball {
     const ry = v.y;
     const rz = v.z - env.windZ;
     const s = sqrt(rx * rx + ry * ry + rz * rz);
-    const kd = world.kDrag * s;
+    const kd = world.kDrag * this.dragScale * s;
     out.set(-kd * rx, -GRAVITY - kd * ry, -kd * rz);
     const wl = w.length();
     if (wl > 1e-6 && s > 1e-6) {
@@ -392,7 +439,7 @@ export class Ball {
     }
   }
 
-  /** Midpoint (RK2) integration of position/velocity; exponential spin decay. */
+  /** Midpoint (RK2) integration of position/velocity; spin decays with the air flown through (dw/dt = -k w v). */
   private integrate(world: BallWorld, pOut: V3, vOut: V3, wOut: V3): void {
     const dt = this.intDt;
     this.accel(world, this.vel, this.spin, a0);
@@ -400,8 +447,11 @@ export class Ball {
     this.accel(world, vMid, this.spin, a1);
     vOut.copy(this.vel).addScaled(a1, dt);
     pOut.copy(this.pos).addScaled(vMid, dt);
-    const decay = exp((-dt * world.rho) / (world.spec.spinDecayTime * SEA_LEVEL_AIR));
-    wOut.copy(this.spin).scale(decay);
+    const env = world.env;
+    const rx = vMid.x - env.windX;
+    const rz = vMid.z - env.windZ;
+    const s = sqrt(rx * rx + vMid.y * vMid.y + rz * rz);
+    wOut.copy(this.spin).scale(exp(-world.kSpin * s * dt));
   }
 
   private roll(world: BallWorld): void {
@@ -805,7 +855,9 @@ export class Ball {
 
     const vn = this.vel.dot(n);
     if (vn >= 0) return; // moving away already
-    let e = clamp(s.e0 - s.eSlope * -vn, s.eMin, s.e0) * spec.restitutionScale;
+    let e = clamp(s.e0 - s.eSlope * -vn, s.eMin, s.e0) * spec.restitutionScale * this.eScale;
+    this.wearV = -vn;
+    this.wearImpact(world);
     if (cord) e = max(e, 0.3);
     if (rng && s.speedJitter > 0) e *= 1 - s.speedJitter * rng.next();
 

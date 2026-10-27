@@ -97,10 +97,13 @@ export class Racket {
     this.cone = (spec.friction / sqrt(1 + spec.friction * spec.friction)) * 0.98;
   }
 
+  /** The ball's restitution against a new one (a worn ball has lost pressure; Ball.eScale). */
+  eScale = 1;
+
   /** True COR of ball on face at approach speed u (m/s). */
   cor(u: number): number {
     const s = this.spec;
-    return clamp(s.e17 - s.eSlope * (u - 17), s.eMin, s.eMax);
+    return clamp(s.e17 - s.eSlope * (u - 17), s.eMin, s.eMax) * this.eScale;
   }
 
   /** Apparent COR of a free racket at rest, ball arriving at u, at fromTip along the face and x across it. */
@@ -124,7 +127,7 @@ export class Racket {
     const b = this.comFromTip - this.qTip;
     const x = this.qX;
     const r = (this.m / s.mass) * (1 + (s.mass * b * b) / s.iCm + (s.mass * x * x) / s.iPolar);
-    const e = clamp(s.e17 - s.eSlope * (this.qU - 17), s.eMin, s.eMax);
+    const e = clamp(s.e17 - s.eSlope * (this.qU - 17), s.eMin, s.eMax) * this.eScale;
     this.qEa = (e - r) / (1 + r);
   }
 

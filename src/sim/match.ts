@@ -177,6 +177,7 @@ export class MatchSim {
     this.world = makeWorld(cfg.world);
     this.net = makeNetCloth(this.world);
     this.ball.cloth = this.net;
+    this.ball.wears = true;
     this.solver = new ShotSolver(this.world);
     this.score = new Score(cfg.format ?? DEFAULT_FORMAT, cfg.firstServer ?? 0, this.doubles);
     this.rng = new Rng(cfg.seed);
@@ -1136,7 +1137,8 @@ export class MatchSim {
     const b = this.ball;
     h.num(this.tick).num(this.time).num(this.phase).num(this.serveNo).num(this.wallsSinceBounce);
     h.num(b.pos.x).num(b.pos.y).num(b.pos.z).num(b.vel.x).num(b.vel.y).num(b.vel.z).num(b.spin.x).num(b.spin.y).num(b.spin.z);
-    h.num(b.inNet ? 1 : 0).num(b.netSide).num(b.sideZ).num(b.netW).num(b.netZeta).num(b.rolling ? 1 : 0).num(b.outside ? 1 : 0);
+    h.num(b.inNet ? 1 : 0).num(b.netSide).num(b.sideZ).num(b.netW).num(b.netZeta).num(b.rolling ? 1 : 0).num(b.outside ? 1 : 0)
+      .num(b.wear);
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)

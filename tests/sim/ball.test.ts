@@ -24,8 +24,15 @@ function run(world: BallWorld, ball: Ball, maxT: number, rng: Rng | null = null,
   return out;
 }
 
-function dropTest(world: BallWorld): number {
+function dropTest(world: BallWorld, wear = 0): number {
   const b = new Ball();
+  if (wear > 0) {
+    // Wear it as a match would: impacts of 15 m/s (each counts 1).
+    b.wears = true;
+    b.wearV = 15;
+    for (let i = 0; i < wear; i++) b.wearImpact(world);
+    b.wears = false;
+  }
   b.pos.set(0, 2.54 + world.spec.radius, 3); // bottom of the ball at 2.54 m
   const r = run(world, b, 3, null, (_b, n) => n >= 2);
   // FIP measures the bounce to the bottom of the ball.
@@ -50,7 +57,79 @@ describe('FIP drop test (2.54 m onto a hard surface)', () => {
   });
 });
 
+describe('ball wear over a match', () => {
+  it('the nap fluffs up: about 4% more drag by the end of the first set (Hawk-Eye: used 0.603 vs new 0.579)', () => {
+    const w = makeWorld();
+    const b = new Ball();
+    b.wears = true;
+    b.wearV = 15;
+    for (let i = 0; i < 60 * 15; i++) b.wearImpact(w);
+    expect(b.dragScale).toBeGreaterThan(1.035);
+    expect(b.dragScale).toBeLessThan(1.045);
+  });
+
+  it('the pressure leaks: a 150-point match takes the drop test down about 4 cm, still a ball', () => {
+    const w = makeWorld({ floor: 'hard' });
+    const fresh = dropTest(w);
+    const used = dropTest(w, 150 * 15);
+    expect(fresh - used).toBeGreaterThan(0.025);
+    expect(fresh - used).toBeLessThan(0.06);
+  });
+
+  it('only the match ball wears; predictions copy its state', () => {
+    const w = makeWorld();
+    const b = new Ball();
+    b.wearV = 20;
+    b.wearImpact(w);
+    expect(b.wear).toBe(0);
+    b.wears = true;
+    b.wearImpact(w);
+    const g = new Ball().copyFrom(b);
+    expect(g.wear).toBe(b.wear);
+    expect(g.dragScale).toBe(b.dragScale);
+    expect(g.wears).toBe(false);
+  });
+});
+
 describe('flight', () => {
+  it('drag of a new ball is the free-flight value, C_D 0.507 (Cross & Lindsey)', () => {
+    const w = makeWorld();
+    const b = new Ball();
+    b.pos.set(0, 5, 9);
+    b.vel.set(0, 0, -25);
+    b.step(w, DT, null, true);
+    // Deceleration along the path (gravity is across it at the start): a = rho C_D A v^2 / 2m.
+    const v = (25 + -b.vel.z) / 2;
+    const a = (25 - -b.vel.z) / DT;
+    const cd = (2 * w.spec.mass * a) / (w.rho * Math.PI * w.spec.radius ** 2 * v * v);
+    expect(cd).toBeGreaterThan(0.5);
+    expect(cd).toBeLessThan(0.515);
+  });
+
+  it('spin decays with distance flown, about 0.5% a metre, so a slow ball keeps it longer per second', () => {
+    const w = makeWorld();
+    const loss = (speed: number, secs: number) => {
+      const b = new Ball();
+      b.pos.set(0, 30, 0);
+      b.vel.set(0, 0, -speed);
+      b.spin.set(-300, 0, 0);
+      let dist = 0;
+      for (let t = 0; t < secs; t += DT) {
+        const z0 = b.pos.z;
+        const y0 = b.pos.y;
+        b.step(w, DT, null, true);
+        dist += Math.hypot(b.pos.z - z0, b.pos.y - y0);
+      }
+      return { perM: (1 - Math.abs(b.spin.x) / 300) / dist, perS: 1 - Math.abs(b.spin.x) / 300 };
+    };
+    const fast = loss(25, 0.6);
+    const slow = loss(6, 0.6);
+    expect(fast.perM).toBeGreaterThan(0.004);
+    expect(fast.perM).toBeLessThan(0.0055);
+    expect(slow.perS).toBeLessThan(fast.perS * 0.6);
+  });
+
+
   it('a ball flies further in thin air at altitude', () => {
     const range = (alt: number): number => {
       const w = makeWorld({ env: { altitudeM: alt } });

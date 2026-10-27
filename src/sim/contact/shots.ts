@@ -416,6 +416,9 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   const bad = 1 - q;
   vin.copy(ball.vel);
   win.copy(ball.spin);
+  // Players play the ball they have: the solves fly a ball as worn as this one.
+  ghost.copyWear(ball);
+  rk.eScale = ball.eScale;
 
   const tdx = req.targetX - ball.pos.x;
   const tdz = req.targetZ - ball.pos.z;
@@ -524,6 +527,8 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
     across = clamp(across, -faceHalfWidth(spec, fromTip), faceHalfWidth(spec, fromTip));
   }
   rk.impact(vin, win, faceN, faceV, axis, fromTip, across, ball.vel, ball.spin);
+  ball.wearV = rk.u;
+  ball.wearImpact(solver.world);
   if (frame) {
     ball.vel.scale(SW.frameSpeed + SW.frameSpeedRand * rng.next());
     rotateYaw(ball.vel, rng.normal() * SW.frameYaw * (PI / 180));

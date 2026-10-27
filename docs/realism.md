@@ -14,7 +14,8 @@ measured against published data, and lands with tests that check the model again
      as a blocked smash does.
    - Checked: ACOR 0.50 at 17 m/s and 0.37–0.41 at 29 m/s; curvature along and across the face; grip above about
      55° and slide at 25°; smash median about 138 km/h against 133 for semi-pros.
-3. **Ball flight.** Free-flight drag of a new ball, spin decay proportional to ω·v, ball wear over a match.
+3. **Ball flight.** Done 2026-10-27: free-flight drag of a new ball (0.507), spin decay proportional to ω·v
+   (k = 0.005/m), ball wear over a match (nap fluff +4.1% drag from Hawk-Eye; pressure loss as tuning).
 4. **Bounce.** Grip/slip with the floor (turf with sand infill), glass vs concrete walls, mesh, seams; spin through
    every bounce.
 5. **Player physics.** Acceleration and braking on turf, split step, reaction time, fatigue over a match,
@@ -27,7 +28,15 @@ measured against published data, and lands with tests that check the model again
 ### Ball flight
 - **Drag.** Free-flight drag of new tennis balls is C_D = 0.507 ± 0.024 at 14–30 m/s and does not vary with spin
   or speed. That was 128 shots of Penn ATP balls, with spin −2400 to +2500 rpm. Wind-tunnel values run 15–20%
-  higher (mostly above 0.6), and drag falls slightly as the ball wears. The game uses 0.55.
+  higher (mostly above 0.6). The game uses 0.507 for a new ball.
+- **Wear.** Hawk-Eye data from about 9,200 Davis Cup first serves give C_D 0.579 for new balls and 0.603 for used
+  ones (balls are changed every 9 games), so the nap fluffing up adds about 4% drag. Heavily worn balls with the
+  nap gone have lower drag than new ones in wind tunnels (Goodwill, Chin & Haake 2004), and an old patent reports
+  drag rising for several games, then falling below new. A padel match stays in the first phase.
+  ([Hawk-Eye study, SHU](https://shura.shu.ac.uk/18922), [effect of wear, SHU](https://shura.shu.ac.uk/2234/))
+- **Pressure loss.** All ten padel balls in an IBV endurance test (666 strokes, for Testfakta) lost pressure and
+  softened, some much more than others; no curve is published. Retailers put a ball's life at 10–20 hours.
+  ([Testfakta](https://www.mynewsdesk.com/se/testfakta-ab/pressreleases/lab-test-reveals-the-best-padel-balls-3268852))
   ([Tennis Warehouse University, ball aerodynamics](https://twu.tennis-warehouse.com/learning_center/aerodynamics2.php))
 - **Lift.** C_L = 0.1–0.3 at spin ratio S = rω/v = 0.14–0.53, close to linear in S (Cross & Lindsey 2013, on the
   same page). The game's fit, C_L = 1/(2 + 1/S), gives 0.11 at S = 0.14 and 0.26 at S = 0.53, inside that band.
@@ -37,7 +46,7 @@ measured against published data, and lands with tests that check the model again
   - golf balls lose about 4%/s at 60 m/s;
   - tennis balls decay over six times faster than golf balls, from the nap's skin friction (Haake group).
   With the inertia of each ball this gives k ≈ 5e-3 per metre. That loses about 8% of the spin over a 15 m flight
-  at any speed. The game currently uses a 5 s exponential, a speed-blind 20%/s.
+  at any speed. The game used a 5 s exponential (a speed-blind 20%/s) until 2026-10-27; it now uses k = 0.005/m.
 
 ### Racket–ball impact
 - **Apparent COR (ACOR) across the face.** Ball rebound ÷ approach speed off a free or hand-held padel racket at

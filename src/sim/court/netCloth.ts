@@ -149,7 +149,10 @@ export class NetCloth {
   private cnz = 0;
   private lamCable = 0;
   private vnPreCable = 0;
+  private ci = 0;
   private cj = 0;
+  /** Deepest contact found so far by triContact(). */
+  private tC = 0;
 
   constructor(court: Court, spec: NetClothSpec, rho: number) {
     this.spec = spec;
@@ -651,7 +654,25 @@ export class NetCloth {
    * push ball and knots apart (by their inverse masses) and remember the contact for the velocity pass.
    */
   private contactBody(apply: boolean): boolean {
-    if (!this.locate()) return false;
+    // The cell under the ball's x-y, then every triangle round it in 3D: a hard ball low into the net folds
+    // the netting into a bag whose floor is nearly level, which a height lookup alone cannot see (the ball
+    // dropped through it and out under the bag).
+    if (!this.findCell(true)) return false;
+    const R = this.rows;
+    const nx = this.nx;
+    const i0 = this.ci > 0 ? this.ci - 1 : 0;
+    const i1 = this.ci < this.cols - 1 ? this.ci + 1 : this.cols - 1;
+    const j0 = this.cj > 1 ? this.cj - 2 : 0;
+    const j1 = this.cj < R - 2 ? this.cj + 2 : R - 1;
+    this.tC = 0;
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const a = j * nx + i;
+        this.triContact(a, a + 1, a + nx, j);
+        this.triContact(a + 1, a + nx + 1, a + nx, j);
+      }
+    }
+    if (this.tC <= 0) return false;
     const p = this.pos;
     const bx = this.bx;
     const by = this.by;
@@ -666,8 +687,7 @@ export class NetCloth {
     const Pz = this.wa * p[ka + 2]! + this.wb * p[kb + 2]! + this.wc * p[kc + 2]!;
     const dist = Nx * (bx - Px) + Ny * (by - Py) + Nz * (this.bz - Pz);
     const C = this.br + 0.0015 - dist; // ball radius + twine radius
-    // Deeper than one substep's travel can take it: the ball is beyond this patch of netting, not in it.
-    if (C <= 0 || C > this.br + this.spec.maxTravel) return false;
+    if (C <= 0) return false;
     if (!apply) return true;
     const w = this.w;
     const W = this.bw + this.wa * this.wa * w[this.ta]! + this.wb * this.wb * w[this.tb]! + this.wc * this.wc * w[this.tc]!;
@@ -698,39 +718,11 @@ export class NetCloth {
    * nx_ ny_ nz_ facing the ball's side. False above the cable or beyond the posts.
    */
   private locate(): boolean {
+    if (!this.findCell(false)) return false;
     const p = this.pos;
     const nx = this.nx;
-    const R = this.rows;
-    const bx = this.bx;
-    const by = this.by;
-    if (bx <= -this.halfW || bx >= this.halfW) return false;
-    this.qx = bx;
-    this.cableAt();
-    if (by >= this.cy) return false; // above the cable: only the cable can touch it
-    // Column from x at rest, row from the knots' heights now, then nudge the column to where the knots are.
-    let i = clampI(((bx + this.halfW) / this.dx) | 0, 0, this.cols - 1);
-    let j = -1;
-    for (let pass = 0; pass < 3; pass++) {
-      j = -1;
-      for (let r = 0; r < R; r++) {
-        const yt = 0.5 * (p[(r * nx + i) * 3 + 1]! + p[(r * nx + i + 1) * 3 + 1]!);
-        const yb = 0.5 * (p[((r + 1) * nx + i) * 3 + 1]! + p[((r + 1) * nx + i + 1) * 3 + 1]!);
-        if (by <= yt && by > yb) { j = r; break; }
-      }
-      // Not between two rows: above the top row's chord (under the cable) or under the bottom edge, which is
-      // bound and swings but does not let a ball under it: the end cell's plane carries on.
-      if (j < 0) {
-        if (by > p[i * 3 + 1]! - 0.05) j = 0;
-        else if (by > p[(R * nx + i) * 3 + 1]! - this.br - 0.05) j = R - 1;
-        else return false;
-      }
-      const xl = 0.5 * (p[(j * nx + i) * 3]! + p[((j + 1) * nx + i) * 3]!);
-      const xr = 0.5 * (p[(j * nx + i + 1) * 3]! + p[((j + 1) * nx + i + 1) * 3]!);
-      if (bx < xl && i > 0) i--;
-      else if (bx > xr && i < this.cols - 1) i++;
-      else break;
-    }
-    this.cj = j;
+    const i = this.ci;
+    const j = this.cj;
     // Two triangles per cell: (i,j) (i+1,j) (i,j+1) and (i+1,j) (i+1,j+1) (i,j+1). Barycentric in x-y.
     const a = j * nx + i;
     const b = a + 1;
@@ -767,6 +759,112 @@ export class NetCloth {
     this.nx_ = Nx * sg;
     this.ny_ = Ny * sg;
     this.nz_ = Nz * sg;
+    return true;
+  }
+
+  /**
+   * The ball against triangle (a, b, c) of cell row `row`, in 3D: its depth past the plane (normal from the
+   * winding, -z at rest for both triangles of a cell, turned to the ball's side, so a fold keeps its front
+   * and back) where the ball's centre projects inside the triangle. Keeps the deepest contact that one
+   * substep's travel can explain (deeper is the ball beyond that patch, not in it): ta tb tc, wa wb wc,
+   * nx_ ny_ nz_, cj, tC.
+   */
+  private triContact(a: number, b: number, c: number, row: number): void {
+    const p = this.pos;
+    const ka = a * 3;
+    const kb = b * 3;
+    const kc = c * 3;
+    const ax = p[ka]!;
+    const ay = p[ka + 1]!;
+    const az = p[ka + 2]!;
+    const e1x = p[kb]! - ax;
+    const e1y = p[kb + 1]! - ay;
+    const e1z = p[kb + 2]! - az;
+    const e2x = p[kc]! - ax;
+    const e2y = p[kc + 1]! - ay;
+    const e2z = p[kc + 2]! - az;
+    let Nx = e1y * e2z - e1z * e2y;
+    let Ny = e1z * e2x - e1x * e2z;
+    let Nz = e1x * e2y - e1y * e2x;
+    const nl = sqrt(Nx * Nx + Ny * Ny + Nz * Nz);
+    if (nl < 1e-12) return;
+    const sg = -this.side / nl;
+    Nx *= sg;
+    Ny *= sg;
+    Nz *= sg;
+    const qx = this.bx - ax;
+    const qy = this.by - ay;
+    const qz = this.bz - az;
+    const C = this.br + 0.0015 - (Nx * qx + Ny * qy + Nz * qz);
+    if (C <= this.tC || C > this.br + this.spec.maxTravel) return;
+    // Barycentric coordinates of the centre's projection onto the plane (a little slack round the edges so
+    // neighbouring triangles overlap).
+    const d00 = e1x * e1x + e1y * e1y + e1z * e1z;
+    const d01 = e1x * e2x + e1y * e2y + e1z * e2z;
+    const d11 = e2x * e2x + e2y * e2y + e2z * e2z;
+    const d20 = qx * e1x + qy * e1y + qz * e1z;
+    const d21 = qx * e2x + qy * e2y + qz * e2z;
+    const den = d00 * d11 - d01 * d01;
+    if (den < 1e-18) return;
+    let u = (d11 * d20 - d01 * d21) / den;
+    let t = (d00 * d21 - d01 * d20) / den;
+    if (u < -0.1 || t < -0.1 || u + t > 1.1) return;
+    if (u < 0) u = 0;
+    if (t < 0) t = 0;
+    const st = u + t;
+    if (st > 1) { u /= st; t /= st; }
+    this.tC = C;
+    this.ta = a;
+    this.tb = b;
+    this.tc = c;
+    this.wa = 1 - u - t;
+    this.wb = u;
+    this.wc = t;
+    this.nx_ = Nx;
+    this.ny_ = Ny;
+    this.nz_ = Nz;
+    this.cj = row;
+  }
+
+  /**
+   * The cell under the ball's x-y (into ci, cj): column from x at rest, row from the knots' heights now, then
+   * the column nudged to where the knots are. False above the cable or beyond the posts.
+   */
+  private findCell(loose: boolean): boolean {
+    const p = this.pos;
+    const nx = this.nx;
+    const R = this.rows;
+    const bx = this.bx;
+    const by = this.by;
+    if (bx <= -this.halfW || bx >= this.halfW) return false;
+    this.qx = bx;
+    this.cableAt();
+    if (by >= this.cy) return false; // above the cable: only the cable can touch it
+    let i = clampI(((bx + this.halfW) / this.dx) | 0, 0, this.cols - 1);
+    let j = -1;
+    for (let pass = 0; pass < 3; pass++) {
+      j = -1;
+      for (let r = 0; r < R; r++) {
+        const yt = 0.5 * (p[(r * nx + i) * 3 + 1]! + p[(r * nx + i + 1) * 3 + 1]!);
+        const yb = 0.5 * (p[((r + 1) * nx + i) * 3 + 1]! + p[((r + 1) * nx + i + 1) * 3 + 1]!);
+        if (by <= yt && by > yb) { j = r; break; }
+      }
+      // Not between two rows: above the top row's chord (under the cable) or under the bottom edge, which is
+      // bound and swings but does not let a ball under it: the end cell's plane carries on. `loose` takes any
+      // height below as the bottom cell (the 3D search round it decides whether anything touches).
+      if (j < 0) {
+        if (by > p[i * 3 + 1]! - 0.05) j = 0;
+        else if (loose || by > p[(R * nx + i) * 3 + 1]! - this.br - 0.05) j = R - 1;
+        else return false;
+      }
+      const xl = 0.5 * (p[(j * nx + i) * 3]! + p[((j + 1) * nx + i) * 3]!);
+      const xr = 0.5 * (p[(j * nx + i + 1) * 3]! + p[((j + 1) * nx + i + 1) * 3]!);
+      if (bx < xl && i > 0) i--;
+      else if (bx > xr && i < this.cols - 1) i++;
+      else break;
+    }
+    this.ci = i;
+    this.cj = j;
     return true;
   }
 

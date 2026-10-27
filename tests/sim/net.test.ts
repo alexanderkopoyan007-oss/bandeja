@@ -150,6 +150,20 @@ describe('net cloth', () => {
     }
   }, 120_000);
 
+  it('a hard low ball folds the netting into a bag and stays in it: 150 balls at 30-45 m/s below 35 cm', () => {
+    // The bag's floor is nearly level; a ball once dropped through it and out under the net.
+    const rng = new Rng(78);
+    const net = makeNetCloth(w);
+    for (let n = 0; n < 150; n++) {
+      net.reset();
+      const side = rng.next() < 0.5 ? 1 : -1;
+      const r = fire((rng.next() * 2 - 1) * 4.5, 0.05 + rng.next() * 0.3, 30 + rng.next() * 15, {
+        side, vy: rng.next() * 4 - 2, secs: 1.2, net,
+      });
+      expect(r.crossedLow).toBe(false);
+    }
+  }, 120_000);
+
   it('is deterministic: the same ball gives the same cloth hash', () => {
     const hash = () => {
       const r = fire(0.7, 0.5, 30, { secs: 1 });
