@@ -99,6 +99,16 @@ const WALL_EASE = 0.2;
 /** How far the head turns from the chest to watch the ball (rad), and the neck's share of it. */
 const LOOK_YAW = 1.25;
 const NECK_SHARE = 0.4;
+/**
+ * Standing or shuffling slowly the feet stay planted while the body turns and drifts over them, and a foot steps
+ * (one at a time, lifted, over STEP_TIME) once it is this far (m) or this turned (rad) from where the animation
+ * wants it. Further than STEP_SNAP (a teleport between points) the feet just go there.
+ */
+const STEP_DIST = 0.13;
+const STEP_YAW = 0.55;
+const STEP_TIME = 0.15;
+const STEP_LIFT = 0.05;
+const STEP_SNAP = 0.7;
 
 /** Fingers of the racket hand ('Right' or 'Left' in front), curled round the grip (rad, per joint). */
 const GRIP: Array<[string, number]> = [
@@ -160,6 +170,15 @@ export class Avatar {
   // Split step: a small hop as the opponent strikes, landing with bent knees (feet kept planted).
   private lift = 0;
   private splitDrop = 0;
+  /** Planted feet (left, right): weight, where each is (world), its yaw, and a step under way (-1: none). */
+  private plantW = 0;
+  private planted = false;
+  private sp = 0;
+  private readonly plantPos = [new THREE.Vector3(), new THREE.Vector3()];
+  private readonly plantYaw = new Float64Array(2);
+  private readonly stepFrom = [new THREE.Vector3(), new THREE.Vector3()];
+  private readonly stepYawFrom = new Float64Array(2);
+  private readonly stepT = new Float64Array([-1, -1]);
   private readonly cycleW = new Float64Array(5);
   private readonly pose: Pose;
   private readonly tmp: Pose;
@@ -642,6 +661,7 @@ export class Avatar {
     const mx = this.vx * c - this.vz * s;
     const mz = this.vx * s + this.vz * c;
     const sp = Math.sqrt(mx * mx + mz * mz);
+    this.sp = sp;
     const move = smoothstep(0.12, 0.9, sp);
     // Four directions: forward (jog or run by speed), left, back, right; the two either side of the heading.
     let wf = 1, wl = 0, wb = 0, wr = 0;
@@ -741,7 +761,9 @@ export class Avatar {
     this.look += ((on ? 1 : 0) - this.look) * (dt > 0 ? 1 - Math.exp(-dt / 0.25) : 0);
     if (this.look >= 0.01) this.watchBall(sim);
 
-    if (this.w > 0 || this.splitDrop > 0) this.solveLegs();
+    this.plantW += (1 - smoothstep(0.25, 0.7, this.sp) - this.plantW) * (dt > 0 ? 1 - Math.exp(-dt / 0.08) : 0);
+    if (this.plantW < 0.01) this.planted = false;
+    if (this.w > 0 || this.splitDrop > 0 || this.plantW >= 0.01) this.solveLegs();
     if (this.w > 0 || this.ready >= 0.01) this.solveArms();
   }
 
@@ -831,12 +853,14 @@ export class Avatar {
     this.reachX = dh > 1e-3 ? (dx / dh) * push : 0;
     this.reachZ = dh > 1e-3 ? (dz / dh) * push : 0;
     const drop = this.crouch + push * 0.35 + this.splitDrop;
-    if (drop < 0.005 && push < 0.005) return;
+    const plant = this.plantW >= 0.01;
+    if (drop < 0.005 && push < 0.005 && !plant) return;
 
     this.footL.setFromMatrixPosition(this.legL[2]!.matrixWorld);
     this.footR.setFromMatrixPosition(this.legR[2]!.matrixWorld);
     worldQuat(this.legL[2]!, this.footQL);
     worldQuat(this.legR[2]!, this.footQR);
+    if (plant) this.plantFeet();
     // Hips are a child of the (turned) model: move them in its frame.
     const c = Math.cos(this.root.rotation.y), s = Math.sin(this.root.rotation.y);
     this.hips.position.x += this.reachX * c - this.reachZ * s;
@@ -851,6 +875,69 @@ export class Avatar {
       twoBoneIK(leg[0]!, leg[1]!, leg[2]!, side === 0 ? this.footL : this.footR, this.pole);
       setWorldQuat(leg[2]!, side === 0 ? this.footQL : this.footQR);
       leg[2]!.updateMatrixWorld(true);
+    }
+  }
+
+  /**
+   * Keep the feet where they were put down while the body turns and drifts over them; a foot steps to where the
+   * animation has it once it falls too far behind. Rewrites the foot targets (footL/R, footQL/R).
+   */
+  private plantFeet(): void {
+    const yaw = this.yRoot;
+    if (!this.planted) {
+      this.plantPos[0]!.copy(this.footL);
+      this.plantPos[1]!.copy(this.footR);
+      this.plantYaw[0] = yaw;
+      this.plantYaw[1] = yaw;
+      this.stepT[0] = -1;
+      this.stepT[1] = -1;
+      this.planted = true;
+    }
+    // Which foot is furthest from where the animation wants it (scaled so a turn counts like a distance).
+    let worst = -1, worstE = 1;
+    for (let f = 0; f < 2; f++) {
+      const A = f === 0 ? this.footL : this.footR;
+      const P = this.plantPos[f]!;
+      const ex = A.x - P.x, ez = A.z - P.z;
+      const d = Math.sqrt(ex * ex + ez * ez);
+      if (d > STEP_SNAP) { P.copy(A); this.plantYaw[f] = yaw; this.stepT[f] = -1; continue; }
+      const e = Math.max(d / STEP_DIST, Math.abs(wrapAngle(yaw - this.plantYaw[f]!)) / STEP_YAW);
+      if (e > worstE) { worstE = e; worst = f; }
+    }
+    if (worst >= 0 && this.stepT[0]! < 0 && this.stepT[1]! < 0) {
+      this.stepT[worst] = 0;
+      this.stepFrom[worst]!.copy(this.plantPos[worst]!);
+      this.stepYawFrom[worst] = this.plantYaw[worst]!;
+    }
+    const w = this.plantW;
+    for (let f = 0; f < 2; f++) {
+      const A = f === 0 ? this.footL : this.footR;
+      const P = this.plantPos[f]!;
+      let st = this.stepT[f]!;
+      let tx = P.x, tz = P.z, ty = A.y, ta = this.plantYaw[f]!;
+      if (st >= 0) {
+        st += this.dt / STEP_TIME;
+        if (st >= 1) {
+          st = -1;
+          P.copy(A);
+          this.plantYaw[f] = yaw;
+          tx = A.x; tz = A.z; ta = yaw;
+        } else {
+          const e = smoothstep(0, 1, st);
+          const F = this.stepFrom[f]!;
+          tx = F.x + (A.x - F.x) * e;
+          tz = F.z + (A.z - F.z) * e;
+          ty = A.y + STEP_LIFT * Math.sin(Math.PI * st);
+          ta = this.stepYawFrom[f]! + wrapAngle(yaw - this.stepYawFrom[f]!) * e;
+        }
+        this.stepT[f] = st;
+      }
+      A.x += (tx - A.x) * w;
+      A.y += (ty - A.y) * w;
+      A.z += (tz - A.z) * w;
+      // The animated foot, turned back to the yaw it was planted at.
+      q1.setFromAxisAngle(UP, wrapAngle(ta - yaw) * w);
+      (f === 0 ? this.footQL : this.footQR).premultiply(q1);
     }
   }
 
