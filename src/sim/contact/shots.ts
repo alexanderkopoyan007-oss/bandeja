@@ -5,7 +5,7 @@ import { Ball, HIT_FLOOR, type BallWorld } from '../ball/ball.ts';
 import { V3 } from '../core/v3.ts';
 import { Rng } from '../core/rng.ts';
 import { DT } from '../core/constants.ts';
-import { abs, clamp, cos, max, min, sin, sqrt, PI } from '../core/smath.ts';
+import { abs, atan, atan2, clamp, cos, max, min, sin, sqrt, PI } from '../core/smath.ts';
 import shotData from '../../../data/shots.json' with { type: 'json' };
 
 export const SHOT_DRIVE = 0;
@@ -185,7 +185,7 @@ export class ShotSolver {
   /** Fixed speed: bisect the elevation for the landing distance; succeed only if it also clears the net. */
   private distanceAt(p: V3, s: number, w: V3, dist: number, want: number, crosses: boolean): boolean {
     // Steepest useful angle is just above the straight line to the landing point.
-    let lo = Math.atan2(-(p.y - 0.033), dist) + 0.01;
+    let lo = atan2(-(p.y - 0.033), dist) + 0.01;
     let hi = (40 * PI) / 180;
     this.eval(p, s, hi, w, dist, want, crosses);
     if (this.eR < 0) return false;
@@ -279,7 +279,7 @@ export class ShotSolver {
       const a = ((want - h0) * -dist * dist + dn * dn * (r - h0)) / det;
       k = (dn * (r - h0) - dist * (want - h0)) / det;
       if (k > 1e-6) {
-        th = Math.atan(a);
+        th = atan(a);
         const c = cos(th);
         s = clamp(sqrt(9.81 / (2 * k * c * c)) * 1.08, 2, 70); // drag needs a little more than vacuum
         ok = this.newton(p, s, th, outW, dist, want);

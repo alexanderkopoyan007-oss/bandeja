@@ -21,5 +21,9 @@ describe('sim purity', () => {
       expect(i, `${f} imports ${i}`).not.toMatch(/^(three|node:|fs|path)|\/(render|game|ui|audio|anim)\//);
     }
     expect(src).not.toMatch(/\bMath\.random\b|\bDate\.now\b|\bperformance\.now\b|\bwindow\.\w|\bdocument\.\w/);
+    // Engine Math transcendentals differ in their last bits between machines: use core/smath (fdlibm ports).
+    expect(src, `${f} calls an engine Math transcendental`).not.toMatch(
+      /\bMath\.(sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|asinh|acosh|atanh|exp|expm1|log|log1p|log2|log10|pow|cbrt|hypot)\b/,
+    );
   });
 });
