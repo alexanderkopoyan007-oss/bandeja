@@ -53,6 +53,7 @@ export class Hud {
   private callUntil = 0;
   private readonly wins = makeWindows();
   pro = false;
+  private readonly zones: HTMLElement[] = [];
 
   constructor(root: HTMLElement, names: [string, string], sets: number) {
     this.root = root;
@@ -82,12 +83,25 @@ export class Hud {
     const perf = el('div', 'zone');
     perf.style.cssText = 'left:45%;width:10%;background:rgba(95,242,255,.9)';
     this.meter.append(good, perf);
+    this.zones.push(good, perf);
     this.mark = this.meter.appendChild(el('div', 'mark'));
     this.help = root.appendChild(el('div', 'help'));
     this.help.innerHTML =
       '<b>WASD</b> move &nbsp; <b>J</b> drive &nbsp; <b>K</b> topspin &nbsp; <b>L</b> slice &nbsp; <b>I</b> lob &nbsp; <b>U</b> drop<br>' +
       'Hold a shot key, <b>release</b> as the ball arrives. Direction keys at release aim.<br>' +
       '<b>Space</b> power &nbsp; <b>Shift</b> precision &nbsp; <b>M</b> mouse aim &nbsp; <b>P</b> pro mode &nbsp; <b>F3</b> debug &nbsp; <b>H</b> hide';
+  }
+
+  /** Size the meter's Good/Perfect zones to the timing windows (meter spans +-0.25 s). */
+  setTiming(scale: number): void {
+    const span = 0.5;
+    const set = (e: HTMLElement, half: number): void => {
+      const w = Math.min(100, ((2 * half * scale) / span) * 100);
+      e.style.left = `${50 - w / 2}%`;
+      e.style.width = `${w}%`;
+    };
+    set(this.zones[0]!, 0.06);
+    set(this.zones[1]!, 0.025);
   }
 
   toggleHelp(): void {

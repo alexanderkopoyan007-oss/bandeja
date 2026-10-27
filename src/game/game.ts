@@ -4,7 +4,7 @@ import { MatchSim, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import { InputFrame } from '../sim/input.ts';
 import { buildCourtView } from '../render/courtView.ts';
-import { BallView, PlayerView, BroadcastCamera } from '../render/views.ts';
+import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { Hud } from '../ui/hud.ts';
 import { DebugOverlay } from '../ui/debug.ts';
@@ -40,6 +40,7 @@ export class Game {
   readonly cam: BroadcastCamera;
   readonly ball: BallView;
   readonly players: PlayerView[];
+  readonly assists: AssistView;
   readonly kb: KeyboardInput;
   readonly hud: Hud;
   readonly debug: DebugOverlay;
@@ -79,6 +80,8 @@ export class Game {
     this.cam = new BroadcastCamera(innerWidth / innerHeight);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [new PlayerView(this.scene, 0), new PlayerView(this.scene, 1)];
+    this.assists = new AssistView(this.scene);
+    this.assists.enabled = !opts.pro;
     this.aimMarker = new THREE.Mesh(
       new THREE.RingGeometry(0.22, 0.3, 32),
       new THREE.MeshBasicMaterial({ color: 0xf4d03f, transparent: true, opacity: 0.8, depthWrite: false }),
@@ -92,6 +95,7 @@ export class Game {
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
     this.hud = new Hud(hudRoot, opts.autoplay ? ['AI', 'AI'] : ['YOU', 'AI'], sets);
     this.hud.pro = opts.pro;
+    this.hud.setTiming(opts.match.timingScale ?? 1);
     this.ball.showTrail = !opts.pro;
     this.ball.showMarker = !opts.pro;
     this.debug = new DebugOverlay(hudRoot);
@@ -116,6 +120,7 @@ export class Game {
       this.hud.pro = !this.hud.pro;
       this.ball.showTrail = !this.hud.pro;
       this.ball.showMarker = !this.hud.pro;
+      this.assists.enabled = !this.hud.pro;
     } else if (code === 'KeyM') this.mouseAim = !this.mouseAim;
   }
 
@@ -199,6 +204,8 @@ export class Game {
     this.ball.update(this.sim, alpha, human);
     for (let i = 0; i < 2; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
     this.cam.update(this.sim, human, this.ball.mesh.position.x, now / 1000);
+    this.assists.update(this.sim, this.opts.autoplay ? -1 : human, this.ball.mesh.position, this.cam.camera, renderTime,
+      this.opts.match.timingScale ?? 1);
     this.hud.update(this.sim, this.opts.autoplay ? -1 : human, now / 1000);
 
     this.renderer.render(this.scene, this.cam.camera);

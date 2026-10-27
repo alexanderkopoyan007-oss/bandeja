@@ -44,7 +44,7 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
 - `node tools/shot.mjs <url> <png> [waitMs] [w] [h]`: real-Chrome screenshot (the Browser pane shows WebGPU canvases as black).
 - `npm run alloc`: GC budget check for the sim. `npm run perf`: frame-time report (needs `npm run build`).
 - `node tools/bot-play.mjs [url] [secs]`: plays as the human with real keyboard events timed in the page; checks that grades use exact key timestamps (p50 error ≈ 8 ms while frames are 33 ms).
-- URL options: `?autoplay=1 &seed= &court=standard|panoramic|singles-narrow &floor=turf|hard|carpet|clay &scoring=star|golden|advantage &ai=0..1 &assist=0..1 &timing=1..2 &pro=1 &aim=mouse &alt= &temp= &windx= &windz= &backend=webgl &dpr=`.
+- URL options: `?autoplay=1 &seed= &court=standard|panoramic|singles-narrow &floor=turf|hard|carpet|clay &scoring=star|golden|advantage &ai=0..1 &assist=0..1 (default 0.45) &timing=1..2 (window scale, default 1.5; 1 = strict) &autotime=1 (a held swing fires itself, graded Good) &pro=1 &aim=mouse &alt= &temp= &windx= &windz= &backend=webgl &dpr=`.
 
 ## Assets and licensing
 - Only CC0 or clearly free licences (Poly Haven, ambientCG, MakeHuman/MPFB output, CC0 Freesound) or our own generated work. Every asset goes in `CREDITS.md` with source and licence.
@@ -60,6 +60,7 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
 - [x] **M0** Plan, scaffold, CLAUDE.md, tests, deploy to GitHub Pages (2026-10-27)
 - [ ] **M1** Feel slice: grey-box court, full ball + wall physics, 1 player vs simple AI, timing-based hitting, serve, scoring
   - 2026-10-27: first playable deployed. Measured: medium-4x laptop proxy p99 6.9 ms (holds 120 Hz); 4K (2x ratio) averages 271 fps but shows queue stalls with the frame limit off (needs GPU timestamps, M4). Waiting on the owner's feel playtest before M2.
+  - Owner's first playtest (2026-10-27): "no cage like real life", "timing quite hard", "minimalist (expected)". Fixed: real cage (posts, rails, anti-aliased wire mesh, doors, glass); timing windows ×1.5 by default, a ring around the ball that closes at the perfect moment (green = Good, cyan = Perfect), a floor spot for where to stand, positioning assist on whenever the ball is coming, optional `?autotime=1`. Looks are M4. Perf after the cage (wire mesh unlit; it cost half the 4K frame when lit): medium-4x p99 3.5 ms; 4K average 478 fps, p99 9.4 ms; 34 draw calls.
   - Not in M1 yet: receiver's choice of side on a deciding point is fixed to the right for humans; ball lodged in mesh / on top of a wall; out-of-court play (stretch); sound (M7).
 - [ ] **M2** Animation: humanoid, locomotion, core shots, contact time-warp, IK
 - [ ] **M3** Doubles, partner/opponent AI, full rules, padel-specific shots

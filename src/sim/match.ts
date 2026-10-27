@@ -17,6 +17,7 @@ import {
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION } from './input.ts';
+import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { SimpleAi } from './ai/simpleAi.ts';
 import { makeWorld, type WorldOptions } from './setup.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
@@ -76,6 +77,8 @@ export interface MatchConfig {
   timingScale?: number;
   /** Positioning assist strength 0..1 for human players. */
   assist?: number;
+  /** Assisted timing: a swing still held at the right moment goes off by itself (graded Good). */
+  autoTiming?: boolean;
   firstServer?: number;
 }
 
@@ -117,6 +120,9 @@ export class MatchSim {
   eventSeq = 0;
 
   private readonly windows = makeWindows();
+  /** Where each player should stand for the incoming ball (assist, HUD spot, timing ring). */
+  readonly stand: [StandPlan, StandPlan] = [makeStandPlan(), makeStandPlan()];
+  private standVersion = [-1, -1];
   private readonly req: ShotRequest = {
     shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1,
   };
@@ -349,10 +355,17 @@ export class MatchSim {
     let dz = -f.moveY * s;
     const isServerSetup = (this.phase === PH_SETUP || this.phase === PH_TOSS) && team === this.score.serverTeam();
     if (isServerSetup) { dx = 0; dz = 0; } // the server stays put; the keys aim the serve
-    if (!this.ai[team] && (p.swing === SW_CHARGE || p.swing === SW_COMMITTED) && this.phase === PH_RALLY) {
-      this.assist(p, f, s);
+    if (!this.ai[team] && this.phase === PH_RALLY && this.rally.hitter !== team && this.rally.hitter >= 0) {
+      // Re-plan when the predicted path changes, and every few ticks as the player moves.
+      if (this.pred.version !== this.standVersion[team] || (this.tick & 7) === 0) {
+        planStand(this.pred, p, s, t0, this.rally.isServe, this.stand[team]!);
+        this.standVersion[team] = this.pred.version;
+      }
+      this.assist(p, f);
       dx += this.assistX;
       dz += this.assistZ;
+    } else {
+      this.stand[team]!.valid = false;
     }
 
     // Button events in time order.
@@ -363,6 +376,13 @@ export class MatchSim {
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
       if (e.press) this.press(team, shot, max(e.t, t0));
       else if (p.swing === SW_CHARGE && p.shot === shot) this.releaseSwing(team, e.t, f);
+    }
+    // Assisted timing: still holding when the ideal moment arrives, the swing goes off by itself.
+    if (this.cfg.autoTiming && !this.ai[team] && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
+      const ideal = this.autoIdeal(team);
+      // Released just outside Perfect, so it always grades Good whatever the timing scale.
+      const late = (TIMING.perfect + 0.35 * (TIMING.good - TIMING.perfect)) * (this.cfg.timingScale ?? 1);
+      if (ideal >= 0 && ideal + late < t0 + DT) this.releaseSwing(team, ideal + late, f);
     }
     // Safety: a swing held far too long releases itself.
     if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) this.releaseSwing(team, t0, f);
@@ -378,33 +398,19 @@ export class MatchSim {
   private assistX = 0;
   private assistZ = 0;
 
-  /** Light pull towards a good hitting position for the best upcoming window. */
-  private assist(p: Player, f: InputFrame, s: number): void {
+  /** Light pull towards the planned hitting spot; weaker while the player is steering themselves. */
+  private assist(p: Player, f: InputFrame): void {
     this.assistX = 0;
     this.assistZ = 0;
     const k = this.cfg.assist ?? p.tune.positioningAssist;
-    if (k <= 0 || this.pred.n === 0) return;
-    let best = -1;
-    let bestD = 1e9;
-    const pr = this.pred;
-    for (let i = 0; i < pr.n; i++) {
-      if (pr.t[i]! < this.time || pr.t[i]! > this.time + 1.6) continue;
-      if (pr.z[i]! * s <= 0.05 || pr.bounces[i]! > 1 || pr.y[i]! < 0.4 || pr.y[i]! > 2.4) continue;
-      const dx = pr.x[i]! - p.pos.x;
-      const dz = pr.z[i]! - p.pos.z;
-      const d = dx * dx + dz * dz;
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    if (best < 0) return;
-    const hand = (pr.x[best]! - p.pos.x) * s >= 0 ? 1 : -1;
-    const sx = pr.x[best]! - s * hand * p.tune.reachComfort;
-    const sz = pr.z[best]! + s * 0.1;
-    const dx = sx - p.pos.x;
-    const dz = sz - p.pos.z;
+    const st = this.stand[p.team]!;
+    if (k <= 0 || !st.valid) return;
+    const dx = st.x - p.pos.x;
+    const dz = st.z - p.pos.z;
     const d = sqrt(dx * dx + dz * dz);
     if (d < 0.05) return;
-    const pushing = abs(f.moveX) + abs(f.moveY) > 0.1 ? 0.5 : 1;
-    const g = k * pushing * min(1, d / 0.6);
+    const pushing = abs(f.moveX) + abs(f.moveY) > 0.1 ? 0.55 : 1;
+    const g = k * pushing * min(1, d / 0.5);
     this.assistX = (dx / d) * g;
     this.assistZ = (dz / d) * g;
   }
@@ -498,6 +504,18 @@ export class MatchSim {
     if (p.contactTime < this.time) p.contactTime = this.time;
     p.swing = SW_COMMITTED;
     this.emit(E_SWING, team, p.shot, p.grade, delta);
+  }
+
+  /** Ideal moment of the window the player is heading for, or -1. */
+  private autoIdeal(team: number): number {
+    if (this.phase === PH_TOSS && team === this.score.serverTeam()) return this.tossIdeal;
+    const n = this.windowsFor(team, this.windows);
+    let best = -1;
+    for (let i = 0; i < n; i++) {
+      const w = this.windows[i]!;
+      if (w.ideal >= this.time - 0.05 && (best < 0 || w.ideal < best)) best = w.ideal;
+    }
+    return best;
   }
 
   private whiff(team: number, t: number): void {

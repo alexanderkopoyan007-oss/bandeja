@@ -4,6 +4,7 @@ import type { MatchSim } from '../sim/match.ts';
 import { PH_RALLY } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
 import { PF_FLOOR } from '../sim/ball/predict.ts';
+import { makeWindows } from '../sim/contact/windows.ts';
 
 const BALL_COLOR = 0xdff23b;
 const TEAM_COLORS = [0xff7a45, 0x35c9a8];
@@ -223,5 +224,64 @@ export class BroadcastCamera {
     const sa = Math.sin(this.angle);
     this.camera.position.set(sa * R + this.lookX * ca, 6.3, ca * R - this.lookX * sa);
     this.camera.lookAt(this.lookX * ca * 0.8, 0.35, -ca * 1.4);
+  }
+}
+
+/**
+ * Timing and positioning cues (hidden in Pro mode):
+ * - a ring around the ball that closes in as the ideal contact moment approaches and lights up inside the
+ *   Good / Perfect windows, so the moment to release is right where you are already looking;
+ * - a spot on the floor showing where to stand for the incoming ball.
+ */
+export class AssistView {
+  readonly ring: THREE.Mesh;
+  readonly spot: THREE.Mesh;
+  private readonly ringMat: THREE.MeshBasicMaterial;
+  private readonly wins = makeWindows();
+  enabled = true;
+
+  constructor(scene: THREE.Scene) {
+    this.ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48), this.ringMat);
+    this.ring.renderOrder = 10;
+    this.ring.visible = false;
+    scene.add(this.ring);
+    this.spot = new THREE.Mesh(
+      new THREE.RingGeometry(0.16, 0.22, 32),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false }),
+    );
+    this.spot.rotation.x = -Math.PI / 2;
+    this.spot.renderOrder = 1;
+    this.spot.visible = false;
+    scene.add(this.spot);
+  }
+
+  update(sim: MatchSim, human: number, ball: THREE.Vector3, camera: THREE.Camera, renderTime: number, timingScale: number): void {
+    this.ring.visible = false;
+    this.spot.visible = false;
+    if (!this.enabled || human < 0) return;
+    const st = sim.stand[human]!;
+    if (st.valid && sim.phase === PH_RALLY) {
+      this.spot.position.set(st.x, 0.006, st.z);
+      this.spot.visible = true;
+    }
+    const n = sim.windowsFor(human, this.wins);
+    let ideal = -1;
+    for (let i = 0; i < n; i++) {
+      const w = this.wins[i]!;
+      if (w.ideal >= renderTime - 0.15 && (ideal < 0 || w.ideal < ideal)) ideal = w.ideal;
+    }
+    if (ideal < 0) return;
+    const dt = ideal - renderTime;
+    if (dt > 0.7) return;
+    const k = timingScale;
+    const r = 0.07 + Math.max(0, dt) * 0.85;
+    this.ring.scale.set(r, r, r);
+    this.ring.position.copy(ball);
+    this.ring.quaternion.copy(camera.quaternion);
+    const a = Math.abs(dt);
+    this.ringMat.color.setHex(a <= 0.025 * k ? 0x5ff2ff : a <= 0.06 * k ? 0x8fe36b : 0xffffff);
+    this.ringMat.opacity = dt < 0 ? Math.max(0, 0.9 + dt * 6) : 0.9;
+    this.ring.visible = true;
   }
 }

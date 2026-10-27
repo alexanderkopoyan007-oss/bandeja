@@ -55,3 +55,25 @@ describe('timing is judged on the exact input time', () => {
     }
   });
 });
+
+describe('assisted timing', () => {
+  it('a swing held through the ideal moment goes off by itself and grades Good', async () => {
+    const { InputFrame, BTN_DRIVE } = await import('../../src/sim/input.ts');
+    const { DT } = await import('../../src/sim/core/constants.ts');
+    const { G_GOOD } = await import('../../src/sim/contact/timing.ts');
+    for (const timingScale of [1, 1.5, 2]) {
+      const m = new MatchSim({ seed: 3, human: [true, false], firstServer: 0, autoTiming: true, timingScale });
+      const f = new InputFrame();
+      while (m.time < m.phaseUntil + DT) { f.clear(); m.step([f, null]); }
+      f.clear();
+      f.push(true, BTN_DRIVE, m.time);
+      f.held = BTN_DRIVE;
+      m.step([f, null]);
+      // Never release: keep holding well past the ideal moment.
+      const until = m.tossIdeal + 0.4;
+      while (m.time < until) { f.clear(); f.held = BTN_DRIVE; m.step([f, null]); }
+      expect(m.players[0]!.grade).toBe(G_GOOD);
+      expect(m.players[0]!.timingDelta).toBeGreaterThan(0);
+    }
+  });
+});

@@ -37,8 +37,10 @@ async function start(): Promise<void> {
       },
       human: autoplay ? [false, false] : [true, false],
       aiLevel: [num('ai', 0.55), num('ai', 0.55)],
-      timingScale: num('timing', 1),
-      assist: num('assist', 0.3),
+      // Defaults are forgiving; ?timing=1 is the strict "pro" window, ?autotime=1 fires a held swing for you.
+      timingScale: num('timing', 1.5),
+      assist: num('assist', 0.45),
+      autoTiming: params.get('autotime') === '1',
       firstServer: num('server', 0),
     },
     humanTeam: 0,
