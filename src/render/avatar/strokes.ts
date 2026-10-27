@@ -123,8 +123,9 @@ export const VOLLEY_BH = volley(BACKHAND, 'volley-bh');
  * - Slice: racket back high, swung high to low with the face open, finishing low and forward.
  * - Lob: a big low-to-high lift with the face open, finishing high in front.
  * - Drop (dejada): a short, soft swing with the face open.
+ * - Chiquita: a compact low-to-high brush with the face square, finishing at the shoulder.
  */
-function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop'): Family {
+function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiquita'): Family {
   const open = (k: Key, up: number): Key => {
     // Open the face (strings looking up): roll the racket about its handle. Forehand and backhand roll
     // opposite ways, since the racket points opposite ways.
@@ -154,6 +155,11 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop'): Famil
     };
   }
   const shrink = (k: Key, u: number): Key => ({ ...k, p: k.p.clone().lerp(f.contact.p, u), pole: k.pole.clone().lerp(f.contact.pole, u) });
+  if (kind === 'chiquita') {
+    const back = shrink(f.back, 0.35);
+    back.p.y -= 0.15;
+    return { ...f, name: `${f.name}-chiquita`, back, finish: shrink(f.finish, 0.3), dip: 0.3, loop: 0.05 };
+  }
   return {
     ...f, name: `${f.name}-drop`,
     back: shrink(f.back, 0.45),
@@ -171,6 +177,8 @@ export const FH_DROP = variant(FOREHAND, -1, 'drop');
 export const BH_SLICE = variant(BACKHAND, 1, 'slice');
 export const BH_LOB = variant(BACKHAND, 1, 'lob');
 export const BH_DROP = variant(BACKHAND, 1, 'drop');
+export const FH_CHIQUITA = variant(FOREHAND, -1, 'chiquita');
+export const BH_CHIQUITA = variant(BACKHAND, 1, 'chiquita');
 
 /**
  * Ready position between shots: the racket up in front of the chest, head up, edge towards the net, the free
@@ -203,7 +211,8 @@ function mirrorFamily(f: Family): Family {
 }
 
 const LEFT = new Map<Family, Family>();
-for (const f of [FOREHAND, BACKHAND, OVERHEAD, SMASH, SERVE, VOLLEY_FH, VOLLEY_BH, FH_SLICE, FH_LOB, FH_DROP, BH_SLICE, BH_LOB, BH_DROP]) {
+for (const f of [FOREHAND, BACKHAND, OVERHEAD, SMASH, SERVE, VOLLEY_FH, VOLLEY_BH, FH_SLICE, FH_LOB, FH_DROP, BH_SLICE, BH_LOB, BH_DROP,
+  FH_CHIQUITA, BH_CHIQUITA]) {
   LEFT.set(f, mirrorFamily(f));
 }
 

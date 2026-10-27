@@ -5,13 +5,13 @@ import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../../sim/match.ts';
 import { PH_DEAD, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
-import { MOD_POWER, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH } from '../../sim/contact/shots.ts';
+import { MOD_POWER, MOD_PRECISION, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH, SHOT_TOPSPIN } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import {
-  BACKHAND, BH_DROP, BH_LOB, BH_SLICE, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   type Family, type Key,
 } from './strokes.ts';
@@ -419,9 +419,12 @@ export class Avatar {
   /** The stroke for a right-hander (`hand` +1 forehand, -1 backhand). */
   private pickRight(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number): Family {
     if (sim.phase <= PH_TOSS && sim.score.serverPlayer() === idx) return SERVE;
-    if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || p.mod === MOD_POWER ? SMASH : OVERHEAD;
+    // An AI holds power or precision only as it lets go: its intent says which overhead or topspin it is.
+    const ai = sim.ai[idx];
+    if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || p.mod === MOD_POWER || (ai !== null && ai !== undefined && ai.smash) ? SMASH : OVERHEAD;
     if (volley) return hand > 0 ? VOLLEY_FH : VOLLEY_BH;
     const sh = p.shot;
+    if (sh === SHOT_TOPSPIN && (p.mod === MOD_PRECISION || (ai !== null && ai !== undefined && ai.chiquita))) return hand > 0 ? FH_CHIQUITA : BH_CHIQUITA;
     if (sh === SHOT_SLICE) return hand > 0 ? FH_SLICE : BH_SLICE;
     if (sh === SHOT_LOB) return hand > 0 ? FH_LOB : BH_LOB;
     if (sh === SHOT_DROP) return hand > 0 ? FH_DROP : BH_DROP;
@@ -495,6 +498,13 @@ export class Avatar {
     }
     const st = this.plan(sim, idx);
     if (!st.valid) return -1;
+    // An AI lets go at its own release time (the window it tracks, its timing error included), and the release
+    // is the contact: time the swing to that, at wherever the ball will be then.
+    const ai = sim.ai[idx];
+    if (ai && ai.pressed && !ai.released && ai.releaseAt > sim.time - 0.05) {
+      this.predAt(sim, ai.releaseAt, this.conW);
+      return ai.releaseAt;
+    }
     this.conW.set(st.bx, st.by, st.bz);
     return st.t;
   }

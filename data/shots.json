@@ -10,6 +10,7 @@
   "bandeja": { "name": "Bandeja",   "netClear": 0.45, "spinRpm": -1300, "depth": 0.86, "speedMax": 26, "errorScale": 0.9 },
   "volley":  { "name": "Volley",    "netClear": 0.25, "spinRpm": -600,  "depth": 0.70, "speedMax": 21, "errorScale": 0.9 },
   "vibora":  { "name": "Víbora",    "netClear": 0.35, "spinRpm": -1500, "sideRpm": 1700, "depth": 0.78, "speedMax": 31, "errorScale": 1.05 },
+  "chiquita": { "name": "Chiquita", "netClear": 0.32, "spinRpm": 1900,  "depth": 0.33, "speedMax": 20, "errorScale": 0.75 },
   "modifiers": {
     "power":     { "netClear": 0.75, "speed": 1.12, "error": 1.45 },
     "precision": { "netClear": 1.25, "speed": 0.86, "error": 0.6 }

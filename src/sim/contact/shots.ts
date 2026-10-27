@@ -19,8 +19,10 @@ export const SHOT_BANDEJA = 7;
 export const SHOT_VOLLEY = 8;
 /** Overhead with slice and sidespin, aimed into the side glass (overhead key + precision). */
 export const SHOT_VIBORA = 9;
+/** Soft topspin that dips just over the net to the feet of players at the net (topspin key + precision). */
+export const SHOT_CHIQUITA = 10;
 
-export const SHOT_KEYS = ['drive', 'topspin', 'slice', 'lob', 'drop', 'serve', 'smash', 'bandeja', 'volley', 'vibora'] as const;
+export const SHOT_KEYS = ['drive', 'topspin', 'slice', 'lob', 'drop', 'serve', 'smash', 'bandeja', 'volley', 'vibora', 'chiquita'] as const;
 
 export const MOD_NONE = 0;
 export const MOD_POWER = 1;

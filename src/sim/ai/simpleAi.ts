@@ -45,6 +45,8 @@ export class SimpleAi {
   smash = false;
   /** The overhead is a víbora (precision held at release). */
   vibora = false;
+  /** The topspin is a chiquita (precision held at release). */
+  chiquita = false;
   private readonly wins = makeWindows();
   private readonly st = makeStandPlan();
   /** The contact this AI is set up for (the renderer times the swing to it). */
@@ -182,6 +184,7 @@ export class SimpleAi {
         this.aimAbs(f);
         if (p.shot === SHOT_BANDEJA && this.smash) f.held |= BTN_POWER;
         else if (p.shot === SHOT_BANDEJA && this.vibora) f.held |= BTN_PRECISION;
+        else if (p.shot === SHOT_TOPSPIN && this.chiquita) f.held |= BTN_PRECISION;
         // Release the button that is actually held (the plan may have been revised since the press).
         f.push(false, button(p.shot), max(t0, this.releaseAt));
         this.released = true;
@@ -353,6 +356,7 @@ export class SimpleAi {
     const r = m.aiRng.next();
     this.smash = false;
     this.vibora = false;
+    this.chiquita = false;
     if (m.doubles) {
       this.chooseDoublesShot(m, r, height, volley, depth);
       this.chooseTarget(m);
@@ -369,8 +373,12 @@ export class SimpleAi {
     } else {
       this.shot = r < 0.4 ? SHOT_DRIVE : r < 0.7 ? SHOT_TOPSPIN : r < 1 - 0.08 * st.lob ? SHOT_SLICE : SHOT_LOB;
     }
-    // Opponent at the net: lob them.
+    // Opponent at the net: lob them, or from the back dip it at their feet.
     if (abs(opp.pos.z) < 4 && r < min(0.9, 0.35 * st.lob)) this.shot = SHOT_LOB;
+    else if (abs(opp.pos.z) < 4 && depth > 6 && !volley && height > 0.4 && height < 1.4 && m.aiRng.next() < 0.3 * st.drop) {
+      this.shot = SHOT_TOPSPIN;
+      this.chiquita = true;
+    }
     this.chooseTarget(m);
   }
 
@@ -391,12 +399,17 @@ export class SimpleAi {
       this.shot = up === 0 && r < 0.12 * st.drop ? SHOT_DROP : r < 0.65 ? SHOT_SLICE : SHOT_DRIVE;
       go = 1;
     } else if (up === 2) {
-      // Lob them (and take the net if it gets past) or keep it low; from the back that is a defensive shot.
+      // Lob them (and take the net if it gets past), dip a chiquita at their feet, or keep it low; from the
+      // back that is a defensive shot.
       const lob = min(0.9, 0.5 * st.lob);
-      this.shot = r < lob ? SHOT_LOB : r < lob + 0.6 * (1 - lob) ? SHOT_SLICE : SHOT_DRIVE;
+      const chiq = height > 0.4 && height < 1.4 ? min(0.6, 0.35 * st.drop) * (1 - lob) : 0;
+      this.shot = r < lob ? SHOT_LOB : r < lob + chiq ? SHOT_TOPSPIN : r < lob + chiq + 0.6 * (1 - lob - chiq) ? SHOT_SLICE : SHOT_DRIVE;
+      this.chiquita = this.shot === SHOT_TOPSPIN;
     } else if (up === 1) {
       const lob = min(0.9, 0.3 * st.lob);
-      this.shot = r < lob ? SHOT_LOB : r < lob + 0.5 * (1 - lob) ? SHOT_DRIVE : SHOT_SLICE;
+      const chiq = height > 0.4 && height < 1.4 ? min(0.4, 0.15 * st.drop) * (1 - lob) : 0;
+      this.shot = r < lob ? SHOT_LOB : r < lob + chiq ? SHOT_TOPSPIN : r < lob + chiq + 0.5 * (1 - lob - chiq) ? SHOT_DRIVE : SHOT_SLICE;
+      this.chiquita = this.shot === SHOT_TOPSPIN;
     } else {
       // Both back: work the ball through the middle; a short ball is the chance to come in.
       const lob = min(0.5, 0.05 * st.lob);
@@ -478,6 +491,11 @@ export class SimpleAi {
     } else if (this.shot === SHOT_DROP) {
       x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 1.2;
       depth = 1.8;
+    } else if (this.chiquita) {
+      // Dipping at the feet of a net player, or between the two.
+      const net = abs(a.pos.z) < abs(b.pos.z) ? a : b;
+      x = rng.next() < 0.5 ? (a.pos.x + b.pos.x) * 0.5 : net.pos.x;
+      depth = 2.8 + 0.8 * rng.next();
     } else if (up === 2) {
       // Both at the net: low through the middle or at a player's feet.
       const at = rng.next() < 0.5 ? a : b;

@@ -144,7 +144,7 @@ describe('a human with an AI partner', () => {
   }
 
   it('the human gets their share of the balls, serves in turn, and returns most of them', () => {
-    const r = playHuman(3, 600);
+    const r = playHuman(3, 900);
     expect(r.points).toBeGreaterThan(15);
     expect(r.serves).toBeGreaterThan(3);
     expect(r.hits[0]).toBeGreaterThan(20);

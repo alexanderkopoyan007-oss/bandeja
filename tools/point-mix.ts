@@ -17,19 +17,20 @@ const lastShot: Record<string, number> = {};
 const lengths: number[] = [];
 const byGrade: Record<string, number> = {};
 const grades = [0, 0, 0, 0, 0, 0];
+const shotsBy: Record<string, number> = {};
 let hits = 0;
 const lobErr: string[] = [];
 let points = 0;
 for (let s = 1; s <= seeds; s++) {
   const m = new MatchSim({ seed: s * 7919, doubles, human: new Array(n).fill(false) });
   const none = new Array(n).fill(null);
-  let seen = 0, shots = 0, shot = '', grade = 0, speed = 0, cy = 0, net = false;
+  let seen = 0, shots = 0, shot = '', grade = 0, speed = 0, cy = 0, cz = 0, net = false;
   for (let k = 0; k < 120 * secs; k++) {
     m.step(none);
     while (seen < m.eventSeq) {
       const e = m.events[seen % m.events.length]!;
       seen++;
-      if (e.kind === E_HIT) { hits++; grades[e.b]!++; shots++; shot = SHOT_KEYS[e.a] ?? '?'; grade = e.b; speed = e.c; cy = e.y; net = false; }
+      if (e.kind === E_HIT) { hits++; grades[e.b]!++; shots++; shot = SHOT_KEYS[e.a] ?? '?'; shotsBy[shot] = (shotsBy[shot] ?? 0) + 1; grade = e.b; speed = e.c; cy = e.y; cz = e.z; net = false; }
       else if (e.kind === E_NET) net = true;
       else if (e.kind === E_POINT) {
         points++;
@@ -39,7 +40,7 @@ for (let s = 1; s <= seeds; s++) {
         if (w === 'own_side') {
           const g = `${GRADE_TEXT[grade]}${net ? ' (net)' : ''}`;
           byGrade[g] = (byGrade[g] ?? 0) + 1;
-          if (shot === 'lob') lobErr.push(`${GRADE_TEXT[grade]} ${(speed * 3.6).toFixed(0)} km/h from ${cy.toFixed(2)} m${net ? ', net' : ''}`);
+          if (shot === (process.env.SHOT ?? 'lob')) lobErr.push(`${GRADE_TEXT[grade]} ${(speed * 3.6).toFixed(0)} km/h from ${cy.toFixed(2)} m high ${Math.abs(cz).toFixed(1)} m back${net ? ', net' : ''}`);
         }
         lengths.push(shots);
         shots = 0;
@@ -52,9 +53,10 @@ console.log(`${points} points, ${seeds} seeds x ${secs} s, ${doubles ? 'doubles'
 for (const [k, v] of Object.entries(why).sort((a, b) => b[1] - a[1])) console.log(`  ${k.padEnd(26)} ${String(v).padStart(4)}  ${pct(v)}`);
 console.log('errors by the shot that made them:');
 for (const [k, v] of Object.entries(lastShot).sort((a, b) => b[1] - a[1]).slice(0, 12)) console.log(`  ${k.padEnd(34)} ${String(v).padStart(4)}  ${pct(v)}`);
+console.log(`shots: ${Object.entries(shotsBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${((100 * v) / hits).toFixed(1)}%`).join(', ')}`);
 console.log(`timing of all ${hits} hits: ${grades.map((g, i) => `${GRADE_TEXT[i]} ${((100 * g) / hits).toFixed(1)}%`).join(', ')}`);
 console.log('own-side errors by the timing of the shot:');
 for (const [k, v] of Object.entries(byGrade).sort((a, b) => b[1] - a[1])) console.log(`  ${k.padEnd(26)} ${String(v).padStart(4)}  ${pct(v)}`);
-if (lobErr.length) console.log(`lobs into the net / own side: ${lobErr.join('; ')}`);
+if (lobErr.length) console.log(`${process.env.SHOT ?? 'lob'} into the net / own side: ${lobErr.join('; ')}`);
 lengths.sort((a, b) => a - b);
 console.log(`shots per point: median ${lengths[lengths.length >> 1]}, p90 ${lengths[Math.floor(lengths.length * 0.9)]}`);

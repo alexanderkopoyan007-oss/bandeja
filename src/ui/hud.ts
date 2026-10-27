@@ -191,7 +191,7 @@ export class Hud {
     this.hint = root.appendChild(el('div', 'hint'));
     this.help = root.appendChild(el('div', 'help'));
     this.help.innerHTML = keys(
-      '[W][A][S][D] move &nbsp; [J] drive &nbsp; [K] topspin &nbsp; [L] slice &nbsp; [I] lob &nbsp; [U] drop<br>' +
+      '[W][A][S][D] move &nbsp; [J] drive &nbsp; [K] topspin (with [Shift] a chiquita) &nbsp; [L] slice &nbsp; [I] lob &nbsp; [U] drop<br>' +
       '[O] overhead for lobs: a bandeja; with [Space] a smash that can leave the court; with [Shift] a víbora<br>' +
       'Hold a shot key as the ball comes: WASD then aims the target and you run to the ball yourself<br>' +
       'Release when the closing ring meets the ring on the ball. Serve: [A]/[D] aims, press to drop, release to hit<br>' +

@@ -12,7 +12,7 @@ import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
 import { Player, SW_IDLE, SW_CHARGE, SW_COMMITTED, SW_RECOVER, DEFAULT_TUNING } from './player/player.ts';
 import {
   ShotSolver, strike, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
-  SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
+  SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
@@ -937,6 +937,8 @@ export class MatchSim {
       else shot = this.rally.bounces === 0 ? SHOT_VOLLEY : SHOT_SLICE;
     } else if (b.pos.y >= t.overheadHeight && shot !== SHOT_LOB && shot !== SHOT_DROP) shot = shot === SHOT_SLICE ? SHOT_BANDEJA : SHOT_SMASH;
     else if (this.rally.bounces === 0 && (shot === SHOT_DRIVE || shot === SHOT_SLICE)) shot = SHOT_VOLLEY;
+    // Topspin key with precision: a chiquita, soft and dipping to the feet of the players at the net.
+    else if (shot === SHOT_TOPSPIN && p.mod === MOD_PRECISION) shot = SHOT_CHIQUITA;
 
     // Target.
     const c = this.world.court;
@@ -959,8 +961,8 @@ export class MatchSim {
     }
 
     r.shot = shot;
-    // Precision picked the víbora; it does not also scale it.
-    r.mod = shot === SHOT_VIBORA ? MOD_NONE : p.mod;
+    // Precision picked the víbora or the chiquita; it does not also scale them.
+    r.mod = shot === SHOT_VIBORA || shot === SHOT_CHIQUITA ? MOD_NONE : p.mod;
     r.quality = gradeQuality(p.grade);
     r.timingDelta = p.timingDelta;
     r.handSide = dx * s * p.handed >= 0 ? 1 : -1;
@@ -1011,6 +1013,7 @@ export class MatchSim {
       case SHOT_BANDEJA: return 0.86;
       case SHOT_VIBORA: return 0.78;
       case SHOT_VOLLEY: return 0.7;
+      case SHOT_CHIQUITA: return 0.33;
       default: return 0.75;
     }
   }
