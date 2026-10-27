@@ -1,0 +1,28 @@
+{
+  "name": "bandeja",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "A realistic, fluid 3D padel game for the browser",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --port 5190",
+    "build": "vite build",
+    "preview": "vite preview --port 4190",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.sim.json",
+    "alloc": "node tools/alloc-check.mjs",
+    "perf": "node tools/perf.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@types/three": "0.186.0",
+    "puppeteer-core": "25.16.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "//": "The simulation must stay pure: no DOM, no three, no Node. Missing libs make any such use a compile error.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/sim", "data"]
+}

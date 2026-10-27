@@ -1,0 +1,22 @@
+{
+  "id": "standard",
+  "name": "Standard court (FIP side-wall variant 1, framed)",
+  "width": 10,
+  "length": 20,
+  "lineWidth": 0.05,
+  "serviceLineFromNet": 6.95,
+  "centreLineExtension": 0.2,
+  "net": { "heightCentre": 0.88, "heightPost": 0.92, "postHeight": 1.05, "postSize": 0.08 },
+  "backWall": { "glassHeight": 3, "top": 4, "glassPanelWidth": 2 },
+  "sideWall": {
+    "//": "Segments run from the back wall toward the net; mirrored for each end. Top = total enclosure height.",
+    "segments": [
+      { "from": 0, "to": 2, "glassHeight": 3, "top": 4 },
+      { "from": 2, "to": 4, "glassHeight": 2, "top": 4 },
+      { "from": 4, "to": 10, "glassHeight": 0, "top": 3 }
+    ]
+  },
+  "openings": { "perSide": 2, "width": 1.05, "height": 2.0, "dividerWidth": 0.1 },
+  "frame": "posts",
+  "outOfCourtPlay": false
+}
