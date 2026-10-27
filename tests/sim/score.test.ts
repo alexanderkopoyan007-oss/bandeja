@@ -204,3 +204,88 @@ describe('match formats', () => {
     expect(t.games).toEqual(s.games);
   });
 });
+
+describe('doubles serve and receive order (rules 6.9, 8.2, 8.3)', () => {
+  const dbl = (mode = MODE_ADVANTAGE): Score => new Score(fmt(mode), 0, true);
+
+  it('the four players serve in turn, one game each: A1, B1, A2, B2, A1 ...', () => {
+    const s = dbl();
+    const servers: number[] = [];
+    for (let g = 0; g < 5; g++) {
+      servers.push(s.serverPlayer());
+      winGame(s, s.serverTeam()); // holds of serve keep the set going
+    }
+    expect(servers).toEqual([0, 1, 2, 3, 0]);
+  });
+
+  it('each pair picks its own first server for the set', () => {
+    const s = dbl();
+    s.firstServerSlot[0] = 1;
+    s.firstServerSlot[1] = 1;
+    const servers: number[] = [];
+    for (let g = 0; g < 4; g++) {
+      servers.push(s.serverPlayer());
+      winGame(s, s.serverTeam());
+    }
+    expect(servers).toEqual([2, 3, 0, 1]);
+  });
+
+  it('the set\'s first receiver takes the first point of every game; the partner the second', () => {
+    const s = dbl();
+    s.firstReceiverSlot[1] = 1; // team 1's player 3 receives on the right
+    expect(s.serveSide()).toBe(SIDE_RIGHT);
+    expect(s.receiverPlayer()).toBe(3);
+    play(s, 'a');
+    expect(s.serveSide()).toBe(SIDE_LEFT);
+    expect(s.receiverPlayer()).toBe(1);
+    play(s, 'aaa'); // game to team 0; team 1 serves, team 0 receives with its own order
+    expect(s.serverTeam()).toBe(1);
+    expect(s.receiverPlayer()).toBe(0);
+    play(s, 'b');
+    expect(s.receiverPlayer()).toBe(2);
+    play(s, 'bbb'); // team 0 serves again: player 3 receives the first point again
+    expect(s.receiverPlayer()).toBe(3);
+  });
+
+  it('a deciding point is received by the player on the side the receivers chose', () => {
+    const s = dbl(MODE_GOLDEN);
+    play(s, 'aaabbb');
+    expect(s.isDecidingPoint()).toBe(true);
+    s.decidingSide = SIDE_LEFT;
+    expect(s.receiverPlayer()).toBe(3);
+    s.decidingSide = SIDE_RIGHT;
+    expect(s.receiverPlayer()).toBe(1);
+  });
+
+  it('a tie-break carries on the rotation: next in turn serves one point, then two each', () => {
+    const s = dbl();
+    // Twelve holds to 6-6: the rotation has gone round three times, so A1 is next in turn.
+    for (let g = 0; g < 12; g++) winGame(s, s.serverTeam());
+    expect(s.tiebreak).toBe(true);
+    const servers: number[] = [];
+    for (let k = 0; k < 9; k++) {
+      servers.push(s.serverPlayer());
+      s.pointWon(k % 2); // keep it level so it doesn't end
+    }
+    expect(servers).toEqual([0, 1, 1, 2, 2, 3, 3, 0, 0]);
+  });
+
+  it('a new set resets the rotation to each pair\'s first server', () => {
+    const s = dbl();
+    for (let g = 0; g < 6; g++) winGame(s, 0); // 6-0: team 0 served games 1, 3, 5 (players 0, 2, 0)
+    expect(s.sets).toEqual([1, 0]);
+    // Games keep alternating across sets (team 1 served the 6th), and team 0 starts again from its first
+    // server (player 0), not from where its rotation stopped (player 2).
+    expect(s.serverTeam()).toBe(0);
+    expect(s.serverPlayer()).toBe(0);
+  });
+
+  it('singles numbering is unchanged', () => {
+    const s = new Score(fmt(MODE_ADVANTAGE));
+    expect(s.serverPlayer()).toBe(0);
+    expect(s.receiverPlayer()).toBe(1);
+    winGame(s, 0);
+    expect(s.serverPlayer()).toBe(1);
+    expect(s.receiverPlayer()).toBe(0);
+  });
+});

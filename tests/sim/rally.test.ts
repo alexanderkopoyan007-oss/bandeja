@@ -62,6 +62,11 @@ describe('serve (rules 6-9)', () => {
     r.onStrike(0, 1, true, 1.2, 1.0);
     expect([r.result, r.why]).toEqual([R_FAULT, WHY_SERVE_ABOVE_WAIST]);
   });
+  it('7.1.d: a serve that hits the server\'s partner is a fault', () => {
+    const r = serveRally();
+    r.onBody(0);
+    expect([r.result, r.why]).toEqual([R_FAULT, WHY_HIT_BODY_OWN]);
+  });
   it('8.5: receiver volleying the serve gives the point to the server', () => {
     const r = serveRally();
     r.onBallZ(-1); r.onStrike(1, -1, false);

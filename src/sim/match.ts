@@ -52,6 +52,8 @@ export interface MatchEvent {
   kind: number;
   time: number;
   team: number;
+  /** Player number for player events (swing, hit, whiff, split, toss), else -1. */
+  player: number;
   /** Kind-specific: shot type / surface / reason. */
   a: number;
   /** Kind-specific: timing grade / wall id / serve number. */
@@ -69,8 +71,10 @@ export interface MatchConfig {
   seed: number;
   world?: WorldOptions;
   format?: MatchFormat;
-  /** Which teams are controlled by a human (input frames supplied). */
-  human: [boolean, boolean];
+  /** Two players a side. Players are numbered team + 2 * slot: 0 and 1 face each other, 2 and 3 are partners. */
+  doubles?: boolean;
+  /** Which players are controlled by a human (input frames supplied), one entry per player. */
+  human: boolean[];
   /** AI skill 0..1 per team. */
   aiLevel?: [number, number];
   /** Widens timing windows (accessibility). */
@@ -94,6 +98,11 @@ const SMASH_NET_MARGIN = 0.45;
 const SMASH_MIN_DEPTH = 3.2;
 /** Windows are searched from this far back, so a release just after the ideal is still judged against it. */
 const RELEASE_LOOKBACK = 0.3;
+/** Doubles ball-taking: runs within this (m) count as a tie (forehand in the middle takes it); a decision
+ * changes only for a run this much shorter; a contact out of time costs this much. */
+const MIDDLE_MARGIN = 0.8;
+const SWITCH_MARGIN = 1.0;
+const CLAIM_OUT = 20;
 
 export class MatchSim {
   readonly cfg: MatchConfig;
@@ -102,12 +111,14 @@ export class MatchSim {
   readonly score: Score;
   readonly rally = new Rally();
   readonly ball = new Ball();
-  readonly players: [Player, Player];
+  /** 2 (singles) or 4 (doubles) players; team = index & 1, partner = index ^ 2. */
+  readonly players: Player[];
+  readonly doubles: boolean;
   readonly pred = new Prediction();
   readonly rng: Rng;
   readonly aiRng: Rng;
-  readonly ai: [SimpleAi | null, SimpleAi | null];
-  readonly aiFrames: [InputFrame, InputFrame] = [new InputFrame(), new InputFrame()];
+  readonly ai: Array<SimpleAi | null>;
+  readonly aiFrames: InputFrame[];
 
   tick = 0;
   time = 0;
@@ -120,41 +131,62 @@ export class MatchSim {
   readonly box = { x0: 0, x1: 0, z0: 0, z1: 0 };
   /** Last strike: for body-hit grace and presentation. */
   lastStrikeTeam = -1;
+  lastStrikePlayer = -1;
   lastStrikeTime = -10;
+  /** Doubles: which player of each team is going for the incoming ball (-1: none / not decided). */
+  readonly taker = [-1, -1];
+  /** Doubles: what an AI striker decided its pair does after its shot: 1 go up to the net, 0 stay back, -1 none. */
+  readonly intentUp = [-1, -1];
+  private readonly takerVersion = [-1, -1];
 
   // Previous-tick state for render interpolation.
   readonly prevBall = { x: 0, y: 0, z: 0 };
-  readonly prevPlayers = [{ x: 0, z: 0 }, { x: 0, z: 0 }];
+  readonly prevPlayers: Array<{ x: number; z: number }>;
 
   readonly events: MatchEvent[] = [];
   eventSeq = 0;
 
   private readonly windows = makeWindows();
   /** Where each player should stand for the incoming ball (assist, HUD spot, timing ring). */
-  readonly stand: [StandPlan, StandPlan] = [makeStandPlan(), makeStandPlan()];
+  readonly stand: StandPlan[];
+  /** Scratch plans for deciding which partner takes the ball. */
+  private readonly claim: StandPlan[];
   private readonly req: ShotRequest = {
     shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1,
   };
   private readonly res: ShotResult = { reachable: true, speed: 0, idealX: 0, idealZ: 0 };
-  /** Aim captured at release, per team: relative (-1..1) or absolute. */
-  private readonly aim = [
-    { abs: false, x: 0, y: 0, tx: 0, tz: 0 },
-    { abs: false, x: 0, y: 0, tx: 0, tz: 0 },
-  ];
+  /** Aim captured at release, per player: relative (-1..1) or absolute. */
+  private readonly aim: Array<{ abs: boolean; x: number; y: number; tx: number; tz: number }>;
 
   constructor(cfg: MatchConfig) {
     this.cfg = cfg;
+    this.doubles = cfg.doubles === true;
+    const n = this.doubles ? 4 : 2;
     this.world = makeWorld(cfg.world);
     this.solver = new ShotSolver(this.world);
-    this.score = new Score(cfg.format ?? DEFAULT_FORMAT, cfg.firstServer ?? 0);
+    this.score = new Score(cfg.format ?? DEFAULT_FORMAT, cfg.firstServer ?? 0, this.doubles);
     this.rng = new Rng(cfg.seed);
     this.aiRng = new Rng(cfg.seed ^ 0x5bd1e995);
-    this.players = [new Player(0, DEFAULT_TUNING), new Player(1, DEFAULT_TUNING)];
     const lv = cfg.aiLevel ?? [0.55, 0.55];
-    this.ai = [cfg.human[0] ? null : new SimpleAi(0, lv[0]), cfg.human[1] ? null : new SimpleAi(1, lv[1])];
+    this.players = [];
+    this.ai = [];
+    this.aiFrames = [];
+    this.stand = [];
+    this.claim = [];
+    this.aim = [];
+    this.prevPlayers = [];
+    for (let i = 0; i < n; i++) {
+      this.players.push(new Player(i, DEFAULT_TUNING));
+      this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!));
+      this.aiFrames.push(new InputFrame());
+      this.stand.push(makeStandPlan());
+      this.claim.push(makeStandPlan());
+      this.aim.push({ abs: false, x: 0, y: 0, tx: 0, tz: 0 });
+      this.prevPlayers.push({ x: 0, z: 0 });
+    }
     this.rally.outOfCourtPlay = false;
     for (let i = 0; i < EVENT_RING; i++) {
-      this.events.push({ seq: -1, kind: 0, time: 0, team: -1, a: 0, b: 0, c: 0, x: 0, y: 0, z: 0 });
+      this.events.push({ seq: -1, kind: 0, time: 0, team: -1, player: -1, a: 0, b: 0, c: 0, x: 0, y: 0, z: 0 });
     }
     this.startPoint();
   }
@@ -168,11 +200,21 @@ export class MatchSim {
   // ---- events --------------------------------------------------------------------------------
 
   emit(kind: number, team: number, a = 0, b = 0, c = 0, x = 0, y = 0, z = 0): void {
+    this.emitFor(kind, team, -1, a, b, c, x, y, z);
+  }
+
+  /** A player's event (team is the player's). */
+  private emitP(kind: number, player: number, a = 0, b = 0, c = 0, x = 0, y = 0, z = 0): void {
+    this.emitFor(kind, player & 1, player, a, b, c, x, y, z);
+  }
+
+  private emitFor(kind: number, team: number, player: number, a: number, b: number, c: number, x: number, y: number, z: number): void {
     const e = this.events[this.eventSeq % EVENT_RING]!;
     e.seq = this.eventSeq++;
     e.kind = kind;
     e.time = this.time;
     e.team = team;
+    e.player = player;
     e.a = a; e.b = b; e.c = c;
     e.x = x; e.y = y; e.z = z;
   }
@@ -184,26 +226,41 @@ export class MatchSim {
     const sc = this.score;
     const sTeam = sc.serverTeam();
     const rTeam = 1 - sTeam;
-    for (let t = 0; t < 2; t++) this.players[t]!.setHalf(this.side(t), c.halfW, c.halfL);
+    for (const p of this.players) p.setHalf(this.side(p.team), c.halfW, c.halfL);
     if (sc.isDecidingPoint() && sc.decidingSide < 0) {
       // Receivers choose the side for the golden/star point. Human receivers default to the right for now.
-      sc.decidingSide = this.ai[rTeam] ? (this.aiRng.next() < 0.5 ? 0 : 1) : SIDE_RIGHT;
+      sc.decidingSide = this.teamHasHuman(rTeam) ? SIDE_RIGHT : this.aiRng.next() < 0.5 ? 0 : 1;
     }
     const ss = this.side(sTeam);
     const sideSign = (sc.serveSide() === SIDE_RIGHT ? 1 : -1) * ss; // server's right is +x for the near half
     const sl = c.def.serviceLineFromNet;
-    const server = this.players[sTeam]!;
-    const recv = this.players[rTeam]!;
+    const server = this.players[sc.serverPlayer()]!;
+    const recv = this.players[sc.receiverPlayer()]!;
     server.pos.set(sideSign * c.halfW * 0.42, 0, ss * (sl + 0.75));
-    server.vel.set(0, 0, 0);
     server.facing = ss > 0 ? 0 : Math.PI;
     recv.pos.set(-sideSign * c.halfW * 0.5, 0, -ss * (c.halfL - 1.4));
-    recv.vel.set(0, 0, 0);
     recv.facing = ss > 0 ? Math.PI : 0;
+    if (this.doubles) {
+      // Server's partner at the net on the other side; receiver's partner back on the other side, a step in.
+      const sp = this.players[server.index ^ 2]!;
+      sp.pos.set(-sideSign * c.halfW * 0.5, 0, ss * 2.6);
+      sp.facing = server.facing;
+      const rp = this.players[recv.index ^ 2]!;
+      rp.pos.set(sideSign * c.halfW * 0.5, 0, -ss * (c.halfL - 2.4));
+      rp.facing = recv.facing;
+    }
     for (const p of this.players) {
+      p.vel.set(0, 0, 0);
       p.swing = SW_IDLE;
       p.grade = -1;
+      p.aiming = false;
     }
+    this.taker[0] = -1;
+    this.taker[1] = -1;
+    this.intentUp[0] = -1;
+    this.intentUp[1] = -1;
+    this.takerVersion[0] = -1;
+    this.takerVersion[1] = -1;
     // Diagonal service box on the receivers' half.
     this.box.x0 = sideSign > 0 ? -c.halfW : 0;
     this.box.x1 = sideSign > 0 ? 0 : c.halfW;
@@ -212,8 +269,6 @@ export class MatchSim {
     // The server's aim starts in the middle of the box, three quarters deep.
     server.aimX = (this.box.x0 + this.box.x1) * 0.5;
     server.aimZ = -ss * sl * 0.75;
-    server.aiming = false;
-    recv.aiming = false;
     this.rally.reset();
     const rb = this.rally.box;
     rb.x0 = this.box.x0; rb.x1 = this.box.x1; rb.z0 = this.box.z0; rb.z1 = this.box.z1;
@@ -224,10 +279,20 @@ export class MatchSim {
     for (const a of this.ai) a?.reset();
   }
 
+  /** Some player of the team is human. */
+  teamHasHuman(team: number): boolean {
+    for (let i = team; i < this.players.length; i += 2) if (!this.ai[i]) return true;
+    return false;
+  }
+
+  /** Half of the court a player plays this game: +1 = z > 0. */
+  sideOf(player: number): number {
+    return this.side(player & 1);
+  }
+
   private placeBallInHand(): void {
-    const s = this.score.serverTeam();
-    const p = this.players[s]!;
-    const ss = this.side(s);
+    const p = this.players[this.score.serverPlayer()]!;
+    const ss = this.side(p.team);
     this.ball.pos.set(p.pos.x + ss * 0.45 * p.handed, SERVE_HAND_HEIGHT, p.pos.z - ss * 0.3);
     this.ball.vel.set(0, 0, 0);
     this.ball.spin.set(0, 0, 0);
@@ -237,14 +302,15 @@ export class MatchSim {
 
   // ---- main step -----------------------------------------------------------------------------
 
-  /** Advance one tick. `inputs[team]` is the human's frame (ignored for AI teams). */
+  /** Advance one tick. `inputs[player]` is a human player's frame (ignored for AI players). */
   step(inputs: ReadonlyArray<InputFrame | null>): void {
     const t0 = this.time;
     const t1 = t0 + DT;
+    const n = this.players.length;
     this.prevBall.x = this.ball.pos.x;
     this.prevBall.y = this.ball.pos.y;
     this.prevBall.z = this.ball.pos.z;
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < n; i++) {
       this.prevPlayers[i]!.x = this.players[i]!.pos.x;
       this.prevPlayers[i]!.z = this.players[i]!.pos.z;
     }
@@ -255,19 +321,23 @@ export class MatchSim {
       return;
     }
 
+    // Doubles: settle which partner goes for an incoming ball before anyone moves.
+    if (this.doubles && this.phase === PH_RALLY) this.updateTakers();
+
     // Inputs (AI writes its own frames).
-    for (let team = 0; team < 2; team++) {
-      const ai = this.ai[team];
+    for (let i = 0; i < n; i++) {
+      const ai = this.ai[i];
       let f: InputFrame | null;
       if (ai) {
-        f = this.aiFrames[team]!;
+        f = this.aiFrames[i]!;
         f.clear();
-        ai.think(this, f, t0, t1);
+        ai.think(this, f);
       } else {
-        f = inputs[team] ?? null;
+        f = inputs[i] ?? null;
       }
-      if (f) this.applyInput(team, f, t0);
+      if (f) this.applyInput(i, f);
     }
+    if (this.doubles) this.separatePartners();
 
     // Phase logic.
     if (this.phase === PH_SETUP) {
@@ -276,9 +346,9 @@ export class MatchSim {
       // Strikes inside this tick split the ball step at the exact contact time.
       let tc = t1;
       let who = -1;
-      for (let team = 0; team < 2; team++) {
-        const p = this.players[team]!;
-        if (p.swing === SW_COMMITTED && p.contactTime < tc) { tc = p.contactTime; who = team; }
+      for (let i = 0; i < n; i++) {
+        const p = this.players[i]!;
+        if (p.swing === SW_COMMITTED && p.contactTime < tc) { tc = p.contactTime; who = i; }
       }
       if (who >= 0) {
         const dt1 = max(0, tc - t0);
@@ -300,7 +370,8 @@ export class MatchSim {
     this.tick++;
 
     // Swing housekeeping.
-    for (const p of this.players) {
+    for (let i = 0; i < n; i++) {
+      const p = this.players[i]!;
       if (p.swing === SW_RECOVER && this.time >= p.recoverUntil) p.swing = SW_IDLE;
     }
 
@@ -367,13 +438,18 @@ export class MatchSim {
 
   // ---- input and swings ----------------------------------------------------------------------
 
-  private applyInput(team: number, f: InputFrame, t0: number): void {
-    const p = this.players[team]!;
+  private applyInput(i: number, f: InputFrame): void {
+    const t0 = this.time;
+    const p = this.players[i]!;
+    const team = p.team;
     const s = this.side(team);
-    const human = !this.ai[team];
-    const isServerSetup = (this.phase === PH_SETUP || this.phase === PH_TOSS) && team === this.score.serverTeam();
-    const incoming = human && this.phase === PH_RALLY && this.rally.hitter !== team && this.rally.hitter >= 0;
-    const st = this.stand[team]!;
+    const human = !this.ai[i];
+    const isServerSetup = (this.phase === PH_SETUP || this.phase === PH_TOSS) && i === this.score.serverPlayer();
+    // In doubles a human plans (spot, ring, assist) only for balls that are theirs: assigned, or claimed by
+    // holding a shot key.
+    const incoming = human && this.phase === PH_RALLY && this.rally.hitter !== team && this.rally.hitter >= 0
+      && (!this.doubles || this.taker[team] === i);
+    const st = this.stand[i]!;
     if (incoming) {
       // Re-plan when the predicted path changes (bounce, wall), every few ticks while the contact is well ahead
       // (the player may be heading somewhere else), and once the planned moment has gone by. The planned contact
@@ -409,26 +485,26 @@ export class MatchSim {
     }
 
     // Button events in time order.
-    for (let i = 0; i < f.evCount; i++) {
-      const e = f.ev[i]!;
+    for (let k = 0; k < f.evCount; k++) {
+      const e = f.ev[k]!;
       // The overhead key is held as a bandeja; it becomes a smash at contact if power is held.
       const shot = e.button === BTN_OVERHEAD ? SHOT_BANDEJA : SHOT_BUTTONS.indexOf(e.button as never);
       if (shot < 0) continue;
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
-      if (e.press) this.press(team, shot, max(e.t, t0));
-      else if (p.swing === SW_CHARGE && p.shot === shot) this.releaseSwing(team, e.t, f);
+      if (e.press) this.press(i, shot, max(e.t, t0));
+      else if (p.swing === SW_CHARGE && p.shot === shot) this.releaseSwing(i, e.t, f);
     }
     // Assisted timing: still holding when the ideal moment arrives, the swing goes off by itself.
-    if (this.cfg.autoTiming && !this.ai[team] && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
-      const ideal = this.autoIdeal(team);
+    if (this.cfg.autoTiming && human && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
+      const ideal = this.autoIdeal(i);
       // Released just before Perfect, so it grades Good whatever the timing scale. Early rather than late: an
       // early swing still meets the ball at the ideal moment (an overhead stays high, a ball at the body is
       // met in front), a late one meets it late.
       const early = (TIMING.perfect + 0.35 * (TIMING.good - TIMING.perfect)) * (this.cfg.timingScale ?? 1);
-      if (ideal >= 0 && ideal - early < t0 + DT) this.releaseSwing(team, max(t0, ideal - early), f);
+      if (ideal >= 0 && ideal - early < t0 + DT) this.releaseSwing(i, max(t0, ideal - early), f);
     }
     // Safety: a swing held far too long releases itself.
-    if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) this.releaseSwing(team, t0, f);
+    if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) this.releaseSwing(i, t0, f);
 
     p.clock = t0;
     if (!isServerSetup && this.phase !== PH_DEAD) { p.driveX = dx; p.driveZ = dz; p.move(); }
@@ -445,6 +521,125 @@ export class MatchSim {
   private assistX = 0;
   private assistZ = 0;
 
+  // ---- doubles: who takes the ball --------------------------------------------------------------
+
+  /**
+   * Doubles: which partner goes for the incoming ball. The serve is the receiver's (8.1). A human holding a
+   * shot key takes it. Otherwise each partner's best contact is planned and the shorter run wins; when it is
+   * close, the player with the forehand in the middle takes it (what pairs agree on). A decision only changes
+   * when the other player is clearly better placed, so the two don't swap back and forth.
+   */
+  private updateTakers(): void {
+    const t0 = this.time;
+    const hitter = this.rally.hitter;
+    for (let team = 0; team < 2; team++) {
+      if (hitter < 0 || hitter === team) {
+        this.taker[team] = -1;
+        continue;
+      }
+      if (this.rally.isServe) {
+        this.setTaker(team, this.score.receiverPlayer());
+        continue;
+      }
+      const a = team;
+      const b = team + 2;
+      const cur = this.taker[team]!;
+      if (cur >= 0 && this.players[cur]!.swing === SW_COMMITTED) continue;
+      const ha = !this.ai[a] && this.players[a]!.swing === SW_CHARGE;
+      const hb = !this.ai[b] && this.players[b]!.swing === SW_CHARGE;
+      if (ha || hb) {
+        this.setTaker(team, ha ? a : b);
+        continue;
+      }
+      if (cur >= 0 && this.pred.version === this.takerVersion[team]) continue;
+      this.takerVersion[team] = this.pred.version;
+      const s = this.side(team);
+      const ca = this.claimCost(a, s, t0);
+      const cb = this.claimCost(b, s, t0);
+      let pick: number;
+      if (abs(ca - cb) < MIDDLE_MARGIN && ca < CLAIM_OUT && cb < CLAIM_OUT) {
+        pick = this.forehandInMiddle(a, s) ? a : this.forehandInMiddle(b, s) ? b : ca <= cb ? a : b;
+      } else pick = ca <= cb ? a : b;
+      if (cur >= 0 && pick !== cur) {
+        const cCur = cur === a ? ca : cb;
+        const cPick = pick === a ? ca : cb;
+        if (cCur < CLAIM_OUT && cPick > cCur - SWITCH_MARGIN) pick = cur;
+      }
+      // A partner standing in the ball's line, who it would hit before the other plays it, has to play it.
+      const other = pick ^ 2;
+      const kHit = this.bodyHitIdx(other, s);
+      const tHit = kHit >= 0 ? this.pred.t[kHit]! : -1;
+      if (tHit >= 0 && (!this.claim[pick]!.valid || this.claim[pick]!.t > tHit - 0.05)) pick = other;
+      this.setTaker(team, pick);
+    }
+  }
+
+  private setTaker(team: number, i: number): void {
+    const prev = this.taker[team]!;
+    // An AI that was getting ready for a ball its partner now takes stands down.
+    if (prev >= 0 && prev !== i && this.ai[prev] && this.players[prev]!.swing === SW_CHARGE) this.players[prev]!.swing = SW_IDLE;
+    this.taker[team] = i;
+  }
+
+  /** Run to the best contact (m), plus a large penalty if it can't be reached in time. */
+  private claimCost(i: number, s: number, t0: number): number {
+    const p = this.players[i]!;
+    const plan = this.claim[i]!;
+    if (!planStand(this.pred, p, s, t0, this.rally.isServe, plan, -1, false, false)) return CLAIM_OUT * 2;
+    const dx = plan.x - p.pos.x;
+    const dz = plan.z - p.pos.z;
+    return sqrt(dx * dx + dz * dz) + (plan.inTime ? 0 : CLAIM_OUT);
+  }
+
+  /**
+   * The prediction sample where the ball reaches the player's body where they stand (-1: it doesn't). An index,
+   * not a time: a double returned from a call that isn't inlined is boxed (garbage every frame).
+   */
+  bodyHitIdx(i: number, s: number): number {
+    const t0 = this.time;
+    const p = this.players[i]!;
+    const pr = this.pred;
+    const r = p.tune.bodyRadius + this.world.spec.radius + 0.05;
+    for (let k = 0; k < pr.n; k++) {
+      if (pr.t[k]! < t0 || pr.z[k]! * s <= 0) continue;
+      if (pr.bounces[k]! > 1) break;
+      if (pr.y[k]! > p.tune.height) continue;
+      const dx = pr.x[k]! - p.pos.x;
+      const dz = pr.z[k]! - p.pos.z;
+      if (dx * dx + dz * dz < r * r) return k;
+    }
+    return -1;
+  }
+
+  /** The player's forehand faces the middle of the court (left-side right-hander, right-side left-hander). */
+  private forehandInMiddle(i: number, s: number): boolean {
+    const p = this.players[i]!;
+    const q = this.players[i ^ 2]!;
+    const lane = (p.pos.x - q.pos.x) * s > 0 ? 1 : -1; // +1: on the right of the pair, as they face the net
+    return lane * p.handed < 0;
+  }
+
+  /** Partners can't stand in each other: push apart when closer than two bodies. */
+  private separatePartners(): void {
+    for (let team = 0; team < 2; team++) {
+      const p = this.players[team]!;
+      const q = this.players[team + 2]!;
+      const minD = p.tune.bodyRadius + q.tune.bodyRadius + 0.15;
+      let dx = q.pos.x - p.pos.x;
+      let dz = q.pos.z - p.pos.z;
+      let d = sqrt(dx * dx + dz * dz);
+      if (d >= minD) continue;
+      if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
+      const push = (minD - d) * 0.5;
+      const ux = dx / d;
+      const uz = dz / d;
+      p.pos.x = clamp(p.pos.x - ux * push, p.minX, p.maxX);
+      p.pos.z = clamp(p.pos.z - uz * push, p.minZ, p.maxZ);
+      q.pos.x = clamp(q.pos.x + ux * push, q.minX, q.maxX);
+      q.pos.z = clamp(q.pos.z + uz * push, q.minZ, q.maxZ);
+    }
+  }
+
   /** The player is holding (or has just released) the overhead key. */
   private goingOverhead(p: Player): boolean {
     return p.shot === SHOT_BANDEJA && (p.swing === SW_CHARGE || p.swing === SW_COMMITTED);
@@ -455,7 +650,7 @@ export class MatchSim {
     this.assistX = 0;
     this.assistZ = 0;
     const k = full ? 1 : (this.cfg.assist ?? p.tune.positioningAssist);
-    const st = this.stand[p.team]!;
+    const st = this.stand[p.index]!;
     if (k <= 0 || !st.valid) return;
     const dx = st.x - p.pos.x;
     const dz = st.z - p.pos.z;
@@ -479,7 +674,7 @@ export class MatchSim {
       // shortest landing that a full-pace straight line from the planned contact clears the net with margin.
       // Near the net that is mid-court, and the steep bounce can leave the court; from deep it lands deeper.
       if ((f.held & BTN_POWER) !== 0) {
-        const st = this.stand[p.team]!;
+        const st = this.stand[p.index]!;
         const back = abs(st.valid ? st.bz : p.pos.z);
         const h = st.valid ? st.by : p.tune.overheadIdealHeight;
         const over = c.netHeightAt(0) + SMASH_NET_MARGIN;
@@ -506,11 +701,12 @@ export class MatchSim {
     }
   }
 
-  private press(team: number, shot: number, t: number): void {
-    const p = this.players[team]!;
+  private press(i: number, shot: number, t: number): void {
+    const p = this.players[i]!;
+    const team = p.team;
     if (p.swing !== SW_IDLE) return;
     if (this.phase === PH_SETUP) {
-      if (team !== this.score.serverTeam() || t < this.phaseUntil) return;
+      if (i !== this.score.serverPlayer() || t < this.phaseUntil) return;
       // Drop the ball for the serve.
       this.phase = PH_TOSS;
       this.tossBounces = 0;
@@ -518,7 +714,7 @@ export class MatchSim {
       this.ball.vel.set(0, -0.3, 0);
       this.pred.compute(this.world, this.ball, t, 0, 2);
       this.computeTossIdeal();
-      this.emit(E_TOSS, team);
+      this.emitP(E_TOSS, i);
     } else if (this.phase === PH_DEAD || this.phase === PH_OVER) {
       return;
     }
@@ -526,7 +722,7 @@ export class MatchSim {
     p.shot = shot;
     p.chargeStart = t;
     p.grade = -1;
-    if (this.phase === PH_RALLY && !this.ai[team]) {
+    if (this.phase === PH_RALLY && !this.ai[i]) {
       // Each rally shot starts aimed down the middle at the shot's natural depth; the keys move it from there.
       const depth = shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot);
       p.aimX = 0;
@@ -551,12 +747,13 @@ export class MatchSim {
     this.tossIdeal = apex >= 0 ? pr.t[apex]! + 0.04 : this.time + 0.5;
   }
 
-  private releaseSwing(team: number, t: number, f: InputFrame): void {
-    const p = this.players[team]!;
+  private releaseSwing(i: number, t: number, f: InputFrame): void {
+    const p = this.players[i]!;
+    const team = p.team;
     p.release = t;
     p.mod = (f.held & BTN_POWER) !== 0 ? MOD_POWER : (f.held & BTN_PRECISION) !== 0 ? MOD_PRECISION : MOD_NONE;
-    const a = this.aim[team]!;
-    if (!this.ai[team] && (this.cfg.assist ?? p.tune.positioningAssist) > 0) {
+    const a = this.aim[i]!;
+    if (!this.ai[i] && (this.cfg.assist ?? p.tune.positioningAssist) > 0) {
       // Human with the aim target: it was steered while charging (or put under the mouse).
       a.abs = true;
       a.tx = p.aimX;
@@ -568,19 +765,20 @@ export class MatchSim {
     }
     a.x = f.moveX;
     a.y = f.moveY;
-    const scale = this.cfg.timingScale ?? 1;
+    // The timing-window setting is a human accessibility aid; AI players are always judged on the real windows.
+    const scale = this.ai[i] ? 1 : this.cfg.timingScale ?? 1;
 
-    if (this.phase === PH_TOSS && team === this.score.serverTeam() && this.rally.hitter < 0) {
+    if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) {
       const delta = t - this.tossIdeal;
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
       if (abs(delta) > TIMING.miss * scale) {
-        this.whiff(team, t);
+        this.whiff(i, t);
         return;
       }
       p.contactTime = clamp(max(t, this.tossIdeal), t, this.tossEnd - 0.02);
       p.swing = SW_COMMITTED;
-      this.emit(E_SWING, team, p.shot, p.grade, delta);
+      this.emitP(E_SWING, i, p.shot, p.grade, delta);
       return;
     }
 
@@ -590,31 +788,31 @@ export class MatchSim {
     const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
       p.shot === SHOT_BANDEJA);
     let w: ContactWindow | null = null;
-    for (let i = 0; i < n; i++) {
-      const c = this.windows[i]!;
+    for (let k = 0; k < n; k++) {
+      const c = this.windows[k]!;
       if (t > c.end + TIMING.miss * scale) continue;
       if (!w || abs(t - c.ideal) < abs(t - w.ideal)) w = c;
     }
     if (!w || this.rally.hitter === team) {
-      this.whiff(team, t);
+      this.whiff(i, t);
       return;
     }
     const delta = t - w.ideal;
     p.timingDelta = delta;
     p.grade = gradeTiming(delta, TIMING, scale);
     if (abs(delta) > TIMING.miss * scale) {
-      this.whiff(team, t);
+      this.whiff(i, t);
       return;
     }
     p.contactTime = delta < 0 ? w.ideal : max(t, w.ideal);
     if (p.contactTime < this.time) p.contactTime = this.time;
     p.swing = SW_COMMITTED;
-    this.emit(E_SWING, team, p.shot, p.grade, delta);
+    this.emitP(E_SWING, i, p.shot, p.grade, delta);
   }
 
   /** Ideal moment of the contact the player is going for, or -1 (assisted timing). */
-  private autoIdeal(team: number): number {
-    return this.focusIdeal(team);
+  private autoIdeal(i: number): number {
+    return this.focusIdeal(i);
   }
 
   /**
@@ -622,15 +820,15 @@ export class MatchSim {
    * into the glass doesn't steal the cue from the rebound you are set up for), else the earliest window.
    * The timing ring, the meter and assisted timing all read this. -1 if there is none.
    */
-  focusIdeal(team: number): number {
+  focusIdeal(i: number): number {
     this.focusInReach = true;
-    if (this.phase === PH_TOSS && team === this.score.serverTeam() && this.rally.hitter < 0) return this.tossIdeal;
-    const n = this.windowsFor(team, this.focusWins);
-    const st = this.stand[team]!;
+    if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) return this.tossIdeal;
+    const n = this.windowsFor(i, this.focusWins);
+    const st = this.stand[i]!;
     let best = -1;
     let bestGap = 1e9;
-    for (let i = 0; i < n; i++) {
-      const w = this.focusWins[i]!;
+    for (let k = 0; k < n; k++) {
+      const w = this.focusWins[k]!;
       if (st.valid) {
         const gap = st.t < w.start ? w.start - st.t : st.t > w.end ? st.t - w.end : 0;
         if (gap < bestGap) { bestGap = gap; best = w.ideal; }
@@ -648,31 +846,34 @@ export class MatchSim {
   focusInReach = true;
 
   /** `reach` > 0: the swing was on time but the ball was this far away (out of reach). */
-  private whiff(team: number, t: number, reach = 0): void {
-    const p = this.players[team]!;
+  private whiff(i: number, t: number, reach = 0): void {
+    const p = this.players[i]!;
     p.swing = SW_RECOVER;
     p.recoverUntil = t + p.tune.recoverTime;
     p.lastContactTime = t;
     if (p.grade < 0) p.grade = p.timingDelta < 0 ? G_TOO_EARLY : G_TOO_LATE;
-    this.emit(E_WHIFF, team, p.shot, p.grade, p.timingDelta, reach);
+    this.emitP(E_WHIFF, i, p.shot, p.grade, p.timingDelta, reach);
   }
 
   /** The committed swing reaches its contact time: connect if the ball is really there. */
-  private contact(team: number): void {
-    const p = this.players[team]!;
+  private contact(i: number): void {
+    const p = this.players[i]!;
+    const team = p.team;
     const b = this.ball;
     const s = this.side(team);
-    const serving = this.phase === PH_TOSS && team === this.score.serverTeam() && this.rally.hitter < 0;
+    const serving = this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0;
     const dx = b.pos.x - p.pos.x;
     const dz = b.pos.z - p.pos.z;
     const d = sqrt(dx * dx + dz * dz);
     const t = p.tune;
     const legal = serving
       ? this.tossBounces === 1
-      : b.pos.z * s > 0 && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0);
+      : b.pos.z * s > 0 && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0)
+        // The serve is returned by the receiver, not the partner (8.1).
+        && !(this.rally.isServe && i !== this.score.receiverPlayer());
     if (!legal || d > t.reachMax + 0.25 || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15 || this.rally.over) {
       if (serving && this.tossBounces !== 1) this.rally.onServeMissed();
-      this.whiff(team, this.time, legal && d > t.reachMax + 0.25 ? d : 0);
+      this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0);
       return;
     }
 
@@ -688,7 +889,7 @@ export class MatchSim {
 
     // Target.
     const c = this.world.court;
-    const a = this.aim[team]!;
+    const a = this.aim[i]!;
     const r = this.req;
     if (serving) {
       const bx = this.box;
@@ -725,6 +926,8 @@ export class MatchSim {
     p.lastContact.copy(b.pos);
     p.lastContactTime = this.time;
     this.lastStrikeTeam = team;
+    this.lastStrikePlayer = i;
+    if (!this.ai[i]) this.intentUp[team] = -1;
     this.lastStrikeTime = this.time;
 
     if (serving) {
@@ -733,13 +936,16 @@ export class MatchSim {
     } else {
       this.rally.onStrike(team, s, false);
     }
-    this.emit(E_HIT, team, shot, p.grade, this.res.speed, b.pos.x, b.pos.y, b.pos.z);
+    this.emitP(E_HIT, i, shot, p.grade, this.res.speed, b.pos.x, b.pos.y, b.pos.z);
     this.wallsSinceBounce = 0;
     this.pred.compute(this.world, b, this.time, 0);
-    // The opponent split-steps as the ball is struck.
-    const opp = this.players[1 - team]!;
-    if (opp.trySplitStep(this.time)) this.emit(E_SPLIT, 1 - team);
-    for (const ai of this.ai) ai?.onStrike(this, team);
+    // The opponents split-step as the ball is struck.
+    for (let o = 1 - team; o < this.players.length; o += 2) {
+      if (this.players[o]!.trySplitStep(this.time)) this.emitP(E_SPLIT, o);
+    }
+    this.taker[1 - team] = -1;
+    this.takerVersion[1 - team] = -1;
+    for (let k = 0; k < this.ai.length; k++) this.ai[k]?.onStrike(this, team);
   }
 
   private solverDepth(shot: number): number {
@@ -760,9 +966,10 @@ export class MatchSim {
   private checkBodies(): void {
     const b = this.ball;
     if (this.rally.hitter < 0 || this.rally.over || b.outside) return;
-    for (let team = 0; team < 2; team++) {
-      if (team === this.lastStrikeTeam && this.time - this.lastStrikeTime < 0.3) continue;
-      const p = this.players[team]!;
+    for (let i = 0; i < this.players.length; i++) {
+      // The striker's own racket follow-through is not a body hit (a partner standing there is).
+      if (i === this.lastStrikePlayer && this.time - this.lastStrikeTime < 0.3) continue;
+      const p = this.players[i]!;
       if (b.pos.y > p.tune.height) continue;
       const dx = b.pos.x - p.pos.x;
       const dz = b.pos.z - p.pos.z;
@@ -770,7 +977,7 @@ export class MatchSim {
       if (dx * dx + dz * dz < rr * rr) {
         // A committed swing about to connect wins over the body.
         if (p.swing === SW_COMMITTED && p.contactTime - this.time < 0.05) continue;
-        this.rally.onBody(team);
+        this.rally.onBody(p.team);
         return;
       }
     }
@@ -827,9 +1034,10 @@ export class MatchSim {
   // ---- queries for presentation --------------------------------------------------------------
 
   /** Contact windows for a team's player right now (timing meter, assists). */
-  windowsFor(team: number, out: ContactWindow[]): number {
-    const p = this.players[team]!;
-    if (this.phase === PH_TOSS && team === this.score.serverTeam()) {
+  windowsFor(i: number, out: ContactWindow[]): number {
+    const p = this.players[i]!;
+    const team = p.team;
+    if (this.phase === PH_TOSS && i === this.score.serverPlayer()) {
       const w = out[0]!;
       w.start = this.tossIdeal - 0.2;
       w.end = this.tossEnd;
@@ -853,6 +1061,7 @@ export class MatchSim {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
         .num(p.aimTouched ? 1 : 0);
     }
+    h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     const st: number[] = [];
     this.score.writeState(st);

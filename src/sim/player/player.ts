@@ -17,6 +17,8 @@ export const SW_COMMITTED = 2;
 export const SW_RECOVER = 3;
 
 export class Player {
+  /** Player number: team + 2 * slot (0 and 1 face each other; 2 and 3 are their partners in doubles). */
+  readonly index: number;
   readonly team: number;
   readonly tune: PlayerTuning;
   readonly pos = new V3();
@@ -59,8 +61,9 @@ export class Player {
   minZ = 0.25;
   maxZ = 9.8;
 
-  constructor(team: number, tune: PlayerTuning = DEFAULT_TUNING) {
-    this.team = team;
+  constructor(index: number, tune: PlayerTuning = DEFAULT_TUNING) {
+    this.index = index;
+    this.team = index & 1;
     this.tune = tune;
   }
 
