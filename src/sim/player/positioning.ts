@@ -88,8 +88,19 @@ export function planStand(
     const dx = sx - p.pos.x;
     const dz = sz - p.pos.z;
     const dist = sqrt(dx * dx + dz * dz);
-    // Time to get there: running at top speed plus starting and setting the feet (less if already on the way).
-    const slack = ti - now - (dist / t.maxSpeed + (dist > 0.4 ? (kept ? 0.15 : 0.3) : 0.05));
+    // Time to get there: the run (from the current velocity, at the top speed for that direction relative to
+    // the ball), stopping, and setting the feet (less if already on the way).
+    let need = 0.05;
+    if (dist > 1e-3) {
+      p.runD = dist;
+      p.runX = dx / dist;
+      p.runZ = dz / dist;
+      p.runTime();
+      // Stopping at the spot takes v / 2a beyond running through it (braking at 0.8 of the limit, as the AI and
+      // the assist do).
+      need = p.runT + p.runV / (1.6 * t.brake) + (dist > 0.4 ? (kept ? 0.05 : 0.1) : 0.05);
+    }
+    const slack = ti - now - need;
     const afterWall = pr.walls[i]! > 0 && b === 1;
     if (slack >= 0) {
       let cost = (overhead ? overheadCost(y, t) : heightCost(y, t.overheadHeight)) + 0.03 * (ti - now);

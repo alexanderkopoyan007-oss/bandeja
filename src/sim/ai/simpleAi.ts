@@ -7,6 +7,7 @@ import type { MatchSim } from '../match.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION } from '../input.ts';
 import { abs, clamp, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
+import { PF_FLOOR } from '../ball/predict.ts';
 import { findWindows, makeWindows } from '../contact/windows.ts';
 import { makeStandPlan, planStand, type StandPlan } from '../player/positioning.ts';
 import { formationSpot, type Spot } from '../player/formation.ts';
@@ -100,6 +101,7 @@ export class SimpleAi {
   think(m: MatchSim, f: InputFrame): void {
     const t0 = m.time;
     const t1 = t0 + DT;
+    this.nowT = t0;
     const p = m.players[this.index]!;
     const s = m.side(this.team);
     const rng = m.aiRng;
@@ -174,6 +176,9 @@ export class SimpleAi {
     if (this.planned) {
       this.goX = this.standX;
       this.goZ = this.standZ;
+      // Be there, feet set, a little before the contact.
+      this.goBy = this.idealT - 0.15;
+      this.chasing = true;
       this.drift(f, p, s);
       if (!this.pressed && p.swing === SW_IDLE && t0 >= this.idealT - 0.45) {
         f.push(true, button(this.shot), t0);
@@ -201,6 +206,13 @@ export class SimpleAi {
     formationSpot(m, this.index, coming, this.spot);
     this.goX = this.spot.x;
     this.goZ = this.spot.z;
+    // In place by the next strike (about when the ball has bounced on its way to whoever plays it).
+    const pr = m.pred;
+    let by = m.time + 1;
+    for (let i = 0; i < pr.n; i++) {
+      if ((pr.flags[i]! & PF_FLOOR) !== 0) { by = pr.t[i]! + 0.25; break; }
+    }
+    this.goBy = by > m.time + 0.4 ? by : m.time + 0.4;
     this.drift(f, p, s);
   }
 
@@ -227,21 +239,51 @@ export class SimpleAi {
     f.aimTZ = this.targetZ;
   }
 
-  /** Steer towards (x, z), braking so we arrive without overshooting. */
-  /** Where drift steers to (fields, not arguments: see think). */
+  /** Where drift steers to, and by when (goBy 0: no hurry). Fields, not arguments: see think. */
   private goX = 0;
   private goZ = 0;
+  private goBy = 0;
+  /** Going for the ball (not just taking up a position). */
+  private chasing = false;
+  /** The tick's start time (a field: a double argument would be boxed). */
+  private nowT = 0;
 
+  /**
+   * Steer towards (goX, goZ) and arrive without overshooting: flat out for the ball, brisk into the formation,
+   * and no shuffling for a few centimetres (real players then stand: most of a match is spent below 6 km/h).
+   */
   private drift(f: InputFrame, p: Player, s: number): void {
+    const now = this.nowT;
     const dx = this.goX - p.pos.x;
     const dz = this.goZ - p.pos.z;
     const d = sqrt(dx * dx + dz * dz);
-    if (d < 0.06) return;
-    const want = min(5.6, sqrt(2 * 11 * d)) / 5.6;
-    const wx = (dx / d) * want;
-    const wz = (dz / d) * want;
-    f.moveX = wx * s;
-    f.moveY = -wz * s;
+    const by = this.goBy;
+    const chase = this.chasing;
+    this.goBy = 0;
+    this.chasing = false;
+    const left = by > 0 ? by - now : 1e9;
+    if (d < (left < 0.6 ? 0.04 : 0.12)) return;
+    const t = p.tune;
+    p.qx = dx / d;
+    p.qz = dz / d;
+    p.look();
+    const lx = p.qx;
+    const lz = p.qz;
+    p.qx = dx / d;
+    p.qz = dz / d;
+    p.topToward(lx, lz);
+    const top = p.qTop;
+    // Going for the ball: flat out. Taking up a position: brisk (being in place before the next strike is what
+    // reaches balls; a relaxed 2.6 m/s left a tenth more of them unreached), faster if the time left asks.
+    const need = left < 1e8 ? (d / (left > 0.08 ? left : 0.08)) * 1.35 : 0;
+    const brisk = 4.5;
+    let v = chase ? top : need > brisk ? need : brisk;
+    if (v > top) v = top;
+    const stop = sqrt(2 * t.brake * 0.8 * d);
+    if (v > stop) v = stop;
+    const want = v / top;
+    f.moveX = (dx / d) * want * s;
+    f.moveY = -(dz / d) * want * s;
   }
 
   /**

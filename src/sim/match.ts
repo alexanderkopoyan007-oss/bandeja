@@ -721,7 +721,14 @@ export class MatchSim {
     const d = sqrt(dx * dx + dz * dz);
     if (d < 0.05 || k <= 0) return;
     const t = p.tune;
-    const g = k * min(1, sqrt(2 * t.brake * 0.7 * d) / t.maxSpeed);
+    // A speed, as a fraction of the top speed that way (the drive is scaled by it in Player.move).
+    p.look();
+    const lx = p.qx;
+    const lz = p.qz;
+    p.qx = dx / d;
+    p.qz = dz / d;
+    p.topToward(lx, lz);
+    const g = k * min(1, sqrt(2 * t.brake * 0.8 * d) / p.qTop);
     this.assistX = (dx / d) * g;
     this.assistZ = (dz / d) * g;
   }

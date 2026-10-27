@@ -20,8 +20,10 @@ measured against published data, and lands with tests that check the model again
    grip with a tangential COR) already gives a felt ball's grip-slip regimes (below). A test holds it to them.
    Still open: concrete walls (a classic club court; glass is faster, longer and livelier, Gea García 2021, no
    numbers published) and the floor-wall corner (rincón).
-5. **Player physics.** Acceleration and braking on turf, split step, reaction time, fatigue over a match,
-   collisions between partners, touching the net, and reach against the racket's length.
+5. **Player physics.** Started 2026-10-27: sprint force-velocity profile, top speed by direction relative to the
+   ball, braking and turning held by the shoe's grip, AI effort by the time left (CLAUDE.md realism notes).
+   Still to do: the AI's extra small accelerations, reaction time against anticipation, fatigue over a match,
+   collisions between partners, touching the net, reach against the racket's length.
 6. **Rules completeness.** Ball lodged in the mesh or on top of a wall, out-of-court play.
 7. **Calibration** against match statistics: shot speeds, rally lengths, how points end.
 
@@ -92,6 +94,26 @@ measured against published data, and lands with tests that check the model again
   [hrcak.srce.hr/227742](https://hrcak.srce.hr/227742))
 - **The game's AI.** Its smash median was 157 km/h with ball-speed caps; with the racket model it is about 138 km/h
   (12 seeds × 300 s of doubles, 2026-10-27).
+
+### Player movement
+- **WPT men, 23 finals and semi-finals, 83 players, inertial units** (Miralles et al., *Biology of Sport* 2025,
+  [PMC11694210](https://pmc.ncbi.nlm.nih.gov/articles/PMC11694210/)), medians:
+  - match 85 min, 3,440 m (2,407 m an hour);
+  - top speed in a match 15.2 km/h (4.2 m/s);
+  - peak acceleration 4.6 m/s² and deceleration −4.5 m/s²;
+  - about 395 accelerations and 356 decelerations above 1.12 m/s² an hour, 80% of them over 1–2 m.
+  Left and right players barely differ (left-side players make about 10% more accelerations,
+  [PMC11819837](https://pmc.ncbi.nlm.nih.gov/articles/PMC11819837/)). Elite women's top speed in a match is
+  14.1 km/h. Earlier studies put most of a match below 3 km/h and about 30% at 3–6 km/h.
+- **Not found:** backpedal and side-shuffle top speeds and shoe–turf friction for padel. The game's values (4.3 and
+  4.8 m/s, mu 0.9) are estimates.
+
+### How points end
+- WPT finals 2016–2022: about 6 unforced errors a set by the winning pair and 7.8 by the losing pair, falling
+  over the years (Biology of Sport, *Analysis and prediction of unforced errors in men's and women's
+  professional padel*). With about 65 points a set, that is roughly a fifth of points.
+- Men's pros end more points with winners than with unforced errors; forced errors are the rarest. Over half of
+  points are won between the 5th and 11th second (WPT Masters Finals, 1,527 rallies).
 
 ### Walls
 - **Glass vs concrete.** Glass gives faster, longer and more accelerated rebounds than concrete. Ball type matters

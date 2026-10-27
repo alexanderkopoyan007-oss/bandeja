@@ -1,7 +1,8 @@
-// Player body for the sim: movement with real acceleration, braking and turning limits, split-step,
-// and the swing state machine (charge -> committed -> recover).
+// Player body for the sim: movement (a sprint's force-velocity profile, top speed by the direction run
+// relative to where the player looks, braking and turning held by the shoe's grip), split-step, and the swing
+// state machine (charge -> committed -> recover).
 import { V3 } from '../core/v3.ts';
-import { clamp, sqrt, atan2 } from '../core/smath.ts';
+import { clamp, sqrt, atan2, sin, cos, exp } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import tuningData from '../../../data/tuning.json' with { type: 'json' };
 
@@ -75,11 +76,8 @@ export class Player {
     else { this.minZ = -halfL + 0.22; this.maxZ = -0.3; }
   }
 
-  /**
-   * Move towards desired world-space velocity direction (dx, dz) in -1..1 (magnitude = intent).
-   * Acceleration is split into along-track (accel/brake) and cross-track (turning) limits.
-   */
-  /** Movement wish for this tick (world axes, length <= 1) and the tick's start time; set before move(). */
+  /** Movement wish for this tick (world axes, length <= 1: the fraction of the top speed for that direction)
+   *  and the tick's start time; set before move(). */
   driveX = 0;
   driveZ = 0;
   clock = 0;
@@ -97,9 +95,19 @@ export class Player {
     let len = sqrt(dx * dx + dz * dz);
     if (len > 1) { dx /= len; dz /= len; len = 1; }
     // Holding a shot key is preparation, done on the run; only the swing itself slows the feet.
-    const top = t.maxSpeed * (this.swing === SW_COMMITTED ? t.chargingSpeedScale : 1);
-    const wantX = dx * top;
-    const wantZ = dz * top;
+    const slow = this.swing === SW_COMMITTED ? t.chargingSpeedScale : 1;
+    // Where the player looks (facing 0 = -z).
+    const lx = -sin(this.facing);
+    const lz = -cos(this.facing);
+    let top = t.maxSpeed;
+    if (len > 1e-6) {
+      this.qx = dx / len;
+      this.qz = dz / len;
+      this.topToward(lx, lz);
+      top = this.qTop;
+    }
+    const wantX = dx * top * slow;
+    const wantZ = dz * top * slow;
     let ax = (wantX - this.vel.x) / dt;
     let az = (wantZ - this.vel.z) / dt;
     const sp = sqrt(this.vel.x * this.vel.x + this.vel.z * this.vel.z);
@@ -107,10 +115,18 @@ export class Player {
     if (sp > 0.05) {
       const ux = this.vel.x / sp;
       const uz = this.vel.z / sp;
+      // Propulsion falls with speed towards the top speed for the way the player is running (a sprint's
+      // force-velocity profile); braking is limited apart; braking, turning and pushing all share the grip.
+      this.qx = ux;
+      this.qz = uz;
+      this.topToward(lx, lz);
+      const push = t.accel * boost * (1 - sp / (this.qTop * slow));
       let along = ax * ux + az * uz;
       let cross = -ax * uz + az * ux;
-      along = clamp(along, -t.brake * boost, t.accel * boost);
-      cross = clamp(cross, -t.turnAccel * boost, t.turnAccel * boost);
+      along = clamp(along, -t.brake, push > 0 ? push : 0);
+      const g2 = t.grip * t.grip - along * along;
+      const cmax = g2 > 0 ? sqrt(g2) : 0;
+      cross = clamp(cross, -cmax, cmax);
       ax = along * ux - cross * uz;
       az = along * uz + cross * ux;
     } else {
@@ -131,6 +147,72 @@ export class Player {
 
   speed(): number {
     return sqrt(this.vel.x * this.vel.x + this.vel.z * this.vel.z);
+  }
+
+  /** Unit direction (qx, qz) in; topToward() leaves the top speed that way in qTop (fields: see move). */
+  qx = 0;
+  qz = 0;
+  qTop = 0;
+
+  /**
+   * Top speed running along (qx, qz) for a player looking along (lx, lz): forward, sideways (crossover steps
+   * with the head turned) or backpedalling, blended by the angle.
+   */
+  topToward(lx: number, lz: number): void {
+    const t = this.tune;
+    const c = this.qx * lx + this.qz * lz;
+    this.qTop = c >= 0 ? t.sideSpeed + (t.maxSpeed - t.sideSpeed) * c : t.sideSpeed + (t.backSpeed - t.sideSpeed) * -c;
+  }
+
+  /** The direction the player looks, from `facing`, into (qx, qz). */
+  look(): void {
+    this.qx = -sin(this.facing);
+    this.qz = -cos(this.facing);
+  }
+
+  /**
+   * Seconds to run `runD` metres to a stop-free arrival along (runX, runZ) (unit), from the current velocity,
+   * with the force-velocity profile: v(t) = vT - (vT - v0) e^(-t/tau), tau = vT / accel. Into runT, and the
+   * speed on arrival into runV.
+   */
+  runD = 0;
+  runX = 0;
+  runZ = 0;
+  runT = 0;
+  runV = 0;
+
+  runTime(): void {
+    const t = this.tune;
+    const lx = -sin(this.facing);
+    const lz = -cos(this.facing);
+    this.qx = this.runX;
+    this.qz = this.runZ;
+    this.topToward(lx, lz);
+    const vT = this.qTop;
+    let d = this.runD;
+    let v0 = this.vel.x * this.runX + this.vel.z * this.runZ;
+    let extra = 0;
+    if (v0 < 0) {
+      // Going the other way: stop first.
+      extra = -v0 / t.brake;
+      d += (v0 * v0) / (2 * t.brake);
+      v0 = 0;
+    }
+    if (v0 > vT) v0 = vT;
+    const tau = vT / t.accel;
+    const dn = d / (vT * tau);
+    const k = 1 - v0 / vT;
+    // Solve dn = s - k (1 - e^-s) for s = time / tau (Newton from the from-rest closed form's neighbourhood).
+    let s = sqrt(dn * (dn + 2));
+    for (let i = 0; i < 3; i++) {
+      const e = exp(-s);
+      const f = s - k * (1 - e) - dn;
+      const fp = 1 - k * e;
+      s -= f / (fp > 0.05 ? fp : 0.05);
+      if (s < 0) s = 0;
+    }
+    this.runT = extra + s * tau;
+    this.runV = vT - (vT - v0) * exp(-s);
   }
 
   /** Turn the body to face a point (render reads `facing`). */

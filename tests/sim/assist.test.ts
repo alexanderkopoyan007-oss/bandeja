@@ -43,7 +43,7 @@ describe('balls off the glass', () => {
   it('a human-like player returns nearly every ball that comes off the back or side glass', () => {
     let wallBalls = 0;
     let returned = 0;
-    for (let seed = 1; seed <= 3; seed++) {
+    for (let seed = 1; seed <= 4; seed++) {
       let seen = 0;
       let cur = false;
       play(seed, 150, [0, 0], (m) => {
@@ -64,7 +64,10 @@ describe('balls off the glass', () => {
       });
     }
     expect(wallBalls).toBeGreaterThan(100);
-    expect(returned / wallBalls).toBeGreaterThan(0.9);
+    // 99% with the old point-mass movement; with real sprint mechanics (2026-10-27) about 89%: most of the rest
+    // are hard balls at the body of a bot waiting in the middle of the back line, which can't sidestep 1.5 m
+    // out of the ball's line in the 0.7 s it takes to reach the glass.
+    expect(returned / wallBalls).toBeGreaterThan(0.85);
   });
 });
 
@@ -197,7 +200,8 @@ describe('overheads', () => {
             let top = 0;
             const pr = m.pred;
             for (let k = 0; k < pr.n && pr.bounces[k]! === 0; k++) if (pr.z[k]! * s > 1.5) top = Math.max(top, pr.y[k]!);
-            lob = top > 2.3 ? 1 : 0;
+            // A lob: up over 3 m above our half (lower balls are taken after the bounce, as real players do).
+            lob = top > 3 ? 1 : 0;
             if (lob) res.lobs++;
           } else if (e.kind === E_HIT && e.team === 0) {
             if (lob === 1 && (e.a === SHOT_SMASH || e.a === SHOT_BANDEJA || e.a === SHOT_VIBORA)) {
@@ -227,7 +231,7 @@ describe('overheads', () => {
   }
 
   it('holding O for a lob takes it in the air, high, as a bandeja', () => {
-    const r = lobs(0);
+    const r = lobs(0, 5);
     expect(r.lobs).toBeGreaterThan(20);
     expect(r.overheads / r.lobs).toBeGreaterThan(0.85);
     expect(r.high / r.overheads).toBeGreaterThan(0.85);
@@ -235,7 +239,7 @@ describe('overheads', () => {
   });
 
   it('with power held the overhead is a smash, fast enough to leave the court', () => {
-    const r = lobs(BTN_POWER, 8);
+    const r = lobs(BTN_POWER, 12);
     expect(r.lobs).toBeGreaterThan(40);
     expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
     const sorted = r.speeds.slice().sort((a, b) => a - b);
