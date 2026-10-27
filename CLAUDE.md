@@ -59,6 +59,8 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
 ## Milestones
 - [x] **M0** Plan, scaffold, CLAUDE.md, tests, deploy to GitHub Pages (2026-10-27)
 - [ ] **M1** Feel slice: grey-box court, full ball + wall physics, 1 player vs simple AI, timing-based hitting, serve, scoring
+  - 2026-10-27: first playable deployed. Measured: medium-4x laptop proxy p99 6.9 ms (holds 120 Hz); 4K (2x ratio) averages 271 fps but shows queue stalls with the frame limit off (needs GPU timestamps, M4). Waiting on the owner's feel playtest before M2.
+  - Not in M1 yet: receiver's choice of side on a deciding point is fixed to the right for humans; ball lodged in mesh / on top of a wall; out-of-court play (stretch); sound (M7).
 - [ ] **M2** Animation: humanoid, locomotion, core shots, contact time-warp, IK
 - [ ] **M3** Doubles, partner/opponent AI, full rules, padel-specific shots
 - [ ] **M4** Graphics: first arenas, lighting, post, quality presets, perf tuning
