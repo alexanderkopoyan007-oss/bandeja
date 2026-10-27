@@ -19,7 +19,8 @@ const CSS = `
   --bad: #ff5a4f; --ball: #ffd84a; }
 #hud .bug { position: absolute; left: 16px; top: 16px; background: rgba(10,12,16,.82); border-radius: 6px; overflow: hidden;
   font: 600 14px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .02em; box-shadow: 0 2px 12px rgba(0,0,0,.35); }
-#hud .row { display: grid; grid-template-columns: 14px 92px repeat(var(--sets), 26px) 34px 74px; align-items: center; height: 30px; }
+#hud .row { display: grid; grid-template-columns: 14px var(--name, 112px) repeat(var(--sets), 26px) 34px 74px; align-items: center; height: 30px; }
+#hud .row .name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #hud .row + .row { border-top: 1px solid rgba(255,255,255,.08); }
 #hud .row span { text-align: center; color: #cfd6dc; }
 #hud .row .name { text-align: left; color: #fff; padding-left: 4px; }
@@ -156,6 +157,8 @@ export class Hud {
     this.cue = new TimingCue(root);
     const bug = el('div', 'bug');
     bug.style.setProperty('--sets', String(sets));
+    // Doubles rows name two players.
+    if (names[0].includes('·') || names[1].includes('·')) bug.style.setProperty('--name', '170px');
     for (let t = 0; t < 2; t++) {
       const row = el('div', 'row');
       const cells: HTMLElement[] = [el('span', 'dot'), el('span', 'name')];
@@ -291,6 +294,11 @@ export class Hud {
     if (human >= 0 && sim.phase === PH_SETUP && sim.score.serverPlayer() === human && now > this.callUntil) {
       this.showCall('Your serve', keys('[A]/[D] aims · press a shot key to drop · release to hit'), '#ffd84a', now, 0.05);
     }
+  }
+
+  /** A neutral banner (the line-up at the start of a match). */
+  announce(title: string, sub: string, now: number, dur: number): void {
+    this.showCall(title, sub, '#ffffff', now, dur);
   }
 
   private showCall(title: string, sub: string, accent: string, now: number, dur: number, big = false): void {

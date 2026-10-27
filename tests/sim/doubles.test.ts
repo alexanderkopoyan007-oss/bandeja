@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { MatchSim, E_POINT, E_HIT, E_TOSS, E_FAULT, E_LET, PH_SETUP, PH_RALLY } from '../../src/sim/match.ts';
 import { InputFrame, BTN_DRIVE } from '../../src/sim/input.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
-import { SHOT_SERVE } from '../../src/sim/contact/shots.ts';
+import { SHOT_SERVE, SHOT_KEYS } from '../../src/sim/contact/shots.ts';
 import { WHY_HIT_BODY_OPP, WHY_HIT_BODY_OWN } from '../../src/sim/rules/rally.ts';
 import { MODE_GOLDEN, DEFAULT_FORMAT } from '../../src/sim/rules/score.ts';
 
@@ -164,5 +164,35 @@ describe('deciding point', () => {
       expect(m.score.isDecidingPoint()).toBe(true);
       expect(m.score.receiverPlayer()).toBe(human);
     }
+  });
+});
+
+describe('AI playing styles', () => {
+  function shots(style: string): Record<string, number> {
+    const m = new MatchSim({ seed: 7, doubles: true, human: [false, false, false, false], aiStyle: [style, style, style, style] });
+    const out: Record<string, number> = { all: 0 };
+    let seen = 0;
+    for (let i = 0; i < 120 * 400; i++) {
+      m.step(NONE);
+      while (seen < m.eventSeq) {
+        const e = m.events[seen % m.events.length]!;
+        seen++;
+        if (e.kind !== E_HIT) continue;
+        out.all!++;
+        out[SHOT_KEYS[e.a]!] = (out[SHOT_KEYS[e.a]!] ?? 0) + 1;
+      }
+    }
+    return out;
+  }
+
+  it('El Muro lobs far more than Martillo; La Serpiente turns more overheads into víboras', () => {
+    const muro = shots('muro');
+    const martillo = shots('martillo');
+    const serpiente = shots('serpiente');
+    const reloj = shots('reloj');
+    const share = (s: Record<string, number>, k: string) => (s[k] ?? 0) / s.all!;
+    expect(share(muro, 'lob')).toBeGreaterThan(1.5 * share(martillo, 'lob'));
+    const vib = (s: Record<string, number>) => (s.vibora ?? 0) / ((s.vibora ?? 0) + (s.bandeja ?? 0) + (s.smash ?? 0));
+    expect(vib(serpiente)).toBeGreaterThan(1.4 * vib(reloj));
   });
 });

@@ -19,6 +19,7 @@ import { findWindows, makeWindows, type ContactWindow } from './contact/windows.
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { formationSpot, type Spot } from './player/formation.ts';
+import { styleOf } from './ai/styles.ts';
 import { SimpleAi } from './ai/simpleAi.ts';
 import { makeWorld, type WorldOptions } from './setup.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
@@ -78,6 +79,8 @@ export interface MatchConfig {
   human: boolean[];
   /** AI skill 0..1 per team. */
   aiLevel?: [number, number];
+  /** AI playing style per player (keys of data/ai.json); missing entries play the neutral default. */
+  aiStyle?: string[];
   /** Widens timing windows (accessibility). */
   timingScale?: number;
   /** Positioning assist strength 0..1 for human players. */
@@ -180,7 +183,7 @@ export class MatchSim {
     this.prevPlayers = [];
     for (let i = 0; i < n; i++) {
       this.players.push(new Player(i, DEFAULT_TUNING));
-      this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!));
+      this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, styleOf(cfg.aiStyle?.[i])));
       this.aiFrames.push(new InputFrame());
       this.stand.push(makeStandPlan());
       this.claim.push(makeStandPlan());

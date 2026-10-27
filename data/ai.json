@@ -1,0 +1,7 @@
+{
+  "//": "AI playing styles (nicknames, never real players). short is the scoreboard name in doubles; level is added to the match's AI level; the rest scale the AI's choices: net (how readily its pair takes the net), lob, drop, smash (smash rather than bandeja), vibora (víbora rather than bandeja), margin (how far it keeps from lines and walls; lower is riskier). The sim's default is the neutral 'reloj'; the game deals styles from the seed.",
+  "reloj":     { "name": "El Relojero", "short": "Relojero",  "level": 0.0,   "net": 1.0, "lob": 1.0, "drop": 1.0, "smash": 1.0, "vibora": 1.0, "margin": 1.0 },
+  "muro":      { "name": "El Muro",      "short": "Muro",     "level": 0.08,  "net": 0.6, "lob": 1.6, "drop": 0.5, "smash": 0.5, "vibora": 0.6, "margin": 1.2 },
+  "martillo":  { "name": "Martillo",     "short": "Martillo", "level": -0.04, "net": 1.6, "lob": 0.6, "drop": 0.7, "smash": 1.8, "vibora": 0.7, "margin": 0.85 },
+  "serpiente": { "name": "La Serpiente", "short": "Serpiente", "level": 0.0,   "net": 1.2, "lob": 0.9, "drop": 1.6, "smash": 0.5, "vibora": 2.6, "margin": 0.9 }
+}

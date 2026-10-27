@@ -10,6 +10,7 @@ import { DT } from '../core/constants.ts';
 import { findWindows, makeWindows } from '../contact/windows.ts';
 import { makeStandPlan, planStand } from '../player/positioning.ts';
 import { formationSpot, type Spot } from '../player/formation.ts';
+import { styleOf, type AiStyle } from './styles.ts';
 import { SW_IDLE, SW_CHARGE, type Player } from '../player/player.ts';
 import { SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_BANDEJA } from '../contact/shots.ts';
 
@@ -48,10 +49,13 @@ export class SimpleAi {
   private readonly st = makeStandPlan();
   private readonly spot: Spot = { x: 0, z: 0 };
 
-  constructor(index: number, level: number) {
+  readonly style: AiStyle;
+
+  constructor(index: number, level: number, style: AiStyle = styleOf(undefined)) {
     this.index = index;
     this.team = index & 1;
-    this.level = clamp(level, 0, 1);
+    this.style = style;
+    this.level = clamp(level + style.level, 0, 1);
   }
 
   reset(): void {
@@ -326,9 +330,10 @@ export class SimpleAi {
   private chooseOverhead(m: MatchSim, height: number, depth: number): void {
     const r = m.aiRng.next();
     this.shot = SHOT_BANDEJA;
-    this.smash = (depth < 6 && height > 2.2 && r < 0.3 + 0.45 * this.level) || (depth < 4.5 && r < 0.8);
+    const st = this.style;
+    this.smash = (depth < 6 && height > 2.2 && r < (0.3 + 0.45 * this.level) * st.smash) || (depth < 4.5 && r < min(0.95, 0.8 * st.smash));
     // Not a smash: the better players turn some into víboras (into the side glass, more pace than a bandeja).
-    this.vibora = !this.smash && depth < 7 && m.aiRng.next() < 0.15 + 0.35 * this.level;
+    this.vibora = !this.smash && depth < 7 && m.aiRng.next() < (0.15 + 0.35 * this.level) * st.vibora;
     if (m.doubles) m.intentUp[this.team] = 1; // keep the net
     this.chooseTarget(m);
   }
@@ -349,19 +354,19 @@ export class SimpleAi {
       this.chooseTarget(m);
       return;
     }
+    const st = this.style;
+    const lob = min(0.9, 0.25 * st.lob);
     if (height >= 1.85 && depth < 7) {
       this.shot = r < 0.65 ? SHOT_DRIVE : SHOT_SLICE; // becomes smash / bandeja
     } else if (volley) {
-      this.shot = abs(opp.pos.z) > 8 && r < 0.15 ? SHOT_DROP : r < 0.6 ? SHOT_SLICE : SHOT_DRIVE;
+      this.shot = abs(opp.pos.z) > 8 && r < 0.15 * st.drop ? SHOT_DROP : r < 0.6 ? SHOT_SLICE : SHOT_DRIVE;
     } else if (depth > 8) {
-      this.shot = r < 0.25 ? SHOT_LOB : r < 0.6 ? SHOT_DRIVE : r < 0.85 ? SHOT_SLICE : SHOT_TOPSPIN;
+      this.shot = r < lob ? SHOT_LOB : r < lob + 0.35 ? SHOT_DRIVE : r < lob + 0.6 ? SHOT_SLICE : SHOT_TOPSPIN;
     } else {
-      this.shot = r < 0.4 ? SHOT_DRIVE : r < 0.7 ? SHOT_TOPSPIN : r < 0.92 ? SHOT_SLICE : SHOT_LOB;
+      this.shot = r < 0.4 ? SHOT_DRIVE : r < 0.7 ? SHOT_TOPSPIN : r < 1 - 0.08 * st.lob ? SHOT_SLICE : SHOT_LOB;
     }
-    // Opponents at the net: lob them (in doubles, only when both are up and we are not at the net ourselves).
-    if (m.doubles) {
-      if (this.opponentsUp(m) === 2 && depth > 5 && height < 1.85 && r < 0.4) this.shot = SHOT_LOB;
-    } else if (abs(opp.pos.z) < 4 && r < 0.35) this.shot = SHOT_LOB;
+    // Opponent at the net: lob them.
+    if (abs(opp.pos.z) < 4 && r < min(0.9, 0.35 * st.lob)) this.shot = SHOT_LOB;
     this.chooseTarget(m);
   }
 
@@ -371,6 +376,7 @@ export class SimpleAi {
    */
   private chooseDoublesShot(m: MatchSim, r: number, height: number, volley: boolean, depth: number): void {
     const up = this.opponentsUp(m);
+    const st = this.style;
     // Second draw for the pair's move after the shot.
     const r2 = m.aiRng.next();
     let go = 0;
@@ -378,17 +384,20 @@ export class SimpleAi {
       this.shot = r < 0.6 ? SHOT_DRIVE : SHOT_SLICE; // a high ball in front: becomes a smash / bandeja
       go = 1;
     } else if (volley || depth < 5) {
-      this.shot = up === 0 && r < 0.12 ? SHOT_DROP : r < 0.65 ? SHOT_SLICE : SHOT_DRIVE;
+      this.shot = up === 0 && r < 0.12 * st.drop ? SHOT_DROP : r < 0.65 ? SHOT_SLICE : SHOT_DRIVE;
       go = 1;
     } else if (up === 2) {
       // Lob them (and take the net if it gets past) or keep it low; from the back that is a defensive shot.
-      this.shot = r < 0.5 ? SHOT_LOB : r < 0.8 ? SHOT_SLICE : SHOT_DRIVE;
+      const lob = min(0.9, 0.5 * st.lob);
+      this.shot = r < lob ? SHOT_LOB : r < lob + 0.6 * (1 - lob) ? SHOT_SLICE : SHOT_DRIVE;
     } else if (up === 1) {
-      this.shot = r < 0.3 ? SHOT_LOB : r < 0.65 ? SHOT_DRIVE : SHOT_SLICE;
+      const lob = min(0.9, 0.3 * st.lob);
+      this.shot = r < lob ? SHOT_LOB : r < lob + 0.5 * (1 - lob) ? SHOT_DRIVE : SHOT_SLICE;
     } else {
       // Both back: work the ball through the middle; a short ball is the chance to come in.
-      this.shot = r < 0.05 ? SHOT_LOB : r < 0.5 ? SHOT_DRIVE : r < 0.75 ? SHOT_SLICE : SHOT_TOPSPIN;
-      go = depth < 7.4 && r2 < 0.45 ? 1 : r2 < 0.12 ? 1 : 0;
+      const lob = min(0.5, 0.05 * st.lob);
+      this.shot = r < lob ? SHOT_LOB : r < 0.5 ? SHOT_DRIVE : r < 0.75 ? SHOT_SLICE : SHOT_TOPSPIN;
+      go = depth < 7.4 && r2 < 0.45 * st.net ? 1 : r2 < 0.12 * st.net ? 1 : 0;
     }
     m.intentUp[this.team] = go;
   }
@@ -422,7 +431,7 @@ export class SimpleAi {
     const c = m.world.court;
     const s = m.side(this.team);
     const opp = m.players[1 - this.team]!;
-    const margin = 1.3 - 0.5 * this.level;
+    const margin = (1.3 - 0.5 * this.level) * this.style.margin;
     const side = opp.pos.x > 0 ? -1 : 1;
     const spread = c.halfW - margin;
     this.targetX = clamp(side * spread * (0.35 + 0.65 * rng.next()) + rng.normal() * 0.6, -spread, spread);
@@ -442,7 +451,7 @@ export class SimpleAi {
     const o = 1 - this.team;
     const a = m.players[o]!;
     const b = m.players[o + 2]!;
-    const margin = 1.2 - 0.5 * this.level;
+    const margin = (1.2 - 0.5 * this.level) * this.style.margin;
     const spread = c.halfW - margin;
     const up = this.opponentsUp(m);
     let x: number;

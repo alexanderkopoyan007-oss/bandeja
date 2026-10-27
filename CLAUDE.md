@@ -52,7 +52,7 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
 - `bash tools/one-chrome.sh node tools/shot.mjs <url> <png> [waitMs] [w] [h]`: real-Chrome screenshot (the Browser pane shows WebGPU canvases as black).
 - `npm run alloc`: GC budget check for the sim. `npm run perf`: frame-time report (needs `npm run build`).
 - `bash tools/one-chrome.sh node tools/bot-play.mjs [url] [secs]`: plays as the human (player 0) with real keyboard events timed in the page, releasing on `focusIdeal` (the ring's moment); in doubles it plays only the balls given to it. Checks that grades use exact key timestamps (p50 error ≈ 8 ms while frames are 33 ms).
-- URL options: `?mode=singles` (default doubles) `&autoplay=1 &seed= &court=standard|panoramic|singles-narrow &floor=turf|hard|carpet|clay &scoring=star|golden|advantage &ai=0..1 &assist=0..1 (default 0.45; 0 = keys always move, no aim target) &timing=1..2 (window scale, default 1.5; 1 = strict) &autotime=1 (a held swing fires itself, graded Good) &pro=1 &aim=mouse &alt= &temp= &windx= &windz= &backend=webgl &dpr=`.
+- URL options: `?mode=singles` (default doubles) `&styles=muro,martillo,serpiente,reloj` (AI style by player number) `&autoplay=1 &seed= &court=standard|panoramic|singles-narrow &floor=turf|hard|carpet|clay &scoring=star|golden|advantage &ai=0..1 &assist=0..1 (default 0.45; 0 = keys always move, no aim target) &timing=1..2 (window scale, default 1.5; 1 = strict) &autotime=1 (a held swing fires itself, graded Good) &pro=1 &aim=mouse &alt= &temp= &windx= &windz= &backend=webgl &dpr=`.
 
 ## Assets and licensing
 - Only CC0 or clearly free licences (Poly Haven, ambientCG, MakeHuman/MPFB output, CC0 Freesound) or our own generated work. Every asset goes in `CREDITS.md` with source and licence.
@@ -88,7 +88,8 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
     - AI pairs (`SimpleAi`): parallel formation (net 3.1 m / back 7.5 m, lanes), the striker sets the pair's `intentUp`, overheads and smashes picked by how many opponents are up, reflex blocks for a ball coming at the body (aimed before `bodyHitIdx`, late releases capped). Lab, 4 seeds × 300 s: median 7 shots a point, 46% of the time at the net, about 5% of points end on a player's body (was 30%).
     - Víbora: overhead key + Shift (`SHOT_VIBORA`, `sideRpm` in `data/shots.json`; `addSidespin` turns the launch so the curve still lands on target; untouched aim goes cross-court into the side glass). AI pairs play some.
     - Positioning assist in doubles: not your ball and no movement keys → you drift into the pair's formation (`player/formation.ts`, shared with the AI).
-    - Next in M3: AI playing styles, chiquita and the other padel shots, partner calls.
+    - AI playing styles (`data/ai.json`, `ai/styles.ts`): El Relojero (neutral, the sim's default), El Muro (lobs, stays back, steady), Martillo (net, smashes, riskier), La Serpiente (víboras, drops). They scale existing choices, so the neutral style reproduces the old AI exactly. The game deals them from the seed (`?styles=` overrides, by player number); the scoreboard and an opening banner name them.
+    - Next in M3: chiquita and the other padel shots, partner calls, AI error mix (about two thirds of AI-vs-AI points end in the net).
 - [ ] **M4** Graphics: first arenas, lighting, post, quality presets, perf tuning
 - [ ] **M5** Character creator, ridiculous mode, rackets, cosmetics, roster
 - [ ] **M6** Career, tournament, academy, challenges, local multiplayer

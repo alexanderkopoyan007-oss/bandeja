@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { Game } from './game/game.ts';
 import { MODE_ADVANTAGE, MODE_GOLDEN, MODE_STAR, FINAL_NORMAL } from './sim/rules/score.ts';
 import type { FloorName } from './sim/setup.ts';
+import { Rng } from './sim/core/rng.ts';
+import { STYLE_KEYS } from './sim/ai/styles.ts';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number): number => {
@@ -14,6 +16,11 @@ async function start(): Promise<void> {
   // Doubles is padel; ?mode=singles plays one against one (not a FIP format).
   const doubles = params.get('mode') !== 'singles';
   const n = doubles ? 4 : 2;
+  const seed = num('seed', (Math.random() * 2 ** 31) | 0);
+  // AI playing styles: ?styles=muro,martillo,... by player number, else dealt from the seed.
+  const deal = new Rng(seed ^ 0x2545f491);
+  const styles = params.get('styles')?.split(',')
+    ?? Array.from({ length: n }, () => STYLE_KEYS[Math.floor(deal.next() * STYLE_KEYS.length)]!);
   const mode = params.get('scoring');
   const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL: params.get('backend') === 'webgl' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, num('dpr', 2)));
@@ -26,7 +33,7 @@ async function start(): Promise<void> {
 
   const game = new Game({
     match: {
-      seed: num('seed', (Math.random() * 2 ** 31) | 0),
+      seed,
       world: {
         court: params.get('court') ?? 'standard',
         floor: (params.get('floor') as FloorName | null) ?? 'turf',
@@ -41,6 +48,7 @@ async function start(): Promise<void> {
       doubles,
       human: Array.from({ length: n }, (_, i) => !autoplay && i === 0),
       aiLevel: [num('ai', 0.55), num('ai', 0.55)],
+      aiStyle: styles,
       // Defaults are forgiving; ?timing=1 is the strict "pro" window, ?autotime=1 fires a held swing for you.
       timingScale: num('timing', 1.5),
       assist: num('assist', 0.45),

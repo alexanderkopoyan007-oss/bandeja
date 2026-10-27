@@ -99,10 +99,13 @@ export class Game {
 
     this.kb = new KeyboardInput(window);
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
-    const pair = this.sim.doubles;
-    const mine = opts.autoplay ? (pair ? 'AI · AI' : 'AI') : pair ? 'YOU · AI' : 'YOU';
-    const theirs = pair ? 'AI · AI' : 'AI';
-    const names: [string, string] = opts.autoplay || this.sim.players[opts.human]!.team === 0 ? [mine, theirs] : [theirs, mine];
+    // Score rows name the players: YOU, and each AI by its playing style.
+    const who = (i: number, short: boolean): string => {
+      const st = this.sim.ai[i]?.style;
+      return !opts.autoplay && i === opts.human ? 'YOU' : st ? (short ? st.short : st.name) : 'AI';
+    };
+    const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
+    const names: [string, string] = [row(0), row(1)];
     this.hud = new Hud(hudRoot, names, sets);
     this.hud.pro = opts.pro;
     this.hud.setTiming(opts.match.timingScale ?? 1);
@@ -147,6 +150,14 @@ export class Game {
   }
 
   start(): void {
+    if (!this.opts.autoplay) {
+      // Who you are playing (and with).
+      const name = (i: number): string => this.sim.ai[i]?.style.name ?? 'AI';
+      const sub = this.sim.doubles ? `Your partner: ${name(this.opts.human ^ 2)}` : '';
+      const them = 1 - this.team;
+      const title = this.sim.doubles ? `vs ${name(them)} & ${name(them + 2)}` : `vs ${name(them)}`;
+      this.hud.announce(title, sub, performance.now() / 1000, 3);
+    }
     this.epoch = performance.now() - this.sim.time * 1000;
     this.renderer.setAnimationLoop(() => this.tick());
   }
