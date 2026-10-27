@@ -63,7 +63,8 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
 - No real players' names or likenesses. No real-money anything.
 
 ## Working rules
-- Solo work, no agents or workflows unless the owner asks (he watches token spend closely).
+- Agents: the owner watches token spend. For the 9-phase realism brief (2026-10-27) the budget is 1-2 agents while working and 3-4 at most for the end-of-phase verify and fresh-eyes reviews. Ultracode doesn't raise it.
+- The 9-phase brief runs on branch `realism-brief`: decisions in `DECISIONS.md`, things that can't be verified in `OPEN_QUESTIONS.md`, feel tuning in `FEEL.md`. Each verified phase is merged to main (that is what deploys to Pages).
 - End of every milestone: `npm test`, `npm run typecheck`, `npm run build`, `npm run alloc`, `npm run perf`, look at screenshots, fix regressions, commit, push, check the Pages deploy, then a short summary (works / doesn't / what I need from him).
 - Commits use the GitHub noreply identity configured in this repo, never his personal email.
 
