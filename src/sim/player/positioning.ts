@@ -3,7 +3,7 @@
 // which contact you are going for. Pure sim code, allocation-free.
 import type { Prediction } from '../ball/predict.ts';
 import type { Player } from './player.ts';
-import { heightCost, nearImpact, overheadCost, volleyCost } from '../contact/windows.ts';
+import { heightCost, nearImpact, overheadCost, volleyCost, OH_ANY } from '../contact/windows.ts';
 import { abs, clamp, max, sqrt } from '../core/smath.ts';
 
 export interface StandPlan {
@@ -41,6 +41,13 @@ const BODY_CLEAR = 0.2;
 /** Depth band in front of the back glass where hitting the ball before it reaches the glass is cramped. */
 const GLASS_BAND = 1.7;
 /**
+ * A ground stroke's plan cost per unit of the ball's pace and time pressure there (ai/pressure.ts's first two terms,
+ * worked out for each candidate contact): players take the easier ball, so a hard ball is let through to the glass
+ * when its rebound can be played. Without it the AI half-volleyed 150 km/h smashes 0.06-0.2 s after their bounce from
+ * 8 m (the plan cost only height and lateness), where players get back and let them come off the glass.
+ */
+const PRESSURE_COST = 0.3;
+/**
  * Volleys are met with a reach or a step, not from set feet: the ball anywhere from VOLLEY_REACH_MIN to
  * VOLLEY_REACH_MAX to the side of the body is in reach (the arm and racket reach about 1.35 m; the comfortable punch
  * is nearer), met the tuning's volleyFront in front of the body.
@@ -58,11 +65,11 @@ const VOLLEY_REACH_MAX = 1.15;
  * standing under it with the ball just in front and to the racket side.
  * `volleyKey`: the player is holding the volley key: only contacts before the bounce, at volley height, met as
  * early as the run allows (cutting the ball off closes the angles). If none can be reached in time the caller
- * plans again without it.
+ * plans again without it. `ohKind` (windows.ts OH_*): the overhead already picked, met at its own height.
  */
 export function planStand(
   pr: Prediction, p: Player, side: number, now: number, mustBounce: boolean, out: StandPlan, keep: number, only: boolean,
-  overhead: boolean, volleyKey = false,
+  overhead: boolean, volleyKey = false, ohKind = OH_ANY,
 ): boolean {
   const t = p.tune;
   const backZ = side > 0 ? p.maxZ : -p.minZ; // depth of the back limit (just in front of the glass)
@@ -89,6 +96,8 @@ export function planStand(
   const latV = overhead ? lateral : sqrt(max(0, t.volleyReach * t.volleyReach - vFront * vFront));
   const behindV = overhead ? behind : vFront;
   const yMax = overhead ? t.contactMaxHeight - 0.05 : volleyKey ? t.overheadHeight + 0.15 : 2.6;
+  const riseOff = t.riseMaxOffWall;
+  const strikeT = pr.strikeT;
   for (let i = 0; i < pr.n; i++) {
     const ti = pr.t[i]!;
     const kept = keep >= 0 && abs(ti - keep) <= 0.15;
@@ -100,6 +109,8 @@ export function planStand(
     if (z * side < 0.3 || b > 1 || (mustBounce && b === 0) || y < 0.3 || y > yMax) continue;
     if (volleyKey && b !== 0) continue;
     if (nearImpact(pr, i)) continue;
+    // Off a wall, a ball still climbing past the shoulders is out of reach until it comes down.
+    if (y > riseOff && pr.walls[i]! > 0 && pr.vy[i]! > 0) continue;
     const lat = b === 0 ? latV : lateral;
     const fhX = x - side * p.handed * lat;
     const bhX = x + side * p.handed * lat;
@@ -138,7 +149,7 @@ export function planStand(
     const slack = ti - now - need;
     const afterWall = pr.walls[i]! > 0 && b === 1;
     if (slack >= 0) {
-      let cost = overhead ? overheadCost(y, t) + 0.03 * (ti - now)
+      let cost = overhead ? overheadCost(y, t, ohKind) + 0.03 * (ti - now)
         : volleyKey ? volleyCost(y) + 0.25 * (ti - now)
         : heightCost(y, t.overheadHeight) + 0.03 * (ti - now);
       if (kept) cost -= 0.35;
@@ -148,6 +159,13 @@ export function planStand(
         if (afterWall) cost -= 0.1;
         // Volleying from the back of the court is rarely the right read.
         if (b === 0 && abs(p.pos.z) > 6.5) cost += 0.4;
+        // The easier ball: pace 14 m/s none, 26 m/s one unit; time since the strike 0.9 s none, 0.45 s one unit.
+        if (b === 1) {
+          const vx = pr.vx[i]!, vy = pr.vy[i]!, vz = pr.vz[i]!;
+          const pace = (sqrt(vx * vx + vy * vy + vz * vz) - 14) / 12;
+          const late = (0.9 - (ti - strikeT)) / 0.45;
+          cost += PRESSURE_COST * (clamp(pace, 0, 3) + clamp(late, 0, 2));
+        }
       }
       if (cost < bestCost && clearOfBall(pr, now, i, sx, sz, t.height, t.bodyRadius)) {
         bestCost = cost;

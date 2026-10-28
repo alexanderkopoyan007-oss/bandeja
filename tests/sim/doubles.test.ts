@@ -1,9 +1,9 @@
 // Doubles: four players, the FIP serve rotation (6.9, 8.2-8.3), who may return the serve (8.1), and AI pairs that
 // actually play the game (both partners hit, few balls in the body).
 import { describe, expect, it } from 'vitest';
-import { MatchSim, E_POINT, E_HIT, E_TOSS, E_FAULT, E_LET, PH_SETUP, PH_RALLY } from '../../src/sim/match.ts';
+import { MatchSim, E_POINT, E_HIT, E_TOSS, E_FAULT, E_LET, E_CALL, CALL_MINE, CALL_YOURS, CALL_SWITCH, PH_SETUP, PH_RALLY } from '../../src/sim/match.ts';
 import { InputFrame, BTN_DRIVE } from '../../src/sim/input.ts';
-import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
+import { SW_IDLE, SW_CHARGE, type Player } from '../../src/sim/player/player.ts';
 import { SHOT_SERVE, SHOT_KEYS } from '../../src/sim/contact/shots.ts';
 import { WHY_HIT_BODY_OPP, WHY_HIT_BODY_OWN } from '../../src/sim/rules/rally.ts';
 import { MODE_GOLDEN, DEFAULT_FORMAT } from '../../src/sim/rules/score.ts';
@@ -103,7 +103,7 @@ describe('a human with an AI partner', () => {
     const m = new MatchSim({ seed, doubles: true, human: [true, false, false, false], autoTiming: true, assist: 0.45, timingScale: 1.5 });
     const f = new InputFrame();
     const frames = [f, null, null, null];
-    const out = { hits: [0, 0, 0, 0], serves: 0, given: 0, returned: 0, points: 0 };
+    const out = { hits: [0, 0, 0, 0], serves: 0, given: 0, returned: 0, points: 0, yours: 0, humanCalls: 0 };
     let holding = false;
     let seen = 0;
     let pending = false;
@@ -131,6 +131,11 @@ describe('a human with an AI partner', () => {
           waiting = false;
           pending = e.team === 1;
         }
+        // A faulted serve is not a ball to return either (it was counted against the human: seven of the fourteen
+        // 'missed' balls in 900 s were out-of-box, net and glass-first faults).
+        if (e.kind === E_FAULT && waiting) { out.given--; waiting = false; }
+        if (e.kind === E_CALL && e.player === 0) out.humanCalls++;
+        if (e.kind === E_CALL && e.player === 2 && e.a === CALL_YOURS) out.yours++;
         if (e.kind === E_POINT) {
           // The opponents' shot ended in the net or out before it reached us: not a ball we had to play.
           if (waiting && e.team === 0) out.given--;
@@ -151,7 +156,68 @@ describe('a human with an AI partner', () => {
     expect(r.hits[2]).toBeGreaterThan(20);
     expect(r.given).toBeGreaterThan(20);
     expect(r.returned / r.given).toBeGreaterThan(0.9);
+    // The AI partner tells the human which contested balls are theirs; the human never 'speaks'.
+    expect(r.yours).toBeGreaterThan(0);
+    expect(r.humanCalls).toBe(0);
   });
+});
+
+describe('pair teamwork', () => {
+  // Lobs to one side over a net pair, taken by the partner on the diagonal: does the lobbed player cross over? And
+  // the calls a pair makes.
+  function teamwork(seeds: number, secs: number) {
+    let mateTakes = 0, switched = 0, splitTicks = 0, ticks = 0;
+    const calls = [0, 0, 0];
+    for (let sd = 1; sd <= seeds; sd++) {
+      const m = new MatchSim({ seed: sd * 7919, doubles: true, human: [false, false, false, false], aiLevel: [1, 1] });
+      let seen = 0;
+      let lob: { team: number; over: number; lane: number; taken: boolean } | null = null;
+      const laneOf = (team: number) => Math.sign((m.players[team]!.pos.x - m.players[team + 2]!.pos.x) * m.side(team));
+      for (let k = 0; k < 120 * secs; k++) {
+        m.step(NONE);
+        if (m.phase === PH_RALLY && m.rally.hitter >= 0 && (k & 7) === 0) {
+          const t = m.rally.hitter;
+          ticks++;
+          if ((Math.abs(m.players[t]!.pos.z) < 5) !== (Math.abs(m.players[t + 2]!.pos.z) < 5)) splitTicks++;
+        }
+        while (seen < m.eventSeq) {
+          const e = m.events[seen++ % m.events.length]!;
+          if (e.kind === E_CALL) calls[e.a]!++;
+          if (e.kind === E_POINT) lob = null;
+          if (e.kind !== E_HIT) continue;
+          if (lob && e.team === lob.team && !lob.taken) {
+            lob.taken = true;
+            if (e.player === lob.over) lob = null; else mateTakes++;
+          } else if (lob && lob.taken && e.team !== lob.team) {
+            if (laneOf(lob.team) !== lob.lane) switched++;
+            lob = null;
+          }
+          if (!lob && SHOT_KEYS[e.a] === 'lob') {
+            const team: number = 1 - e.team;
+            const a: Player = m.players[team]!, b: Player = m.players[team + 2]!;
+            let lx = 0;
+            for (let i = 0; i < m.pred.n; i++) if (m.pred.bounces[i]! > 0) { lx = m.pred.x[i]!; break; }
+            if (Math.abs(a.pos.z) < 5 && Math.abs(b.pos.z) < 5 && Math.abs(lx) > 1.3) {
+              lob = { team, over: (a.pos.x - b.pos.x) * lx > 0 ? team : team + 2, lane: laneOf(team), taken: false };
+            }
+          }
+        }
+      }
+    }
+    return { mateTakes, switched, split: splitTicks / ticks, calls };
+  }
+
+  it('partners move as a unit, switch sides when the partner takes a lob over them, and call the ball', () => {
+    // 12 matches: partner-taken lobs to one side are rare (about one a match).
+    const r = teamwork(12, 300);
+    // The pair that just struck is level (both up or both back) most of the time: split 11-12% when measured.
+    expect(r.split).toBeLessThan(0.2);
+    // Before the switch existed: 0 of 29.
+    expect(r.mateTakes).toBeGreaterThan(5);
+    expect(r.switched / r.mateTakes).toBeGreaterThan(0.4);
+    expect(r.calls[CALL_MINE]).toBeGreaterThan(20);
+    expect(r.calls[CALL_SWITCH]).toBeGreaterThan(5);
+  }, 120_000);
 });
 
 describe('deciding point', () => {

@@ -7,9 +7,9 @@
   "drop":    { "name": "Drop shot", "netClear": 0.30, "spinRpm": -1500, "depth": 0.20, "racketMax": 9.6, "impact": 0.14, "errorScale": 1.2, "timing": 1.2 },
   "serve":   { "name": "Serve",     "netClear": 0.40, "spinRpm": -1300, "depth": 0.78, "racketMax": 15.9, "impact": 0.128, "errorScale": 0.8, "timing": 1.10 },
   "smash":   { "name": "Smash",     "netClear": 0.20, "spinRpm": 300,   "depth": 0.50, "racketMax": 29.5, "impact": 0.083, "errorScale": 1.25, "pace": true, "timing": 0.71 },
-  "bandeja": { "name": "Bandeja",   "netClear": 0.45, "spinRpm": -1300, "depth": 0.86, "racketMax": 20.7, "impact": 0.083, "errorScale": 0.9, "timing": 0.84 },
+  "bandeja": { "name": "Bandeja",   "netClear": 1.0, "spinRpm": -1300, "depth": 0.86, "racketMax": 20.7, "impact": 0.083, "errorScale": 0.9, "timing": 0.84 },
   "volley":  { "name": "Volley",    "netClear": 0.25, "spinRpm": -600,  "depth": 0.70, "racketMax": 12.3, "impact": 0.146, "errorScale": 0.9, "timing": 1.35 },
-  "vibora":  { "name": "Víbora",    "netClear": 0.35, "spinRpm": -1500, "sideRpm": 1700, "depth": 0.78, "racketMax": 25.2, "impact": 0.083, "errorScale": 1.05, "timing": 0.76 },
+  "vibora":  { "name": "Víbora",    "netClear": 0.8, "spinRpm": -1500, "sideRpm": 1700, "depth": 0.78, "racketMax": 25.2, "impact": 0.083, "errorScale": 1.05, "timing": 0.76 },
   "chiquita": { "name": "Chiquita", "netClear": 0.32, "spinRpm": 1900,  "depth": 0.33, "racketMax": 13.6, "impact": 0.128, "errorScale": 0.75, "spinFloor": 0.8, "timing": 1.18 },
   "modifiers": {
     "power":     { "netClear": 0.75, "speed": 1.12, "error": 1.45 },
@@ -22,6 +22,8 @@
     "speed": [0.01,  0.04],
     "contactAlong": [0.008,  0.025,  0.015,  0.02], "contactAcross": [0.0025,  0.01,  0.007,  0.01],
     "timingYaw": 2.2, "timingAlong": 0.02, "edgeMin": 0.09, "edgeRand": 0.05,
-    "frameSpeed": 0.55, "frameSpeedRand": 0.2, "frameYaw": 9, "framePitch": [2, 8]
+    "frameSpeed": 0.55, "frameSpeedRand": 0.2, "frameYaw": 9, "framePitch": [2, 8],
+    "motor//": "AI players only (Phase 4): the swing-to-swing spread that is not timing, per unit of the AI's motor value (data/ai-skill.json; 0 for humans, whose own hands supply it). Path and face in degrees, speed a fraction, added to the spreads above. Mostly height and length (net and long errors: pros' errors are 51% net, 28% back wall on the full, 17% side wall, Ramírez Ortega et al. 2025), some direction.",
+    "motor": { "pathYaw": 0.8, "pathPitch": 1.0, "faceOpen": 0.6, "speed": 0.03 }
   }
 }

@@ -15,11 +15,13 @@ import {
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
-import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
+import { findWindows, BEHIND_MAX, makeWindows, OH_ANY, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
-import { formationSpot, type Spot } from './player/formation.ts';
+import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
+import { pressureOf } from './ai/pressure.ts';
+import { smashLanding } from './contact/smashAim.ts';
 import { SimpleAi } from './ai/simpleAi.ts';
 import { makeWorld, makeNetCloth, type WorldOptions } from './setup.ts';
 import type { NetCloth } from './court/netCloth.ts';
@@ -49,6 +51,17 @@ export const E_TOSS = 13;
 export const E_EXIT = 14;
 export const E_ENDS = 15;
 export const E_SWING = 16;
+/** Doubles: a player calls the ball (a: CALL_*). */
+export const E_CALL = 17;
+/** E_CALL's a: the taker's "mine", the partner's "yours", "switch" (the partner takes a lob over us: we cross). */
+export const CALL_MINE = 0;
+export const CALL_YOURS = 1;
+export const CALL_SWITCH = 2;
+/** E_WHIFF's y: the swing missed a ball in reach (timing) / there was no ball to hit (none in reach at the release,
+ * or not legal to play) / the ball was out of reach (too far or too high or low) at the contact. */
+export const WHIFF_TIMING = 0;
+export const WHIFF_NOTHING = 1;
+export const WHIFF_REACH = 2;
 
 export interface MatchEvent {
   seq: number;
@@ -114,7 +127,7 @@ const AIM_SPEED_Z = 9;
 const OVERHEAD_AIM_DEPTH = 0.8;
 /** Untouched víbora target: cross-court, this deep (fraction of the half), into the side glass. */
 const VIBORA_AIM_DEPTH = 0.68;
-/** Untouched smash target: clear the tape by this much on a straight line, but land no shorter than this. */
+/** Untouched smash target: clear the tape by this much at full pace (smashAim.ts), but land no shorter than this. */
 const SMASH_NET_MARGIN = 0.45;
 const SMASH_MIN_DEPTH = 3.2;
 /** Windows are searched from this far back, so a release just after the ideal is still judged against it. */
@@ -124,6 +137,14 @@ const RELEASE_LOOKBACK = 0.3;
 const MIDDLE_MARGIN = 0.8;
 const SWITCH_MARGIN = 1.0;
 const CLAIM_OUT = 20;
+/**
+ * Calls: a ball is called once its taker has held CALL_AFTER (s) past the strike (about when a player has read it:
+ * the 0.14-0.20 s reaction, ai/simpleAi.ts), when the runs are within CALL_MARGIN (m) of each other (a ball either
+ * could play) or the taker crosses to the partner's side (a switch: player.formation.ts SWITCH_X). Clear balls
+ * aren't called, as in a real pair.
+ */
+const CALL_AFTER = 0.25;
+const CALL_MARGIN = 1.5;
 
 export class MatchSim {
   readonly cfg: MatchConfig;
@@ -164,6 +185,18 @@ export class MatchSim {
   /** Doubles: what an AI striker decided its pair does after its shot: 1 go up to the net, 0 stay back, -1 none. */
   readonly intentUp = [-1, -1];
   private readonly takerVersion = [-1, -1];
+  /** Doubles: each player's side of the pair when the point started (+1 right of the partner as they face the net,
+   * -1 left; 0 none): a pair that switched on a lob crosses back when there is time (formation.ts). */
+  readonly homeLane = [0, 0, 0, 0];
+  /** Doubles calls: whether this ball has been called (per team), and the last claim decision's run gap and switch. */
+  private readonly called = [0, 0];
+  private readonly claimGap = new Float64Array(2);
+  /**
+   * Doubles, per team: 1 once this ball has been judged far enough from bouncing (before its bounce) for a
+   * switched pair of AIs to cross back to their own sides; held until the team's next strike, so the crossing
+   * isn't re-judged (and abandoned half-way) once the ball has bounced or come off the glass.
+   */
+  readonly crossBack = [0, 0];
 
   // Previous-tick state for render interpolation.
   readonly prevBall = { x: 0, y: 0, z: 0 };
@@ -178,7 +211,7 @@ export class MatchSim {
   /** Scratch plans for deciding which partner takes the ball. */
   private readonly claim: StandPlan[];
   private readonly req: ShotRequest = {
-    shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, bodyX: 0, bodyZ: 0,
+    shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, motor: 0, bodyX: 0, bodyZ: 0,
   };
   private readonly res: ShotResult = { reachable: true, speed: 0, idealX: 0, idealZ: 0 };
   /** Aim captured at release, per player: relative (-1..1) or absolute. */
@@ -300,6 +333,8 @@ export class MatchSim {
     this.intentUp[1] = -1;
     this.takerVersion[0] = -1;
     this.takerVersion[1] = -1;
+    this.called[0] = 0;
+    this.called[1] = 0;
     // Diagonal service box on the receivers' half.
     this.box.x0 = sideSign > 0 ? -c.halfW : 0;
     this.box.x1 = sideSign > 0 ? 0 : c.halfW;
@@ -477,6 +512,7 @@ export class MatchSim {
     // Caught in the net, or under a pocket of it, the ball can be past the net line without having crossed.
     if (!b.inNet) this.rally.onBallZ(b.sideZ);
     if (recompute && (this.phase === PH_RALLY || this.phase === PH_TOSS)) {
+      this.pred.strikeT = this.lastStrikeTime;
       this.pred.compute(this.world, b, tStart + dt, this.phase === PH_RALLY ? this.rally.bounces : this.tossBounces, 2,
         this.wallsSinceBounce, flags);
     }
@@ -623,6 +659,8 @@ export class MatchSim {
     for (let team = 0; team < 2; team++) {
       if (hitter < 0 || hitter === team) {
         this.taker[team] = -1;
+        if (hitter === team && this.crossBack[team] === 0 && this.rally.bounces === 0 && this.ai[team] && this.ai[team + 2]
+          && bounceIsFar(this)) this.crossBack[team] = 1;
         continue;
       }
       if (this.rally.isServe) {
@@ -659,7 +697,37 @@ export class MatchSim {
       const tHit = kHit >= 0 ? this.pred.t[kHit]! : -1;
       if (tHit >= 0 && (!this.claim[pick]!.valid || this.claim[pick]!.t > tHit - 0.05)) pick = other;
       this.setTaker(team, pick);
+      this.claimGap[team] = ca < CLAIM_OUT && cb < CLAIM_OUT ? abs(ca - cb) : CLAIM_OUT;
     }
+    for (let team = 0; team < 2; team++) this.callBall(team);
+  }
+
+  /** Doubles: a contested ball or a switch is called once, by an AI: the taker ("mine") or the partner ("yours",
+   * "switch"); a human's partner speaks for the pair. */
+  private callBall(team: number): void {
+    const k = this.taker[team]!;
+    if (k < 0 || this.called[team] !== 0 || this.rally.isServe || this.time - this.lastStrikeTime < CALL_AFTER) return;
+    // A switch is the formation's own rule (formation.ts) on the taker's real plan, so the call matches what the
+    // pair does; an AI taker still reading the ball hasn't planned it yet: wait.
+    const plan = this.ai[k] ? this.ai[k]!.standPlan : this.stand[k]!;
+    if (this.ai[k] && !plan.valid) return;
+    const s = this.side(team);
+    const lane = (this.players[k ^ 2]!.pos.x - this.players[k]!.pos.x) * s > 0 ? 1 : -1;
+    const sw = plan.valid && plan.bx * s * lane > SWITCH_X;
+    if (!sw && this.claimGap[team]! >= CALL_MARGIN) return;
+    this.called[team] = 1;
+    const mate = k ^ 2;
+    // The switch is called by the player the ball went over (they cross); "mine" by the taker. A human doesn't
+    // speak: then the AI partner calls "yours" (or the switch).
+    if (sw) this.emitP(E_CALL, this.ai[mate] ? mate : k, CALL_SWITCH);
+    else if (this.ai[k]) this.emitP(E_CALL, k, CALL_MINE);
+    else if (this.ai[mate]) this.emitP(E_CALL, mate, CALL_YOURS);
+  }
+
+  /** An AI beaten by the ball it is charged for lets the swing go unmade (ai/simpleAi.ts: no swing at the air). */
+  standDown(i: number): void {
+    const p = this.players[i]!;
+    if (this.ai[i] && p.swing === SW_CHARGE) p.swing = SW_IDLE;
   }
 
   private setTaker(team: number, i: number): void {
@@ -819,15 +887,13 @@ export class MatchSim {
     if (f.aimAbs || abs(f.moveX) + abs(f.moveY) > 0.1) p.aimTouched = true;
     else if (!p.aimTouched && !serve && p.shot === SHOT_BANDEJA) {
       // An overhead target nobody has steered follows the shot: deep for a bandeja; for a smash (Space) the
-      // shortest landing that a full-pace straight line from the planned contact clears the net with margin.
+      // shortest landing at which a full-pace smash from the planned contact clears the net with margin.
       // Near the net that is mid-court, and the steep bounce can leave the court; from deep it lands deeper.
       if ((f.held & BTN_POWER) !== 0) {
         const st = this.stand[p.index]!;
         const back = abs(st.valid ? st.bz : p.pos.z);
         const h = st.valid ? st.by : p.tune.overheadIdealHeight;
-        const over = c.netHeightAt(0) + SMASH_NET_MARGIN;
-        const far = c.halfL - 2.0;
-        p.aimZ = -s * (h > over + 0.2 ? clamp((over * back) / (h - over), SMASH_MIN_DEPTH, far) : far);
+        p.aimZ = -s * smashLanding(c.netHeightAt(0), back, h, SMASH_NET_MARGIN, SMASH_MIN_DEPTH, c.halfL - 2.0);
       } else if ((f.held & BTN_PRECISION) !== 0) {
         // Víbora: cross-court into the side glass.
         p.aimX = (p.pos.x > 0 ? -1 : 1) * (c.halfW - 0.9);
@@ -864,6 +930,7 @@ export class MatchSim {
       this.tossBounces = 0;
       this.placeBallInHand();
       this.ball.vel.set(0, -SERVE_PUSH, 0);
+      this.pred.strikeT = t;
       this.pred.compute(this.world, this.ball, t, 0, 2);
       this.computeTossIdeal();
       this.emitP(E_TOSS, i);
@@ -927,7 +994,7 @@ export class MatchSim {
     let scale = this.ai[i] ? 1 : this.cfg.timingScale ?? 1;
 
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) {
-      if (!this.ai[i]) scale *= SHAPES[SHOT_SERVE]!.timing ?? 1;
+      scale *= SHAPES[SHOT_SERVE]!.timing ?? 1;
       const delta = t - this.tossIdeal;
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
@@ -945,7 +1012,7 @@ export class MatchSim {
     const s = this.side(team);
     const mustBounce = this.rally.isServe;
     const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
-      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY);
+      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY, this.ai[i] ? this.ai[i].ohKind : OH_ANY);
     let w: ContactWindow | null = null;
     for (let k = 0; k < n; k++) {
       const c = this.windows[k]!;
@@ -953,19 +1020,24 @@ export class MatchSim {
       if (!w || abs(t - c.ideal) < abs(t - w.ideal)) w = c;
     }
     if (!w || this.rally.hitter === team) {
-      this.whiff(i, t);
+      this.whiff(i, t, 0, WHIFF_NOTHING);
       return;
     }
     // Each shot has its own windows: a punch volley barely turns the face, a víbora brushes across the ball at speed.
-    // Humans only for now: the AI's timing spread was fitted with one window for every shot, and Phase 4 refits it.
-    if (!this.ai[i]) {
-      this.shotHeight = w.height;
-      this.shotMod = p.mod;
-      scale *= SHAPES[this.shotFor(p, w.volley)]!.timing ?? 1;
-    }
+    // The AI is judged on them too (Phase 4; its timing spread was refit with them).
+    this.shotHeight = w.height;
+    this.shotMod = p.mod;
+    scale *= SHAPES[this.shotFor(p, w.volley)]!.timing ?? 1;
     const delta = t - w.ideal;
     p.timingDelta = delta;
     p.grade = gradeTiming(delta, TIMING, scale);
+    // A late release whose ball is already past the body (as contact() judges it) is too late whatever the timing
+    // setting: the accessibility scale widens the grades, not the court (a "Good" volley 70 ms late was then cut at
+    // contact as out of reach).
+    if (delta > 0) {
+      const k = this.pred.indexAt(t);
+      if (k >= 0 && s * (this.pred.z[k]! - p.pos.z) > BEHIND_MAX + 0.25) p.grade = G_TOO_LATE;
+    }
     if (abs(delta) > TIMING.miss * scale) {
       this.whiff(i, t);
       return;
@@ -1036,14 +1108,14 @@ export class MatchSim {
     return base * (SHAPES[this.shotFor(p, this.focusVolley)]!.timing ?? 1);
   }
 
-  /** `reach` > 0: the swing was on time but the ball was this far away (out of reach). */
-  private whiff(i: number, t: number, reach = 0): void {
+  /** `reach` > 0: the swing was on time but the ball was this far away (out of reach). `kind`: WHIFF_*. */
+  private whiff(i: number, t: number, reach = 0, kind = WHIFF_TIMING): void {
     const p = this.players[i]!;
     p.swing = SW_RECOVER;
     p.recoverUntil = t + p.tune.recoverTime;
     p.lastContactTime = t;
     if (p.grade < 0) p.grade = p.timingDelta < 0 ? G_TOO_EARLY : G_TOO_LATE;
-    this.emitP(E_WHIFF, i, p.shot, p.grade, p.timingDelta, reach);
+    this.emitP(E_WHIFF, i, p.shot, p.grade, p.timingDelta, reach, kind);
   }
 
   /** The committed swing reaches its contact time: connect if the ball is really there. */
@@ -1062,9 +1134,13 @@ export class MatchSim {
       : b.sideZ * s > 0 && !b.inNet && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0)
         // The serve is returned by the receiver, not the partner (8.1).
         && !(this.rally.isServe && i !== this.score.receiverPlayer());
-    if (!legal || d > t.reachMax + 0.25 || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15 || this.rally.over) {
+    // (a ball gone more than BEHIND_MAX past the hips, away from the net, is past the stroke: the same margin as reach)
+    const past = !serving && s * (b.pos.z - p.pos.z) > BEHIND_MAX + 0.25;
+    if (past && legal && d <= t.reachMax + 0.25) p.grade = G_TOO_LATE;
+    if (!legal || d > t.reachMax + 0.25 || past || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15
+      || this.rally.over) {
       if (serving && this.tossBounces !== 1) this.rally.onServeMissed();
-      this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0);
+      this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
       return;
     }
 
@@ -1107,6 +1183,12 @@ export class MatchSim {
     r.spinScale = serving ? (p.shot === SHOT_TOPSPIN ? -0.9 : p.shot === SHOT_DRIVE ? 0.15 : 1) : 1;
     r.bodyX = p.pos.x;
     r.bodyZ = p.pos.z;
+    // How hard this ball is to play (ai/pressure.ts): an AI's swing is less steady under pressure.
+    const v = b.vel;
+    const walls = !serving && this.rally.bounces > 0 ? this.wallsSinceBounce : 0;
+    this.lastPressure = serving ? 0 : pressureOf(sqrt(v.x * v.x + v.y * v.y + v.z * v.z), this.time - this.lastStrikeTime, d, p.speed(), b.pos.y, walls > 0, walls > 1);
+    const ai = this.ai[i];
+    r.motor = ai ? ai.motor(this.lastPressure) : 0;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
 
@@ -1127,6 +1209,7 @@ export class MatchSim {
     }
     this.emitP(E_HIT, i, shot, p.grade, this.res.speed, b.pos.x, b.pos.y, b.pos.z);
     this.wallsSinceBounce = 0;
+    this.pred.strikeT = this.lastStrikeTime;
     this.pred.compute(this.world, b, this.time, 0);
     // The opponents split-step as the ball is struck (a human already pushing a direction goes instead: a forced hop
     // would hold their keys for its airtime).
@@ -1135,6 +1218,15 @@ export class MatchSim {
     }
     this.taker[1 - team] = -1;
     this.takerVersion[1 - team] = -1;
+    this.called[1 - team] = 0;
+    this.claimGap[1 - team] = CLAIM_OUT;
+    this.crossBack[team] = 0;
+    if (serving && this.doubles) {
+      for (let k = 0; k < 4; k++) {
+        const dx = this.players[k]!.pos.x - this.players[k ^ 2]!.pos.x;
+        this.homeLane[k] = dx * this.side(this.players[k]!.team) > 0 ? 1 : -1;
+      }
+    }
     for (let k = 0; k < this.ai.length; k++) this.ai[k]?.onStrike(this, team);
   }
 
@@ -1178,6 +1270,8 @@ export class MatchSim {
   // ---- end of rally --------------------------------------------------------------------------
 
   private pendingPointWinner = -1;
+  /** Pressure of the last contact (ai/pressure.ts; read by tools/match-stats.ts). */
+  lastPressure = 0;
 
   /** While the ball is dead after a point: the team that won it, else -1 (read by the renderer). */
   get pointWinner(): number {
@@ -1245,7 +1339,7 @@ export class MatchSim {
     // Same look-back as the release is judged with: windows must include the moments just gone, or the ideal
     // of a window you are already in slides forward with the clock and the cue never closes.
     return findWindows(this.pred, p.pos.x, p.pos.z, this.side(team), this.rally.isServe, 1, p.tune, out, this.time - RELEASE_LOOKBACK,
-      this.goingOverhead(p), this.goingVolley(p));
+      this.goingOverhead(p), this.goingVolley(p), this.ai[i] ? this.ai[i].ohKind : OH_ANY);
   }
 
   /** Fingerprint of the full sim state (determinism checks). */
@@ -1262,6 +1356,8 @@ export class MatchSim {
         .num(p.aimTouched ? 1 : 0).num(p.heldMod).num(p.splitAt).num(p.pushFrom);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
+    h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);
+    h.num(this.crossBack[0]!).num(this.crossBack[1]!).num(this.claimGap[0]!).num(this.claimGap[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     const st: number[] = [];
     this.score.writeState(st);

@@ -5,13 +5,37 @@
 // formation with its partner: both at the net or both back, each covering a lane, shifted to the ball.
 import type { MatchSim } from '../match.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION } from '../input.ts';
-import { abs, clamp, max, min, sqrt } from '../core/smath.ts';
+import { abs, clamp, floor, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import { PF_FLOOR } from '../ball/predict.ts';
-import { findWindows, makeWindows } from '../contact/windows.ts';
+import { findWindows, makeWindows, OH_ANY, OH_BANDEJA, OH_SMASH, OH_VIBORA } from '../contact/windows.ts';
 import { makeStandPlan, planStand, type StandPlan } from '../player/positioning.ts';
+import { smashLanding } from '../contact/smashAim.ts';
 import { formationSpot, type Spot } from '../player/formation.ts';
 import { styleOf, type AiStyle } from './styles.ts';
+import skillData from '../../../data/ai-skill.json' with { type: 'json' };
+
+/** Share of a style's balls hit with power or played safe per unit of its pace (data/ai.json). */
+const PACE_SHARE = 0.5;
+/** How far (m) a ball event must move the planned contact to need a correction (AI.correctAt). */
+const SURPRISE = 0.15;
+/**
+ * Extra timing spread (per unit of the SD) for a ball off the glass: a wall shot is read and met on a ball that
+ * changed direction, and is the least accurate stroke (Delgado García et al. 2017's target test). At 0.3 the top
+ * AI erred on 3.1-3.5% of its back-wall shots against the pros' 5.4-6.3% (and rallies ran 11.7 shots); with the
+ * AI judged on each shot's own windows, 1.8 gives 6.4% (and 11.3).
+ */
+const AFTER_WALL = 1.8;
+/** Chance a pair follows its chiquita in to the net, per unit of the style's net. */
+const CHIQ_NET = 0.35;
+const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number };
+/** A value by level: v holds it at evenly spaced levels from 0 to 1 (two or more), interpolated linearly between. */
+function byLevel(v: number[], level: number): number {
+  const n = v.length - 1;
+  const x = level * n;
+  const k = x >= n ? n - 1 : x <= 0 ? 0 : floor(x);
+  return v[k]! + (v[k + 1]! - v[k]!) * (x - k);
+}
 import { SW_IDLE, SW_CHARGE, type Player } from '../player/player.ts';
 import { SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_BANDEJA } from '../contact/shots.ts';
 
@@ -28,6 +52,12 @@ export class SimpleAi {
   readonly level: number;
   planVersion = -1;
   reactAt = 0;
+  /**
+   * A bounce or a wall moved the ball off the path the plan was made for (mesh, a glass join, the net cord): the plan
+   * and the release are corrected only from this time (-1: none pending). Players correct a stroke under way after
+   * 110-170 ms (docs/research/shots-movement-feel.md §3); the AI used to see the new path the tick it happened.
+   */
+  private correctAt = -1;
   standX = 0;
   standZ = 0;
   idealT = 0;
@@ -48,6 +78,9 @@ export class SimpleAi {
   vibora = false;
   /** The topspin is a chiquita (precision held at release). */
   chiquita = false;
+  /** A volley played safe (precision held: more net clearance, less pace) or put away (power held). */
+  safe = false;
+  punch = false;
   private readonly wins = makeWindows();
   private readonly st = makeStandPlan();
   /** The contact this AI is set up for (the renderer times the swing to it). */
@@ -67,20 +100,31 @@ export class SimpleAi {
 
   reset(): void {
     this.planVersion = -1;
+    this.ohKind = OH_ANY;
     this.planned = false;
     this.pressed = false;
     this.released = false;
     this.servePressAt = -1;
   }
 
-  /** Reaction time after the opponent strikes, by level (seconds). */
+  /**
+   * Reaction time after the opponent strikes, by level (seconds), drawn 0.8-1.2x round it: 0.17 s at the top
+   * (0.14-0.20 s: tennis pros commit to a direction 140-160 ms after the opponent's contact and start the racket
+   * 187 +- 22 ms after it; Triolet et al. 2013, Mecheri et al. 2019), 0.3 s for a beginner. It was 0.13 s, faster
+   * than any measured player: defenders blocked 150 km/h smashes on the rise from 8 m.
+   */
   private reaction(): number {
-    return 0.3 - 0.17 * this.level;
+    return 0.3 - 0.13 * this.level;
   }
 
   /** Standard deviation of the release timing error (seconds). */
   private timingSigma(): number {
-    return 0.07 - 0.052 * this.level;
+    return byLevel(SKILL.timing, this.level);
+  }
+
+  /** Swing-to-swing spread at contact (ShotRequest.motor), growing with the ball's pressure. */
+  motor(pressure: number): number {
+    return byLevel(SKILL.motor, this.level) * (1 + SKILL.pressure * pressure);
   }
 
   onStrike(m: MatchSim, striker: number): void {
@@ -91,7 +135,13 @@ export class SimpleAi {
       return;
     }
     this.reactAt = m.time + this.reaction() * (0.8 + 0.4 * m.aiRng.next());
+    this.correctAt = -1;
     this.planVersion = -1;
+    // The plan was for the last ball: until this one is planned (after the reaction) nobody may read it as this
+    // ball's (the partner's lane switch did, and ran across and back on 13% of the balls its mate took).
+    this.st.valid = false;
+    this.reach = true;
+    this.ohKind = OH_ANY;
     this.planned = false;
     this.pressed = false;
     this.released = false;
@@ -115,13 +165,31 @@ export class SimpleAi {
       if (this.servePressAt < 0) {
         this.servePressAt = t0 + 0.7 + 0.7 * rng.next();
         const r = rng.next();
-        this.shot = r < 0.6 ? SHOT_SLICE : r < 0.85 ? SHOT_DRIVE : SHOT_TOPSPIN;
+        // A first serve goes for the lines and pace; a second serve is a safe slice with room to spare (pros fault
+        // about 10% of first serves and 2% of second serves: Mellado-Arbelo et al. 2019).
+        const second = m.serveNo === 2;
+        this.shot = second ? (r < 0.85 ? SHOT_SLICE : SHOT_TOPSPIN) : r < 0.6 ? SHOT_SLICE : r < 0.85 ? SHOT_DRIVE : SHOT_TOPSPIN;
         const b = m.box;
         const wide = rng.next();
-        // Aim at the T, the body or wide, with a safety margin from the lines.
-        const tx = wide < 0.4 ? (abs(b.x0) < abs(b.x1) ? b.x0 + 0.5 : b.x1 - 0.5) : wide < 0.7 ? (b.x0 + b.x1) * 0.5 : abs(b.x0) < abs(b.x1) ? b.x1 - 0.6 : b.x0 + 0.6;
+        // The box's outer side is the side wall: a wide serve that bounces short runs on into the side mesh (a fault
+        // after the bounce), so wide serves go deep, onto the side glass. A second serve goes to the T or the body.
+        const inner = abs(b.x0) < abs(b.x1) ? b.x0 : b.x1; // the centre line
+        const outer = inner === b.x0 ? b.x1 : b.x0;
+        const toOut = outer > inner ? 1 : -1;
+        let tx: number;
+        let depth: number;
+        if (!second && wide < 0.35) {
+          tx = outer - toOut * 0.85;
+          depth = 5.8 + 0.6 * rng.next();
+        } else if (wide < (second ? 0.5 : 0.7)) {
+          tx = inner + toOut * (second ? 0.8 : 0.6);
+          depth = second ? 4.9 + 0.8 * rng.next() : 5.4 + 0.8 * rng.next();
+        } else {
+          tx = (inner + outer) * 0.5;
+          depth = second ? 4.9 + 0.8 * rng.next() : 5.4 + 0.8 * rng.next();
+        }
         this.targetX = tx;
-        this.targetZ = -s * (5.2 + 1.0 * rng.next());
+        this.targetZ = -s * depth;
       }
       if (!this.pressed && t1 > this.servePressAt && t0 >= m.phaseUntil) {
         f.push(true, SHOT_BUTTONS[this.shot]!, max(t0, this.servePressAt));
@@ -175,7 +243,20 @@ export class SimpleAi {
       return;
     }
 
-    if (t0 >= this.reactAt && m.pred.version !== this.planVersion) this.plan(m);
+    // On the way to the planned contact, a ball that will hit us first (walking into its line, or a contact planned
+    // after it passes): plan again, which blocks it from where we stand. Checked as we move, not only when the plan
+    // was made (net players walked into the ball on their way to a contact behind them: a tenth of all points).
+    if (this.planned && !this.pressed && !this.overhead && t0 >= this.reactAt && (this.tick++ & 3) === 0) {
+      const k = m.bodyHitIdx(this.index, s);
+      if (k >= 0 && m.pred.t[k]! < this.idealT - 0.05) this.planVersion = -1;
+    }
+    if (this.planned && this.planVersion >= 0 && m.pred.version !== this.planVersion && this.correctAt < 0
+      && t0 >= this.reactAt && this.surprised(m)) {
+      this.correctAt = t0 + (0.17 - 0.06 * this.level) * (0.8 + 0.4 * m.aiRng.next());
+    }
+    const correcting = this.correctAt >= 0 && t0 < this.correctAt;
+    if (!correcting) this.correctAt = -1;
+    if (t0 >= this.reactAt && !correcting && m.pred.version !== this.planVersion) this.plan(m);
     if (this.planned) {
       this.goX = this.standX;
       this.goZ = this.standZ;
@@ -187,12 +268,22 @@ export class SimpleAi {
         f.push(true, button(this.shot), t0);
         this.pressed = true;
       }
-      if (this.pressed && !this.released && p.swing === SW_CHARGE) this.trackRelease(m, s);
+      if (this.pressed && !this.released && p.swing === SW_CHARGE && !correcting) this.trackRelease(m, s);
+      if (this.pressed && !this.released && p.swing === SW_CHARGE && t1 > this.releaseAt && !this.reach) {
+        // Beaten: the ball no longer passes within reach of where we are. A player stretches for it or lets it go;
+        // they don't take a full swing at the air (40% of points at the top level ended on such a swing: the
+        // opponents' winners).
+        m.standDown(this.index);
+        this.released = true;
+      }
       if (this.pressed && !this.released && p.swing === SW_CHARGE && t1 > this.releaseAt) {
         this.aimAbs(f);
         if (p.shot === SHOT_BANDEJA && this.smash) f.held |= BTN_POWER;
         else if (p.shot === SHOT_BANDEJA && this.vibora) f.held |= BTN_PRECISION;
         else if (p.shot === SHOT_TOPSPIN && this.chiquita) f.held |= BTN_PRECISION;
+        else if ((p.shot === SHOT_SLICE || p.shot === SHOT_DRIVE) && this.safe) f.held |= BTN_PRECISION;
+        else if ((p.shot === SHOT_SLICE || p.shot === SHOT_DRIVE) && this.punch) f.held |= BTN_POWER;
+        else if (p.shot === SHOT_LOB && this.safe) f.held |= BTN_PRECISION;
         // Release the button that is actually held (the plan may have been revised since the press).
         f.push(false, button(p.shot), max(t0, this.releaseAt));
         this.released = true;
@@ -222,7 +313,8 @@ export class SimpleAi {
   /** Watch the ball come in from where we actually are, and time the release off that window. */
   private trackRelease(m: MatchSim, s: number): void {
     const p = m.players[this.index]!;
-    const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3, p.shot === SHOT_BANDEJA);
+    const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3, p.shot === SHOT_BANDEJA, false, this.ohKind);
+    this.reach = n > 0;
     let best = -1;
     for (let i = 0; i < n; i++) {
       if (best < 0 || abs(this.wins[i]!.ideal - this.idealT) < abs(this.wins[best]!.ideal - this.idealT)) best = i;
@@ -242,6 +334,23 @@ export class SimpleAi {
     f.aimTZ = this.targetZ;
   }
 
+  /** The planned contact's height and distance from the net (overhead targets read them). */
+  private conHeight = 0;
+  private conDepth = 0;
+  /**
+   * The overhead picked for this ball (windows.ts OH_*; OH_ANY: not yet), planned, timed and judged at its own
+   * contact height (MatchSim reads it for the windows).
+   */
+  ohKind = OH_ANY;
+  /** From where we stand, the ball still passes within reach (trackRelease): else the swing is not made. */
+  private reach = true;
+
+  /** Charging, and from where we stand the ball doesn't pass within reach: the avatar holds the backswing (it would
+   * otherwise swing all the way into nothing before the stand-down). */
+  get beaten(): boolean {
+    return this.pressed && !this.released && !this.reach;
+  }
+
   /** Where drift steers to, and by when (goBy 0: no hurry). Fields, not arguments: see think. */
   private goX = 0;
   private goZ = 0;
@@ -252,6 +361,8 @@ export class SimpleAi {
   private set = false;
   /** The tick's start time (a field: a double argument would be boxed). */
   private nowT = 0;
+  /** Ticks counted for checks that run every few ticks. */
+  private tick = 0;
 
   /**
    * Steer towards (goX, goZ) and arrive without overshooting: flat out for the ball, brisk into the formation,
@@ -305,6 +416,25 @@ export class SimpleAi {
    * a comfortable height, deep balls played off the glass, and never a spot the ball flies through on its
    * way (it would hit us first). The planned contact is kept unless a clearly better one appears.
    */
+  /** The new prediction no longer brings the ball to the planned contact (within SURPRISE m at its moment). */
+  private surprised(m: MatchSim): boolean {
+    const pr = m.pred;
+    const t = this.idealT;
+    if (!this.st.valid || t <= m.time) return false;
+    for (let i = 0; i < pr.n; i++) {
+      if (pr.t[i]! < t) continue;
+      const dx = pr.x[i]! - this.refX, dy = pr.y[i]! - this.refY, dz = pr.z[i]! - this.refZ;
+      return dx * dx + dy * dy + dz * dz > SURPRISE * SURPRISE;
+    }
+    return true;
+  }
+
+  /** Where the plan's prediction put the ball at the planned moment (idealT): what a later bounce is judged against
+   * (a block's moment is not the stand plan's contact, so st.b* would call every block surprised). */
+  private refX = 0;
+  private refY = 0;
+  private refZ = 0;
+
   private plan(m: MatchSim): void {
     const pr = m.pred;
     const p = m.players[this.index]!;
@@ -319,11 +449,13 @@ export class SimpleAi {
     // Already holding the overhead key, stay with it.
     let overhead = p.swing === SW_CHARGE ? p.shot === SHOT_BANDEJA : abs(p.pos.z) < 6.5 && this.lobComing(m, s);
     if (overhead) {
-      const ok = (close && this.overhead && planStand(pr, p, s, now, m.rally.isServe, st, keep, true, true))
-        || planStand(pr, p, s, now, m.rally.isServe, st, this.overhead ? keep : -1, false, true);
+      const oh = this.ohKind;
+      const ok = (close && this.overhead && planStand(pr, p, s, now, m.rally.isServe, st, keep, true, true, false, oh))
+        || planStand(pr, p, s, now, m.rally.isServe, st, this.overhead ? keep : -1, false, true, false, oh);
       overhead = ok && (st.inTime || p.swing === SW_CHARGE) && abs(st.z) < 8.2;
     }
     if (!overhead) {
+      this.ohKind = OH_ANY;
       const k = this.overhead ? -1 : keep;
       if (!(close && k >= 0 && planStand(pr, p, s, now, m.rally.isServe, st, k, true, false))) {
         if (!planStand(pr, p, s, now, m.rally.isServe, st, k, false, false)) { this.planned = false; return; }
@@ -357,6 +489,11 @@ export class SimpleAi {
     this.standX = sx;
     this.standZ = sz;
     this.idealT = t;
+    for (let i = 0; i < pr.n; i++) {
+      if (pr.t[i]! < t) continue;
+      this.refX = pr.x[i]!; this.refY = pr.y[i]!; this.refZ = pr.z[i]!;
+      break;
+    }
     if (changed) this.noise = rng.normal() * this.timingSigma() * this.difficulty(m, height, st.afterWall);
     this.releaseAt = this.idealT + this.noise;
     this.planned = true;
@@ -374,7 +511,7 @@ export class SimpleAi {
   private difficulty(m: MatchSim, height: number, afterWall: boolean): number {
     const v = m.ball.vel;
     const speed = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-    return 1 + 0.55 * clamp((speed - 12) / 14, 0, 1.6) + (afterWall ? 0.3 : 0) + (height < 0.5 ? 0.3 : 0);
+    return 1 + 0.55 * clamp((speed - 12) / 14, 0, 1.6) + (afterWall ? AFTER_WALL : 0) + (height < 0.5 ? 0.3 : 0);
   }
 
   /** The predicted path climbs well above head height over our half before it bounces: a lob. */
@@ -391,12 +528,35 @@ export class SimpleAi {
    * a smash; better players take the smash more often.
    */
   private chooseOverhead(m: MatchSim, height: number, depth: number): void {
-    const r = m.aiRng.next();
+    this.conHeight = height;
+    this.conDepth = depth;
     this.shot = SHOT_BANDEJA;
+    if (this.ohKind !== OH_ANY) {
+      // Picked when the lob was first read (and planned at that overhead's height since): keep it.
+      this.smash = this.ohKind === OH_SMASH;
+      this.vibora = this.ohKind === OH_VIBORA;
+      if (m.doubles) m.intentUp[this.team] = 1;
+      this.chooseTarget(m);
+      return;
+    }
+    const r = m.aiRng.next();
     const st = this.style;
-    this.smash = (depth < 6 && height > 2.2 && r < (0.3 + 0.45 * this.level) * st.smash) || (depth < 4.5 && r < min(0.95, 0.8 * st.smash));
+    // A smash can finish the point only from where its bounce kicks up into the glass hard enough to come back over
+    // the net or leave the court: a straight line from the contact that clears the tape lands within KILL_DEPTH.
+    // From there players smash; from deeper they play the bandeja to keep the net (pros smash 26-36% of overheads,
+    // and a flat smash wins half the time: Sánchez-Alcaraz et al. 2020). Lower levels go for the smash from too far
+    // anyway (amateurs' power smashes are their error: Fernández-de-Osso et al. 2025).
+    // A smash-loving style counts a little more of the court as smash range and smashes more of the rest anyway;
+    // a defensive one less (the neutral style's smash 1 leaves both as measured).
+    const kill = smashDepth(m, depth, height) <= KILL_DEPTH * (0.92 + 0.08 * st.smash);
+    this.smash = kill ? r < min(0.95, (0.6 + 0.35 * this.level) * st.smash)
+      : depth < 6.5 && height > 2.2 && r < max(0, 0.35 - 0.3 * this.level + 0.1 * (st.smash - 1));
     // Not a smash: the better players turn some into víboras (into the side glass, more pace than a bandeja).
     this.vibora = !this.smash && depth < 7 && m.aiRng.next() < (0.15 + 0.35 * this.level) * st.vibora;
+    // Planned again at that overhead's own height (a bandeja is let drop to head height, a smash is met at full
+    // reach): from the next tick.
+    this.ohKind = this.smash ? OH_SMASH : this.vibora ? OH_VIBORA : OH_BANDEJA;
+    if (this.overhead) this.planVersion = -1;
     if (m.doubles) m.intentUp[this.team] = 1; // keep the net
     this.chooseTarget(m);
   }
@@ -413,6 +573,16 @@ export class SimpleAi {
     this.smash = false;
     this.vibora = false;
     this.chiquita = false;
+    this.safe = false;
+    this.punch = false;
+    // A ball at overhead height in front: an overhead, chosen as one (the sim turned a drive key's high ball into a
+    // smash aimed like a drive: most of the AI's smashes, from 6.5 m, which the defenders blocked back).
+    if (height >= m.players[this.index]!.tune.overheadHeight && depth < 7) {
+      this.chooseOverhead(m, height, depth);
+      return;
+    }
+    if (volley) this.volleyPlay(m, height, depth);
+    else this.paceOf(m.aiRng.next());
     if (m.doubles) {
       this.chooseDoublesShot(m, r, height, volley, depth);
       this.chooseTarget(m);
@@ -420,9 +590,7 @@ export class SimpleAi {
     }
     const st = this.style;
     const lob = min(0.9, 0.25 * st.lob);
-    if (height >= 1.85 && depth < 7) {
-      this.shot = r < 0.65 ? SHOT_DRIVE : SHOT_SLICE; // becomes smash / bandeja
-    } else if (volley) {
+    if (volley) {
       this.shot = abs(opp.pos.z) > 8 && r < 0.15 * st.drop ? SHOT_DROP : r < 0.6 ? SHOT_SLICE : SHOT_DRIVE;
     } else if (depth > 8) {
       this.shot = r < lob ? SHOT_LOB : r < lob + 0.35 ? SHOT_DRIVE : r < lob + 0.6 ? SHOT_SLICE : SHOT_TOPSPIN;
@@ -439,38 +607,81 @@ export class SimpleAi {
   }
 
   /**
+   * How a volley is played, from its height: a ball below the tape has to be lifted, so it is played soft with
+   * margin (precision: 1.25x the clearance, 0.86x the pace, 0.6x the spread); a high ball near the net is put away
+   * (power). Weaker players misjudge it more often, the wrong way round included: a mistake of choice, not a miss.
+   */
+  private volleyPlay(m: MatchSim, height: number, depth: number): void {
+    const r = m.aiRng.next();
+    const right = 0.4 + 0.5 * this.level;
+    if (height < 0.9) {
+      this.safe = r < right;
+      this.punch = r > 1 - 0.25 * (1 - this.level);
+    } else if (height > 1.25 && depth < 4.5) {
+      this.punch = r < right;
+    } else this.paceOf(m.aiRng.next());
+  }
+
+  /** A slice's share of the slice-or-drive choices, tilted by the style's pace: a hitter drives flat, a defender
+   * slices (the neutral style keeps `base`). */
+  private sliceOf(base: number): number {
+    return clamp(base * (1 - 0.6 * this.style.pace), 0.1, 0.9);
+  }
+
+  /** The style's pace on a ball with no call of its own: hit hard (power) or played safe (precision), from draw r. */
+  private paceOf(r: number): void {
+    const pace = this.style.pace;
+    if (pace > 0) this.punch = r < PACE_SHARE * pace;
+    else if (pace < 0) this.safe = r < -PACE_SHARE * pace;
+  }
+
+  /**
    * Doubles: against a pair at the net, lob them or keep it low at their feet; against a pair at the back,
    * drive and slice through the middle (a lob there only hands them a smash). At the net ourselves, volley.
    */
   private chooseDoublesShot(m: MatchSim, r: number, height: number, volley: boolean, depth: number): void {
     const up = this.opponentsUp(m);
     const st = this.style;
+    // Weaker players choose worse: against a pair at the net they lob less and drive into the volleyers more, and
+    // they take the net less (novices volley 15.5% of their shots, trained players 25.1%: Sánchez-Alcaraz et al.
+    // 2021). At the top level both factors are 1.
+    const lobSense = 0.5 + 0.5 * this.level;
+    const netSense = 0.4 + 0.6 * this.level;
     // Second draw for the pair's move after the shot.
     const r2 = m.aiRng.next();
     let go = 0;
-    if (height >= 1.85 && depth < 7) {
-      this.shot = r < 0.6 ? SHOT_DRIVE : SHOT_SLICE; // a high ball in front: becomes a smash / bandeja
-      go = 1;
-    } else if (volley || depth < 5) {
-      this.shot = up === 0 && r < 0.12 * st.drop ? SHOT_DROP : r < 0.65 ? SHOT_SLICE : SHOT_DRIVE;
-      go = 1;
+    if (volley || depth < 5) {
+      const near = depth < 4.2;
+      if (up === 2 && r < min(0.6, 0.3 * st.lob)) {
+        // Both pairs at the net: a lob volley sends them back (net duels are short in real play; they had become
+        // 60% of the AI's volleys, ending on bodies and through the middle).
+        this.shot = SHOT_LOB;
+        go = 1;
+      } else {
+        this.shot = up === 0 && r < 0.12 * st.drop ? SHOT_DROP : r < this.sliceOf(0.65) ? SHOT_SLICE : SHOT_DRIVE;
+        // Pulled in by a short ball against a pair at the net: back out again unless already close in.
+        go = near || up < 2 ? 1 : 0;
+      }
     } else if (up === 2) {
       // Lob them (and take the net if it gets past), dip a chiquita at their feet, or keep it low; from the
       // back that is a defensive shot.
-      const lob = min(0.9, 0.5 * st.lob);
+      const lob = min(0.9, 0.5 * st.lob * lobSense);
       const chiq = height > 0.4 && height < 1.4 ? min(0.6, 0.35 * st.drop) * (1 - lob) : 0;
-      this.shot = r < lob ? SHOT_LOB : r < lob + chiq ? SHOT_TOPSPIN : r < lob + chiq + 0.6 * (1 - lob - chiq) ? SHOT_SLICE : SHOT_DRIVE;
+      this.shot = r < lob ? SHOT_LOB : r < lob + chiq ? SHOT_TOPSPIN : r < lob + chiq + this.sliceOf(0.6) * (1 - lob - chiq) ? SHOT_SLICE : SHOT_DRIVE;
       this.chiquita = this.shot === SHOT_TOPSPIN;
+      // A chiquita at their feet is the other way to the net (lobs are 60.6% of net takes, the rest mostly low balls
+      // at the feet: Muñoz et al. 2017), taken as readily as the style likes the net.
+      go = this.chiquita && r2 < CHIQ_NET * st.net * netSense ? 1 : 0;
     } else if (up === 1) {
-      const lob = min(0.9, 0.3 * st.lob);
+      const lob = min(0.9, 0.3 * st.lob * lobSense);
       const chiq = height > 0.4 && height < 1.4 ? min(0.4, 0.15 * st.drop) * (1 - lob) : 0;
-      this.shot = r < lob ? SHOT_LOB : r < lob + chiq ? SHOT_TOPSPIN : r < lob + chiq + 0.5 * (1 - lob - chiq) ? SHOT_DRIVE : SHOT_SLICE;
+      this.shot = r < lob ? SHOT_LOB : r < lob + chiq ? SHOT_TOPSPIN : r < lob + chiq + (1 - this.sliceOf(0.5)) * (1 - lob - chiq) ? SHOT_DRIVE : SHOT_SLICE;
       this.chiquita = this.shot === SHOT_TOPSPIN;
     } else {
       // Both back: work the ball through the middle; a short ball is the chance to come in.
       const lob = min(0.5, 0.05 * st.lob);
-      this.shot = r < lob ? SHOT_LOB : r < 0.5 ? SHOT_DRIVE : r < 0.75 ? SHOT_SLICE : SHOT_TOPSPIN;
-      go = depth < 7.4 && r2 < 0.45 * st.net ? 1 : r2 < 0.12 * st.net ? 1 : 0;
+      this.shot = r < lob ? SHOT_LOB : r < 0.75 - this.sliceOf(0.25) ? SHOT_DRIVE : r < 0.75 ? SHOT_SLICE : SHOT_TOPSPIN;
+      go = depth < 7.4 && r2 < 0.45 * st.net * netSense ? 1 : r2 < 0.12 * st.net * netSense ? 1 : 0;
     }
     m.intentUp[this.team] = go;
   }
@@ -534,16 +745,21 @@ export class SimpleAi {
       x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.8 + 0.2 * rng.next());
       depth = 6.4 + 1.2 * rng.next();
     } else if (this.shot === SHOT_BANDEJA && this.smash) {
-      // Flat and hard towards a side (it can kick off the side glass and out: por tres) or through the middle.
-      x = rng.next() < 0.65 ? (rng.next() < 0.5 ? -1 : 1) * spread * (0.6 + 0.3 * rng.next()) : (a.pos.x + b.pos.x) * 0.5;
-      depth = 4.6 + 1.6 * rng.next();
+      // Flat and hard, mostly down the line (men 77.7%: Sánchez-Alcaraz et al. 2020), landing as short as a straight
+      // line from the contact clears the tape with margin, so the bounce kicks up into the glass and can leave the
+      // court (por tres) or come back over the net: the shortest landing the untouched human smash aims at.
+      const me = m.players[this.index]!;
+      x = rng.next() < 0.75 ? (me.pos.x >= 0 ? 1 : -1) * spread * (0.55 + 0.35 * rng.next()) : (a.pos.x + b.pos.x) * 0.5;
+      depth = smashDepth(m, this.conDepth, this.conHeight) + 0.6 * rng.next();
     } else if (this.shot === SHOT_BANDEJA) {
       // Deep into a corner, so the ball sits down off the back glass.
       x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.5 + 0.4 * rng.next());
       depth = 8.0 + 0.8 * rng.next();
     } else if (this.shot === SHOT_LOB) {
+      // Deep enough to get over and behind the net player, short of the back glass on the full: real lobs land
+      // anywhere from about 5.5 m (good) to 8.6 m (excellent) from the net (Ramón-Llin et al. 2019).
       x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.3 + 0.5 * rng.next());
-      depth = min(8.6, c.halfL - 1.0 - 0.6 * (1 - this.level));
+      depth = min(8.2, c.halfL - 1.8 - 0.6 * (1 - this.level)) - 1.2 * rng.next();
     } else if (this.shot === SHOT_DROP) {
       x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 1.2;
       depth = 1.8;
@@ -571,6 +787,19 @@ export class SimpleAi {
     this.targetZ = -s * depth;
   }
 }
+
+/**
+ * A smash's landing depth (m from the net): the shortest at which a full-pace smash from the contact (`back` m from
+ * the net, `h` high) clears the tape by SMASH_MARGIN, as the human's untouched smash aims (match.ts steerAim).
+ */
+function smashDepth(m: MatchSim, back: number, h: number): number {
+  const c = m.world.court;
+  return smashLanding(c.netHeightAt(0), back, h, SMASH_MARGIN, SMASH_MIN, c.halfL - 2.0);
+}
+const SMASH_MARGIN = 0.45;
+const SMASH_MIN = 3.2;
+/** A smash landing this short (m from the net) kicks off the glass hard enough to be a winner. */
+const KILL_DEPTH = 6.0;
 
 /** The key that holds a shot: the overhead key for a bandeja/smash, else the shot's own key. */
 function button(shot: number): number {

@@ -28,6 +28,8 @@ export class Prediction {
   n = 0;
   /** Sim time the prediction was made. */
   start = 0;
+  /** Sim time of the strike this path comes from (set by the match before computing; how long a player has had). */
+  strikeT = -10;
   /** Incremented on every recompute so consumers can cache by version. */
   version = 0;
 

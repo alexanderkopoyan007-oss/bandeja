@@ -84,7 +84,9 @@ describe('volley key', () => {
 
   it('at the net, holding it takes most balls in the air; the drive key lets more of them bounce', () => {
     expect(volley.hits).toBeGreaterThan(40);
-    expect(volley.volleys / volley.hits).toBeGreaterThan(0.7);
+    // 0.6: the Phase 4 AI keeps more balls low at a net player's feet, which have to bounce (0.66-0.70 now, from
+    // above 0.7); what the key changes is the next line.
+    expect(volley.volleys / volley.hits).toBeGreaterThan(0.6);
     expect(volley.volleys / volley.hits).toBeGreaterThan(drive.volleys / Math.max(1, drive.hits) + 0.1);
   });
 

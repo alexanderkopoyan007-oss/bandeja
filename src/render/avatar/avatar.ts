@@ -266,9 +266,27 @@ const QS = new Float64Array(4);
 const qFoot = new THREE.Quaternion();
 /** Most the hips drop for a low or wide ball (crouch, lunge and reach together; m). */
 const DROP_MAX = 0.55;
+/**
+ * The smash is hit in the air, both feet off before the contact (Espino et al. 2015 via
+ * docs/research/serve-and-strokes-motion.md 4.2; contact 2.30-2.50 m at full reach): a ballistic hop peaking at the
+ * contact, as high as the ball is above what the toes reach (JUMP_TOES), up to JUMP_MAX (no padel jump height is
+ * published; a smash hop is well under a standing jump's 35-45 cm), landing on bent knees (LAND_DROP over LAND_TIME).
+ * Standing on the toes only, smashes met at 2.4 m missed the ball by about 10 cm.
+ */
+const JUMP_MAX = 0.3;
+const JUMP_TOES = 0.12;
+const LAND_DROP = 0.06;
+const LAND_TIME = 0.2;
 const FOLLOW = 0.3;
 const FADE = 0.35;
 const PREP = 0.28;
+/**
+ * A ball on the player before a full backswing fits (a reflex block of a smash taken 0.15 s after the reaction):
+ * the backswing is cut to PREP_SHARE of the time left, at least PREP_MIN. At the full PREP the arm was only half
+ * into the stroke at the contact and missed the ball by 40 cm.
+ */
+const PREP_SHARE = 0.6;
+const PREP_MIN = 0.06;
 /** Share of the shoulder turn taken by the whole body (the rest is the spine). */
 const BODY_TURN = 0.35;
 /** Extra turn to the racket side while the ball goes past to the glass (rad), and how fast it comes and goes (s). */
@@ -394,6 +412,12 @@ export class Avatar {
   // Split step: a small hop as the opponent strikes, landing with bent knees (feet kept planted).
   private lift = 0;
   private splitDrop = 0;
+  /** Smash jump: how far the ball is above the arm's reach (m, from the legs' solve), and the hop under way. */
+  private upNeed = 0;
+  private jumpH = 0;
+  private jumpT0 = -1;
+  private jumpT = 0;
+  private landAt = -1;
   /** The hips' drop shown last frame (m; see HIP_RISE). */
   private dropShown = 0;
   /** Planted feet (left, right): weight, where each is (world), its yaw, and a step under way (-1: none). */
@@ -614,6 +638,8 @@ export class Avatar {
   private planZ = 0;
   /** The planned contact is an AI's own release (or a serve's ideal for an AI): its moment is known. */
   private known = false;
+  /** The AI is charged for a ball that no longer passes within its reach (SimpleAi.beaten). */
+  private beaten = false;
 
   constructor(asset: PlayerAsset, color: number) {
     this.nb = asset.bones.length;
@@ -895,11 +921,13 @@ export class Avatar {
       return at;
     }
     this.known = false;
+    this.beaten = false;
     const st = this.plan(sim, idx);
     if (!st.valid) return -1;
     // An AI lets go at its own release time (the window it tracks, its timing error included), and the release
     // is the contact: time the swing to that, at wherever the ball will be then.
     const ai = sim.ai[idx];
+    this.beaten = ai ? ai.beaten : false;
     if (ai && ai.pressed && !ai.released && ai.releaseAt > sim.time - 0.05) {
       this.known = true;
       this.predAt(sim, ai.releaseAt, this.conW);
@@ -962,7 +990,14 @@ export class Avatar {
       const lead = this.fam.lead ?? LEAD;
       // A human's release can come at any moment, so the swing waits short of the ball for it; an AI's moment is
       // known, and its swing runs straight into the ball.
-      if (this.hasCon && tp - t < lead) this.swingS = Math.max(this.swingS, Math.min(this.known ? 1 : HOVER, 1 - (tp - t) / lead));
+      // An AI that sees the ball won't pass within its reach holds the backswing (it stands down at the release
+      // rather than swing at the air; the swing went 90-100% of the way into nothing before this).
+      if (this.hasCon && tp - t < lead && !this.beaten) {
+        // Never faster than the quickest swing (a backswing held while beaten and let go late jumped to nearly
+        // done in one frame and snapped the elbow).
+        const cap = this.swingS + this.dt / (MIN_SWING * this.fam.punch);
+        this.swingS = Math.max(this.swingS, Math.min(this.known ? 1 : HOVER, 1 - (tp - t) / lead, cap));
+      }
     }
     // Release (a whiff at release goes straight to recover): finish the swing at the contact moment.
     if (sw !== SW_CHARGE) this.wallWant = 0;
@@ -1010,7 +1045,8 @@ export class Avatar {
 
     const f = this.fam;
     if (this.st === ST_PREP) {
-      const u = smoothstep(0, PREP, t - this.prepStart);
+      const left = this.hasCon ? this.tPlan - this.prepStart : PREP;
+      const u = smoothstep(0, left * PREP_SHARE < PREP ? Math.max(PREP_MIN, left * PREP_SHARE) : PREP, t - this.prepStart);
       if (this.swingS > 0) this.swingKey(this.swingS);
       else {
         // Held at the end of the backswing: no forward swing yet (keyS is what the racket clear's release reads; the
@@ -1216,6 +1252,7 @@ export class Avatar {
     this.locomote(p);
     this.reaction(sim, idx, t);
     this.splitStep(p, t);
+    this.smashJump(t);
     this.root.position.y = this.lift;
 
     // Pose -> bones, with the racket hand gripping.
@@ -1317,6 +1354,9 @@ export class Avatar {
     this.wI.reset();
     this.dropI.reset();
     this.dropShown = 0;
+    this.jumpT0 = -1;
+    this.landAt = -1;
+    this.upNeed = 0;
     this.racketQOk = false;
     this.kneeSideL.set(0, 0, 0);
     this.kneeSideR.set(0, 0, 0);
@@ -1466,6 +1506,37 @@ export class Avatar {
     else this.splitDrop = 0.05 * Math.sin((Math.PI * (u - air)) / (len - air));
   }
 
+  /**
+   * The smash's hop (JUMP_MAX): taken off so that it peaks at the contact, as high as the ball is above the toes'
+   * reach then (a late take-off flies lower to peak on time), held whatever the plan does next, and landed on bent
+   * knees. Adds to lift and splitDrop (after splitStep). The feet leave their locks as the clip's soles leave the floor.
+   */
+  private smashJump(t: number): void {
+    if (this.jumpT0 >= 0) {
+      const u = (t - this.jumpT0) / this.jumpT;
+      if (u >= 0 && u < 1) { this.lift += 4 * this.jumpH * u * (1 - u); return; }
+      this.landAt = u >= 1 ? this.jumpT0 + this.jumpT : -1;
+      this.jumpT0 = -1;
+    }
+    if (this.landAt >= 0) {
+      const v = (t - this.landAt) / LAND_TIME;
+      if (v >= 0 && v < 1) this.splitDrop += LAND_DROP * Math.sin(Math.PI * v);
+      else this.landAt = -1;
+    }
+    if (this.fam !== SMASH) return;
+    const tc = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
+    if (tc < 0 || t >= tc) return;
+    const h = Math.min(JUMP_MAX, this.upNeed - JUMP_TOES);
+    if (h < 0.03) return;
+    const T = 2 * Math.sqrt((2 * h) / 9.81);
+    if (t < tc - T / 2) return;
+    const T2 = Math.min(T, 2 * (tc - t));
+    this.jumpT = T2;
+    this.jumpH = (9.81 * T2 * T2) / 8;
+    this.jumpT0 = t;
+    this.landAt = -1;
+  }
+
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */
   private solveLegs(): void {
     // How far the arm would fall short of where the key puts the wrist: the hips go that way (up to 40 cm out,
@@ -1500,6 +1571,8 @@ export class Avatar {
     // the hips leaned 18 cm towards a ball 0.4 s away at p90, and 20-29 cm through a serve's toss).
     const lean = before ? smoothstep(LEAN_FROM, LEAN_FULL, left) : 1;
     const short = len > 1e-3 ? Math.max(0, len - this.armLen * 0.96) * this.w * lean : 0;
+    // How far above the arm's reach the contact is, whole (the smash's hop is decided before the lean is in).
+    this.upNeed = before && len > 1e-3 && dy > 0 ? (Math.max(0, len - this.armLen * 0.96) * dy) / len : 0;
     const dh = Math.sqrt(dx * dx + dz * dz);
     const push = dh > 1e-3 ? Math.min(0.4, (short * dh) / len) : 0;
     let rx = dh > 1e-3 ? (dx / dh) * push : 0;

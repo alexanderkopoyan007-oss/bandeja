@@ -11,8 +11,10 @@ import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
  * A human-like bot: holds drive as soon as the opponent strikes (auto timing releases it), gets back to the
  * middle of the back court after its own shot, and steers the aim with `aimKeys` (player-relative x, y).
  */
+// The AI opponent plays at the top level here: these tests are about the human's assist, and a lower level's
+// swing-to-swing spread (data/ai-skill.json motor, Phase 4) feeds wilder balls whose share shifts the bars.
 function play(seed: number, seconds: number, aimKeys: [number, number], onTick?: (m: MatchSim) => void) {
-  const m = new MatchSim({ seed, human: [true, false], firstServer: 1, autoTiming: true, assist: 0.45, timingScale: 1.5 });
+  const m = new MatchSim({ seed, human: [true, false], firstServer: 1, autoTiming: true, assist: 0.45, timingScale: 1.5, aiLevel: [1, 1] });
   const f = new InputFrame();
   let holding = false;
   for (let i = 0; i < seconds * 120 && m.phase !== PH_OVER; i++) {
@@ -43,7 +45,8 @@ describe('balls off the glass', () => {
   it('a human-like player returns nearly every ball that comes off the back or side glass', () => {
     let wallBalls = 0;
     let returned = 0;
-    for (let seed = 1; seed <= 4; seed++) {
+    // 5 matches: 4 gave 99 glass balls once the Phase 4 AI placed its shots differently.
+    for (let seed = 1; seed <= 5; seed++) {
       let seen = 0;
       let cur = false;
       play(seed, 150, [0, 0], (m) => {
@@ -170,7 +173,7 @@ describe('overheads', () => {
       viboras: 0, viboraSpeeds: [] as number[], viboraSpin: [] as number[], viboraIn: 0, bandejaSpeeds: [] as number[],
     };
     for (let seed = 1; seed <= seeds; seed++) {
-      const m = new MatchSim({ seed, human: [true, false], firstServer: 1, autoTiming: true, assist: 0.45, timingScale: 1.5 });
+      const m = new MatchSim({ seed, human: [true, false], firstServer: 1, autoTiming: true, assist: 0.45, timingScale: 1.5, aiLevel: [1, 1] });
       const f = new InputFrame();
       let seen = 0;
       let held = 0;
@@ -242,8 +245,10 @@ describe('overheads', () => {
   });
 
   it('with power held the overhead is a smash, fast enough to leave the court', () => {
-    // 16 matches: about 50 lobs (12 gave 36-45 depending on the ball's tuning).
-    const r = lobs(BTN_POWER, 16);
+    // 40 matches: about 130 lobs. (18 were enough for the lob counts, but the smashes that leave the court are rare:
+    // the AI lobs deep and the smash comes from 6-8 m: 14 of 58 matches had one, 5 of the first 25, at the Phase 4
+    // review; seeded, but any AI change shifts which.) About 30 s of CPU: its own timeout for loaded machines and CI.
+    const r = lobs(BTN_POWER, 40);
     expect(r.lobs).toBeGreaterThan(40);
     expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
     const sorted = r.speeds.slice().sort((a, b) => a - b);
@@ -251,8 +256,8 @@ describe('overheads', () => {
     // full-power smashes from a lob, so a little above.
     expect(sorted[sorted.length >> 1]! * 3.6).toBeGreaterThan(128);
     expect(sorted[sorted.length >> 1]! * 3.6).toBeLessThan(155);
-    expect(r.outAfterBounce).toBeGreaterThan(0); // por tres / por cuatro (rare at Good timing: ~3 in 8 matches' worth)
-  });
+    expect(r.outAfterBounce).toBeGreaterThan(0); // por tres / por cuatro
+  }, 240_000);
 
   it('with precision held the overhead is a víbora: sidespin, between bandeja and smash pace, and it lands in', () => {
     // 12 matches: about 50 víboras (4 gave 13, where one ball decides the 80% bar).

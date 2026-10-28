@@ -45,27 +45,49 @@ export function volleyCost(y: number): number {
   return (y - 1.45) * 0.7;
 }
 
-/** Cost of taking the ball overhead at height y: best around the ideal overhead height, poor below it. */
-export function overheadCost(y: number, t: PlayerTuning): number {
-  if (y >= t.overheadHeight) return abs(y - t.overheadIdealHeight) * 0.8;
-  return 0.4 + (t.overheadHeight - y) * 2;
+/** Overhead kinds for overheadCost: not picked yet, bandeja, smash, víbora (each has its own contact height). */
+export const OH_ANY = 0;
+export const OH_BANDEJA = 1;
+export const OH_SMASH = 2;
+export const OH_VIBORA = 3;
+
+/**
+ * Cost of taking the ball overhead at height y: best around the ideal height of the overhead `kind` (OH_*), poor
+ * below the overhead band (a víbora's band starts lower: it is met from the shoulder up).
+ */
+export function overheadCost(y: number, t: PlayerTuning, kind: number): number {
+  const ideal = kind === OH_SMASH ? t.overheadIdealSmash : kind === OH_BANDEJA ? t.overheadIdealBandeja
+    : kind === OH_VIBORA ? t.overheadIdealVibora : t.overheadIdealHeight;
+  const low = kind === OH_VIBORA ? t.overheadIdealVibora - 0.2 : t.overheadHeight;
+  if (y >= low) return abs(y - ideal) * 0.8;
+  return 0.4 + (low - y) * 2;
 }
 
 /**
  * Fill `out` with up to MAX_WINDOWS windows for a player at (px, pz) on half `side`.
  * `mustBounce`: the ball may not be volleyed (receiving a serve). `overhead`: the player is going for an
  * overhead, so each window's ideal moment is the best overhead contact, not the most comfortable groundstroke.
+ * `ohKind` (OH_*): the overhead already picked (an AI picks it as it reads the lob), met at its own height.
  * `volley`: the player is holding the volley key, so a window before the bounce has its ideal at the best volley
  * height (windows after the bounce stay legal: a volley planned too late is blocked off the bounce instead).
  * Returns the window count.
  */
+/**
+ * How far behind the body's centre (m, away from the net) a ball can still be struck: a player opens up to a ball
+ * beside or just behind the hips, but no stroke reaches one further back (contacts are met 0.4-0.6 m in front of
+ * the body: Sánchez-Alcaraz et al. 2021). Without it 1.4% of the AI's contacts were 0.6-1.4 m behind the hitter,
+ * slices and lobs off a ball that had bounced past a net player, which the avatar's racket missed by up to 59 cm.
+ */
+export const BEHIND_MAX = 0.4;
+
 export function findWindows(
   pred: Prediction, px: number, pz: number, side: number, mustBounce: boolean, bouncesAllowed: number,
-  t: PlayerTuning, out: ContactWindow[], fromTime: number, overhead = false, volley = false,
+  t: PlayerTuning, out: ContactWindow[], fromTime: number, overhead = false, volley = false, ohKind = OH_ANY,
 ): number {
   let count = 0;
   let open = false;
   let bestCost = 1e9;
+  const riseOff = t.riseMaxOffWall;
   for (let i = 0; i < pred.n; i++) {
     if (pred.t[i]! < fromTime) continue;
     const x = pred.x[i]!;
@@ -78,10 +100,13 @@ export function findWindows(
     const legal = z * side > 0.05 && b <= bouncesAllowed && !(mustBounce && b === 0) && (pred.flags[i]! & PF_NET) === 0;
     // The ball reaches the body here: it hits the player, so nothing after this can be played from here.
     if (legal && d < t.bodyRadius + 0.035 && y < t.height) break;
-    const ok = legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight;
+    // (off a wall, a ball still climbing past the shoulders can't be met until it comes down: riseMaxOffWall)
+    // (and a ball more than BEHIND_MAX behind the body, further from the net than the hips, is past the stroke)
+    const ok = legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight
+      && !(y > riseOff && pred.walls[i]! > 0 && pred.vy[i]! > 0) && side * (z - pz) <= BEHIND_MAX;
     if (ok) {
       // A ball touching the floor or glass right now is not where anyone means to hit it.
-      const cost = (overhead ? abs(d - t.overheadReach) + overheadCost(y, t)
+      const cost = (overhead ? abs(d - t.overheadReach) + overheadCost(y, t, ohKind)
         : abs(d - (b === 0 ? t.volleyReach : t.reachComfort)) + (volley && b === 0 ? volleyCost(y) : heightCost(y, t.overheadHeight))
           // Met in front of the body, not beside or behind it (a ball off the back glass passes the comfortable
           // distance once behind the player and once in front).

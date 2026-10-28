@@ -13,6 +13,7 @@ export interface AiStyle {
   smash: number;
   vibora: number;
   margin: number;
+  pace: number;
 }
 
 const data = styleData as unknown as Record<string, Omit<AiStyle, 'key'>>;
