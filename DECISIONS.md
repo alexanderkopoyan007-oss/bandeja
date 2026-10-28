@@ -1288,3 +1288,13 @@ it over the net (FIP 13.l: the hitter's own glass is legal before the ball cross
   cm, racket in body unchanged (0.1-0.2%).
 - Captures: a hidden tab runs no animation frames, so three's node frame never advanced and the post-processing's
   scene pass kept its first render; `Game.renderOnce` advances it (captures with bloom on work again).
+
+**The ball's look** (owner, 2026-10-28: "the ball doesn't look real").
+- Felt (`render/ballLook.ts`): the old ball was one flat yellow with a thin seam line, so up close it read as a
+  plastic sphere. Now the felt is mottled at three scales (patches, fibre, fine nap) between a duller and a brighter
+  yellow-green, presses darker beside the seam, the seam is a whiter sunk rubber line (rougher felt 0.95, smoother
+  seam 0.5), a soft sheen gives the nap's glow at grazing angles, and a thin transparent shell 4.5% outside the ball
+  carries stray fibres on the silhouette only (opacity from noise times the edge term, no depth write). At the TV
+  camera the ball is 12-15 px across and reads as a felt ball with a seam; the extra cost is one draw call per ball.
+- Trail (`render/views.ts`): drawn only while a struck ball is in play. It used to be drawn from the toss, so during a
+  serve it hung under the dropped ball like a string, and it stayed behind a dead ball between points.

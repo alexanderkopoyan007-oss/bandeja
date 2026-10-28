@@ -101,8 +101,9 @@ export class BallView {
     this.shadow.scale.set(sc, sc, sc);
     (this.shadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.12, 0.72 - h * 0.13);
 
-    // Trail: one point per sim tick.
-    if (this.showTrail && sim.phase >= 1) {
+    // Trail: one point per sim tick, while a struck ball is in play (from the toss it hung under the dropped ball like a
+    // string, and stayed drawn behind a dead one between points).
+    if (this.showTrail && sim.phase === PH_RALLY && sim.rally.hitter >= 0 && !sim.rally.over) {
       if (sim.time !== this.lastTrailTime) {
         this.lastTrailTime = sim.time;
         this.trailPos.copyWithin(3, 0, (TRAIL - 1) * 3);
