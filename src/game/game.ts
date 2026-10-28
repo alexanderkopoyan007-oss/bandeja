@@ -35,6 +35,10 @@ export interface GameOptions {
   gpuLoad?: number;
   /** Perf runs only: at most this many frames a second (a display's refresh, with the browser's limit off). */
   fpsCap?: number;
+  /** Review only (`?cam=hand|body|ball`, `&camp=N` the player): a close camera on a player's racket hand, the whole
+   * player, or the ball, instead of the broadcast camera. */
+  closeCam?: string;
+  closeCamPlayer?: number;
   /** The human's player number (team + 2 * slot); ignored with autoplay. */
   human: number;
   autoplay: boolean;
@@ -460,6 +464,30 @@ export class Game {
     }
   }
 
+  private readonly closeAt = new THREE.Vector3();
+  private readonly closeEye = new THREE.Vector3();
+  /** `?cam=`: a close look for reviews (not a game camera: it allocates nothing but isn't smoothed). */
+  private aimCloseCam(kind: string): void {
+    const pv = this.players[Math.min(this.players.length - 1, this.opts.closeCamPlayer ?? 0)]!;
+    const cam = this.cam.camera;
+    const at = this.closeAt;
+    const root = pv.root.position;
+    const side = root.z >= 0 ? 1 : -1;
+    if (kind === 'ball') {
+      at.copy(this.ball.mesh.position);
+      this.closeEye.set(at.x + 0.35, at.y + 0.12, at.z + 0.9 * side);
+    } else if (kind === 'hand' && pv.avatar) {
+      pv.avatar.racket.getWorldPosition(at);
+      this.closeEye.set(at.x + 0.9, at.y + 0.25, at.z + 1.1 * side);
+    } else {
+      at.set(root.x, 0.95, root.z);
+      this.closeEye.set(at.x + 1.6, 1.35, at.z + 3.2 * side);
+    }
+    cam.position.copy(this.closeEye);
+    cam.lookAt(at);
+    cam.updateMatrixWorld();
+  }
+
   /** Draw the current moment once, outside the animation loop (captures). */
   renderOnce(): void {
     for (const p of this.players) p.avatar?.refreshSkin();
@@ -571,6 +599,7 @@ export class Game {
     this.feedback.update(this.sim, who, now);
     this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
+    if (this.opts.closeCam) this.aimCloseCam(this.opts.closeCam);
     // Sound never takes a frame down: a browser's WebAudio quirk (Firefox has no listener.positionX) once threw on
     // every play and the frame's assists, HUD and draw were skipped.
     try {

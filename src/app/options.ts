@@ -77,6 +77,8 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     dprCap: num('dpr', 2),
     gpuLoad: num('gpuload', 1),
     fpsCap: num('fpscap', 0),
+    closeCam: params.get('cam') ?? undefined,
+    closeCamPlayer: num('camp', 0),
     avatar,
     prefs: { quality: qualityPreset(params.get('quality')) },
   };
