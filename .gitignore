@@ -8,3 +8,4 @@ tools/out/
 # Local Claude Code launch config
 .claude/
 scratch/
+reference/photos/

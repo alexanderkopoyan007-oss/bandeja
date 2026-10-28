@@ -1,10 +1,11 @@
 // The browser game: fixed-step sim driven by requestAnimationFrame, timestamped input, render interpolation.
 import * as THREE from 'three/webgpu';
-import { MatchSim, type MatchConfig } from '../sim/match.ts';
+import { MatchSim, PH_RALLY, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import { InputFrame } from '../sim/input.ts';
 import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
-import { buildCourtView } from '../render/courtView.ts';
+import { buildCourtView, type CourtView } from '../render/courtView.ts';
+import { Arena, arenaDef } from '../render/arena/arena.ts';
 import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
 import { KeyboardInput } from './input/keyboard.ts';
@@ -14,6 +15,7 @@ import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
 import { Hud } from '../ui/hud.ts';
 import { DebugOverlay } from '../ui/debug.ts';
+import { applyPhotoCam, type PhotoOverlay } from './photoMatch.ts';
 
 const MAX_TICKS_PER_FRAME = 12;
 
@@ -35,6 +37,8 @@ export interface GameOptions {
   runAhead?: boolean;
   /** Hit sounds (`?sound=0` turns them off). */
   sound?: boolean;
+  /** Arena (data/arenas.json): stadium, hall, club-day, club-night. */
+  arena?: string;
 }
 
 /** One button event's trip to the screen, performance.now() ms (tools/latency.mjs reads these). */
@@ -71,6 +75,8 @@ export class Game {
   readonly cam: BroadcastCamera;
   readonly ball: BallView;
   readonly net: NetView;
+  readonly arena: Arena;
+  readonly court: CourtView;
   readonly players: PlayerView[];
   readonly assists: AssistView;
   readonly kb: KeyboardInput;
@@ -99,6 +105,10 @@ export class Game {
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly hit = new THREE.Vector3();
   private mouseAim: boolean;
+  /** Photo-match mode (`?photo=`): the camera and the canvas's shape come from the photo. */
+  photo: PhotoOverlay | null = null;
+  /** The sim stands still (the scene is still drawn): photo-match comparisons. */
+  paused = false;
 
   constructor(opts: GameOptions, renderer: THREE.WebGPURenderer, hudRoot: HTMLElement) {
     this.opts = opts;
@@ -107,17 +117,11 @@ export class Game {
     this.sim = new MatchSim(opts.match);
     const court = this.sim.world.court;
 
-    this.scene.background = new THREE.Color(0x0d0f12);
-    this.scene.add(new THREE.HemisphereLight(0xdfe8f0, 0x30343a, 1.15));
-    const sun = new THREE.DirectionalLight(0xffffff, 2.3);
-    sun.position.set(5, 15, 7);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.02;
-    Object.assign(sun.shadow.camera, { left: -13, right: 13, top: 13, bottom: -13, near: 2, far: 40 });
-    this.scene.add(sun);
-    this.scene.add(buildCourtView(court));
+    // The arena: floor, lights, surroundings; the court's glass, mesh and frame in its colours.
+    this.arena = new Arena(arenaDef(opts.arena ?? 'stadium'), court, this.scene, renderer);
+    this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base });
+    this.scene.add(this.court.group);
+    this.arena.addNeighbours(this.court.group, court);
     this.net = new NetView(this.sim.net);
     this.scene.add(this.net.group);
 
@@ -137,6 +141,10 @@ export class Game {
     this.aimMarker.position.y = 0.005;
     this.aimMarker.visible = false;
     this.scene.add(this.aimMarker);
+    // Reflections and ambient light from the arena itself (without the players, ball and cues).
+    const moving: THREE.Object3D[] = [this.ball.mesh, this.ball.shadow, this.ball.trail, this.ball.marker, this.aimMarker, this.net.group];
+    for (const pv of this.players) moving.push(pv.root);
+    this.court.setEnvironment(this.arena.bakeEnvironment(renderer, this.scene, moving));
 
     this.kb = new KeyboardInput(window);
     this.pad = new GamepadInput(window);
@@ -188,6 +196,12 @@ export class Game {
   resize(): void {
     // A collapsed or hidden embed can report a 0 x 0 window: keep the last size rather than a NaN camera.
     if (!innerWidth || !innerHeight) return;
+    if (this.photo) {
+      const { w, h } = this.photo.fit();
+      this.renderer.setSize(w, h, false);
+      this.photo.fit();
+      return;
+    }
     this.renderer.setSize(innerWidth, innerHeight);
     this.cam.camera.aspect = innerWidth / innerHeight;
     this.cam.camera.updateProjectionMatrix();
@@ -196,6 +210,7 @@ export class Game {
   /** Compile every pipeline before the first point so nothing compiles mid-rally. */
   async warmUp(): Promise<void> {
     this.cam.update(this.sim, this.team, 0, 0);
+    if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     await this.renderer.compileAsync(this.scene, this.cam.camera);
   }
 
@@ -274,6 +289,13 @@ export class Game {
     }
   }
 
+  /** Draw the current moment once, outside the animation loop (captures). */
+  renderOnce(): void {
+    for (const p of this.players) p.avatar?.refreshSkin();
+    if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
+    this.renderer.render(this.scene, this.cam.camera);
+  }
+
   /** The human's team (the camera's end); team 0 with autoplay. */
   get team(): number {
     return this.opts.autoplay ? 0 : this.sim.players[this.opts.human]!.team;
@@ -312,6 +334,10 @@ export class Game {
     const ease = this.lastFrame ? 0.25 * Math.min(0.1, (now - this.lastFrame) / 1000) : DT;
     this.renderLag = lagTo > this.renderLag ? Math.min(lagTo, this.renderLag + ease) : Math.max(lagTo, this.renderLag - ease);
     let drawn = simNow - this.renderLag;
+    if (this.paused) {
+      this.epoch = now - this.sim.time * 1000;
+      drawn = this.sim.time;
+    }
     while (this.sim.time < drawn && n < MAX_TICKS_PER_FRAME) {
       if (holding && hp.swing === SW_CHARGE && this.sim.time + DT > simNow) break;
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
@@ -359,9 +385,13 @@ export class Game {
     // frame's camera, which is close enough).
     this.feedback.update(this.sim, who, renderTime, now);
     this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
+    if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt, cueNow);
     this.hud.update(this.sim, who, now / 1000);
+    // The crowd follows the rally: calm between points, rising with a long one.
+    this.arena.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : this.arena.excite * 0.98;
+    this.arena.update(now / 1000);
 
     this.renderer.render(this.scene, this.cam.camera);
     if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);

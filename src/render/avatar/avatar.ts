@@ -769,6 +769,12 @@ export class Avatar {
   }
 
   /** Switch the racket hand (the sim's `handed`): racket, grip, arms and stroke keys all follow. */
+  /** Skin matrices are refreshed once per animation-loop frame; a render outside the loop calls this first. */
+  refreshSkin(): void {
+    this.root.updateMatrixWorld(true);
+    this.mesh.skeleton.update();
+  }
+
   private setHanded(h: number): void {
     this.handed = h;
     this.grip = this.grips[h > 0 ? 0 : 1]!;

@@ -4,6 +4,7 @@
 import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { buildCourtView } from '../render/courtView.ts';
+import { Arena, arenaDef } from '../render/arena/arena.ts';
 import { NetView } from '../render/netView.ts';
 import { makeWorld, makeNetCloth } from '../sim/setup.ts';
 import { Rng } from '../sim/core/rng.ts';
@@ -16,12 +17,11 @@ const SURF_COLOR: Record<number, number> = { [SURF_GLASS]: 0x4fd3ff, [SURF_MESH]
 export async function startBallLab(renderer: THREE.WebGPURenderer, hud: HTMLElement): Promise<void> {
   const world = makeWorld();
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0d0f12);
-  scene.add(new THREE.HemisphereLight(0xdfe8f0, 0x30343a, 1.2));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.0);
-  sun.position.set(5, 15, 7);
-  scene.add(sun);
-  scene.add(buildCourtView(world.court));
+  // The plain covered-club look: a floor with its lines and daylight, nothing round it to distract.
+  const arena = new Arena(arenaDef('hall'), world.court, scene, renderer);
+  const court = buildCourtView(world.court, { frame: arena.def.frame, base: arena.def.base });
+  scene.add(court.group);
+  court.setEnvironment(arena.bakeEnvironment(renderer, scene, []));
   const net = new NetView(makeNetCloth(world));
   scene.add(net.group);
 
