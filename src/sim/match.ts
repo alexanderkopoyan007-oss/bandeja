@@ -15,7 +15,7 @@ import {
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
-import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
+import { findWindows, makeWindows, OH_ANY, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { formationSpot, type Spot } from './player/formation.ts';
@@ -484,6 +484,7 @@ export class MatchSim {
     // Caught in the net, or under a pocket of it, the ball can be past the net line without having crossed.
     if (!b.inNet) this.rally.onBallZ(b.sideZ);
     if (recompute && (this.phase === PH_RALLY || this.phase === PH_TOSS)) {
+      this.pred.strikeT = this.lastStrikeTime;
       this.pred.compute(this.world, b, tStart + dt, this.phase === PH_RALLY ? this.rally.bounces : this.tossBounces, 2,
         this.wallsSinceBounce, flags);
     }
@@ -869,6 +870,7 @@ export class MatchSim {
       this.tossBounces = 0;
       this.placeBallInHand();
       this.ball.vel.set(0, -SERVE_PUSH, 0);
+      this.pred.strikeT = t;
       this.pred.compute(this.world, this.ball, t, 0, 2);
       this.computeTossIdeal();
       this.emitP(E_TOSS, i);
@@ -950,7 +952,7 @@ export class MatchSim {
     const s = this.side(team);
     const mustBounce = this.rally.isServe;
     const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
-      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY);
+      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY, this.ai[i] ? this.ai[i].ohKind : OH_ANY);
     let w: ContactWindow | null = null;
     for (let k = 0; k < n; k++) {
       const c = this.windows[k]!;
@@ -1138,6 +1140,7 @@ export class MatchSim {
     }
     this.emitP(E_HIT, i, shot, p.grade, this.res.speed, b.pos.x, b.pos.y, b.pos.z);
     this.wallsSinceBounce = 0;
+    this.pred.strikeT = this.lastStrikeTime;
     this.pred.compute(this.world, b, this.time, 0);
     // The opponents split-step as the ball is struck (a human already pushing a direction goes instead: a forced hop
     // would hold their keys for its airtime).
@@ -1258,7 +1261,7 @@ export class MatchSim {
     // Same look-back as the release is judged with: windows must include the moments just gone, or the ideal
     // of a window you are already in slides forward with the clock and the cue never closes.
     return findWindows(this.pred, p.pos.x, p.pos.z, this.side(team), this.rally.isServe, 1, p.tune, out, this.time - RELEASE_LOOKBACK,
-      this.goingOverhead(p), this.goingVolley(p));
+      this.goingOverhead(p), this.goingVolley(p), this.ai[i] ? this.ai[i].ohKind : OH_ANY);
   }
 
   /** Fingerprint of the full sim state (determinism checks). */

@@ -28,7 +28,13 @@
     "contactMaxHeight": 2.75,
     "overheadHeight": 1.85,
     "overheadIdealHeight": 2.35,
+    "//overheadIdeal": "Where each overhead is met when the player picks it in advance (the AI; the human's cue keeps overheadIdealHeight, a ring that moved as Space went down mid-charge would play worse): bandeja 1.85-2.05 m (head height or a little above, arm not fully straight), víbora 1.55-1.85 m (shoulder to head height), smash 2.30-2.50 m (full reach, in the air); docs/research/serve-and-strokes-motion.md 4.2. All overheads had been planned at 2.35 m: bandejas too high, smashes at the bottom of their band.",
+    "overheadIdealBandeja": 1.95,
+    "overheadIdealVibora": 1.72,
+    "overheadIdealSmash": 2.42,
     "overheadReach": 0.4,
+    "//riseMaxOffWall": "Off a wall the ball is met at or below the shoulders, or coming down: a ball still climbing past the shoulders after the glass can't be swung at (a ground stroke tops out at the shoulder, and an overhead needs the player under a ball that is falling). Shoulder height 0.818 of stature (Drillis & Contini 1966: 1.47 m at 1.80 m). Without it the AI took 13-15 m/s smash rebounds 0.15-0.3 s after the glass at 2-2.9 m, rising, often with a smash of its own, and only 11% of smashes won (pros 45%).",
+    "riseMaxOffWall": 1.47,
     "recoverTime": 0.35,
     "positioningAssist": 0.3
   },
