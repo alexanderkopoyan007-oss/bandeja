@@ -40,6 +40,8 @@ export interface Family {
    */
   via?: THREE.Vector3;
   viaS?: number;
+  /** Played facing the player's own back glass (the contrapared): the stance turns round to it. */
+  glass?: boolean;
 }
 
 const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
@@ -167,8 +169,11 @@ export const VOLLEY_BH = volley(BACKHAND, 'volley-bh');
  * - Lob: a big low-to-high lift with the face open, finishing high in front.
  * - Drop (dejada): a short, soft swing with the face open.
  * - Chiquita: a compact low-to-high brush with the face square, finishing at the shoulder.
+ * - Contrapared: facing the back glass (the keys are the stance's, and the stance turns round), a short backswing
+ *   kept low, then a steep low-to-high lift with the face well open that sends the ball up into the glass, finishing
+ *   high in front of the face (the ball rebounds over the player's head towards the net).
  */
-function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiquita'): Family {
+function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiquita' | 'contra'): Family {
   const open = (k: Key, up: number): Key => {
     // Open the face (strings looking up): roll the racket about its handle. Forehand and backhand roll
     // opposite ways, since the racket points opposite ways.
@@ -198,6 +203,20 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
     };
   }
   const shrink = (k: Key, u: number): Key => ({ ...k, p: k.p.clone().lerp(f.contact.p, u), pole: k.pole.clone().lerp(f.contact.pole, u) });
+  if (kind === 'contra') {
+    // (the glass is a metre or two away: no room for a full backswing)
+    const back = shrink(f.back, 0.3);
+    back.p.y -= 0.25;
+    return {
+      ...f, name: `${f.name}-contra`, glass: true,
+      back,
+      contact: open(f.contact, 0.75),
+      low: f.low && open({ ...f.contact, q: f.low }, 0.75).q,
+      finish: key(v(side * 0.1, 2.0, 0.42), v(side * -0.05, 0.95, 0.3), v(0, 0.35, 1), v(side * 0.5, 1.55, 0.3), f.contact.yaw - side * 0.15, f.finish.off),
+      dip: 0.42,
+      loop: 0.06,
+    };
+  }
   if (kind === 'chiquita') {
     const back = shrink(f.back, 0.35);
     back.p.y -= 0.15;
@@ -222,6 +241,8 @@ export const BH_LOB = variant(BACKHAND, 1, 'lob');
 export const BH_DROP = variant(BACKHAND, 1, 'drop');
 export const FH_CHIQUITA = variant(FOREHAND, -1, 'chiquita');
 export const BH_CHIQUITA = variant(BACKHAND, 1, 'chiquita');
+export const FH_CONTRA = variant(FOREHAND, -1, 'contra');
+export const BH_CONTRA = variant(BACKHAND, 1, 'contra');
 
 /**
  * Ready position between shots: the racket up in front of the chest, head up, edge towards the net, the free
@@ -258,7 +279,7 @@ function mirrorFamily(f: Family): Family {
 
 const LEFT = new Map<Family, Family>();
 for (const f of [FOREHAND, BACKHAND, OVERHEAD, SMASH, SERVE, VOLLEY_FH, VOLLEY_BH, FH_SLICE, FH_LOB, FH_DROP, BH_SLICE, BH_LOB, BH_DROP,
-  FH_CHIQUITA, BH_CHIQUITA]) {
+  FH_CHIQUITA, BH_CHIQUITA, FH_CONTRA, BH_CONTRA]) {
   LEFT.set(f, mirrorFamily(f));
 }
 

@@ -28,12 +28,19 @@ export interface StandPlan {
   volleyKey: boolean;
   /** The player can get there in time (false: the best try, out of time). */
   inTime: boolean;
+  /** A contrapared: the player faces their own back glass and plays the ball up into it (see CONTRA_*). */
+  contra: boolean;
+  /**
+   * The last plan that found anything was a contrapared: the player has turned to the glass. Kept through a re-plan
+   * that finds nothing (the close-in `only` pass), so a kept contact isn't charged the turn again.
+   */
+  turned: boolean;
   /** Prediction version the plan was made from. */
   version: number;
 }
 
 export function makeStandPlan(): StandPlan {
-  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, volleyKey: false, inTime: false, version: -1 };
+  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, volleyKey: false, inTime: false, contra: false, turned: false, version: -1 };
 }
 
 /** Margin kept between the ball's path and the body (on top of the body radius). */
@@ -54,6 +61,23 @@ const PRESSURE_COST = 0.3;
  */
 const VOLLEY_REACH_MIN = 0.35;
 const VOLLEY_REACH_MAX = 1.15;
+
+/**
+ * Contrapared (shots.ts SHOT_CONTRAPARED): a ball that has bounced on our half and is between the player and their
+ * own back glass (dying near it, in the corner, or past the player) is met facing the glass, from the net side of
+ * it, and hit up into the glass. Only when nothing better is on: it costs CONTRA_COST over a comfortable stroke, so
+ * a ball that comes off the glass to be played facing the net is played that way. The ball's centre must be
+ * CONTRA_GLASS_MIN-CONTRA_GLASS_MAX from the glass (room to swing; further out it is a plain ball past the player,
+ * which a quick turn and a hit into the glass still saves) and CONTRA_LOW-CONTRA_HIGH up; turning round takes
+ * CONTRA_TURN on top of the run.
+ */
+export const CONTRA_COST = 1.1;
+export const CONTRA_GLASS_MIN = 0.75;
+export const CONTRA_GLASS_MAX = 2.8;
+export const CONTRA_LOW = 0.3;
+export const CONTRA_HIGH = 1.55;
+const CONTRA_TURN = 0.15;
+const BACK_GAP = 0.22;
 
 /**
  * Pick the contact the player can reach in time with the best height. Deep balls that will come off the back
@@ -82,7 +106,11 @@ export function planStand(
   let bestCost = 1e9;
   let found = false;
   let fbSlack = -1e9;
+  // Already set up facing the glass for this contact: the turn is done (charging it again every re-plan made a
+  // contrapared impossible in its last 0.2 s, and the plan fell back to a stroke facing the net that whiffed).
+  const wasContra = out.turned;
   out.valid = false;
+  out.contra = false;
   out.version = pr.version;
   out.overhead = overhead;
   out.volleyKey = volleyKey;
@@ -148,6 +176,14 @@ export function planStand(
     }
     const slack = ti - now - need;
     const afterWall = pr.walls[i]! > 0 && b === 1;
+    // The easier ball: pace 14 m/s none, 26 m/s one unit; time since the strike 0.9 s none, 0.45 s one unit.
+    let press = 0;
+    if (b === 1) {
+      const vx = pr.vx[i]!, vy = pr.vy[i]!, vz = pr.vz[i]!;
+      const pace = (sqrt(vx * vx + vy * vy + vz * vz) - 14) / 12;
+      const late = (0.9 - (ti - strikeT)) / 0.45;
+      press = PRESSURE_COST * (clamp(pace, 0, 3) + clamp(late, 0, 2));
+    }
     if (slack >= 0) {
       let cost = overhead ? overheadCost(y, t, ohKind) + 0.03 * (ti - now)
         : volleyKey ? volleyCost(y) + 0.25 * (ti - now)
@@ -159,26 +195,67 @@ export function planStand(
         if (afterWall) cost -= 0.1;
         // Volleying from the back of the court is rarely the right read.
         if (b === 0 && abs(p.pos.z) > 6.5) cost += 0.4;
-        // The easier ball: pace 14 m/s none, 26 m/s one unit; time since the strike 0.9 s none, 0.45 s one unit.
-        if (b === 1) {
-          const vx = pr.vx[i]!, vy = pr.vy[i]!, vz = pr.vz[i]!;
-          const pace = (sqrt(vx * vx + vy * vy + vz * vz) - 14) / 12;
-          const late = (0.9 - (ti - strikeT)) / 0.45;
-          cost += PRESSURE_COST * (clamp(pace, 0, 3) + clamp(late, 0, 2));
-        }
+        cost += press;
       }
       if (cost < bestCost && clearOfBall(pr, now, i, sx, sz, t.height, t.bodyRadius)) {
         bestCost = cost;
         found = true;
         write(out, sx, sz, ti, x, y, z, useFh ? 1 : -1, afterWall, b === 0);
         out.inTime = true;
+        out.contra = false;
       }
     } else if (!found && slack > fbSlack) {
       fbSlack = slack;
       write(out, sx, sz, ti, x, y, z, useFh ? 1 : -1, afterWall, b === 0);
       out.inTime = false;
+      out.contra = false;
+    }
+    // The contrapared from this sample: facing the glass, from the net side of the ball.
+    if (overhead || volleyKey || b !== 1 || y < CONTRA_LOW || y > CONTRA_HIGH) continue;
+    // (the glass is BACK_GAP behind the players' back limit, Player.setHalf)
+    const gap = backZ + BACK_GAP - abs(z);
+    if (gap < CONTRA_GLASS_MIN || gap > CONTRA_GLASS_MAX) continue;
+    // Facing the glass the forehand is on the other side of the ball from facing the net.
+    const cfX = x + side * p.handed * lateral;
+    const cbX = x - side * p.handed * lateral;
+    const cFh = abs(cfX - p.pos.x) <= abs(cbX - p.pos.x) + 0.6;
+    const cx = clamp(cFh ? cfX : cbX, p.minX, p.maxX);
+    const cz = clamp(z - side * behind, p.minZ, p.maxZ);
+    const cdx = cx - p.pos.x;
+    const cdz = cz - p.pos.z;
+    const cd = sqrt(cdx * cdx + cdz * cdz);
+    const turn = kept && wasContra ? 0 : CONTRA_TURN;
+    let cNeed = 0.05 + turn;
+    if (cd > 1e-3) {
+      p.runD = cd;
+      p.runX = cdx / cd;
+      p.runZ = cdz / cd;
+      p.runTime();
+      cNeed = p.runT + p.runV / (1.6 * t.brake) + (cd > 0.4 ? (kept ? 0.05 : 0.1) : 0.05) + turn;
+    }
+    const cSlack = ti - now - cNeed;
+    if (cSlack < 0) {
+      // Out of time: still the least-late plan if it is (a ball behind the player dying on the glass has no other).
+      if (!found && cSlack > fbSlack) {
+        fbSlack = cSlack;
+        write(out, cx, cz, ti, x, y, z, cFh ? 1 : -1, pr.walls[i]! > 0, false);
+        out.inTime = false;
+        out.contra = true;
+      }
+      continue;
+    }
+    // (a hard ball is as hard to meet facing the glass: it is better waited for off the glass)
+    let cCost = CONTRA_COST + heightCost(y, t.overheadHeight) + 0.03 * (ti - now) + press;
+    if (kept) cCost -= 0.35;
+    if (cCost < bestCost && clearOfBall(pr, now, i, cx, cz, t.height, t.bodyRadius)) {
+      bestCost = cCost;
+      found = true;
+      write(out, cx, cz, ti, x, y, z, cFh ? 1 : -1, pr.walls[i]! > 0, false);
+      out.inTime = true;
+      out.contra = true;
     }
   }
+  if (out.valid) out.turned = out.contra;
   return out.valid;
 }
 

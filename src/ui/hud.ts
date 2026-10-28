@@ -271,7 +271,8 @@ export class Hud {
     }
     this.meter.style.opacity = show ? '1' : '0';
 
-    // Teach the court: a lob coming (the overhead key), the overhead you are holding, or a ball to play off the glass.
+    // Teach the court: a lob coming (the overhead key), the overhead you are holding, a contrapared, or a ball to play
+    // off the glass.
     let hint = '';
     if (human >= 0 && !this.pro && sim.phase === PH_RALLY && sim.rally.hitter >= 0 && sim.rally.hitter !== team) {
       const p = sim.players[human]!;
@@ -286,6 +287,7 @@ export class Hud {
       else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Bandeja · hold [Space] to smash, [Shift] for a víbora';
       else if (p.shot === SHOT_VOLLEY && p.swing === SW_CHARGE) hint = st.valid && st.volley ? 'Volley · hold [Space] to punch it flat' : 'Out of reach in the air · it will be blocked off the bounce';
       else if (this.lob) hint = 'Lob coming · hold [O] for an overhead';
+      else if (st.valid && st.contra) hint = 'Contrapared · turn and play it up into your own glass';
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }
     if (hint) this.set(this.hint, keys(hint), true);

@@ -17,7 +17,7 @@ import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, type KitLook, type KitState } from './kit.ts';
 import {
-  BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   type Family, type Key,
 } from './strokes.ts';
@@ -993,8 +993,8 @@ export class Avatar {
 
   // ---- strokes ----
 
-  private pickFamily(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number): Family {
-    const f = this.pickRight(sim, p, idx, c, overhead, volley, hand);
+  private pickFamily(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number, contra = false): Family {
+    const f = contra ? (hand > 0 ? FH_CONTRA : BH_CONTRA) : this.pickRight(sim, p, idx, c, overhead, volley, hand);
     return this.handed > 0 ? f : leftFamily(f);
   }
 
@@ -1167,14 +1167,14 @@ export class Avatar {
       // Off the back glass: side-on to the racket side while the ball, on this side, still goes towards it.
       const side = sim.side(p.team);
       if (st.valid) this.hand = st.hand;
-      this.wallWant = st.valid && st.afterWall && this.swingS === 0 && sim.phase === PH_RALLY
+      this.wallWant = st.valid && st.afterWall && !st.contra && this.swingS === 0 && sim.phase === PH_RALLY
         && sim.ball.pos.z * side > 0 && sim.ball.vel.z * side > 0.3 ? 1 : 0;
       if (this.swingS === 0) {
         // Re-aimed while the plan changes (the ball may cross to the other side); a change of stroke blends
         // over from wherever the racket is rather than jumping.
         if (!this.hasCon) this.conW.set(sim.ball.pos.x, sim.ball.pos.y, sim.ball.pos.z);
         const hand = st.valid ? st.hand : this.handOf(sim, p, this.conW);
-        const fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand);
+        const fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand, st.valid && st.contra);
         if (fam !== this.fam && t - this.prepStart > 0.03) {
           this.snapshot();
           this.prepStart = t;
@@ -1218,7 +1218,10 @@ export class Avatar {
         const vol = fresh
           ? (hit ? this.prevBounces : sim.rally.bounces) === 0 && (p.shot === SHOT_DRIVE || p.shot === SHOT_SLICE)
           : st.volley;
-        const fam = this.pickFamily(sim, p, idx, this.conW, !fresh && st.overhead, vol, fresh ? this.handOf(sim, p, this.conW) : st.hand);
+        // (a contrapared is only struck from a contrapared plan; facing the glass the forehand is the other side)
+        const contra = fresh ? p.contra : st.contra;
+        const hand = fresh ? this.handOf(sim, p, this.conW) * (contra ? -1 : 1) : st.hand;
+        const fam = this.pickFamily(sim, p, idx, this.conW, !fresh && st.overhead, vol && !contra, hand, contra);
         if (this.st === ST_PREP && fam !== this.fam) { this.snapshot(); this.relBlend = true; }
         this.fam = fam;
       }
@@ -1446,7 +1449,9 @@ export class Avatar {
     this.addrW += ((this.addr ? 1 : 0) - this.addrW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.1) : 0);
     this.mixReady();
     const sq = Math.max(this.w, this.ready * this.addrW);
-    this.yaw = p.facing + wrapAngle(net - this.hand * this.handed * WALL_TURN * this.wall - p.facing) * sq;
+    // (a contrapared is played facing the player's own back glass)
+    const face = this.fam.glass ? net + Math.PI : net;
+    this.yaw = p.facing + wrapAngle(face - this.hand * this.handed * WALL_TURN * this.wall - p.facing) * sq;
     // The body turns no faster than a person turns (the sim faces the ball at once, even one that has just passed).
     if (this.inertial && (Avatar.inertMask & 4) !== 0) {
       this.yawI.in[0] = this.yaw;

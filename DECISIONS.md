@@ -1232,3 +1232,35 @@ shader compiles mid-point.
   play on while you were away).
 - Not verified with people or hardware: a real screen reader, physical controllers, colour-blind players
   (OPEN_QUESTIONS.md).
+
+## Phase 9: expert review
+**The contrapared** (owner's playtest, 2026-10-28: "I can't hit a shot off of it; when recovering the human does a
+weird move instead of possibly hitting it off of their back glass as they do in real life"). A ball that has bounced
+and got behind the player, close to their own back glass, is turned on and played up into that glass so it comes off
+it over the net (FIP 13.l: the hitter's own glass is legal before the ball crosses, their mesh is not).
+- **Shot** (`SHOT_CONTRAPARED`, `data/shots.json`): `ShotSolver.solveContra` aims at the target as seen in the glass
+  (the mirror image), takes the elevation through the aimed glass height (1.9 m, higher on a retry), finds the speed by
+  secant on the flown landing and turns the yaw for the sideways miss, all flown through the real ball with the walls
+  (`flyWalls`). A launch is clean only if the own back glass comes first, below its top, nothing else is touched, the
+  net is cleared by 15 cm and the ball comes down on the far half. 4-9 flights, 0.6 ms on average on the strike tick
+  (2 ms at most).
+- **When**: `planStand` adds a contrapared candidate for each sample after the bounce, 0.75-2.8 m from the glass and
+  0.3-1.55 m up, standing on the net side of the ball facing the glass, with a turn of 0.15 s on top of the run and a
+  cost of 1.1 over a comfortable stroke plus the same pace/hurry cost as any ball, so it is only played when no stroke
+  facing the net is on in time. Contact windows for it (`findWindows(..., contraGlass)`) are behind the body by 0.1 m
+  or more and 0.45 m or more off the glass. The AI plans it the same way and aims it deep cross or middle.
+- **Human path** (the owner's bug): the plan was there but the swing never took it. Two causes found by tracing the QA
+  bot: the turn was charged again on every re-plan, so in the last 0.2 s before the contact a contrapared plan was
+  always out of time and fell back to a stroke facing the net, which whiffed; and an out-of-time contrapared was left
+  out of the least-late fallback. Now the plan remembers that the player has turned (`StandPlan.turned`) and the
+  contrapared competes in the fallback. QA bot (10 seeds x 240 s): 23 of 33 contrapared plans played (was 4 of 21),
+  21 of them came back and the rally went on.
+- **AI** (6 seeds x 300 s): 1.4% of hits (was 0.3%), 13 of 14 returned. No published frequency was found; it is a
+  rare defensive save in pro play, which this matches in kind.
+- **Body**: its own stroke (`FH_CONTRA`/`BH_CONTRA`, `Family.glass`): the stance turns round to the glass, a short
+  low backswing (no room), a steep lift with the face well open, finishing high. The forehand facing the glass is on
+  the other side, so the sim's hand side flips too. Face centre to ball at contact p50 under 1 cm, stance square to the
+  glass at every contact (`tests/render/contrapared.test.ts`). The HUD hints "Contrapared · turn and play it up into
+  your own glass" (the existing hint pill; any shot key plays it).
+- Tests: `tests/sim/contrapared.test.ts` (solver, swing errors: over 80% still go glass-net-court, AI share and
+  legality, the human path).

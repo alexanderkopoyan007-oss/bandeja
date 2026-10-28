@@ -38,6 +38,8 @@ export class Player {
   contactTime = 0;
   /** Timing delta at release (s) and resulting grade. */
   timingDelta = 0;
+  /** The committed swing is a contrapared (released against a contrapared window: facing the own back glass). */
+  contra = false;
   grade = -1;
   recoverUntil = 0;
   /** +1 forehand side, -1 backhand side of the planned contact. */
@@ -300,7 +302,8 @@ export class Player {
     out.push(this.pos.x, this.pos.z, this.vel.x, this.vel.z, this.facing, this.swing, this.shot, this.mod,
       this.chargeStart, this.release, this.contactTime, this.timingDelta, this.grade, this.recoverUntil,
       this.handSide, this.splitUntil, this.lastContactTime, this.lastContact.x, this.lastContact.y, this.lastContact.z,
-      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.heldMod, this.splitAt, this.pushFrom);
+      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.heldMod, this.splitAt, this.pushFrom,
+      this.contra ? 1 : 0);
   }
 
   readState(s: number[], i: number): number {
@@ -313,6 +316,7 @@ export class Player {
     this.heldMod = s[i++]!;
     this.splitAt = s[i++]!;
     this.pushFrom = s[i++]!;
+    this.contra = s[i++]! === 1;
     return i;
   }
 }

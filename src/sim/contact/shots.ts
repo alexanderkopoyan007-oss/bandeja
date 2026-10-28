@@ -475,14 +475,13 @@ export class ShotSolver {
   }
 
   // Residuals of the last evalContra(): landing distance and sideways miss in the unfolded plane (the court beyond
-  // the glass mirrored back), and the height the ball met the glass at against the one wanted.
+  // the glass mirrored back).
   private cR = 0;
   private cL = 0;
-  private cG = 0;
   private cDir = new V3();
 
   /** Fly a contrapared launch (speed s, elevation th along cDir) and measure it against the unfolded target. */
-  private evalContra(p: V3, s: number, th: number, w: V3, zc: number, ux: number, uz: number, gh: number): void {
+  private evalContra(p: V3, s: number, th: number, w: V3, zc: number, ux: number, uz: number): void {
     this.evals++;
     const d = this.cDir;
     tmpV.set(d.x * s * cos(th), s * sin(th), d.z * s * cos(th));
@@ -497,7 +496,6 @@ export class ShotSolver {
     const tl = sqrt(tx * tx + tz * tz);
     this.cR = (ex * tx + ez * tz) / tl - tl;
     this.cL = (ex * tz - ez * tx) / tl;
-    this.cG = this.wallHit === back ? this.wallY - gh : (this.wallHit < 0 ? -2 : 2);
   }
 
   /**
@@ -548,18 +546,18 @@ export class ShotSolver {
         ShotSolver.spinFor(rpm, this.cDir.x, this.cDir.z, outW);
         // Secant on the speed for the landing distance.
         let s0 = s;
-        this.evalContra(p, s0, th, outW, zc, ux, uz, gh);
+        this.evalContra(p, s0, th, outW, zc, ux, uz);
         let r0 = this.cR;
         let s1 = s0 * (r0 < 0 ? 1.12 : 0.9);
         for (let it = 0; it < 7 && abs(r0) > 0.08; it++) {
-          this.evalContra(p, s1, th, outW, zc, ux, uz, gh);
+          this.evalContra(p, s1, th, outW, zc, ux, uz);
           const r1 = this.cR;
           if (abs(r1 - r0) < 1e-6) break;
           const s2 = clamp(s1 - r1 * (s1 - s0) / (r1 - r0), 3, 50);
           s0 = s1; r0 = r1; s1 = s2;
         }
         s = abs(r0) <= 0.08 ? s0 : s1;
-        this.evalContra(p, s, th, outW, zc, ux, uz, gh);
+        this.evalContra(p, s, th, outW, zc, ux, uz);
         if (abs(this.cL) < 0.1) break;
         // The miss sideways, as the angle it subtends from the contact over the unfolded distance.
         yaw += atan(this.cL / dl);
@@ -607,8 +605,11 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   ghost.copyWear(ball);
   rk.eScale = ball.eScale;
 
+  const contra = req.shot === SHOT_CONTRAPARED;
   const tdx = req.targetX - ball.pos.x;
-  const tdz = req.targetZ - ball.pos.z;
+  // A contrapared is struck towards the target's reflection in the hitter's own back glass.
+  const zc = (ball.pos.z > 0 ? 1 : -1) * (solver.world.court.halfL - solver.world.spec.radius);
+  const tdz = (contra ? 2 * zc - req.targetZ : req.targetZ) - ball.pos.z;
   const tdl = sqrt(tdx * tdx + tdz * tdz);
   // The racket's long axis: across the shot towards the side of the body the ball is on (the head drops for a
   // low ball), up for overheads.
@@ -648,7 +649,8 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   // face cannot give the spin the flight was solved with (friction), solve the flight again with what it gives.
   for (let pass = 0; pass < 5; pass++) {
     ball.vel.copy(vin);
-    out.reachable = (shape.pace === true && solver.solvePace(ball.pos, req.targetX, req.targetZ, rpm, cap, paceClear, ball.vel, ball.spin))
+    out.reachable = contra ? solver.solveContra(ball.pos, req.targetX, req.targetZ, rpm, cap, shape.glassHeight ?? 1.9, ball.vel, ball.spin)
+      : (shape.pace === true && solver.solvePace(ball.pos, req.targetX, req.targetZ, rpm, cap, paceClear, ball.vel, ball.spin))
       || solver.solve(ball.pos, req.targetX, req.targetZ, rpm, shape.pace === true ? paceClear : clear, cap, ball.vel, ball.spin);
     if (shape.sideRpm) addSidespin(solver, ball, req, (shape.sideRpm * 2 * PI) / 60 * (0.7 + 0.3 * q));
     wantV.copy(ball.vel);

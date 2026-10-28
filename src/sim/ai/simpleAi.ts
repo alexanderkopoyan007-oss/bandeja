@@ -84,6 +84,8 @@ export class SimpleAi {
   /** A volley played safe (precision held: more net clearance, less pace) or put away (power held). */
   safe = false;
   punch = false;
+  /** The current plan is a contrapared (positioning.ts): met facing our own back glass and hit up into it. */
+  contra = false;
   private readonly wins = makeWindows();
   private readonly st = makeStandPlan();
   /** The contact this AI is set up for (the renderer times the swing to it). */
@@ -104,6 +106,7 @@ export class SimpleAi {
   reset(): void {
     this.planVersion = -1;
     this.ohKind = OH_ANY;
+    this.contra = false;
     this.planned = false;
     this.pressed = false;
     this.released = false;
@@ -316,7 +319,8 @@ export class SimpleAi {
   /** Watch the ball come in from where we actually are, and time the release off that window. */
   private trackRelease(m: MatchSim, s: number): void {
     const p = m.players[this.index]!;
-    const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3, p.shot === SHOT_BANDEJA, false, this.ohKind);
+    const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3, p.shot === SHOT_BANDEJA, false, this.ohKind,
+      this.contra ? m.world.court.halfL : 0);
     this.reach = n > 0;
     let best = -1;
     for (let i = 0; i < n; i++) {
@@ -462,10 +466,12 @@ export class SimpleAi {
       this.ohKind = OH_ANY;
       const k = this.overhead ? -1 : keep;
       if (!(close && k >= 0 && planStand(pr, p, s, now, m.rally.isServe, st, k, true, false))) {
-        if (!planStand(pr, p, s, now, m.rally.isServe, st, k, false, false)) { this.planned = false; return; }
+        if (!planStand(pr, p, s, now, m.rally.isServe, st, k, false, false)) { this.planned = false; this.contra = false; return; }
       }
     }
     this.overhead = overhead;
+    // (a held swing follows the plan too: the sim judges its release against the windows of the kind planned now)
+    this.contra = !overhead && st.contra;
     let sx = st.x;
     let sz = st.z;
     let t = st.t;
@@ -480,6 +486,7 @@ export class SimpleAi {
       const n = findWindows(pr, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, now, false);
       if (n > 0 && this.wins[0]!.ideal < st.t + 0.09) {
         const w = this.wins[0]!;
+        this.contra = false;
         sx = p.pos.x;
         sz = p.pos.z;
         // The window's ideal can sit a hair before the ball reaches us; aim the block early enough that a late
@@ -569,7 +576,16 @@ export class SimpleAi {
   /** Already swinging: keep the shot, refresh the target only. */
   private retarget(m: MatchSim): void {
     this.shot = m.players[this.index]!.shot;
-    this.chooseTarget(m);
+    if (this.contra) this.contraTarget(m, m.aiRng.next());
+    else this.chooseTarget(m);
+  }
+
+  /** A contrapared's target: deep, with margin from the side glass (a defensive shot: get it back). */
+  private contraTarget(m: MatchSim, r: number): void {
+    const c = m.world.court;
+    const spread = c.halfW - 1.4;
+    this.targetX = clamp((r - 0.5) * 2 * spread * 0.7, -spread, spread);
+    this.targetZ = -m.side(this.team) * (6.2 + 1.4 * m.aiRng.next());
   }
 
   private chooseShot(m: MatchSim, height: number, volley: boolean, depth: number): void {
@@ -580,6 +596,12 @@ export class SimpleAi {
     this.chiquita = false;
     this.safe = false;
     this.punch = false;
+    if (this.contra) {
+      // Off our own back glass: a ground-stroke key (the sim makes it a contrapared).
+      this.shot = SHOT_LOB;
+      this.contraTarget(m, r);
+      return;
+    }
     // A ball at overhead height in front: an overhead, chosen as one (the sim turned a drive key's high ball into a
     // smash aimed like a drive: most of the AI's smashes, from 6.5 m, which the defenders blocked back).
     if (height >= m.players[this.index]!.tune.overheadHeight && depth < 7) {
