@@ -35,7 +35,7 @@ function at(asset: PlayerAsset, name: string): THREE.Vector3 {
   return new THREE.Vector3().setFromMatrixPosition(asset.restWorld[asset.bone(name)]!);
 }
 
-/** Per-vertex region (R_*), computed once per asset and stored as the geometry's `region` attribute. */
+/** Per-vertex region (R_*), computed once per asset; the shader reads it as one weight per region (`kitRegA/B`). */
 export function kitRegions(asset: PlayerAsset): { region: Float32Array; frame: KitFrame } {
   let region = REGIONS.get(asset);
   let frame = FRAMES.get(asset);
@@ -172,7 +172,7 @@ export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THRE
   // Folds: soft horizontal creases on the shirt and shorts, fixed to the body, about 2 mm deep.
   const folds = mx_noise_float(vec3(p.x.mul(16), p.y.mul(44), p.z.mul(16))).mul(0.6)
     .add(mx_noise_float(p.mul(60)).mul(0.15));
-  m.normalNode = heightBump(folds.mul(fabric).mul(0.0025));
+  m.normalNode = heightBump(folds.mul(fabric).mul(0.0025), 0.023);
   // Hems lag the body: the shirt from the chest down to its hem, the shorts' legs, by `lag`.
   const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
   const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);

@@ -58,7 +58,7 @@ export function makeBall(radius: number): BallLook {
   m.sheenColor = new THREE.Color(0xf4ffb0);
   m.sheenRoughness = 0.6;
   // Fuzz about 0.15 mm high on ~1 mm features; none on the seam.
-  m.normalNode = heightBump(fuzz.mul(float(1).sub(seam)).mul(0.00015));
+  m.normalNode = heightBump(fuzz.mul(float(1).sub(seam)).mul(0.00015), 0.0009);
   const mesh = new THREE.Mesh(geo, m);
   mesh.castShadow = true;
   return { mesh, blur: blurU };

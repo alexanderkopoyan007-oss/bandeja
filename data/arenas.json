@@ -24,6 +24,8 @@
       "hemi": { "sky": "#eef1f6", "ground": "#5a3a34", "intensity": 0.55 }
     },
     "post": { "bloom": { "strength": 0.3, "radius": 0.5, "threshold": 3 } },
+    "camera": { "swingRise": 2.5 },
+    "//camera": "The change-of-ends swing climbs 2.5 m at its middle to pass over the side stands' back rows (on the end's 25.5 m circle at 7.6 m the lens went through them). Only here: in the hall it would go through the roof.",
     "//light": "The roof's skylights and the event floodlights: bright, nearly shadowless from above (soft, faint shadows under the players in arena-wide-2). The key light gives the soft shadow; the reflections and most of the fill come from the arena itself (environment map rendered from the court)."
   },
   "hall": {

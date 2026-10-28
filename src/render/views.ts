@@ -242,8 +242,6 @@ const CAM_BACK = 15.5;
 const CAM_HEIGHT = 7.6;
 const FOV = 26;
 const KICK_DECAY = 0.09;
-/** How much higher the camera goes at the middle of the change-of-ends swing (m). */
-const SWING_RISE = 2.5;
 /** Lob tilt: the ball kept this far (rad) below the top edge; the most the camera tilts up (rad); its lag (s). */
 const TILT_MARGIN = (2.5 * Math.PI) / 180;
 const TILT_MAX = (14 * Math.PI) / 180;
@@ -264,8 +262,18 @@ export class BroadcastCamera {
   private tilt = 0;
   private lastNow = -1;
 
-  constructor(aspect: number) {
+  /** How much higher the camera goes at the middle of the change-of-ends swing (m; per arena: over the stadium's
+   * stands, never through a hall's roof). */
+  private readonly swingRise: number;
+
+  constructor(aspect: number, swingRise = 0) {
     this.camera = new THREE.PerspectiveCamera(FOV, aspect, 0.1, 300);
+    this.swingRise = swingRise;
+  }
+
+  /** The camera is swinging round at a change of ends. */
+  get swinging(): boolean {
+    return this.turnStart >= 0;
   }
 
   /**
@@ -316,7 +324,7 @@ export class BroadcastCamera {
         fov = FOV * (1 - 0.029 * env * Math.min(1, u / 0.03));
       }
     }
-    const camY = CAM_HEIGHT + SWING_RISE * swing + jolt;
+    const camY = CAM_HEIGHT + this.swingRise * swing + jolt;
     const tx = this.lookX * ca * 0.8, ty = 0.35 + jolt * 0.5, tz = -ca * 1.1;
     this.camera.position.set(sa * Rx + this.lookX * ca, camY, ca * Rz - this.lookX * sa);
     this.camera.lookAt(tx, ty, tz);
