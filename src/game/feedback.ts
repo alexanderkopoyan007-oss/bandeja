@@ -1,10 +1,10 @@
-// Hit feedback (Phase 2; FEEL.md): turns the sim's hit and whiff events into sound, gamepad rumble and the
-// camera's response to a smash. Reads the event ring like the HUD does; never writes to the sim.
+// Hit feedback (Phase 2; FEEL.md): turns the sim's hit and whiff events into gamepad rumble and the camera's
+// response to a smash (sound moved to src/audio/soundscape.ts in Phase 6). Reads the event ring like the HUD does;
+// never writes to the sim.
 import * as THREE from 'three/webgpu';
 import { E_HIT, E_WHIFF, type MatchSim } from '../sim/match.ts';
-import { SHOT_SMASH, SHOT_VIBORA, SHOT_DROP, SHOT_CHIQUITA, SHOT_BANDEJA } from '../sim/contact/shots.ts';
+import { SHOT_SMASH, SHOT_VIBORA, SHOT_BANDEJA } from '../sim/contact/shots.ts';
 import { gradeQuality } from '../sim/contact/timing.ts';
-import type { Sound } from '../audio/sound.ts';
 import type { GamepadInput } from './input/gamepad.ts';
 import type { BroadcastCamera } from '../render/views.ts';
 
@@ -13,20 +13,16 @@ const v = new THREE.Vector3();
 export class Feedback {
   private seen = 0;
   private sim: MatchSim | null = null;
-  private readonly hitSound = { quality: 1, speed: 0, soft: false, overhead: false, delay: 0, pan: 0, near: 1 };
-
-  private readonly sound: Sound;
   private readonly pad: GamepadInput;
   private readonly cam: BroadcastCamera;
 
-  constructor(sound: Sound, pad: GamepadInput, cam: BroadcastCamera) {
-    this.sound = sound;
+  constructor(pad: GamepadInput, cam: BroadcastCamera) {
     this.pad = pad;
     this.cam = cam;
   }
 
-  /** After the frame's sim steps: `renderTime` is the moment being drawn (events up to a tick ahead of it). */
-  update(sim: MatchSim, human: number, renderTime: number, nowMs: number): void {
+  /** After the frame's sim steps. */
+  update(sim: MatchSim, human: number, nowMs: number): void {
     if (sim !== this.sim) {
       this.sim = sim;
       this.seen = sim.eventSeq;
@@ -38,31 +34,18 @@ export class Feedback {
       const e = sim.events[this.seen % sim.events.length]!;
       this.seen++;
       if (e.kind !== E_HIT && e.kind !== E_WHIFF) continue;
-      // Where it is on screen and how far from the camera, for pan and loudness.
-      v.set(e.x, e.y, e.z).project(camera);
-      const pan = v.x;
+      // How far from the camera, for the kick.
       const d = camera.position.distanceTo(v.set(e.x, e.y, e.z));
       // 1 at the near baseline (about 16 m from the broadcast camera), 0.1 at the far one (36 m).
       const near = Math.max(0, Math.min(1, 1 - (d - 16) / 22));
-      const delay = Math.min(0.05, Math.max(0, e.time - renderTime));
       const mine = human >= 0 && e.player === human;
       if (e.kind === E_WHIFF) {
-        if (e.player >= 0) this.sound.whiff(delay, pan, near);
         if (mine) this.pad.rumble(0, 0.15, 40, nowMs);
         continue;
       }
       const shot = e.a;
       const q = gradeQuality(e.b);
       const overhead = shot === SHOT_SMASH || shot === SHOT_VIBORA;
-      const h = this.hitSound;
-      h.quality = q;
-      h.speed = e.c;
-      h.soft = shot === SHOT_DROP || shot === SHOT_CHIQUITA;
-      h.overhead = overhead;
-      h.delay = delay;
-      h.pan = pan;
-      h.near = near;
-      this.sound.hit(h);
       if (mine) {
         // A clean hit is a short, light tap on the high motor; a mistimed one a heavier, longer buzz on the low
         // one; a smash both, hard.

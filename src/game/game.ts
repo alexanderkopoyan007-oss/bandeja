@@ -10,7 +10,9 @@ import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
-import { Sound } from '../audio/sound.ts';
+import { AudioEngine } from '../audio/engine.ts';
+import { Soundscape, type FeetSource } from '../audio/soundscape.ts';
+import { FLOOR_NAMES } from '../audio/voices.ts';
 import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
 import { Hud } from '../ui/hud.ts';
@@ -38,7 +40,7 @@ export interface GameOptions {
    * old way.
    */
   runAhead?: boolean;
-  /** Hit sounds (`?sound=0` turns them off). */
+  /** Sound (`?sound=0` turns it off). */
   sound?: boolean;
   /** Arena (data/arenas.json): stadium, hall, club-day, club-night. */
   arena?: string;
@@ -90,7 +92,10 @@ export class Game {
   readonly assists: AssistView;
   readonly kb: KeyboardInput;
   readonly pad: GamepadInput;
-  readonly sound = new Sound();
+  /** Sound (Phase 6): the engine, and what decides what is heard. */
+  readonly audio: AudioEngine;
+  readonly soundscape: Soundscape;
+  private readonly feetSrc: FeetSource[];
   readonly feedback: Feedback;
   readonly hud: Hud;
   readonly debug: DebugOverlay;
@@ -159,12 +164,18 @@ export class Game {
 
     this.kb = new KeyboardInput(window);
     this.pad = new GamepadInput(window);
-    this.sound.enabled = opts.sound !== false && !opts.autoplay;
-    // Audio may only start from a gesture.
-    const unlock = (): void => this.sound.unlock();
+    // Sound: the bank renders in a worker from now; audio starts at the first key, click or pad press (browsers
+    // allow it only from a gesture). Autoplay too: a click and the AI match has sound.
+    const floor = Math.max(0, FLOOR_NAMES.indexOf(opts.match.world?.floor ?? 'turf'));
+    this.audio = new AudioEngine({ floor, arena: opts.arena ?? 'stadium' });
+    this.audio.enabled = opts.sound !== false;
+    this.audio.load();
+    this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? []);
+    this.feetSrc = this.players.map((pv) => ({ feet: pv.avatar ? pv.avatar.feet : null }));
+    const unlock = (): void => this.audio.unlock();
     addEventListener('keydown', unlock);
     addEventListener('pointerdown', unlock);
-    this.feedback = new Feedback(this.sound, this.pad, this.cam);
+    this.feedback = new Feedback(this.pad, this.cam);
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
     // Score rows name the players: YOU, and each AI by its playing style.
     const who = (i: number, short: boolean): string => {
@@ -342,7 +353,7 @@ export class Game {
     const ahead = this.opts.runAhead !== false;
     if (this.pad.connected) {
       this.pad.poll(this.kb, now);
-      if (this.pad.held !== 0) this.sound.unlock();
+      if (this.pad.held !== 0) this.audio.unlock();
     }
     // ...except while the human holds a swing: the release can come for any moment from now on, and one that
     // arrives for a moment the sim has already run past would meet the ball up to a tick late. Until it goes the
@@ -410,9 +421,11 @@ export class Game {
     const who = this.opts.autoplay ? -1 : human;
     // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last
     // frame's camera, which is close enough).
-    this.feedback.update(this.sim, who, renderTime, now);
+    this.feedback.update(this.sim, who, now);
     this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
+    this.audio.setListener(this.cam.camera);
+    this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt, cueNow);
     this.hud.update(this.sim, who, now / 1000);

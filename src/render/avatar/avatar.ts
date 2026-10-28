@@ -669,6 +669,14 @@ export class Avatar {
   private clothOn = false;
   /** Metres run this match (render-side): sweat builds with effort as well as time. */
   private ran = 0;
+  /**
+   * Each foot's lowest sole point after this frame's pose (world): x, height above the floor, z, for the left then
+   * the right foot. The soundscape hears a step where one comes down onto the floor.
+   */
+  readonly feet = new Float64Array(6);
+  private readonly footA = new THREE.Vector3();
+  private readonly footQ = new THREE.Quaternion();
+
   /** QA: a fixed sweat level for screenshots (negative = from the match). */
   static sweatAt = -1;
 
@@ -1413,6 +1421,20 @@ export class Avatar {
     if (this.inertial && (Avatar.inertMask & 2) !== 0) {
       this.headInertia.apply(this.bones, null, this.headSkip);
       this.neck.updateMatrixWorld(true);
+    }
+    this.measureFeet();
+  }
+
+  /** `feet`: where each sole's lowest point is now. */
+  private measureFeet(): void {
+    for (let f = 0; f < 2; f++) {
+      const foot = (f === 0 ? this.legL : this.legR)[2]!;
+      this.footA.setFromMatrixPosition(foot.matrixWorld);
+      worldQuat(foot, this.footQ);
+      this.soleLow(f, this.footA, this.footQ);
+      this.feet[f * 3] = this.footA.x;
+      this.feet[f * 3 + 1] = this.low1;
+      this.feet[f * 3 + 2] = this.footA.z;
     }
   }
 
