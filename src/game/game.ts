@@ -1,19 +1,26 @@
 // The browser game: fixed-step sim driven by requestAnimationFrame, timestamped input, render interpolation.
 import * as THREE from 'three/webgpu';
-import { MatchSim, type MatchConfig } from '../sim/match.ts';
+import { MatchSim, PH_RALLY, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import { InputFrame } from '../sim/input.ts';
 import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
-import { buildCourtView } from '../render/courtView.ts';
+import { buildCourtView, type CourtView } from '../render/courtView.ts';
+import { Arena, arenaDef } from '../render/arena/arena.ts';
 import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
-import { Sound } from '../audio/sound.ts';
+import { AudioEngine } from '../audio/engine.ts';
+import { Soundscape, type FeetSource } from '../audio/soundscape.ts';
+import { FLOOR_NAMES } from '../audio/voices.ts';
 import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
 import { Hud } from '../ui/hud.ts';
+import { TvGraphics } from '../ui/tv.ts';
+import { Post } from '../render/post.ts';
+import { kitFor } from '../render/avatar/kit.ts';
 import { DebugOverlay } from '../ui/debug.ts';
+import { applyPhotoCam, type PhotoOverlay } from './photoMatch.ts';
 
 const MAX_TICKS_PER_FRAME = 12;
 
@@ -33,8 +40,14 @@ export interface GameOptions {
    * old way.
    */
   runAhead?: boolean;
-  /** Hit sounds (`?sound=0` turns them off). */
+  /** Sound (`?sound=0` turns it off). */
   sound?: boolean;
+  /** Arena (data/arenas.json): stadium, hall, club-day, club-night. */
+  arena?: string;
+  /** `tv`: the broadcast graphics package (ui/tv.ts) instead of the plain score bug. */
+  gfx?: string;
+  /** Lens bloom (render/post.ts); `?bloom=0` renders straight to the screen. */
+  bloom?: boolean;
 }
 
 /** One button event's trip to the screen, performance.now() ms (tools/latency.mjs reads these). */
@@ -70,12 +83,20 @@ export class Game {
   readonly scene = new THREE.Scene();
   readonly cam: BroadcastCamera;
   readonly ball: BallView;
+  private tv: TvGraphics | null = null;
+  private post: Post | null = null;
   readonly net: NetView;
+  readonly arena: Arena;
+  readonly court: CourtView;
   readonly players: PlayerView[];
   readonly assists: AssistView;
   readonly kb: KeyboardInput;
   readonly pad: GamepadInput;
-  readonly sound = new Sound();
+  /** Sound (Phase 6): the engine, and what decides what is heard. */
+  readonly audio: AudioEngine;
+  private audioFailed = false;
+  readonly soundscape: Soundscape;
+  private readonly feetSrc: FeetSource[];
   readonly feedback: Feedback;
   readonly hud: Hud;
   readonly debug: DebugOverlay;
@@ -99,6 +120,10 @@ export class Game {
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly hit = new THREE.Vector3();
   private mouseAim: boolean;
+  /** Photo-match mode (`?photo=`): the camera and the canvas's shape come from the photo. */
+  photo: PhotoOverlay | null = null;
+  /** The sim stands still (the scene is still drawn): photo-match comparisons. */
+  paused = false;
 
   constructor(opts: GameOptions, renderer: THREE.WebGPURenderer, hudRoot: HTMLElement) {
     this.opts = opts;
@@ -107,21 +132,17 @@ export class Game {
     this.sim = new MatchSim(opts.match);
     const court = this.sim.world.court;
 
-    this.scene.background = new THREE.Color(0x0d0f12);
-    this.scene.add(new THREE.HemisphereLight(0xdfe8f0, 0x30343a, 1.15));
-    const sun = new THREE.DirectionalLight(0xffffff, 2.3);
-    sun.position.set(5, 15, 7);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.02;
-    Object.assign(sun.shadow.camera, { left: -13, right: 13, top: 13, bottom: -13, near: 2, far: 40 });
-    this.scene.add(sun);
-    this.scene.add(buildCourtView(court));
+    // The arena: floor, lights, surroundings; the court's glass, mesh and frame in its colours.
+    this.arena = new Arena(arenaDef(opts.arena ?? 'stadium'), court, this.scene, renderer);
+    this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base });
+    this.scene.add(this.court.group);
+    this.arena.addNeighbours(this.court.group, court);
     this.net = new NetView(this.sim.net);
     this.scene.add(this.net.group);
 
-    this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9);
+    this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0);
+    const bl = this.arena.def.post?.bloom;
+    if (bl && opts.bloom !== false) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar));
@@ -137,15 +158,25 @@ export class Game {
     this.aimMarker.position.y = 0.005;
     this.aimMarker.visible = false;
     this.scene.add(this.aimMarker);
+    // Reflections and ambient light from the arena itself (without the players, ball and cues).
+    const moving: THREE.Object3D[] = [this.ball.mesh, this.ball.shadow, this.ball.trail, this.ball.marker, this.aimMarker, this.net.group];
+    for (const pv of this.players) moving.push(pv.root);
+    this.court.setEnvironment(this.arena.bakeEnvironment(renderer, this.scene, moving));
 
     this.kb = new KeyboardInput(window);
     this.pad = new GamepadInput(window);
-    this.sound.enabled = opts.sound !== false && !opts.autoplay;
-    // Audio may only start from a gesture.
-    const unlock = (): void => this.sound.unlock();
+    // Sound: the bank renders in a worker from now; audio starts at the first key, click or pad press (browsers
+    // allow it only from a gesture). Autoplay too: a click and the AI match has sound.
+    const floor = Math.max(0, FLOOR_NAMES.indexOf(opts.match.world?.floor ?? 'turf'));
+    this.audio = new AudioEngine({ floor, arena: opts.arena ?? 'stadium' });
+    this.audio.enabled = opts.sound !== false;
+    this.audio.load();
+    this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? []);
+    this.feetSrc = this.players.map((pv) => ({ feet: pv.avatar ? pv.avatar.feet : null }));
+    const unlock = (): void => this.audio.unlock();
     addEventListener('keydown', unlock);
     addEventListener('pointerdown', unlock);
-    this.feedback = new Feedback(this.sound, this.pad, this.cam);
+    this.feedback = new Feedback(this.pad, this.cam);
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
     // Score rows name the players: YOU, and each AI by its playing style.
     const who = (i: number, short: boolean): string => {
@@ -155,6 +186,10 @@ export class Game {
     const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
     const names: [string, string] = [row(0), row(1)];
     this.hud = new Hud(hudRoot, names, sets);
+    if (opts.gfx === 'tv') {
+      const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
+      this.tv = new TvGraphics(hudRoot, names, [hex(kitFor(0).shirt), hex(kitFor(1).shirt)], sets, this.sim);
+    }
     this.hud.pro = opts.pro;
     this.hud.setTiming(opts.match.timingScale ?? 1);
     this.ball.showTrail = !opts.pro;
@@ -165,6 +200,7 @@ export class Game {
     addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
       // Freeze the sim while the tab is hidden instead of fast-forwarding on return.
+      this.audio.pause(document.hidden);
       if (document.hidden) this.hiddenAt = performance.now();
       else if (this.hiddenAt >= 0) {
         this.epoch += performance.now() - this.hiddenAt;
@@ -188,6 +224,17 @@ export class Game {
   resize(): void {
     // A collapsed or hidden embed can report a 0 x 0 window: keep the last size rather than a NaN camera.
     if (!innerWidth || !innerHeight) return;
+    if (this.photo) {
+      const { w, h } = this.photo.fit();
+      this.renderer.setSize(w, h, false);
+      this.photo.fit();
+      // A photo with no solved camera keeps the broadcast camera, at the photo's shape.
+      if (!this.photo.entry.cam) {
+        this.cam.camera.aspect = w / h;
+        this.cam.camera.updateProjectionMatrix();
+      }
+      return;
+    }
     this.renderer.setSize(innerWidth, innerHeight);
     this.cam.camera.aspect = innerWidth / innerHeight;
     this.cam.camera.updateProjectionMatrix();
@@ -195,8 +242,11 @@ export class Game {
 
   /** Compile every pipeline before the first point so nothing compiles mid-rally. */
   async warmUp(): Promise<void> {
-    this.cam.update(this.sim, this.team, 0, 0);
+    this.cam.update(this.sim, this.team, null, 0);
+    if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     await this.renderer.compileAsync(this.scene, this.cam.camera);
+    // The post passes' own shaders compile on their first frame: draw one now.
+    if (this.post) this.post.render();
   }
 
   start(): void {
@@ -274,6 +324,18 @@ export class Game {
     }
   }
 
+  /** Draw the current moment once, outside the animation loop (captures). */
+  renderOnce(): void {
+    for (const p of this.players) p.avatar?.refreshSkin();
+    if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
+    this.draw();
+  }
+
+  private draw(): void {
+    if (this.post) this.post.render();
+    else this.renderer.render(this.scene, this.cam.camera);
+  }
+
   /** The human's team (the camera's end); team 0 with autoplay. */
   get team(): number {
     return this.opts.autoplay ? 0 : this.sim.players[this.opts.human]!.team;
@@ -293,7 +355,7 @@ export class Game {
     const ahead = this.opts.runAhead !== false;
     if (this.pad.connected) {
       this.pad.poll(this.kb, now);
-      if (this.pad.held !== 0) this.sound.unlock();
+      if (this.pad.held !== 0) this.audio.unlock();
     }
     // ...except while the human holds a swing: the release can come for any moment from now on, and one that
     // arrives for a moment the sim has already run past would meet the ball up to a tick late. Until it goes the
@@ -312,6 +374,10 @@ export class Game {
     const ease = this.lastFrame ? 0.25 * Math.min(0.1, (now - this.lastFrame) / 1000) : DT;
     this.renderLag = lagTo > this.renderLag ? Math.min(lagTo, this.renderLag + ease) : Math.max(lagTo, this.renderLag - ease);
     let drawn = simNow - this.renderLag;
+    if (this.paused) {
+      this.epoch = now - this.sim.time * 1000;
+      drawn = this.sim.time;
+    }
     while (this.sim.time < drawn && n < MAX_TICKS_PER_FRAME) {
       if (holding && hp.swing === SW_CHARGE && this.sim.time + DT > simNow) break;
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
@@ -357,13 +423,28 @@ export class Game {
     const who = this.opts.autoplay ? -1 : human;
     // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last
     // frame's camera, which is close enough).
-    this.feedback.update(this.sim, who, renderTime, now);
-    this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
+    this.feedback.update(this.sim, who, now);
+    this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
+    if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
+    // Sound never takes a frame down: a browser's WebAudio quirk (Firefox has no listener.positionX) once threw on
+    // every play and the frame's assists, HUD and draw were skipped.
+    try {
+      this.audio.setListener(this.cam.camera);
+      this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
+    } catch (e) {
+      if (!this.audioFailed) { this.audioFailed = true; console.warn('audio', e); }
+    }
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt, cueNow);
     this.hud.update(this.sim, who, now / 1000);
+    this.tv?.update(this.sim);
+    // The crowd follows the rally: calm between points, rising with a long one.
+    this.arena.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : this.arena.excite * Math.exp(-frameDt / 0.8);
+    // Stands behind the camera are skipped, but not while it swings round (a very wide screen sees them) or in
+    // photo-match mode (the photo's camera can stand anywhere).
+    this.arena.update(now / 1000, this.cam.swinging || this.photo ? undefined : this.cam.camera.position);
 
-    this.renderer.render(this.scene, this.cam.camera);
+    this.draw();
     if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);
     const info = this.renderer.info.render;
     this.probe.drawCalls = info.drawCalls;

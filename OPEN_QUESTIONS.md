@@ -149,3 +149,53 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   after watching AI matches.
 - **Personalities.** The four styles' traits are set by design (recognisable, not measured from real players); they
   are tested to stay distinct (`tests/sim/ai.test.ts`) but no player's real profile is behind any of them, by rule.
+
+## Phase 5 (visual realism)
+- **A realistic body and face.** The players are the Y Bot mannequin (separate shells for the chest, belly and
+  joints, no face), dressed in the shader. Skin, hair and clothing can only go so far on it. Settled by: a
+  realistic rigged human the licence allows (Mixamo's other characters, downloaded by the owner with their Adobe
+  ID, or a CC0 base body from MakeHuman/MPFB, which needs Blender), then rebinding it to our skeleton.
+- **Glass reflections of the players.** The arena-glass photo shows the players mirrored in the side glass at
+  grazing angles; our glass reflects only the arena baked at load. Settled by: a planar reflection per glass wall
+  on the High preset (Phase 8 measures its cost).
+- **The broadcast lens.** The camera's height and distance come from Javadiha et al. 2021; the lens (26°) is chosen
+  so the court fills the frame as TV frames do, not measured. Settled by: one broadcast frame with the court's
+  corners marked, solved with `tools/photo-solve.ts` (a still from the owner's own screen is enough; it is not
+  shipped).
+- **Sweat timing.** How fast shirts darken (soaked after about a set at the AI's pace) is a guess; no study gives
+  sweat patch growth in padel. Settled by: photos of the same players early and late in a match.
+- **The cues' colours under the new tone mapping.** The timing rings keep their size on screen, but Phase 5's
+  switch from AgX to Neutral tone mapping makes their green and cyan a little brighter and more saturated than
+  the owner saw. Settled by: the owner looking at them (unchanged if they like it; `toneMapped: false` or the old
+  colours if not).
+- **The 15.5 m camera distance.** The paper's abstract gives the 7.6 m height; the 15.5 m behind the glass is from
+  its body as read earlier and wasn't re-found in the review. The framing check (the near mesh covering the far
+  court to the far service line) holds either way. Settled by: the paper's full text, or a broadcast frame solved.
+- **The ball's seam up close.** The seam's distance is stored per vertex (about 4 mm apart for a 4 mm line), so in
+  a close replay it renders a little beaded. Invisible from the broadcast camera. Settled by: an analytic seam
+  distance in the shader if replays get close-ups (Phase 7/8).
+
+## Phase 6 (sound)
+- **No padel recordings were analysed.** Every sound is synthesised from published descriptions and physics; the
+  only padel-specific measurements found are qualitative (Piana et al. 2025's spectra peak at 800-1000 Hz
+  A-weighted; "glass bangs low, mesh rings high"). How close each sound is to a real court is untested. Settled by:
+  the owner's `/reference/audio` (a phone recording at a club is enough: hits, bounces, glass, mesh, feet), or the
+  owner's OK to download CC0 recordings (Freesound needs an account, which only the owner can make); the tests then
+  compare spectra and decays.
+- **Racket face modes.** The padel racket's bending and plate mode frequencies (205, 480, 1050, 1520, 2650 Hz) are
+  estimates (no modal analysis of a padel racket was found; a tennis frame's first mode is 146 Hz). Settled by: the
+  Loughborough padel racket acoustics paper (ISEA 2024), whose full text was not readable here, or a recording.
+- **Room acoustics.** The arenas' RT60s are estimates within published ranges, not measurements of padel venues.
+- **Grunts and crowd voices** are formant synthesis: clearly voices, not clearly people. Settled by: recorded
+  vocal samples (the owner's own, or licensed), which the engine would play the same way.
+- **Speakers.** The glass's boom is mostly under 300 Hz, which laptop speakers barely reproduce; on them the glass
+  is mostly its edge and the ball's pop. Not compensated (headphones and TV speakers carry it).
+- **The bounce's level against the hit.** The game puts the ball's bounce over 4 dB under a clean drive and the shoes
+  15-32 dB under it. No padel measurement of these ratios was found (broadcast mixes put the bounce well under the
+  hit, but they are mixed, not measured). Settled by: a recording at a court, read at the camera's distance.
+- **A gamepad-only player may hear nothing.** Browsers start audio only from a user gesture, and a pad press doesn't
+  count in every browser; a pad-only player needs one key or click. A small "press any key for sound" hint would fix
+  it, but it is new UI: needs the owner's OK.
+- **Output latency.** Sounds are scheduled at the event's time; the device's output latency (10-40 ms wired,
+  150 ms+ on Bluetooth) is not taken off, and Safari doesn't report it. Whether it is noticeable is for a player to say.
+

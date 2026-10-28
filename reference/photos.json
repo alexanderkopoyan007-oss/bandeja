@@ -1,0 +1,130 @@
+{
+  "comment": "Public reference photos of real courts for the photo-match mode (Phase 5). tools/fetch-reference.mjs downloads them into reference/photos/ (gitignored). `points` pair image positions (u across, v down, 0-1) with court positions (metres, sim axes: x across, y up, z along, net at z = 0); tools/photo-solve.ts fits `cam` to them. `aspect` is the photo's width / height.",
+  "photos": [
+    {
+      "id": "day-framed",
+      "file": "Padel court, Regent's Park - geograph.org.uk - 7406779.jpg",
+      "what": "outdoor, day, overcast; framed court, green turf"
+    },
+    {
+      "id": "day-glass",
+      "file": "Regent's Park padel court, showing glass walls - geograph.org.uk - 7406792.jpg",
+      "what": "outdoor, day; the glass close up, reflections"
+    },
+    {
+      "id": "day-panoramic",
+      "file": "University of Cambridge Padel Courts.jpg",
+      "what": "outdoor, day; panoramic court, blue turf, from behind the back glass",
+      "court": "panoramic"
+    },
+    {
+      "id": "day-hyde",
+      "file": "Padel court at Hyde Park Tennis Centre - geograph.org.uk - 7408224.jpg",
+      "what": "outdoor, day; framed court, green turf"
+    },
+    {
+      "id": "day-lights",
+      "file": "Court de padel de Vic-en-Bigorre (Hautes-Pyr\u00e9n\u00e9es) 1.jpg",
+      "what": "outdoor, day, sun; blue turf, floodlight poles"
+    },
+    {
+      "id": "night",
+      "file": "Padel Courts at Barnt Green Sports Club - geograph.org.uk - 8271890.jpg",
+      "what": "outdoor, night, floodlit; green turf"
+    },
+    {
+      "id": "hall",
+      "file": "Padel court.jpg",
+      "what": "covered club hall, day; blue turf"
+    },
+    {
+      "id": "hall-2",
+      "file": "Padel court12.jpg",
+      "what": "covered club hall, day; blue turf, from the end"
+    },
+    {
+      "id": "arena-wide",
+      "file": "Vigo Open 2019 de World Padel Tour - 32.jpg",
+      "what": "indoor arena, pro event; the whole court from the stands",
+      "court": "panoramic",
+      "arena": "stadium"
+    },
+    {
+      "id": "arena-wide-2",
+      "file": "Vigo Open 2019 de World Padel Tour - 33.jpg",
+      "what": "indoor arena, pro event; the whole court from high in the stands",
+      "aspect": 1.5,
+      "points": [
+        {
+          "what": "A",
+          "u": 0.441,
+          "v": 0.5368,
+          "x": -5,
+          "y": 0,
+          "z": 10
+        },
+        {
+          "what": "B",
+          "u": 0.5655,
+          "v": 0.5978,
+          "x": 5,
+          "y": 0,
+          "z": 10
+        },
+        {
+          "what": "C",
+          "u": 0.7295,
+          "v": 0.511,
+          "x": 5,
+          "y": 0,
+          "z": -10
+        },
+        {
+          "what": "D",
+          "u": 0.6195,
+          "v": 0.4822,
+          "x": -5,
+          "y": 0,
+          "z": -10
+        },
+        {
+          "what": "postL",
+          "u": 0.5465,
+          "v": 0.4845,
+          "x": -5,
+          "y": 1.05,
+          "z": 0
+        },
+        {
+          "what": "postR",
+          "u": 0.6625,
+          "v": 0.5235,
+          "x": 5,
+          "y": 1.05,
+          "z": 0
+        }
+      ],
+      "cam": {
+        "pos": [
+          23.195,
+          10.013,
+          33.363
+        ],
+        "yaw": 0.77892,
+        "pitch": 0.22269,
+        "roll": 0.02928,
+        "vfov": 58.588,
+        "k1": -0.0295
+      },
+      "court": "panoramic",
+      "arena": "stadium"
+    },
+    {
+      "id": "arena-glass",
+      "file": "Vigo Open 2019 de World Padel Tour - 10.jpg",
+      "what": "indoor arena, pro event; court level behind the back glass",
+      "court": "panoramic",
+      "arena": "stadium"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "//": "Sound (Phase 6). Every sound is synthesised at load in a worker (src/audio/voices.ts recipes, src/audio/bank.ts lists them) and played through WebAudio from the broadcast camera (src/audio/engine.ts), driven by the sim's events, the players' feet and a crowd that follows the match (src/audio/soundscape.ts). DECISIONS.md (Phase 6) has the reasoning and sources; tests/audio holds the measurable parts.",
+  "variants": { "racket": 3, "bounce": 4, "glass": 3, "mesh": 3, "metal": 2, "net": 2, "whoosh": 3, "step": 4, "scuff": 3, "grunt": 3, "applause": 4, "ooh": 3, "aah": 3, "cheer": 3, "bird": 6 },
+  "//variants": "Renders of each sound per parameter bin; play picks one at random (never the one just played) and varies its pitch +-3% and level +-1.5 dB, so no two hits are the same. Three or more of anything heard often: with two, never repeating the last makes a strict A/B/A/B (the applause after every point alternated between two renders).",
+  "peak": { "racket": -5, "bounce": -17, "glass": -6, "mesh": -9, "metal": -10, "net": -14, "whoosh": -20, "step": -31, "scuff": -28, "grunt": -13, "bird": -30 },
+  "//peak": "dBFS peak of the loudest render of each family, heard at the reference distance. Impacts follow a law below it (bank.ts `law`: a bin's level goes with its speed or force, the bins only change the timbre). Bounces, steps and scuffs are levelled on turf: other floors keep their own loudness against it (a resin court is louder than sand). The racket leads; the glass is nearly as loud (the 'bang' is what neighbours complain of); shoes are a texture under the play; a bird is a call in the trees.",
+  "rms": { "applause": -26, "ooh": -30, "aah": -31, "cheer": -25, "murmur": -41, "wind": -44, "crickets": -48, "hum": -56, "hall": -46 },
+  "//rms": "Crowd and ambience beds by loudness (RMS dBFS of the loudest render), not peak; reactions (applause, ooh, aah, cheer) by the rms of the part that sounds, capped at -9 dBFS peak. These are the stadium's 4,600; a smaller crowd is quieter by 10 log10(N / 4600) (power with headcount), +6 dB for a club's few watchers sitting by the court (bank.ts crowdDb): 8 people clap 22 dB under the stadium. A clean drive is about -30 dBFS over its first 50 ms: the crowd's chatter between points sits 10 dB under it (hushed 16 dB further in a point), a big applause a little over it, as on a broadcast after a great point.",
+  "distance": { "ref": 16, "rolloff": 0.85, "max": 120, "airHz": 18000, "airM": 30 },
+  "//distance": "From the broadcast camera (the listener): ref is the near baseline's distance, where a sound plays at its family level; the inverse law with this rolloff makes the far baseline (36 m) about 6 dB quieter. Air and distance take the highs: lowpass at airHz / (1 + d / airM).",
+  "master": -1,
+  "limiter": { "threshold": -2, "ratio": 20 },
+  "//master": "dB before the safety limiter (a compressor at -2 dBFS, hard knee, 20:1, its automatic make-up gain taken back out, so it is unity below -2 dBFS) and a clip that passes everything under 0.8 unchanged and rounds off above: the mix tests (tests/audio/bank.test.ts) hold the busiest moments of every arena and floor under the limiter's threshold.",
+  "arenas": {
+    "stadium": {
+      "room": { "rt60": [2.4, 2.0, 1.3], "preDelay": 0.03, "early": [[0.012, 0.35, -0.5], [0.024, 0.3, 0.5], [0.066, 0.3, 0], [0.108, 0.25, 0.1], [0.19, 0.15, -0.8], [0.2, 0.15, 0.8]] },
+      "//room": "A big indoor arena: RT60 about 2 s in the mids (an estimate for a full hall; BB93 caps school sports halls at 1.5 s, arenas run longer), longer in the lows, shorter in the highs (air and seats). Early reflections: the court's own glass (12-24 ms), the roof (19 m up: 66 ms), the end wall (108 ms), the side walls.",
+      "wet": -9, "crowd": 4600, "talkers": 24, "ambience": ["hall"], "neighbours": 0
+    },
+    "hall": {
+      "room": { "rt60": [1.6, 1.25, 0.8], "preDelay": 0.02, "early": [[0.012, 0.35, -0.5], [0.024, 0.3, 0.5], [0.052, 0.3, 0]], "flutter": [0.052, 0.18] },
+      "//room": "A covered club: a steel shed with open or half-open sides. RT60 about 1.25 s (BB93's 1.5 s ceiling for sports halls; the open sides let sound out). The bare roof about 9 m over a hard floor gives a flutter echo every 52 ms.",
+      "wet": -12, "crowd": 14, "talkers": 8, "ambience": ["hall"], "neighbours": 1
+    },
+    "club-day": {
+      "room": { "rt60": [0.35, 0.3, 0.2], "preDelay": 0.01, "early": [[0.014, 0.35, -0.6], [0.029, 0.35, 0.6], [0.058, 0.25, 0], [0.12, 0.1, 0.3]] },
+      "//room": "Outdoors: no room, only the court's glass (side and far walls, 14-58 ms), a little from the neighbours' cages and the clubhouse (120 ms) and a short tail.",
+      "wet": -18, "crowd": 8, "talkers": 6, "ambience": ["wind"], "birds": true, "neighbours": 2
+    },
+    "club-night": {
+      "room": { "rt60": [0.35, 0.3, 0.2], "preDelay": 0.01, "early": [[0.014, 0.35, -0.6], [0.029, 0.35, 0.6], [0.058, 0.25, 0], [0.12, 0.1, 0.3]] },
+      "wet": -18, "crowd": 10, "talkers": 8, "ambience": ["wind", "crickets", "hum"], "neighbours": 2
+    }
+  },
+  "crowd": { "chatter": 0, "hush": -16, "tensionGain": 13, "big": 50 },
+  "//crowd": "The murmur bed's level (dB from its rms) between points (chatter), from the server's set-up through the point (hush: 'silence, please'), and how much it rises over a long rally (tension: back to near chatter level by about 22 shots, the buzz of a crowd on the edge of its seats). Crowds under `big` don't cheer or gasp as one; they clap. The stadium has its air handling under the play (the hall bed)."
+}

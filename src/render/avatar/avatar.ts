@@ -15,6 +15,7 @@ import { fitCapsules, RACKET_PTS } from './capsules.ts';
 import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
+import { kitMaterial, type KitLook, type KitState } from './kit.ts';
 import {
   BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
@@ -151,6 +152,17 @@ function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion
 type Elbow = HingeLimb & { dir: THREE.Vector3 };
 /** How fast an elbow's side may swing round the shoulder-to-hand line (rad/s): the shoulder's rotation speed limit. */
 const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
+/**
+ * Cloth lag (kit.ts): spring stiffness (1/s², about 2 Hz, a shirt hem's swing) and damping (1/s, ζ ≈ 0.6) of the
+ * point the hems follow, and the most they trail (m). Sweat: the time term and the distance term add; at the AI's
+ * pace (about 4.4 km an hour of play, more than the 2 km/h Miralles 2025 measured for pros, since the AI shuffles more)
+ * a shirt is soaked after about 40 minutes, a set. Dry at the start.
+ */
+const CLOTH_K = 160;
+const CLOTH_C = 15;
+const CLOTH_MAX = 0.05;
+const SWEAT_T = 4800;
+const SWEAT_M = 6000;
 
 /**
  * An elbow's hinge, measured from the clips: the axis (forearm frame) of the forearm's turn from its rest rotation,
@@ -641,7 +653,34 @@ export class Avatar {
   /** The AI is charged for a ball that no longer passes within its reach (SimpleAi.beaten). */
   private beaten = false;
 
-  constructor(asset: PlayerAsset, color: number) {
+  /** The kit's per-frame inputs (kit.ts), null for a plain body (QA, tests). */
+  private readonly kit: KitState | null = null;
+  /** Cloth lag: a point on a spring chasing the body (world, m) and its velocity; the hems trail by its offset. */
+  private clothX = 0;
+  private clothY = 0;
+  private clothZ = 0;
+  private clothVX = 0;
+  private clothVY = 0;
+  private clothVZ = 0;
+  private bodyVX = 0;
+  private bodyVY = 0;
+  private bodyVZ = 0;
+  private lastLift = 0;
+  private clothOn = false;
+  /** Metres run this match (render-side): sweat builds with effort as well as time. */
+  private ran = 0;
+  /**
+   * Each foot's lowest sole point after this frame's pose (world): x, height above the floor, z, for the left then
+   * the right foot. The soundscape hears a step where one comes down onto the floor.
+   */
+  readonly feet = new Float64Array(6);
+  private readonly footA = new THREE.Vector3();
+  private readonly footQ = new THREE.Quaternion();
+
+  /** QA: a fixed sweat level for screenshots (negative = from the match). */
+  static sweatAt = -1;
+
+  constructor(asset: PlayerAsset, look: number | KitLook) {
     this.nb = asset.bones.length;
     this.pose = new Pose(this.nb);
     this.tmp = new Pose(this.nb);
@@ -653,7 +692,13 @@ export class Avatar {
       return b;
     });
     asset.bones.forEach((d, i) => { if (d.parent >= 0) this.bones[d.parent]!.add(this.bones[i]!); });
-    const mat = new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness: 0.55, metalness: 0.05 });
+    let mat: THREE.Material;
+    if (typeof look === 'number') mat = new THREE.MeshStandardMaterial({ color: look, vertexColors: true, roughness: 0.55, metalness: 0.05 });
+    else {
+      const k = kitMaterial(asset, look);
+      mat = k.material;
+      this.kit = k.state;
+    }
     this.mesh = new THREE.SkinnedMesh(asset.geometry, mat);
     this.mesh.add(this.bones[0]!);
     this.mesh.bind(new THREE.Skeleton(this.bones, asset.boneInverses), new THREE.Matrix4());
@@ -770,7 +815,60 @@ export class Avatar {
     return g;
   }
 
+  /**
+   * The kit's inputs: sweat from the match's length and the metres run; the hems' lag from a spring (about 2 Hz,
+   * damped) chasing the body, so they trail when it speeds up, stops or lands, and hang straight on a steady run.
+   */
+  private dress(sim: MatchSim, cut: boolean, dt: number, rx: number, rz: number, yRoot: number): void {
+    const k = this.kit;
+    const X = this.root.position.x, Y = this.lift, Z = this.root.position.z;
+    if (cut || dt <= 0) {
+      if (cut || !this.clothOn) {
+        this.clothOn = true;
+        this.clothX = X; this.clothY = Y; this.clothZ = Z;
+        this.clothVX = this.clothVY = this.clothVZ = 0;
+        this.bodyVX = this.bodyVY = this.bodyVZ = 0;
+      }
+      this.lastLift = Y;
+      if (!cut || !k) return;
+    } else {
+      this.bodyVX = rx / dt;
+      this.bodyVY = (Y - this.lastLift) / dt;
+      this.bodyVZ = rz / dt;
+      this.lastLift = Y;
+      this.ran += Math.sqrt(rx * rx + rz * rz);
+      // Spring towards the body, damped against the body's own velocity: a steady run has no lag, a change of pace
+      // swings the hem by about a / CLOTH_K.
+      const h = Math.min(dt, 1 / 30);
+      this.clothVX += (CLOTH_K * (X - this.clothX) + CLOTH_C * (this.bodyVX - this.clothVX)) * h;
+      this.clothVY += (CLOTH_K * (Y - this.clothY) + CLOTH_C * (this.bodyVY - this.clothVY)) * h;
+      this.clothVZ += (CLOTH_K * (Z - this.clothZ) + CLOTH_C * (this.bodyVZ - this.clothVZ)) * h;
+      this.clothX += this.clothVX * h;
+      this.clothY += this.clothVY * h;
+      this.clothZ += this.clothVZ * h;
+    }
+    if (!k) return;
+    let ox = this.clothX - X, oy = this.clothY - Y, oz = this.clothZ - Z;
+    const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
+    if (d > CLOTH_MAX) {
+      ox *= CLOTH_MAX / d; oy *= CLOTH_MAX / d; oz *= CLOTH_MAX / d;
+    }
+    // World offset into the body's frame (the mesh turns with the root).
+    const c = Math.cos(yRoot), s = Math.sin(yRoot);
+    const lag = k.lag.value;
+    lag.x = ox * c - oz * s;
+    lag.y = oy;
+    lag.z = ox * s + oz * c;
+    k.sweat.value.x = Avatar.sweatAt >= 0 ? Avatar.sweatAt : Math.min(1, sim.time / SWEAT_T + this.ran / SWEAT_M);
+  }
+
   /** Switch the racket hand (the sim's `handed`): racket, grip, arms and stroke keys all follow. */
+  /** Skin matrices are refreshed once per animation-loop frame; a render outside the loop calls this first. */
+  refreshSkin(): void {
+    this.root.updateMatrixWorld(true);
+    this.mesh.skeleton.update();
+  }
+
   private setHanded(h: number): void {
     this.handed = h;
     this.grip = this.grips[h > 0 ? 0 : 1]!;
@@ -1254,6 +1352,7 @@ export class Avatar {
     this.splitStep(p, t);
     this.smashJump(t);
     this.root.position.y = this.lift;
+    this.dress(sim, cut, dt, rx, rz, yRoot);
 
     // Pose -> bones, with the racket hand gripping.
     const q = this.pose.q;
@@ -1322,6 +1421,20 @@ export class Avatar {
     if (this.inertial && (Avatar.inertMask & 2) !== 0) {
       this.headInertia.apply(this.bones, null, this.headSkip);
       this.neck.updateMatrixWorld(true);
+    }
+    this.measureFeet();
+  }
+
+  /** `feet`: where each sole's lowest point is now. */
+  private measureFeet(): void {
+    for (let f = 0; f < 2; f++) {
+      const foot = (f === 0 ? this.legL : this.legR)[2]!;
+      this.footA.setFromMatrixPosition(foot.matrixWorld);
+      worldQuat(foot, this.footQ);
+      this.soleLow(f, this.footA, this.footQ);
+      this.feet[f * 3] = this.footA.x;
+      this.feet[f * 3 + 1] = this.low1;
+      this.feet[f * 3 + 2] = this.footA.z;
     }
   }
 

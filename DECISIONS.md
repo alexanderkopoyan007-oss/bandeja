@@ -803,3 +803,246 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   → 4.2 ms, max 12.8 ms, 0 frames over 20 ms, sim p99 1.1 ms; high at 2x p99 8.8-9.1 → 8.7 ms, 0.66% of frames over
   20 ms (the queue stalls seen since M1). Draw calls 42, 473k triangles. Alloc: singles 3, doubles 5, avatars 6
   GCs per 100k ticks (budget 10).
+
+## Phase 5: visual realism (photo-match)
+- **Photo-match mode** (`?photo=<id>`, `src/game/photoMatch.ts`, `tools/photo-solve.ts`, `reference/photos.json`):
+  11 public reference photos (Wikimedia Commons, CC0 / CC BY / CC BY-SA; `reference/SOURCES.md`) of indoor and
+  outdoor courts by day and night; the images are kept out of git and out of the build (their list,
+  `reference/photos.json`, and `SOURCES.md` are committed). Court points marked by hand give a photo's camera
+  (position, yaw, pitch, roll, vertical FOV and one radial distortion term) by Levenberg-Marquardt over many
+  starts; so far only arena-wide-2 has marked points and a solved camera (2.4 px RMS; its service lines, which were
+  not fitted, land on the photo's). The other ten are compared by eye through the broadcast camera at the photo's
+  shape. The game renders through the solved camera with the photo over it: a wipe (drag or [ ]), a blend, the
+  photo alone, the game alone (O cycles), and `&lines=1` draws the solve.
+- **Arenas** (`data/arenas.json`, `src/render/arena/`, `?arena=stadium|hall|club-day|club-night`, default
+  stadium): a stadium with stands on four sides, a seated crowd that sways as rallies grow, generic boards
+  ("BANDEJA / PADEL / OPEN", no real event's branding), hall walls, trusses and a lit roof; a covered club hall
+  (portal frames, translucent roof, high-bays, daylight past the open sides); an outdoor club by day and under
+  floodlights, with neighbour courts beside ours (clubs build in rows). Colours were picked off the photos: the
+  stadium's blue turf and red surround off arena-wide-2, the night court off the night photo (turf measured
+  180-191 / 207-234 / 135-139 against the photo's 169-195 / 187-217 / 117-128 sRGB).
+- **Turf** (`src/render/turf.ts`): sand-filled artificial grass, the most common padel surface: fibre and sand
+  detail at two scales, wear where players stand (the service boxes and the back), roll seams 4 m apart, paler
+  and dustier at grazing angles (sand shows between the fibres), and the lines painted in the shader.
+- **Glass**: what you see through it, plus Fresnel reflection (8% face-on for two faces, rising to grazing) of an
+  environment rendered from the arena once at load, box-projected onto the hall or the club's surroundings so
+  each wall reflects its own side (a plain lookup made the near glass at night reflect the floodlit court), a
+  faint iron green, ball prints (faint felt rings smeared along the skid) and dust at the foot that fade with
+  distance. Not reflected: the players and the ball (needs a planar reflection per wall; a Phase 8 preset).
+- **Tone mapping**: Khronos PBR Neutral (AgX turned the photos' saturated blues and reds to periwinkle and salmon;
+  `?tone=agx|aces` compares).
+- **Players dressed** (`src/render/avatar/kit.ts`): the mannequin mesh becomes a padel player in the shader: each
+  vertex gets a region from the bone that moves it most and where it sits on that bone (a short-sleeved shirt to
+  mid upper arm and over the hips, shorts to mid thigh, socks, shoes with a gum sole and a stripe, a hair cap,
+  skin elsewhere); partners wear the same kit, each has their own skin and hair. Collar and sleeve hems in the
+  kit's trim colour (side panels were tried and read as blotches). Sweat: wet patches grow from where shirts
+  darken first (the middle of the chest, the spine, under the arms, the small of the back) with the match's
+  length and the metres run (the two add: soaked after about 40 minutes at the AI's pace; dry at the start), and
+  skin turns shinier; the darkening is 30% (42% read as camouflage on the red shirt). Folds: about 2 mm of bump
+  fixed to the body (`render/bump.ts`; see the review fixes). Hems lag the body: a point on a
+  spring (about 2 Hz, damped against the body's own velocity, so a steady run has no lag) chases the hips, and the
+  shirt from the chest down and the shorts' legs trail by its offset, at most 5 cm.
+- **Ball** (`src/render/ballLook.ts`): optic-yellow felt with sheen and fuzz, the seam's dog-bone curve as a pale
+  4 mm line, turned by the sim's spin each frame; the seam blurs into the felt when a frame's turn passes what a
+  camera can follow. A shutter stretch along the path (1/500 s; 1/250 s read as an egg up close).
+- **Bloom** (`src/render/post.ts`): the scene renders to an HDR target; what is brighter than a per-arena threshold
+  (above the sunlit lines: 3-5 linear) blooms, as a broadcast lens blooms floodlight lenses and roof panels, which
+  are now HDR emitters (4-14x white). The first threshold (1.4 at night) bloomed the floodlit turf itself. `?bloom=0`
+  renders straight to the screen. Under a 0 x 0 canvas (a hidden tab) the pass draws nothing: WebGL targets made at
+  zero size stayed black after a resize.
+- **Broadcast camera at the TV position**: the de facto standard padel broadcast view is about 7.6 m above the
+  floor and 15.5 m behind the back glass (Javadiha et al. 2021, Sensors 21(10) 3368, from professional footage). We
+  had 6.3 m up, 9.2 m back and a 42° lens; now 7.6 m, 15.5 m and 26°. Check: from there the near end's mesh (3-4 m
+  high) covers the far court from the foot of the net to the far service line, as the paper describes TV frames,
+  and as our render now shows. The smash kick's zoom is now a share of the lens (2.9%). The sky dome shrank to
+  240 m so its far side stays inside the camera's 300 m far plane from the new position.
+- **Broadcast graphics** (`src/ui/tv.ts`, `?gfx=tv`; off by default until the owner has seen it, by the rule that
+  the HUD isn't restyled unseen): a score bug in the kits' colours with the server's ball, a tag sliding out of it
+  (break, set and match point worked out on a copy of the score; star and golden point; deuce n; tie-break), a
+  radar readout of serve and smash speeds, a strap after each point (winner, error and its cause, ace, double fault,
+  out of the court; the rally's length) and after a first-serve fault, the scoreboard after each game, and match
+  stats at each change of ends (points, winners, errors, double faults, won on serve, fastest smash, longest
+  rally). The graphics run on the match clock; a strap still waiting is replaced, not queued, when the next comes.
+  Generic: "BDJ OPEN", no real tour's names or look.
+- **Trees**: crowns of nine jittered clumps lit with normals out from the crown's centre (foliage scatters light
+  as a volume), darker underneath and inside; they had been three spheres.
+- **Review fixes** (verifier and fresh-eyes review, 2026-10-28):
+  - The timing rings are sized in radians of view and the 26° lens had made them 1.7x bigger on screen than the
+    ones the owner approved: they are scaled by the lens now (`lensScale`), the same size in pixels as before.
+    Their colours shifted a little with the change from AgX to Neutral tone mapping (OPEN_QUESTIONS.md).
+  - Lobs left the top of the frame (38 of 154 rallies over 6 AI matches, against 11 with the old camera): the
+    camera tilts up with the ball, as the operator does, keeping it 2.5° below the top edge (up to 14°, 0.2 s lag,
+    easing back at half that rate).
+  - The stadium crowd cost 891k triangles (4,640 people at 192): people are low-poly now (74 each; a head is 5-10
+    pixels from the camera) and grouped by stand (draws 3 -> 12), and the stand behind the camera is not drawn
+    (302k drawn), except during the change-of-ends swing and in photo-match mode.
+  - The change-of-ends swing went through the stadium's back rows: it goes round an ellipse (20.5 m at the side)
+    and, in the stadium only (`camera.swingRise`), climbs 2.5 m at its middle; in the hall that climb went through
+    the roof (re-review).
+  - `bumpMap()` only works on textures (it offsets their UVs to difference the height), so the kit's folds and
+    the ball's fuzz did nothing: `render/bump.ts` differentiates the height in screen space (Mikkelsen 2010), and
+    fades the bump where a pixel covers more than a quarter of a feature (a far player's folds would shimmer).
+  - The kit's region code blended through the codes between two regions (a dark ring at each sock top, sleeves
+    through the shorts' colour, black seams where every weight was 0): one weight per region now.
+  - TV graphics: a double fault (an `E_FAULT` with b = 2, no `E_POINT`) had no strap and was never counted; a
+    receiver volleying the serve was shown as a double fault. Both fixed; points won and won on serve now count
+    double faults.
+  - Writing a number to a scalar uniform's `.value` boxes it (one per avatar and the ball per frame): sweat and the
+    seam blur are a vector uniform's `.x`.
+  - Sweat: the time and distance terms add, so the shirt was soaked in about 25 minutes, and wet spots showed at
+    the start; now dry at 0 and soaked after about a set at the AI's pace.
+  - The night arena's floodlit lines (4-6 linear) straddled its bloom threshold of 5: raised to 7.5 (the lenses,
+    13, still bloom). The hit sound's and smash kick's distance law still had the old camera's distances (the far
+    end got none). The crowd's excitement decays by time, not by frame. A photo without a solved camera keeps the
+    photo's shape; the solver's starting pitch looked up; the ball lab's sky was cut by a 200 m far plane.
+
+## Phase 6: sound
+- **No recordings: synthesis.** `/reference/audio` doesn't exist and downloads need the owner's word, so every sound
+  is synthesised (the brief's third option). Physical models where there is something to model, rendered in plain
+  TypeScript into buffers so tests can measure them (`src/audio/voices.ts`, `dsp.ts`; tests/audio, 27 tests):
+  - **Impacts are modes struck by a contact.** A half-sine force pulse as long as the contact drives two-pole
+    resonators; a mode well below the pulse's roll-off starts at its amplitude, one above it is excited by the pulse's
+    spectrum (a long soft contact is dull, a short hard one bright). The resonators are driven by the force's rate of
+    change, scaled back by the difference's gain at each mode, so a struck mode has no net area (a spectrogram showed
+    the first version's DC plateau under every hit). The ball's shell and a face's plate modes ring from the
+    contact's sharp onset (17% of the contact time): driven by the whole 5 ms pulse alone they were 36 dB down at
+    1 kHz and every hit came out a 250 Hz thud.
+  - **Racket.** A padel racket is a solid perforated paddle (carbon or fibreglass skins on EVA foam), so a hit is a
+    dry "pock" with no strings' ring (Piana et al. 2025: carbon drier, fibreglass less sharp, faster impacts sharper).
+    Contact about 5 ms (racket sports' dwell, Zienowicz et al., IOA 2008), shorter when harder. Measured: clean hits
+    centre at 450-1500 Hz (padel play's A-weighted spectrum peaks at 800-1000 Hz, Piana et al.) and 90% of their
+    energy arrives within 30 ms (Piana et al.'s ambisonic recordings: the direct sound spans about 30 ms). Off the
+    sweet spot the face's first bending mode (about 205 Hz; a tennis frame's is 146 Hz, Russell, and a padel racket
+    is shorter and stiffer: an estimate) rings, half as bright and longer; a frame hit clacks above 2 kHz. Slices
+    brush felt across the face before the hit. Bins: five kinds (drive, volley, overhead, slice, touch), three powers
+    and three contacts (clean, off, frame), from the impact itself: the ball's speed against the face and where on
+    the face it met (review fix, below).
+  - **Bounce.** On a hard floor about 1 kHz for the first cycles, then a decaying ~250 Hz (line-calling patent US
+    9551572), held by a test. Sand-filled turf is damped (porous fibres; the sand softens the bounce, Piana et al.)
+    with grains of sand scattering; carpet is muffled; resin/hard loudest (ibid.).
+  - **Glass.** "A low frequency bang" (Higgins, via The Padel Paper): a 2 x 3 m panel of 12 mm toughened glass, its
+    bending modes from plate theory (f11 = 10.7 Hz, crowding from 50 Hz up), weighted by the mode shapes at a random
+    impact point and by radiation (odd-odd modes radiate best), loss factor 0.04 (an estimate: glass in gaskets);
+    a hard ball clanks the panel in its fixings. Mesh: "a higher frequency ringing" (ibid.): wire modes from 400 Hz
+    to 7 kHz and the panel rattling in its frame. Posts and frames ring as free bars (1 : 2.756 : 5.404 : 8.933),
+    for about 0.3 s (bolted). A wall hit within 4 cm of a frame (`Court.backZone/sideZone` seamDist) rings the steel.
+  - **Net.** The netting's catch is a soft low "fwump" over 15-20 ms; a net cord is a tick on the tape and the
+    cable; a net post rings like a smaller post.
+  - **Feet.** Sand-filled turf crunches (grains at 2-7.5 kHz) with no squeak (padel soles are herringbone/omni for
+    sand); clay crunches coarser; carpet pats; a hard court slaps and squeaks (stick-slip chirps at 1.3-2.5 kHz).
+    Steps are heard where an avatar's sole comes down onto the floor (`Avatar.feet`, the lowest sole point each
+    frame), or by a stride clock for the capsules; scuffs where a player brakes hard or cuts.
+  - **Swing.** Turbulent noise whose band rises with the racket's speed; aeolian pressure goes about as speed cubed,
+    so a block volley is near silent and a smash swishes. On every swing (`E_SWING`), whiffs included.
+  - **Voices.** A Rosenberg glottal pulse train with jitter and shimmer and breath noise through five cascaded
+    formant resonators (Klatt 1980), vowel formants from Peterson & Barney 1952. Grunts: pitched up by effort and
+    falling, voiced only past an effort, breath below it; four players' voices; each player grunts with their own
+    propensity on overheads and hard drives. Shouts carry more sound power in real padel than impacts (Piana et al.:
+    +1.9 dB(A) overall), but the game keeps them a step under the racket.
+  - **Crowd.** Applause is many clappers, each with a hand configuration from ClaPD's resonance table (Peltola et
+    al. 2007, after Repp 1987; a clap about 5 ms, Jylhä & Erkut 2008), about 4 claps a second (tuning), joining and
+    leaving at their own times; a stadium's thousands beyond the 160 rendered are a band of noise in the claps'
+    spectrum. Gasps, groans and cheers are 40 formant voices, men's and women's, staggered, with noise standing in
+    for the rest. The murmur is talkers in phrases at about 5 syllables a second (Pellegrino et al. 2011: 5-8).
+  - **Rooms.** A stereo impulse response per arena: decaying noise in three bands, each with its own RT60, early
+    reflections (the court's own glass, the roof, the end walls) and, in the covered hall, a flutter between floor
+    and roof. Stadium RT60 2.4 / 2.0 / 1.3 s (low / mid / high; an estimate for a big hall, BB93 caps school sports
+    halls at 1.5 s), covered hall 1.6 / 1.25 / 0.8 s, outdoors 0.3 s of the glass and the clubhouse. Measured by
+    Schroeder integration (T20) in the tests within 20% (mid) and 25% (low) of the spec.
+  - **Ambience.** Wind with gusts and leaves, birds by day, crickets and the floodlights' 100 Hz hum by night, a
+    covered hall's air; the courts next door play rallies (about a hit a second, then pauses: club padel is about 88
+    impacts in 5 minutes, Higgins), heard from where those courts stand.
+- **The bank** (`src/audio/bank.ts`, `data/audio.json`): 2-4 renders of each sound per parameter bin (about 200
+  buffers, 0.5-1 s of synthesis, mostly the crowd) rendered in a worker (`bankWorker.ts`) so the first frames never
+  stall, the racket first. Each family is scaled so its loudest render sits at its level (peak dBFS for impacts, rms
+  for beds); a play picks a render at random, never the last one, with +-3% pitch and +-1.5 dB, and a continuous
+  parameter (speed, effort) picks the bin below or above at random by where it falls between them, the level
+  following it, so sounds slide with the play rather than step.
+- **Engine** (`src/audio/engine.ts`): heard from the broadcast camera (the listener follows it each frame): 32 pooled
+  voices (gain, an air/distance low-pass, an equal-power panner with the inverse distance law at 16 m reference so
+  the far baseline is about 6 dB down, and a send to the arena's reverb that grows with distance), four buses, a
+  master gain, a safety limiter (-2 dBFS, 20:1, make-up gain undone) and a clip that is exact below 0.8 (review fix,
+  below). Sounds play at the event's exact time (up to
+  50 ms ahead, as the sim runs ahead of the screen). Audio starts on the first key, click or pad press (browsers
+  allow it only from a gesture), in autoplay too, and pauses with the tab.
+- **The mix.** Levels in `data/audio.json`: racket -5 dBFS peak, glass -6, mesh -9, posts -10, bounce -14, net -14,
+  grunts -13, swish -20, shoes -30; beds by rms: applause -26, cheer -25, murmur -41. Tests hold: no single sound at
+  its loudest play needs the limiter; the busiest moment (a smash off the glass with a grunt, steps, a cheer and the
+  big applause over the murmur) peaks under the limiter's threshold in every arena on every floor; the shoes sit 15-32 dB under the racket, the bounce
+  over 4 dB under, the crowd's chatter 9+ dB under a hit (hushed 16 dB further in a point).
+- **The crowd follows the match** (`src/audio/soundscape.ts`): chatter between points, hushed as the server gets
+  ready, a murmur of tension rising past 6 shots, a gasp (big crowds) at a smash or a ball off two walls sent back,
+  then applause by the point: small for most, big after a long rally or a smash winner, a cheer for a ball played
+  out of the court, a groan for a long rally lost on an error or a double fault, more for sets and the match. Club
+  crowds (8-14 people) only clap.
+- **Feedback**: the Phase 2 hit sound (`sound.ts`) is gone; rumble and the smash's camera kick stay in
+  `src/game/feedback.ts`.
+
+### Phase 6 review fixes
+Two reviews (a verifier and a fresh pair of ears reading the code) found one critical problem, four high and about
+twenty medium or low. Fixed:
+- **Critical: sound froze for good in Firefox.** The engine set the listener through `positionX`, which Firefox's
+  `AudioListener` doesn't have; the throw came out of the frame loop. The listener's position now lives in the
+  engine's own fields and goes through `setPosition` where `positionX` is missing, only when the camera has moved;
+  `game.ts` catches any audio failure once and carries on silent; a foot's `footDown` is set before the step plays,
+  so a throw can't make it play every frame.
+- **High: a club's eight watchers clapped as loud as a stadium.** Reactions are levelled by the part that sounds
+  (`activeRms`, not the whole render with its silent tail) and by headcount: `crowdDb(N) = 10 log10(N / 4600)`
+  (power adds with clappers), +6 dB under 50 people (they sit by the court). Eight people clap 22 dB under the
+  stadium; every crowd render is capped at -9 dBFS peak. Tests hold both.
+- **High: the master chain coloured every mix.** The -8 dBFS 12:1 compressor ran on most hits and its automatic
+  make-up gain lifted everything under it. It is now a safety limiter at -2 dBFS, 20:1, hard knee, with the make-up
+  gain taken back out (`1 / (1 / fullScale)^0.6`, WebAudio's own formula), so it is unity below the threshold; the
+  soft clip is the identity up to 0.8. The mix tests run all four arenas on all four floors through that chain and
+  hold the busiest moment under the threshold: in play nothing touches it.
+- **High: the racket's sound came from the timing grade.** A "Perfect" frame shot sounded clean. The hit event now
+  carries the impact speed (`MatchEvent.d`, the ball against the face, from `ShotResult.impactSpeed`) and where it
+  met the face (`q`: 0 centre to 1 edge, 2 the frame, from the contact point against the head's length and width);
+  power is (speed - 4) / 36 m/s, a contact past 0.55 is off-centre.
+- **High: scuffs depended on the frame rate.** Braking and cutting were judged from one frame's velocity change,
+  so 144 fps scuffed far less than 60. They are judged over a fixed 0.1 s window now; a test plays the same match at
+  60 and 144 fps and gets the same count within 35%.
+- **Medium and low:**
+  - **Levels follow a law.** A bin's level now goes with its speed or force (`law` per family in `bank.ts`); the
+    bins only change the timbre, so `binFor` slides between them with no step (a test checks both picks at every
+    midpoint agree within 0.2 dB). The gain is clamped only above the top bin.
+  - **Floors keep their loudness.** Bounces, steps and scuffs were each normalised per floor, so sand rang as loud
+    as resin. They are levelled on turf (`floorRef`); the other floors keep their own level against it (a test:
+    resin over 2 dB louder than turf, carpet quietest).
+  - **The bounce sat 3.6 dB under the racket.** It is now -17 dBFS peak (from -14) and the shoes -31 (from -30):
+    a test holds the bounce over 4 dB under a clean drive and the shoes 15-32 dB under it on turf and on resin.
+    Broadcast mixes put the ball's bounce well under the hit; there is no padel measurement of the ratio
+    (OPEN_QUESTIONS.md).
+  - **The crowd carried its state between points.** Wall counts and the "long rally" state now reset on every point,
+    fault and let; walls count only in a rally; no gasp at a serve; a set or match point plays one celebration (no
+    applause stacked on a big one in the last 3 s); a long rally gets a cheer only for a winner, a groan for an error;
+    the cheer comes 0.3 s after the point. The hush starts at the server's set-up (time constant 0.35 s) and the
+    chatter returns after the point (0.8 s); a test reads the murmur's level at each serve's contact as WebAudio
+    follows its targets. The tension rises 13 dB by about 22 shots (7 was inaudible under the hush).
+  - **Frame clacks.** The rim's modes (1.9, 2.9, 4.3, 6.1 kHz) are struck by a 0.22 ms pulse and the face's bend is
+    damped on a frame hit: brighter than a clean hit, with more energy above 2 kHz, at about the same loudness (a
+    test measures all three).
+  - **The swish peaks at the contact.** It was played at the swing's start; it is now scheduled so its peak lands
+    25 ms before the contact (`WHOOSH_LEAD` + `WHOOSH_PEAK`), started part-way in when late; whiffs swish too. A
+    test: 80% of swishes peak within 45 ms before to 20 ms after the hit.
+  - **Steps.** Force from the speed and the braking (`0.06 + v / 6.5 + brake / 18`), the capsules' stride clock at
+    a runner's cadence (`1.6 + 0.48 v` steps a second).
+  - **Variety.** Three or more renders of anything heard often: with two, "never the one just played" was a strict
+    A/B/A/B.
+  - **Ambience.** Birds are one-shot calls from the trees 14-32 m to the side, 4-10 m up, at random (a loop of birds
+    repeated audibly every few seconds); the wind loop is 17 s and the murmur 12 s; the stadium has its air
+    handling under the play.
+  - **Engine.** Buffers made once per family (at unlock or on arrival from the worker), the raw floats dropped; the
+    render picker uses typed arrays, not string keys; a voice is free when its sound has ended by the audio clock;
+    `pause()` always suspends or resumes, and a state change while paused is put right; without a worker the bank
+    renders one family per 30 ms task after 1.5 s, so the first frames never stall; the impulse response's bands
+    use independent noise and its flutter can't go negative; `air.Q` is -3.01 dB (Butterworth); loop requests that
+    change nothing are skipped. `src/audio/sink.ts` holds the interface the soundscape plays into, so the tests
+    record it without WebAudio or three.
+- **Not done:**
+  - **A gamepad-only player may hear nothing until a key or click.** Browsers start audio only from a user gesture
+    and a pad press may not count. A hint would be new UI, which needs the owner's OK first (OPEN_QUESTIONS.md).
+  - **Output latency isn't compensated.** `AudioContext.outputLatency` (10-40 ms; Bluetooth 150+) would move every
+    sound earlier; Safari doesn't report it, and the swish's lead covers the usual wired case.
+  - **Partner calls aren't voiced** ("¡mía!", "¡tuya!"): the calls are on the HUD; voices would need recorded
+    speech to sound like people (formant synthesis gives vowels, not words).

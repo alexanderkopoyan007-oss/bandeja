@@ -2,13 +2,15 @@
 // frame (posts, rails, door frames, clamps) and the net. Rendering only reads the sim.
 // Draw calls stay low: glass and mesh are each one merged mesh, the whole frame is one instanced mesh.
 import * as THREE from 'three/webgpu';
-import { uv, vec2, float, fract, min, max, fwidth, smoothstep, mix, saturate, color, length } from 'three/tsl';
+import {
+  uv, vec2, vec3, float, fract, min, max, fwidth, smoothstep, mix, saturate, color, length, positionWorld, cameraPosition,
+  normalWorld, normalize, dot, abs, pow, texture, pmremTexture, reflectVector,
+} from 'three/tsl';
 import {
   Court, SURF_GLASS, SURF_MESH,
   WALL_BACK_NEAR, WALL_BACK_FAR, WALL_SIDE_LEFT, WALL_SIDE_RIGHT, type Panel,
 } from '../sim/court/court.ts';
 
-const LINE_Y = 0.002;
 const POST = 0.08; // square steel tube
 const RAIL = 0.05;
 
@@ -44,38 +46,34 @@ export function wireMaterial(cell: number, wire: number, diamond: boolean, tint:
   return m;
 }
 
-export function buildCourtView(court: Court): THREE.Group {
+export interface CourtLook {
+  /** Posts, rails and door frames (sRGB hex). */
+  frame: string;
+  /** The steel the glass stands on (panoramic courts show it as a pale line round the court). */
+  base: string;
+}
+
+/** The arena's baked environment and where it was captured, for parallax-corrected reflections. */
+export interface EnvProbe {
+  texture: THREE.Texture;
+  /** Where the cube map was rendered from. */
+  at: THREE.Vector3;
+  /** The box the reflections are projected onto (the hall's walls, or a box round an outdoor club). */
+  min: THREE.Vector3;
+  max: THREE.Vector3;
+  /** Scales the reflection (the arena's environment intensity: low at night). */
+  intensity: number;
+}
+
+export interface CourtView {
+  group: THREE.Group;
+  /** Hand the glass the arena's baked environment (Arena.bakeEnvironment) for its reflections. */
+  setEnvironment(env: EnvProbe): void;
+}
+
+export function buildCourtView(court: Court, look: CourtLook = { frame: '#1b1e21', base: '#1b1e21' }): CourtView {
   const g = new THREE.Group();
   g.name = 'court';
-  const { halfW, def } = court;
-
-  // Surroundings and playing surface.
-  const apron = new THREE.Mesh(
-    new THREE.PlaneGeometry(def.width + 16, def.length + 16),
-    new THREE.MeshStandardMaterial({ color: 0x3d4247, roughness: 0.95 }),
-  );
-  apron.rotation.x = -Math.PI / 2;
-  apron.position.y = -0.005;
-  apron.receiveShadow = true;
-  g.add(apron);
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(def.width, def.length),
-    new THREE.MeshStandardMaterial({ color: 0x2a5d9c, roughness: 0.9 }),
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  g.add(floor);
-
-  // Lines: service lines and the centre service line (extends 20 cm past each service line). One mesh.
-  const lw = def.lineWidth;
-  const sl = def.serviceLineFromNet;
-  const lines = new QuadBatch();
-  for (const s of [1, -1]) {
-    lines.flat(-halfW, halfW, s * sl - lw / 2, s * sl + lw / 2, LINE_Y);
-    const len = sl + def.centreLineExtension;
-    lines.flat(-lw / 2, lw / 2, Math.min(0, s * len), Math.max(0, s * len), LINE_Y);
-  }
-  g.add(lines.mesh(new THREE.MeshBasicMaterial({ color: 0xf2f2f2 })));
 
   // Glass and mesh: one merged mesh each.
   const glass = new QuadBatch();
@@ -84,10 +82,9 @@ export function buildCourtView(court: Court): THREE.Group {
     if (p.kind === SURF_GLASS) glass.wall(court, p);
     else if (p.kind === SURF_MESH) mesh.wall(court, p);
   }
-  const glassMesh = glass.mesh(new THREE.MeshStandardMaterial({
-    color: 0xcfe9e2, transparent: true, opacity: 0.13, roughness: 0.04, metalness: 0.1,
-    side: THREE.DoubleSide, depthWrite: false,
-  }));
+  const glassMat = new THREE.MeshBasicNodeMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  glassLook(glassMat, null);
+  const glassMesh = glass.mesh(glassMat);
   glassMesh.renderOrder = 3;
   g.add(glassMesh);
 
@@ -99,10 +96,110 @@ export function buildCourtView(court: Court): THREE.Group {
   // Steel frame: posts, rails, door frames and glass clamps, all one instanced mesh.
   const frame = new FrameBuilder();
   buildFrame(court, frame);
-  g.add(frame.mesh());
+  g.add(frame.mesh(look.frame));
+  // The base the glass stands on: a flat steel channel along the foot of every glass panel.
+  const base = new FrameBuilder();
+  for (const p of court.panels) {
+    if (p.kind !== SURF_GLASS || p.y0 > 0.01) continue;
+    const back = p.wall === WALL_BACK_NEAR || p.wall === WALL_BACK_FAR;
+    const out = back ? (p.wall === WALL_BACK_NEAR ? 1 : -1) * (court.halfL + 0.02) : (p.wall === WALL_SIDE_RIGHT ? 1 : -1) * (court.halfW + 0.02);
+    const mid = (p.u0 + p.u1) / 2, len = p.u1 - p.u0;
+    if (back) base.box(mid, 0.035, out, len, 0.07, 0.1);
+    else base.box(out, 0.035, mid, 0.1, 0.07, len);
+  }
+  g.add(base.mesh(look.base, 0.5, 0.35));
 
   // The net itself is render/netView.ts (it moves with the ball).
-  return g;
+  return { group: g, setEnvironment: (env) => glassLook(glassMat, env) };
+}
+
+let smudgeTex: THREE.CanvasTexture | null = null;
+
+/**
+ * Ball marks, smears and dust on the glass, one tile per 4 m x 3 m of wall (uv in metres): felt marks where balls
+ * hit (round, 6-7 cm, most between knee and head height), wipe streaks, and the dirty band along the foot.
+ */
+function smudges(): THREE.CanvasTexture {
+  if (smudgeTex) return smudgeTex;
+  const W = 1024, H = 768;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d')!;
+  let s = 77;
+  const r = (): number => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const pxm = W / 4; // pixels per metre
+  // Ball prints: felt leaves a faint ring-shaped print, smeared a little along the way the ball skidded (mostly
+  // sideways and down), at the heights balls meet the glass. Faint: they show against light, not everywhere.
+  for (let i = 0; i < 46; i++) {
+    const x = r() * W;
+    const hgt = 0.35 + Math.pow(r(), 1.3) * 2.3;
+    const y = H - hgt * pxm;
+    const rad = (0.03 + r() * 0.006) * pxm;
+    const a = 0.03 + r() * 0.07;
+    const smear = 1 + r() * 1.4;
+    g.save();
+    g.translate(x, y);
+    g.rotate((r() - 0.5) * 1.2);
+    g.scale(smear, 1);
+    const grd = g.createRadialGradient(0, 0, 0, 0, 0, rad * 1.3);
+    grd.addColorStop(0, `rgba(255,255,255,${a * 0.45})`);
+    grd.addColorStop(0.6, `rgba(255,255,255,${a})`);
+    grd.addColorStop(0.8, `rgba(255,255,255,${a * 0.5})`);
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(0, 0, rad * 1.3, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+  // Wipe streaks: long soft arcs.
+  g.lineCap = 'round';
+  for (let i = 0; i < 18; i++) {
+    g.strokeStyle = `rgba(255,255,255,${0.02 + r() * 0.03})`;
+    g.lineWidth = 10 + r() * 30;
+    const x = r() * W, y = H * (0.3 + r() * 0.6);
+    g.beginPath(); g.arc(x, y + 200, 200 + r() * 200, -2.2, -0.9); g.stroke();
+  }
+  // Dust along the foot.
+  const dust = g.createLinearGradient(0, H, 0, H - 0.35 * pxm);
+  dust.addColorStop(0, 'rgba(255,255,255,0.22)');
+  dust.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = dust;
+  g.fillRect(0, H - 0.35 * pxm, W, 0.35 * pxm);
+  smudgeTex = new THREE.CanvasTexture(c);
+  smudgeTex.wrapS = smudgeTex.wrapT = THREE.RepeatWrapping;
+  smudgeTex.anisotropy = 8;
+  return smudgeTex;
+}
+
+/**
+ * Glass: 10-12 mm tempered panels. What you see is mostly what is behind them; the rest is the arena reflected
+ * by Fresnel (about 8% straight on for two faces, rising towards grazing angles), a faint green in the
+ * reflection from the glass's iron, and the marks on it. Unlit and blended: reflection + smudges over the scene.
+ */
+function glassLook(m: THREE.MeshBasicNodeMaterial, env: EnvProbe | null): void {
+  const view = normalize(cameraPosition.sub(positionWorld));
+  const cosT = abs(dot(normalWorld, view));
+  const fres = float(0.08).add(float(0.92).mul(pow(float(1).sub(cosT), 5)));
+  const marks = texture(smudges(), uv().div(vec2(4, 3)).add(vec2(0, 0))).a;
+  const tint = vec3(0.9, 1.0, 0.95);
+  let refl: THREE.Node<'vec3'> = vec3(0.6, 0.65, 0.68).mul(tint);
+  if (env) {
+    // Box-projected: follow the reflected ray to the arena's box and look the hit point up from where the probe
+    // was rendered. A plain lookup sees everything from the court's centre, so the near back glass "reflected" the
+    // floodlit court at night instead of the dark park behind the camera.
+    const r = reflectVector;
+    const lo = vec3(env.min.x, env.min.y, env.min.z), hi = vec3(env.max.x, env.max.y, env.max.z);
+    const t1 = hi.sub(positionWorld).div(r), t2 = lo.sub(positionWorld).div(r);
+    const tf = max(t1, t2);
+    const t = min(min(tf.x, tf.y), tf.z);
+    const dir = positionWorld.add(r.mul(t)).sub(vec3(env.at.x, env.at.y, env.at.z));
+    refl = pmremTexture(env.texture, dir, float(0.04)).rgb.mul(tint).mul(env.intensity);
+  }
+  // Marks fade with distance (seen from the stands the glass is all but invisible; the marks show close to it).
+  const near = float(1).sub(smoothstep(4, 14, cameraPosition.sub(positionWorld).length()));
+  const haze = marks.mul(0.5).mul(near.mul(0.85).add(0.15));
+  m.colorNode = mix(refl, color(0xc9cfd3), saturate(haze.div(fres.add(haze).add(1e-4))));
+  m.opacityNode = saturate(fres.add(haze).add(0.02));
+  m.needsUpdate = true;
 }
 
 /** Posts, rails, door frames and clamps for a framed (posts) or frameless (panoramic) court. */
@@ -203,11 +300,11 @@ class FrameBuilder {
     this.items.push(x, y, z, sx, sy, sz);
   }
 
-  mesh(): THREE.InstancedMesh {
+  mesh(colour: string, roughness = 0.42, metalness = 0.55): THREE.InstancedMesh {
     const n = this.items.length / 6;
     const m = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x1b1e21, roughness: 0.42, metalness: 0.55 }),
+      new THREE.MeshStandardMaterial({ color: colour, roughness, metalness }),
       n,
     );
     const mat = new THREE.Matrix4();

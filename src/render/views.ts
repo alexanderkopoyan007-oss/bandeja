@@ -9,6 +9,9 @@ import { decal, makeSpotTexture } from './decals.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 import { Avatar, makeRacket } from './avatar/avatar.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
+import { kitFor } from './avatar/kit.ts';
+import { makeBall, spinBall } from './ballLook.ts';
+import { DT } from '../sim/core/constants.ts';
 
 const TIMING = tuning.timing;
 const BALL_COLOR = 0xdff23b;
@@ -26,7 +29,14 @@ function smooth(t: number): number {
 }
 
 export class BallView {
-  readonly mesh: THREE.Mesh;
+  /** Holds the ball at its position, stretched along its path for the shutter (ballLook.ts). */
+  readonly mesh = new THREE.Group();
+  private readonly felt: THREE.Mesh;
+  private readonly blur: { value: THREE.Vector2 };
+  private readonly radius: number;
+  private lastSpinT = -1;
+  /** Camera shutter for the ball's stretch (s; broadcast cameras run 1/100-1/1000 s; longer reads as an egg up close without a real blur). */
+  static shutter = 1 / 500;
   readonly shadow: THREE.Mesh;
   readonly trail: THREE.Line;
   readonly marker: THREE.Mesh;
@@ -37,11 +47,11 @@ export class BallView {
   showMarker = true;
 
   constructor(scene: THREE.Scene, radius: number) {
-    this.mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(radius, 20, 14),
-      new THREE.MeshStandardMaterial({ color: BALL_COLOR, roughness: 0.55, emissive: 0x2a3008 }),
-    );
-    this.mesh.castShadow = true;
+    const look = makeBall(radius);
+    this.felt = look.mesh;
+    this.blur = look.blur;
+    this.radius = radius;
+    this.mesh.add(this.felt);
     scene.add(this.mesh);
 
     // Crisp contact shadow straight below the ball: the main cue for judging height and depth.
@@ -77,6 +87,13 @@ export class BallView {
     const y = p.y + (b.y - p.y) * alpha;
     const z = p.z + (b.z - p.z) * alpha;
     this.mesh.position.set(x, y, z);
+    {
+      const t = sim.time + alpha * DT;
+      const dt = this.lastSpinT < 0 || t < this.lastSpinT || t - this.lastSpinT > 0.25 ? 0 : t - this.lastSpinT;
+      this.lastSpinT = t;
+      const w = sim.ball.spin, v = sim.ball.vel;
+      this.blur.value.x = spinBall(this.mesh, this.felt, w.x, w.y, w.z, dt, v.x, v.y, v.z, this.radius, BallView.shutter);
+    }
     const h = Math.max(0, y - sim.world.spec.radius);
     this.shadow.position.set(x, 0.003, z);
     const sc = 1 + h * 0.25;
@@ -128,7 +145,7 @@ export class PlayerView {
 
   constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null) {
     if (asset) {
-      this.avatar = new Avatar(asset, PLAYER_COLORS[idx]!);
+      this.avatar = new Avatar(asset, kitFor(idx));
       this.root = this.avatar.root;
       scene.add(this.root);
       return;
@@ -214,8 +231,21 @@ export class PlayerView {
   }
 }
 
-const FOV = 42;
+/**
+ * The broadcast main camera ("the WPT angle", the de facto standard of professional padel video): about 7.6 m above
+ * the floor and 15.5 m behind the back glass (Javadiha et al. 2021, Sensors 21(10) 3368, from professional
+ * footage: from there the near end's mesh covers the far court from the foot of the net to the far service line,
+ * as on TV). A long lens frames the whole court from that far back (vertical FOV, degrees). Was 6.3 m up, 9.2 m
+ * back, 42°: closer, with a wide angle's perspective.
+ */
+const CAM_BACK = 15.5;
+const CAM_HEIGHT = 7.6;
+const FOV = 26;
 const KICK_DECAY = 0.09;
+/** Lob tilt: the ball kept this far (rad) below the top edge; the most the camera tilts up (rad); its lag (s). */
+const TILT_MARGIN = (2.5 * Math.PI) / 180;
+const TILT_MAX = (14 * Math.PI) / 180;
+const TILT_LAG = 0.2;
 
 /** Broadcast camera high behind the back glass of the human's end; swings round smoothly at changes of ends. */
 export class BroadcastCamera {
@@ -229,13 +259,25 @@ export class BroadcastCamera {
   private kickAt = -1;
   private kickAmp = 0;
   private fovNow = FOV;
+  private tilt = 0;
+  private lastNow = -1;
 
-  constructor(aspect: number) {
+  /** How much higher the camera goes at the middle of the change-of-ends swing (m; per arena: over the stadium's
+   * stands, never through a hall's roof). */
+  private readonly swingRise: number;
+
+  constructor(aspect: number, swingRise = 0) {
     this.camera = new THREE.PerspectiveCamera(FOV, aspect, 0.1, 300);
+    this.swingRise = swingRise;
+  }
+
+  /** The camera is swinging round at a change of ends. */
+  get swinging(): boolean {
+    return this.turnStart >= 0;
   }
 
   /**
-   * A smash: the shot camera's operator flinches with it. A quick push in (up to 1.2° of zoom) and a 2 cm jolt
+   * A smash: the shot camera's operator flinches with it. A quick push in (up to 2.9% of zoom) and a 2 cm jolt
    * that rings down over a quarter of a second (11 Hz, 90 ms decay): felt, not seen as shake.
    */
   kick(strength: number, now: number): void {
@@ -245,22 +287,29 @@ export class BroadcastCamera {
     this.kickAmp = Math.min(1, strength);
   }
 
-  update(sim: MatchSim, humanTeam: number, ballX: number, now: number): void {
+  /** `ball`: where the ball is drawn (null: placing the camera before play). `now` in seconds. */
+  update(sim: MatchSim, humanTeam: number, ball: THREE.Vector3 | null, now: number): void {
     const want = sim.side(humanTeam) > 0 ? 0 : Math.PI;
     if (Math.abs(want - this.to) > 1e-6) {
       this.from = this.angle;
       this.to = want;
       this.turnStart = now;
     }
+    // The change-of-ends swing goes round an ellipse (a side's stands come nearer the court than an end's) and
+    // climbs over them: on the end's 25.5 m circle the lens went through the stadium's back rows.
+    let swing = 0;
     if (this.turnStart >= 0) {
       const u = smooth((now - this.turnStart) / 1.6);
       this.angle = this.from + (this.to - this.from) * u;
+      swing = Math.sin(Math.PI * u);
       if (u >= 1) this.turnStart = -1;
     } else {
       this.angle = this.to;
     }
-    const halfL = sim.world.court.halfL;
-    const R = halfL + 9.2;
+    const court = sim.world.court;
+    const Rz = court.halfL + CAM_BACK;
+    const Rx = court.halfW + CAM_BACK;
+    const ballX = ball ? ball.x : 0;
     this.lookX += (ballX * 0.12 - this.lookX) * 0.05;
     const ca = Math.cos(this.angle);
     const sa = Math.sin(this.angle);
@@ -272,11 +321,31 @@ export class BroadcastCamera {
       else {
         const env = this.kickAmp * Math.exp(-u / KICK_DECAY);
         jolt = 0.02 * env * Math.sin(2 * Math.PI * 11 * u);
-        fov = FOV - 1.2 * env * Math.min(1, u / 0.03);
+        fov = FOV * (1 - 0.029 * env * Math.min(1, u / 0.03));
       }
     }
-    this.camera.position.set(sa * R + this.lookX * ca, 6.3 + jolt, ca * R - this.lookX * sa);
-    this.camera.lookAt(this.lookX * ca * 0.8, 0.35 + jolt * 0.5, -ca * 1.4);
+    const camY = CAM_HEIGHT + this.swingRise * swing + jolt;
+    const tx = this.lookX * ca * 0.8, ty = 0.35 + jolt * 0.5, tz = -ca * 1.1;
+    this.camera.position.set(sa * Rx + this.lookX * ca, camY, ca * Rz - this.lookX * sa);
+    this.camera.lookAt(tx, ty, tz);
+    // Tilt up with a lob, as the operator does: keep the ball TILT_MARGIN below the top of the frame, following
+    // with a TILT_LAG response (and easing back down).
+    // On the match clock (stepped captures included); the operator leads a rising ball by the lag.
+    const dt = this.lastNow < 0 ? 0 : Math.min(0.1, Math.max(0, sim.time - this.lastNow));
+    this.lastNow = sim.time;
+    let tiltWant = 0;
+    if (ball) {
+      const p = this.camera.position;
+      const hx = ball.x - p.x, hz = ball.z - p.z;
+      const lead = Math.max(0, sim.ball.vel.y) * TILT_LAG;
+      const ballPitch = Math.atan2(ball.y + lead - p.y, Math.sqrt(hx * hx + hz * hz));
+      const vx = tx - p.x, vz = tz - p.z;
+      const viewPitch = Math.atan2(ty - p.y, Math.sqrt(vx * vx + vz * vz));
+      const top = viewPitch + ((FOV / 2) * Math.PI) / 180 - TILT_MARGIN;
+      tiltWant = Math.min(TILT_MAX, Math.max(0, ballPitch - top));
+    }
+    this.tilt += (tiltWant - this.tilt) * (dt > 0 ? 1 - Math.exp(-dt / (tiltWant > this.tilt ? TILT_LAG : TILT_LAG * 2)) : 0);
+    if (this.tilt > 1e-5) this.camera.rotateX(this.tilt);
     if (fov !== this.fovNow) {
       this.fovNow = fov;
       this.camera.fov = fov;
@@ -334,11 +403,18 @@ class RingStrip {
   }
 }
 
-// Sizes in radians of view angle, so the cue looks the same near and far (~1400 px per radian at 1080p).
+// Sizes in radians of view angle at the old 42° lens, so the cue looks the same near and far (~1400 px per radian at
+// 1080p); scaled by the lens in use (lensScale), so it keeps the size on screen the owner saw with the 42° lens.
 const TARGET_R = 0.0115;
 const APPROACH_RATE = 0.11; // per second before the ideal moment
 const APPROACH_SHOW = 0.6; // seconds before the ideal moment the approaching ring appears
 const LINE_W = 0.0022;
+
+/** View angle per screen height relative to the 42° lens the cue sizes were set with. */
+function lensScale(camera: THREE.Camera): number {
+  const fov = (camera as THREE.PerspectiveCamera).fov;
+  return fov ? Math.tan((fov * Math.PI) / 360) / Math.tan((21 * Math.PI) / 180) : 1;
+}
 
 const C_WHITE = 0xffffff;
 const C_LOCK = 0x8fe36b;
@@ -447,7 +523,7 @@ export class AssistView {
       this.spotRoot.visible = true;
     }
 
-    const d = camera.position.distanceTo(ball);
+    const d = camera.position.distanceTo(ball) * lensScale(camera);
     const lw = d * LINE_W;
     const tr = d * TARGET_R;
     // Just released: flash the grade on the target ring.

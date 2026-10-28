@@ -18,9 +18,10 @@ if (process.argv[2] === '--child') {
     const THREE = await import('three/webgpu');
     const { parsePlayerAsset } = await import('../src/render/avatar/asset.ts');
     const { Avatar } = await import('../src/render/avatar/avatar.ts');
+    const { kitFor } = await import('../src/render/avatar/kit.ts');
     const raw = gunzipSync(readFileSync(new URL('../public/assets/player.bnz', import.meta.url)));
     const asset = parsePlayerAsset(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
-    const av = [0, 1, 2, 3].map(() => new Avatar(asset, 0xffffff));
+    const av = [0, 1, 2, 3].map((i) => new Avatar(asset, kitFor(i)));
     const scene = new THREE.Scene();
     for (const v of av) scene.add(v.root);
     let k = 0;
