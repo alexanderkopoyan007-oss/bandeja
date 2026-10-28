@@ -375,3 +375,310 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   frames while the lag eases in after a press at 165-240 Hz; taps under 15 ms can strike late; the camera kick
   and rumble can lead the drawn hit by up to a tick; `npm run alloc` drives only AI players (a human-path bot
   measured 7-15 GCs per 100k ticks, mean 10.2, against 8.6 on Phase 1's code: within match noise).
+
+## Phase 3: animation realism
+- **Measure first** (`node tools/anim-check.ts <tag> [secs] [seeds]`, `src/render/avatar/animQa.ts`, results in
+  `docs/lab/anim-check-*.md`): every sim tick of an AI doubles match drawn, then foot skating (Zhang et al. 2018's
+  measure), planted-sole drift, soles under the floor, racket to ball at the contact, the face against the ball's
+  way out, one-frame pops and joint speeds against what people reach (Fleisig 2003 and others in `avatar.ts`),
+  and clipping with capsules fitted to the mesh (racket in body, hand in torso, thighs through each other, net,
+  glass, players). Seed 3 plays two left-handers. Before Phase 3 (`anim-check-before.md`): skate 54-68 cm/s,
+  soles under the floor 7-9% of foot frames (8 cm), pops 118-145 per player-minute.
+- **Inertialization of the animation's inputs** (Bollo 2016, Holden 2021; `src/render/avatar/inertia.ts`): the clip
+  pose before IK, the stroke's key, the body's facing, the stroke weight and the crouch carry on smoothly through a
+  jump (a jump goes into an offset that dies away with a critically damped spring), never the IK's output (that
+  would lift the feet off their plants and the racket off the ball). Pops 119-180 → 45-68.
+- **Feet**: a sole within 1.5 cm of the floor stays where it was put down, rotation and toes held, until the clip
+  lifts it or the body drifts, turns or reaches too far over it (then it steps, lifted, one foot at a time when
+  standing); soles kept above the floor measured as the foot will be; orientation warping for diagonal running
+  (the nearest direction's clip with the legs turned up to 45 degrees onto the travel). Skate 57-65 → 17-19 cm/s,
+  planted-sole drift p50 → 0, soles under the floor → 0.
+- **Allocation**: the new code passed doubles to calls V8 doesn't inline; fixed (30-33 → 4-7 GCs per 100k ticks).
+- **The serve, studied from pros** (owner's ask; `docs/research/serve-and-strokes-motion.md` §4.1: FIP rules,
+  Ramón-Llin and Courel-Ibáñez's serve studies, the tennis forehand's kinematics for the swing, physics for the
+  bounce). Before, the server stood square, dropped the ball from waist height and swatted it at knee height
+  with an underarm flick. Now:
+  - Ball: held at 0.95 m, 0.55 m out to the racket side and 0.5 m ahead, pushed down at 3.2 m/s so it bounces up
+    to an apex near the waist, struck 20 ms before the apex (`match.ts` SERVE_*). Contact height 0.57 → 0.87 m,
+    toss to contact 0.79 → 0.62 s, serve speed 56-66 → 59-69 km/h (still under FIP's waist rule; 58-72 km/h p10-p90
+    after the contact-placement change below, measured in the Phase 3 review).
+  - Address (K0): side-on (hips about 80°, shoulders 85°), racket in front at the waist face up, the free hand on
+    the ball, which it follows down as it is pushed (`SERVE_ADDRESS`, the avatar's `addrKey`).
+  - Swing keys from the research in the court frame (`courtKey`: forward, out to the racket side, up): backswing
+    to the racket head above the grip, face about vertical, shoulders turned 100° (measured 101°, hips 85°; the
+    research 105° / 85°); a waypoint at the mid forward swing out to the racket side and dropping (`Family.via`,
+    the curve's bend solved through it); contact at the ball out to the side, face open; low forward finish.
+    Measured turns at contact 56° / 49° (research 45° / 50°) and at the finish about 25° (15° / 25°).
+  - The research measures from the floor under the mid-hip, the keys from the player's position: the pelvis sits
+    0.13 m behind it at the top of the backswing (weight on the rear leg), so the backswing is that much further
+    back (the racket arm was folded to 25-30% of its length there; now 62-70%).
+  - Free hand keys placed from the measured free shoulder (it was 8-12 cm from its own shoulder at contact, the
+    arm folded flat and the elbow flipping): towards the bounce in the backswing, down by the free hip after.
+  - The serve address hands over to the ready position over about 0.1 s (`addrW`) instead of in one frame at the
+    contact (the free hand jumped 85°).
+  - An AI server's swing is timed to its own release (one after the ideal is the contact), as rally shots were.
+  - Serve QA (3 seeds, 13-17 s of serving each): racket in body 0.88 / 0.42 / 0.40%, hand in torso 0 / 0 / 0%,
+    pops 4.5 / 0 / 10.7 per minute (the first version of the new serve: 2.3 / 0.9 / 1.0%, 2.6 / 2.1 / 1.9%, 36 / 49
+    / 60; the old swat: about 0 on all three, it barely moved).
+- **Arms solved as hinges** (`hingeIK` in `ik.ts`). Every clip bends the forearm about one axis of its own frame
+  (per-frame distance from that axis, frames bent over 20°: p50 0.63° right / 0.81° left, max 11-14°, measured from
+  all eight clips, `elbowHinge`), so the elbow is solved exactly: the forearm's
+  rest rotation turned about that hinge by the bend that puts the wrist at the target's distance, then the upper
+  arm turned as a whole so the wrist lands on the target with the elbow towards the pole. The old two-bone IK
+  turned the clip's forearm the shortest way onto the new direction, which flips over when the bend needed is the
+  other way from the clip's: forearms and hands turning 150-180° in a frame, the worst pops in every match. The
+  elbow's side about the shoulder-to-wrist line turns no faster than 1500°/s (well under the 3600°/s the QA allows a
+  shoulder), so a pole passing
+  close by that line swings the elbow round instead of flipping it. The free arm's pole turns with the chest. The
+  knees stay on the two-bone IK: solving them as hinges threw away the clips' shin rotation (about 10°) and
+  tripled the pops (measured, reverted).
+- **Racket rotation blends keep their way round by continuity** (`nlerpQ`): the way that lands nearer last frame's
+  result, the short way only at a blend's start. Re-picking the short way mid-blend turned the racket over in a
+  frame (a left-hander's overhead: the wrist target jumped 60 cm).
+- **Swing timing**: an AI's release moment is known, so its forward swing runs straight into the ball instead of
+  waiting at 85% for the release (that wait, then 15% of the swing in one or two frames, was a pop at most AI
+  contacts); the rest of a swing after a release starts from last frame's moment (it held still for a frame). On
+  the QA's new contact measure (the face's path between frames: a face that passes through the ball on time is
+  already centimetres past it at the frame that reports the hit, which the old measure scored against it):
+  racket to ball p50 4-9 mm, p90 6-10 cm, the closest moment p50 0 ms late, p90 one frame; with the old wait
+  1-2 mm and 3-7 cm but up to two frames late (a 20 m/s ball is 30 cm away by then) and 10-20% more pops.
+- **Hips**: the reach that pushes and lowers the hips towards a ball out of the arm's reach is now measured from
+  where the shoulder will be at the contact (the plan's spot, as far as the present speed covers in the time
+  left): a sprinting player had their hips pushed out and dropped to 0.33 m. The total drop is capped at 0.55 m
+  (a 0.4 m cap cost low volleys up to 7 cm of contact).
+- **QA after the serve and arm work** (3 seeds x 120 s, before → after): pops 51-64 → 37-50 per player-minute,
+  racket in body 2.0-2.6 → 1.6-2.2%, hand in torso 3.7-5.7 → 3.0-4.8%, legs through 2.7-3.5% (unchanged), skate
+  17-18 cm/s, soles under the floor 0, avatars 6-7 GCs per 100k ticks. Left: the leg flips (up to 177° at the
+  knee and foot in a stretch at a sprint, a few per match), and the leg pops that make up most of the count
+  (small, at foot plants and lifts).
+- **Hands kept off their own shoulders** (`keepOff`). The free hand's keys are placed for a standing body, so a
+  low slice's crouch brought the free shoulder down onto the hand's key (a left-hander's free hand 2 cm from its
+  shoulder), and a backhand's recovery passed the racket hand through its shoulder. There the line from the
+  shoulder to the hand turns over in a frame and the whole arm with it (167° and 123° pops). Two changes: the free
+  hand's keys move with the free shoulder when the hips drop or push and the spine leans; and the way from each
+  shoulder to its hand turns no faster than 40 rad/s (a hand 0.6 m out at 24 m/s; swings stay under it, so away
+  from the shoulder it changes nothing), with the hand put along it at least 35% of the arm's length out. Pushing
+  the hand straight out from the shoulder alone moved the flip, not removed it: no smooth rule pushes every point
+  out of a ball, so the push needs memory. Shoulder joint speed max 15400 → 7800°/s, frames over the limit 42 → 5;
+  wrist max 13200 → 6000°/s; contact unchanged.
+- **QA as a test** (`tests/render/animQa.test.ts`): 60 s of seed 1 and seed 3 (two left-handers) with thresholds
+  a little above today's numbers (skate, soles under the floor, planted feet, contact distance and lag, pops,
+  clipping, the serve's own numbers, and no arm or hand turning 150° or more in a frame), so a change that brings
+  a flip back fails `npm test`.
+- **Inertializer allocation**: `expQ` and the predicted rotation wrote through `Quaternion.set`/`normalize`
+  (boxed doubles when not inlined; the largest allocation site in the avatar run); they write through a
+  Float64Array now. Avatars 7-8 → 6 GCs per 100k ticks.
+- **Legs: no more flips** (the worst pops left: knees and feet turning up to 177° in a frame). Four causes, each
+  traced frame by frame:
+  - The lunge (a planted foot stepping out towards a wide contact) was given to whichever foot was on the ball's
+    side, picked by a sign: with the ball nearly in front or behind, the whole 0.55 m moved to the other foot in a
+    frame, and it applied at a sprint to a foot in the air. It now needs the feet planted (scaled by `plantW`) and
+    is shared between the feet by a smooth weight on the ball's side.
+  - The knee turned the shortest way from the clip's shin onto the new one: a shin that had to fold back past its
+    clip's line went over the top, twisting about itself. The knee now turns about its hinge (measured from the
+    clips as the elbows' are) and only the small rest the shortest way, faded out where either direction comes
+    into line with the hinge (a hard switch there was a 128° twist of its own).
+  - The hips came back up out of a low reach at up to 5.7 m/s, following the stroke's key as it swung up after the
+    contact. They now rise no faster than 1.5 m/s (`HIP_RISE`, standing up out of a lunge).
+  - The drop and the reach together put the hip joints 0.28 m off the floor (the legs folded flat, nothing a
+    knee can do there). The hips bone now stops at 0.58 m (`HIP_FLOOR`: a deep lunge with the front thigh level,
+    hip joints at knee height), and the upper body bends up to 43° towards a ball still out of reach
+    (`SPINE_REACH`, was 30°), which kept the contact (seed 2 p90 9.9 → 8.4 cm; it was 12.5 cm with the floor alone).
+  - QA, 3 seeds x 120 s (before → after): pops 35-48 → 20.5-26 per player-minute, the worst pop 177° → 72°, knee
+    max 21300 → 6000°/s, ankle max 19300 → 11500°/s, contact p50 4-9 mm and p90 7.7-8.4 cm (6-10 before),
+    legs through 2.8-3.5% (unchanged). The QA test now fails on any one-frame spike of 120° or more, or more
+    than 35 pops per player-minute (raised to 40 with the low-ball lunge below, which put the test's seed 1 at 34.75).
+- **Motion matching: not built.** Motion matching (Clavet 2016, "Motion Matching and The Road to Next-Gen
+  Animation", GDC; Holden et al. 2020's learned version) picks, several times a second, the frame of a large
+  motion database whose pose and future path best match where the player is going, and blends to it with
+  inertialization. Its quality comes entirely from the database: hours of unstructured capture (starts, stops,
+  plants, turns, cuts, side steps, crossovers, recoveries). This game has six looping Mixamo locomotion clips (idle,
+  jog, run, run back, strafe left and right; `docs/mixamo.md`), no starts, stops or turns: every query would land
+  on one of those loops at the right phase, which is what the direction blend with a stride-matched phase already
+  does. What does the job of motion matching here instead: the four-direction blend at one phase advanced by
+  distance (no skating), orientation warping for diagonals, inertialization of every input, planted feet with
+  stepping, the lunge, and the split-step hop. What would make motion matching worth building is in
+  OPEN_QUESTIONS.md (the clips, or capture).
+- **Video-to-mocap: not done here.** Turning video of real play into clips needs a pose-estimation model's weights
+  (a download the owner hasn't approved), video to run it on (there is no `/reference/video` on this machine) and
+  a body-model licence; see OPEN_QUESTIONS.md. The serve was instead studied from the published measurements
+  (`docs/research/serve-and-strokes-motion.md`) and built as key poses.
+- **Where contact happens, from the pros** (sim; `data/tuning.json` `//reach`, `planStand`). Measured in AI doubles
+  (4 seeds x 300 s, contact point from the body's centre, towards the net): drives 0.00 m on average, lobs 0.02,
+  volleys 0.18, against highly trained players' 0.64, 0.65 and 0.38 (Sánchez-Alcaraz et al. 2021). The game
+  planned every ground stroke 0.12 m in front and 0.75 m out to the side, so the ball came level with the body,
+  the arm reaching sideways. Now ground strokes are planned 0.6 m in front and 0.67 m out (0.9 m away across the
+  floor: `reachComfort`, which the timing windows also use for the ideal moment), volleys 0.35 m in front
+  (`VOLLEY_FRONT`, as the volley key already did) and `volleyReach` 0.7 m away; the timing windows use the same
+  distances for their ideal moment and now cost a contact behind the body (a ball off the back glass
+  passes the comfortable distance once behind the player, once in front). Measured after (4 seeds x 300 s):
+  drives, lobs, slices p50 0.60 m, means 0.52-0.59, p10 0.13-0.33 (the paper's SD 0.32); volleys p50 0.35.
+  What it did to the rally (`node tools/point-mix.ts 12 300`, AI doubles): points ending unreached 47.9 → 53.8%,
+  errors into their own side 45.6 → 38.6% (the first figures written here, 59% and 33%, didn't reproduce) (contacts in front are struck better; the comfortable distance also counts as no
+  stretch now). The published mix is winners 35-42%, forced 25-33%, unforced 29-38% (main-draw men), so the AI
+  now wins too many points outright: its error rates and shot choice are Phase 4's to calibrate, against those
+  numbers, not by putting the contact back beside the body.
+- **Ready position**: the racket 0.52 m out (was 0.42) and higher, the hands about 0.35 m in front of the body
+  with the elbows bent; the racket hand had sat 18 cm in front of the hips, and a running body's pelvis tilted onto
+  it (8% of a left-handed pair's frames had a hand inside the pelvis).
+- **The follow-through goes with the trunk**: after the contact the racket's key moves with the racket shoulder
+  as the hips move (it is read before the spine's lean towards the ball, so not with that) (as the free hand's keys do), eased in from the contact and out over 0.15 s when the
+  next stroke starts. The hips rising no faster than a body stands up had left the finish key (placed for a
+  standing body) in the chest and face after low balls.
+- **The racket is kept out of the body** (`racketClear`): the racket's points against the pelvis, chest and head
+  capsules (the QA's, fitted to the mesh; `capsules.ts` is shared now); every point inside pushes straight out by
+  its depth, the racket is moved by the push found on its moved position (three rounds, no IK between), and the
+  arm is solved once from where the hand is (a hand short of an out-of-reach target can't be pushed further out,
+  only round the shoulder). The push carries over and dies away over 0.08 s (taken anew each frame, it moved
+  between points and capsules and turned the forearm over); the carried part is at most 0.2 m (a backhand's
+  backswing across the chest can't be cleared; it had grown to 0.5 m) and is gone over the last fifth of the
+  forward swing so the racket is on the ball at the contact. A fresh push on top can make a frame's push larger
+  (p99 0.16 m, max 0.30 m, in 8% of arm-solve frames, measured in the review).
+- **QA after** (3 seeds x 120 s; the matches differ from the table above, the sim's contact placement changed):
+  racket in body 1.7-2.3 → 0.18-0.30%, hand in torso 3.0-4.8 → 1.0-1.8%, contact p50 4-8 mm and p90 6.2-7.8 cm,
+  pops 22-30 per player-minute (the guard adds about 2), legs through 2.6-3.2%, avatars 4 GCs per 100k ticks.
+- **Frame rate, Phase 3 against Phase 2** (`npm run perf`, two runs each, other sessions' Chromes also running on
+  this machine): medium with the CPU throttled 4x p50 2.5 / 2.5 ms, p99 4.5 / 4.6 ms before; 2.5 ms, p99 4.3 ms
+  after (one run at 2.8 / 5.1 ms overlapped a point-mix run); high at 2x p99 9.2 → 8.8-9.1 ms, 0.66% of frames
+  over 20 ms both (the queue stalls seen since M1). Draw calls 42 → 43. After the final review (one run, queued
+  behind and overlapping other sessions' Chrome jobs): medium 4x p50 3.0 ms, p99 5.4 ms, 0 frames over 20 ms, 329
+  fps; high at 2x p99 9.3 ms, 0.66% over 20 ms (max 56.7 ms), 480 fps; sim p99 1.3 / 0.2 ms; draw calls 42.
+- **Low balls: a lunge, not a squat.** Real-Chrome frames at stroke contacts showed every ball under 0.6 m met in
+  a full squat, knees splayed, the hips on the floor limit (90% of those contacts; hips bone at 0.58 m). Three
+  changes: a low ball steps the foot on its side towards it (`LUNGE_LOW` 0.45 m from a contact at 0.95 m down to
+  0.45 m, shared between the feet as the wide-ball lunge is), the hips take 55% of the arm's vertical shortfall
+  and leave the rest to the upper body bending towards the ball (`DOWN_SHARE`), the racket head drops further for
+  a low ball (48° below level at the lowest, was 33°: a low volley's head below the wrist), and the hips stop at
+  0.66 m (`HIP_FLOOR`, a deep lunge). Feet apart at low contacts p50 0.58 → 0.78 m; contact p90 8.0 / 7.7 / 7.8 cm (seed 1 rose from 6.2 cm,
+  and its 60 s test run from 6.2 to 9.2 cm against the test's 12), pops 24-30.5 per player-minute. The hips still
+  sit on the floor at most low balls: 81% of contacts under 0.6 m have the hips bone within 1 cm of 0.66 m (83% sat
+  on the old 0.58 m floor), so the clamp, not `DOWN_SHARE`, sets their height; the stance is wider and the upper
+  body takes more, but it is a lunge onto a floor limit.
+- **End-of-phase review** (a verifier re-running every claim and a fresh-eyes reviewer, both read-only). Fixed:
+  - **Left-handers' feet still flipped** (128-165° in a frame on 4 of 12 left-handed matches; Phase 3 had only ever
+    measured one left-handed seed, which had none). A stroke squaring a left-hander up from a ball behind turned the
+    body about 190° on the spot while a planted foot waited for the other to finish its step; its step then started
+    180° from its target, and a start-to-target slerp re-picked the short way mid-step. Steps now turn from last
+    frame's rotation by the share of the way left (no re-pick once under way; replaced in the second review, below),
+    and a foot left more than 1.6 rad behind the body steps even while the other is stepping (`WAIT_TURN_MAX`). A right-hander's foot turned 123° in
+    a frame as the hips' reach collapsed after a contact (0.38 m in five frames, the follow-through moving the key
+    at racket speed): after the contact the reach changes no faster than 2.5 m/s (`REACH_RATE`; before the contact
+    it is what puts the racket on the ball, and limiting it there cost 2-4 cm of contact p90; see the second review
+    for what drives it there now).
+  - **The same moment drawn twice snapped every body** (game.ts draws sim time twice while the render lag eases in
+    at a press, about once a held swing at 240 Hz): with dt 0 every filter and rate limit treated the frame as a
+    cut (up to 137° in a frame). `Avatar.update` now keeps last frame's pose when time hasn't moved.
+  - A reflex volley's hand turned 117° in a frame (released 46 ms before the contact with the stroke 18% faded in):
+    the racket turns no faster than 3600°/s (`RACKET_TURN_RATE`; the racket centre still goes to the key, so the
+    contact's position is unchanged, but not always its face: see the second review).
+  - The racket clear's carried push was cancelled on almost every backswing frame by the last stroke's progress
+    (`keyS` 0.99, never reset while the backswing held); a clear's second arm solve doubled the arm's rate limits
+    that frame (it now limits from last frame's state); the clear's push is reset when the arms switch off; the
+    lunge can't divide by zero; three per-frame `Vector3.set` calls write through `fromArray`.
+  - `volleyFront` moved to `data/tuning.json` (it drives the plan now); a front distance longer than the reach in the
+    data can no longer make the plan NaN.
+  - Text corrected above where the review measured otherwise: the point mix after the contact change (53.8% / 38.6%,
+    not 59% / 33%), the test's pop threshold (40), seed 1's contact p90 rise, the hips still on their floor at most
+    low balls, the clear's push size, the elbow hinge's spread, the serve speed, the windows' cost.
+  - The QA now also measures the fastest one-frame turn of any joint (a turn next to a large neighbour is no pop:
+    the 123° step and the 117° hand were both missed) and draws every seventh frame twice; the test runs a third
+    seed (5, left-handers) and fails on any joint turning 120° or more in a frame or any bone moving on a repeated
+    frame. `anim-check` plays left-handers on seeds 3, 5 and 6.
+  - **After** (3 seeds x 120 s, `docs/lab/anim-check-cur.md`): pops 29.1 / 25.3 / 22.4 per player-minute (was 30.5 /
+    26.0 / 23.9), racket in body 0.13 / 0.20 / 0.17% (0.24 / 0.28 / 0.22), hand in torso 0.88 / 1.05 / 1.79%, legs
+    through 2.6-3.2% (unchanged), contact p50 4-8 mm and p90 7.7-8.0 cm (unchanged), the same moment drawn twice
+    0.000°. Fastest one-frame turn of any joint over 12 left-handed and 12 right-handed matches x 120 s: 96° and 91°
+    (were 165° and 117°). Joint maxima on seeds 1-3 (°/s): shoulder 8853, wrist 7332, knee 9386, hip 9489, ankle
+    10979; the worst pop 91.5° (seed 1, a foot snapping down as its lock lets go). Avatars 4 GCs per 100k ticks.
+  - Left as they are: the serve's tuning numbers (`SERVE_*` in match.ts, sourced in comments) stay in code for now;
+    the follow-through follows the hips' move, not the spine's lean; `setHanded` after the first frame doesn't reset
+    the filters (handedness is fixed at match start); some per-frame three helpers that box doubles remain in the
+    avatar (`setFromAxisAngle` for the stance) with allocation inside budget.
+- **Second fresh review** (a new read-only reviewer with its own probes; one serious finding, five smaller). Fixed:
+  - **Knees and feet still flipped, 153-173° in a frame** (the first review's 96° held over 120 s, but not over 300 s
+    or more seeds). Five causes, each traced frame by frame:
+    - A knee's pole came close to the hip-to-ankle line with the hips low and a foot lifted, and its side swung round
+      in a frame. `twoBoneIK` now keeps last frame's side per knee and turns it no faster than `IK_TURN` (as the
+      elbows' `hingeIK` does), and an ankle never comes nearer its hip than 55% of the leg (`LEG_FOLD`): lowered, but
+      only until the sole touches the floor (lowering it further put a foot on its toes 8 cm under).
+    - The knee's turn about its hinge flipped side as the target swung round behind the shin (a turn of -155° then
+      +178°: the shin spun 118°). A knee can't bend 180° either way, so that turn fades out from 120° to 180°
+      (`HINGE_FADE0`) and the plain solve takes the rest.
+    - Where that hand-over happens the shin twisted 50-60° about its own length in a frame: a shin now twists no
+      faster than 2400°/s (`SHIN_TWIST_RATE`, about the knee-to-ankle line, so the ankle stays put). It acts 0-24
+      times per 120 s match.
+    - The lunge (a foot stepping out to a wide or low ball) was dropped on the stroke's first fade frame, and a foot
+      mid-step jumped 0.55 m back (58° in the shin). It is held through the fade by the stroke's weight, each foot's
+      offset moves no faster than 3 m/s (`LUNGE_RATE`), and it goes no further from the hip than 95% of the leg
+      (`LUNGE_REACH`), measured from the hip as it will be after the drop and the reach. The locks' reach check was
+      measured from the clip's (standing) hip too, so a held lunge was always out of reach: the foot let go, stepped
+      back to the same place, and did it again every 0.15 s with the leg straight.
+    - A foot left more than `STEP_SNAP` (0.7 m) behind went there in a frame; it now steps at once instead (a cut
+      between points resets the locks anyway, so the snap only ever fired in play: 0.65 m, 122° in the foot).
+    - The racket's push out of the body was carried at full size while the arms faded out, and as they switched off
+      the hand went back to the clip 143° in a frame. The push now fades with the arm's weight (`clearW`).
+  - **The hips lurched up to 29 cm in a frame before the contact**, following the swinging key at racket speed (the
+    QA logged a 58° leg pop with it). Before the contact the reach is now worked out from the contact's key (the
+    same at the ball, steady before it), and changes no faster than 4 m/s (`REACH_RATE_BEFORE`) as a new plan comes
+    in. Hips relative to the root per frame over seeds 1-6 both ways: max 4.0-5.6 cm (were 15-29 cm), no frame over
+    8 cm (were 2.4-5.3 per player-minute); contact p90 unchanged (8.0 / 8.3 / 7.8 cm). The hips sit 1-3 cm further
+    from the sim's position at p90 (they lean towards the contact earlier).
+  - The step's carried turn (the first review's fix) lagged its target and left more of the turn for the
+    touch-down: feet skated more on all 24 matches of seeds 1-12. Steps turn from their start to the target again,
+    the target kept on the side of last frame's and the slerp never re-picking the short way (`slerpAs`); the foot's
+    turn on a step's last frame p90 4.0-4.3° (was 5.1-5.8°). `WAIT_TURN_MAX` stays: the reviewer found it changes
+    almost nothing on the seeds that needed it (149 vs 149 both-feet steps), so it is a guard, not the fix.
+  - `volleyFront` is read at the top of the plan, not in the rare volley-key branch (a value read only there
+    deoptimised the function when it came; the sim is bit-exact).
+  - Two stale joint maxima above (wrist 7332, hip 9489).
+  - **After** (3 seeds x 120 s, `docs/lab/anim-check-cur.md`): pops 19.3 / 16.8 / 15.9 per player-minute (were
+    29.1 / 25.3 / 22.4), skating 16.1 / 18.6 / 18.5 cm/s (16.7 / 19.2 / 18.7), contact p50 4-8 mm and p90 7.8-8.3 cm,
+    racket in body 0.15-0.20%, no sole below the floor, ankle maxima 2522 / 2494 / 2586 °/s (were 10979 / 9113;
+    corrected by the final review, which read 4222 here). Over 24 seeds both ways x 120 s: pops 15.7 per
+    player-minute on average (21.5 before this round), skating 17.2 cm/s (17.8), and the fastest one-frame turn of
+    any joint 96° (a left-hander's racket hand in a fast swing; no leg over 80° on these seeds: the final review
+    found 83-97° beyond them, below). The test now fails at pops 30 per minute (was 40) and any joint turning 105°
+    in a frame (was 120). Avatars 4 GCs per 100k ticks.
+  - Left as they are: within two frames of the contact the racket face can be up to 15-19° short of its key where
+    the turn limit holds it (11 frames in 16 matches; the face's p50 / p90 are unchanged). The limit also hides a
+    ready-to-stroke blend that asks for up to 141° in a frame as the stroke weight crosses about 0.5 with the ready
+    weight high (seed 7 L, t=107.13: the racket turns about 200° in 58 ms at the cap); a slerp there instead of the
+    nlerp is the fix, not done yet.
+- **Final fresh review** (the fourth phase-end agent: a new read-only reviewer with its own probes, against 0529a23
+  for "before"; two serious findings and five smaller ones). Fixed:
+  - **The hips fell 20-30 cm in a frame, the knees 50-97° with them** (a regression of the second review's fix: before
+    the contact the reach comes from the contact's key, which jumps when a release changes the contact, e.g. an
+    overhead planned at 2.0 m taken at 1.2 m, and nothing limited the hips going down). The drop now falls no faster
+    than 2 m/s (`HIP_FALL`, the reviewer's suggestion), as it already rose no faster than `HIP_RISE`. Frames with the
+    hips' height changing more than 8 cm, seeds 25-40 both ways x 120 s: 0 (49 at review, 20 on the old tree).
+  - **Knee spins**: a knee turning round 150-165° over a tenth of a second, 17-33° a frame, which neither the pop
+    rule nor the one-frame limit sees (14 in 24 seeds both ways x 120 s; 4 on seeds 1-12 in the old tree). Traced
+    frame by frame (seed 5 L, player 0, t=35.0: backpedalling at 4 m/s into a low backhand slice, the hips 23 cm
+    down, a step released in front): the knee's pole was the clip's knee plus its bend direction, and the clip's knee
+    carries where the clip has the foot. With the foot put down somewhere else (a lock, a lunge, a released step)
+    the pole crossed to the other side of the hip-to-ankle line and the knee swung round, smeared by the side's rate
+    limit and `limitShins`. The pole is now the clip's bend direction out from the middle of the hip-to-ankle line as
+    it is: the same knee where the foot is the clip's, no flip where it isn't. Knee spins over 24 seeds both ways x
+    120 s: 0; pops, contact, skating and the worst one-frame turn unchanged (13.6 vs 13.6 per player-minute, 96°);
+    thighs through each other 2.8% (2.7%). `animQa` now reports them (`pops.kneeSpins`: the knee's local rotation
+    more than 150° from any of its last 12 frames) and the test fails on any.
+    - Tried first, as the reviewer suggested: knees solved as hinges like the elbows (`hingeIK`). No spins, but pops
+      rose from 13.6 to 115 per player-minute (leg joints jerking a few degrees a frame), as the first attempt found;
+      the knees stay on `twoBoneIK` (the doc comment above `elbowHinge` says why).
+  - **The hips leaned towards the contact far earlier than before** (the reach from the contact's key applies from
+    the start of the preparation: standing p50 11.6 cm, more than 0.4 s before the contact p90 17.9 cm, against 0
+    and 1.3 cm on the old tree). The reach before the contact now comes in over the last 0.4 to 0.1 s (`LEAN_FROM`,
+    `LEAN_FULL`): more than 0.4 s before, p50 / p90 / p99 0 / 0 / 0 cm; standing p50 4.0 cm; hips off the root
+    running above 3 m/s p99 12.6 cm (18.1 at review, 11.1 old). Serve pops over seeds 25-40 both ways: 4.8 per
+    minute (8.8 at review, 6.1 old; the worst, seed 27 R, 15.5, was 23.3).
+  - **Foot taps** (a lock let go for reach with less than 3 cm to step): the lock's reach check is now measured from
+    the nearer of the hip as the clip has it and as it will be after the reach (a deep lunge's back foot was let go
+    and stepped back to where it was). 6.8 per player-minute (22.7 at review, 31.5 old).
+  - Stale numbers above corrected (ankle maxima; "no leg over 80°" holds on seeds 1-24 only).
+  - Not changed: a few low-ball contacts are worse than on the old tree (the reviewer's seed 37 R: a slice from 15 to
+    36 cm), 4 worse and 1 better by more than 5 cm out of 1543 hits on seeds 1-12; contact p90 over 24 seeds both
+    ways 5.9 cm, the same as before these fixes.
+  - **After** (`docs/lab/anim-check-cur.md`, 3 seeds x 120 s): pops 18.3 / 15.5 / 14.8 per player-minute, skating
+    16.1 / 18.6 / 18.4 cm/s, contact p50 4-8 mm and p90 7.8-8.3 cm, racket in body 0.15-0.19%, no sole below the
+    floor, ankle maxima 2322 / 2047 / 1991 °/s, no knee spins. `npm test` 193/193, both typechecks, `npm run alloc`
+    singles 5, doubles 4, avatars 4 GCs per 100k ticks.

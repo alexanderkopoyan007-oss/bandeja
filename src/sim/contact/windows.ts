@@ -82,7 +82,10 @@ export function findWindows(
     if (ok) {
       // A ball touching the floor or glass right now is not where anyone means to hit it.
       const cost = (overhead ? abs(d - t.overheadReach) + overheadCost(y, t)
-        : abs(d - t.reachComfort) + (volley && b === 0 ? volleyCost(y) : heightCost(y, t.overheadHeight)))
+        : abs(d - (b === 0 ? t.volleyReach : t.reachComfort)) + (volley && b === 0 ? volleyCost(y) : heightCost(y, t.overheadHeight))
+          // Met in front of the body, not beside or behind it (a ball off the back glass passes the comfortable
+          // distance once behind the player and once in front).
+          + (side * (pz - z) < 0 ? -side * (pz - z) : 0))
         + (nearImpact(pred, i) ? 0.5 : 0);
       if (!open) {
         if (count >= MAX_WINDOWS) break;

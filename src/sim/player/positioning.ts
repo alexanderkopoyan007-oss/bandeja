@@ -4,7 +4,7 @@
 import type { Prediction } from '../ball/predict.ts';
 import type { Player } from './player.ts';
 import { heightCost, nearImpact, overheadCost, volleyCost } from '../contact/windows.ts';
-import { abs, clamp, sqrt } from '../core/smath.ts';
+import { abs, clamp, max, sqrt } from '../core/smath.ts';
 
 export interface StandPlan {
   valid: boolean;
@@ -43,11 +43,10 @@ const GLASS_BAND = 1.7;
 /**
  * Volleys are met with a reach or a step, not from set feet: the ball anywhere from VOLLEY_REACH_MIN to
  * VOLLEY_REACH_MAX to the side of the body is in reach (the arm and racket reach about 1.35 m; the comfortable punch
- * is nearer), met VOLLEY_FRONT in front of the body.
+ * is nearer), met the tuning's volleyFront in front of the body.
  */
 const VOLLEY_REACH_MIN = 0.35;
 const VOLLEY_REACH_MAX = 1.15;
-const VOLLEY_FRONT = 0.35;
 
 /**
  * Pick the contact the player can reach in time with the best height. Deep balls that will come off the back
@@ -80,8 +79,15 @@ export function planStand(
   out.version = pr.version;
   out.overhead = overhead;
   out.volleyKey = volleyKey;
-  const lateral = overhead ? t.overheadReach : t.reachComfort;
-  const behind = overhead ? 0.3 : 0.12;
+  // Ground strokes are met contactFront in front of the body and reachComfort from it, volleys volleyFront in front
+  // and volleyReach from it (see data/tuning.json; the timing windows use the same distances).
+  // (max: a front distance in the data longer than the reach would make the plan NaN; the data keeps it shorter.)
+  const lateral = overhead ? t.overheadReach : sqrt(max(0, t.reachComfort * t.reachComfort - t.contactFront * t.contactFront));
+  const behind = overhead ? 0.3 : t.contactFront;
+  // (read here, not in the rare volley-key branch: a value read only there deoptimised the function when it came)
+  const vFront = t.volleyFront;
+  const latV = overhead ? lateral : sqrt(max(0, t.volleyReach * t.volleyReach - vFront * vFront));
+  const behindV = overhead ? behind : vFront;
   const yMax = overhead ? t.contactMaxHeight - 0.05 : volleyKey ? t.overheadHeight + 0.15 : 2.6;
   for (let i = 0; i < pr.n; i++) {
     const ti = pr.t[i]!;
@@ -94,12 +100,13 @@ export function planStand(
     if (z * side < 0.3 || b > 1 || (mustBounce && b === 0) || y < 0.3 || y > yMax) continue;
     if (volleyKey && b !== 0) continue;
     if (nearImpact(pr, i)) continue;
-    const fhX = x - side * p.handed * lateral;
-    const bhX = x + side * p.handed * lateral;
+    const lat = b === 0 ? latV : lateral;
+    const fhX = x - side * p.handed * lat;
+    const bhX = x + side * p.handed * lat;
     // Overheads are hit on the racket side (a backhand overhead is a last resort).
     let useFh = overhead || abs(fhX - p.pos.x) <= abs(bhX - p.pos.x) + 0.6;
     let sx = clamp(useFh ? fhX : bhX, p.minX, p.maxX);
-    let sz = clamp(z + side * behind, p.minZ, p.maxZ);
+    let sz = clamp(z + side * (b === 0 ? behindV : behind), p.minZ, p.maxZ);
     if (volleyKey) {
       // Stay put if the ball passes within reach; otherwise the smallest step that brings it there, on the side
       // the player already is (forehand when it comes straight at them).
@@ -109,7 +116,7 @@ export function planStand(
       const a = abs(off);
       sx = clamp(a < VOLLEY_REACH_MIN ? x + sg * VOLLEY_REACH_MIN : a > VOLLEY_REACH_MAX ? x + sg * VOLLEY_REACH_MAX : p.pos.x, p.minX, p.maxX);
       useFh = sg === fhSign;
-      const z0 = z + side * VOLLEY_FRONT;
+      const z0 = z + side * vFront;
       sz = clamp(abs(p.pos.z - z0) < 0.4 ? p.pos.z : z0 + (p.pos.z > z0 ? 0.4 : -0.4), p.minZ, p.maxZ);
     }
     const dx = sx - p.pos.x;

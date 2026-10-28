@@ -1,0 +1,1446 @@
+[
+ {
+  "seed": 1,
+  "lefty": false,
+  "r": {
+   "seconds": 120,
+   "frames": 14400,
+   "feet": {
+    "skate": 16.063544224311443,
+    "planted": {
+     "n": 44732,
+     "mean": 29.798487905823645,
+     "p50": 0.0001772703802445538,
+     "p90": 34.24669740547122,
+     "p99": 613.5549439051839,
+     "max": 3109.446040360193
+    },
+    "groundShare": 0.3885346999044558,
+    "belowMax": 0,
+    "belowShare": 0
+   },
+   "contact": {
+    "hits": 74,
+    "dist": {
+     "n": 74,
+     "mean": 0.03598659745170994,
+     "p50": 0.007180565729554884,
+     "p90": 0.0798806496201888,
+     "p99": 0.2908105623947799,
+     "max": 0.2952522678080965
+    },
+    "lag": {
+     "n": 74,
+     "mean": 0.0038288288288304477,
+     "p50": 0,
+     "p90": 0.008333333333339965,
+     "p99": 0.008333333333339965,
+     "max": 0.03333333333335986
+    },
+    "face": {
+     "n": 74,
+     "mean": 24.402503449165646,
+     "p50": 23.300750779094226,
+     "p90": 38.31644005474142,
+     "p99": 57.47228330906514,
+     "max": 82.3067451065083
+    },
+    "byShot": {
+     "serve": {
+      "n": 8,
+      "p50": 0.00408879076948456,
+      "p90": 0.006749904948609209
+     },
+     "lob": {
+      "n": 8,
+      "p50": 0.006092515456114532,
+      "p90": 0.02302747740306847
+     },
+     "slice": {
+      "n": 9,
+      "p50": 0.00016006086518900183,
+      "p90": 0.03609529192724924
+     },
+     "drive": {
+      "n": 16,
+      "p50": 0.00568468689146326,
+      "p90": 0.02997553165747935
+     },
+     "drop": {
+      "n": 3,
+      "p50": 0.02628533775471885,
+      "p90": 0.02628533775471885
+     },
+     "volley": {
+      "n": 26,
+      "p50": 0.019628652996129384,
+      "p90": 0.09175542625396865
+     },
+     "vibora": {
+      "n": 1,
+      "p50": 0.005705003074804659,
+      "p90": 0.005705003074804659
+     },
+     "chiquita": {
+      "n": 2,
+      "p50": 0.011732662858988874,
+      "p90": 0.011732662858988874
+     },
+     "smash": {
+      "n": 1,
+      "p50": 0.2765418512970048,
+      "p90": 0.2765418512970048
+     }
+    }
+   },
+   "pops": {
+    "perMinute": 18.25,
+    "count": 146,
+    "byJoint": {
+     "LeftLeg": 12,
+     "LeftFoot": 6,
+     "RightHand": 15,
+     "RightForeArm": 37,
+     "Spine2": 5,
+     "LeftArm": 13,
+     "Head": 7,
+     "RightLeg": 8,
+     "LeftUpLeg": 6,
+     "RightUpLeg": 5,
+     "LeftForeArm": 16,
+     "RightArm": 10,
+     "Hips": 3,
+     "RightFoot": 3
+    },
+    "peaks": {
+     "pelvis": {
+      "p99": 710.6679607294773,
+      "max": 1523.6155072602937,
+      "limit": 620,
+      "over": 420
+     },
+     "torso": {
+      "p99": 717.1762836064675,
+      "max": 4425.683629527063,
+      "limit": 1110,
+      "over": 98
+     },
+     "shoulder": {
+      "p99": 1700.3267825283851,
+      "max": 8572.818586511237,
+      "limit": 3600,
+      "over": 16
+     },
+     "elbow": {
+      "p99": 1259.543621470169,
+      "max": 8127.812383985486,
+      "limit": 2050,
+      "over": 209
+     },
+     "wrist": {
+      "p99": 1637.5005443268653,
+      "max": 6362.1993878310905,
+      "limit": 3990,
+      "over": 2
+     },
+     "hip": {
+      "p99": 717.5031544210541,
+      "max": 2229.6435736445433,
+      "limit": 900,
+      "over": 118
+     },
+     "knee": {
+      "p99": 903.9551215139986,
+      "max": 4037.573773344019,
+      "limit": 1500,
+      "over": 103
+     },
+     "ankle": {
+      "p99": 868.5525088940198,
+      "max": 2322.7939059554706,
+      "limit": 1200,
+      "over": 39
+     },
+     "head": {
+      "p99": 794.2010527594509,
+      "max": 1722.4617890535521,
+      "limit": 700,
+      "over": 435
+     }
+    },
+    "worst": [
+     {
+      "t": 53.36666666666428,
+      "player": 3,
+      "what": "pop LeftArm",
+      "value": 71.44015488759364
+     },
+     {
+      "t": 112.24166666670206,
+      "player": 3,
+      "what": "pop RightForeArm",
+      "value": 67.73176986654572
+     },
+     {
+      "t": 16.65833333333303,
+      "player": 2,
+      "what": "pop LeftArm",
+      "value": 67.05558694644978
+     },
+     {
+      "t": 31.58333333333218,
+      "player": 3,
+      "what": "pop LeftArm",
+      "value": 64.46438920427268
+     },
+     {
+      "t": 42.4916666666649,
+      "player": 3,
+      "what": "pop LeftArm",
+      "value": 58.81779775922051
+     },
+     {
+      "t": 42.4916666666649,
+      "player": 3,
+      "what": "pop LeftForeArm",
+      "value": 56.911260792333636
+     },
+     {
+      "t": 100.64166666669283,
+      "player": 3,
+      "what": "pop RightForeArm",
+      "value": 43.917400852646075
+     },
+     {
+      "t": 21.949999999999395,
+      "player": 2,
+      "what": "pop RightHand",
+      "value": 42.45726226499994
+     },
+     {
+      "t": 77.16666666667415,
+      "player": 1,
+      "what": "pop LeftForeArm",
+      "value": 40.21862404697745
+     },
+     {
+      "t": 25.19999999999921,
+      "player": 1,
+      "what": "pop LeftForeArm",
+      "value": 39.8303795764418
+     },
+     {
+      "t": 51.59999999999771,
+      "player": 2,
+      "what": "pop LeftForeArm",
+      "value": 38.63996352692009
+     },
+     {
+      "t": 11.524999999999986,
+      "player": 0,
+      "what": "pop RightForeArm",
+      "value": 38.08161491247557
+     }
+    ],
+    "turnWorst": [
+     {
+      "t": 53.36666666666428,
+      "player": 3,
+      "what": "turn LeftArm",
+      "value": 71.44015488759364
+     },
+     {
+      "t": 112.24166666670206,
+      "player": 3,
+      "what": "turn RightForeArm",
+      "value": 67.73176986654572
+     },
+     {
+      "t": 16.65833333333303,
+      "player": 2,
+      "what": "turn LeftArm",
+      "value": 67.05558694644978
+     },
+     {
+      "t": 20.53333333333281,
+      "player": 2,
+      "what": "turn RightForeArm",
+      "value": 66.68624479120264
+     },
+     {
+      "t": 31.58333333333218,
+      "player": 3,
+      "what": "turn LeftArm",
+      "value": 64.46438920427268
+     },
+     {
+      "t": 56.98333333333074,
+      "player": 1,
+      "what": "turn RightForeArm",
+      "value": 63.726889082581174
+     },
+     {
+      "t": 42.4916666666649,
+      "player": 3,
+      "what": "turn LeftArm",
+      "value": 58.81779775922051
+     },
+     {
+      "t": 83.4333333333458,
+      "player": 0,
+      "what": "turn RightForeArm",
+      "value": 58.34966301473345
+     },
+     {
+      "t": 69.16666666666778,
+      "player": 1,
+      "what": "turn RightArm",
+      "value": 58.089086902916755
+     },
+     {
+      "t": 42.4916666666649,
+      "player": 3,
+      "what": "turn LeftForeArm",
+      "value": 56.911260792333636
+     },
+     {
+      "t": 42.47499999999823,
+      "player": 3,
+      "what": "turn RightForeArm",
+      "value": 56.287376912729954
+     },
+     {
+      "t": 77.80000000000798,
+      "player": 0,
+      "what": "turn RightForeArm",
+      "value": 54.80814982627464
+     }
+    ],
+    "kneeSpins": []
+   },
+   "repeat": {
+    "frames": 8228,
+    "maxDeg": 0
+   },
+   "clip": {
+    "racketBody": 0.0017013888888888888,
+    "racketBodyMax": 0.06240841774281894,
+    "handTorso": 0.009097222222222222,
+    "handTorsoMax": 0.10190105410659796,
+    "by": {
+     "backhand-lob": {
+      "racketBody": 2,
+      "handTorso": 0
+     },
+     "ready": {
+      "racketBody": 0,
+      "handTorso": 336
+     },
+     "run": {
+      "racketBody": 0,
+      "handTorso": 73
+     },
+     "volley-fh": {
+      "racketBody": 0,
+      "handTorso": 6
+     },
+     "volley-bh": {
+      "racketBody": 32,
+      "handTorso": 8
+     },
+     "backhand": {
+      "racketBody": 43,
+      "handTorso": 52
+     },
+     "overhead": {
+      "racketBody": 0,
+      "handTorso": 7
+     },
+     "backhand-drop": {
+      "racketBody": 11,
+      "handTorso": 12
+     },
+     "serve": {
+      "racketBody": 4,
+      "handTorso": 0
+     },
+     "backhand-slice": {
+      "racketBody": 4,
+      "handTorso": 19
+     },
+     "forehand-lob": {
+      "racketBody": 0,
+      "handTorso": 11
+     },
+     "backhand-chiquita": {
+      "racketBody": 2,
+      "handTorso": 0
+     }
+    },
+    "legs": 0.02829861111111111,
+    "legsMax": 0.1476475518884636,
+    "net": 0,
+    "wall": 0.0013020833333333333,
+    "players": 0,
+    "racketOther": 0,
+    "worst": [
+     {
+      "t": 72.49166666667043,
+      "player": 2,
+      "what": "legs thighL/thighR",
+      "value": 0.1476475518884636
+     },
+     {
+      "t": 44.758333333331436,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.1462848320150688
+     },
+     {
+      "t": 30.24166666666559,
+      "player": 2,
+      "what": "legs thighL/thighR",
+      "value": 0.14494772180077486
+     },
+     {
+      "t": 44.7499999999981,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.14394292521513172
+     },
+     {
+      "t": 44.874999999998096,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.1431688073929985
+     },
+     {
+      "t": 92.8166666666866,
+      "player": 3,
+      "what": "legs thighL/thighR",
+      "value": 0.1431580096733049
+     },
+     {
+      "t": 72.50000000000377,
+      "player": 2,
+      "what": "legs thighL/thighR",
+      "value": 0.14272027228219028
+     },
+     {
+      "t": 13.51666666666654,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.14247381143140173
+     },
+     {
+      "t": 30.233333333332258,
+      "player": 2,
+      "what": "legs thighL/thighR",
+      "value": 0.1417769746327043
+     },
+     {
+      "t": 44.76666666666477,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.14122516708230728
+     },
+     {
+      "t": 44.86666666666476,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.1392911134983929
+     },
+     {
+      "t": 30.224999999998925,
+      "player": 2,
+      "what": "legs thighL/thighR",
+      "value": 0.1388201471165618
+     }
+    ]
+   },
+   "hipsFromSim": {
+    "n": 51868,
+    "mean": 0.05859034840533801,
+    "p50": 0.03817218657673294,
+    "p90": 0.1318576716655607,
+    "p99": 0.40083209043972284,
+    "max": 0.49679660568731965
+   },
+   "serve": {
+    "frames": 2172,
+    "racketBody": 0.001841620626151013,
+    "handTorso": 0,
+    "legs": 0,
+    "popsPerMinute": 6.6298342541436455
+   },
+   "nan": 0
+  }
+ },
+ {
+  "seed": 2,
+  "lefty": false,
+  "r": {
+   "seconds": 120,
+   "frames": 14400,
+   "feet": {
+    "skate": 18.60814268232944,
+    "planted": {
+     "n": 43392,
+     "mean": 36.13676109917809,
+     "p50": 0.00018430765416040438,
+     "p90": 61.35807828579403,
+     "p99": 686.835801302419,
+     "max": 2789.4517071133
+    },
+    "groundShare": 0.37687604224569204,
+    "belowMax": 0,
+    "belowShare": 0
+   },
+   "contact": {
+    "hits": 73,
+    "dist": {
+     "n": 73,
+     "mean": 0.03938602796286107,
+     "p50": 0.007657475225782515,
+     "p90": 0.08303759019303383,
+     "p99": 0.3931733920746184,
+     "max": 0.3967384066893986
+    },
+    "lag": {
+     "n": 73,
+     "mean": 0.002853881278540013,
+     "p50": 0,
+     "p90": 0.008333333333339965,
+     "p99": 0.008333333333339965,
+     "max": 0.008333333333339965
+    },
+    "face": {
+     "n": 73,
+     "mean": 28.2916280875317,
+     "p50": 28.010554569547914,
+     "p90": 42.24224653754154,
+     "p99": 51.031589366821194,
+     "max": 53.95733363457335
+    },
+    "byShot": {
+     "serve": {
+      "n": 7,
+      "p50": 0.005393531246292988,
+      "p90": 0.007095007108674601
+     },
+     "drive": {
+      "n": 12,
+      "p50": 0.00384748216290784,
+      "p90": 0.02101550418915082
+     },
+     "drop": {
+      "n": 4,
+      "p50": 0.00761838585275412,
+      "p90": 0.10407333868287476
+     },
+     "volley": {
+      "n": 27,
+      "p50": 0.008544638766605222,
+      "p90": 0.08303759019303383
+     },
+     "slice": {
+      "n": 8,
+      "p50": 0.01235280391877761,
+      "p90": 0.016277675992926427
+     },
+     "lob": {
+      "n": 10,
+      "p50": 0.00016031699442861874,
+      "p90": 0.012758086435603977
+     },
+     "smash": {
+      "n": 2,
+      "p50": 0.3931286648454535,
+      "p90": 0.3931286648454535
+     },
+     "chiquita": {
+      "n": 2,
+      "p50": 0.00015628050531748755,
+      "p90": 0.00015628050531748755
+     },
+     "topspin": {
+      "n": 1,
+      "p50": 0.0003497047800785683,
+      "p90": 0.0003497047800785683
+     }
+    }
+   },
+   "pops": {
+    "perMinute": 15.5,
+    "count": 124,
+    "byJoint": {
+     "RightForeArm": 41,
+     "RightHand": 12,
+     "Spine2": 4,
+     "LeftArm": 11,
+     "LeftForeArm": 9,
+     "Hips": 2,
+     "RightArm": 9,
+     "Head": 7,
+     "LeftLeg": 9,
+     "RightUpLeg": 4,
+     "RightLeg": 6,
+     "LeftUpLeg": 4,
+     "RightFoot": 4,
+     "LeftFoot": 2
+    },
+    "peaks": {
+     "pelvis": {
+      "p99": 721.5224388262415,
+      "max": 1686.7555553995421,
+      "limit": 620,
+      "over": 444
+     },
+     "torso": {
+      "p99": 680.8213668031153,
+      "max": 8245.013860105526,
+      "limit": 1110,
+      "over": 93
+     },
+     "shoulder": {
+      "p99": 1606.4053431558414,
+      "max": 8853.698854812536,
+      "limit": 3600,
+      "over": 11
+     },
+     "elbow": {
+      "p99": 1235.660852699532,
+      "max": 7833.057631864607,
+      "limit": 2050,
+      "over": 147
+     },
+     "wrist": {
+      "p99": 1557.7011016933384,
+      "max": 7194.676260532325,
+      "limit": 3990,
+      "over": 7
+     },
+     "hip": {
+      "p99": 727.0109088800617,
+      "max": 2408.5388880130536,
+      "limit": 900,
+      "over": 127
+     },
+     "knee": {
+      "p99": 905.1636476714156,
+      "max": 3455.390517045252,
+      "limit": 1500,
+      "over": 98
+     },
+     "ankle": {
+      "p99": 868.1999354215559,
+      "max": 2047.3844834055217,
+      "limit": 1200,
+      "over": 44
+     },
+     "head": {
+      "p99": 772.6624300308072,
+      "max": 1813.343806541422,
+      "limit": 700,
+      "over": 405
+     }
+    },
+    "worst": [
+     {
+      "t": 61.249999999997165,
+      "player": 0,
+      "what": "pop Spine2",
+      "value": 68.70844883421272
+     },
+     {
+      "t": 64.00833333333034,
+      "player": 1,
+      "what": "pop LeftArm",
+      "value": 63.654504211286934
+     },
+     {
+      "t": 44.316666666664794,
+      "player": 0,
+      "what": "pop RightForeArm",
+      "value": 57.57043314241417
+     },
+     {
+      "t": 44.28333333333146,
+      "player": 0,
+      "what": "pop RightForeArm",
+      "value": 52.89348574868155
+     },
+     {
+      "t": 16.849999999999685,
+      "player": 1,
+      "what": "pop LeftArm",
+      "value": 52.73986701877191
+     },
+     {
+      "t": 44.33333333333146,
+      "player": 0,
+      "what": "pop RightForeArm",
+      "value": 51.773554006753805
+     },
+     {
+      "t": 54.85833333333086,
+      "player": 1,
+      "what": "pop RightForeArm",
+      "value": 51.493107211460845
+     },
+     {
+      "t": 61.249999999997165,
+      "player": 0,
+      "what": "pop RightArm",
+      "value": 50.4884766885268
+     },
+     {
+      "t": 62.39166666666377,
+      "player": 0,
+      "what": "pop LeftForeArm",
+      "value": 45.4913417946355
+     },
+     {
+      "t": 90.64166666668487,
+      "player": 2,
+      "what": "pop RightForeArm",
+      "value": 41.252611522014405
+     },
+     {
+      "t": 79.2833333333425,
+      "player": 3,
+      "what": "pop RightForeArm",
+      "value": 28.218766139821362
+     },
+     {
+      "t": 92.78333333335324,
+      "player": 1,
+      "what": "pop RightForeArm",
+      "value": 26.10569208498291
+     }
+    ],
+    "turnWorst": [
+     {
+      "t": 61.249999999997165,
+      "player": 0,
+      "what": "turn LeftArm",
+      "value": 73.78082379010446
+     },
+     {
+      "t": 61.249999999997165,
+      "player": 0,
+      "what": "turn Spine2",
+      "value": 68.70844883421272
+     },
+     {
+      "t": 79.45833333334264,
+      "player": 3,
+      "what": "turn RightForeArm",
+      "value": 65.27548026553839
+     },
+     {
+      "t": 64.00833333333034,
+      "player": 1,
+      "what": "turn LeftArm",
+      "value": 63.654504211286934
+     },
+     {
+      "t": 12.258333333333278,
+      "player": 0,
+      "what": "turn RightForeArm",
+      "value": 61.996358504152404
+     },
+     {
+      "t": 33.358333333332084,
+      "player": 2,
+      "what": "turn RightHand",
+      "value": 59.95563550443604
+     },
+     {
+      "t": 45.074999999998084,
+      "player": 1,
+      "what": "turn RightForeArm",
+      "value": 59.57349201161802
+     },
+     {
+      "t": 44.316666666664794,
+      "player": 0,
+      "what": "turn RightForeArm",
+      "value": 57.57043314241417
+     },
+     {
+      "t": 62.34166666666377,
+      "player": 0,
+      "what": "turn RightForeArm",
+      "value": 56.69499138161289
+     },
+     {
+      "t": 45.08333333333142,
+      "player": 1,
+      "what": "turn RightArm",
+      "value": 52.91724019337273
+     },
+     {
+      "t": 44.28333333333146,
+      "player": 0,
+      "what": "turn RightForeArm",
+      "value": 52.89348574868155
+     },
+     {
+      "t": 16.849999999999685,
+      "player": 1,
+      "what": "turn LeftArm",
+      "value": 52.73986701877191
+     }
+    ],
+    "kneeSpins": []
+   },
+   "repeat": {
+    "frames": 8228,
+    "maxDeg": 0
+   },
+   "clip": {
+    "racketBody": 0.0019270833333333334,
+    "racketBodyMax": 0.08889751160827514,
+    "handTorso": 0.010954861111111111,
+    "handTorsoMax": 0.10200308818293927,
+    "by": {
+     "backhand": {
+      "racketBody": 15,
+      "handTorso": 31
+     },
+     "ready": {
+      "racketBody": 0,
+      "handTorso": 425
+     },
+     "volley-bh": {
+      "racketBody": 76,
+      "handTorso": 27
+     },
+     "backhand-slice": {
+      "racketBody": 1,
+      "handTorso": 30
+     },
+     "serve": {
+      "racketBody": 8,
+      "handTorso": 0
+     },
+     "run": {
+      "racketBody": 0,
+      "handTorso": 77
+     },
+     "forehand-lob": {
+      "racketBody": 0,
+      "handTorso": 3
+     },
+     "overhead": {
+      "racketBody": 0,
+      "handTorso": 10
+     },
+     "volley-fh": {
+      "racketBody": 0,
+      "handTorso": 9
+     },
+     "forehand": {
+      "racketBody": 0,
+      "handTorso": 12
+     },
+     "backhand-lob": {
+      "racketBody": 11,
+      "handTorso": 4
+     },
+     "forehand-slice": {
+      "racketBody": 0,
+      "handTorso": 3
+     }
+    },
+    "legs": 0.03357638888888889,
+    "legsMax": 0.1488078374000945,
+    "net": 0,
+    "wall": 0.0026215277777777777,
+    "players": 0,
+    "racketOther": 0,
+    "worst": [
+     {
+      "t": 57.341666666664054,
+      "player": 0,
+      "what": "legs thighL/thighR",
+      "value": 0.1488078374000945
+     },
+     {
+      "t": 54.85833333333086,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.1445734834304631
+     },
+     {
+      "t": 101.26666666669333,
+      "player": 0,
+      "what": "legs thighL/thighR",
+      "value": 0.14344202792675798
+     },
+     {
+      "t": 57.34999999999739,
+      "player": 0,
+      "what": "legs thighL/thighR",
+      "value": 0.1434382079040814
+     },
+     {
+      "t": 57.33333333333072,
+      "player": 0,
+      "what": "legs thighL/thighR",
+      "value": 0.14318036415169816
+     },
+     {
+      "t": 54.84999999999753,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.14258552812232672
+     },
+     {
+      "t": 76.93333333334063,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.14084322288087112
+     },
+     {
+      "t": 54.866666666664194,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.14084140182115332
+     },
+     {
+      "t": 76.92500000000729,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.14074563885334987
+     },
+     {
+      "t": 51.49999999999772,
+      "player": 0,
+      "what": "legs thighL/thighR",
+      "value": 0.139118433636206
+     },
+     {
+      "t": 57.35833333333072,
+      "player": 0,
+      "what": "legs thighL/thighR",
+      "value": 0.138706830407624
+     },
+     {
+      "t": 68.62500000000068,
+      "player": 3,
+      "what": "legs thighL/thighR",
+      "value": 0.13862389661092075
+     }
+    ]
+   },
+   "hipsFromSim": {
+    "n": 52688,
+    "mean": 0.0538211953561257,
+    "p50": 0.037928594187890505,
+    "p90": 0.11120594165890166,
+    "p99": 0.3698241837583904,
+    "max": 0.4578885772343763
+   },
+   "serve": {
+    "frames": 1941,
+    "racketBody": 0.004121586810922205,
+    "handTorso": 0,
+    "legs": 0,
+    "popsPerMinute": 0
+   },
+   "nan": 0
+  }
+ },
+ {
+  "seed": 3,
+  "lefty": true,
+  "r": {
+   "seconds": 120,
+   "frames": 14400,
+   "feet": {
+    "skate": 18.40936919420413,
+    "planted": {
+     "n": 42678,
+     "mean": 35.40565456245093,
+     "p50": 0.00019061594693979257,
+     "p90": 70.91686807638877,
+     "p99": 653.247431495981,
+     "max": 2927.4655169557127
+    },
+    "groundShare": 0.3706231763234681,
+    "belowMax": 0,
+    "belowShare": 0
+   },
+   "contact": {
+    "hits": 65,
+    "dist": {
+     "n": 65,
+     "mean": 0.04514714617679167,
+     "p50": 0.004266966934426198,
+     "p90": 0.07771045429859066,
+     "p99": 0.5152223969437116,
+     "max": 0.7583775342161899
+    },
+    "lag": {
+     "n": 65,
+     "mean": 0.004230769230770343,
+     "p50": 0,
+     "p90": 0.008333333333339965,
+     "p99": 0.016666666666667496,
+     "max": 0.05833333333333002
+    },
+    "face": {
+     "n": 65,
+     "mean": 25.608025994701986,
+     "p50": 23.740485332194794,
+     "p90": 39.64533849968792,
+     "p99": 55.9475124991478,
+     "max": 87.67971483158728
+    },
+    "byShot": {
+     "serve": {
+      "n": 5,
+      "p50": 0.005360232615818064,
+      "p90": 0.005906638015819275
+     },
+     "slice": {
+      "n": 9,
+      "p50": 0.011889766195580189,
+      "p90": 0.06886471239716212
+     },
+     "volley": {
+      "n": 20,
+      "p50": 0.0038450451369497684,
+      "p90": 0.06702295885908234
+     },
+     "lob": {
+      "n": 18,
+      "p50": 0.0002854779234316854,
+      "p90": 0.015840142601711016
+     },
+     "chiquita": {
+      "n": 4,
+      "p50": 3.984422756667008e-8,
+      "p90": 0.00011358577068190769
+     },
+     "drive": {
+      "n": 4,
+      "p50": 0.002647765245025236,
+      "p90": 0.027526665107814027
+     },
+     "smash": {
+      "n": 2,
+      "p50": 0.029249744460411824,
+      "p90": 0.029249744460411824
+     },
+     "bandeja": {
+      "n": 2,
+      "p50": 0.135821352776719,
+      "p90": 0.135821352776719
+     },
+     "drop": {
+      "n": 1,
+      "p50": 0.0037576166732390323,
+      "p90": 0.0037576166732390323
+     }
+    }
+   },
+   "pops": {
+    "perMinute": 14.75,
+    "count": 118,
+    "byJoint": {
+     "LeftForeArm": 18,
+     "Spine2": 7,
+     "RightArm": 14,
+     "LeftArm": 17,
+     "Head": 8,
+     "RightLeg": 7,
+     "RightFoot": 5,
+     "LeftLeg": 5,
+     "RightForeArm": 14,
+     "Hips": 1,
+     "LeftFoot": 3,
+     "RightUpLeg": 3,
+     "RightHand": 4,
+     "LeftUpLeg": 2,
+     "LeftHand": 10
+    },
+    "peaks": {
+     "pelvis": {
+      "p99": 711.6379986416366,
+      "max": 1636.4528574569674,
+      "limit": 620,
+      "over": 428
+     },
+     "torso": {
+      "p99": 646.7077899300233,
+      "max": 4806.84101456282,
+      "limit": 1110,
+      "over": 46
+     },
+     "shoulder": {
+      "p99": 1576.0107376124408,
+      "max": 7277.5279331296215,
+      "limit": 3600,
+      "over": 6
+     },
+     "elbow": {
+      "p99": 1129.3851174627737,
+      "max": 9753.094423137385,
+      "limit": 2050,
+      "over": 134
+     },
+     "wrist": {
+      "p99": 1471.1600563605973,
+      "max": 6821.077486436423,
+      "limit": 3990,
+      "over": 2
+     },
+     "hip": {
+      "p99": 711.7322806920976,
+      "max": 1634.482175421566,
+      "limit": 900,
+      "over": 66
+     },
+     "knee": {
+      "p99": 925.0947541981003,
+      "max": 3722.191124331713,
+      "limit": 1500,
+      "over": 95
+     },
+     "ankle": {
+      "p99": 853.8529190571992,
+      "max": 1991.826077246649,
+      "limit": 1200,
+      "over": 47
+     },
+     "head": {
+      "p99": 811.074930702651,
+      "max": 1679.0735390907546,
+      "limit": 700,
+      "over": 473
+     }
+    },
+    "worst": [
+     {
+      "t": 5.208333333333382,
+      "player": 1,
+      "what": "pop LeftForeArm",
+      "value": 81.2757868594782
+     },
+     {
+      "t": 113.71666666670323,
+      "player": 1,
+      "what": "pop LeftForeArm",
+      "value": 76.52842980747188
+     },
+     {
+      "t": 80.94166666667715,
+      "player": 0,
+      "what": "pop LeftArm",
+      "value": 56.85594121363013
+     },
+     {
+      "t": 110.12500000003371,
+      "player": 0,
+      "what": "pop LeftArm",
+      "value": 52.598922354781614
+     },
+     {
+      "t": 66.30833333333217,
+      "player": 2,
+      "what": "pop LeftArm",
+      "value": 47.66221420124869
+     },
+     {
+      "t": 66.30833333333217,
+      "player": 2,
+      "what": "pop LeftHand",
+      "value": 47.28507242974793
+     },
+     {
+      "t": 32.96666666666544,
+      "player": 0,
+      "what": "pop Spine2",
+      "value": 40.05700845469017
+     },
+     {
+      "t": 53.24999999999762,
+      "player": 3,
+      "what": "pop RightForeArm",
+      "value": 35.964118380027536
+     },
+     {
+      "t": 32.96666666666544,
+      "player": 0,
+      "what": "pop LeftArm",
+      "value": 32.96710893482316
+     },
+     {
+      "t": 72.4250000000037,
+      "player": 1,
+      "what": "pop LeftHand",
+      "value": 32.60308681373562
+     },
+     {
+      "t": 85.20833333334721,
+      "player": 3,
+      "what": "pop RightForeArm",
+      "value": 31.78150930198304
+     },
+     {
+      "t": 52.80833333333098,
+      "player": 3,
+      "what": "pop RightForeArm",
+      "value": 28.08443653063417
+     }
+    ],
+    "turnWorst": [
+     {
+      "t": 5.208333333333382,
+      "player": 1,
+      "what": "turn LeftForeArm",
+      "value": 81.2757868594782
+     },
+     {
+      "t": 113.71666666670323,
+      "player": 1,
+      "what": "turn LeftForeArm",
+      "value": 76.52842980747188
+     },
+     {
+      "t": 5.208333333333382,
+      "player": 1,
+      "what": "turn LeftArm",
+      "value": 60.64606610941351
+     },
+     {
+      "t": 8.641666666666817,
+      "player": 2,
+      "what": "turn LeftForeArm",
+      "value": 57.01174541114849
+     },
+     {
+      "t": 80.94166666667715,
+      "player": 0,
+      "what": "turn LeftArm",
+      "value": 56.85594121363013
+     },
+     {
+      "t": 5.241666666666717,
+      "player": 1,
+      "what": "turn LeftHand",
+      "value": 56.84231238697019
+     },
+     {
+      "t": 110.12500000003371,
+      "player": 0,
+      "what": "turn LeftArm",
+      "value": 52.598922354781614
+     },
+     {
+      "t": 8.641666666666817,
+      "player": 2,
+      "what": "turn LeftArm",
+      "value": 51.22192935557629
+     },
+     {
+      "t": 53.291666666664284,
+      "player": 3,
+      "what": "turn RightForeArm",
+      "value": 48.533208333854056
+     },
+     {
+      "t": 113.71666666670323,
+      "player": 1,
+      "what": "turn LeftArm",
+      "value": 48.048663983863804
+     },
+     {
+      "t": 66.30833333333217,
+      "player": 2,
+      "what": "turn LeftArm",
+      "value": 47.66221420124869
+     },
+     {
+      "t": 100.30833333335923,
+      "player": 3,
+      "what": "turn RightForeArm",
+      "value": 47.4817284117888
+     }
+    ],
+    "kneeSpins": []
+   },
+   "repeat": {
+    "frames": 8228,
+    "maxDeg": 0
+   },
+   "clip": {
+    "racketBody": 0.0015451388888888889,
+    "racketBodyMax": 0.045695521606816926,
+    "handTorso": 0.018038194444444444,
+    "handTorsoMax": 0.10897461046955698,
+    "by": {
+     "backhand-slice-left": {
+      "racketBody": 2,
+      "handTorso": 23
+     },
+     "volley-bh-left": {
+      "racketBody": 43,
+      "handTorso": 3
+     },
+     "ready": {
+      "racketBody": 0,
+      "handTorso": 761
+     },
+     "run": {
+      "racketBody": 0,
+      "handTorso": 142
+     },
+     "backhand-left": {
+      "racketBody": 6,
+      "handTorso": 38
+     },
+     "backhand-lob": {
+      "racketBody": 12,
+      "handTorso": 2
+     },
+     "forehand-lob": {
+      "racketBody": 1,
+      "handTorso": 22
+     },
+     "overhead": {
+      "racketBody": 1,
+      "handTorso": 30
+     },
+     "backhand-slice": {
+      "racketBody": 3,
+      "handTorso": 0
+     },
+     "volley-fh-left": {
+      "racketBody": 0,
+      "handTorso": 6
+     },
+     "volley-bh": {
+      "racketBody": 9,
+      "handTorso": 0
+     },
+     "backhand-chiquita": {
+      "racketBody": 6,
+      "handTorso": 8
+     },
+     "forehand-slice-left": {
+      "racketBody": 0,
+      "handTorso": 3
+     },
+     "forehand-slice": {
+      "racketBody": 0,
+      "handTorso": 1
+     },
+     "backhand-lob-left": {
+      "racketBody": 6,
+      "handTorso": 0
+     }
+    },
+    "legs": 0.027934027777777776,
+    "legsMax": 0.14065776311895167,
+    "net": 0,
+    "wall": 0.005086805555555555,
+    "players": 0,
+    "racketOther": 0,
+    "worst": [
+     {
+      "t": 102.8250000000279,
+      "player": 3,
+      "what": "legs thighL/thighR",
+      "value": 0.14065776311895167
+     },
+     {
+      "t": 21.46666666666609,
+      "player": 3,
+      "what": "legs thighL/thighR",
+      "value": 0.1382743391517291
+     },
+     {
+      "t": 113.40000000003631,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.13603222445388485
+     },
+     {
+      "t": 16.758333333333024,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.13350284484097186
+     },
+     {
+      "t": 21.474999999999422,
+      "player": 3,
+      "what": "legs thighL/thighR",
+      "value": 0.13258168766357
+     },
+     {
+      "t": 21.458333333332757,
+      "player": 3,
+      "what": "legs thighL/thighR",
+      "value": 0.1290487699746773
+     },
+     {
+      "t": 113.40833333336965,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.12823548186064257
+     },
+     {
+      "t": 103.55833333336182,
+      "player": 0,
+      "what": "legs shinL/thighR",
+      "value": 0.12733670931310842
+     },
+     {
+      "t": 115.95833333337168,
+      "player": 1,
+      "what": "legs shinL/thighR",
+      "value": 0.12730843637964676
+     },
+     {
+      "t": 9.916666666666744,
+      "player": 1,
+      "what": "legs shinL/thighR",
+      "value": 0.12700592535073751
+     },
+     {
+      "t": 16.766666666666357,
+      "player": 1,
+      "what": "legs thighL/thighR",
+      "value": 0.12249054993227483
+     },
+     {
+      "t": 9.925000000000077,
+      "player": 1,
+      "what": "legs shinL/thighR",
+      "value": 0.12236668753588813
+     }
+    ]
+   },
+   "hipsFromSim": {
+    "n": 54332,
+    "mean": 0.04824303607412,
+    "p50": 0.0341487465680399,
+    "p90": 0.09541834622503566,
+    "p99": 0.33194830701265154,
+    "max": 0.45681746402154105
+   },
+   "serve": {
+    "frames": 1363,
+    "racketBody": 0,
+    "handTorso": 0,
+    "legs": 0,
+    "popsPerMinute": 5.282465150403523
+   },
+   "nan": 0
+  }
+ }
+]

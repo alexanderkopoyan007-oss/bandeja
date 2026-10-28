@@ -93,3 +93,27 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   start up to a tick before the hit is drawn (sound already waits for it). `npm run alloc` drives AI players only;
   a human-path mode would close that gap. Settled by: the owner's playtest on a fast screen; none is visible at 60
   or 120 Hz in the emulation.
+
+## Phase 3 (animation)
+- **Clips for motion matching and for better movement.** Six looping locomotion clips can't feed motion matching
+  (DECISIONS.md). Settled by: more Mixamo downloads with the owner's Adobe ID, same settings as `docs/mixamo.md`
+  (In Place off for these, so the root motion can be measured): runs starting from a standstill forwards and to
+  each side, running to a stop, 90° and 180° turns while running, side shuffles that start and stop, a crossover
+  step, a backpedal turning into a run (retreating for a lob), and a lunge to each side. Search terms that should
+  find them on mixamo.com: "start running", "run to stop", "running turn", "side step", "shuffle", "crossover",
+  "lunge". Better still: an hour of capture of a padel player moving freely on court.
+- **Video-to-mocap.** Monocular video-to-motion models (for example WHAM, GVHMR, 4D-Humans) could turn match
+  footage into clips for strokes Mixamo doesn't have. Not done: it needs the owner's OK to download model weights
+  (several hundred MB to a few GB), footage to run it on (the owner's own play filmed side-on at 60 fps or more;
+  broadcast footage raises its own rights question), and most of these output the SMPL body model, whose licence
+  is granted after a registration (an account only the owner can make) and, as far as its site says, for
+  non-commercial research; whether a free public game fits needs the owner to read it. Settled by: the owner's
+  yes on all three.
+- **Stroke motion beyond the serve.** The serve's key poses follow published padel and tennis measurements; the
+  other strokes' contact positions now follow Sánchez-Alcaraz et al. 2021, but their joint angles and timings are
+  the M2 key poses with tennis anchors (`docs/research/serve-and-strokes-motion.md` §4.2, §5: padel joint
+  kinematics for any stroke are unpublished). Settled by: the de Sire et al. 2024 full text (3D shoulder
+  kinematics, pros vs amateurs), or side-on video of the owner's own strokes.
+- **What the QA can't see.** `tools/anim-check.ts` measures skating, contact, pops, joint speeds and clipping; it
+  can't judge whether a swing looks like a padel player's. Settled by: the owner watching a match (the serve
+  especially) and saying which strokes look wrong.
