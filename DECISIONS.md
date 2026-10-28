@@ -540,7 +540,9 @@ better-looking, more realistic court. Every decision and the reason for it goes 
 - **Frame rate, Phase 3 against Phase 2** (`npm run perf`, two runs each, other sessions' Chromes also running on
   this machine): medium with the CPU throttled 4x p50 2.5 / 2.5 ms, p99 4.5 / 4.6 ms before; 2.5 ms, p99 4.3 ms
   after (one run at 2.8 / 5.1 ms overlapped a point-mix run); high at 2x p99 9.2 → 8.8-9.1 ms, 0.66% of frames
-  over 20 ms both (the queue stalls seen since M1). Draw calls 42 → 43.
+  over 20 ms both (the queue stalls seen since M1). Draw calls 42 → 43. After the final review (one run, queued
+  behind and overlapping other sessions' Chrome jobs): medium 4x p50 3.0 ms, p99 5.4 ms, 0 frames over 20 ms, 329
+  fps; high at 2x p99 9.3 ms, 0.66% over 20 ms (max 56.7 ms), 480 fps; sim p99 1.3 / 0.2 ms; draw calls 42.
 - **Low balls: a lunge, not a squat.** Real-Chrome frames at stroke contacts showed every ball under 0.6 m met in
   a full squat, knees splayed, the hips on the floor limit (90% of those contacts; hips bone at 0.58 m). Three
   changes: a low ball steps the foot on its side towards it (`LUNGE_LOW` 0.45 m from a contact at 0.95 m down to
