@@ -28,11 +28,14 @@ export interface Settings {
   /** Positioning assist: none, light, normal (0.45, the default since M1), strong. */
   assist: 'off' | 'light' | 'normal' | 'strong';
   autoTiming: boolean;
+  /** hold: hold a shot key and release it to swing; tap: one press charges it and the swing times itself (turns on
+   * auto timing). For players who can't hold and release a key on time. */
+  swing: 'hold' | 'tap';
   /** Pro mode: no timing cues, meter, trail or bounce marker. */
   pro: boolean;
   mouseAim: boolean;
   // Video
-  /** auto: picked from the frame rate the first seconds of play reach, then kept adapted. */
+  /** auto: High with the render scale adapted to hold 60 Hz (Game.adapt); the others are fixed presets. */
   quality: 'auto' | 'low' | 'medium' | 'high' | 'ultra';
   showFps: boolean;
   // Sound (0..1)
@@ -61,7 +64,7 @@ export const DEFAULT_SETUP: MatchSetup = {
 export function defaultSettings(): Settings {
   return {
     setup: { ...DEFAULT_SETUP },
-    timing: 'forgiving', assist: 'normal', autoTiming: false, pro: false, mouseAim: false,
+    timing: 'forgiving', assist: 'normal', autoTiming: false, swing: 'hold', pro: false, mouseAim: false,
     quality: 'auto', showFps: false,
     volume: 0.8, crowd: 1,
     motion: 'system', safeColours: false, textSize: 1, announce: true, rumble: true,
@@ -74,7 +77,7 @@ const CHOICES: Record<string, readonly unknown[]> = {
   mode: ['doubles', 'singles'], level: ['novice', 'club', 'advanced', 'pro'],
   arena: ['stadium', 'hall', 'club-day', 'club-night'], court: ['standard', 'panoramic', 'singles-narrow'],
   scoring: ['star', 'golden', 'advantage'], length: ['short', 'set', 'three'], hand: ['right', 'left'],
-  timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'],
+  timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'], swing: ['hold', 'tap'],
   quality: ['auto', 'low', 'medium', 'high', 'ultra'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
 };
 

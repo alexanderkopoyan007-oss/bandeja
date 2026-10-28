@@ -26,6 +26,9 @@ const CSS = `
 #loading .tip { position: absolute; bottom: 7vh; max-width: min(640px, 86vw); text-align: center; color: #b7c0c8; font-size: 14px; }
 #loading .tip b { color: #ffd84a; font-weight: 700; }
 #loading .err { margin-top: 18px; max-width: min(560px, 86vw); text-align: center; color: #ffb4a8; display: none; }
+#loading .retry { margin-top: 16px; padding: 10px 26px; border: 0; border-radius: 999px; background: #ffd84a; color: #10161f;
+  font: 800 13px/1 var(--display); letter-spacing: .18em; text-transform: uppercase; cursor: pointer; }
+#loading .retry:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { #loading .ball { animation: none; left: calc(50% - 7px); } }
 :root.calm #loading .ball { animation: none; left: calc(50% - 7px); }
 `;
@@ -106,10 +109,27 @@ export class LoadingScreen {
     return new Promise((r) => setTimeout(() => { this.root.style.display = 'none'; r(); }, 520));
   }
 
+  /** Something stopped the load: say what, and offer to try again (Enter or the pad's A press the focused button). */
   fail(message: string): void {
     this.stageEl.textContent = 'Could not start';
     this.err.textContent = message;
     this.err.style.display = 'block';
     clearInterval(this.tipTimer);
+    this.tip.textContent = '';
+    this.root.classList.remove('out');
+    this.root.style.display = '';
+    const b = document.createElement('button');
+    b.className = 'retry';
+    b.textContent = 'Try again';
+    b.onclick = () => location.reload();
+    this.err.appendChild(document.createElement('br'));
+    this.err.appendChild(b);
+    b.focus();
+    const pad = (): void => {
+      if (!b.isConnected) return;
+      for (const g of navigator.getGamepads?.() ?? []) if (g?.buttons[0]?.pressed) { location.reload(); return; }
+      requestAnimationFrame(pad);
+    };
+    requestAnimationFrame(pad);
   }
 }

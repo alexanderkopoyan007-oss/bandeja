@@ -76,4 +76,28 @@ describe('assisted timing', () => {
       expect(m.players[0]!.timingDelta).toBeLessThan(0);
     }
   });
+
+  it('one-tap swings: a tap charges the serve and assisted timing lets it go (the release is ignored)', async () => {
+    const { InputFrame, BTN_DRIVE } = await import('../../src/sim/input.ts');
+    const { DT } = await import('../../src/sim/core/constants.ts');
+    const { G_GOOD } = await import('../../src/sim/contact/timing.ts');
+    for (const tapSwing of [true, false]) {
+      const m = new MatchSim({ seed: 3, human: [true, false], firstServer: 0, autoTiming: true, tapSwing, timingScale: 1.5 });
+      const f = new InputFrame();
+      while (m.time < m.phaseUntil + DT) { f.clear(); m.step([f, null]); }
+      f.clear();
+      f.push(true, BTN_DRIVE, m.time);
+      f.held = BTN_DRIVE;
+      m.step([f, null]);
+      // Let go at once: the drop is still falling, far from the ideal moment.
+      f.clear();
+      f.push(false, BTN_DRIVE, m.time);
+      f.held = 0;
+      m.step([f, null]);
+      const until = m.tossIdeal + 0.4;
+      while (m.time < until) { f.clear(); m.step([f, null]); }
+      if (tapSwing) expect(m.players[0]!.grade).toBe(G_GOOD);
+      else expect(m.players[0]!.grade).not.toBe(G_GOOD);
+    }
+  });
 });

@@ -99,6 +99,8 @@ export interface PerfProbe {
   sims: number[];
   /** CPU time of each frame's work (sim + scene update + render submit), ms. */
   works: number[];
+  /** GPU time of each frame's render passes, ms (only with ?gputime=1, where the GPU supports timestamp queries). */
+  gpus: number[];
   drawCalls: number;
   triangles: number;
   backend: string;
@@ -132,7 +134,7 @@ export class Game {
   readonly frame = new InputFrame();
   readonly aimMarker: THREE.Mesh;
   private mouseOnCourt = false;
-  readonly probe: PerfProbe = { frames: [], sims: [], works: [], drawCalls: 0, triangles: 0, backend: '', points: 0 };
+  readonly probe: PerfProbe = { frames: [], sims: [], works: [], gpus: [], drawCalls: 0, triangles: 0, backend: '', points: 0 };
   /** Input latency samples (one per button event; allocates only on key events). */
   readonly latency: LatencySample[] = [];
   private latFirst = 0;
@@ -246,7 +248,7 @@ export class Game {
     // Score rows name the players: YOU, and each AI by its playing style.
     const who = (i: number, short: boolean): string => {
       const st = this.sim.ai[i]?.style;
-      return !opts.autoplay && i === opts.human ? 'YOU' : st ? (short ? st.short : st.name) : 'AI';
+      return !opts.autoplay && i === opts.human ? 'YOU' : st ? (short ? st.short : st.name) : `P${i + 1}`;
     };
     const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
     const names: [string, string] = [row(0), row(1)];
@@ -275,6 +277,7 @@ export class Game {
       }
     }, { signal: sig });
     this.probe.backend = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'WebGPU' : 'WebGL2';
+    this.gpuTimed = (renderer.backend as { trackTimestamp?: boolean }).trackTimestamp === true;
     this.applyPixelRatio();
   }
 
@@ -372,7 +375,7 @@ export class Game {
   start(): void {
     if (!this.opts.autoplay) {
       // Who you are playing (and with).
-      const name = (i: number): string => this.sim.ai[i]?.style.name ?? 'AI';
+      const name = (i: number): string => this.sim.ai[i]?.style.name ?? `Player ${i + 1}`;
       const sub = this.sim.doubles ? `Your partner: ${name(this.opts.human ^ 2)}` : '';
       const them = 1 - this.team;
       const title = this.sim.doubles ? `vs ${name(them)} & ${name(them + 2)}` : `vs ${name(them)}`;
@@ -385,6 +388,9 @@ export class Game {
 
   /** start() has run (tools wait for this; the page exposes the game before its warm-up). */
   running = false;
+  /** GPU timestamps are on (?gputime=1 and the GPU has them); one read-back at a time. */
+  private gpuTimed = false;
+  private gpuBusy = false;
 
   private buildInput(t0: number, t1: number): InputFrame | null {
     if (this.opts.autoplay) return null;
@@ -583,6 +589,14 @@ export class Game {
       this.probe.frames.push(dt);
       this.probe.sims.push(simMs);
       this.probe.works.push(performance.now() - now);
+    }
+    if (this.gpuTimed && !this.gpuBusy) {
+      // One read-back in flight at a time; each gives the latest frame's passes (three keeps one query pair per pass).
+      this.gpuBusy = true;
+      void this.renderer.resolveTimestampsAsync('render').then((ms) => {
+        this.gpuBusy = false;
+        if (typeof ms === 'number' && ms > 0 && this.probe.gpus.length < 100000) this.probe.gpus.push(ms);
+      }, () => { this.gpuBusy = false; });
     }
     this.debug.frame(now, simMs, n, info.drawCalls, info.triangles, this.probe.backend, this.renderer.getPixelRatio());
     if (this.opts.prefs?.adapt) this.adapt(dt);

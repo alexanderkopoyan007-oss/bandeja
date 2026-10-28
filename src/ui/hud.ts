@@ -43,10 +43,10 @@ const CSS = `
 #hud .ms { position: absolute; left: 50%; bottom: 102px; transform: translateX(-50%); font: 600 12px/1 ui-sans-serif, system-ui;
   color: #e6ebef; opacity: 0; transition: opacity .25s; letter-spacing: .04em; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 #hud .shot { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
-  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
+  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 /* The AI partner's call: the shot line's type, above the hint. */
 #hud .mate { position: absolute; left: 50%; bottom: 224px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
-  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
+  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 
 /* Hints: a glass pill with key caps. */
 #hud .hint { position: absolute; left: 50%; bottom: 176px; transform: translate(-50%, 6px); opacity: 0;

@@ -13,7 +13,8 @@ const num = (k: string, d: number): number => {
 };
 
 async function makeRenderer(): Promise<THREE.WebGPURenderer> {
-  const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL: params.get('backend') === 'webgl' });
+  // ?gputime=1 (perf runs): GPU timestamp queries, read back each frame into the probe (Game.tick).
+  const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL: params.get('backend') === 'webgl', trackTimestamp: params.get('gputime') === '1' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, num('dpr', 2)));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
@@ -31,12 +32,19 @@ async function makeRenderer(): Promise<THREE.WebGPURenderer> {
 async function startApp(): Promise<void> {
   const loading = new LoadingScreen();
   loading.stage('Starting the renderer', 0.03);
-  const renderer = await makeRenderer();
+  let renderer: THREE.WebGPURenderer;
+  try {
+    renderer = await makeRenderer();
+  } catch (err) {
+    loading.fail(`This browser could not start the 3D renderer (${String(err)}). BANDEJA needs WebGPU or WebGL 2: a recent Chrome, Edge, Firefox or Safari, with hardware acceleration on.`);
+    throw err;
+  }
   const app = new App(renderer, document.getElementById('hud')!, params, loading);
   try {
     await app.boot();
   } catch (err) {
-    loading.fail(`The game could not start here: ${String(err)}. It needs a browser with WebGPU or WebGL 2 (a recent Chrome, Edge, Firefox or Safari).`);
+    const msg = err instanceof Error ? err.message : String(err);
+    loading.fail(`The game could not start: ${msg}.`);
     throw err;
   }
 }

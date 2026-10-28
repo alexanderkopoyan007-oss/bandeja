@@ -9,7 +9,7 @@ const CSS = `
   color: #e8ecef; --display: "Avenir Next Condensed", "DIN Condensed", "Arial Narrow", system-ui, sans-serif;
   --accent: #ffd84a; --glass: rgba(9,12,17,.74); --edge: rgba(255,255,255,.12); zoom: var(--ui-scale, 1); }
 #menu.on { display: block; }
-#menu .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,7,10,.78) 0%, rgba(5,7,10,.45) 46%, rgba(5,7,10,.08) 100%);
+#menu .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,7,10,.8) 0%, rgba(5,7,10,.7) 34%, rgba(5,7,10,.4) 52%, rgba(5,7,10,.08) 100%);
   opacity: 0; transition: opacity .35s; }
 #menu.on .shade { opacity: 1; }
 #menu .brand { position: absolute; left: 6vw; top: 6vh; font: italic 800 30px/1 var(--display); letter-spacing: .1em; color: #fff; }
@@ -46,7 +46,8 @@ const CSS = `
 #menu .bar { width: 120px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
 #menu .bar i { display: block; height: 100%; background: var(--accent); }
 #menu .group { margin: 14px 0 6px 4px; font: 700 11px/1 var(--display); letter-spacing: .26em; text-transform: uppercase; color: rgba(255,255,255,.5); }
-#menu .desc { min-height: 38px; flex: none; margin-top: 12px; font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; color: #c4ccd3; max-width: 520px; }
+#menu .desc { min-height: 38px; flex: none; margin-top: 12px; font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; color: #d3d9de; max-width: 520px;
+  text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.6); }
 #menu .side { position: absolute; left: calc(6vw + min(520px, 88vw) + 4vw); top: calc(6vh + 54px); bottom: calc(5vh + 34px);
   width: min(420px, 34vw); display: flex; flex-direction: column; justify-content: center; overflow-y: auto; }
 #menu .card { padding: 16px 18px; border-radius: 10px; background: var(--glass); box-shadow: inset 0 0 0 1px var(--edge); backdrop-filter: blur(12px); }
@@ -242,8 +243,9 @@ export class Menu {
       const sub = scr.appendChild(el('div', 'sub'));
       sub.textContent = s.sub;
     }
+    // Plain buttons (and sliders for the choices) in a list: role=menu would make a screen reader expect only
+    // menu items, and the choices are not.
     const list = scr.appendChild(el('div', 'list'));
-    list.setAttribute('role', 'menu');
     this.els = [];
     this.items = [];
     for (const it of s.items) {
@@ -251,6 +253,8 @@ export class Menu {
       if (it.kind === 'group') {
         const g = list.appendChild(el('div', 'group'));
         g.textContent = it.label;
+        g.setAttribute('role', 'heading');
+        g.setAttribute('aria-level', '2');
         continue;
       }
       const b = list.appendChild(document.createElement('button')) as HTMLButtonElement;
@@ -292,7 +296,6 @@ export class Menu {
     const dis = it.disabled?.() ?? false;
     b.setAttribute('aria-disabled', String(dis));
     if (it.kind === 'button') {
-      b.setAttribute('role', 'menuitem');
       b.innerHTML = `<span class="lab"></span>`;
       b.querySelector('.lab')!.textContent = it.label;
       b.setAttribute('aria-label', it.label);
@@ -323,7 +326,6 @@ export class Menu {
       b.querySelector('.lab')!.textContent = it.label;
     } else if (it.kind === 'key') {
       const k = it.keys?.() ?? '';
-      b.setAttribute('role', 'menuitem');
       b.setAttribute('aria-label', `${it.label}: ${k}. Press Enter to change.`);
       b.innerHTML = `<span class="lab"></span><span class="val"><span class="v"></span></span>`;
       b.querySelector('.lab')!.textContent = it.label;

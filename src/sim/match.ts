@@ -109,6 +109,9 @@ export interface MatchConfig {
   assist?: number;
   /** Assisted timing: a swing still held at the right moment goes off by itself (graded Good). */
   autoTiming?: boolean;
+  /** One-tap swings (accessibility, with autoTiming): a human's release of the charged shot key is ignored, so a tap
+   * charges the swing and assisted timing lets it go. */
+  tapSwing?: boolean;
   firstServer?: number;
 }
 
@@ -618,7 +621,7 @@ export class MatchSim {
       if (shot < 0) continue;
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
       if (e.press) this.press(i, shot, max(e.t, t0));
-      else if (p.swing === SW_CHARGE && p.shot === shot) {
+      else if (p.swing === SW_CHARGE && p.shot === shot && !(human && this.cfg.tapSwing && this.cfg.autoTiming)) {
         // The modifiers as they were at this release: f.held is the tick's end; undo this tick's later changes.
         let h = f.held;
         for (let j = f.evCount - 1; j > k; j--) {

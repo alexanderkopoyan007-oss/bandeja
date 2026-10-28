@@ -36,12 +36,21 @@ export const DEFAULT_KEYS: Record<string, string[]> = {
 /** Keys the game keeps for itself (pause, debug, help, pro mode, mouse aim): never bound to an action. */
 export const RESERVED = new Set(['Escape', 'F3', 'KeyH', 'KeyP', 'KeyM', 'Tab', 'Enter']);
 
-/** The bindings in use: the defaults with the player's changes over them. */
+/**
+ * The bindings in use: the defaults with the player's changes over them. An action stored with no keys has none (its
+ * key went to another action); giving it its default back would put one key on two actions.
+ */
 export function resolveKeys(custom: Record<string, string[]> | undefined): Record<string, string[]> {
   const out: Record<string, string[]> = {};
+  const taken = new Set<string>();
   for (const a of ACTIONS) {
     const c = custom?.[a.id];
-    out[a.id] = c && c.length ? c.filter((k) => !RESERVED.has(k)).slice(0, 2) : DEFAULT_KEYS[a.id]!.slice();
+    if (c) for (const k of c) taken.add(k);
+  }
+  for (const a of ACTIONS) {
+    const c = custom?.[a.id];
+    // An action the player never changed keeps its defaults, less any key they have since given to another action.
+    out[a.id] = c ? c.filter((k) => !RESERVED.has(k)).slice(0, 2) : DEFAULT_KEYS[a.id]!.filter((k) => !taken.has(k));
   }
   return out;
 }

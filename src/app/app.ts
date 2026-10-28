@@ -54,10 +54,16 @@ export class App {
   async boot(): Promise<void> {
     const L = this.loading;
     L.stage('Fetching the players', 0.12);
-    try {
-      this.asset = await loadPlayerAsset(new URL('assets/player.bnz', document.baseURI).href, (f) => L.stage('Fetching the players', 0.12 + 0.4 * f));
-    } catch (err) {
-      console.warn('player body not loaded, using capsules:', err);
+    // The players' bodies: a dropped connection is tried again twice before the load gives up and says so (the
+    // capsule stand-ins are for ?avatar=0 and test pages only, never the game).
+    const url = new URL('assets/player.bnz', document.baseURI).href;
+    for (let attempt = 0; !this.asset; attempt++) {
+      try {
+        this.asset = await loadPlayerAsset(url, (f) => L.stage('Fetching the players', 0.12 + 0.4 * f));
+      } catch (err) {
+        if (attempt >= 2) throw new Error(`the players could not be downloaded (${String(err)}). Check the connection`);
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
     await this.build(true, (name, f) => L.stage(name, 0.52 + 0.46 * f));
     await L.done();
@@ -251,6 +257,8 @@ export class App {
         ch('Positioning assist', 'assist', [{ value: 'off', label: 'Off' }, { value: 'light', label: 'Light' }, { value: 'normal', label: 'Normal' }, { value: 'strong', label: 'Strong' }],
           'How much the game moves you towards the ball when you leave the keys alone. Off: you move yourself, always.'),
         ch('Auto timing', 'autoTiming', onOff, 'A held swing fires itself at the right moment (graded Good): you choose the shot and the aim, the game times it.'),
+        ch('Swing', 'swing', [{ value: 'hold', label: 'Hold and release' }, { value: 'tap', label: 'One tap' }],
+          'One tap: press a shot key once and the swing goes off at the right moment by itself (auto timing on); the movement keys still aim. For when holding and releasing a key on time is hard.'),
         ch('Timing cues', 'pro', [{ value: false, label: 'Shown' }, { value: true, label: 'Hidden (pro)' }], 'The closing ring, the meter, the trail and the bounce marker. Pro mode plays without them.'),
         ch('Aim with', 'mouseAim', [{ value: false, label: 'Keys' }, { value: true, label: 'Mouse' }], 'Keys: the movement keys steer the target while a shot key is held. Mouse: point at the far court.'),
         { kind: 'group', label: 'Picture' },
