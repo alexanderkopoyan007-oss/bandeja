@@ -908,7 +908,8 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     sweet spot the face's first bending mode (about 205 Hz; a tennis frame's is 146 Hz, Russell, and a padel racket
     is shorter and stiffer: an estimate) rings, half as bright and longer; a frame hit clacks above 2 kHz. Slices
     brush felt across the face before the hit. Bins: five kinds (drive, volley, overhead, slice, touch), three powers
-    and three contacts (clean, off, frame), from the event's pace and timing grade.
+    and three contacts (clean, off, frame), from the impact itself: the ball's speed against the face and where on
+    the face it met (review fix, below).
   - **Bounce.** On a hard floor about 1 kHz for the first cycles, then a decaying ~250 Hz (line-calling patent US
     9551572), held by a test. Sand-filled turf is damped (porous fibres; the sand softens the bounce, Piana et al.)
     with grains of sand scattering; carpet is muffled; resin/hard loudest (ibid.).
@@ -952,14 +953,15 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   following it, so sounds slide with the play rather than step.
 - **Engine** (`src/audio/engine.ts`): heard from the broadcast camera (the listener follows it each frame): 32 pooled
   voices (gain, an air/distance low-pass, an equal-power panner with the inverse distance law at 16 m reference so
-  the far baseline is about 5 dB down, and a send to the arena's reverb that grows with distance), four buses, a
-  master gain, a limiter (-8 dBFS, 12:1, 2 ms) and a tanh soft clip. Sounds play at the event's exact time (up to
+  the far baseline is about 6 dB down, and a send to the arena's reverb that grows with distance), four buses, a
+  master gain, a safety limiter (-2 dBFS, 20:1, make-up gain undone) and a clip that is exact below 0.8 (review fix,
+  below). Sounds play at the event's exact time (up to
   50 ms ahead, as the sim runs ahead of the screen). Audio starts on the first key, click or pad press (browsers
   allow it only from a gesture), in autoplay too, and pauses with the tab.
 - **The mix.** Levels in `data/audio.json`: racket -5 dBFS peak, glass -6, mesh -9, posts -10, bounce -14, net -14,
   grunts -13, swish -20, shoes -30; beds by rms: applause -26, cheer -25, murmur -41. Tests hold: no single sound at
   its loudest play needs the limiter; the busiest moment (a smash off the glass with a grunt, steps, a cheer and the
-  big applause over the murmur) peaks under 0 dBFS before it; the shoes sit 15-32 dB under the racket, the bounce
+  big applause over the murmur) peaks under the limiter's threshold in every arena on every floor; the shoes sit 15-32 dB under the racket, the bounce
   over 4 dB under, the crowd's chatter 9+ dB under a hit (hushed 16 dB further in a point).
 - **The crowd follows the match** (`src/audio/soundscape.ts`): chatter between points, hushed as the server gets
   ready, a murmur of tension rising past 6 shots, a gasp (big crowds) at a smash or a ball off two walls sent back,
@@ -968,3 +970,72 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   crowds (8-14 people) only clap.
 - **Feedback**: the Phase 2 hit sound (`sound.ts`) is gone; rumble and the smash's camera kick stay in
   `src/game/feedback.ts`.
+
+### Phase 6 review fixes
+Two reviews (a verifier and a fresh pair of ears reading the code) found one critical problem, four high and about
+twenty medium or low. Fixed:
+- **Critical: sound froze for good in Firefox.** The engine set the listener through `positionX`, which Firefox's
+  `AudioListener` doesn't have; the throw came out of the frame loop. The listener's position now lives in the
+  engine's own fields and goes through `setPosition` where `positionX` is missing, only when the camera has moved;
+  `game.ts` catches any audio failure once and carries on silent; a foot's `footDown` is set before the step plays,
+  so a throw can't make it play every frame.
+- **High: a club's eight watchers clapped as loud as a stadium.** Reactions are levelled by the part that sounds
+  (`activeRms`, not the whole render with its silent tail) and by headcount: `crowdDb(N) = 10 log10(N / 4600)`
+  (power adds with clappers), +6 dB under 50 people (they sit by the court). Eight people clap 22 dB under the
+  stadium; every crowd render is capped at -9 dBFS peak. Tests hold both.
+- **High: the master chain coloured every mix.** The -8 dBFS 12:1 compressor ran on most hits and its automatic
+  make-up gain lifted everything under it. It is now a safety limiter at -2 dBFS, 20:1, hard knee, with the make-up
+  gain taken back out (`1 / (1 / fullScale)^0.6`, WebAudio's own formula), so it is unity below the threshold; the
+  soft clip is the identity up to 0.8. The mix tests run all four arenas on all four floors through that chain and
+  hold the busiest moment under the threshold: in play nothing touches it.
+- **High: the racket's sound came from the timing grade.** A "Perfect" frame shot sounded clean. The hit event now
+  carries the impact speed (`MatchEvent.d`, the ball against the face, from `ShotResult.impactSpeed`) and where it
+  met the face (`q`: 0 centre to 1 edge, 2 the frame, from the contact point against the head's length and width);
+  power is (speed - 4) / 36 m/s, a contact past 0.55 is off-centre.
+- **High: scuffs depended on the frame rate.** Braking and cutting were judged from one frame's velocity change,
+  so 144 fps scuffed far less than 60. They are judged over a fixed 0.1 s window now; a test plays the same match at
+  60 and 144 fps and gets the same count within 35%.
+- **Medium and low:**
+  - **Levels follow a law.** A bin's level now goes with its speed or force (`law` per family in `bank.ts`); the
+    bins only change the timbre, so `binFor` slides between them with no step (a test checks both picks at every
+    midpoint agree within 0.2 dB). The gain is clamped only above the top bin.
+  - **Floors keep their loudness.** Bounces, steps and scuffs were each normalised per floor, so sand rang as loud
+    as resin. They are levelled on turf (`floorRef`); the other floors keep their own level against it (a test:
+    resin over 2 dB louder than turf, carpet quietest).
+  - **The bounce sat 3.6 dB under the racket.** It is now -17 dBFS peak (from -14) and the shoes -31 (from -30):
+    a test holds the bounce over 4 dB under a clean drive and the shoes 15-32 dB under it on turf and on resin.
+    Broadcast mixes put the ball's bounce well under the hit; there is no padel measurement of the ratio
+    (OPEN_QUESTIONS.md).
+  - **The crowd carried its state between points.** Wall counts and the "long rally" state now reset on every point,
+    fault and let; walls count only in a rally; no gasp at a serve; a set or match point plays one celebration (no
+    applause stacked on a big one in the last 3 s); a long rally gets a cheer only for a winner, a groan for an error;
+    the cheer comes 0.3 s after the point. The hush starts at the server's set-up (time constant 0.35 s) and the
+    chatter returns after the point (0.8 s); a test reads the murmur's level at each serve's contact as WebAudio
+    follows its targets. The tension rises 13 dB by about 22 shots (7 was inaudible under the hush).
+  - **Frame clacks.** The rim's modes (1.9, 2.9, 4.3, 6.1 kHz) are struck by a 0.22 ms pulse and the face's bend is
+    damped on a frame hit: brighter than a clean hit, with more energy above 2 kHz, at about the same loudness (a
+    test measures all three).
+  - **The swish peaks at the contact.** It was played at the swing's start; it is now scheduled so its peak lands
+    25 ms before the contact (`WHOOSH_LEAD` + `WHOOSH_PEAK`), started part-way in when late; whiffs swish too. A
+    test: 80% of swishes peak within 45 ms before to 20 ms after the hit.
+  - **Steps.** Force from the speed and the braking (`0.06 + v / 6.5 + brake / 18`), the capsules' stride clock at
+    a runner's cadence (`1.6 + 0.48 v` steps a second).
+  - **Variety.** Three or more renders of anything heard often: with two, "never the one just played" was a strict
+    A/B/A/B.
+  - **Ambience.** Birds are one-shot calls from the trees 14-32 m to the side, 4-10 m up, at random (a loop of birds
+    repeated audibly every few seconds); the wind loop is 17 s and the murmur 12 s; the stadium has its air
+    handling under the play.
+  - **Engine.** Buffers made once per family (at unlock or on arrival from the worker), the raw floats dropped; the
+    render picker uses typed arrays, not string keys; a voice is free when its sound has ended by the audio clock;
+    `pause()` always suspends or resumes, and a state change while paused is put right; without a worker the bank
+    renders one family per 30 ms task after 1.5 s, so the first frames never stall; the impulse response's bands
+    use independent noise and its flutter can't go negative; `air.Q` is -3.01 dB (Butterworth); loop requests that
+    change nothing are skipped. `src/audio/sink.ts` holds the interface the soundscape plays into, so the tests
+    record it without WebAudio or three.
+- **Not done:**
+  - **A gamepad-only player may hear nothing until a key or click.** Browsers start audio only from a user gesture
+    and a pad press may not count. A hint would be new UI, which needs the owner's OK first (OPEN_QUESTIONS.md).
+  - **Output latency isn't compensated.** `AudioContext.outputLatency` (10-40 ms; Bluetooth 150+) would move every
+    sound earlier; Safari doesn't report it, and the swish's lead covers the usual wired case.
+  - **Partner calls aren't voiced** ("¡mía!", "¡tuya!"): the calls are on the HUD; voices would need recorded
+    speech to sound like people (formant synthesis gives vowels, not words).

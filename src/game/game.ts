@@ -94,6 +94,7 @@ export class Game {
   readonly pad: GamepadInput;
   /** Sound (Phase 6): the engine, and what decides what is heard. */
   readonly audio: AudioEngine;
+  private audioFailed = false;
   readonly soundscape: Soundscape;
   private readonly feetSrc: FeetSource[];
   readonly feedback: Feedback;
@@ -425,8 +426,14 @@ export class Game {
     this.feedback.update(this.sim, who, now);
     this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
-    this.audio.setListener(this.cam.camera);
-    this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
+    // Sound never takes a frame down: a browser's WebAudio quirk (Firefox has no listener.positionX) once threw on
+    // every play and the frame's assists, HUD and draw were skipped.
+    try {
+      this.audio.setListener(this.cam.camera);
+      this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
+    } catch (e) {
+      if (!this.audioFailed) { this.audioFailed = true; console.warn('audio', e); }
+    }
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt, cueNow);
     this.hud.update(this.sim, who, now / 1000);

@@ -126,6 +126,8 @@ export interface ShotResult {
   fromTip?: number;
   across?: number;
   frame?: boolean;
+  /** Relative normal speed of ball and face at the impact (m/s): how hard the ball met the strings' bed. */
+  impactSpeed?: number;
   /** Ideal (pre-error) landing point, for debug/assists. */
   idealX: number;
   idealZ: number;
@@ -554,6 +556,7 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   out.fromTip = fromTip;
   out.across = across;
   out.frame = frame;
+  out.impactSpeed = rk.u;
   ball.rolling = false;
   ball.ahead = 0;
   ball.clearNet();

@@ -37,7 +37,20 @@ add('applause big', turf, 'applause', APPLAUSE_BIG);
 add('cheer', turf, 'cheer'); add('ooh', turf, 'ooh'); add('aah', turf, 'aah');
 add('murmur', turf, 'murmur', 0, 0, 3, 4);
 add('club applause', day, 'applause', APPLAUSE_BIG);
-add('wind+birds', day, 'birds', 0, 0, 3, 4); add('wind', day, 'wind', 0, 0, 3, 3); add('crickets', hard, 'crickets', 0, 0, 4, 3);
+add('wind', day, 'wind', 0, 0, 3, 3);
+{
+  // Birds as the game plays them: calls at random from the trees over the wind.
+  const w = resample(day.get('wind')![0]![0]!.ch[0]!, 24000, SR).slice(0, 4 * SR).map((x) => x * 3);
+  let t = 0.2;
+  for (let k = 0; t < 3.5; k++) {
+    const c = resample(day.get('bird')![0]![k % 6]!.ch[0]!, 24000, SR);
+    const o = Math.round(t * SR);
+    for (let i = 0; i < c.length && o + i < w.length; i++) w[o + i] = w[o + i]! + c[i]! * 0.5;
+    t += 0.6 + ((k * 0.37) % 1) * 1.2;
+  }
+  parts.push(['wind+birds', w]);
+}
+add('crickets', hard, 'crickets', 0, 0, 4, 3);
 const crowd = parts.splice(0);
 function join(list: Array<[string, Float32Array]>, gap: number): { x: Float32Array; marks: Array<[string, number]> } {
   const n = list.reduce((a, [, c]) => a + c.length + Math.round(gap * SR), 0);

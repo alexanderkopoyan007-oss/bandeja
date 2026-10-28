@@ -69,8 +69,9 @@ export function racket(rng: Rng, kind: number, power: number, off: number, frame
   // node), more the further off.
   const low: Mode[] = [];
   ballRing(rng, low, frame ? 0.5 : 1, 0.2);
-  const bend = 0.05 + 0.6 * q + (frame ? 0.5 : 0) + (kind === RK_OVER ? 0.1 * p : 0);
-  low.push({ f: jit(rng, 205, 0.06), t60: 0.04 + 0.06 * q + (frame ? 0.06 : 0), a: bend });
+  // (on the frame the face hardly flexes: the rim takes the ball, and its clack, below, is the sound)
+  const bend = 0.05 + 0.6 * q * (frame ? 0.35 : 1) + (kind === RK_OVER ? 0.1 * p : 0);
+  low.push({ f: jit(rng, 205, 0.06), t60: 0.04 + 0.06 * q, a: bend });
   low.push({ f: jit(rng, 480, 0.06), t60: 0.03 + 0.02 * q, a: 0.04 + 0.35 * q * rng.next() });
   for (const m of low) m.a *= loud;
   modal(out, at, low, contact);
@@ -80,14 +81,20 @@ export function racket(rng: Rng, kind: number, power: number, off: number, frame
   high.push({ f: jit(rng, 1050, 0.05), t60: 0.028, a: 0.55 * (1 - 0.45 * q) });
   high.push({ f: jit(rng, 1520, 0.05), t60: 0.02, a: 0.4 * (1 - 0.5 * q) * (1 - 0.4 * soft) });
   high.push({ f: jit(rng, 2650, 0.06), t60: 0.01, a: 0.25 * (1 - 0.6 * q) * (1 - 0.7 * soft) });
-  if (frame) {
-    // The rim's clack: short, high, hard.
-    high.push({ f: jit(rng, 2300, 0.08), t60: 0.016, a: 0.5 });
-    high.push({ f: jit(rng, 3500, 0.08), t60: 0.011, a: 0.35 });
-    high.push({ f: jit(rng, 5200, 0.08), t60: 0.007, a: 0.25 });
-  }
   for (const m of high) m.a *= loud;
   modal(out, at, high, contact * ONSET);
+  if (frame) {
+    // The rim's clack: the felt meets a hollow carbon tube, not the foam, so the strike is far sharper (about
+    // 0.2 ms: a contact that short reaches 5 kHz) and the tube's shell modes ring high and short.
+    const rim: Mode[] = [
+      { f: jit(rng, 1900, 0.08), t60: 0.02, a: 0.32 },
+      { f: jit(rng, 2900, 0.08), t60: 0.014, a: 0.4 },
+      { f: jit(rng, 4300, 0.08), t60: 0.009, a: 0.3 },
+      { f: jit(rng, 6100, 0.08), t60: 0.006, a: 0.18 },
+    ];
+    for (const m of rim) m.a *= loud;
+    modal(out, at, rim, jit(rng, 2.2e-4, 0.1));
+  }
   // The crack: the impact's broadband noise; harder and cleaner is brighter, soft and off is dull.
   const bright = (2600 + 4200 * p) * (1 - 0.45 * q) * (1 - 0.5 * soft);
   noiseBurst(out, rng, at, 0.0003, jit(rng, 0.006 + 0.006 * q, 0.1), 0.3 * loud * (1 - 0.35 * q),
@@ -388,15 +395,18 @@ export function scuff(rng: Rng, floor: number, slide: number): Float32Array {
  * racket's speed; aeolian sound pressure goes as about speed cubed, so a block volley is near silent and a smash
  * swishes. Peaks 60 ms in (the event is the release, about the contact).
  */
+/** When a whoosh peaks after its start (s): the soundscape starts it so the peak lands just before the contact. */
+export const WHOOSH_PEAK = 0.025;
+
 export function whoosh(rng: Rng, speed: number): Float32Array {
-  const out = buf(0.28);
+  const out = buf(0.25);
   const s = clamp01(speed);
   const amp = 0.05 + 0.2 * s * s * s;
   const n = out.length;
   const bp = new Biquad(SR), hi = Biquad.make('bp', 3000, 1.1);
   for (let i = 0; i < n; i++) {
     const t = i / SR;
-    const e = t < 0.06 ? (t / 0.06) ** 2 : Math.exp(-(t - 0.06) / 0.045);
+    const e = t < WHOOSH_PEAK ? (t / WHOOSH_PEAK) ** 2 : Math.exp(-(t - WHOOSH_PEAK) / 0.05);
     if (i % 32 === 0) bp.set('bp', 250 + 1300 * s * e, 1.3);
     const x = rng.next() * 2 - 1;
     out[i] = (bp.run(x) + 0.25 * s * hi.run(x)) * e * amp;
@@ -752,6 +762,39 @@ export function ambience(rng: Rng, kind: 'wind' | 'birds' | 'crickets' | 'hum' |
   return [loopable(L, secs, fade, sr), loopable(R, secs, fade, sr)];
 }
 
+/**
+ * One bird's phrase (day clubs), mono at LO_SR: a few frequency-swept chirps of one of three species patterns.
+ * Played as one-shots at random times and places (soundscape.ts), so the trees never repeat on a loop.
+ */
+export function birdCall(rng: Rng): Float32Array {
+  const sr = LO_SR;
+  const species = [
+    { f: [3200, 4200], n: [3, 6], len: 0.06, gap: 0.09 },
+    { f: [2200, 2900], n: [2, 3], len: 0.18, gap: 0.12 },
+    { f: [4800, 6200], n: [5, 9], len: 0.03, gap: 0.05 },
+  ];
+  const sp = species[Math.floor(rng.next() * species.length)]!;
+  const count = Math.round(rng.range(sp.n[0]!, sp.n[1]!));
+  const out = new Float32Array(Math.round((count * (sp.len + sp.gap * 1.3) + 0.1) * sr));
+  const fb = rng.range(sp.f[0]!, sp.f[1]!);
+  const up = rng.next() < 0.5;
+  let t = 0.01;
+  for (let c = 0; c < count; c++) {
+    const start = Math.round(t * sr), n = Math.round(sp.len * sr);
+    const amp = rng.range(0.6, 1);
+    let ph = 0;
+    for (let i = 0; i < n && start + i < out.length; i++) {
+      const u = i / n;
+      const f = fb * (1 + (up ? 0.35 * u : 0.35 * (1 - u)) + 0.05 * Math.sin(2 * Math.PI * 40 * u));
+      ph += (2 * Math.PI * f) / sr;
+      out[start + i] = out[start + i]! + Math.sin(ph) * Math.sin(Math.PI * u) * amp;
+    }
+    t += sp.len + sp.gap * rng.range(0.7, 1.3);
+  }
+  dcBlock(out, sr);
+  return fadeTail(out, 0.02, sr);
+}
+
 // ---- rooms ------------------------------------------------------------------------------------------------------
 /** A room's reverberation (data/audio.json `rooms`). */
 export interface RoomSpec {
@@ -776,7 +819,9 @@ export function impulseResponse(rng: Rng, room: RoomSpec, sr = SR): Float32Array
   const chans: Float32Array[] = [];
   for (let c = 0; c < 2; c++) {
     const lo = new Float32Array(n), mid = new Float32Array(n), hi = new Float32Array(n);
-    for (let i = 0; i < n; i++) { const x = rng.gauss(); lo[i] = x; mid[i] = x; hi[i] = x; }
+    // Independent noise per band: one noise split by Butterworth filters cancels at each crossover (about 6 dB
+    // dips at 400 Hz and 3 kHz); separate noises add in power, flat through the crossovers.
+    for (let i = 0; i < n; i++) { lo[i] = rng.gauss(); mid[i] = rng.gauss(); hi[i] = rng.gauss(); }
     Biquad.make('lp', 400, 0.7, 0, sr).process(lo);
     Biquad.make('hp', 400, 0.7, 0, sr).process(mid); Biquad.make('lp', 3000, 0.7, 0, sr).process(mid);
     Biquad.make('hp', 3000, 0.7, 0, sr).process(hi);
@@ -800,7 +845,7 @@ export function impulseResponse(rng: Rng, room: RoomSpec, sr = SR): Float32Array
       const [d, g] = room.flutter;
       for (let r = 1; r * d < len; r++) {
         const i = Math.round(r * d * sr);
-        out[i] = out[i]! + g * tapScale * Math.exp(-k[1]! * i) * (1 - 0.1 * r);
+        out[i] = out[i]! + g * tapScale * Math.exp(-k[1]! * i) * Math.max(0, 1 - 0.1 * r);
       }
     }
     chans.push(out);
