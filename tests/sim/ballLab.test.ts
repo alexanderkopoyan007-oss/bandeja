@@ -300,6 +300,47 @@ describe('ball lab: junctions, edges and rolling', () => {
     }
   });
 
+  it('a ball dropped into a corner comes off the glass it lands against, never through it', () => {
+    // Review round 3: the junction's flight (floor + side glass) carried the centre past the back glass's plane,
+    // where it was never met again; the ball sank through the glass and was ruled out.
+    const c = turf.court, r = turf.spec.radius;
+    const b = new Ball();
+    b.pos.set(4.9345, 0.2788, 9.9654);
+    b.vel.set(0.279, -2.384, -0.0386);
+    b.spin.set(56.5, -47.6, -10.5);
+    let back = false;
+    for (let k = 0; k < 60; k++) {
+      b.step(turf, DT, null);
+      for (let e = 0; e < b.eventCount; e++) if (b.events[e]!.kind === HIT_WALL) back ||= b.pos.z > 0;
+      expect(b.outside).toBe(false);
+      expect(b.pos.z).toBeLessThan(c.halfL - r + 1e-3);
+    }
+    expect(back).toBe(true);
+  });
+
+  it('balls driven into the four corners, slow or fast, all stay in the court and in time order', () => {
+    const c = turf.court, r = turf.spec.radius;
+    const g = new Rng(31);
+    let junctions = 0;
+    for (let i = 0; i < 4000; i++) {
+      const sx = g.next() < 0.5 ? -1 : 1, sz = g.next() < 0.5 ? -1 : 1;
+      const b = new Ball();
+      b.pos.set(sx * (c.halfW - r - 0.3 * g.next()), r + 0.6 * g.next(), sz * (c.halfL - r - 0.3 * g.next()));
+      const sp = 0.5 + 14.5 * g.next() * g.next();
+      b.vel.set(sx * sp * g.next(), -sp * g.next(), sz * sp * g.next());
+      b.spin.set(300 * (g.next() - 0.5), 300 * (g.next() - 0.5), 300 * (g.next() - 0.5));
+      for (let k = 0; k < 30; k++) {
+        b.step(turf, DT, null);
+        if (b.ahead > 0) junctions++;
+        for (let e = 1; e < b.eventCount; e++) expect(b.events[e]!.t).toBeGreaterThanOrEqual(b.events[e - 1]!.t - 1e-9);
+        expect(b.outside).toBe(false);
+        expect(Math.abs(b.pos.x)).toBeLessThan(c.halfW - r + 1e-3);
+        expect(Math.abs(b.pos.z)).toBeLessThan(c.halfL - r + 1e-3);
+      }
+    }
+    expect(junctions).toBeGreaterThan(100);
+  });
+
   it('a ball in the nick lands first for the rules (FIP: good in the corner where wall meets floor)', () => {
     const c = rincon(2).contacts;
     expect(c[0]!.kind).toBe(HIT_FLOOR);

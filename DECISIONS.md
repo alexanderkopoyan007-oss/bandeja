@@ -138,6 +138,25 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     10% (clay is a fantasy surface). The rigid net's catch logs no extra bounce for a dying ball (predictions only).
   - Allocation: the match content changes with the physics, so GC counts move by match; four seeds of singles,
     before 4/12/4/4, after 5/5/5/8 (`ALLOC_SEED=` picks the seed in `tools/alloc-check.mjs`). Budget 10.
+- **Review round 3** (fresh-eyes, read-only; 100k fuzzed balls into corners and wall feet on every floor and
+  court, 50k slow corner balls, 60k at wall tops and doors). Fixed:
+  - *In a corner the junction's flight went through the third wall* (high, new in round 2): the flight on to the
+    second surface (up to 12 ms) moved the ball with no collision test, so in a corner it could carry the centre
+    past the other wall's contact plane; a wall is only met by crossing its plane, so the ball sank through the
+    glass and was ruled out (38 exits through glass and 31 balls left inside a wall in 100k; 0 in AI play, where
+    junctions are rare, but a human playing into the corners would meet it). The flight now stops at any other
+    wall's contact plane, and, as the floor already did, a ball found past a solid wall's plane (still overlapping
+    it) and going out bounces at once. Fuzz after: 0 tunnels, 0 embedded, 0 events out of time order (tests: the
+    reviewer's corner drop, and 4,000 balls into the four corners).
+  - *A second surface the ball never reached was logged* (low, since round 1): a ball barely closing on the second
+    surface (the 12 ms cap) or stopped short by a third wall was logged as touching it, e.g. a serve 3.6 mm from
+    the side mesh, never closer than 3.2 mm, faulted (7.1.e), or a topspin ball hitting the back glass 8 mm above
+    the floor and flying up to 1.1 m logged a floor bounce. The squeeze still changes the bounce (the ball deforms
+    against the first surface), but the contact is logged only when the flight gets there.
+  - *Wear counted twice* when the ball bounces off the first surface again (low).
+  - Left as is: a ball that dies right after a junction gains up to 12 ms of travel (it is dead; only where it
+    rests moves), and after a flight longer than a tick (8.3 ms) the ball stands still for one tick (a few cm of
+    hitch, in junctions only). Gameplay unchanged (24 x 300 s: 317 points, 47.0% / 46.1%, median 11 shots).
 - **A second V8 trap: exp() calls.** With the junction code, singles allocated in about one run in six (13-30 GCs
   per 100k ticks). `--no-concurrent-recompilation` made it repeat every run (15), and the heap profile showed
   smath's `exp` wrapper not inlined into `Ball.integrate` (spin decay) and `Player.runTime`: its argument and

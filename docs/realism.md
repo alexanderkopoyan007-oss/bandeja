@@ -139,7 +139,8 @@ measured against published data, and lands with tests that check the model again
   floor counts as landing first for the rules (FIP: a ball in the corner where wall meets floor is good). The
   extra loss goes with the second surface's share of the squeeze (a ball drifting into the glass as it lands
   barely feels it), and the ball is flown on to the second surface before its bounce there, so the path is
-  continuous where the junction gives way to two separate bounces.
+  continuous where the junction gives way to two separate bounces. That flight stops at any third wall (a corner),
+  and the second surface is logged as touched only if the ball gets there.
 - **Edges.** Wall tops, the vertical edge where the enclosure steps down, and door posts and lintels are lines a
   ball can clip (a cylinder of the ball's radius): a ball passing a centimetre over the back wall is knocked up,
   one 4 cm over it is gone. Frames bounce as frames; a frameless glass top as glass.
