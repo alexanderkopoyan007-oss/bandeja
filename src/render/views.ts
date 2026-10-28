@@ -231,7 +231,16 @@ export class PlayerView {
   }
 }
 
-const FOV = 42;
+/**
+ * The broadcast main camera ("the WPT angle", the de facto standard of professional padel video): about 7.6 m above
+ * the floor and 15.5 m behind the back glass (Javadiha et al. 2021, Sensors 21(10) 3368, from professional
+ * footage: from there the near end's mesh covers the far court from the foot of the net to the far service line,
+ * as on TV). A long lens frames the whole court from that far back (vertical FOV, degrees). Was 6.3 m up, 9.2 m
+ * back, 42°: closer, with a wide angle's perspective.
+ */
+const CAM_BACK = 15.5;
+const CAM_HEIGHT = 7.6;
+const FOV = 26;
 const KICK_DECAY = 0.09;
 
 /** Broadcast camera high behind the back glass of the human's end; swings round smoothly at changes of ends. */
@@ -252,7 +261,7 @@ export class BroadcastCamera {
   }
 
   /**
-   * A smash: the shot camera's operator flinches with it. A quick push in (up to 1.2° of zoom) and a 2 cm jolt
+   * A smash: the shot camera's operator flinches with it. A quick push in (up to 2.9% of zoom) and a 2 cm jolt
    * that rings down over a quarter of a second (11 Hz, 90 ms decay): felt, not seen as shake.
    */
   kick(strength: number, now: number): void {
@@ -277,7 +286,7 @@ export class BroadcastCamera {
       this.angle = this.to;
     }
     const halfL = sim.world.court.halfL;
-    const R = halfL + 9.2;
+    const R = halfL + CAM_BACK;
     this.lookX += (ballX * 0.12 - this.lookX) * 0.05;
     const ca = Math.cos(this.angle);
     const sa = Math.sin(this.angle);
@@ -289,11 +298,11 @@ export class BroadcastCamera {
       else {
         const env = this.kickAmp * Math.exp(-u / KICK_DECAY);
         jolt = 0.02 * env * Math.sin(2 * Math.PI * 11 * u);
-        fov = FOV - 1.2 * env * Math.min(1, u / 0.03);
+        fov = FOV * (1 - 0.029 * env * Math.min(1, u / 0.03));
       }
     }
-    this.camera.position.set(sa * R + this.lookX * ca, 6.3 + jolt, ca * R - this.lookX * sa);
-    this.camera.lookAt(this.lookX * ca * 0.8, 0.35 + jolt * 0.5, -ca * 1.4);
+    this.camera.position.set(sa * R + this.lookX * ca, CAM_HEIGHT + jolt, ca * R - this.lookX * sa);
+    this.camera.lookAt(this.lookX * ca * 0.8, 0.35 + jolt * 0.5, -ca * 1.1);
     if (fov !== this.fovNow) {
       this.fovNow = fov;
       this.camera.fov = fov;

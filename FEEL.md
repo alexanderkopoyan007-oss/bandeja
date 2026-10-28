@@ -140,7 +140,7 @@ impact recordings were analysed (Phase 6 does the full soundscape with reference
 | Smash or víbora | 110 ms, strong 0.55-0.85 (by pace, capped at 40 m/s), weak 0.6 | The big one. |
 | Whiff | 40 ms, weak 0.15 | You felt nothing, nearly. |
 
-**Camera on a smash** (`BroadcastCamera.kick`, `src/render/views.ts`): up to 1.2° of zoom in and a 2 cm jolt that
+**Camera on a smash** (`BroadcastCamera.kick`, `src/render/views.ts`): up to 2.9% of zoom in (1.2° of the old 42° lens; Phase 5 moved the camera to the TV position with a 26° lens) and a 2 cm jolt that
 rings down at 11 Hz with a 90 ms decay, over 0.35 s. Strength: smash 1, víbora (or a bandeja over 20 m/s) 0.4,
 times the pace ((speed − 15) / 20 m/s, 0-1), times 0.5-1 for distance to the camera. Broadcast cameras don't
 shake; this is the camera operator flinching, felt more than seen. Tuning. It starts in the frame that shows the

@@ -60,6 +60,47 @@ function skyTexture(def: NonNullable<ArenaDef['sky']>, night: boolean): THREE.Ca
 }
 
 /**
+ * A tree's crown: clumps of foliage (jittered spheres) round a centre, lit with normals pointing out from the
+ * crown's centre (foliage scatters light as a volume, not as facets), darker underneath and inside where less
+ * light gets in. Unit size; instances scale it.
+ */
+function crownGeometry(): THREE.BufferGeometry {
+  let seed = 4242;
+  const rnd = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const clumps: THREE.BufferGeometry[] = [];
+  const N = 9;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 + rnd() * 0.6, up = i === 0 ? 0.35 : -0.25 + rnd() * 0.75;
+    const r = i === 0 ? 0 : 0.45 + rnd() * 0.25;
+    const sz = i === 0 ? 0.75 : 0.42 + rnd() * 0.25;
+    clumps.push(new THREE.IcosahedronGeometry(sz, 1).translate(Math.cos(a) * r, up, Math.sin(a) * r));
+  }
+  const g = mergeGeometries(clumps);
+  const pos = g.attributes.position!.array as Float32Array;
+  const nor = g.attributes.normal!.array as Float32Array;
+  const col = new Float32Array(pos.length);
+  // Jitter by a hash of the position, so the corners triangles share move together (no cracks).
+  const h = (x: number, y: number, z: number): number => {
+    const v = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
+    return v - Math.floor(v) - 0.5;
+  };
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = pos[i]!, y = pos[i + 1]!, z = pos[i + 2]!;
+    const j = 0.12;
+    pos[i] = x + h(x, y, z) * j;
+    pos[i + 1] = y + h(y, z, x) * j;
+    pos[i + 2] = z + h(z, x, y) * j;
+    const l = Math.hypot(pos[i]!, pos[i + 1]! - 0.1, pos[i + 2]!) || 1;
+    nor[i] = pos[i]! / l; nor[i + 1] = (pos[i + 1]! - 0.1) / l; nor[i + 2] = pos[i + 2]! / l;
+    // Light falls off underneath and into the crown.
+    const shade = Math.min(1, Math.max(0.35, 0.62 + 0.4 * pos[i + 1]! + 0.25 * (l - 0.6)));
+    col[i] = col[i + 1] = col[i + 2] = shade * (0.9 + h(x * 3, y * 3, z * 3) * 0.2);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
+/**
  * Sky, grass and trees round a club (outdoor, or seen past a covered hall's open sides). Their ambient light and
  * reflections come from the sky alone: the arena's probe sits on the court and sees it floodlit, which lit the trees
  * bright green from below at night.
@@ -68,7 +109,9 @@ export function buildScenery(root: THREE.Group, def: ArenaDef): THREE.Texture {
   const night = (def.poles?.lit ?? false) === true;
   const sky = skyTexture(def.sky!, night);
   // The sky is a dome mesh, not the scene background, so the environment bake sees it with the trees in front.
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(300, 48, 24), new THREE.MeshBasicMaterial({ map: sky, side: THREE.BackSide, depthWrite: false, fog: false }));
+  // Radius well inside the camera's far plane (300 m) from wherever a camera stands (the broadcast camera is 25 m
+  // from the centre; at 300 m the far side of the dome was clipped to the background).
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(240, 48, 24), new THREE.MeshBasicMaterial({ map: sky, side: THREE.BackSide, depthWrite: false, fog: false }));
   dome.renderOrder = -1;
   root.add(dome);
 
@@ -86,13 +129,9 @@ export function buildScenery(root: THREE.Group, def: ArenaDef): THREE.Texture {
   const rnd = (() => { let a = 1234; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; })();
   const trunkGeo = new THREE.CylinderGeometry(0.18, 0.28, 1, 6);
   trunkGeo.translate(0, 0.5, 0);
-  const crownGeo = mergeGeometries([
-    new THREE.IcosahedronGeometry(1, 1),
-    new THREE.IcosahedronGeometry(0.7, 1).translate(0.6, 0.3, 0.2),
-    new THREE.IcosahedronGeometry(0.75, 1).translate(-0.5, 0.15, -0.4),
-  ]);
+  const crownGeo = crownGeometry();
   const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x4a3b2c, roughness: 0.9, envMap: sky }), tr.count);
-  const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, envMap: sky }), tr.count);
+  const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.95, envMap: sky }), tr.count);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
   const c = new THREE.Color();
   for (let i = 0; i < tr.count; i++) {
