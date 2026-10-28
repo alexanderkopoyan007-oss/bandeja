@@ -334,6 +334,8 @@ export class MatchSim {
   /** Advance one tick. `inputs[player]` is a human player's frame (ignored for AI players). */
   step(inputs: ReadonlyArray<InputFrame | null>): void {
     const t0 = this.time;
+    // Every player's clock is this tick's before anything plans with it (startLag reads it).
+    for (let k = 0; k < this.players.length; k++) this.players[k]!.clock = t0;
     const t1 = t0 + DT;
     const n = this.players.length;
     this.prevBall.x = this.ball.pos.x;
@@ -554,7 +556,9 @@ export class MatchSim {
     }
     // Assisted timing: still holding when the ideal moment arrives, the swing goes off by itself.
     if (this.cfg.autoTiming && human && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
-      const ideal = this.autoIdeal(i);
+      // Not while the planned contact is still out of reach (still running there): a swing then meets nothing.
+      const focus = this.autoIdeal(i);
+      const ideal = this.focusInReach ? focus : -1;
       // Released just before Perfect, so it grades Good whatever the timing scale. Early rather than late: an
       // early swing still meets the ball at the ideal moment (an overhead stays high, a ball at the body is
       // met in front), a late one meets it late.
@@ -957,12 +961,16 @@ export class MatchSim {
    * The timing ring, the meter and assisted timing all read this. -1 if there is none.
    */
   focusIdeal(i: number): number {
+    // Every field this sets is set on every path: the HUD and the cue call this between steps, and the sim reads
+    // focusHeight / focusVolley (assisted timing), so nothing a render-side call leaves behind may differ.
+    const st = this.stand[i]!;
     this.focusInReach = true;
+    this.focusHeight = st.valid ? st.by : 1;
+    this.focusVolley = st.valid && st.volley;
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) return this.tossIdeal;
     // Doubles: no cue for a ball the partner is taking (holding a shot key claims it, and then it is ours).
     if (this.doubles && this.taker[this.players[i]!.team] !== i) return -1;
     const n = this.windowsFor(i, this.focusWins);
-    const st = this.stand[i]!;
     let best = -1;
     let bestGap = 1e9;
     for (let k = 0; k < n; k++) {

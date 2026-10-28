@@ -138,6 +138,25 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     10% (clay is a fantasy surface). The rigid net's catch logs no extra bounce for a dying ball (predictions only).
   - Allocation: the match content changes with the physics, so GC counts move by match; four seeds of singles,
     before 4/12/4/4, after 5/5/5/8 (`ALLOC_SEED=` picks the seed in `tools/alloc-check.mjs`). Budget 10.
+- **Review round 3** (fresh-eyes, read-only; 100k fuzzed balls into corners and wall feet on every floor and
+  court, 50k slow corner balls, 60k at wall tops and doors). Fixed:
+  - *In a corner the junction's flight went through the third wall* (high, new in round 2): the flight on to the
+    second surface (up to 12 ms) moved the ball with no collision test, so in a corner it could carry the centre
+    past the other wall's contact plane; a wall is only met by crossing its plane, so the ball sank through the
+    glass and was ruled out (38 exits through glass and 31 balls left inside a wall in 100k; 0 in AI play, where
+    junctions are rare, but a human playing into the corners would meet it). The flight now stops at any other
+    wall's contact plane, and, as the floor already did, a ball found past a solid wall's plane (still overlapping
+    it) and going out bounces at once. Fuzz after: 0 tunnels, 0 embedded, 0 events out of time order (tests: the
+    reviewer's corner drop, and 4,000 balls into the four corners).
+  - *A second surface the ball never reached was logged* (low, since round 1): a ball barely closing on the second
+    surface (the 12 ms cap) or stopped short by a third wall was logged as touching it, e.g. a serve 3.6 mm from
+    the side mesh, never closer than 3.2 mm, faulted (7.1.e), or a topspin ball hitting the back glass 8 mm above
+    the floor and flying up to 1.1 m logged a floor bounce. The squeeze still changes the bounce (the ball deforms
+    against the first surface), but the contact is logged only when the flight gets there.
+  - *Wear counted twice* when the ball bounces off the first surface again (low).
+  - Left as is: a ball that dies right after a junction gains up to 12 ms of travel (it is dead; only where it
+    rests moves), and after a flight longer than a tick (8.3 ms) the ball stands still for one tick (a few cm of
+    hitch, in junctions only). Gameplay unchanged (24 x 300 s: 317 points, 47.0% / 46.1%, median 11 shots).
 - **A second V8 trap: exp() calls.** With the junction code, singles allocated in about one run in six (13-30 GCs
   per 100k ticks). `--no-concurrent-recompilation` made it repeat every run (15), and the heap profile showed
   smath's `exp` wrapper not inlined into `Ball.integrate` (spin decay) and `Player.runTime`: its argument and
@@ -161,7 +180,8 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   reach band fixed it. Its test moved from singles to doubles: a net player in singles faces passing shots 2.4-3.2 m
   wide, which no volley plan should chase. Result (12 seeds x 120 s): a doubles net player takes 80% of balls in
   the air with N against 36% with the drive key, and under 5% of their shots lose the point either way (3 of 162
-  with N, 1 of 174 with the drive key; 5 seeds gave 0 and 1, which proved nothing).
+  with N, 1 of 174 with the drive key; 5 seeds gave 0 and 1, which proved nothing). Misses were not counted: see
+  the fresh-eyes round.
 - **Each shot has its own timing windows.** The tolerance of a contact is how far the face turns per millisecond,
   so the windows scale with the square root of the face's angular speed against the drive's (capped at 1.35):
   a punch volley 1.35x (the cap), a lob 1.19x, a bandeja 0.84x, a víbora 0.76x, a smash 0.71x; every value is
@@ -195,7 +215,8 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   on 33% of her overheads, El Relojero 8%; the test's bar goes back to 1.4x (Phase 1 had lowered it to 1.25 on this
   bug's account).
 - **Test samples enlarged, not bars lowered** (overheads in `assist.test.ts`): 5 matches gave 20-25 lobs for an 85%
-  bar, 4 gave 13 víboras for an 80% one, 12 gave 36-45 smashes against a 40-lob floor; now 8, 12 and 16 matches.
+  bar, 4 gave 13 víboras for an 80% one, 12 gave 36-45 smashes against a 40-lob floor; 8, 12 and 16 matches
+  (those sizes were already in Phase 1's last commit; Phase 2 kept them).
   The víbora bar was first lowered to 72% on a wrong reading (that its narrow window made it miss); the verifier
   found the misses were swings the 3 s "held too long" safety had let off by themselves, graded against nothing
   (the bot, like the HUD's hint, holds O from the opponent's strike, and a lob can hang longer than 3 s). A held
@@ -212,7 +233,7 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - *Run-ahead could strike the ball up to a tick late* (medium): a release arriving for a moment the sim had
     already run past had its contact moved to the next tick (11-15% of releases at 60 Hz, 23-30% at 120 Hz, median
     2.3 ms late, and anything in that tick, a body hit, already decided). While a swing is held, the tick holding
-    its contact now waits until now reaches it (`Game.tick`).
+    its contact now waits until now reaches it (`Game.tick`). Not enough: see the fresh-eyes round.
   - *Gamepad timing* (medium): a pad's timestamp is its latest report of anything, so it is now kept between the
     last poll and now (a stale value landed an event far in the past); triggers use their value with hysteresis
     (held past 50%, let go below 40%) instead of `pressed`, which Chromium flips early in the travel.
@@ -226,11 +247,35 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     at 175 ms, 5 cm at 283 ms, 1.35 x 8.5 = 11.5 m/s²).
   - Left: `focusHeight` can stay from an earlier window while the planned contact is still out of reach (the cue
     shows the plan's moment then; harmless today); the HUD and cue call `focusIdeal`/`windowScale`, which write
-    sim scratch fields (no sim state); a pad press may not unlock audio (OPEN_QUESTIONS.md).
+    sim scratch fields (no sim state); a pad press may not unlock audio (OPEN_QUESTIONS.md). The first two were
+    not harmless: see the fresh-eyes round.
+- **Fresh-eyes round** (independent, read-only, from scratch). Fixed:
+  - *Run-ahead still struck late* (high): holding back the tick with the ideal moment covers releases before the
+    ideal only; one after it meets the ball at its own moment, and that tick was still run ahead. An emulation of
+    `Game.tick` against the sim (releases at ideal ± 30 ms, delivered the next frame) still had 6-34% of releases
+    late, up to 7.7 ms. While the human holds a swing the sim is now not run ahead at all (checked in the loop):
+    0 late at 60, 120 and 144 Hz. The cost is at most a tick of display latency while a swing is held.
+  - *The HUD changed the sim* (medium, determinism): `focusIdeal` left `focusHeight`/`focusVolley` from an
+    earlier call on one path, assisted timing read them, and the HUD and cue call it between steps, so with
+    `?autotime=1` the same seed and inputs played out differently (seed 12 parted at 71.5 s). Every field it sets
+    is now set on every path, from the plan when no window is found; test: the volley matches, with and without
+    the cue's calls between steps, hashed through the match (a difference inside a rally can heal at the next
+    point, so the end hash alone missed it).
+  - *Assisted timing swung at nothing* (medium): it let a held swing go `early` before the planned moment even
+    while the player was still running there, out of reach (volley plans come only 30 ms before the contact), so
+    the volley key missed 32 times against 14 for the drive key, and the volley test did not count misses. It now
+    waits until the contact is in reach; the test counts misses and the points lost straight after them: 0 misses
+    either way, 1 of 216 swings losing the point with N and 2 of 189 with J.
+  - Low: every player's clock is the tick's at the top of `step()` (plans read it before `applyInput` set it, so
+    every plan used the previous tick's time and the first re-plan after a strike missed the hop's airtime); a
+    gamepad unplugged with a button held lets go of it and forgets its buttons (the swing waited for the 3-8 s
+    safety, and the next press after reconnecting was swallowed); pad events go into the queue in time order (one
+    stamped before a queued key event landed a tick late); the sample-size slip above.
 - **Gameplay effect** (AI doubles, 24 seeds x 300 s, `tools/point-mix.ts`; Phase 1 after review round 2 → Phase 2
   after the verifier's fixes): 317 → 331 points, median rally 11 → 10 shots, untouched winners 47.0 → 50.2%,
   own-side errors 46.1 → 42.6%, balls on an opponent 2.5 → 3.0%. A small move away from the pros (winners 34-42%,
   errors about 60%), left for Phase 4. The first write-up said 328 → 297 and 43.9 → 56.2% winners: its Phase 1
   baseline didn't reproduce (see Phase 1), and most of the shift it found was the per-shot windows applied to the
   AI (volleys, a third of all shots, got 1.35x the window, so the AI missed fewer). The windows now apply to humans
-  only until Phase 4 refits the AI's timing with them on.
+  only until Phase 4 refits the AI's timing with them on. After the fresh-eyes round (the players' clock): 340
+  points, median 9, winners 49.7%, own-side errors 44.7%, balls on an opponent 3.2%.

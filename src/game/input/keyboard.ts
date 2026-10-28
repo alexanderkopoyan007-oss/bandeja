@@ -65,9 +65,19 @@ export class KeyboardInput {
     if (down) this.onKey?.(e.code, e);
   }
 
-  /** A button event from another device (the gamepad), into the same timestamped queue. */
+  /**
+   * A button event from another device (the gamepad), into the same timestamped queue, in time order: a pad's
+   * stamp can be earlier than a key event already queued, and the sim takes events up to the first one past a tick.
+   */
   inject(press: boolean, button: number, ts: number): void {
     this.push(press, button, ts);
+    for (let k = this.tail - 1; k > this.head; k--) {
+      const a = this.queue[(k - 1) % QUEUE]!, b = this.queue[k % QUEUE]!;
+      if (a.ts <= b.ts) break;
+      const p = a.press, bt = a.button, t = a.ts;
+      a.press = b.press; a.button = b.button; a.ts = b.ts;
+      b.press = p; b.button = bt; b.ts = t;
+    }
   }
 
   private push(press: boolean, button: number, ts: number): void {

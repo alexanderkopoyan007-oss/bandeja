@@ -621,14 +621,16 @@ export class Ball {
     }
 
     if (!this.outside && !flightOnly) {
-      // Side walls.
+      // Side walls. As with the floor, a ball already past a wall's contact plane (but still overlapping the
+      // glass) and going out bounces at once where the wall is solid: crossing the plane is the only other test.
       const xl = c.halfW - r;
-      if (p.x > xl && q.x <= xl) { this.cand = (xl - q.x) / (p.x - q.x); this.tryWall(c, p, WALL_SIDE_RIGHT); }
-      if (p.x < -xl && q.x >= -xl) { this.cand = (-xl - q.x) / (p.x - q.x); this.tryWall(c, p, WALL_SIDE_LEFT); }
+      const v = this.vel;
+      if (p.x > xl && (q.x <= xl || (q.x < c.halfW && v.x > 0))) { this.cand = q.x <= xl ? (xl - q.x) / (p.x - q.x) : 0; this.tryWall(c, p, WALL_SIDE_RIGHT); }
+      if (p.x < -xl && (q.x >= -xl || (q.x > -c.halfW && v.x < 0))) { this.cand = q.x >= -xl ? (-xl - q.x) / (p.x - q.x) : 0; this.tryWall(c, p, WALL_SIDE_LEFT); }
       // Back walls.
       const zl = c.halfL - r;
-      if (p.z > zl && q.z <= zl) { this.cand = (zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_NEAR); }
-      if (p.z < -zl && q.z >= -zl) { this.cand = (-zl - q.z) / (p.z - q.z); this.tryWall(c, p, WALL_BACK_FAR); }
+      if (p.z > zl && (q.z <= zl || (q.z < c.halfL && v.z > 0))) { this.cand = q.z <= zl ? (zl - q.z) / (p.z - q.z) : 0; this.tryWall(c, p, WALL_BACK_NEAR); }
+      if (p.z < -zl && (q.z >= -zl || (q.z > -c.halfL && v.z < 0))) { this.cand = q.z >= -zl ? (-zl - q.z) / (p.z - q.z) : 0; this.tryWall(c, p, WALL_BACK_FAR); }
       // Net body and tape (a cloth net is solved apart), and the posts.
       if (this.cloth === null) this.tryNet(c, p);
       this.tryPost(c, p);
@@ -1018,14 +1020,37 @@ export class Ball {
     if (d < 0) {
       n.copy(nA);
       this.bounce(world, sA, rng, false);
+      this.wear = wear;
       d = this.vel.dot(nA);
     }
     if (d < 0.05) this.vel.addScaled(nA, 0.05 - d);
     d = this.vel.dot(nB);
     if (d < 0) this.vel.addScaled(nB, -d);
     n.copy(nA);
-    // The first contact, here.
-    const floorFirst = this.jKind === HIT_FLOOR && this.jGap < J.nickGap;
+    // The flight on to the second, as the first surface alone sends it: B is met gap / approach later (capped: a
+    // ball barely closing on B is barely changed by it, and is not logged as touching it: it never gets there).
+    // Without this the second bounce would land early by that time, and the path would jump by up to v * contact
+    // time where the junction gives way to two separate bounces. Under gravity (energy stays put); drag over a few
+    // ms is left out.
+    const appr = -va.dot(nB);
+    let tau = appr > 1e-6 ? this.jGap / appr : 0;
+    const cap = 3 * J.contactTime;
+    const tauB = tau;
+    if (tau > cap) tau = cap;
+    // Never past a third wall's contact plane (in a corner): a wall is only met by crossing its plane.
+    {
+      const c = world.court;
+      const xl = c.halfW - world.spec.radius, zl = c.halfL - world.spec.radius;
+      const q = this.pos;
+      const jw = this.jWall;
+      if (va.x > 1e-9 && jw !== WALL_SIDE_RIGHT) { const t = (xl - q.x) / va.x; if (t < tau) tau = t > 0 ? t : 0; }
+      if (va.x < -1e-9 && jw !== WALL_SIDE_LEFT) { const t = (-xl - q.x) / va.x; if (t < tau) tau = t > 0 ? t : 0; }
+      if (va.z > 1e-9 && jw !== WALL_BACK_NEAR) { const t = (zl - q.z) / va.z; if (t < tau) tau = t > 0 ? t : 0; }
+      if (va.z < -1e-9 && jw !== WALL_BACK_FAR) { const t = (-zl - q.z) / va.z; if (t < tau) tau = t > 0 ? t : 0; }
+    }
+    const reached = appr > 1e-6 && tauB <= tau + 1e-12;
+    // The first contact, here (a wall-then-floor nick logs both at once, floor first: below).
+    const floorFirst = reached && this.jKind === HIT_FLOOR && this.jGap < J.nickGap;
     this.recT = this.resolveAt;
     this.recZ = this.pos.z;
     this.vnB = vnB;
@@ -1034,14 +1059,6 @@ export class Ball {
     this.hitSurface = sfA;
     this.recVn = vnA;
     if (!floorFirst) this.record();
-    // Then the flight on to the second, as the first surface alone sends it: B is met gap / approach later
-    // (capped: a ball barely closing on B is barely changed by it). Without this the second bounce would land
-    // early by that time, and the path would jump by up to v * contact time where the junction gives way to two
-    // separate bounces. Under gravity (energy stays put); drag over a few ms is left out.
-    const appr = -va.dot(nB);
-    let tau = appr > 1e-6 ? this.jGap / appr : 0;
-    const cap = 3 * J.contactTime;
-    if (tau > cap) tau = cap;
     this.pos.addScaled(va, tau);
     this.pos.y -= 0.5 * GRAVITY * tau * tau;
     this.vel.y -= GRAVITY * tau;
@@ -1051,9 +1068,11 @@ export class Ball {
     if (this.pos.y < r) this.pos.y = r;
     this.ahead = tau;
     // A wall-then-floor nick counts as landing first (FIP: good in the corner), both at the first contact.
-    if (!floorFirst) this.recT = this.resolveAt + tau;
-    this.recZ = this.pos.z;
-    this.recordJ();
+    if (reached) {
+      if (!floorFirst) this.recT = this.resolveAt + tauB;
+      this.recZ = this.pos.z;
+      this.recordJ();
+    }
     if (floorFirst) {
       this.hitKind = kA;
       this.hitWall = wA;

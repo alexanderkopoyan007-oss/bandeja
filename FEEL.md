@@ -11,7 +11,7 @@ derived from data, or tuning (then it says so). Change a value here and in its d
 | Key events carry `event.timeStamp`; pad events `Gamepad.timestamp` | `src/game/input/keyboard.ts`, `gamepad.ts` | A release is judged at the moment it happened, not when the next frame polls it: the frame rate never moves your timing. |
 | Sim at 120 Hz, fixed step | `src/sim/core/constants.ts` | Deterministic; an input inside a tick is placed at its exact time in it. |
 | Run-ahead render (default on, `?runahead=0` off) | `src/game/game.ts` tick() | The sim steps until it is at or just past *now* and the render blends the last two ticks to now, instead of drawing a tick behind. Saves one tick (8.3 ms) between a key and the screen. Measured with `tools/latency.mjs` (key → used by the sim → drawn → GPU done, both modes): see Latency results below. |
-| ...except the tick holding a held swing's contact | same | While you hold a swing, the tick that contains the contact you are waiting for is not run ahead of now. Otherwise a release arriving next frame for a moment the sim had already passed met the ball up to a tick late (the verifier measured 11-15% of releases at 60 Hz, 23-30% at 120 Hz, median 2.3 ms late). |
+| ...except while you hold a swing | same | While a swing is held the sim is not run ahead of now (it is drawn from its newest state, at most a tick behind). Otherwise a release arriving next frame for a moment the sim had already passed met the ball up to a tick late: 18-33% of releases at 60 Hz and 34-36% at 120-144 Hz, up to 7.7 ms late. Holding back only the tick with the ideal moment (the first fix) left 6-34%, all releases after the ideal; this gives 0 at 60, 120 and 144 Hz (an emulation of `Game.tick` against the sim, releases at ideal ± 30 ms). |
 | Up to 12 ticks a frame, then drop the backlog | `MAX_TICKS_PER_FRAME` | A stall never turns into a fast-forward spiral. |
 
 **Latency results.** Pending: the measurement is queued behind the machine's one shared headless Chrome. It will
@@ -63,8 +63,10 @@ or Perfect hit.
 | Time needed: the run plus 30 ms | positioning.ts | A volley is played on the move: no stop-and-set time (groundstrokes take 50-100 ms more to set the feet). |
 | A volley planned too late is blocked off the bounce as a short slice | match.ts shotFor | The key never produces a nonsense shot. |
 
-Test: `tests/sim/volley.test.ts` (12 matches: a net player takes 80% of balls in the air with N against 36% with
-the drive key, and under 5% of their shots lose the point either way: 3 of 162 with N, 1 of 174 with the drive).
+Test: `tests/sim/volley.test.ts` (12 matches: a net player takes 81% of balls in the air with N against 41% with
+the drive key, and under 5% of their swings lose the point either way, swings that meet nothing counted: 1 of 216
+with N, 2 of 189 with the drive, no misses. Assisted timing used to let a volley swing go before the ball was in
+reach: 32 misses with N against 14 with J, 8.8% of swings losing the point against 4.3%).
 
 ## 4. Movement
 
