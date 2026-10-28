@@ -901,6 +901,8 @@ export class Ball {
   private jJoin = 0.5;
   private jW = 0;
   private jGap = 0;
+  /** Time to the second surface at the approach speed before the first bounce (s). */
+  private jT2 = 0;
   /** Candidate for considerJunction: gap to the surface's contact plane (m) and approach speed (m/s). */
   private cg = 0;
   private ca = 0;
@@ -963,6 +965,7 @@ export class Ball {
     this.jKind = kind;
     this.jWall = wall;
     this.jGap = gap;
+    this.jT2 = t2;
   }
 
   /** Both bounces of a junction, the first surface's material given (n: its normal). */
@@ -1048,7 +1051,11 @@ export class Ball {
       if (va.z > 1e-9 && jw !== WALL_BACK_NEAR) { const t = (zl - q.z) / va.z; if (t < tau) tau = t > 0 ? t : 0; }
       if (va.z < -1e-9 && jw !== WALL_BACK_FAR) { const t = (-zl - q.z) / va.z; if (t < tau) tau = t > 0 ? t : 0; }
     }
-    const reached = appr > 1e-6 && tauB <= tau + 1e-12;
+    // Reached by the flight, or already during the squeeze: the ball keeps closing on B at its incoming speed while
+    // it compresses against A (about half the contact), whatever A's friction then does to it (topspin into the
+    // glass kicks the ball up off a floor it is already touching).
+    const flown = appr > 1e-6 && tauB <= tau + 1e-12;
+    const reached = flown || this.jT2 <= 0.5 * J.contactTime || (this.jKind === HIT_FLOOR && this.jGap < J.nickGap);
     // The first contact, here (a wall-then-floor nick logs both at once, floor first: below).
     const floorFirst = reached && this.jKind === HIT_FLOOR && this.jGap < J.nickGap;
     this.recT = this.resolveAt;
@@ -1069,7 +1076,7 @@ export class Ball {
     this.ahead = tau;
     // A wall-then-floor nick counts as landing first (FIP: good in the corner), both at the first contact.
     if (reached) {
-      if (!floorFirst) this.recT = this.resolveAt + tauB;
+      if (!floorFirst) this.recT = this.resolveAt + (flown ? tauB : 0);
       this.recZ = this.pos.z;
       this.recordJ();
     }
