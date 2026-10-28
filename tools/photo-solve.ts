@@ -112,7 +112,7 @@ for (const ph of doc.photos) {
         const ang = (a / 16) * Math.PI * 2;
         const cx = Math.sin(ang) * dist, cz = Math.cos(ang) * (dist + 4);
         const yaw = Math.atan2(cx, cz); // look back at the origin
-        const pitch = -Math.atan2(h - 0.5, Math.hypot(cx, cz));
+        const pitch = Math.atan2(h - 0.5, Math.hypot(cx, cz)); // positive looks down
         for (const fov of [25, 45, 70]) {
           const free6 = [true, true, true, true, true, true, true, false];
           const r = lm([cx, h, cz, yaw, pitch, 0, fov, 0], ph, aspect, free6, 40);

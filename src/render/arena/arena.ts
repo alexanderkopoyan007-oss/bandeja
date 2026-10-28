@@ -49,7 +49,7 @@ export function arenaDef(key: string): ArenaDef {
 
 /** What a kind-specific builder hands back: things to animate, and lights it added. */
 export interface ArenaPart {
-  update?(time: number, excite: number): void;
+  update?(time: number, excite: number, cam?: THREE.Vector3): void;
   /** The sky texture the scenery's materials use as their own envMap (filtered before the bake: see there). */
   sky?: THREE.Texture;
 }
@@ -170,7 +170,8 @@ export class Arena {
     }
   }
 
-  update(time: number): void {
-    for (const p of this.parts) p.update?.(time, this.excite);
+  /** Each frame: `cam` is the camera's position (parts may skip what is behind it). */
+  update(time: number, cam?: THREE.Vector3): void {
+    for (const p of this.parts) p.update?.(time, this.excite, cam);
   }
 }

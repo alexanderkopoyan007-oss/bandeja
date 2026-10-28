@@ -6,7 +6,7 @@
 import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import { E_HIT, E_POINT, E_GAME, E_SET, E_MATCH, E_ENDS, E_FAULT } from '../sim/match.ts';
 import {
-  REASON_TEXT, WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP, WHY_WHIFF, WHY_OWN_SIDE,
+  REASON_TEXT, WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP, WHY_OWN_SIDE,
   WHY_WALL_BEFORE_BOUNCE, WHY_OWN_MESH, WHY_OUT, WHY_HIT_BODY_OWN,
 } from '../sim/rules/rally.ts';
 import { Score, EV_GAME, EV_SET, EV_MATCH, MODE_STAR, MODE_GOLDEN } from '../sim/rules/score.ts';
@@ -220,40 +220,47 @@ export class TvGraphics {
         if (e.a === SHOT_SMASH) this.stats[e.team]!.fastest = Math.max(this.stats[e.team]!.fastest, kmh);
       }
     } else if (e.kind === E_FAULT && e.a !== 14) {
-      // A first-serve fault (the second ends the point: E_POINT says double fault).
+      // A first-serve fault; the second is a double fault, which ends the point with no E_POINT of its own.
       if (e.b === 1) this.queue({ html: `<div class="h">Fault</div><div class="s">${esc(REASON_TEXT[e.a]?.replace(/^Fault: /, '') ?? '')} · Second serve</div>`, acc: '#e8e8e8', secs: 2 }, true);
+      else {
+        const srv = e.team;
+        this.stats[srv]!.doubleFaults++;
+        this.pointWon(sim, 1 - srv, 'Double fault');
+      }
     } else if (e.kind === E_POINT) {
       const w = e.team, l = 1 - w, why = e.a;
-      const st = this.stats[w]!;
-      st.points++;
-      const srv = sim.score.serverTeam();
-      this.stats[srv]!.servePts++;
-      if (w === srv) this.stats[srv]!.serveWon++;
       const shots = sim.rally.shots;
-      this.longest = Math.max(this.longest, shots);
       const hitter = sim.rally.hitter;
       let head: string;
-      if ((why === WHY_DOUBLE_BOUNCE || why === WHY_EXIT_AFTER_BOUNCE || why === WHY_HIT_BODY_OPP || why === WHY_WHIFF) && hitter === w) {
-        st.winners++;
+      if ((why === WHY_DOUBLE_BOUNCE || why === WHY_EXIT_AFTER_BOUNCE || why === WHY_HIT_BODY_OPP) && hitter === w) {
+        this.stats[w]!.winners++;
         head = why === WHY_EXIT_AFTER_BOUNCE ? 'Out of the court' : shots <= 1 ? 'Ace' : 'Winner';
       } else if ((why === WHY_OWN_SIDE || why === WHY_WALL_BEFORE_BOUNCE || why === WHY_OWN_MESH || why === WHY_OUT || why === WHY_HIT_BODY_OWN) && hitter === l) {
         this.stats[l]!.errors++;
         head = 'Error · ' + (REASON_TEXT[why] ?? '');
-      } else if (why >= 9 && why <= 17 && why !== 14) {
-        this.stats[l]!.doubleFaults++;
-        head = 'Double fault';
       } else head = REASON_TEXT[why] ?? 'Point';
-      const sub = shots > 1 ? `Rally · ${shots} shots` : '';
-      this.queue({
-        html: `<div class="h">${esc(head)}<span style="color:var(--tv-dim);font-size:15px;letter-spacing:.1em">${esc(this.names[w]!)}</span></div>` +
-          (sub ? `<div class="s">${esc(sub)}</div>` : ''),
-        acc: this.colors[w]!, secs: 2.6,
-      }, true);
+      this.pointWon(sim, w, head);
     } else if (e.kind === E_GAME || e.kind === E_SET || e.kind === E_MATCH) {
       this.queue({ html: this.board(sim, e.kind === E_MATCH ? 'Match' : e.kind === E_SET ? 'Set' : 'Game'), acc: this.colors[e.team]!, secs: 4.5 });
     } else if (e.kind === E_ENDS) {
       this.queue({ html: this.statsPanel(), acc: 'var(--tv-gold)', secs: 6 });
     }
+  }
+
+  /** A point to pair `w`: the stats and its strap. Points end in an E_POINT, or in a double fault (E_FAULT b=2). */
+  private pointWon(sim: MatchSim, w: number, head: string): void {
+    this.stats[w]!.points++;
+    const srv = sim.score.serverTeam();
+    this.stats[srv]!.servePts++;
+    if (w === srv) this.stats[srv]!.serveWon++;
+    const shots = sim.rally.shots;
+    this.longest = Math.max(this.longest, shots);
+    const sub = shots > 1 ? `Rally · ${shots} shots` : '';
+    this.queue({
+      html: `<div class="h">${esc(head)}<span style="color:var(--tv-dim);font-size:15px;letter-spacing:.1em">${esc(this.names[w]!)}</span></div>` +
+        (sub ? `<div class="s">${esc(sub)}</div>` : ''),
+      acc: this.colors[w]!, secs: 2.6,
+    }, true);
   }
 
   /** Queue a strap; a passing one (a point, a fault) replaces any passing one still waiting, so they never pile up. */

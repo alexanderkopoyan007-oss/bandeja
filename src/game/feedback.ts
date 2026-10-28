@@ -42,7 +42,8 @@ export class Feedback {
       v.set(e.x, e.y, e.z).project(camera);
       const pan = v.x;
       const d = camera.position.distanceTo(v.set(e.x, e.y, e.z));
-      const near = Math.max(0, Math.min(1, 1 - (d - 8) / 22));
+      // 1 at the near baseline (about 16 m from the broadcast camera), 0.1 at the far one (36 m).
+      const near = Math.max(0, Math.min(1, 1 - (d - 16) / 22));
       const delay = Math.min(0.05, Math.max(0, e.time - renderTime));
       const mine = human >= 0 && e.player === human;
       if (e.kind === E_WHIFF) {

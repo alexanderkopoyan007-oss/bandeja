@@ -98,7 +98,8 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   // Stands: a block on each side, rows rising away from the court; seats and a seated crowd, instanced.
   const tiers = new BoxBatch();
   const seats: THREE.Matrix4[] = [];
-  const people: THREE.Matrix4[] = [];
+  // People by stand (blocks below), so the stand behind the camera need not be drawn.
+  const people: THREE.Matrix4[][] = [[], [], [], []];
   const rnd = mulberry(7);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1), pos = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
@@ -111,7 +112,8 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     { n: new THREE.Vector3(0, 0, 1), at: b.z + st.from, half: b.x - 0.5, yaw: Math.PI },
     { n: new THREE.Vector3(0, 0, -1), at: b.z + st.from, half: b.x - 0.5, yaw: 0 },
   ];
-  for (const bl of blocks) {
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const bl = blocks[bi]!;
     const along = new THREE.Vector3(bl.n.z, 0, -bl.n.x); // perpendicular in the floor plane
     for (let r = 0; r < st.rows; r++) {
       const out = bl.at + r * st.depth;
@@ -138,7 +140,7 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
           const s = 0.92 + rnd() * 0.18;
           const p = pos.clone().addScaledVector(bl.n, -0.05 + rnd() * 0.08).addScaledVector(along, (rnd() - 0.5) * 0.08);
           q.setFromAxisAngle(up, bl.yaw + (rnd() - 0.5) * 0.5);
-          people.push(new THREE.Matrix4().compose(p, q.clone(), new THREE.Vector3(s, s, s)));
+          people[bi]!.push(new THREE.Matrix4().compose(p, q.clone(), new THREE.Vector3(s, s, s)));
         }
       }
     }
@@ -161,30 +163,37 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     const f = float(1.3).add(hash(instanceIndex.add(7)).mul(0.9));
     return positionLocal.add(vec3(sin(time.mul(f).add(ph)).mul(0.012 * amp), sin(time.mul(f.mul(2)).add(ph)).mul(excite).mul(0.05 * amp), 0));
   };
-  const crowd = (geo: THREE.BufferGeometry, colors: number[], rough: number): THREE.InstancedMesh => {
+  // One instanced mesh per stand and part. Seen from 20-40 m a head is 5-10 pixels, so the shapes are low-poly
+  // (about 80 triangles a person; 192 before the review: 950k triangles for the stadium's 4,600 people).
+  const groups: THREE.InstancedMesh[][] = [[], [], [], []];
+  const crowd = (geo: THREE.BufferGeometry, colors: number[], rough: number): void => {
     const mat = new THREE.MeshStandardNodeMaterial({ roughness: rough });
     mat.positionNode = sway(1);
-    const im = new THREE.InstancedMesh(geo, mat, people.length);
     const c = new THREE.Color();
-    people.forEach((m, i) => {
-      im.setMatrixAt(i, m);
-      // Each a little different, and a little in the shade of the people round them.
-      im.setColorAt(i, c.setHex(colors[Math.floor(rnd() * colors.length)]!).offsetHSL(0, -0.05, (rnd() - 0.6) * 0.06).multiplyScalar(STAND_LIGHT));
-    });
-    root.add(im);
-    return im;
+    for (let bi = 0; bi < people.length; bi++) {
+      const list = people[bi]!;
+      const im = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((m, i) => {
+        im.setMatrixAt(i, m);
+        // Each a little different, and a little in the shade of the people round them.
+        im.setColorAt(i, c.setHex(colors[Math.floor(rnd() * colors.length)]!).offsetHSL(0, -0.05, (rnd() - 0.6) * 0.06).multiplyScalar(STAND_LIGHT));
+      });
+      im.computeBoundingSphere();
+      root.add(im);
+      groups[bi]!.push(im);
+    }
   };
-  const torso = new THREE.CylinderGeometry(0.16, 0.2, 0.62, 7);
+  const torso = new THREE.CylinderGeometry(0.16, 0.2, 0.62, 6, 1, true);
   torso.translate(0, 0.72, 0.12);
   const thighs = new THREE.BoxGeometry(0.34, 0.14, 0.42);
   thighs.translate(0, 0.47, -0.08);
   const body = mergeGeometries([torso, thighs]);
   crowd(body, SHIRT, 0.85);
-  const head = new THREE.IcosahedronGeometry(0.105, 1);
+  const head = new THREE.IcosahedronGeometry(0.105, 0);
   head.scale(0.9, 1.1, 1);
   head.translate(0, 1.15, 0.12);
   crowd(head, SKIN, 0.6);
-  const hair = new THREE.SphereGeometry(0.112, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  const hair = new THREE.SphereGeometry(0.112, 6, 3, 0, Math.PI * 2, 0, Math.PI * 0.55);
   hair.translate(0, 1.17, 0.13);
   crowd(hair, HAIR, 0.8);
 
@@ -238,7 +247,17 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   root.add(sideMesh);
 
   return {
-    update(_t: number, ex: number): void { excite.value = ex; },
+    update(_t: number, ex: number, cam?: THREE.Vector3): void {
+      excite.value = ex;
+      // A stand whose front row the camera is behind (along its normal) is behind the camera: out of shot, except
+      // in passing during the change-of-ends swing.
+      if (cam) for (let bi = 0; bi < blocks.length; bi++) {
+        const bl = blocks[bi]!;
+        const show = cam.x * bl.n.x + cam.z * bl.n.z < bl.at;
+        const g = groups[bi]!;
+        for (let k = 0; k < g.length; k++) g[k]!.visible = show;
+      }
+    },
   };
 }
 

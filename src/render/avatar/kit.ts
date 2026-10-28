@@ -7,8 +7,9 @@
 import * as THREE from 'three/webgpu';
 import {
   attribute, positionGeometry, positionLocal, uniform, vec3, float, mix, smoothstep, color,
-  mx_noise_float, bumpMap,
+  mx_noise_float,
 } from 'three/tsl';
+import { heightBump } from '../bump.ts';
 import type { PlayerAsset } from './asset.ts';
 
 export const R_SHIRT = 0, R_SHORTS = 1, R_SKIN = 2, R_HAIR = 3, R_SOCK = 4, R_SHOE = 5;
@@ -105,7 +106,17 @@ export function kitRegions(asset: PlayerAsset): { region: Float32Array; frame: K
     shortsHemY: L.up.y + (L.knee.y - L.up.y) * 0.58, armSpan: Math.abs(L.arm.x - Rr.arm.x), floorY: Infinity,
   };
   for (let i = 1; i < pos.length; i += 3) frame.floorY = Math.min(frame.floorY, pos[i]!);
-  g.setAttribute('region', new THREE.BufferAttribute(region, 1));
+  // One weight per region (shirt, shorts, skin | hair, socks, shoes), not one region code: interpolated across a
+  // triangle, a code blends through the codes between (skin to sock passed through hair: a dark ring at the sock
+  // tops), while weights blend only between the regions the triangle's corners have.
+  const ra = new Float32Array(n * 3), rb = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const r = region[i]!;
+    if (r < 3) ra[i * 3 + r] = 1;
+    else rb[i * 3 + r - 3] = 1;
+  }
+  g.setAttribute('kitRegA', new THREE.BufferAttribute(ra, 3));
+  g.setAttribute('kitRegB', new THREE.BufferAttribute(rb, 3));
   REGIONS.set(asset, region);
   FRAMES.set(asset, frame);
   return { region, frame };
@@ -113,20 +124,20 @@ export function kitRegions(asset: PlayerAsset): { region: Float32Array; frame: K
 
 /** Uniforms one player's material reads each frame. */
 export interface KitState {
-  /** 0 dry .. 1 soaked (the match's length and the player's effort). */
-  sweat: { value: number };
+  /** x: 0 dry .. 1 soaked (the match's length and the player's effort). A vector, so writing it doesn't box a double. */
+  sweat: { value: THREE.Vector2 };
   /** How far the hems lag the body (m, model space). */
   lag: { value: THREE.Vector3 };
 }
 
 export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THREE.MeshStandardNodeMaterial; state: KitState } {
   const { frame } = kitRegions(asset);
-  const reg = attribute<'float'>('region', 'float');
+  const ra = attribute<'vec3'>('kitRegA', 'vec3'), rb = attribute<'vec3'>('kitRegB', 'vec3');
   const p = positionGeometry; // bind pose: patterns stay on the body as it moves
-  const sweat = uniform(0);
+  const sweatU = uniform(new THREE.Vector2());
+  const sweat = sweatU.x;
   const lag = uniform(new THREE.Vector3());
-  const is = (r: number): THREE.Node<'float'> => float(1).sub(smoothstep(0.25, 0.5, reg.sub(r).abs()));
-  const shirtW = is(R_SHIRT), shortsW = is(R_SHORTS), skinW = is(R_SKIN), hairW = is(R_HAIR), sockW = is(R_SOCK), shoeW = is(R_SHOE);
+  const shirtW = ra.x, shortsW = ra.y, skinW = ra.z, hairW = rb.x, sockW = rb.y, shoeW = rb.z;
   const fabric = shirtW.add(shortsW).add(sockW);
 
   const aux = attribute<'vec2'>('kitAux', 'vec2');
@@ -135,8 +146,9 @@ export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THRE
   const shirtC = mix(color(look.shirt), color(look.trim), trimW);
 
   // Wet patches spread out from where sweat shows first as the level rises; ragged edges from noise on the body.
+  // Dry shirt at sweat 0 (the patch centre, 1, plus the noise's most, 0.22, stays under the threshold).
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
-  const wet = smoothstep(0.02, 0.12, aux.y.add(blotch).sub(float(1).sub(sweat.mul(0.7)))).mul(shirtW);
+  const wet = smoothstep(0.02, 0.12, aux.y.add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
 
   const skinC = color(look.skin);
   // Shoes: a gum sole round the bottom, a stripe in the shirt's colour along the side, the upper.
@@ -157,15 +169,15 @@ export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THRE
     .add(skinW.mul(mix(float(0.62), float(0.34), sweat)))
     .add(hairW.mul(0.7)).add(shoeW.mul(0.45));
   m.metalnessNode = float(0);
-  // Folds: soft horizontal creases on the shirt and shorts, fixed to the body.
+  // Folds: soft horizontal creases on the shirt and shorts, fixed to the body, about 2 mm deep.
   const folds = mx_noise_float(vec3(p.x.mul(16), p.y.mul(44), p.z.mul(16))).mul(0.6)
     .add(mx_noise_float(p.mul(60)).mul(0.15));
-  m.normalNode = bumpMap(folds.mul(fabric), float(0.0025));
+  m.normalNode = heightBump(folds.mul(fabric).mul(0.0025));
   // Hems lag the body: the shirt from the chest down to its hem, the shorts' legs, by `lag`.
   const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
   const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);
   m.positionNode = positionLocal.add(lag.mul(shirtSway.add(shortsSway)));
-  return { material: m, state: { sweat, lag } };
+  return { material: m, state: { sweat: sweatU, lag } };
 }
 
 /** Kits by player number (team + 2 * slot): partners in the same shirt, each team its own; skins and hair vary. */

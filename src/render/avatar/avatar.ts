@@ -154,14 +154,15 @@ type Elbow = HingeLimb & { dir: THREE.Vector3 };
 const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
 /**
  * Cloth lag (kit.ts): spring stiffness (1/s², about 2 Hz, a shirt hem's swing) and damping (1/s, ζ ≈ 0.6) of the
- * point the hems follow, and the most they trail (m). Sweat: fully wet after SWEAT_T s of play or SWEAT_M m run (a
- * set's worth of either; Miralles 2025 measure about 2 km an hour of match play).
+ * point the hems follow, and the most they trail (m). Sweat: the time term and the distance term add; at the AI's
+ * pace (about 4.4 km an hour of play, more than the 2 km/h Miralles 2025 measured for pros, since the AI shuffles more)
+ * a shirt is soaked after about 40 minutes, a set. Dry at the start.
  */
 const CLOTH_K = 160;
 const CLOTH_C = 15;
 const CLOTH_MAX = 0.05;
-const SWEAT_T = 2400;
-const SWEAT_M = 5000;
+const SWEAT_T = 4800;
+const SWEAT_M = 6000;
 
 /**
  * An elbow's hinge, measured from the clips: the axis (forearm frame) of the forearm's turn from its rest rotation,
@@ -850,7 +851,7 @@ export class Avatar {
     lag.x = ox * c - oz * s;
     lag.y = oy;
     lag.z = ox * s + oz * c;
-    k.sweat.value = Avatar.sweatAt >= 0 ? Avatar.sweatAt : Math.min(1, 0.06 + sim.time / SWEAT_T + this.ran / SWEAT_M);
+    k.sweat.value.x = Avatar.sweatAt >= 0 ? Avatar.sweatAt : Math.min(1, sim.time / SWEAT_T + this.ran / SWEAT_M);
   }
 
   /** Switch the racket hand (the sim's `handed`): racket, grip, arms and stroke keys all follow. */

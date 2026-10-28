@@ -800,10 +800,12 @@ better-looking, more realistic court. Every decision and the reason for it goes 
 ## Phase 5: visual realism (photo-match)
 - **Photo-match mode** (`?photo=<id>`, `src/game/photoMatch.ts`, `tools/photo-solve.ts`, `reference/photos.json`):
   11 public reference photos (Wikimedia Commons, CC0 / CC BY / CC BY-SA; `reference/SOURCES.md`) of indoor and
-  outdoor courts by day and night, kept out of git and out of the build. For each, court points marked by hand
-  give the camera (position, yaw, pitch, roll, vertical FOV and one radial distortion term) by Levenberg-Marquardt
-  over many starts; arena-wide-2 fits to 2.4 px RMS and its service lines, which were not fitted, land on the
-  photo's. The game renders through the solved camera with the photo over it: a wipe (drag or [ ]), a blend, the
+  outdoor courts by day and night; the images are kept out of git and out of the build (their list,
+  `reference/photos.json`, and `SOURCES.md` are committed). Court points marked by hand give a photo's camera
+  (position, yaw, pitch, roll, vertical FOV and one radial distortion term) by Levenberg-Marquardt over many
+  starts; so far only arena-wide-2 has marked points and a solved camera (2.4 px RMS; its service lines, which were
+  not fitted, land on the photo's). The other ten are compared by eye through the broadcast camera at the photo's
+  shape. The game renders through the solved camera with the photo over it: a wipe (drag or [ ]), a blend, the
   photo alone, the game alone (O cycles), and `&lines=1` draws the solve.
 - **Arenas** (`data/arenas.json`, `src/render/arena/`, `?arena=stadium|hall|club-day|club-night`, default
   stadium): a stadium with stands on four sides, a seated crowd that sways as rallies grow, generic boards
@@ -828,8 +830,9 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   skin elsewhere); partners wear the same kit, each has their own skin and hair. Collar and sleeve hems in the
   kit's trim colour (side panels were tried and read as blotches). Sweat: wet patches grow from where shirts
   darken first (the middle of the chest, the spine, under the arms, the small of the back) with the match's
-  length (fully wet after 40 min) and the metres run (5 km), and skin turns shinier; the darkening is 30% (42%
-  read as camouflage on the red shirt). Folds: a bump pattern fixed to the body. Hems lag the body: a point on a
+  length and the metres run (the two add: soaked after about 40 minutes at the AI's pace; dry at the start), and
+  skin turns shinier; the darkening is 30% (42% read as camouflage on the red shirt). Folds: about 2 mm of bump
+  fixed to the body (`render/bump.ts`; see the review fixes). Hems lag the body: a point on a
   spring (about 2 Hz, damped against the body's own velocity, so a steady run has no lag) chases the hips, and the
   shirt from the chest down and the shorts' legs trail by its offset, at most 5 cm.
 - **Ball** (`src/render/ballLook.ts`): optic-yellow felt with sheen and fuzz, the seam's dog-bone curve as a pale
@@ -856,3 +859,29 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   Generic: "BDJ OPEN", no real tour's names or look.
 - **Trees**: crowns of nine jittered clumps lit with normals out from the crown's centre (foliage scatters light
   as a volume), darker underneath and inside; they had been three spheres.
+- **Review fixes** (verifier and fresh-eyes review, 2026-10-28):
+  - The timing rings are sized in radians of view and the 26° lens had made them 1.7x bigger on screen than the
+    ones the owner approved: they are scaled by the lens now (`lensScale`), the same size in pixels as before.
+    Their colours shifted a little with the change from AgX to Neutral tone mapping (OPEN_QUESTIONS.md).
+  - Lobs left the top of the frame (38 of 154 rallies over 6 AI matches, against 11 with the old camera): the
+    camera tilts up with the ball, as the operator does, keeping it 2.5° below the top edge (up to 14°, 0.2 s lag,
+    easing back at half that rate).
+  - The stadium crowd cost about 950k triangles: people are low-poly now (about 80 triangles each; a head is 5-10
+    pixels from the camera) and grouped by stand, and the stand behind the camera is not drawn.
+  - The change-of-ends swing went through the stadium's back rows: it goes round an ellipse (20.5 m at the side)
+    and climbs 2.5 m at its middle.
+  - `bumpMap()` only works on textures (it offsets their UVs to difference the height), so the kit's folds and
+    the ball's fuzz did nothing: `render/bump.ts` differentiates the height in screen space (Mikkelsen 2010).
+  - The kit's region code blended through the codes between two regions (a dark ring at each sock top, sleeves
+    through the shorts' colour, black seams where every weight was 0): one weight per region now.
+  - TV graphics: a double fault (an `E_FAULT` with b = 2, no `E_POINT`) had no strap and was never counted; a
+    receiver volleying the serve was shown as a double fault. Both fixed; points won and won on serve now count
+    double faults.
+  - Writing a number to a scalar uniform's `.value` boxes it (one per avatar and the ball per frame): sweat and the
+    seam blur are a vector uniform's `.x`.
+  - Sweat: the time and distance terms add, so the shirt was soaked in about 25 minutes, and wet spots showed at
+    the start; now dry at 0 and soaked after about a set at the AI's pace.
+  - The night arena's floodlit lines (4-6 linear) straddled its bloom threshold of 5: raised to 7.5 (the lenses,
+    13, still bloom). The hit sound's and smash kick's distance law still had the old camera's distances (the far
+    end got none). The crowd's excitement decays by time, not by frame. A photo without a solved camera keeps the
+    photo's shape; the solver's starting pitch looked up; the ball lab's sky was cut by a 200 m far plane.

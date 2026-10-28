@@ -215,6 +215,11 @@ export class Game {
       const { w, h } = this.photo.fit();
       this.renderer.setSize(w, h, false);
       this.photo.fit();
+      // A photo with no solved camera keeps the broadcast camera, at the photo's shape.
+      if (!this.photo.entry.cam) {
+        this.cam.camera.aspect = w / h;
+        this.cam.camera.updateProjectionMatrix();
+      }
       return;
     }
     this.renderer.setSize(innerWidth, innerHeight);
@@ -224,7 +229,7 @@ export class Game {
 
   /** Compile every pipeline before the first point so nothing compiles mid-rally. */
   async warmUp(): Promise<void> {
-    this.cam.update(this.sim, this.team, 0, 0);
+    this.cam.update(this.sim, this.team, null, 0);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     await this.renderer.compileAsync(this.scene, this.cam.camera);
     // The post passes' own shaders compile on their first frame: draw one now.
@@ -406,15 +411,15 @@ export class Game {
     // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last
     // frame's camera, which is close enough).
     this.feedback.update(this.sim, who, renderTime, now);
-    this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
+    this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt, cueNow);
     this.hud.update(this.sim, who, now / 1000);
     this.tv?.update(this.sim);
     // The crowd follows the rally: calm between points, rising with a long one.
-    this.arena.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : this.arena.excite * 0.98;
-    this.arena.update(now / 1000);
+    this.arena.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : this.arena.excite * Math.exp(-frameDt / 0.8);
+    this.arena.update(now / 1000, this.cam.camera.position);
 
     this.draw();
     if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);

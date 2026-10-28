@@ -25,7 +25,7 @@ export async function startBallLab(renderer: THREE.WebGPURenderer, hud: HTMLElem
   const net = new NetView(makeNetCloth(world));
   scene.add(net.group);
 
-  const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.05, 200);
+  const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.05, 300);
   camera.position.set(-9, 6, 16);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(1, 1, 7);

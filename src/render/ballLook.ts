@@ -2,7 +2,8 @@
 // spin turning it (seam blurring out when the spin outruns the frame rate, as a camera sees it), and a short
 // stretch along its path for the camera's shutter.
 import * as THREE from 'three/webgpu';
-import { attribute, float, mix, smoothstep, color, uniform, positionGeometry, mx_noise_float, bumpMap } from 'three/tsl';
+import { attribute, float, mix, smoothstep, color, uniform, positionGeometry, mx_noise_float } from 'three/tsl';
+import { heightBump } from './bump.ts';
 
 /**
  * The seam: the classic two-lobed curve on the unit sphere, x = a cos t + b cos 3t, y = a sin t - b sin 3t,
@@ -34,15 +35,16 @@ function seamDistance(g: THREE.BufferGeometry, radius: number): Float32Array {
 
 export interface BallLook {
   mesh: THREE.Mesh;
-  /** 0 the seam reads sharp .. 1 blurred into the felt by spin. */
-  blur: { value: number };
+  /** x: 0 the seam reads sharp .. 1 blurred into the felt by spin (a vector: writing it doesn't box a double). */
+  blur: { value: THREE.Vector2 };
 }
 
 export function makeBall(radius: number): BallLook {
   const geo = new THREE.SphereGeometry(radius, 48, 32);
   geo.setAttribute('seam', new THREE.BufferAttribute(seamDistance(geo, radius), 1));
   const m = new THREE.MeshPhysicalNodeMaterial();
-  const blur = uniform(0);
+  const blurU = uniform(new THREE.Vector2());
+  const blur = blurU.x;
   // A seam about 4 mm wide (the rubber showing between the panels), blurred towards the felt as the ball spins.
   const seam = float(1).sub(smoothstep(0.0016, 0.0026, attribute<'float'>('seam', 'float'))).mul(float(1).sub(blur.mul(0.8)));
   const p = positionGeometry.div(radius);
@@ -55,10 +57,11 @@ export function makeBall(radius: number): BallLook {
   m.sheen = 1;
   m.sheenColor = new THREE.Color(0xf4ffb0);
   m.sheenRoughness = 0.6;
-  m.normalNode = bumpMap(fuzz.mul(float(1).sub(seam)), float(0.0006));
+  // Fuzz about 0.15 mm high on ~1 mm features; none on the seam.
+  m.normalNode = heightBump(fuzz.mul(float(1).sub(seam)).mul(0.00015));
   const mesh = new THREE.Mesh(geo, m);
   mesh.castShadow = true;
-  return { mesh, blur };
+  return { mesh, blur: blurU };
 }
 
 const QT = new THREE.Quaternion();

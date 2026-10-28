@@ -162,6 +162,16 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   so the court fills the frame as TV frames do, not measured. Settled by: one broadcast frame with the court's
   corners marked, solved with `tools/photo-solve.ts` (a still from the owner's own screen is enough; it is not
   shipped).
-- **Sweat timing.** How fast shirts darken (fully after about 40 minutes or 5 km) is a guess; no study gives sweat
-  patch growth in padel. Settled by: photos of the same players early and late in a match.
+- **Sweat timing.** How fast shirts darken (soaked after about a set at the AI's pace) is a guess; no study gives
+  sweat patch growth in padel. Settled by: photos of the same players early and late in a match.
+- **The cues' colours under the new tone mapping.** The timing rings keep their size on screen, but Phase 5's
+  switch from AgX to Neutral tone mapping makes their green and cyan a little brighter and more saturated than
+  the owner saw. Settled by: the owner looking at them (unchanged if they like it; `toneMapped: false` or the old
+  colours if not).
+- **The 15.5 m camera distance.** The paper's abstract gives the 7.6 m height; the 15.5 m behind the glass is from
+  its body as read earlier and wasn't re-found in the review. The framing check (the near mesh covering the far
+  court to the far service line) holds either way. Settled by: the paper's full text, or a broadcast frame solved.
+- **The ball's seam up close.** The seam's distance is stored per vertex (about 4 mm apart for a 4 mm line), so in
+  a close replay it renders a little beaded. Invisible from the broadcast camera. Settled by: an analytic seam
+  distance in the shader if replays get close-ups (Phase 7/8).
 

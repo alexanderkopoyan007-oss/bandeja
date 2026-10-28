@@ -98,7 +98,7 @@
       "hemi": { "sky": "#1a2233", "ground": "#0c0d0f", "intensity": 0.12 },
       "floods": { "intensity": 95, "angle": 1.15, "penumbra": 0.9, "decay": 1.2, "shadow": 1 }
     },
-    "post": { "bloom": { "strength": 0.5, "radius": 0.5, "threshold": 5 } },
+    "post": { "bloom": { "strength": 0.5, "radius": 0.5, "threshold": 7.5 } },
     "//floods": "Eight heads (two per pole, four poles); spot lights aimed at the court. Only one casts a shadow (cost); the others light without."
   }
 }
