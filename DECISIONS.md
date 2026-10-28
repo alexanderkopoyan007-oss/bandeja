@@ -1264,3 +1264,27 @@ it over the net (FIP 13.l: the hitter's own glass is legal before the ball cross
   your own glass" (the existing hint pill; any shot key plays it).
 - Tests: `tests/sim/contrapared.test.ts` (solver, swing errors: over 80% still go glass-net-court, AI share and
   legality, the human path).
+
+**The racket and the grip** (owner, 2026-10-28: "make the padel rackets look more accurate and fix their grip on it").
+- **Racket** (`render/avatar/racket.ts`, render only; the sim's racket stays `data/rackets.json`): to the FIP limits
+  and the sim's own frame (tip 14.5 cm above the face centre, butt 31 cm below): a round head 26 x 28 cm, 38 mm thick
+  with rounded edges, 52 holes of 13 mm in a hex pattern clear of the rim, the open throat ("heart") between two arms,
+  a 12.5 cm grip in white overgrip wound in a spiral, a flared butt cap, and the wrist cord looped round the wrist. The
+  cosmetic is generic (carbon twill, a glossy rim, one accent stripe). 5.5k triangles, shared geometry and materials.
+  It replaces a cylinder for a head and a stick for a handle.
+- **Grip** (`render/avatar/grip.ts`): the old handle ran along the fingers 30 degrees off them, its axis 3.5 mm off the
+  palm's bone line, so half the handle was inside the palm (84 skin vertices up to 4.5 mm inside it), finger joints
+  were inside the handle, and the wrist hung past the butt. Now it is the continental grip padel is played with: the
+  handle lies across the palm from the heel pad under the little finger to the base of the index finger (53 degrees
+  off the fingers on this hand, the racket at about 127 degrees to the forearm), a handle's radius off the palm's
+  surface as measured from the mesh, the heel pad just over the butt cap, the face turned 35 degrees from square to the
+  palm towards the thumb side. Each finger closes in a power grip's proportions (knuckle : middle : end joint 0.75 : 1 :
+  0.65) until a segment touches the tape, then its far joints go on closing; the thumb is solved onto the side of the
+  handle, part of the way round towards the fingers (a straight reach to the middle finger went through the handle).
+  Solved from the body's own mesh and skeleton at load (8-16 ms a hand), so another body grips as well.
+- Measured (`tests/render/grip.test.ts`, `node tools/anim-check.ts`): 9 skin vertices at most 2.1 mm inside the handle;
+  every finger joint outside it and the fingertips on it; hands mirror to under 2 mm. AI doubles, 3 seeds x 60 s: hand
+  in torso 0.05-0.13% of frames (was 0.7-2.1%), pops 7.5-12 a minute (was 15-22), racket to ball p50 8-9 mm, p90 2.6-3.6
+  cm, racket in body unchanged (0.1-0.2%).
+- Captures: a hidden tab runs no animation frames, so three's node frame never advanced and the post-processing's
+  scene pass kept its first render; `Game.renderOnce` advances it (captures with bloom on work again).

@@ -12,6 +12,8 @@ import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { hingeIK, IK_BEND, IK_SOFT, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import { fitCapsules, RACKET_PTS } from './capsules.ts';
+import { makeRacketModel, makeWristCord } from './racket.ts';
+import { solveGrip } from './grip.ts';
 import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
@@ -427,15 +429,6 @@ const JOINT_LIMITS: Record<string, number> = {
   LeftFoot: 1200, RightFoot: 1200, LeftToeBase: 1200, RightToeBase: 1200,
 };
 
-/** Fingers of the racket hand ('Right' or 'Left' in front), curled round the grip (rad, per joint). */
-const GRIP: Array<[string, number]> = [
-  ['HandIndex1', 0.95], ['HandIndex2', 1.2], ['HandIndex3', 0.8],
-  ['HandMiddle1', 1.1], ['HandMiddle2', 1.3], ['HandMiddle3', 0.85],
-  ['HandRing1', 1.2], ['HandRing2', 1.3], ['HandRing3', 0.85],
-  ['HandPinky1', 1.3], ['HandPinky2', 1.25], ['HandPinky3', 0.85],
-  ['HandThumb1', 0.3], ['HandThumb2', 0.45], ['HandThumb3', 0.35],
-];
-
 /** How one hand holds the racket. */
 interface Grip {
   hand: THREE.Bone;
@@ -446,26 +439,12 @@ interface Grip {
   /** Gripping fingers: bone index and the local rotation (x, y, z, w) that curls it round the handle. */
   bones: number[];
   quats: Float32Array;
+  /** The wrist cord for this hand, in the racket's frame. */
+  cord: THREE.Mesh;
 }
 
 export function makeRacket(): THREE.Group {
-  const racket = new THREE.Group();
-  const face = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.13, 0.13, 0.03, 24),
-    new THREE.MeshStandardMaterial({ color: 0x1d1f24, roughness: 0.4, metalness: 0.2 }),
-  );
-  face.rotation.x = Math.PI / 2;
-  face.scale.set(1, 1, 1.12);
-  face.castShadow = true;
-  racket.add(face);
-  const handle = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.016, 0.016, 0.2, 10),
-    new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.6 }),
-  );
-  handle.position.y = -0.24;
-  handle.castShadow = true;
-  racket.add(handle);
-  return racket;
+  return makeRacketModel();
 }
 
 export class Avatar {
@@ -830,7 +809,7 @@ export class Avatar {
     const rw = asset.restWorld;
     const bp = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(rw[asset.bone(n)]!);
     this.armLen = bp('RightArm').distanceTo(bp('RightForeArm')) + bp('RightForeArm').distanceTo(bp('RightHand'));
-    this.grips = [this.makeGrip(asset, 'Right', 1), this.makeGrip(asset, 'Left', -1)];
+    this.grips = [this.makeGrip(asset, 'Right'), this.makeGrip(asset, 'Left')];
     const lim = new Float64Array(this.nb);
     this.inertiaSkip = new Uint8Array(this.nb);
     for (let i = 0; i < this.nb; i++) {
@@ -854,46 +833,13 @@ export class Avatar {
     this.setHanded(1);
   }
 
-  /** The grip for one hand; `hs` is +1 for the right, -1 for the left (the mirror image). */
-  private makeGrip(asset: PlayerAsset, side: string, hs: number): Grip {
-    // The hand's frame at rest (T-pose): fingers F, thumb side T, palm normal N.
-    const rw = asset.restWorld;
-    const at = (n: string, out: THREE.Vector3): THREE.Vector3 => out.setFromMatrixPosition(rw[asset.bone(side + n)]!);
-    const hand = rw[asset.bone(side + 'Hand')]!;
-    const ph = at('Hand', new THREE.Vector3());
-    const F = at('HandMiddle1', new THREE.Vector3()).sub(ph).normalize();
-    const T = at('HandThumb2', new THREE.Vector3()).sub(ph);
-    T.addScaledVector(F, -T.dot(F)).normalize();
-    const N = new THREE.Vector3().crossVectors(T, F).multiplyScalar(hs).normalize();
-    // Handshake grip: the racket runs on from the hand, tilted 30 degrees to the thumb side, strings parallel
-    // to the palm; the handle sits in the fist just off the palm, gripped 27 cm below the face centre.
-    const A = F.clone().multiplyScalar(Math.cos(0.52)).addScaledVector(T, Math.sin(0.52)).normalize();
-    const Nf = N.clone().addScaledVector(A, -N.dot(A)).normalize();
-    const X = new THREE.Vector3().crossVectors(A, Nf);
-    const origin = ph.clone().addScaledVector(F, 0.085).addScaledVector(N, 0.035).addScaledVector(A, 0.27);
-    const mr = new THREE.Matrix4().makeBasis(X, A, Nf).setPosition(origin);
-    const local = hand.clone().invert().multiply(mr);
-    const g: Grip = {
+  /** The grip for one hand ('Right' or 'Left'), solved from this body's hand (grip.ts). */
+  private makeGrip(asset: PlayerAsset, side: string): Grip {
+    const s = solveGrip(asset, side);
+    return {
       hand: this.bones[asset.bone(side + 'Hand')]!,
-      pos: new THREE.Vector3(), q: new THREE.Quaternion(), qInv: new THREE.Quaternion(),
-      bones: [], quats: new Float32Array(GRIP.length * 4),
+      pos: s.pos, q: s.q, qInv: s.q.clone().invert(), bones: s.bones, quats: s.quats, cord: makeWristCord(s.wrist, s.forearm, s.wristR),
     };
-    local.decompose(g.pos, g.q, v1);
-    g.qInv.copy(g.q).invert();
-
-    // Finger curl: about F x N in model space (moves a finger towards the palm; N is already the mirrored palm
-    // normal for the left hand, which turns the axis the way a mirrored rotation needs), in each bone's frame.
-    const K = new THREE.Vector3().crossVectors(F, N).normalize();
-    GRIP.forEach(([name, ang], k) => {
-      const i = asset.bone(side + name);
-      const restW = new THREE.Quaternion();
-      rw[i]!.decompose(v1, restW, v2);
-      const axis = K.clone().applyQuaternion(restW.invert());
-      const q = new THREE.Quaternion().fromArray(asset.bones[i]!.quat).multiply(new THREE.Quaternion().setFromAxisAngle(axis, ang));
-      g.bones.push(i);
-      q.toArray(g.quats, k * 4);
-    });
-    return g;
   }
 
   /**
@@ -965,6 +911,8 @@ export class Avatar {
     this.addrKey.yaw = ak.yaw;
     this.addrKey.off.copy(ak.off);
     this.offPole = h > 0 ? OFF_POLE : OFF_POLE_LEFT;
+    for (const g of this.grips) this.racket.remove(g.cord);
+    this.racket.add(this.grip.cord);
     this.grip.hand.add(this.racket);
     this.racket.position.copy(this.grip.pos);
     this.racket.quaternion.copy(this.grip.q);

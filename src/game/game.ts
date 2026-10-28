@@ -491,6 +491,10 @@ export class Game {
   /** Draw the current moment once, outside the animation loop (captures). */
   renderOnce(): void {
     for (const p of this.players) p.avatar?.refreshSkin();
+    // A frame of three's own: its animation loop advances the node frame, and passes that update once a frame (the
+    // post-processing's scene pass) kept showing their first render in a hidden tab, where no animation frame runs.
+    const r = this.renderer as unknown as { _nodes?: { nodeFrame: { update(): void; frameId: number } }; info: { frame: number } };
+    if (r._nodes) { r._nodes.nodeFrame.update(); r.info.frame = r._nodes.nodeFrame.frameId; }
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     this.draw();
   }
