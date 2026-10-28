@@ -1,7 +1,9 @@
 # Phase 7: rules and QA report
 
-What the QA army found in the game, what was fixed, and what is left. Every fix has a regression test in
-`tests/qa/regressions.test.ts`; the commands that reproduce each finding are in the army reports beside this file.
+What the QA army found in the game, what was fixed, and what is left. Every fix has a regression test: the rules and
+physics fixes in `tests/qa/regressions.test.ts`, the animation fixes in `tests/qa/animRegressions.test.ts` (the four
+army configurations that showed them worst). Each test was checked to fail on the code from before its fix. The
+commands that reproduce each finding are in the army reports beside this file.
 
 ## How the game was tested
 
@@ -40,7 +42,7 @@ What the QA army found in the game, what was fixed, and what is left. Every fix 
 | 2 | A dropped ball nobody swung at, bouncing twice, was a fault. It isn't a serve at all (6.6). | referee oracle | The server picks it up and drops it again (`retoss`). |
 | 3 | A serve off the net that then touched a player (receiver or server's partner) wasn't a let (9.1.b). | referee oracle | `onBody` replays it. |
 | 4 | A net cord rolling over the tape stayed on the hitter's side for up to 20 ticks past the net. | through-net check | The side changes when the centre passes over the cable's centre line. |
-| 5 | The server's partner could hit the ball the server had dropped: the point was played with no serve. | referee oracle (13.1.q) | Before the serve only the server plays the ball. |
+| 5 | The server's partner could hit the ball the server had dropped: the point was played with no serve. | referee oracle (no FIP rule names it; 13.1.o, "the ball may only be played by one member of the team", is the nearest; the oracle filed these points as the server's double fault, 13.1.q) | Before the serve only the server plays the ball. |
 | 6 | **The corner.** A ball 2.7 cm off the floor at the opponents' glass, on the floor 8 ms later, lost the point as "hit the wall before bouncing"; 86 calls in 200 matches. FIP 14.1.i: a ball in "the angle where the wall joins the ground" is good. Serves into the box's corner with the side glass too. | referee oracle | A glass touch with the ball's centre at most 6 cm up counts as the bounce (`Rally.cornerY`); the floor touch right after it is the same bounce. |
 | 7 | A serve whose centre was 3-5 cm past the net's plane when it met the tape was played on instead of replayed (9.1.a). | referee oracle | A net touch before the bounce counts on either side of the plane. |
 | 8 | In a one-set match, "final set: no tie-break" applied (there is no final set) while "final set: match tie-break" didn't. | score oracle | The final-set rule needs a deciding set (`setsToWin >= 2`). The menu only offers the normal final set today. |
@@ -52,6 +54,7 @@ What the QA army found in the game, what was fixed, and what is left. Every fix 
 |---|---|---|---|
 | 10 | A smash driven into the top of the net climbed out of its pocket past the cable's centre line and changed sides while the netting still held it. | through-net check | The ball's side doesn't change while the netting grips it. |
 | 11 | **A ball through the net.** A 4.6 m/s wind billowed the bottom of the sleeping net 12 cm out. A drive at 0.32 m and 14.5 m/s was already past the netting when it came within the 4 cm a sleeping net was coupled at, and went through. 8 of 64 such drives in the test. | through-net check | The ball is coupled to a sleeping net within the net's measured bulge (`NetCloth.bulge`). |
+| 20 | A ball falling beside the side fence's 3 m centre section crossed into the 4 m end section right at the step's top corner and went 3.2 cm into the side wall for a tick before bouncing. The corner is the end of two edge lines (the step, the 4 m top) and neither line's test covers its end point; the face isn't there before the step. | ball-in-wall check (run r3) | The edges' end points are contacts too (`Court.corners`, `Ball.tryCorners`). |
 
 ### Animation
 
@@ -74,6 +77,11 @@ What the QA army found in the game, what was fixed, and what is left. Every fix 
   and over the cable; it now takes the crossing where the side changes if that is above the tape.
 - The net's settled-shape cache was keyed on the air's density and never bounded: 2000 climates grew the army's
   heap 9 KB a match. It keeps 16 now.
+- The spin check was a flat 900 rad/s, which a ball leaving a gripping bounce passes legitimately. It now flags spin
+  whose rim speed is more than 1.5 times the ball's speed plus 8 m/s, or over 1600 rad/s.
+- The low side-flip check read a crossing just above the tape (a net cord) as one under it; a change of side within
+  20 ms of a crossing at the tape's height or higher is skipped.
+- The rally's state and the serve's drop point (new in Phase 7) were not in `MatchSim.hash()`; they are now.
 
 ## Not fixed, not built
 
@@ -86,9 +94,10 @@ What the QA army found in the game, what was fixed, and what is left. Every fix 
   correct return; before it, it is out).
 - **Monkey animation.** The 7 configurations still failing the animation thresholds all have a monkey: 3 on pops
   per minute (31-44, limit 30), 3 on the racket in the body (1.5-2.4%, limit 1%), 3 on the serve hand in the torso
-  (0.6%, limit 0.5%), 1 on serve pops. Monkeys swing about three times as often as the AI (46 swings against 16 in
-  the same 90 s) and somewhat more jerkily (1.2-2.7 pops a swing against the AI's 0.5-1.9), so per-minute limits
-  set for AI play don't fit them; no AI-only configuration fails.
+  (0.6%, limit 0.5%), 1 on serve pops. Monkeys swing far more often than the AI (46 swings against 16 in the same
+  90 s in configuration 59). Per swing the two overlap: across six configurations monkeys made 1.1-4.0 pops a swing
+  and AI players 0.5-4.8. So the per-minute limits, set for AI play, mostly count the monkeys' extra swings. No
+  AI-only configuration fails.
 - **Allocation with four bodies** is 8-9 minor GCs per 100k ticks (budget 10; 7-8 before Phase 7; CLAUDE.md said 2
   at Phase 3). Phase 8.
 
@@ -96,6 +105,8 @@ What the QA army found in the game, what was fixed, and what is left. Every fix 
 
 | Run | Code | Result |
 |---|---|---|
-| Match army `p7-r1` ([report](army-p7-r1.md)) | before fixes 6-11 | 2000 matches, 549 h of play, 164,873 points, 17.9 min on 7 workers: 39 matches with a problem. 4 were one-set "no tie-break" matches whose score diverged and then disagreed on everything after (#8); 27 the through-net check (#10 and #11, and the checker's own two mistakes); the rest #6, #7, #9, #11. No crash, no ball stuck, no match that didn't end. |
-| Animation army `a1` → `a10` ([a1](anim-army-a1.md), [a10](anim-army-a10.md)) | before #12 → final | 60 configurations × 90 s. Pops 21.9 → 14.7 a player-minute, serve pops 8.9 → 5.8, fastest one-frame turn 77° → 46°, racket to ball at contact p50 0.5 → 0.7 cm and p90 2.7 → 3.4 cm (the soft reach), contact lag p50 4.4 → 5.1 ms. Failing configurations 18 → 7, all 7 with a monkey. |
-| Browser soak | final | 20 min of AI doubles in Chrome at 1080p, vsync: 71,975 frames, 1 over 20 ms, none over 50 ms; JS heap after GC 14.7 → 15.5 MB (0.019 MB a minute after warm-up), DOM nodes 151 → 153, three's geometries 38 and textures 28 throughout; no errors; 1.4 s from load to playing. |
+| Match army, first run (200 matches, seed0 1; not kept) | before #6 and #7 | 86 corner calls (59 + 27) and 6 9.1.a disagreements. |
+| Match army `p7-r1` ([report](army-p7-r1.md)) | before #8-11 | 2000 matches (seed0 1), 549 h of play, 164,873 points, 17.9 min on 7 workers: 39 matches with a problem. 5 were one-set "no tie-break" matches whose score diverged and then disagreed on everything after (#8: 206, 459, 1018, 1991, 1997); 27 the through-net check (#10, #11 in 276 and 963, and the checker's own two mistakes); 7 monkey servers dropping inside the line (#9: some filed by the oracle as double faults). No corner or 9.1.a disagreements were left. No crash, no ball stuck, no match that didn't end. |
+| Match army `p7-r3` ([report](army-p7-r3.md)) | after #11, before #20 and the checker fixes | 2000 new matches (seed0 2), 535 h of play, 160,232 points, 29.1 min on 6 workers: 5 matches with a problem. 4 were the checker's two mistakes (spin in 230 and 907, the low side flip in 460 and 1273), clean on the fixed checker; 1 was #20 (match 1463). No rules disagreement, no crash, no ball stuck, no match that didn't end; the heap after each match 12.7 → 14.3 MB (max 14.6). |
+| Animation army `a1` → `a10` ([a1](anim-army-a1.md), [a10](anim-army-a10.md)) | before #12 → final | 60 configurations × 90 s; means across the 60. Pops 21.9 → 14.7 a player-minute, serve pops 8.9 → 5.8, each configuration's fastest one-frame turn 77° → 46° (the largest in any configuration 137° → 62°), racket to ball at contact p50 0.5 → 0.7 cm and p90 2.7 → 3.4 cm (the soft reach), contact lag p50 4.4 → 5.1 ms. Failing configurations 18 → 7, all 7 with a monkey. |
+| Browser soak ([log](soak-p7.md)) | final | 20 min of AI doubles in Chrome at 1080p, vsync: 71,975 frames, 1 over 20 ms, none over 50 ms; JS heap after GC 14.7 → 15.5 MB (0.019 MB a minute after warm-up), DOM nodes 151 → 153, three's geometries 38 and textures 28 throughout; no errors; 1.4 s from load to playing. |

@@ -32,6 +32,8 @@ export const EDGE_X = 0;
 export const EDGE_Y = 1;
 export const EDGE_Z = 2;
 export const EDGE_STRIDE = 8;
+/** Court.corners: x, y, z, surface kind, wall. */
+export const CORNER_STRIDE = 5;
 
 export const WALL_BACK_NEAR = 0; // z = +halfL
 export const WALL_BACK_FAR = 1; // z = -halfL
@@ -77,6 +79,12 @@ export class Court {
    * panel's frame or a door frame) and the wall.
    */
   readonly edges: number[];
+  /**
+   * The edges' end points (wall-top corners, the top of the step where the enclosure rises from 3 to 4 m, door-frame
+   * corners), each once: a ball coming down onto one meets neither edge's line within its length nor a face (QA
+   * army r3: a ball dropping onto the step's top corner went 3 cm into the side wall for a tick). CORNER_STRIDE each.
+   */
+  readonly corners: number[];
 
   constructor(def: CourtDef) {
     this.def = def;
@@ -92,6 +100,8 @@ export class Court {
     this.buildSide(WALL_SIDE_RIGHT);
     this.edges = [];
     this.buildEdges();
+    this.corners = [];
+    this.buildCorners();
   }
 
   /** Height of the top of the net at lateral position x (parabolic sag between the posts). */
@@ -260,6 +270,25 @@ export class Court {
           const lo = o.z0 > 0 ? sign * o.z0 : 0;
           this.edge(EDGE_Z, x, o.height, Math.min(lo, z1), Math.max(lo, z1), SURF_MESH, wall);
         }
+      }
+    }
+  }
+
+  private buildCorners(): void {
+    const E = this.edges;
+    const K = this.corners;
+    const add = (x: number, y: number, z: number, kind: number, wall: number): void => {
+      for (let j = 0; j < K.length; j += CORNER_STRIDE) {
+        if (Math.abs(K[j]! - x) < 1e-3 && Math.abs(K[j + 1]! - y) < 1e-3 && Math.abs(K[j + 2]! - z) < 1e-3) return;
+      }
+      K.push(x, y, z, kind, wall);
+    };
+    for (let i = 0; i < E.length; i += EDGE_STRIDE) {
+      const axis = E[i]!, a = E[i + 1]!, b = E[i + 2]!, kind = E[i + 5]!, wall = E[i + 6]!;
+      for (const al of [E[i + 3]!, E[i + 4]!]) {
+        if (axis === EDGE_X) add(al, a, b, kind, wall);
+        else if (axis === EDGE_Y) add(a, al, b, kind, wall);
+        else add(a, b, al, kind, wall);
       }
     }
   }

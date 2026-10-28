@@ -64,6 +64,11 @@ const FLOOR_Y = 0.004; // twine radius: knots rest on the floor here
 const restCache = new Map<string, Float64Array>();
 const REST_CACHE_MAX = 16;
 
+/** How many settled shapes are kept (the QA's heap check and its test). */
+export function restCacheSize(): number {
+  return restCache.size;
+}
+
 export class NetCloth {
   readonly spec: NetClothSpec;
   readonly cols: number;

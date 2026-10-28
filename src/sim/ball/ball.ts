@@ -6,7 +6,7 @@ import { Rng } from '../core/rng.ts';
 import { GRAVITY, DT } from '../core/constants.ts';
 import { abs, clamp, cos, exp, expF, FIO, max, min, pow, sin, sqrt, PI } from '../core/smath.ts';
 import {
-  Court, SURF_GLASS, SURF_MESH, SURF_OPEN, SURF_FLOOR, SURF_NET, EDGE_X, EDGE_Y, EDGE_STRIDE,
+  Court, SURF_GLASS, SURF_MESH, SURF_OPEN, SURF_FLOOR, SURF_NET, EDGE_X, EDGE_Y, EDGE_STRIDE, CORNER_STRIDE,
   WALL_BACK_NEAR, WALL_BACK_FAR, WALL_SIDE_LEFT, WALL_SIDE_RIGHT, type ZoneHit,
 } from '../court/court.ts';
 import type { NetCloth } from '../court/netCloth.ts';
@@ -647,7 +647,10 @@ export class Ball {
       this.tryPost(c, p);
       // Wall tops and door frames, near the walls only.
       const m = 0.5;
-      if (abs(p.x) > c.halfW - m || abs(p.z) > c.halfL - m || abs(q.x) > c.halfW - m || abs(q.z) > c.halfL - m) this.tryEdges(c, p);
+      if (abs(p.x) > c.halfW - m || abs(p.z) > c.halfL - m || abs(q.x) > c.halfW - m || abs(q.z) > c.halfL - m) {
+        this.tryEdges(c, p);
+        this.tryCorners(c, p);
+      }
     }
     return this.best <= 1;
   }
@@ -691,6 +694,34 @@ export class Ball {
       if (axis === EDGE_X) n.set(0, ss / l, tt / l);
       else if (axis === EDGE_Y) n.set(ss / l, 0, tt / l);
       else n.set(ss / l, tt / l, 0);
+    }
+  }
+
+  /** The edges' end points (Court.corners): the centre path against a sphere of the ball's radius round each. */
+  private tryCorners(c: Court, p: V3): void {
+    const q = this.pos;
+    const r = this.radius;
+    const K = c.corners;
+    const dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+    const A = dx * dx + dy * dy + dz * dz;
+    if (A < 1e-18) return;
+    for (let i = 0; i < K.length; i += CORNER_STRIDE) {
+      const ox = q.x - K[i]!, oy = q.y - K[i + 1]!, oz = q.z - K[i + 2]!;
+      const C = ox * ox + oy * oy + oz * oz - r * r;
+      if (C <= 0) continue;
+      const B = 2 * (ox * dx + oy * dy + oz * dz);
+      if (B >= 0) continue;
+      const disc = B * B - 4 * A * C;
+      if (disc < 0) continue;
+      const f = (-B - sqrt(disc)) / (2 * A);
+      if (f < 0 || f >= this.best) continue;
+      this.best = f;
+      this.hitKind = HIT_EDGE;
+      this.hitSurface = K[i + 3]!;
+      this.hitWall = K[i + 4]!;
+      const sx = ox + dx * f, sy = oy + dy * f, sz = oz + dz * f;
+      const l = sqrt(sx * sx + sy * sy + sz * sz);
+      n.set(sx / l, sy / l, sz / l);
     }
   }
 
