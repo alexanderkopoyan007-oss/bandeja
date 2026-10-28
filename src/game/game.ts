@@ -247,7 +247,8 @@ export class Game {
     this.kb = new KeyboardInput(window, sig, prefs.keys);
     this.pad = new GamepadInput(window, sig);
     this.pad.rumbleOn = prefs.rumble !== false;
-    this.pad.onStart = () => this.onMenu?.();
+    // Start while a menu is up is the menu's (it resumes from the pause screen).
+    this.pad.onStart = () => { if (!this.menuPaused) this.onMenu?.(); };
     // Sound: the bank renders in a worker from now; audio starts at the first key, click or pad press (browsers
     // allow it only from a gesture). Autoplay too: a click and the AI match has sound.
     const floor = Math.max(0, FLOOR_NAMES.indexOf(opts.match.world?.floor ?? 'turf'));
@@ -360,7 +361,10 @@ export class Game {
     // Pausing drops what was queued (the menu has the keys now); resuming lets go, at this moment, of any swing
     // the sim still holds that no key or button holds any more (KeyboardInput.resume).
     if (on) this.kb.flush();
-    else this.kb.resume(this.simHeld, this.pad.held, performance.now());
+    else {
+      this.kb.resume(this.simHeld, this.pad.held, performance.now());
+      this.pad.consumeStart();
+    }
     this.audio.pause(on || document.hidden);
     this.hudLayer.classList.toggle('paused', on);
   }
