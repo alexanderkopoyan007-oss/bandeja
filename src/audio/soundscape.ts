@@ -296,11 +296,11 @@ export class Soundscape {
     const prev = this.lastSpeed[i]!;
     const decel = (prev - speed) / dt;
     const dot = prev > 0.1 && speed > 0.1 ? (vx * this.lastVx[i]! + vz * this.lastVz[i]!) / (speed * prev) : 1;
-    const cut = prev > 2.5 && dot < 0.65;
-    if ((prev > 2.5 && decel > 7) || cut) {
-      if (t - this.scuffT[i]! > 0.4 || this.scuffT[i]! < 0) {
+    const cut = prev > 3 && dot < 0.6;
+    if ((prev > 3 && decel > 8) || cut) {
+      if (t - this.scuffT[i]! > 0.8 || this.scuffT[i]! < 0) {
         this.scuffT[i] = t;
-        this.out.play('scuff', 0, p.pos.x, 0, p.pos.z, 0.4 + 0.6 * clamp01(cut ? 0.6 : (decel - 7) / 8), 1, 0, BUS_PLAYERS);
+        this.out.play('scuff', 0, p.pos.x, 0, p.pos.z, 0.4 + 0.6 * clamp01(cut ? 0.6 : (decel - 8) / 8), 1, 0, BUS_PLAYERS);
       }
     }
     this.lastSpeed[i] = speed;

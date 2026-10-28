@@ -342,6 +342,14 @@ export class AudioEngine implements AudioSink {
     }
   }
 
+  /** The tab is hidden (the game freezes the sim): stop the audio clock too, and pick up again on return. */
+  pause(hidden: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (hidden && ctx.state === 'running') void ctx.suspend();
+    else if (!hidden && ctx.state === 'suspended') void ctx.resume();
+  }
+
   /** Families the engine has (for tests and the debug overlay). */
   has(family: string): boolean {
     return this.raw.has(family);

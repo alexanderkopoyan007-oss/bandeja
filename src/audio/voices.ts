@@ -4,7 +4,7 @@
 // voice as a glottal source through formants, applause as many clappers); every number with a source says so,
 // the rest is tuning by measurement (tests/audio) and by ear. DECISIONS.md (Phase 6) has the reasoning.
 import {
-  SR, Rng, Biquad, Formant, modal, contactPulse, grains, noiseBurst, removeDC, fadeTail, type Mode,
+  SR, Rng, Biquad, Formant, modal, contactPulse, grains, noiseBurst, removeDC, dcBlock, fadeTail, type Mode,
 } from './dsp.ts';
 
 export const LO_SR = 24000;
@@ -92,7 +92,7 @@ export function racket(rng: Rng, kind: number, power: number, off: number, frame
   const bright = (2600 + 4200 * p) * (1 - 0.45 * q) * (1 - 0.5 * soft);
   noiseBurst(out, rng, at, 0.0003, jit(rng, 0.006 + 0.006 * q, 0.1), 0.3 * loud * (1 - 0.35 * q),
     [Biquad.make('hp', 700, 0.7), Biquad.make('lp', bright, 0.7)]);
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.02);
 }
 
@@ -137,7 +137,7 @@ export function bounce(rng: Rng, floor: number, v: number): Float32Array {
     const lp = Biquad.make('lp', 1700, 0.6);
     lp.process(out);
   }
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.015);
 }
 
@@ -202,7 +202,7 @@ export function glass(rng: Rng, v: number): Float32Array {
   }
   // Below about 40 Hz neither the panel nor a speaker radiates much.
   Biquad.make('hp', 45, 0.7).process(out);
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.12);
 }
 
@@ -247,7 +247,7 @@ export function mesh(rng: Rng, v: number): Float32Array {
     }
     modal(out, t, sub, 0.0006);
   }
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.08);
 }
 
@@ -257,7 +257,7 @@ export const MT_POST = 0, MT_NETPOST = 1;
 /**
  * The ball on steel: a cage post or a frame (square tube, about 80 mm, kind MT_POST) or a net post (MT_NETPOST,
  * smaller). A tube rings as a free bar (mode ratios 1 : 2.756 : 5.404 : 8.933, Euler-Bernoulli free-free), bolted
- * down so it decays in under a second, plus its walls' higher modes.
+ * down so it rings for about a third of a second, plus its walls' higher modes.
  */
 export function metal(rng: Rng, kind: number, v: number): Float32Array {
   const out = buf(0.9);
@@ -268,7 +268,8 @@ export function metal(rng: Rng, kind: number, v: number): Float32Array {
   const f1 = jit(rng, kind === MT_POST ? 430 : 620, 0.08);
   const r = [1, 2.756, 5.404, 8.933];
   const modes: Mode[] = [];
-  for (let i = 0; i < r.length; i++) modes.push({ f: f1 * r[i]!, t60: jit(rng, 0.7 / (1 + 0.5 * i), 0.15), a: (0.5 / (1 + 0.6 * i)) * loud });
+  // Bolted at both ends and filled with nothing: a short 'tonk', not a bell (about 0.3 s).
+  for (let i = 0; i < r.length; i++) modes.push({ f: f1 * r[i]!, t60: jit(rng, 0.32 / (1 + 0.5 * i), 0.15), a: (0.5 / (1 + 0.6 * i)) * loud });
   modes.push({ f: jit(rng, 2900, 0.1), t60: 0.08, a: 0.15 * loud }, { f: jit(rng, 4100, 0.1), t60: 0.05, a: 0.1 * loud });
   const ring: Mode[] = [];
   ballRing(rng, ring, 0.7, 0.3 * loud);
@@ -276,7 +277,7 @@ export function metal(rng: Rng, kind: number, v: number): Float32Array {
   modal(out, 0.001, ring, contact);
   // Steel is stiffer than a racket's face: a sharper onset reaches the tube's higher modes.
   modal(out, 0.001, modes, contact * ONSET * 0.6);
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.15);
 }
 
@@ -303,7 +304,7 @@ export function net(rng: Rng, cord: boolean, v: number): Float32Array {
     modal(out, 0.001, high, c * ONSET * 1.5);
     noiseBurst(out, rng, 0.004, 0.006, 0.06, 0.03 * loud, [Biquad.make('bp', 2200, 0.8)]);
   }
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.05);
 }
 
@@ -330,7 +331,7 @@ export function step(rng: Rng, floor: number, force: number): Float32Array {
     noiseBurst(out, rng, 0.001, 0.0003, 0.008, 0.14 * loud, [Biquad.make('bp', 1800, 0.9)]);
     if (f > 0.5 && rng.next() < 0.45) chirp(out, rng, 0.008, rng.range(0.025, 0.045), 0.08 * f);
   }
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.02);
 }
 
@@ -377,7 +378,7 @@ export function scuff(rng: Rng, floor: number, slide: number): Float32Array {
       }
     }
   }
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.03);
 }
 
@@ -400,7 +401,7 @@ export function whoosh(rng: Rng, speed: number): Float32Array {
     const x = rng.next() * 2 - 1;
     out[i] = (bp.run(x) + 0.25 * s * hi.run(x)) * e * amp;
   }
-  removeDC(out);
+  dcBlock(out);
   return fadeTail(out, 0.03);
 }
 
@@ -493,7 +494,7 @@ export function grunt(rng: Rng, v: VoiceSpec, effort: number): Float32Array {
   const breath = e < 0.3 ? 0.95 : 0.25 + 0.3 * (1 - e);
   vocal(out, rng, 0.004, len, v, vowels[0]!, vowels[1]!, (u) => rise * (1 + 0.06 * Math.min(1, u * 8) - fall * u), breath,
     0.25 + 0.75 * e, e > 0.6 ? 0.008 : 0.03, 0.06 + 0.04 * e);
-  removeDC(out);
+  dcBlock(out, LO_SR);
   return fadeTail(out, 0.02, LO_SR);
 }
 

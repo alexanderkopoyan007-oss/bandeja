@@ -199,6 +199,7 @@ export class Game {
     addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
       // Freeze the sim while the tab is hidden instead of fast-forwarding on return.
+      this.audio.pause(document.hidden);
       if (document.hidden) this.hiddenAt = performance.now();
       else if (this.hiddenAt >= 0) {
         this.epoch += performance.now() - this.hiddenAt;

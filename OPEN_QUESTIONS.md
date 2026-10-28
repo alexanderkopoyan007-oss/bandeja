@@ -175,3 +175,18 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   a close replay it renders a little beaded. Invisible from the broadcast camera. Settled by: an analytic seam
   distance in the shader if replays get close-ups (Phase 7/8).
 
+## Phase 6 (sound)
+- **No padel recordings were analysed.** Every sound is synthesised from published descriptions and physics; the
+  only padel-specific measurements found are qualitative (Piana et al. 2025's spectra peak at 800-1000 Hz
+  A-weighted; "glass bangs low, mesh rings high"). How close each sound is to a real court is untested. Settled by:
+  the owner's `/reference/audio` (a phone recording at a club is enough: hits, bounces, glass, mesh, feet), or the
+  owner's OK to download CC0 recordings (Freesound needs an account, which only the owner can make); the tests then
+  compare spectra and decays.
+- **Racket face modes.** The padel racket's bending and plate mode frequencies (205, 480, 1050, 1520, 2650 Hz) are
+  estimates (no modal analysis of a padel racket was found; a tennis frame's first mode is 146 Hz). Settled by: the
+  Loughborough padel racket acoustics paper (ISEA 2024), whose full text was not readable here, or a recording.
+- **Room acoustics.** The arenas' RT60s are estimates within published ranges, not measurements of padel venues.
+- **Grunts and crowd voices** are formant synthesis: clearly voices, not clearly people. Settled by: recorded
+  vocal samples (the owner's own, or licensed), which the engine would play the same way.
+- **Speakers.** The glass's boom is mostly under 300 Hz, which laptop speakers barely reproduce; on them the glass
+  is mostly its edge and the ball's pop. Not compensated (headphones and TV speakers carry it).

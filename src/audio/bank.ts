@@ -140,6 +140,7 @@ export function renderRoom(arena: string): Sample {
  * (an impact's sound pressure goes about with its speed). `u` is a uniform random number.
  */
 export function binFor(values: readonly number[], x: number, u: number): { bin: number; gain: number } {
+  const out = BIN;
   let b = 0;
   if (x <= values[0]!) b = 0;
   else if (x >= values[values.length - 1]!) b = values.length - 1;
@@ -148,5 +149,9 @@ export function binFor(values: readonly number[], x: number, u: number): { bin: 
     const f = (x - values[b]!) / (values[b + 1]! - values[b]!);
     if (u < f) b++;
   }
-  return { bin: b, gain: Math.max(0.05, Math.min(1.6, x / values[b]!)) };
+  out.bin = b;
+  out.gain = Math.max(0.05, Math.min(1.6, x / values[b]!));
+  return out;
 }
+/** binFor's result, reused (read it before the next call). */
+const BIN = { bin: 0, gain: 1 };

@@ -23,7 +23,8 @@ function pct(a, p) {
 }
 
 async function run(name, { dpr, throttle, unlimited }) {
-  const args = ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal'];
+  // Audio on (Phase 6): no gesture in a headless run, so let the page start it; its main-thread cost is measured.
+  const args = ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required'];
   if (unlimited) args.push('--disable-frame-rate-limit', '--disable-gpu-vsync');
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args });
   const page = await browser.newPage();
@@ -38,11 +39,12 @@ async function run(name, { dpr, throttle, unlimited }) {
   await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 3000)); // settle after warm-up
+  await page.evaluate(() => window.__bandeja.audio.unlock());
   await page.evaluate(() => { const p = window.__bandeja.probe; p.frames.length = 0; p.sims.length = 0; p.works.length = 0; });
   await new Promise((r) => setTimeout(r, secs * 1000));
   const d = await page.evaluate(() => {
     const p = window.__bandeja.probe;
-    return { frames: p.frames.slice(1), sims: p.sims.slice(1), works: p.works.slice(1), draws: p.drawCalls, tris: p.triangles, backend: p.backend };
+    return { frames: p.frames.slice(1), sims: p.sims.slice(1), works: p.works.slice(1), draws: p.drawCalls, tris: p.triangles, backend: p.backend, audio: window.__bandeja.audio.live };
   });
   await browser.close();
   const f = d.frames;
@@ -53,7 +55,7 @@ async function run(name, { dpr, throttle, unlimited }) {
   console.log(`  frames > 20 ms: ${long} (${(100 * long / f.length).toFixed(2)}%)`);
   console.log(`  CPU work/frame ms p50 ${pct(d.works, 0.5).toFixed(2)}  p99 ${pct(d.works, 0.99).toFixed(2)}  max ${Math.max(...d.works).toFixed(2)}`);
   console.log(`  sim ms/frame p50 ${pct(d.sims, 0.5).toFixed(3)}  p99 ${pct(d.sims, 0.99).toFixed(3)}  max ${Math.max(...d.sims).toFixed(3)}`);
-  console.log(`  draw calls ${d.draws}  triangles ${d.tris}`);
+  console.log(`  draw calls ${d.draws}  triangles ${d.tris}  audio ${d.audio ? 'on' : 'off'}`);
   if (errors.length) console.log('  errors:', errors.slice(0, 5));
   return { avg, long, p99: pct(f, 0.99) };
 }

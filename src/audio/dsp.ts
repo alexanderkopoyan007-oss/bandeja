@@ -29,7 +29,9 @@ export function poleR(t60: number, sr = SR): number { return Math.exp(-6.9078 / 
  * Modes struck by a half-sine force pulse `contact` seconds long. Each mode is an exact two-pole resonator driven by
  * the pulse, normalised so a mode far below the pulse's roll-off starts at amplitude `a` (an impulse's response does
  * not depend on the damping); a mode near or above 1/contact is excited less, by the pulse's own spectrum. That is
- * what makes a long, soft contact dull and a short, hard one bright.
+ * what makes a long, soft contact dull and a short, hard one bright. The resonators are driven by the force's rate of
+ * change (and scaled back by the difference's gain at the mode), so the result has no DC: a decaying sine struck
+ * by a force has a net area, which as sound pressure would be a slow offset (radiated pressure has none).
  */
 export function modal(out: Float32Array, at: number, modes: Mode[], contact: number, gain = 1, sr = SR): void {
   const n = out.length;
@@ -41,13 +43,15 @@ export function modal(out: Float32Array, at: number, modes: Mode[], contact: num
     const r = poleR(m.t60, sr);
     const w = (2 * Math.PI * m.f) / sr;
     const c1 = 2 * r * Math.cos(w), c2 = -r * r;
-    // h[n] = g r^n sin((n+1)w) / sin(w); the pulse's area is 2 np / pi.
-    const g = (m.a * gain * Math.sin(w) * Math.PI) / (2 * np);
+    // h[n] = g r^n sin((n+1)w) / sin(w); the pulse's area is 2 np / pi; differencing it scales the mode by 2 sin(w/2).
+    const g = (m.a * gain * Math.sin(w) * Math.PI) / (2 * np) / (2 * Math.sin(w / 2));
     const floor = Math.abs(m.a * gain) * 1e-5;
-    let y1 = 0, y2 = 0;
+    let y1 = 0, y2 = 0, last = 0;
     for (let i = start; i < n; i++) {
       const k = i - start;
-      const x = k < np ? Math.sin((Math.PI * k) / np) : 0;
+      const f = k < np ? Math.sin((Math.PI * k) / np) : 0;
+      const x = f - last;
+      last = f;
       const y = x * g + c1 * y1 + c2 * y2;
       y2 = y1;
       y1 = y;
@@ -220,7 +224,23 @@ export class Formant {
   }
 }
 
-/** Remove any DC offset (mean). */
+/**
+ * A DC blocker: a one-pole high-pass at about 15 Hz (y = x - x1 + R y1). Unlike subtracting the mean it leaves no
+ * flat offset under a transient.
+ */
+export function dcBlock(buf: Float32Array, sr = SR): Float32Array {
+  const R = 1 - (2 * Math.PI * 15) / sr;
+  let x1 = 0, y1 = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const x = buf[i]!;
+    const y = x - x1 + R * y1;
+    x1 = x; y1 = y;
+    buf[i] = y;
+  }
+  return buf;
+}
+
+/** Remove any DC offset (mean): for loops, where a blocker's settling would show at the seam. */
 export function removeDC(buf: Float32Array): Float32Array {
   let m = 0;
   for (let i = 0; i < buf.length; i++) m += buf[i]!;

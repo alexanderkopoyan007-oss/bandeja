@@ -116,20 +116,20 @@ air) and its value is real too: from a standstill force takes time to build, and
 
 ## 6. Hit feedback
 
-Sound, rumble and the camera read the sim's hit events (`src/game/feedback.ts`); none of them writes to the sim.
+Sound, rumble and the camera read the sim's hit events; none of them writes to the sim. Rumble and the camera's
+kick are in `src/game/feedback.ts`.
 
-**Sound** (`src/audio/sound.ts`, WebAudio, synthesised; `?sound=0` off). All of this is tuning by ear: no padel
-impact recordings were analysed (Phase 6 does the full soundscape with references).
+**Sound** (Phase 6: `src/audio/`, `?sound=0` off; DECISIONS.md Phase 6 has the sources). The Phase 2 hit sound
+(`sound.ts`, a filtered noise burst tuned by ear) was replaced by synthesised physical models: the ball's shell
+and the racket face's modes struck by the contact, quality and pace picking the render. The feel-related parts:
 
 | Value | Why |
 |---|---|
-| Impact: a 3-6 ms noise burst through a resonance at 900-1400 Hz, Q 1.2-4, decay 18-48 ms | A ball meeting a solid face is a short broadband "pock" with a body resonance. |
-| Contact quality 1 → resonance 1400 Hz, narrow, 18 ms; quality 0.15 → about 1000 Hz, wide, 45 ms | A centred, well-timed hit is short, bright and dry; an off-centre one is duller and rings longer. |
-| Below quality 0.8: a 240 → 170 Hz frame knock, louder the worse the contact | The frame's low knock is what tells a player they missed the sweet spot. |
-| Loudness ∝ ball speed off the racket / 25 m/s (0.15-1.6), drops and chiquitas at 0.45, overheads +15% | Louder the harder the hit. |
-| Pan from the hit's screen position, louder nearer the camera | Where the sound comes from. |
-| Played at the event's exact time (up to 50 ms ahead) | With run-ahead the sim is up to a tick ahead of the screen; the sound lands with the picture. |
-| A swish for a swing that meets nothing | A whiff should be heard as one. |
+| Racket: clean hits centre at 0.5-1.5 kHz and are over in 30 ms; off-centre ones half as bright and ringing longer (the face's first bending mode); frame hits clack above 2 kHz | You hear the sweet spot: dry and sharp in it, a dull "thock" off it, a clack on the rim. |
+| Three power bins and three contact bins, picked by the hit's pace and grade, the level following the pace | Louder and sharper the harder the hit. |
+| Played at the event's exact time (up to 50 ms ahead), from where it happens, heard from the broadcast camera | With run-ahead the sim is up to a tick ahead of the screen; the sound lands with the picture. |
+| A swish on every swing, its band and level rising with the racket's speed (smash loud, block volley near silent) | A swing is heard before the hit; a whiff is heard as one. |
+| Grunts on hard shots, some players more than others | Effort is heard. |
 
 **Rumble** (gamepad `vibrationActuator`, Chrome/Edge):
 

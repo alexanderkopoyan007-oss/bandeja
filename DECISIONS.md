@@ -888,3 +888,83 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     13, still bloom). The hit sound's and smash kick's distance law still had the old camera's distances (the far
     end got none). The crowd's excitement decays by time, not by frame. A photo without a solved camera keeps the
     photo's shape; the solver's starting pitch looked up; the ball lab's sky was cut by a 200 m far plane.
+
+## Phase 6: sound
+- **No recordings: synthesis.** `/reference/audio` doesn't exist and downloads need the owner's word, so every sound
+  is synthesised (the brief's third option). Physical models where there is something to model, rendered in plain
+  TypeScript into buffers so tests can measure them (`src/audio/voices.ts`, `dsp.ts`; tests/audio, 27 tests):
+  - **Impacts are modes struck by a contact.** A half-sine force pulse as long as the contact drives two-pole
+    resonators; a mode well below the pulse's roll-off starts at its amplitude, one above it is excited by the pulse's
+    spectrum (a long soft contact is dull, a short hard one bright). The resonators are driven by the force's rate of
+    change, scaled back by the difference's gain at each mode, so a struck mode has no net area (a spectrogram showed
+    the first version's DC plateau under every hit). The ball's shell and a face's plate modes ring from the
+    contact's sharp onset (17% of the contact time): driven by the whole 5 ms pulse alone they were 36 dB down at
+    1 kHz and every hit came out a 250 Hz thud.
+  - **Racket.** A padel racket is a solid perforated paddle (carbon or fibreglass skins on EVA foam), so a hit is a
+    dry "pock" with no strings' ring (Piana et al. 2025: carbon drier, fibreglass less sharp, faster impacts sharper).
+    Contact about 5 ms (racket sports' dwell, Zienowicz et al., IOA 2008), shorter when harder. Measured: clean hits
+    centre at 450-1500 Hz (padel play's A-weighted spectrum peaks at 800-1000 Hz, Piana et al.) and 90% of their
+    energy arrives within 30 ms (Piana et al.'s ambisonic recordings: the direct sound spans about 30 ms). Off the
+    sweet spot the face's first bending mode (about 205 Hz; a tennis frame's is 146 Hz, Russell, and a padel racket
+    is shorter and stiffer: an estimate) rings, half as bright and longer; a frame hit clacks above 2 kHz. Slices
+    brush felt across the face before the hit. Bins: five kinds (drive, volley, overhead, slice, touch), three powers
+    and three contacts (clean, off, frame), from the event's pace and timing grade.
+  - **Bounce.** On a hard floor about 1 kHz for the first cycles, then a decaying ~250 Hz (line-calling patent US
+    9551572), held by a test. Sand-filled turf is damped (porous fibres; the sand softens the bounce, Piana et al.)
+    with grains of sand scattering; carpet is muffled; resin/hard loudest (ibid.).
+  - **Glass.** "A low frequency bang" (Higgins, via The Padel Paper): a 2 x 3 m panel of 12 mm toughened glass, its
+    bending modes from plate theory (f11 = 10.7 Hz, crowding from 50 Hz up), weighted by the mode shapes at a random
+    impact point and by radiation (odd-odd modes radiate best), loss factor 0.04 (an estimate: glass in gaskets);
+    a hard ball clanks the panel in its fixings. Mesh: "a higher frequency ringing" (ibid.): wire modes from 400 Hz
+    to 7 kHz and the panel rattling in its frame. Posts and frames ring as free bars (1 : 2.756 : 5.404 : 8.933),
+    for about 0.3 s (bolted). A wall hit within 4 cm of a frame (`Court.backZone/sideZone` seamDist) rings the steel.
+  - **Net.** The netting's catch is a soft low "fwump" over 15-20 ms; a net cord is a tick on the tape and the
+    cable; a net post rings like a smaller post.
+  - **Feet.** Sand-filled turf crunches (grains at 2-7.5 kHz) with no squeak (padel soles are herringbone/omni for
+    sand); clay crunches coarser; carpet pats; a hard court slaps and squeaks (stick-slip chirps at 1.3-2.5 kHz).
+    Steps are heard where an avatar's sole comes down onto the floor (`Avatar.feet`, the lowest sole point each
+    frame), or by a stride clock for the capsules; scuffs where a player brakes hard or cuts.
+  - **Swing.** Turbulent noise whose band rises with the racket's speed; aeolian pressure goes about as speed cubed,
+    so a block volley is near silent and a smash swishes. On every swing (`E_SWING`), whiffs included.
+  - **Voices.** A Rosenberg glottal pulse train with jitter and shimmer and breath noise through five cascaded
+    formant resonators (Klatt 1980), vowel formants from Peterson & Barney 1952. Grunts: pitched up by effort and
+    falling, voiced only past an effort, breath below it; four players' voices; each player grunts with their own
+    propensity on overheads and hard drives. Shouts carry more sound power in real padel than impacts (Piana et al.:
+    +1.9 dB(A) overall), but the game keeps them a step under the racket.
+  - **Crowd.** Applause is many clappers, each with a hand configuration from ClaPD's resonance table (Peltola et
+    al. 2007, after Repp 1987; a clap about 5 ms, Jylhä & Erkut 2008), about 4 claps a second (tuning), joining and
+    leaving at their own times; a stadium's thousands beyond the 160 rendered are a band of noise in the claps'
+    spectrum. Gasps, groans and cheers are 40 formant voices, men's and women's, staggered, with noise standing in
+    for the rest. The murmur is talkers in phrases at about 5 syllables a second (Pellegrino et al. 2011: 5-8).
+  - **Rooms.** A stereo impulse response per arena: decaying noise in three bands, each with its own RT60, early
+    reflections (the court's own glass, the roof, the end walls) and, in the covered hall, a flutter between floor
+    and roof. Stadium RT60 2.4 / 2.0 / 1.3 s (low / mid / high; an estimate for a big hall, BB93 caps school sports
+    halls at 1.5 s), covered hall 1.6 / 1.25 / 0.8 s, outdoors 0.3 s of the glass and the clubhouse. Measured by
+    Schroeder integration (T20) in the tests within 20% (mid) and 25% (low) of the spec.
+  - **Ambience.** Wind with gusts and leaves, birds by day, crickets and the floodlights' 100 Hz hum by night, a
+    covered hall's air; the courts next door play rallies (about a hit a second, then pauses: club padel is about 88
+    impacts in 5 minutes, Higgins), heard from where those courts stand.
+- **The bank** (`src/audio/bank.ts`, `data/audio.json`): 2-4 renders of each sound per parameter bin (about 200
+  buffers, 0.5-1 s of synthesis, mostly the crowd) rendered in a worker (`bankWorker.ts`) so the first frames never
+  stall, the racket first. Each family is scaled so its loudest render sits at its level (peak dBFS for impacts, rms
+  for beds); a play picks a render at random, never the last one, with +-3% pitch and +-1.5 dB, and a continuous
+  parameter (speed, effort) picks the bin below or above at random by where it falls between them, the level
+  following it, so sounds slide with the play rather than step.
+- **Engine** (`src/audio/engine.ts`): heard from the broadcast camera (the listener follows it each frame): 32 pooled
+  voices (gain, an air/distance low-pass, an equal-power panner with the inverse distance law at 16 m reference so
+  the far baseline is about 5 dB down, and a send to the arena's reverb that grows with distance), four buses, a
+  master gain, a limiter (-8 dBFS, 12:1, 2 ms) and a tanh soft clip. Sounds play at the event's exact time (up to
+  50 ms ahead, as the sim runs ahead of the screen). Audio starts on the first key, click or pad press (browsers
+  allow it only from a gesture), in autoplay too, and pauses with the tab.
+- **The mix.** Levels in `data/audio.json`: racket -5 dBFS peak, glass -6, mesh -9, posts -10, bounce -14, net -14,
+  grunts -13, swish -20, shoes -30; beds by rms: applause -26, cheer -25, murmur -41. Tests hold: no single sound at
+  its loudest play needs the limiter; the busiest moment (a smash off the glass with a grunt, steps, a cheer and the
+  big applause over the murmur) peaks under 0 dBFS before it; the shoes sit 15-32 dB under the racket, the bounce
+  over 4 dB under, the crowd's chatter 9+ dB under a hit (hushed 16 dB further in a point).
+- **The crowd follows the match** (`src/audio/soundscape.ts`): chatter between points, hushed as the server gets
+  ready, a murmur of tension rising past 6 shots, a gasp (big crowds) at a smash or a ball off two walls sent back,
+  then applause by the point: small for most, big after a long rally or a smash winner, a cheer for a ball played
+  out of the court, a groan for a long rally lost on an error or a double fault, more for sets and the match. Club
+  crowds (8-14 people) only clap.
+- **Feedback**: the Phase 2 hit sound (`sound.ts`) is gone; rumble and the smash's camera kick stay in
+  `src/game/feedback.ts`.
