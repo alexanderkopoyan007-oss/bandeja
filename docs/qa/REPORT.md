@@ -47,6 +47,7 @@ commands that reproduce each finding are in the army reports beside this file.
 | 7 | A serve whose centre was 3-5 cm past the net's plane when it met the tape was played on instead of replayed (9.1.a). | referee oracle | A net touch before the bounce counts on either side of the plane. |
 | 8 | In a one-set match, "final set: no tie-break" applied (there is no final set) while "final set: match tie-break" didn't. | score oracle | The final-set rule needs a deciding set (`setsToWin >= 2`). The menu only offers the normal final set today. |
 | 9 | A partner walking into the server before the serve pushed them 45 cm forward, the ball in hand with them, and the serve dropped inside the service line was played (6.2). | referee oracle (7.1.a) | The server stands still before the serve and the partner gives way; a drop or a contact over the service line or the centre line is a fault (`WHY_SERVE_AREA`). |
+| 21 | An AI server that reached a re-toss (#2) kept its press spent and never dropped the ball again: the match stalled in the set-up. | fresh-eyes review (the army's AI always swings, so it never got there) | `retoss` resets the server's AI. |
 
 ### Physics
 
@@ -82,6 +83,7 @@ commands that reproduce each finding are in the army reports beside this file.
 - The low side-flip check read a crossing just above the tape (a net cord) as one under it; a change of side within
   20 ms of a crossing at the tape's height or higher is skipped.
 - The rally's state and the serve's drop point (new in Phase 7) were not in `MatchSim.hash()`; they are now.
+- The sleeping net's stand-off in wind (`NetCloth.bulge`) is in the net's hash.
 
 ## Not fixed, not built
 
@@ -98,6 +100,9 @@ commands that reproduce each finding are in the army reports beside this file.
   90 s in configuration 59). Per swing the two overlap: across six configurations monkeys made 1.1-4.0 pops a swing
   and AI players 0.5-4.8. So the per-minute limits, set for AI play, mostly count the monkeys' extra swings. No
   AI-only configuration fails.
+- **Serves in strong wind.** Above about 9 m/s of wind (a URL-only option, `?windx=`; the menus play in still air)
+  some AI serves are blown out of the box (WHY_SERVE_AREA): the serve's solve aims in still air. Real players in
+  such wind would not be playing.
 - **Allocation with four bodies** is 8-9 minor GCs per 100k ticks (budget 10; 7-8 before Phase 7; CLAUDE.md said 2
   at Phase 3). Phase 8.
 

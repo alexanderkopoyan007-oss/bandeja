@@ -453,3 +453,31 @@ describe('the net\'s settled-shape cache stays bounded (QA army heap check)', ()
     expect(restCacheSize()).toBeGreaterThan(8);
   });
 });
+
+describe('an AI server drops the ball again after a re-toss (fresh-eyes review)', () => {
+  // retoss() put the server back in set-up but left the AI's press spent (`pressed` true): it never dropped the
+  // ball again and the match stalled. Here the AI server's first swing is swallowed so the drop bounces twice.
+  it('serves within a few seconds of the re-toss', () => {
+    const m = new MatchSim({ seed: 5, human: [false, false], firstServer: 0 });
+    const ai = m.ai[0]!;
+    const think = ai.think.bind(ai);
+    let eat = true;
+    ai.think = (mm, f) => {
+      think(mm, f);
+      if (eat && mm.phase === PH_TOSS) f.evCount = 0;
+    };
+    let tossed = false;
+    let retossAt = -1;
+    let served = false;
+    const seq = m.eventSeq;
+    for (let k = 0; k < 120 * 30 && !served; k++) {
+      const was = m.phase;
+      m.step([]);
+      if (was === PH_TOSS) tossed = true;
+      if (tossed && retossAt < 0 && m.phase === PH_SETUP) { retossAt = m.time; eat = false; }
+      if (retossAt >= 0 && events(m, seq, E_HIT).length > 0) served = true;
+    }
+    expect(retossAt).toBeGreaterThan(0);
+    expect(served).toBe(true);
+  });
+});

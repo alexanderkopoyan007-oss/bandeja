@@ -1,6 +1,7 @@
 // Browser soak (Phase 7): the built game in Chrome, AI-vs-AI autoplay for a long run, sampled every 30 s for
 // memory leaks (JS heap after a forced GC, DOM nodes, listeners, three's live geometries and textures), frame drops
-// (frame-time percentiles and frames over 20 / 50 ms per window) and errors. Takes the one-Chrome lock itself.
+// (frame-time percentiles and frames over 20 / 50 ms per window) and errors. It doesn't take the one-Chrome lock:
+// run it through tools/one-chrome.sh as below.
 //   npm run build && bash tools/one-chrome.sh node tools/soak.mjs [minutes 20] [query]
 // e.g. `node tools/soak.mjs 30 '&doubles=0'`. Writes tools/out/soak.json and prints a table and a verdict.
 import puppeteer from 'puppeteer-core';

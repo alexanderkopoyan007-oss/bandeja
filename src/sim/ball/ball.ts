@@ -424,7 +424,9 @@ export class Ball {
       // net cord that dropped past the net stayed on the hitter's side for a metre).
       // It changes on crossing that line, not on being past it, and never while the netting grips it: smashes
       // driven into the top of the net climbed out of the pocket with the centre past the cable and above it, and
-      // were put on the far side, still held or just let go (QA army).
+      // were put on the far side, still held or just let go (QA army). Crossing is judged within a coupled tick:
+      // `relSide` starts each one at `netSide`, so a ball already past the line and above the cable when a tick
+      // starts (the cable sprang back under it) counts as a crossing then.
       cl.qx = p.x;
       cl.cableAt();
       const ax = p.x < 0 ? -p.x : p.x;

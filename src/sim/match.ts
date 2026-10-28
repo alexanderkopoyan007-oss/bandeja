@@ -992,6 +992,8 @@ export class MatchSim {
     this.tossBounces = 0;
     const p = this.players[this.score.serverPlayer()]!;
     if (p.swing === SW_CHARGE) p.swing = SW_IDLE;
+    // An AI server plans its drop again (its press is spent: it would otherwise wait for a release forever).
+    this.ai[p.index]?.reset();
     this.placeBallInHand();
   }
 
