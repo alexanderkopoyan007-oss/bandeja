@@ -318,3 +318,76 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Left: the HUD meter reads `sim.time` and the ring the render time (up to a tick apart, cosmetic); unplugging
     the pad mid-charge swings at that moment rather than cancelling (the sim has no cancel); for rollback later,
     `Player.writeState` leaves out the half bounds and the human's stand plans are not hashed (both before Phase 2).
+
+## Phase 3: animation realism
+- **Measure first** (`node tools/anim-check.ts <tag> [secs] [seeds]`, `src/render/avatar/animQa.ts`, results in
+  `docs/lab/anim-check-*.md`): every sim tick of an AI doubles match drawn, then foot skating (Zhang et al. 2018's
+  measure), planted-sole drift, soles under the floor, racket to ball at the contact, the face against the ball's
+  way out, one-frame pops and joint speeds against what people reach (Fleisig 2003 and others in `avatar.ts`),
+  and clipping with capsules fitted to the mesh (racket in body, hand in torso, thighs through each other, net,
+  glass, players). Seed 3 plays two left-handers. Before Phase 3 (`anim-check-before.md`): skate 54-68 cm/s,
+  soles under the floor 7-9% of foot frames (8 cm), pops 118-145 per player-minute.
+- **Inertialization of the animation's inputs** (Bollo 2016, Holden 2021; `src/render/avatar/inertia.ts`): the clip
+  pose before IK, the stroke's key, the body's facing, the stroke weight and the crouch carry on smoothly through a
+  jump (a jump goes into an offset that dies away with a critically damped spring), never the IK's output (that
+  would lift the feet off their plants and the racket off the ball). Pops 119-180 → 45-68.
+- **Feet**: a sole within 1.5 cm of the floor stays where it was put down, rotation and toes held, until the clip
+  lifts it or the body drifts, turns or reaches too far over it (then it steps, lifted, one foot at a time when
+  standing); soles kept above the floor measured as the foot will be; orientation warping for diagonal running
+  (the nearest direction's clip with the legs turned up to 45 degrees onto the travel). Skate 57-65 → 17-19 cm/s,
+  planted-sole drift p50 → 0, soles under the floor → 0.
+- **Allocation**: the new code passed doubles to calls V8 doesn't inline; fixed (30-33 → 4-7 GCs per 100k ticks).
+- **The serve, studied from pros** (owner's ask; `docs/research/serve-and-strokes-motion.md` §4.1: FIP rules,
+  Ramón-Llin and Courel-Ibáñez's serve studies, the tennis forehand's kinematics for the swing, physics for the
+  bounce). Before, the server stood square, dropped the ball from waist height and swatted it at knee height
+  with an underarm flick. Now:
+  - Ball: held at 0.95 m, 0.55 m out to the racket side and 0.5 m ahead, pushed down at 3.2 m/s so it bounces up
+    to an apex near the waist, struck 20 ms before the apex (`match.ts` SERVE_*). Contact height 0.57 → 0.87 m,
+    toss to contact 0.79 → 0.62 s, serve speed 56-66 → 59-69 km/h (still under FIP's waist rule).
+  - Address (K0): side-on (hips about 80°, shoulders 85°), racket in front at the waist face up, the free hand on
+    the ball, which it follows down as it is pushed (`SERVE_ADDRESS`, the avatar's `addrKey`).
+  - Swing keys from the research in the court frame (`courtKey`: forward, out to the racket side, up): backswing
+    to the racket head above the grip, face about vertical, shoulders turned 100° (measured 101°, hips 85°; the
+    research 105° / 85°); a waypoint at the mid forward swing out to the racket side and dropping (`Family.via`,
+    the curve's bend solved through it); contact at the ball out to the side, face open; low forward finish.
+    Measured turns at contact 56° / 49° (research 45° / 50°) and at the finish about 25° (15° / 25°).
+  - The research measures from the floor under the mid-hip, the keys from the player's position: the pelvis sits
+    0.13 m behind it at the top of the backswing (weight on the rear leg), so the backswing is that much further
+    back (the racket arm was folded to 25-30% of its length there; now 62-70%).
+  - Free hand keys placed from the measured free shoulder (it was 8-12 cm from its own shoulder at contact, the
+    arm folded flat and the elbow flipping): towards the bounce in the backswing, down by the free hip after.
+  - The serve address hands over to the ready position over about 0.1 s (`addrW`) instead of in one frame at the
+    contact (the free hand jumped 85°).
+  - An AI server's swing is timed to its own release (one after the ideal is the contact), as rally shots were.
+  - Serve QA (3 seeds, 13-17 s of serving each): racket in body 0.88 / 0.42 / 0.40%, hand in torso 0 / 0 / 0%,
+    pops 4.5 / 0 / 10.7 per minute (the first version of the new serve: 2.3 / 0.9 / 1.0%, 2.6 / 2.1 / 1.9%, 36 / 49
+    / 60; the old swat: about 0 on all three, it barely moved).
+- **Arms solved as hinges** (`hingeIK` in `ik.ts`). Every clip bends the forearm about one axis of its own frame
+  (within 0.6-0.8°, measured from all eight clips, `elbowHinge`), so the elbow is solved exactly: the forearm's
+  rest rotation turned about that hinge by the bend that puts the wrist at the target's distance, then the upper
+  arm turned as a whole so the wrist lands on the target with the elbow towards the pole. The old two-bone IK
+  turned the clip's forearm the shortest way onto the new direction, which flips over when the bend needed is the
+  other way from the clip's: forearms and hands turning 150-180° in a frame, the worst pops in every match. The
+  elbow's side about the shoulder-to-wrist line turns no faster than the shoulder can (1500°/s), so a pole passing
+  close by that line swings the elbow round instead of flipping it. The free arm's pole turns with the chest. The
+  knees stay on the two-bone IK: solving them as hinges threw away the clips' shin rotation (about 10°) and
+  tripled the pops (measured, reverted).
+- **Racket rotation blends keep their way round by continuity** (`nlerpQ`): the way that lands nearer last frame's
+  result, the short way only at a blend's start. Re-picking the short way mid-blend turned the racket over in a
+  frame (a left-hander's overhead: the wrist target jumped 60 cm).
+- **Swing timing**: an AI's release moment is known, so its forward swing runs straight into the ball instead of
+  waiting at 85% for the release (that wait, then 15% of the swing in one or two frames, was a pop at most AI
+  contacts); the rest of a swing after a release starts from last frame's moment (it held still for a frame). On
+  the QA's new contact measure (the face's path between frames: a face that passes through the ball on time is
+  already centimetres past it at the frame that reports the hit, which the old measure scored against it):
+  racket to ball p50 4-9 mm, p90 6-10 cm, the closest moment p50 0 ms late, p90 one frame; with the old wait
+  1-2 mm and 3-7 cm but up to two frames late (a 20 m/s ball is 30 cm away by then) and 10-20% more pops.
+- **Hips**: the reach that pushes and lowers the hips towards a ball out of the arm's reach is now measured from
+  where the shoulder will be at the contact (the plan's spot, as far as the present speed covers in the time
+  left): a sprinting player had their hips pushed out and dropped to 0.33 m. The total drop is capped at 0.55 m
+  (a 0.4 m cap cost low volleys up to 7 cm of contact).
+- **QA after the serve and arm work** (3 seeds x 120 s, before → after): pops 51-64 → 37-50 per player-minute,
+  racket in body 2.0-2.6 → 1.6-2.2%, hand in torso 3.7-5.7 → 3.0-4.8%, legs through 2.7-3.5% (unchanged), skate
+  17-18 cm/s, soles under the floor 0, avatars 6-7 GCs per 100k ticks. Left: the leg flips (up to 177° at the
+  knee and foot in a stretch at a sprint, a few per match), and the leg pops that make up most of the count
+  (small, at foot plants and lifts).

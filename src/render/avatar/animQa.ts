@@ -85,6 +85,8 @@ export interface QaReport {
   };
   /** Hips (horizontal) from the sim's position (m): reaching and lunging move them, nothing else should. */
   hipsFromSim: Dist;
+  /** The serve alone (the server from the point's setup to the end of the stroke): frames, and shares of them. */
+  serve: { frames: number; racketBody: number; handTorso: number; legs: number; popsPerMinute: number };
   nan: number;
 }
 
@@ -144,7 +146,7 @@ function segSeg(p1: THREE.Vector3, q1: THREE.Vector3, p2: THREE.Vector3, q2: THR
   return c1.distanceTo(c2);
 }
 
-function pointSeg(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
+export function pointSeg(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
   const ab = new THREE.Vector3().subVectors(b, a);
   const l = ab.lengthSq();
   const t = l > 1e-12 ? Math.min(1, Math.max(0, new THREE.Vector3().subVectors(p, a).dot(ab) / l)) : 0;
@@ -154,7 +156,7 @@ function pointSeg(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number 
 interface CapsuleDef { name: string; a: string; b: string; bones: string[]; r: number; ia: number; ib: number }
 
 /** Body capsules, fitted to the mesh: radius = the median distance of the segment's vertices from it. */
-function fitCapsules(asset: PlayerAsset): CapsuleDef[] {
+export function fitCapsules(asset: PlayerAsset): CapsuleDef[] {
   const defs: Array<[string, string, string, string[]]> = [
     ['pelvis', 'Hips', 'Spine1', ['Hips', 'Spine']],
     ['chest', 'Spine1', 'Neck', ['Spine1', 'Spine2']],
@@ -209,7 +211,7 @@ const JOINTS: Array<[string, string, string]> = [
 ];
 
 /** Racket points in its frame (face centre at the origin, face normal z, handle down -y). */
-const RACKET_PTS = [
+export const RACKET_PTS = [
   new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.146, 0), new THREE.Vector3(0, -0.146, 0),
   new THREE.Vector3(0.13, 0, 0), new THREE.Vector3(-0.13, 0, 0), new THREE.Vector3(0, -0.24, 0),
 ];
@@ -250,6 +252,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   let ground = 0, footFrames = 0, below = 0, belowMax = 0;
   const peaks: Record<string, number[]> = {};
   const popsBy: Record<string, number> = {};
+  const sv = { frames: 0, racketBody: 0, handTorso: 0, legs: 0, pops: 0 };
   let pops = 0;
   const popWorst: QaEvent[] = [];
   const clip = { racketBody: 0, racketBodyMax: 0, handTorso: 0, handTorsoMax: 0, legs: 0, legsMax: 0, net: 0, wall: 0, players: 0, racketOther: 0 };
@@ -264,6 +267,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const wq = new THREE.Quaternion(), wp = new THREE.Quaternion(), lq = new THREE.Quaternion();
   const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), D = new THREE.Vector3(), P = new THREE.Vector3();
   const racketW = av.map(() => RACKET_PTS.map(() => new THREE.Vector3()));
+  const prevFace = av.map(() => new THREE.Vector3());
   const bpos = (i: number, b: number, out: THREE.Vector3): THREE.Vector3 => out.setFromMatrixPosition(bones[i]![b]!.matrixWorld);
   const note = (list: QaEvent[], e: QaEvent): void => {
     list.push(e);
@@ -299,6 +303,10 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       const jump = k > 0 && prevRoot[i]!.distanceTo(a.root.position) > 0.2;
       prevRoot[i]!.copy(a.root.position);
       const motion = k > 1 && !jump;
+      const ai = a as unknown as { fam: { name: string }; w: number };
+      const serving = ((m.phase === PH_SETUP || m.phase === PH_TOSS) && m.score.serverPlayer() === i)
+        || (ai.fam.name.startsWith('serve') && ai.w > 0.01);
+      if (serving && motion) sv.frames++;
       playerFrames++;
 
       // Feet.
@@ -335,6 +343,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         const a1 = prevAng[i]![j]!, a2 = prevAng2[i]![j]!;
         if (a1 > 6 && a1 > 3 * Math.max(a2, ang, 1)) {
           pops++;
+          if (serving) sv.pops++;
           popsBy[J.name] = (popsBy[J.name] ?? 0) + 1;
           note(popWorst, { t: m.time - DTF, player: i, what: `pop ${J.name}`, value: a1 });
         }
@@ -360,6 +369,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.racketBody++;
+          if (serving && motion) sv.racketBody++;
           if (deep > clip.racketBodyMax) clip.racketBodyMax = deep;
           note(clipWorst, { t: m.time, player: i, what: `racket in ${where}`, value: deep });
         }
@@ -375,6 +385,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.handTorso++;
+          if (serving && motion) sv.handTorso++;
           if (deep > clip.handTorsoMax) clip.handTorsoMax = deep;
           note(clipWorst, { t: m.time, player: i, what: where, value: deep });
         }
@@ -387,6 +398,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.legs++;
+          if (serving && motion) sv.legs++;
           if (deep > clip.legsMax) clip.legsMax = deep;
           note(clipWorst, { t: m.time, player: i, what: `legs ${where}`, value: deep });
         }
@@ -432,11 +444,13 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       }
     }
 
-    // Contact: closest approach of the face centre to the contact point near the sim's contact.
+    // Contact: closest approach of the face centre to the contact point near the sim's contact, along the path the
+    // face swept since the last frame (the contact falls between frames: a face that passes through the ball on
+    // time is already centimetres past it at the frame that reports the hit).
     for (const h of hits) {
       if (m.time > h.t + 0.15 || m.time < h.t - 0.05) continue;
       const c = racketW[h.player]![0]!;
-      const d = c.distanceTo(h.ball);
+      const d = pointSeg(h.ball, prevFace[h.player]!, c);
       if (d < h.best) {
         h.best = d;
         h.at = m.time - h.t;
@@ -446,6 +460,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         h.face = (Math.acos(Math.min(1, Math.abs(nx * h.out.x + ny * h.out.y + nz * h.out.z) / l)) * 180) / Math.PI;
       }
     }
+    for (let i = 0; i < np; i++) prevFace[i]!.copy(racketW[i]![0]!);
     if (k % 60 === 0) for (const a of av) a.root.traverse((o) => { if (!Number.isFinite(o.quaternion.w) || !Number.isFinite(o.position.x)) nan++; });
   }
 
@@ -491,6 +506,10 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       worst: clipWorst,
     },
     hipsFromSim: dist(hips),
+    serve: {
+      frames: sv.frames, racketBody: sv.racketBody / Math.max(1, sv.frames), handTorso: sv.handTorso / Math.max(1, sv.frames),
+      legs: sv.legs / Math.max(1, sv.frames), popsPerMinute: sv.pops / Math.max(1e-9, sv.frames * DTF / 60),
+    },
     nan,
   };
 }

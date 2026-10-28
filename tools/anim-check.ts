@@ -43,6 +43,7 @@ L.push('', '## Pops by joint, and the worst moments', '');
 for (const { seed, r } of runs) {
   L.push(`- Seed ${seed}: ${r.pops.count} pops ${JSON.stringify(r.pops.byJoint)}; worst: ` + r.pops.worst.slice(0, 6).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)} ${f(e.value)}°`).join(', '));
   L.push(`  clipping worst: ` + r.clip.worst.slice(0, 8).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)}${e.value ? ' ' + f(e.value * 100) + ' cm' : ''}`).join(', '));
+  L.push(`  serve (${(r.serve.frames / 120).toFixed(0)} s of serving): racket in body ${pct(r.serve.racketBody)}, hand in torso ${pct(r.serve.handTorso)}, legs through ${pct(r.serve.legs)}, pops ${f(r.serve.popsPerMinute, 1)} per minute`);
   L.push(`  contact by shot: ` + Object.entries(r.contact.byShot).map(([k, v]) => `${k} ${v.n} (p50 ${f(v.p50, 3)}, p90 ${f(v.p90, 3)})`).join(', '));
 }
 writeFileSync(new URL(`../docs/lab/anim-check-${tag}.md`, import.meta.url), L.join('\n') + '\n');

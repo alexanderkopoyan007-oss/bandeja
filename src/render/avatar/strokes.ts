@@ -30,6 +30,16 @@ export interface Family {
   crouch: number;
   /** Shortest forward swing, as a share of the avatar's MIN_SWING (a volley is a quick punch). */
   punch: number;
+  /** The hips' share of the shoulder turn (default the avatar's BODY_TURN). */
+  bodyTurn?: number;
+  /** How long before the planned contact the forward swing starts (s; default the avatar's LEAD). */
+  lead?: number;
+  /**
+   * A point the forward swing passes through (model frame), at progress `viaS` of the swing's time: the curve's
+   * bend is solved from it (instead of dip and loop), so the path keeps its shape wherever the contact is.
+   */
+  via?: THREE.Vector3;
+  viaS?: number;
 }
 
 const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
@@ -90,18 +100,51 @@ export const SMASH: Family = {
   finish: key(v(0.38, 0.78, 0.12), v(0.6, -0.65, -0.3), v(0.2, -0.3, 0.9), v(-0.1, 1.0, 0.4), 0.75, v(0.35, 1.05, -0.1)),
 };
 
+/**
+ * A key authored in the court's frame (F towards the net, S out to the racket side, U up: the research's frame, from
+ * the floor under the mid-hip). Keys live in the stance's frame, square to the net whatever the body's turn (`yaw`
+ * turns the hips and shoulders, not the frame), so this is only a change of axes.
+ */
+function courtKey(p: number[], a: number[], n: number[], pole: number[], yaw: number, off: number[]): Key {
+  const m = (u: number[]): THREE.Vector3 => v(-u[1]!, u[2]!, u[0]!);
+  return { p: m(p), q: racketQuat(m(a), m(n)), pole: m(pole), yaw, off: m(off) };
+}
+
+/**
+ * The padel serve, a low forehand slice off a bounce the server feeds (docs/research/serve-and-strokes-motion.md
+ * §4.1; a right-hander, keys in the court frame, see courtKey). The research measures from the floor under the
+ * mid-hip, these keys from the player's position: at the top of the backswing the pelvis sits about 0.13 m behind
+ * it (the weight on the rear leg), so the backswing is that much further back. The free hand points at the bounce
+ * during the backswing, then comes down by the free hip (keys placed from the measured free shoulder, so the arm
+ * is never folded flat). Side-on: the hips take most of the shoulder turn.
+ * Backswing: the racket goes back and up while the ball bounces, head above the grip, shoulders about 100 degrees
+ * turned (the tennis forehand's coil, 106 degrees at -231 ms). Forward swing high to low, starting about 300 ms out.
+ * Contact at the top of the bounce out to the racket side, face about 25 degrees open, the shaft out to the side
+ * with the head a little below the hand; the free hand folds in. Finish low and forward towards the target.
+ */
+const SERVE_TURN = 0.82;
 export const SERVE: Family = {
   name: 'serve',
-  // Underarm: the racket back low, the free hand out in front holding the ball.
-  back: key(v(-0.55, 0.78, -0.55), v(-0.3, 0.25, -0.9), v(-1, 0.1, 0.2), v(-0.4, 0.75, -0.4), -0.9, v(-0.05, 0.95, 0.45)),
-  contact: key(v(-0.55, 0.85, 0.45), v(-0.8, -0.2, 0.55), v(0, 0.12, 1), v(-0.5, 0.8, -0.1), -0.1, v(0.35, 1.0, 0.1)),
-  finish: key(v(-0.05, 1.45, 0.55), v(0.1, 0.8, 0.6), v(0, -0.3, 1), v(-0.3, 1.2, 0.4), 0.4, v(0.35, 1.05, 0.05)),
-  low: racketQuat(v(-0.62, -0.6, 0.5), v(0, 0.3, 1)),
-  dip: 0.12,
+  back: courtKey([-0.68, 0.38, 1.5], [-0.1, 0.15, 1], [0.85, 0.5, 0.15], [-0.55, 0.55, 0.85], -1.75, [0.37, 0.47, 1.0]),
+  contact: courtKey([0.5, 0.55, 0.9], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.5, 0.75], -0.8, [0.49, 0.09, 0.82]),
+  finish: courtKey([0.75, 0.15, 1.25], [0.7, 0.1, 0.7], [-0.3, 0, 0.95], [0.4, 0.4, 1.0], -0.3, [0.33, -0.19, 0.87]),
+  dip: 0.1,
   loop: 0,
-  crouch: 0.6,
+  crouch: 1.5,
   punch: 1,
+  bodyTurn: SERVE_TURN,
+  lead: 0.3,
+  // K4, mid forward swing (-120 ms of 300): out to the racket side and dropping, high to low.
+  via: v(-0.55, 1.1, -0.3),
+  viaS: 0.6,
 };
+
+/**
+ * The server's address before the toss (§4.1 K0): side-on, the racket in front at the waist, face up, the free hand
+ * out where it lets the ball go (the avatar puts it on the ball itself).
+ */
+export const SERVE_ADDRESS: Key = courtKey([0.1, 0.35, 0.95], [0.95, 0.3, 0.1], [0, 0, 1], [-0.2, 0.45, 0.8], -1.45, [0.5, 0.5, 0.95]);
+export const SERVE_TURN_SHARE = SERVE_TURN;
 
 /** A volley is a short punch: the backswing and follow-through pulled most of the way in towards contact. */
 function volley(f: Family, name: string): Family {
@@ -207,6 +250,7 @@ function mirrorFamily(f: Family): Family {
     contact: mirrorKey(f.contact),
     finish: mirrorKey(f.finish),
     low: f.low && new THREE.Quaternion(f.low.x, -f.low.y, -f.low.z, f.low.w),
+    via: f.via && v(-f.via.x, f.via.y, f.via.z),
   };
 }
 
@@ -222,3 +266,4 @@ export function leftFamily(f: Family): Family {
 }
 
 export const READY_LEFT: Key = mirrorKey(READY);
+export const SERVE_ADDRESS_LEFT: Key = mirrorKey(SERVE_ADDRESS);

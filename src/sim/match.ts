@@ -94,7 +94,19 @@ export interface MatchConfig {
 }
 
 const TIMING: TimingWindows = tuning.timing;
+/**
+ * The serve's ball (docs/research/serve-and-strokes-motion.md §1.3-1.4, 4.1): held at the free hand's release point,
+ * ahead of the body and out to the racket side, where it will bounce (pushed straight down, the bounce spot is the
+ * contact spot in plan: 0.50 m ahead of the body's centre, the measured 0.52 m for trained players, and 0.55 m out),
+ * then pushed into the turf at SERVE_PUSH m/s, as most professionals do: it comes back up to about 0.8 m, just under
+ * the waist, about 0.64 s after the release. A plain drop from the hand peaks near the knee (the beginner's serve).
+ */
 const SERVE_HAND_HEIGHT = 0.95;
+const SERVE_HAND_AHEAD = 0.5;
+const SERVE_HAND_OUT = 0.55;
+const SERVE_PUSH = 3.2;
+/** Ideal contact this long before the bounce's apex (within 80 ms of it the height changes by 3 cm or less). */
+const SERVE_BEFORE_APEX = 0.02;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
@@ -320,7 +332,7 @@ export class MatchSim {
   private placeBallInHand(): void {
     const p = this.players[this.score.serverPlayer()]!;
     const ss = this.side(p.team);
-    this.ball.pos.set(p.pos.x + ss * 0.45 * p.handed, SERVE_HAND_HEIGHT, p.pos.z - ss * 0.3);
+    this.ball.pos.set(p.pos.x + ss * SERVE_HAND_OUT * p.handed, SERVE_HAND_HEIGHT, p.pos.z - ss * SERVE_HAND_AHEAD);
     this.ball.vel.set(0, 0, 0);
     this.ball.spin.set(0, 0, 0);
     this.ball.outside = false;
@@ -851,7 +863,7 @@ export class MatchSim {
       this.phase = PH_TOSS;
       this.tossBounces = 0;
       this.placeBallInHand();
-      this.ball.vel.set(0, -0.3, 0);
+      this.ball.vel.set(0, -SERVE_PUSH, 0);
       this.pred.compute(this.world, this.ball, t, 0, 2);
       this.computeTossIdeal();
       this.emitP(E_TOSS, i);
@@ -884,7 +896,7 @@ export class MatchSim {
       if (apex < 0 || pr.y[i]! > pr.y[apex]!) apex = i;
       this.tossEnd = pr.t[i]!;
     }
-    this.tossIdeal = apex >= 0 ? pr.t[apex]! + 0.04 : this.time + 0.5;
+    this.tossIdeal = apex >= 0 ? pr.t[apex]! - SERVE_BEFORE_APEX : this.time + 0.5;
   }
 
   /** The buttons held at the release being handled (-1: f.held). */

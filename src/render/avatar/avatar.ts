@@ -7,13 +7,15 @@ import { PH_DEAD, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
 import { MOD_POWER, MOD_PRECISION, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH, SHOT_TOPSPIN } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
+import { DT } from '../../sim/core/constants.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
-import { rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
+import { hingeIK, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
+import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import {
-  BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   type Family, type Key,
 } from './strokes.ts';
@@ -77,11 +79,8 @@ const bendF = new THREE.Vector3();
 const bendFwd = new THREE.Vector3();
 const DOWN = new THREE.Vector3(0, -1, 0);
 
-/**
- * Blend weight for lerpV / nlerpQ, in a field: V8 boxes a double passed to a call it doesn't inline. `hemi`: which
- * way round nlerpQ goes (+1 / -1), kept by the caller between frames.
- */
-const BL = { u: 0, hemi: 1 };
+/** Blend weight for lerpV / nlerpQ, in a field: V8 boxes a double passed to a call it doesn't inline. */
+const BL = { u: 0 };
 
 /** a = lerp(a, b, BL.u). */
 function lerpV(a: THREE.Vector3, b: THREE.Vector3): void {
@@ -98,20 +97,63 @@ function alignQ(q: THREE.Quaternion, prev: THREE.Quaternion): void {
 }
 
 /**
- * a = nlerp(a, b, BL.u) (for blending poses, close enough to slerp), the way round BL.hemi says. The short way is
- * picked again only near the blend's ends, where both ways give the same rotation: switching mid-blend, when the
- * two rotations are about 180 degrees apart, would flip the result (the racket turned over in one frame). The way
- * round is also re-picked when it has become the long way by far (b moved a long way mid-blend). Both inputs must
- * be continuous from frame to frame (alignQ): a quaternion read off a matrix can change sign at will.
+ * a = nlerp(a, b, BL.u) (for blending poses, close enough to slerp). Two rotations can be blended either way round;
+ * the way is the one whose result is nearer last frame's (`prev`, the blend's own output, zero when there is none),
+ * and the short way only at the blend's start. Re-picking the short way mid-blend whenever b swung far (the old
+ * rule) turned the racket over in a frame, and the wrist with it (60 cm at a left-hander's overhead). Both inputs
+ * should be continuous from frame to frame (alignQ).
  */
-function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion): void {
-  const u = BL.u;
-  const d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-  if (u < 0.02 || u > 0.98 || BL.hemi * d < -0.7) BL.hemi = d < 0 ? -1 : 1;
-  const s = BL.hemi * u;
-  const x = a.x * (1 - u) + b.x * s, y = a.y * (1 - u) + b.y * s, z = a.z * (1 - u) + b.z * s, w = a.w * (1 - u) + b.w * s;
-  const l = 1 / Math.sqrt(x * x + y * y + z * z + w * w);
-  a.set(x * l, y * l, z * l, w * l);
+/** nlerpQ's result on its way into the quaternion (a double passed to a call V8 doesn't inline is boxed). */
+const QN = new Float64Array(4);
+function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion): void {
+  const u = BL.u, v = 1 - u;
+  const x1 = a.x * v + b.x * u, y1 = a.y * v + b.y * u, z1 = a.z * v + b.z * u, w1 = a.w * v + b.w * u;
+  const x2 = a.x * v - b.x * u, y2 = a.y * v - b.y * u, z2 = a.z * v - b.z * u, w2 = a.w * v - b.w * u;
+  const l1 = Math.sqrt(x1 * x1 + y1 * y1 + z1 * z1 + w1 * w1), l2 = Math.sqrt(x2 * x2 + y2 * y2 + z2 * z2 + w2 * w2);
+  let plus: boolean;
+  if (l1 < 1e-6 || l2 < 1e-6) plus = l1 >= l2;
+  else if (u < 0.02 || prev.x * prev.x + prev.y * prev.y + prev.z * prev.z + prev.w * prev.w < 0.5) {
+    plus = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w >= 0;
+  } else {
+    const c1 = Math.abs(x1 * prev.x + y1 * prev.y + z1 * prev.z + w1 * prev.w) / l1;
+    const c2 = Math.abs(x2 * prev.x + y2 * prev.y + z2 * prev.z + w2 * prev.w) / l2;
+    plus = c1 >= c2;
+  }
+  if (plus) { QN[0] = x1 / l1; QN[1] = y1 / l1; QN[2] = z1 / l1; QN[3] = w1 / l1; } else { QN[0] = x2 / l2; QN[1] = y2 / l2; QN[2] = z2 / l2; QN[3] = w2 / l2; }
+  a.fromArray(QN);
+  prev.copy(a);
+}
+
+type Elbow = HingeLimb;
+/** How fast an elbow's side may swing round the shoulder-to-hand line (rad/s): the shoulder's rotation speed limit. */
+const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
+
+/**
+ * An elbow's hinge, measured from the clips: the axis (forearm frame) of the forearm's turn from its rest rotation,
+ * averaged over every clip frame bent more than 20 degrees (on the Y Bot it is the forearm's z, within a degree).
+ * The knees stay on twoBoneIK: the clips turn the shin about 10 degrees off any one axis and run with the legs
+ * nearly straight, and solving them as hinges threw that away and tripled the pops (measured).
+ */
+function elbowHinge(asset: PlayerAsset, name: string): Elbow {
+  const bi = asset.bone(name);
+  const rest = new THREE.Quaternion().fromArray(asset.bones[bi]!.quat);
+  const inv = rest.clone().invert();
+  const nb = asset.bones.length;
+  const acc = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  for (const cn of ['idle', 'jog', 'run', 'strafeLeft', 'runBack', 'strafeRight', 'celebrate', 'dejected']) {
+    const c = asset.clip(cn);
+    for (let f = 0; f < c.frames; f++) {
+      const o = (f * nb + bi) * 4;
+      q.set(c.quat[o]!, c.quat[o + 1]!, c.quat[o + 2]!, c.quat[o + 3]!).premultiply(inv);
+      if (q.w < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+      const ang = 2 * Math.acos(Math.min(1, q.w));
+      const s = Math.sqrt(Math.max(1e-12, 1 - q.w * q.w));
+      if (ang > 0.35) acc.x += (q.x / s) * ang, acc.y += (q.y / s) * ang, acc.z += (q.z / s) * ang;
+    }
+  }
+  if (acc.lengthSq() < 1e-9) acc.set(0, 0, name.startsWith('Right') ? -1 : 1);
+  return { hinge: acc.normalize(), rest, side: new THREE.Vector3() };
 }
 
 /** The free arm's elbow hangs down and back. */
@@ -131,6 +173,8 @@ const MIN_SWING = 0.11;
 const LEAD = 0.16;
 /** ...and waits this far along (0..1) for the release. */
 const HOVER = 0.85;
+/** Most the hips drop for a low or wide ball (crouch, lunge and reach together; m). */
+const DROP_MAX = 0.55;
 const FOLLOW = 0.3;
 const FADE = 0.35;
 const PREP = 0.28;
@@ -307,9 +351,30 @@ export class Avatar {
   private handed = 1;
   private armRacket: THREE.Bone[];
   private armFree: THREE.Bone[];
+  /** Each elbow's hinge (forearm frame) and the forearm's rest rotation, for hingeIK. */
+  private readonly elbowR: Elbow;
+  private readonly elbowL: Elbow;
+  private elbowRacket: Elbow;
+  private elbowFree: Elbow;
   private readonly grips: Grip[];
   private grip: Grip;
   private readyKey: Key = READY;
+  /** The server's address before the toss (side-on, the ball in the free hand): this player's copy, the hand on the ball. */
+  private readonly addrKey: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
+  /** The address's share of the ready pose (eased: at the serve's contact the address hands over to the ready pose). */
+  private addrW = 0;
+  /** The chest's turn from square this frame (hips and spine together, rad). */
+  private chestTurn = 0;
+  private readonly outAddr = new THREE.Quaternion(0, 0, 0, 0);
+  private readonly readyMix: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
+  /** Serving: the address is the ready pose (from the point's setup to the contact). */
+  private addr = false;
+  /** The serve's ball is still in the free hand (set up, or being pushed down). */
+  private inHand = false;
+  /** A point is on for this player (the ready position applies). */
+  private on = false;
+  /** The hips' share of the shoulder turn (the stroke's own, eased). */
+  private bt = BODY_TURN;
   private offPole = OFF_POLE;
 
   // Stroke state.
@@ -394,15 +459,22 @@ export class Avatar {
   private readonly dropI = new InertN(1, 1.5);
   private lastRootX = 0;
   private lastRootZ = 0;
-  /** Which way round the racket's rotation blends go (see nlerpQ). */
-  private hemiReady = 1;
-  private hemiKey = 1;
+  /** The racket's rotation blends' last outputs (see nlerpQ; zero = none). */
+  private readonly outReady = new THREE.Quaternion(0, 0, 0, 0);
+  private readonly outKey = new THREE.Quaternion(0, 0, 0, 0);
   /** Last frame's blend inputs, to keep their signs continuous. */
   private readonly prevFkQ = new THREE.Quaternion();
   private readonly prevReadyQ = new THREE.Quaternion();
   private readonly prevKeyQ = new THREE.Quaternion();
   /** What is left of a smoothing offset each frame: 1, or less so it reaches zero at the contact moment. */
   private keepCon = 1;
+  /** The planned contact's time and the plan's spot (for the reach: where the body will be). */
+  private tPlan = -1;
+  private planOk = false;
+  private planX = 0;
+  private planZ = 0;
+  /** The planned contact is an AI's own release (or a serve's ideal for an AI): its moment is known. */
+  private known = false;
 
   constructor(asset: PlayerAsset, color: number) {
     this.nb = asset.bones.length;
@@ -435,6 +507,8 @@ export class Avatar {
     this.headRestInv.invert();
     this.armR = [b('RightArm'), b('RightForeArm'), b('RightHand')];
     this.armL = [b('LeftArm'), b('LeftForeArm'), b('LeftHand')];
+    this.elbowR = elbowHinge(asset, 'RightForeArm');
+    this.elbowL = elbowHinge(asset, 'LeftForeArm');
     this.legL = [b('LeftUpLeg'), b('LeftLeg'), b('LeftFoot')];
     this.legR = [b('RightUpLeg'), b('RightLeg'), b('RightFoot')];
     this.toes = [b('LeftToeBase'), b('RightToeBase')];
@@ -478,6 +552,8 @@ export class Avatar {
     this.grip = this.grips[0]!;
     this.armRacket = this.armR;
     this.armFree = this.armL;
+    this.elbowRacket = this.elbowR;
+    this.elbowFree = this.elbowL;
     this.racket = makeRacket();
     this.setHanded(1);
   }
@@ -530,7 +606,15 @@ export class Avatar {
     this.grip = this.grips[h > 0 ? 0 : 1]!;
     this.armRacket = h > 0 ? this.armR : this.armL;
     this.armFree = h > 0 ? this.armL : this.armR;
+    this.elbowRacket = h > 0 ? this.elbowR : this.elbowL;
+    this.elbowFree = h > 0 ? this.elbowL : this.elbowR;
     this.readyKey = h > 0 ? READY : READY_LEFT;
+    const ak = h > 0 ? SERVE_ADDRESS : SERVE_ADDRESS_LEFT;
+    this.addrKey.p.copy(ak.p);
+    this.addrKey.q.copy(ak.q);
+    this.addrKey.pole.copy(ak.pole);
+    this.addrKey.yaw = ak.yaw;
+    this.addrKey.off.copy(ak.off);
     this.offPole = h > 0 ? OFF_POLE : OFF_POLE_LEFT;
     this.grip.hand.add(this.racket);
     this.racket.position.copy(this.grip.pos);
@@ -591,7 +675,15 @@ export class Avatar {
   private predAt(sim: MatchSim, t: number, out: THREE.Vector3): THREE.Vector3 {
     const pr = sim.pred;
     const i = pr.indexAt(t);
-    return out.set(pr.x[i]!, pr.y[i]!, pr.z[i]!);
+    // Between the samples either side (a tick apart): the sample at or before t alone put the racket up to a
+    // tick's flight (8-17 cm at rally speeds) behind the ball.
+    let f = (t - pr.start) / DT - i;
+    if (i + 1 >= pr.n || !(f > 0)) f = 0;
+    else if (f > 1) f = 1;
+    out.x = pr.x[i]! + (pr.x[i + 1]! - pr.x[i]!) * f;
+    out.y = pr.y[i]! + (pr.y[i + 1]! - pr.y[i]!) * f;
+    out.z = pr.z[i]! + (pr.z[i + 1]! - pr.z[i]!) * f;
+    return out;
   }
 
   /** Snapshot the current blended key, so a new phase starts from wherever the racket is. */
@@ -631,9 +723,15 @@ export class Avatar {
     const k = this.contactKey();
     // Accelerating into the ball along a curve below (groundstrokes) or behind the head (overheads).
     const e = Math.pow(s, 1.7);
-    this.ctrl.copy(f.back.p).lerp(k.p, 0.5);
-    this.ctrl.y -= f.dip;
-    this.ctrl.z -= f.loop;
+    if (f.via) {
+      // The control point that puts the curve through `via` at its moment: B(ev) = via.
+      const ev = Math.pow(f.viaS ?? 0.5, 1.7), u = 1 - ev, c = 1 / (2 * ev * u);
+      this.ctrl.copy(f.via).addScaledVector(f.back.p, -u * u).addScaledVector(k.p, -ev * ev).multiplyScalar(c);
+    } else {
+      this.ctrl.copy(f.back.p).lerp(k.p, 0.5);
+      this.ctrl.y -= f.dip;
+      this.ctrl.z -= f.loop;
+    }
     bezier(f.back.p, this.ctrl, k.p, e, this.kp);
     this.kq.copy(f.back.q).slerp(k.q, e);
     this.kpole.copy(f.back.pole).lerp(k.pole, e);
@@ -644,15 +742,21 @@ export class Avatar {
   /** The contact this player is set up for (world, into conW) and when; -1 if none. */
   private planned(sim: MatchSim, idx: number): number {
     if (sim.phase === PH_TOSS && sim.score.serverPlayer() === idx && sim.rally.hitter < 0) {
-      this.predAt(sim, sim.tossIdeal, this.conW);
-      return sim.tossIdeal;
+      // An AI server lets go at its own moment, and one after the ideal is the contact (an early one waits for it).
+      const ai = sim.ai[idx];
+      const at = ai && ai.pressed && !ai.released && ai.releaseAt > sim.tossIdeal ? ai.releaseAt : sim.tossIdeal;
+      this.known = ai !== null && ai !== undefined;
+      this.predAt(sim, at, this.conW);
+      return at;
     }
+    this.known = false;
     const st = this.plan(sim, idx);
     if (!st.valid) return -1;
     // An AI lets go at its own release time (the window it tracks, its timing error included), and the release
     // is the contact: time the swing to that, at wherever the ball will be then.
     const ai = sim.ai[idx];
     if (ai && ai.pressed && !ai.released && ai.releaseAt > sim.time - 0.05) {
+      this.known = true;
       this.predAt(sim, ai.releaseAt, this.conW);
       return ai.releaseAt;
     }
@@ -675,6 +779,9 @@ export class Avatar {
   private updateStroke(sim: MatchSim, p: Player, idx: number, t: number): void {
     const sw = p.swing;
     const st = this.plan(sim, idx);
+    this.planOk = st.valid;
+    this.planX = st.x;
+    this.planZ = st.z;
     // A hit moves lastContact; a whiff only stamps lastContactTime.
     const hit = p.lastContactTime !== this.lastHit
       && (p.lastContact.x !== this.lastHitX || p.lastContact.y !== this.lastHitY || p.lastContact.z !== this.lastHitZ);
@@ -688,6 +795,7 @@ export class Avatar {
       }
       const tp = this.planned(sim, idx);
       this.hasCon = tp >= 0;
+      this.tPlan = tp;
       // Off the back glass: side-on to the racket side while the ball, on this side, still goes towards it.
       const side = sim.side(p.team);
       if (st.valid) this.hand = st.hand;
@@ -706,7 +814,10 @@ export class Avatar {
         }
         this.fam = fam;
       }
-      if (this.hasCon && tp - t < LEAD) this.swingS = Math.max(this.swingS, Math.min(HOVER, 1 - (tp - t) / LEAD));
+      const lead = this.fam.lead ?? LEAD;
+      // A human's release can come at any moment, so the swing waits short of the ball for it; an AI's moment is
+      // known, and its swing runs straight into the ball.
+      if (this.hasCon && tp - t < lead) this.swingS = Math.max(this.swingS, Math.min(this.known ? 1 : HOVER, 1 - (tp - t) / lead));
     }
     // Release (a whiff at release goes straight to recover): finish the swing at the contact moment.
     if (sw !== SW_CHARGE) this.wallWant = 0;
@@ -714,7 +825,9 @@ export class Avatar {
       || (sw === SW_RECOVER && this.lastSwing === SW_CHARGE);
     if (released) {
       if (this.st !== ST_PREP) { this.snapshot(); this.swingS = 0; }
-      this.tRel = t;
+      // The swing's progress (relS) is last frame's: carry on from then, so this frame already moves (starting the
+      // rest of the swing now held the racket still for a frame and then jumped).
+      this.tRel = t - this.dt;
       this.relBlend = false;
       this.relS = this.swingS;
       this.relW = this.st === ST_PREP ? this.w : 0;
@@ -895,12 +1008,24 @@ export class Avatar {
     // Stance: the sim faces the ball; a stroke squares up to the net and turns the shoulders instead
     // (last frame's stroke weight: the stroke below reads this frame).
     const net = sim.side(p.team) > 0 ? 0 : Math.PI;
-    this.yaw = p.facing + wrapAngle(net - this.hand * this.handed * WALL_TURN * this.wall - p.facing) * this.w;
     // A cut (placed for the next point) starts every filter afresh.
     const rx = this.root.position.x - this.lastRootX, rz = this.root.position.z - this.lastRootZ;
     this.lastRootX = this.root.position.x;
     this.lastRootZ = this.root.position.z;
-    if (rx * rx + rz * rz > 0.25) this.resetInertia();
+    const cut = rx * rx + rz * rz > 0.25;
+    if (cut) this.resetInertia();
+    // Serving: from the point's setup to the contact the address is the ready pose (side-on, the ball in hand).
+    this.addr = sim.score.serverPlayer() === idx && (sim.phase === PH_SETUP || (sim.phase === PH_TOSS && sim.rally.hitter < 0));
+    // Ready position while a point is on (and for the receiver waiting for the serve), not at a sprint; the server's
+    // is the address. Decided before the stance, which it turns. A cut (players placed for the next point) starts in
+    // the new point's pose, not on the way to it.
+    this.on = sim.phase === PH_RALLY || ((sim.phase === PH_SETUP || sim.phase === PH_TOSS) && sim.score.serverPlayer() !== idx);
+    const want = this.addr ? 1 : this.on ? 0.85 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
+    this.ready += (want - this.ready) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
+    this.addrW += ((this.addr ? 1 : 0) - this.addrW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.1) : 0);
+    this.mixReady();
+    const sq = Math.max(this.w, this.ready * this.addrW);
+    this.yaw = p.facing + wrapAngle(net - this.hand * this.handed * WALL_TURN * this.wall - p.facing) * sq;
     // The body turns no faster than a person turns (the sim faces the ball at once, even one that has just passed).
     if (this.inertial && (Avatar.inertMask & 4) !== 0) {
       this.yawI.in[0] = this.yaw;
@@ -908,14 +1033,18 @@ export class Avatar {
       this.yaw = this.yawI.out[0]!;
     }
     this.dt = dt;
+    IK_TURN[0] = dt > 0 ? ELBOW_SIDE_RATE * dt : Math.PI;
     const ys = this.yaw + Math.PI;
     this.stanceC = Math.cos(ys);
     this.stanceS = Math.sin(ys);
     this.stanceQ.setFromAxisAngle(UP, ys);
     this.updateStroke(sim, p, idx, t);
     this.wall += (this.wallWant - this.wall) * (dt > 0 ? 1 - Math.exp(-dt / WALL_EASE) : 0);
-    const turn = this.kyaw * this.w;
-    const yRoot = ys + turn * BODY_TURN;
+    const turn = this.kyaw * this.w + this.readyKey.yaw * this.ready * (1 - this.w);
+    const btTo = this.w > 0.01 ? this.fam.bodyTurn ?? BODY_TURN : this.addr ? SERVE_TURN_SHARE : BODY_TURN;
+    this.bt += (btTo - this.bt) * (dt > 0 && !cut ? 1 - Math.exp(-dt / 0.12) : 1);
+    this.chestTurn = turn;
+    const yRoot = ys + turn * this.bt;
     this.root.rotation.y = yRoot;
 
     this.yRoot = yRoot;
@@ -950,8 +1079,8 @@ export class Avatar {
       this.hips.position.z = -hx * sw + hz * cw;
     }
     // Shoulder turn and lean in the spine.
-    if (this.w > 0) {
-      const spineTurn = (turn * (1 - BODY_TURN)) / 3;
+    if (this.w > 0 || turn !== 0) {
+      const spineTurn = (turn * (1 - this.bt)) / 3;
       const lean = Math.min(0.4, this.crouch * 1.2) / 3;
       q1.setFromAxisAngle(AXIS_Y, spineTurn);
       q2.setFromAxisAngle(AXIS_X, lean);
@@ -961,23 +1090,46 @@ export class Avatar {
     if (this.inertial && (Avatar.inertMask & 1) !== 0) this.inertia.apply(this.bones, this.hips.position, this.inertiaSkip);
     this.root.updateMatrixWorld(true);
 
-    // Ready position while a point is on (and for the receiver waiting for the serve), not at a sprint.
-    const on = sim.phase === PH_RALLY || ((sim.phase === PH_SETUP || sim.phase === PH_TOSS) && sim.score.serverPlayer() !== idx);
-    const want = on ? 0.85 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
-    this.ready += (want - this.ready) * (dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
+    // The server's free hand holds the ball, and goes down with it as it is pushed into the turf.
+    const on = this.on;
+    if (this.addr) {
+      const b = sim.ball;
+      if (sim.phase === PH_SETUP) this.inHand = true;
+      else if (b.pos.y < 0.75 || b.vel.y >= 0) this.inHand = false;
+      if (this.inHand) { v1.set(b.pos.x, b.pos.y, b.pos.z); this.toModel(v1, this.addrKey.off); }
+    }
 
-    this.look += ((on ? 1 : 0) - this.look) * (dt > 0 ? 1 - Math.exp(-dt / 0.25) : 0);
+    const watch = on || (this.addr && sim.phase === PH_TOSS);
+    this.look += ((watch ? 1 : 0) - this.look) * (dt > 0 ? 1 - Math.exp(-dt / 0.25) : 0);
     if (this.look >= 0.01) this.watchBall(sim);
 
     this.plantW += (1 - smoothstep(0.25, 0.7, this.sp) - this.plantW) * (dt > 0 ? 1 - Math.exp(-dt / 0.08) : 0);
     this.solveLegs();
     if (this.w > 0 || this.ready >= 0.01) this.solveArms();
+    else { this.elbowR.side.set(0, 0, 0); this.elbowL.side.set(0, 0, 0); this.outReady.set(0, 0, 0, 0); this.outKey.set(0, 0, 0, 0); }
 
     // The head after looking (the ball can move faster than a head turns).
     if (this.inertial && (Avatar.inertMask & 2) !== 0) {
       this.headInertia.apply(this.bones, null, this.headSkip);
       this.neck.updateMatrixWorld(true);
     }
+  }
+
+  /** The ready pose: the serve's address, the plain ready position, or on the way between them (addrW). */
+  private mixReady(): void {
+    const rk = this.handed > 0 ? READY : READY_LEFT;
+    const a = this.addrW;
+    if (a >= 0.999) { this.readyKey = this.addrKey; return; }
+    if (a <= 0.001) { this.readyKey = rk; return; }
+    const m = this.readyMix, k = this.addrKey;
+    BL.u = a;
+    m.p.copy(rk.p); lerpV(m.p, k.p);
+    m.pole.copy(rk.pole); lerpV(m.pole, k.pole);
+    m.off.copy(rk.off); lerpV(m.off, k.off);
+    m.yaw = rk.yaw + (k.yaw - rk.yaw) * a;
+    m.q.copy(rk.q);
+    nlerpQ(m.q, k.q, this.outAddr);
+    this.readyKey = m;
   }
 
   private resetInertia(): void {
@@ -993,6 +1145,11 @@ export class Avatar {
     this.dropI.reset();
     this.lockOn.fill(0);
     this.relT.fill(-1);
+    this.elbowR.side.set(0, 0, 0);
+    this.elbowL.side.set(0, 0, 0);
+    this.outReady.set(0, 0, 0, 0);
+    this.outKey.set(0, 0, 0, 0);
+    this.outAddr.set(0, 0, 0, 0);
   }
 
   /**
@@ -1135,6 +1292,16 @@ export class Avatar {
     q3.multiplyQuaternions(q2, this.grip.qInv);
     v3.copy(this.grip.pos).applyQuaternion(q3);
     v2.setFromMatrixPosition(this.armRacket[0]!.matrixWorld);
+    // Measured from where the shoulder will be at the contact: a player still running to the ball gets there on
+    // their feet, not by lunging the hips out (that put the hips 0.33 m off the floor at a sprint, the knees folded
+    // through). The run left: towards the plan's spot, as far as the present speed covers in the time left.
+    const left = (this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : this.lastT) - this.lastT;
+    if (left > 0 && this.planOk) {
+      const ex = this.planX - this.root.position.x, ez = this.planZ - this.root.position.z;
+      const ed = Math.sqrt(ex * ex + ez * ez);
+      const go = Math.sqrt(this.vx * this.vx + this.vz * this.vz) * Math.min(left, 0.6);
+      if (ed > 1e-3) { const f = Math.min(1, go / ed); v2.x += ex * f; v2.z += ez * f; }
+    }
     const dx = v1.x - v3.x - v2.x, dy = v1.y - v3.y - v2.y, dz = v1.z - v3.z - v2.z;
     const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const short = len > 1e-3 ? Math.max(0, len - this.armLen * 0.96) * this.w : 0;
@@ -1153,7 +1320,8 @@ export class Avatar {
       D.step();
       crouch = D.out[0]!;
     }
-    const drop = crouch + push * 0.35 + down + this.splitDrop - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
+    // No lower than a deep lunge (hips about 0.4 m; crouch, reach and drop together reached 0.62).
+    const drop = Math.min(DROP_MAX, crouch + push * 0.35 + down + this.splitDrop) - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
     const plant = this.plantW >= 0.01;
     const pushed = Math.abs(this.reachX) + Math.abs(this.reachZ);
 
@@ -1339,18 +1507,14 @@ export class Avatar {
       alignQ(q2, this.prevReadyQ);
       BL.u = this.ready;
       lerpV(v1, v2);
-      BL.hemi = this.hemiReady;
-      nlerpQ(q1, q2);
-      this.hemiReady = BL.hemi;
+      nlerpQ(q1, q2, this.outReady);
     }
     this.toWorld(this.kp, v2);
     this.quatToWorld(this.kq, q2);
     alignQ(q2, this.prevKeyQ);
     BL.u = w;
     lerpV(v1, v2);
-    BL.hemi = this.hemiKey;
-    nlerpQ(q1, q2);
-    this.hemiKey = BL.hemi;
+    nlerpQ(q1, q2, this.outKey);
     // Hand = racket rotation without the grip; wrist = racket centre minus the grip offset.
     q3.multiplyQuaternions(q1, this.grip.qInv);
     this.tgt.copy(this.grip.pos).applyQuaternion(q3);
@@ -1390,7 +1554,7 @@ export class Avatar {
       BL.u = 1 - ik;
       lerpV(this.pole, v2);
     }
-    twoBoneIK(ua, fa, hand, this.tgt, this.pole);
+    hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
     setWorldQuat(hand, q3);
     hand.updateMatrixWorld(true);
 
@@ -1405,7 +1569,11 @@ export class Avatar {
     this.toWorld(this.koff, v2);
     BL.u = w * 0.85;
     lerpV(v1, v2);
-    this.toWorld(this.offPole, this.pole);
+    // The free elbow hangs down and back from the chest, which has turned with the stroke (in the stance frame a
+    // pole fixed square to the net comes into line with the arm when the body is side-on, and the elbow flips).
+    const cT = Math.cos(this.chestTurn), sT = Math.sin(this.chestTurn), op = this.offPole;
+    v3.set(op.x * cT + op.z * sT, op.y, -op.x * sT + op.z * cT);
+    this.toWorld(v3, this.pole);
     const ikF = Math.max(this.ready, w * 0.85);
     if (ikF < 1) {
       bendDir(ul, fl, hl, DOWN, bendF);
@@ -1413,6 +1581,6 @@ export class Avatar {
       BL.u = 1 - ikF;
       lerpV(this.pole, v2);
     }
-    twoBoneIK(ul, fl, hl, v1, this.pole);
+    hingeIK(ul, fl, hl, v1, this.pole, this.elbowFree);
   }
 }
