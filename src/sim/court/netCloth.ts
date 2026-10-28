@@ -102,7 +102,7 @@ export class NetCloth {
   private readonly cdg: Float64Array;
   private readonly cof: Float64Array;
   private readonly crh: Float64Array;
-  private chainAlpha = 0;
+  private chainAlpha = -0;
 
   awake = false;
   /**
@@ -110,8 +110,8 @@ export class NetCloth {
    * to a sleeping net within this of it. (QA army: a 4.6 m/s wind billowed the bottom 12 cm out towards a low
    * drive, which was already past the netting when it came within the 4 cm allowed, and went through it.)
    */
-  bulge = 0;
-  private quiet = 0;
+  bulge = -0; // -0: a double from the start (see Ball's fields)
+  private quiet = -0;
   windX = 0;
   windZ = 0;
 
@@ -321,8 +321,8 @@ export class NetCloth {
     }
   }
 
-  private rowT = 0;
-  private rowC = 0;
+  private rowT = -0;
+  private rowC = -0;
 
   /**
    * Solve one chain exactly (linearised once): knots first, first + stride, ... (`count` links), rest lengths

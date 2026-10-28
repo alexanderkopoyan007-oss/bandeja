@@ -15,6 +15,8 @@ export class Feedback {
   private sim: MatchSim | null = null;
   private readonly pad: GamepadInput;
   private readonly cam: BroadcastCamera;
+  /** The camera's kick on smashes (off with reduced motion or the setting). */
+  shake = true;
 
   constructor(pad: GamepadInput, cam: BroadcastCamera) {
     this.pad = pad;
@@ -58,7 +60,7 @@ export class Feedback {
       if (shot === SHOT_SMASH || shot === SHOT_VIBORA || (shot === SHOT_BANDEJA && e.c > 20)) {
         const pace = Math.max(0, Math.min(1, (e.c - 15) / 20));
         const k = (shot === SHOT_SMASH ? 1 : 0.4) * pace * (0.5 + 0.5 * near);
-        if (k > 0.05) this.cam.kick(k, nowMs / 1000);
+        if (k > 0.05 && this.shake) this.cam.kick(k, nowMs / 1000);
       }
     }
   }

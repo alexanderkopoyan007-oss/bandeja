@@ -10,13 +10,15 @@ import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/c
 import { SW_CHARGE } from '../sim/player/player.ts';
 import { SHAPES, SHOT_BANDEJA, SHOT_VOLLEY } from '../sim/contact/shots.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
+import { PAL, gradeColour, hex } from './palette.ts';
+import { DEFAULT_KEYS, keyName } from '../game/input/bindings.ts';
 
 /** E_CALL's words (CALL_MINE, CALL_YOURS, CALL_SWITCH), as a pair shouts them. */
 const CALL_TEXT = ['Mine!', 'Yours!', 'Switch!'];
 
 const TIMING = tuning.timing;
 
-const CSS = `
+export const HUD_CSS = `
 #hud { --display: "Avenir Next Condensed", "DIN Condensed", "Arial Narrow", system-ui, sans-serif;
   --glass: rgba(9,12,17,.66); --edge: rgba(255,255,255,.13); --perfect: #5ff2ff; --good: #8fe36b; --ok: #ffb13b;
   --bad: #ff5a4f; --ball: #ffd84a; }
@@ -42,10 +44,10 @@ const CSS = `
 #hud .ms { position: absolute; left: 50%; bottom: 102px; transform: translateX(-50%); font: 600 12px/1 ui-sans-serif, system-ui;
   color: #e6ebef; opacity: 0; transition: opacity .25s; letter-spacing: .04em; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 #hud .shot { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
-  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
+  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 /* The AI partner's call: the shot line's type, above the hint. */
 #hud .mate { position: absolute; left: 50%; bottom: 224px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
-  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
+  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 
 /* Hints: a glass pill with key caps. */
 #hud .hint { position: absolute; left: 50%; bottom: 176px; transform: translate(-50%, 6px); opacity: 0;
@@ -74,11 +76,17 @@ const CSS = `
   color: transparent; filter: drop-shadow(0 0 14px rgba(255,190,70,.55)); }
 #hud .call.big.on { animation: hud-slam .45s cubic-bezier(.2,1.6,.4,1); }
 @keyframes hud-slam { from { transform: translate(-50%, 0) scale(1.6); opacity: 0; } to { transform: translate(-50%, 0) scale(1); opacity: 1; } }
+:root.calm #hud .call.big.on { animation: none; }
 
 #hud .help { position: absolute; right: 16px; bottom: 16px; padding: 12px 14px; border-radius: 10px; background: var(--glass);
-  border: 1px solid var(--edge); backdrop-filter: blur(8px); font: 12px/1.9 ui-sans-serif, system-ui; color: #cfd6dc;
+  border: 1px solid var(--edge); backdrop-filter: blur(8px); font: 12px/1.9 ui-sans-serif, system-ui; color: #dfe5ea;
   max-width: 470px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 #hud .help .key { font-size: 11px; min-width: 16px; padding: 2px 4px 1px; }
+
+/* High-contrast panels (Accessibility): nearly solid glass and score bug, and a backing behind the loose timing words. */
+:root.hc #hud { --glass: rgba(9,12,17,.94); }
+:root.hc #hud .bug { background: rgba(10,12,16,.95); }
+:root.hc #hud .grade, :root.hc #hud .shot, :root.hc #hud .mate, :root.hc #hud .ms { background: rgba(9,12,17,.9); padding: 5px 10px; border-radius: 6px; }
 `;
 
 /** The predicted path climbs well above head height over our half before it bounces: a lob. */
@@ -91,11 +99,16 @@ function isLob(sim: MatchSim, team: number): boolean {
   return false;
 }
 
-const GRADE_COLORS = ['#ff5a4f', '#ffb13b', '#8fe36b', '#5ff2ff', '#ffb13b', '#ff5a4f'];
 
 /** Text with [X] key caps turned into styled keys (only our own strings go through here). */
 function keys(text: string): string {
   return text.replace(/\[([^\]]+)\]/g, '<span class="key">$1</span>');
+}
+
+/** A key cap with a key's name (any key: ']' or '<' included). */
+function cap(name: string): string {
+  const safe = name.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  return `<span class="key">${safe}</span>`;
 }
 
 export class Hud {
@@ -129,9 +142,12 @@ export class Hud {
 
   constructor(root: HTMLElement, names: [string, string], sets: number) {
     this.root = root;
-    const style = document.createElement('style');
-    style.textContent = CSS;
-    document.head.appendChild(style);
+    if (!document.getElementById('hud-css')) {
+      const style = document.createElement('style');
+      style.id = 'hud-css';
+      style.textContent = HUD_CSS;
+      document.head.appendChild(style);
+    }
     const bug = el('div', 'bug');
     bug.style.setProperty('--sets', String(sets));
     // Doubles rows name two players.
@@ -158,25 +174,61 @@ export class Hud {
     this.meter = root.appendChild(el('div', 'meter'));
     // Meter zones: perfect window in the middle, good either side (sized by setTiming).
     const good = el('div', 'zone');
-    good.style.background = 'rgba(143,227,107,.55)';
     const perf = el('div', 'zone');
-    perf.style.background = 'rgba(95,242,255,.9)';
     this.meter.append(good, perf);
     this.zones.push(good, perf);
+    this.applyPalette();
     this.mark = this.meter.appendChild(el('div', 'mark'));
     this.ms = root.appendChild(el('div', 'ms'));
     this.hint = root.appendChild(el('div', 'hint'));
     this.help = root.appendChild(el('div', 'help'));
-    this.help.innerHTML = keys(
-      '[W][A][S][D] move &nbsp; [J] drive &nbsp; [K] topspin (with [Shift] a chiquita) &nbsp; [L] slice &nbsp; [I] lob &nbsp; [U] drop<br>' +
-      '[O] overhead for lobs: a bandeja; with [Space] a smash that can leave the court; with [Shift] a víbora<br>' +
-      '[N] volley: take it in the air and punch it; with [Space] flat and hard; [U] in the air is a drop volley<br>' +
-      'Hold a shot key as the ball comes: WASD then aims the target and you run to the ball yourself<br>' +
-      'Release when the closing ring meets the ring on the ball. Serve: [A]/[D] aims, press to drop, release to hit<br>' +
-      'Doubles: you are the ringed player; your partner calls the balls on their side, holding a shot key takes it<br>' +
-      '[Space] power &nbsp; [Shift] precision &nbsp; [M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide<br>' +
-      'Gamepad: stick moves &nbsp; A drive &nbsp; X topspin &nbsp; B slice &nbsp; Y lob &nbsp; d-pad drop &nbsp; LB volley &nbsp; RB overhead &nbsp; RT power &nbsp; LT precision',
-    );
+    this.setKeys(DEFAULT_KEYS, false);
+  }
+
+  /**
+   * The keys in use (input/bindings.ts, remapped ones included) and the swing mode: the help panel, the hints and
+   * the serve call name them. Built here, once per change, so a frame showing a hint builds no strings.
+   */
+  setKeys(bound: Record<string, string[]>, tap: boolean): void {
+    const c = (id: string): string => {
+      const code = bound[id]?.[0];
+      return cap(code ? keyName(code) : '–');
+    };
+    const pw = c('power'), pr = c('precision'), lr = `${c('left')}/${c('right')}`;
+    const how = tap
+      ? 'Tap a shot key as the ball comes: the movement keys then aim the target, you run to the ball, and the swing goes at the right moment by itself<br>'
+        + `Serve: ${lr} aims, tap a shot key to drop the ball; it is hit for you<br>`
+      : 'Hold a shot key as the ball comes: the movement keys then aim the target and you run to the ball yourself<br>'
+        + `Release when the closing ring meets the ring on the ball. Serve: ${lr} aims, press to drop, release to hit<br>`;
+    this.help.innerHTML =
+      `${c('up')}${c('left')}${c('down')}${c('right')} move &nbsp; ${c('drive')} drive &nbsp; ${c('topspin')} topspin (with ${pr} a chiquita) &nbsp; ${c('slice')} slice &nbsp; ${c('lob')} lob &nbsp; ${c('drop')} drop<br>`
+      + `${c('overhead')} overhead for lobs: a bandeja; with ${pw} a smash that can leave the court; with ${pr} a víbora<br>`
+      + `${c('volley')} volley: take it in the air and punch it; with ${pw} flat and hard; ${c('drop')} in the air is a drop volley<br>`
+      + how
+      + `Doubles: you are the ringed player; your partner calls the balls on their side, ${tap ? 'pressing' : 'holding'} a shot key takes it<br>`
+      + `${pw} power &nbsp; ${pr} precision &nbsp; ${keys('[M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide')}<br>`
+      + 'Gamepad: stick moves &nbsp; A drive &nbsp; X topspin &nbsp; B slice &nbsp; Y lob &nbsp; d-pad drop &nbsp; LB volley &nbsp; RB overhead &nbsp; RT power &nbsp; LT precision';
+    this.hintBandeja = `Bandeja · hold ${pw} to smash, ${pr} for a víbora`;
+    this.hintVolley = `Volley · hold ${pw} to punch it flat`;
+    this.hintLob = `Lob coming · ${tap ? 'press' : 'hold'} ${c('overhead')} for an overhead`;
+    this.hintPartner = `Partner's ball · ${tap ? 'press' : 'hold'} a shot key to take it`;
+    this.serveSub = tap ? `${lr} aims · tap a shot key: the serve is timed for you` : `${lr} aims · press a shot key to drop · release to hit`;
+    // Shown again with the new words.
+    this.cache.delete(this.hint);
+    this.cache.delete(this.callSub);
+  }
+
+  private hintBandeja = '';
+  private hintVolley = '';
+  private hintLob = '';
+  private hintPartner = '';
+  private serveSub = '';
+
+  /** The meter's zones in the palette's colours (ui/palette.ts; call again after the colour setting changes). */
+  applyPalette(): void {
+    const rgba = (c: number, a: number): string => `rgba(${c >> 16},${(c >> 8) & 255},${c & 255},${a})`;
+    this.zones[0]!.style.background = rgba(PAL.good, 0.55);
+    this.zones[1]!.style.background = rgba(PAL.perfect, 0.9);
   }
 
   /** Size the meter's Good/Perfect zones to the timing windows (meter spans +-0.25 s). */
@@ -268,16 +320,17 @@ export class Hud {
       }
       // Doubles: the partner has called it. Holding a shot key takes it anyway.
       const partners = sim.doubles && sim.taker[team] === (human ^ 2) && p.swing !== SW_CHARGE;
-      if (partners) hint = sim.rally.isServe ? 'Partner receives' : 'Partner\'s ball · hold a shot key to take it';
-      else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Bandeja · hold [Space] to smash, [Shift] for a víbora';
-      else if (p.shot === SHOT_VOLLEY && p.swing === SW_CHARGE) hint = st.valid && st.volley ? 'Volley · hold [Space] to punch it flat' : 'Out of reach in the air · it will be blocked off the bounce';
-      else if (this.lob) hint = 'Lob coming · hold [O] for an overhead';
+      if (partners) hint = sim.rally.isServe ? 'Partner receives' : this.hintPartner;
+      else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = this.hintBandeja;
+      else if (p.shot === SHOT_VOLLEY && p.swing === SW_CHARGE) hint = st.valid && st.volley ? this.hintVolley : 'Out of reach in the air · it will be blocked off the bounce';
+      else if (this.lob) hint = this.hintLob;
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }
-    if (hint) this.set(this.hint, keys(hint), true);
+    // (HTML of our own strings and key names escaped by cap())
+    if (hint) this.set(this.hint, hint, true);
     if (!!hint !== this.hintOn) { this.hintOn = !!hint; this.toggle(this.hint, 'on', this.hintOn); }
     if (human >= 0 && sim.phase === PH_SETUP && sim.score.serverPlayer() === human && now > this.callUntil) {
-      this.showCall('Your serve', keys('[A]/[D] aims · press a shot key to drop · release to hit'), '#ffd84a', now, 0.05);
+      this.showCall('Your serve', this.serveSub, '#ffd84a', now, 0.05);
     }
   }
 
@@ -309,7 +362,7 @@ export class Hud {
           const outOfReach = e.kind === E_WHIFF && e.x > 0;
           this.set(this.grade, outOfReach ? 'Out of reach'
             : e.kind === E_WHIFF && e.b !== G_TOO_EARLY && e.b !== G_TOO_LATE ? `${GRADE_TEXT[e.b]} · miss` : GRADE_TEXT[e.b]!);
-          this.grade.style.color = outOfReach ? '#ffb13b' : GRADE_COLORS[e.b]!;
+          this.grade.style.color = hex(outOfReach ? PAL.textOff : gradeColour(e.b, true));
           this.grade.style.opacity = '1';
           const ms = Math.round(Math.abs(e.c) * 1000);
           this.set(this.ms, outOfReach ? `${e.x.toFixed(1)} m away: get to the spot first` : ms === 0 ? 'spot on' : `${ms} ms ${e.c < 0 ? 'early' : 'late'}`);
@@ -339,7 +392,7 @@ export class Hud {
         break;
       case E_POINT: {
         const who = team < 0 ? (e.team === 0 ? 'Near side' : 'Far side') : e.team === team ? 'Your point' : 'Their point';
-        const accent = team < 0 ? '#ffffff' : e.team === team ? '#8fe36b' : '#ff5a4f';
+        const accent = team < 0 ? '#ffffff' : hex(e.team === team ? PAL.good : PAL.textBad);
         if (e.a === WHY_EXIT_AFTER_BOUNCE) {
           // Out of the court after a good bounce: over the back fence is "por cuatro", over the side or out
           // through a door "por tres".
@@ -350,7 +403,7 @@ export class Hud {
         break;
       }
       case E_FAULT:
-        this.showCall(REASON_TEXT[e.a]!, e.b === 2 ? 'Double fault' : 'Second serve', '#ffb13b', now, 1.2);
+        this.showCall(REASON_TEXT[e.a]!, e.b === 2 ? 'Double fault' : 'Second serve', hex(PAL.textOff), now, 1.2);
         break;
       case E_LET:
         this.showCall('Let', 'Replay the serve', '#5ff2ff', now, 1.2);

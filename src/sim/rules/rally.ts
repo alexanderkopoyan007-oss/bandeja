@@ -61,7 +61,8 @@ export class Rally {
   winner = -1;
   why = 0;
 
-  readonly box: ServeBox = { x0: 0, x1: 0, z0: 0, z1: 0 };
+  // -0: held as doubles from the start (z1 is 0 for one serving side and a fraction for the other).
+  readonly box: ServeBox = { x0: -0, x1: -0, z0: -0, z1: -0 };
   lineTolerance = 0.025;
   outOfCourtPlay = false;
   /**
@@ -73,8 +74,10 @@ export class Rally {
   cornerY = 0.06;
   /** That corner touch, while the next contact may still be its floor half (within CORNER_SAME): x, z. */
   private cornerOn = false;
-  private cornerX = 0;
-  private cornerZ = 0;
+  // -0, not 0: a field that starts as a small integer and gets its first fractional value only at a corner touch
+  // (mid-rally) changes the Rally's field representation then, and every optimised function using it deoptimises.
+  private cornerX = -0;
+  private cornerZ = -0;
 
   reset(): void {
     this.hitter = -1;
