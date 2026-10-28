@@ -318,6 +318,13 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Left: the HUD meter reads `sim.time` and the ring the render time (up to a tick apart, cosmetic); unplugging
     the pad mid-charge swings at that moment rather than cancelling (the sim has no cancel); for rollback later,
     `Player.writeState` leaves out the half bounds and the human's stand plans are not hashed (both before Phase 2).
+- **Frame rate, Phase 1 → Phase 2** (`npm run build && npm run perf`, 30 s each, AI doubles, this M1 Max; build
+  a8f763d): medium with the CPU throttled 4x (laptop proxy) p50 2.4 → 2.4 ms, p99 4.3 → 4.1 ms, max 12.0 → 10.2
+  ms, 0 frames over 20 ms, sim p99 0.8 → 0.9 ms; high (2x pixel ratio) 539 → 498 fps, p99 8.8 → 8.8 ms, 105 → 99
+  frames over 20 ms (0.65% → 0.66%, the queue stalls M1 noted). No regression: the average at high moves ±8%
+  between runs of the same build (Phase 1's own before/after went 498 → 539 with no rendering change); p99 and
+  the stalls are the same. 42 draw calls, 473k triangles. Round 3's change is in when the loop steps, not what
+  it draws.
 - **Fresh-eyes round 3** (independent, read-only; 189 tests, typecheck, point mix 24 x 300 s, alloc over four
   seeds, render-side determinism, the modifier fix end to end with the real `KeyboardInput`, an emulation of
   `Game.tick` against the real sim at 60-240 Hz). Fixed:
