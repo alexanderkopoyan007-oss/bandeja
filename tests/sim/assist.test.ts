@@ -245,8 +245,9 @@ describe('overheads', () => {
   });
 
   it('with power held the overhead is a smash, fast enough to leave the court', () => {
-    // 18 matches: about 45 lobs (12 gave 36-45 depending on the ball's tuning; 16 gave 39 with the Phase 4 AI).
-    const r = lobs(BTN_POWER, 18);
+    // 40 matches: about 130 lobs. (18 were enough for the lob counts, but the smashes that leave the court are rare:
+    // the AI lobs deep and the smash comes from 6-8 m; 10 left the court in 58 matches, none in the first 25.)
+    const r = lobs(BTN_POWER, 40);
     expect(r.lobs).toBeGreaterThan(40);
     expect(r.smashes / r.lobs).toBeGreaterThan(0.85);
     const sorted = r.speeds.slice().sort((a, b) => a - b);
@@ -254,7 +255,7 @@ describe('overheads', () => {
     // full-power smashes from a lob, so a little above.
     expect(sorted[sorted.length >> 1]! * 3.6).toBeGreaterThan(128);
     expect(sorted[sorted.length >> 1]! * 3.6).toBeLessThan(155);
-    expect(r.outAfterBounce).toBeGreaterThan(0); // por tres / por cuatro (rare at Good timing: ~3 in 8 matches' worth)
+    expect(r.outAfterBounce).toBeGreaterThan(0); // por tres / por cuatro
   });
 
   it('with precision held the overhead is a víbora: sidespin, between bandeja and smash pace, and it lands in', () => {

@@ -23,6 +23,15 @@ const BACK_FOLLOW = 0.3;
  * outside the partner, and the pair defended with 1.2 m between them and the other side open.
  */
 export const SWITCH_X = 0.8;
+/**
+ * Weaker AI players attack from further back (club players about 4.5 m from the net against the pros' 3.8 m:
+ * docs/research/shots-movement-feel.md §5): UP_Z_WEAK more at level 0, 0.7 m at level 0.5. And they move with the
+ * ball less as a pair (the follow shares scaled down to 0.4 at level 0): a gap down the middle, not a frozen player.
+ */
+const UP_Z_WEAK = 1.4;
+/** A style that likes the net stands closer in at the net (and a defensive one further out): NET_CLOSE (m) per unit
+ * of its net trait away from 1 (data/ai.json). */
+const NET_CLOSE = 0.5;
 const SWITCH_BACK_T = 1.0;
 
 export interface Spot {
@@ -47,8 +56,8 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
     // Partner is on it: match their depth (where they will play it from), and if they are taking it on our side,
     // switch.
     up = abs(mate.pos.z) < 5.2;
-    const ai = m.ai[i ^ 2];
-    const plan = ai ? ai.standPlan : m.stand[i ^ 2]!;
+    const mateAi = m.ai[i ^ 2];
+    const plan = mateAi ? mateAi.standPlan : m.stand[i ^ 2]!;
     if (m.taker[team] === (i ^ 2) && plan.valid && plan.bx * s * lane > SWITCH_X) lane = -lane;
   } else if (m.lastStrikeTeam === team && m.lastStrikePlayer >= 0) {
     // A switched pair of AIs crosses back while its ball is a long way from bouncing over there.
@@ -67,8 +76,11 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   // them at 4.5 m apart: most volley winners went that way); back by the glass they cover the width. Both slide
   // towards the ball (Ramón-Llin et al. 2021: the pair shifts to the side the ball is on), more at the net.
   const half = up ? UP_HALF_GAP : BACK_HALF_GAP;
-  out.x = clamp(lane * s * half + (up ? UP_FOLLOW : BACK_FOLLOW) * m.ball.pos.x, p.minX + 0.3, p.maxX - 0.3);
-  out.z = s * (up ? UP_Z : BACK_Z);
+  const ai = m.ai[i];
+  const weak = ai ? 1 - ai.level : 0;
+  const close = ai ? NET_CLOSE * (ai.style.net - 1) : 0;
+  out.x = clamp(lane * s * half + (up ? UP_FOLLOW : BACK_FOLLOW) * (1 - 0.6 * weak) * m.ball.pos.x, p.minX + 0.3, p.maxX - 0.3);
+  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close : BACK_Z);
 }
 
 /** The ball's next bounce on the floor is more than SWITCH_BACK_T away. (A boolean: a double returned from a call
@@ -89,10 +101,13 @@ function bounceIsFar(m: MatchSim): boolean {
  */
 function deepLob(m: MatchSim, s: number, team: number): boolean {
   const pr = m.pred;
+  // An AI lobber's style sets how good the lob must be to follow it in (a net-rusher follows a shorter one).
+  const lobber = m.ai[m.lastStrikePlayer];
+  const beats = lobber ? LOB_BEATS * lobber.style.net : LOB_BEATS;
   let top = 0;
   let deep = false;
   for (let i = 0; i < pr.n; i++) {
-    if (pr.bounces[i]! > 0) { deep = top > 4.5 && abs(pr.z[i]!) > m.world.court.halfL - LOB_BEATS && pr.z[i]! * s < 0; break; }
+    if (pr.bounces[i]! > 0) { deep = top > 4.5 && abs(pr.z[i]!) > m.world.court.halfL - beats && pr.z[i]! * s < 0; break; }
     if (pr.y[i]! > top) top = pr.y[i]!;
   }
   if (!deep) return false;

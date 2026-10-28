@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { MatchSim, E_POINT, E_HIT, E_TOSS, E_FAULT, E_LET, E_CALL, CALL_MINE, CALL_YOURS, CALL_SWITCH, PH_SETUP, PH_RALLY } from '../../src/sim/match.ts';
 import { InputFrame, BTN_DRIVE } from '../../src/sim/input.ts';
-import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
+import { SW_IDLE, SW_CHARGE, type Player } from '../../src/sim/player/player.ts';
 import { SHOT_SERVE, SHOT_KEYS } from '../../src/sim/contact/shots.ts';
 import { WHY_HIT_BODY_OPP, WHY_HIT_BODY_OWN } from '../../src/sim/rules/rally.ts';
 import { MODE_GOLDEN, DEFAULT_FORMAT } from '../../src/sim/rules/score.ts';
@@ -193,7 +193,8 @@ describe('pair teamwork', () => {
             lob = null;
           }
           if (!lob && SHOT_KEYS[e.a] === 'lob') {
-            const team = 1 - e.team, a = m.players[team]!, b = m.players[team + 2]!;
+            const team: number = 1 - e.team;
+            const a: Player = m.players[team]!, b: Player = m.players[team + 2]!;
             let lx = 0;
             for (let i = 0; i < m.pred.n; i++) if (m.pred.bounces[i]! > 0) { lx = m.pred.x[i]!; break; }
             if (Math.abs(a.pos.z) < 5 && Math.abs(b.pos.z) < 5 && Math.abs(lx) > 1.3) {
