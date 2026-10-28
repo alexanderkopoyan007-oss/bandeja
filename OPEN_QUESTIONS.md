@@ -156,8 +156,9 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   realistic rigged human the licence allows (Mixamo's other characters, downloaded by the owner with their Adobe
   ID, or a CC0 base body from MakeHuman/MPFB, which needs Blender), then rebinding it to our skeleton.
 - **Glass reflections of the players.** The arena-glass photo shows the players mirrored in the side glass at
-  grazing angles; our glass reflects only the arena baked at load. Settled by: a planar reflection per glass wall
-  on the High preset (Phase 8 measures its cost).
+  grazing angles; our glass reflects only the arena baked at load. Phase 8 didn't build it: a planar reflection
+  renders the scene again per glass wall in view, and High already fills the GPU unpaced (DECISIONS.md Phase 8).
+  Settled by: the owner saying whether an Ultra-only reflection is worth building and measuring.
 - **The broadcast lens.** The camera's height and distance come from Javadiha et al. 2021; the lens (26°) is chosen
   so the court fills the frame as TV frames do, not measured. Settled by: one broadcast frame with the court's
   corners marked, solved with `tools/photo-solve.ts` (a still from the owner's own screen is enough; it is not
@@ -221,10 +222,12 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 
 ## Phase 8 (performance and polish)
 - **A real integrated-GPU laptop.** Every frame rate here is from an M1 Max, with an integrated-GPU stand-in (CPU 4x
-  slower, five times the pixels) that holds 60 Hz on every preset. Settled by: a match on a mid-range laptop (Intel
-  Iris Xe or AMD Radeon 680M) in Chrome with Settings → Frame rate meter on (or F3), noting the
-  frame rate and any hitches during rallies on Auto, Medium and Low; or `npm run build && npm run perf` on that
-  laptop, which prints the 1% lows.
+  slower, five times the pixels). On it Low and Medium hold 60 Hz unpaced; High, Ultra and Auto at pixel ratio 1.5
+  don't (2.4-2.7% of frames over 20 ms, 1% low 16 fps, a full GPU queue) but do when paced at 60 Hz, and Auto never
+  lowered its scale. How a real laptop's compositor treats those frames is what the stand-in can't show. Settled
+  by: a match on a mid-range laptop (Intel Iris Xe or AMD Radeon 680M) in Chrome with Settings → Frame rate meter
+  on (or F3), noting the frame rate and any hitches during rallies on Auto, High, Medium and Low; or
+  `npm run build && npm run perf` on that laptop, which prints the 1% lows.
 - **Safari and Firefox load times.** The `scheduler.yield` fallback was measured in Chrome with `scheduler.yield`
   removed (19.2 s → 9.1 s cold at 4x CPU), not in Safari or Firefox themselves, and Safari's WebGPU and WebGL
   compile speeds differ from Chrome's. Settled by: a cold load (empty cache) in each, timed from the address bar to
@@ -244,5 +247,21 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   help panel's and between-points card's text is a shade lighter, menu group labels are brighter and the
   narrow-screen menu shade is a little darker (all for contrast). The High contrast setting is opt-in. Settled by:
   the owner looking at them.
+- **The Low preset's triangle budget.** CLAUDE.md gives Low 300k triangles; every preset draws 608,546 in view
+  (847,6xx with the shadow pass): the players 221k, the crowd about 302k, the seats 65k. Low holds 60 Hz on the
+  integrated-GPU stand-in all the same (1% low 136 fps). Meeting the budget needs a lighter crowd and body LODs on
+  Low, which change a look the owner approved. Settled by: the owner choosing between a lighter Low (seen first)
+  and a budget that matches what Low draws.
+- **One-off deoptimisations left in the sim.** After the warm-up, a function deoptimises once the first time play
+  reaches a branch with no type feedback, then is optimised again (`tools/sim-deopt.ts`; DECISIONS.md Phase 8).
+  Seen over 4 matches each way, one deopt apiece: `SimpleAi.think` (serve and shot lines 176-193, 277-291),
+  `formationSpot`/`deepLob` (formation.ts 61-118), `applyInput` and `steerAim` (match.ts 581, 629, 930),
+  `updateTakers`/`setTaker`/`callBall` (match.ts 712-757, once "not a Smi"), `focusIdeal`, `checkBodies`,
+  `separatePartners`, `stepBall`, `planStand`/`findWindows`/`overheadCost` (windows.ts 45-60, positioning.ts 167
+  once "lost precision"), the ball's `tryPost`/`tryNet`/`tryEdges`/`tryCorners`/`junction`/`bounce`/`resolve`/
+  `findContact`/`checkExit`, the net cloth's `contactBody`/`surfaceZ`/`findCell`, `ShotSolver.solve`, the score's
+  star-point check (score.ts 120), `Court.backZoneAt` and fdlibm's `expIO`. In Chrome none came in the player's first
+  60 s after Quick match (the title's match warms them). Settled by: a deopt run on a player's whole match; a
+  function that deopts more than once there is worth reading its rare branches up front, as `Player.move` does.
 - **three's bind-group cache** keeps about 130 KB a match (`_bindingGroupsCache`, DECISIONS.md). Reporting it to
   three is public, so it waits for the owner's OK.

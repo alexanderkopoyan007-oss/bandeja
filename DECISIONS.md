@@ -821,7 +821,8 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   environment rendered from the arena once at load, box-projected onto the hall or the club's surroundings so
   each wall reflects its own side (a plain lookup made the near glass at night reflect the floodlit court), a
   faint iron green, ball prints (faint felt rings smeared along the skid) and dust at the foot that fade with
-  distance. Not reflected: the players and the ball (needs a planar reflection per wall; a Phase 8 preset).
+  distance. Not reflected: the players and the ball (needs a planar reflection per wall; a Phase 8 preset: not
+  built, see Phase 8).
 - **Tone mapping**: Khronos PBR Neutral (AgX turned the photos' saturated blues and reds to periwinkle and salmon;
   `?tone=agx|aces` compares).
 - **Players dressed** (`src/render/avatar/kit.ts`): the mannequin mesh becomes a padel player in the shader: each
@@ -1049,7 +1050,8 @@ twenty medium or low. Fixed:
 - **Frame rate, sound off → on** (the same Phase 6 build, `QUERY=&sound=0` then without, back to back): medium 4x
   178 → 141 fps, frame p50 5.5 → 7.1 ms, p99 8.4 → 9.8 ms, CPU work p50 4.9 → 6.3 ms (the soundscape and WebAudio's
   main-thread share: about 0.35 ms a frame unthrottled), still 0 frames over 20 ms; high 212 → 202 fps, p99 22.7 →
-  29.0 ms, 1.95% over 20 ms both. The audio's cost is a Phase 8 item (voice pooling, fewer parameter writes).
+  29.0 ms, 1.95% over 20 ms both. The audio's cost is a Phase 8 item (voice pooling, fewer parameter writes;
+  Phase 8 measured about 0.4 ms a frame at 4x and left it).
 
 ## Phase 7: rules and QA
 What was found and fixed, with the commands that reproduce it: `docs/qa/REPORT.md`. The decisions:
@@ -1116,8 +1118,8 @@ What was found and fixed, with the commands that reproduce it: `docs/qa/REPORT.m
 ## Phase 8: performance and polish
 Measured with `tools/perf.mjs` (Chrome with puppeteer, 1080p, AI-vs-AI autoplay, the frame limit off), with
 `tools/lifecycle.mjs` (match → title → match cycles, heap and GPU objects after GC) and `node tools/perf.mjs 20 load`
-(cold starts on throttled networks). The machine was shared with other sessions (load average 5-12), so before and
-after numbers come from paired runs back to back.
+(cold starts on throttled networks). The machine was shared with other sessions (load average 4-17 over the
+review's runs), so before and after numbers come from paired runs back to back, and each run prints its load.
 
 **Screens**
 - **One app around the game** (`src/app/app.ts`): a title screen over an attract match on the chosen arena, Play
@@ -1125,11 +1127,20 @@ after numbers come from paired runs back to back.
   results screen with the match's stats (`src/game/stats.ts`). URL options (`?autoplay=1` and the rest) still
   launch straight into a game (`directLaunch`), so every tool keeps working.
 - **Menus** (`src/ui/menu/menu.ts`): plain buttons in a list (sliders for the choices), driven alike by the keyboard,
-  the mouse and a pad (d-pad or stick with repeat, A to choose, B back, Start pause). Screens slide in (0.22 s) and
-  fade instead with reduced motion. Going back puts the focus where it was. Checked with a fake pad in Chrome.
-- **Loading** (`src/ui/loading.ts`): named stages with a bar, the arena behind as soon as it exists; a failure says
-  which step failed (the renderer, or the players' download, retried three times at 1 s and 2 s) and offers Try
-  again (a key, a click or the pad's A).
+  the mouse and a pad (d-pad or stick with repeat, A to choose, B back, Start pause and resume, also from the pause
+  menu's Settings and Controls). Screens slide in (0.22 s) and fade instead with reduced motion. Going back puts
+  the focus where it was. The pad is polled only while a menu is up, by one loop that clears its id before it
+  polls (a `hide()` from inside the poll, a button that starts a match, used to leave the loop running:
+  `cancelAnimationFrame` can't stop the callback that is running, so during play A pressed the stale Quick match
+  again and restarted the match, and the stick moved hidden focus); a hidden menu has nothing left to press.
+  Checked with a scripted pad in Chrome (`tools/pad-check.mjs`: PASS on this build; the build before the fix
+  fails its restart, focus, pause sub-screen and held-swing checks). The game ignores Start while a menu has it
+  and marks the press that resumed as used (the two polls run in one frame in either order).
+- **Loading** (`src/ui/loading.ts`): named stages with a bar over an opaque screen that fades once the first frame
+  is drawn; a failure says which step failed (the renderer, the players' download, tried three times: two retries,
+  1 s and 2 s apart, or the arena's build, for the title as for a match) in words, not a raw `Error:`, and offers
+  one Try again button (a key, a click or a new press of the pad's A). The progress bar alone has the progressbar
+  role; the message is an alert beside it.
 - **Between points and games** (`src/ui/transitions.ts`): the sim puts the players back the instant the dead time
   ends, so the picture dips to near black for a quarter second over that instant, as a broadcast cuts away, instead
   of showing four players jump. After a game or a set a score card shows the match so far.
@@ -1141,38 +1152,107 @@ after numbers come from paired runs back to back.
 
 **Quality presets** (`src/render/quality.ts`): chosen by what costs GPU time here, pixels first. Low: pixel ratio 1,
 render scale 0.75, 1024 shadow map, no bloom. Medium: ratio 1, full scale, 2048, bloom. High (the game as it was):
-ratio up to 2. Ultra: 4096 shadows. Auto (the default) is High with dynamic resolution (`Game.adapt`): about half a
-second of frames over 18.5 ms takes the render scale down 0.1 (to 0.6 at least), 900 frames without one try a step
-up, and a step up that has to come back down within 10 s doubles the wait. Only the pixel ratio changes, so no
-shader compiles mid-point.
+ratio up to 2, so on a screen at ratio 1 High draws what Medium draws. Ultra: 4096 shadows. Auto (the default) is
+High with dynamic resolution (`Game.adapt`; `?quality=auto` runs it from a URL): about half a second of slow
+frames takes the render scale down 0.1 (to 0.6 at least), 900 frames without one try a step up, and a step up
+that has to come back down within 10 s doubles the wait. Only the pixel ratio changes, so no shader compiles
+mid-point.
+- **Slow is judged against the display.** The first version counted every frame over 18.5 ms as slow, so on a
+  50 Hz screen, or with a browser's 30 Hz cap (battery savers; headless Chrome paces at 30 Hz), every frame was
+  slow and the scale sank to 0.6 for good. A frame is now slow past max(18.5 ms, 1.25 display periods). The
+  period is measured while the page loads (`render/display.ts`: the lower quartile of requestAnimationFrame
+  intervals while the main thread mostly waits on the renderer and the download) and lowered when frames run
+  faster than it (the 10th percentile of the last 256). Intervals alone can't tell a 30 Hz cap from a GPU that
+  only makes 30 Hz on a 60 Hz screen, so one more check: when the scale reaches its floor and the median frame is
+  no faster than at full scale, pixels were never the limit (a cap, or the CPU): the scale goes back to full and
+  that frame time becomes the period. Checked with `node tools/perf.mjs 30 autocap`, paced by the game's own
+  `?fpscap` (which the load-time sample can't see, so harder than a browser's cap): at 30 Hz the scale went to the
+  floor in the first seconds and came back to full when the floor check ran (28% of the run at 0.6, 3% at 0.7,
+  full from then on); at 50 Hz it took one step to 0.9 at the start and was back at full after the 900-frame
+  probe, never lower. On the integrated-GPU stand-in Auto stayed at full scale (above).
 
-**Frame rate** (30 s each)
+**Frame rate** (each run 30 s of the AI match after a 3 s settle, 1080p, the frame limit off unless paced; the
+review's runs on build 45f0f12, logs in `tools/out/p8-review-*.log` with the load average before and after each)
 
-| Run | p50 ms | p99 ms | 1% low fps | frames > 20 ms |
-|---|---|---|---|---|
-| Phase 7, medium, CPU 4x (paired run) | 6.2 | 11.6 | 76 | |
-| Phase 8, medium, CPU 4x (paired run) | 5.5 | 8.8 | 87 | 1 |
-| Phase 8 final, medium, CPU 4x (load average 7.9 / 8.5) | 7.1 / 8.7 | 11.3 / 12.0 | 74 / 75 | 1 / 0 |
-| Integrated-GPU proxy, low | | 7.2 | 103 | 0 |
-| Integrated-GPU proxy, medium | | 9.3 | 92 | 0 |
-| Integrated-GPU proxy, high | | 11.4 | 77 | 0 |
-| Phase 7, high, 2x pixels, unpaced | 3.8 | 20.6 | 36 | 1.03% |
-| Phase 8, high, 2x pixels, unpaced | 3.3 | 21.2 | 37 | 1.05% |
-| Phase 8, high, 2x pixels, paced at 120 Hz | 8.3 | 8.3 | 120.4 | 0 (and no 120 Hz refresh missed) |
+| Run | load average | p50 ms | p99 ms | 1% low fps | frames > 20 ms |
+|---|---|---|---|---|---|
+| Phase 7, medium, CPU 4x (paired with the next) | | 6.2 | 11.6 | 75.9 | 0 |
+| Phase 8, medium, CPU 4x (paired) | | 5.5 | 8.8 | 86.9 | 1 (0.02%) |
+| Phase 8 before the review, medium, CPU 4x (two runs) | 7.9 / 8.5 | 7.1 / 8.7 | 11.3 / 12.0 | 74 / 75 | 1 / 0 |
+| Phase 8 review, medium, CPU 4x | 4.2 → 7.6 | 5.7 | 9.1 | 88.4 | 0 |
+| Phase 7, high, 2x pixels, unpaced (paired with the next) | | 3.0 | 20.3 | 40.5 | 1.01% |
+| Phase 8, high, 2x pixels, unpaced (paired) | | 3.1 | 28.6 | 33.6 | 1.98% |
+| Phase 8 before the review, high, 2x pixels, unpaced | | 5.3 | 38.5 | 23.9 | 2.14% |
+| Phase 8 review, high, 2x pixels, unpaced | 7.6 → 8.5 | 3.0 | 19.9 | 38.6 | 0.99% |
+| Phase 8 review, high, 2x pixels, paced at 120 Hz | 8.5 → 7.5 | 8.3 | 8.3 | 120.5 | 0 (no 120 Hz refresh missed) |
+
+Integrated-GPU stand-in (`node tools/perf.mjs 30 igpu`, then `igpu60`): CPU 4x, five times the pixels.
+
+| Preset (pixel ratio asked → drawn) | load average | p50 ms | p99 ms | 1% low fps | frames > 20 ms | holds 60 Hz |
+|---|---|---|---|---|---|---|
+| Low (1 → 1.68: √5 × its 0.75 render scale) | 4.0 → 3.7 | 4.1 | 6.4 | 135.7 | 0 (max 13.6) | yes |
+| Medium (1 → 2.24) | 3.7 → 3.7 | 5.9 | 9.3 | 84.8 | 0 (max 18.3) | yes |
+| High (1.5 → 3.35) | 3.7 → 4.1 | 8.8 | 60.9 | 15.8 | 67 (2.39%) | **no** |
+| Ultra (1.5 → 3.35) | 4.1 → 4.0 | 8.7 | 55.2 | 16.2 | 72 (2.55%) | **no** |
+| Auto (1.5 → 3.35; stayed at full scale) | 4.0 → 4.2 | 8.3 | 56.0 | 16.2 | 77 (2.66%) | **no** |
+| Medium, paced at 60 Hz | 10.2 → 11.3 | 16.8 | 17.4 | 55.5 | 1 (20.1 ms) | one late frame in 1,778 |
+| High, paced at 60 Hz | 11.3 → 10.9 | 16.8 | 17.5 | 55.2 | 0 (max 19.2) | yes |
+| Ultra, paced at 60 Hz | 10.9 → 9.9 | 16.8 | 17.4 | 57.2 | 0 (max 18.4) | yes |
+| Auto, paced at 60 Hz (stayed at full scale) | 9.9 → 12.9 | 16.8 | 17.4 | 55.1 | 0 (max 19.3) | yes |
 
 - **The 1% low** is 1000 / the mean frame time of the slowest 1% of frames (0.1% likewise); every run reports it,
   frames over 20 ms and frames over 9.33 ms (a missed 120 Hz refresh).
-- **The integrated-GPU proxy** throttles the CPU 4x and draws five times the pixels (`?gpuload=5` scales the pixel
-  ratio by √5): an M1 Max has about five times the fill rate and bandwidth of an Iris Xe or a Radeon 680M. Every
-  preset holds 60 Hz on it with no frame over 20 ms. It is a proxy (OPEN_QUESTIONS.md).
-- **The unpaced High runs' spikes are the GPU queue, not the game.** At 196 fps with nothing pacing the frames the
-  main thread's work per frame (p99 20.8 ms) equals the frame time: it is blocked submitting into a full queue. A
-  display paces frames; paced as a 120 Hz screen would (`?fpscap=120`), the same High run at twice the pixels holds
-  120 Hz to the frame: 3614 frames in 30 s, max 8.4 ms, CPU work p50 1.7 ms.
+- **The integrated-GPU stand-in** throttles the CPU 4x and draws five times the pixels (`?gpuload=5` scales the
+  pixel ratio by √5): an M1 Max has about five times the fill rate and bandwidth of an Iris Xe or a Radeon 680M.
+  Low and Medium cap the pixel ratio at 1, so they draw the same at any ratio; High, Ultra and Auto run at 1.5, a
+  14-15" laptop's usual 125-150% (at ratio 1 High draws what Medium draws). Unpaced, Low and Medium hold 60 Hz with
+  no frame over 20 ms; **High, Ultra and Auto don't**: their median frame is 8.3-8.8 ms, but 2.4-2.7% of frames
+  take over 20 ms and the 1% low is 16 fps, with the main thread's work at p99 equal to the frame time, the same
+  full GPU queue as the unpaced High runs at 2x below. Paced as a 60 Hz screen paces them (`?fpscap=60`, under a
+  load average of 10-13), all four draw 59.3 frames a second (the cap's own spacing here is 16.8 ms) with p99
+  17.4-17.5 ms and nothing over 20 ms but one 20.1 ms frame on Medium. Whether a frame 1-3 ms past the period would
+  miss a real screen's refresh depends on the compositor, which the stand-in can't show. Auto never left full scale
+  in either run: the unpaced stalls are single frames, not the half second of slow frames it reacts to. It is a
+  stand-in (OPEN_QUESTIONS.md). The first version of this table ran High at ratio 1 (so it measured Medium), never
+  ran Ultra or Auto, and gave Low 0 frames over 20 ms where its log had 1 (21.5 ms); those runs were 25 s.
+- **Unpaced High is slower in Phase 8 than in Phase 7** in the paired run: 1% low 33.6 against 40.5 fps, p99 28.6
+  against 20.3 ms, 1.98% against 1.01% of frames over 20 ms. The final run before the review measured 23.9 fps,
+  38.5 ms and 2.14%, the review's 38.6 fps, 19.9 ms and 0.99%; neither is paired, and the machine's load moves
+  these runs that much. What Phase 8 added to the unpaced cost wasn't isolated. In every unpaced High run the main
+  thread's work at p99 equals the frame time: it is blocked submitting into a full GPU queue, which a display's
+  pacing never lets fill. Paced as a 120 Hz screen paces it (`?fpscap=120`), the same High run at twice the pixels
+  holds 120 Hz to the frame: 3615 frames in 30 s, max 8.3 ms, CPU work p50 1.3 ms.
+- **The final build** (7e62375: after 45f0f12 only sim fields' initial values changed) was paired with 45f0f12,
+  alternating A B A B (`tools/out/p8-review-pair.log`), while other processes loaded the machine (Chrome helpers
+  outside the runs at 100-130% CPU, load average 6-8): medium at 4x 1% low 56.8 and 60.3 fps against 57.4 and
+  61.4, p99 15.7 and 14.7 ms against 14.3 and 14.5. The same within the noise; both ran half as fast as the runs above,
+  even paced at 120 Hz (68-89 fps), which is the machine, not the build.
 - **GPU timestamps can't be used on Apple GPUs**: three's timestamp queries reported 27 ms of GPU time a frame at
   140 fps (the passes' times overlap). They are opt-in (`?gputime=1`, `GPUTIME=1` for perf.mjs) and off otherwise.
-- **The JIT**: `node tools/perf.mjs 20 deopt` (V8's `--trace-deopt` over a match) shows only warm-up deoptimisations;
-  the attract match on the title screen warms the code before the first point is played.
+- **The audio's cost** (left to Phase 8 by Phase 6): `node tools/perf.mjs 30 audio`, medium at CPU 4x with the
+  sound on, off, on, off back to back (load average 7.9 → 5.0): 183.9 and 185.7 fps with sound against 201.3 and
+  200.8 without, frame p50 5.3 against 4.8 ms, p99 8.3-8.4 against 7.8-8.0 ms, main-thread work p50 4.7-4.8
+  against 4.4 ms. About 0.4 ms a frame at 4x (0.1 ms unthrottled); one sound-on run had one 20.5 ms frame. Phase 6
+  measured 1.4 ms at 4x on its own build. Voice pooling and fewer parameter writes weren't needed for 60 Hz and
+  weren't done.
+- **The JIT** (V8's deoptimisations). The first version of this bullet said only warm-up deoptimisations were left,
+  from a run that launched a match straight from the URL (no title match first), stopped printing at 30 and had 30
+  after its 8 s warm-up. Measured now through the app as a player meets it (`node tools/perf.mjs 60 deopt`, CPU 4x,
+  every deopt placed by the build's source map): on 45f0f12, 619 while loading and over the title match's first
+  30 s, 68 over its next 60 s (33 in the sim, 17 of them "wrong map" in the ball and the net cloth) and none over
+  the player's first 60 s after Quick match, the match's build included. On the final build (7e62375, load average
+  16.5): 637, then 47 (22 in the sim, every one a first visit of a branch but one "lost precision"), then none
+  again. The sim's own were traced in Node (`tools/sim-deopt.ts`: four doubles matches of up to 1,020 s with
+  a bot human, and with `AI=1` four of the title's all-AI match, `--trace-generalization` for the causes). Fields
+  that held small integers until their first fraction, seconds to minutes in (the ball's surface and wall ids
+  read from a Float64Array, its junction and net-catch scratch fields, the rally's corner touch and the serve boxes,
+  `SimpleAi.servePressAt`, the shot request, the AI styles built from JSON) changed their class's map then, and
+  every optimised function reading a ball, a rally or an AI deoptimised in a burst ("wrong map", "not a Smi");
+  they start as doubles now. `Player.move`'s wall clamps, stores reached only at a wall, choose between locals.
+  After a 120 s warm-up the bot-human matches went from 73 deopts to 48 (40 in the sim); the AI matches have 64
+  after 30 s (60 in the sim: 50 in the first match, 10 in the three after it). Every one left is single: the first
+  time play reaches a branch with no type feedback (and two one-off number guesses), and the function is optimised
+  again straight away. They are listed in OPEN_QUESTIONS.md, not fixed: it would take warming every rare branch.
 - **Garbage**: the page makes 17-27 MB/s of short-lived garbage, almost all inside three (render-object cache keys,
   sorting, sampler updates; the avatar's IK while the JIT warms up). Minor GCs run about once a second, the longest
   1.5-5.3 ms with the CPU throttled 4x; none breaks a 60 Hz frame, and the 1% lows above include them. The sim
@@ -1191,7 +1271,8 @@ shader compiles mid-point.
   `scheduler.yield`, and without it (Safari, Firefox) with one animation frame per object, which doubled the load. A
   `MessageChannel` queue stands in for it.
 - **Shaders compile on the loading screen** for the whole scene (`Game.warmUp`), so none compiles mid-point. Most of
-  the load is that compile (2.6 s of the title's 5.5 s, 2.4 s of the match's 3.5 s with the CPU at 4x).
+  the load is that compile (2.54 s of the title's 5.49 s, 2.37 s of the match's 3.46 s with the CPU at 4x, the
+  broadband run with the fallback).
 - **A hidden tab stalls WebGL's compile**: three polls for shader readiness with animation frames, which a hidden tab
   doesn't get. Only an issue for tools driving a hidden tab (the Browser pane).
 
@@ -1207,6 +1288,24 @@ shader compiles mid-point.
   It is inside three; reusing every material between matches would remove it, at the cost of a far bigger change.
   A hundred matches in one sitting cost about 30 MB. Worth reporting to three (it needs the owner's OK: it is
   public).
+- **The pooled lights aren't disposed at a teardown any more** (`disposeTree` skips what `lights.ts` keeps; before,
+  every teardown freed their shadow maps and the next build made them again). Paired lifecycle runs, 12 cycles
+  each (load average 5.7 and 4.5): 0.315 MB a cycle on the build before the review, 0.31 MB on this one, so the
+  residual is the bind-group cache, not the lights. DOM nodes stay between 226 and 234 (which screens the cycle
+  passed through); geometries, textures, canvases and listeners don't move.
+
+**Left from earlier phases**
+- **Triangles** (`node tools/perf.mjs 30 tris`): every preset draws the same 608,546 triangles in view (847,6xx
+  counted by the renderer, the shadow pass included): the four players 221,280 (55,320 each, skinned), the crowd
+  about 302,000 (74 a person, 4,084 in view: torso, head, hair) and the seats 64,512 (5,376 boxes), the rest under
+  25,000. CLAUDE.md's Low budget is 300k; the presets change only pixels, shadows and bloom, so Low is twice that
+  in view and 2.8 times it counted. Not changed: Low holds 60 Hz on the integrated-GPU stand-in with a 1% low of
+  136 fps, so its triangles aren't what limits it there, and cutting them means a lighter crowd and body LODs on
+  Low, which change a look the owner approved (OPEN_QUESTIONS.md).
+- **Glass reflections of the players and the ball** (Phase 5 left them for "a Phase 8 preset"): not built. A planar
+  reflection renders the scene again for each glass wall in view (two to four from the broadcast camera), each
+  about as costly as the main pass (an estimate, not measured), and unpaced High at 2x already fills the GPU, so it
+  could only be an Ultra option. Whether it is worth building and measuring is the owner's call (OPEN_QUESTIONS.md).
 
 **Accessibility**
 - **Colours**: a colour-blind safe palette (blue Good, cyan Perfect, yellow early/late, dark orange a miss). Simulated
@@ -1217,18 +1316,38 @@ shader compiles mid-point.
   the panel, from black to white and the arenas' colours. Three failed and were brightened (menu group labels, the
   help panel, the between-points card; the narrow-screen shade darkened a little). The coloured call subtitles keep
   the approved look and fall to 1.8:1 over a white backdrop, so a **High contrast** setting makes the panels nearly
-  solid and backs the loose timing words; everything passes with it.
+  solid, darkens the score bug and backs the loose timing words (grade, shot, partner and the ms line); everything
+  passes with it. The test reads the panels' colours and alphas from the CSS itself (`HUD_CSS`, `MENU_CSS`), so its
+  cases are what is drawn. The menu's shade was a share of the window (.7 to 34%, .4 at 52%), so below about
+  1857 px the 520 px column ran into the fade and the description and accent sub-title fell to 2.6-4.2:1 over a
+  white scene at 1280-1600 px; its .7 stop is now the column's right edge plus 40 px (`calc(6vw + var(--col) +
+  40px)`), about where 34% was at 1920 px, so .7 is the true worst case under any menu text.
 - **Motion**: reduced (or the system's `prefers-reduced-motion`) turns off the camera kick on smashes and the score
-  banner's slam, fades menus instead of sliding them and stops the loading screen's ball.
+  banner's slam, fades menus instead of sliding them, stops the key-capture blink and the loading screen's ball.
+  The menus get it from the first screen (the menu was made after the look was applied, so at boot it slid), the
+  CSS has `prefers-reduced-motion` fallbacks unless Motion is set to Full, and the first loading screen follows
+  the stored text size, motion and contrast.
 - **Text size** 100/125/150% for the HUD and menus.
 - **Screen readers**: the score, points, games and sets are announced through a polite live region
-  (`ui/announce.ts`); menu items are buttons and sliders with labels and value text, group titles are headings, the
-  description line is live, the menu is a modal dialog labelled by its title, decoration is hidden.
-- **Input**: every key can be remapped; everything works on a pad (menus included) and the rumble can be turned off.
+  (`ui/announce.ts`; the words go in a task after the clear, so the same words twice are read twice); menu items
+  are buttons and sliders with labels and value text, group titles are headings, the description line is live,
+  the menu is a modal dialog labelled by its title, decoration is hidden, and on a narrow window the side card's
+  copy under the list is the one read (the hidden copy is display: none).
+- **Input**: every key can be remapped, and the help panel, hints and serve call name the keys in use; everything
+  works on a pad (menus included) and the rumble can be turned off.
+- **Settings in the pause menu**: sound, picture (not the preset), accessibility, pro mode, mouse aim, the
+  announcer and the keys apply at once. The timing window, the assist, auto timing and the swing mode are the
+  sim's configuration: a replay is the seed and the input frames under one configuration, so they apply from the
+  next match and say so, as Quality does. With one-tap swings Auto timing shows as on and can't be changed.
 - **Timing help**: forgiving, standard or strict windows; positioning assist off to strong; auto timing (a held
   swing fires itself, graded Good); and **one-tap swings** (Swing: One tap): a tap starts the swing and the game
   times it, for players who can't hold and release on time.
 - **Pausing**: the game pauses when the window loses focus, the tab is hidden or the pad is unplugged (a point used to
-  play on while you were away).
+  play on while you were away), also when that happened while the match was loading. A swing held as it paused
+  is let go at the resume moment (`KeyboardInput.resume`: a release event for every button the sim still holds
+  that no key or pad button holds, judged like any release). Before, both the pause and the resume flushed the
+  queue, the release was dropped and the sim's swing stayed charged: the movement keys kept steering the aim,
+  other shot keys did nothing and the swing went off by itself late. `tests/app/pauseRelease.test.ts` (which also
+  shows the old path leaving it charged) and `tools/pad-check.mjs` hold it.
 - Not verified with people or hardware: a real screen reader, physical controllers, colour-blind players
   (OPEN_QUESTIONS.md).
