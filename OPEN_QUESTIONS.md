@@ -218,3 +218,31 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   read it as the serve's fault. Either is defensible.
 - **Monkey thresholds.** Random-input players fail per-minute animation limits set for AI play (they swing three
   times as often). Whether random mashing should look as clean as real play is a call for the owner.
+
+## Phase 8 (performance and polish)
+- **A real integrated-GPU laptop.** Every frame rate here is from an M1 Max, with an integrated-GPU stand-in (CPU 4x
+  slower, five times the pixels) that holds 60 Hz on every preset. Settled by: a match on a mid-range laptop (Intel
+  Iris Xe or AMD Radeon 680M) in Chrome with Settings → Frame rate meter on (or F3), noting the
+  frame rate and any hitches during rallies on Auto, Medium and Low; or `npm run build && npm run perf` on that
+  laptop, which prints the 1% lows.
+- **Safari and Firefox load times.** The `scheduler.yield` fallback was measured in Chrome with `scheduler.yield`
+  removed (19.2 s → 9.1 s cold at 4x CPU), not in Safari or Firefox themselves, and Safari's WebGPU and WebGL
+  compile speeds differ from Chrome's. Settled by: a cold load (empty cache) in each, timed from the address bar to
+  the title screen and from Quick match to the first point.
+- **Real networks.** Loads were measured with Chrome's throttling (25 Mbit/s 40 ms, 9 Mbit/s 150 ms). Settled by: a
+  cold load of the Pages build on a phone hotspot.
+- **A real screen reader.** The menus' roles, labels and value text and the score announcements were checked in the
+  DOM, not heard. Settled by: VoiceOver on macOS (Cmd+F5) through the title, Settings (a choice and a slider), a
+  match's points and the results, saying what it reads and whether anything is read twice or not at all.
+- **Physical controllers.** Menus and play were driven with a scripted standard-mapping pad in Chrome. Settled by: an
+  Xbox and a PlayStation controller in Chrome, Safari and Firefox (menus, a match, Start to pause, unplugging it
+  mid-point, the rumble).
+- **Colour-blind players.** The safe palette passes a simulation (Machado 2009) of the three dichromacies, which is a
+  model. Settled by: a red-green colour-blind player telling Good, Perfect, Early/Late and a miss apart on the ring
+  and the meter with the safe colours, and saying whether the default ones merge for them.
+- **Small HUD and menu text changes the owner hasn't seen**: the shot and partner lines got a dark text shadow, the
+  help panel's and between-points card's text is a shade lighter, menu group labels are brighter and the
+  narrow-screen menu shade is a little darker (all for contrast). The High contrast setting is opt-in. Settled by:
+  the owner looking at them.
+- **three's bind-group cache** keeps about 130 KB a match (`_bindingGroupsCache`, DECISIONS.md). Reporting it to
+  three is public, so it waits for the owner's OK.

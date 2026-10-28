@@ -1,7 +1,7 @@
 // Quality presets (Phase 8). What each one changes is chosen by what it costs on the GPU (DECISIONS.md, Phase 8):
 // pixels drawn (the pixel-ratio cap and a render scale under it), the key light's shadow map, and the bloom pass.
-// "high" is the game as it was before Phase 8. "auto" starts from high (or from what the loading screen's
-// benchmark picked) and lets the render scale adapt to hold 60 Hz (Game.adapt).
+// "high" is the game as it was before Phase 8. "auto" is high with the render scale adapting to hold 60 Hz
+// (Game.adapt).
 
 export interface QualityPreset {
   name: string;

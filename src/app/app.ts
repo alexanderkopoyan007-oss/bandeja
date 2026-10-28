@@ -271,7 +271,7 @@ export class App {
         { kind: 'slider', label: 'Crowd', get: () => s.crowd, set: (v) => { s.crowd = Number(v); }, step: 0.1, desc: 'The crowd and the neighbouring courts, against the ball and the players.' },
         { kind: 'group', label: 'Accessibility' },
         ch('Motion', 'motion', [{ value: 'system', label: 'As the system' }, { value: 'full', label: 'Full' }, { value: 'reduced', label: 'Reduced' }],
-          'Reduced: no camera kick on smashes, menus fade instead of sliding, no bouncing ball on the loading screen.'),
+          'Reduced: no camera kick on smashes, no slam on the big calls, menus fade instead of sliding, no bouncing ball on the loading screen.'),
         ch('Colours', 'safeColours', [{ value: false, label: 'Standard' }, { value: true, label: 'Colour-blind safe' }],
           'Timing colours a red-green colour-blind player can tell apart: blue for Good, cyan for Perfect, yellow for early or late, dark orange for a miss.'),
         ch('Panels', 'contrast', [{ value: false, label: 'Standard' }, { value: true, label: 'High contrast' }],

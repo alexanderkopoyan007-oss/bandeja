@@ -75,6 +75,7 @@ const CSS = `
   color: transparent; filter: drop-shadow(0 0 14px rgba(255,190,70,.55)); }
 #hud .call.big.on { animation: hud-slam .45s cubic-bezier(.2,1.6,.4,1); }
 @keyframes hud-slam { from { transform: translate(-50%, 0) scale(1.6); opacity: 0; } to { transform: translate(-50%, 0) scale(1); opacity: 1; } }
+:root.calm #hud .call.big.on { animation: none; }
 
 #hud .help { position: absolute; right: 16px; bottom: 16px; padding: 12px 14px; border-radius: 10px; background: var(--glass);
   border: 1px solid var(--edge); backdrop-filter: blur(8px); font: 12px/1.9 ui-sans-serif, system-ui; color: #dfe5ea;

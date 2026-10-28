@@ -1112,3 +1112,123 @@ What was found and fixed, with the commands that reproduce it: `docs/qa/REPORT.m
 - **The rally's state and the serve's drop point are in `MatchSim.hash()`** (new state goes in the hash).
 - **Not built**: out-of-court play (OPEN_QUESTIONS.md), touching the net (players are kept 0.3 m off it), a hall
   ceiling.
+
+## Phase 8: performance and polish
+Measured with `tools/perf.mjs` (Chrome with puppeteer, 1080p, AI-vs-AI autoplay, the frame limit off), with
+`tools/lifecycle.mjs` (match → title → match cycles, heap and GPU objects after GC) and `node tools/perf.mjs 20 load`
+(cold starts on throttled networks). The machine was shared with other sessions (load average 5-12), so before and
+after numbers come from paired runs back to back.
+
+**Screens**
+- **One app around the game** (`src/app/app.ts`): a title screen over an attract match on the chosen arena, Play
+  (match setup), Quick match, Settings, Controls, Credits, a pause screen (Esc, Start, or leaving the window) and a
+  results screen with the match's stats (`src/game/stats.ts`). URL options (`?autoplay=1` and the rest) still
+  launch straight into a game (`directLaunch`), so every tool keeps working.
+- **Menus** (`src/ui/menu/menu.ts`): plain buttons in a list (sliders for the choices), driven alike by the keyboard,
+  the mouse and a pad (d-pad or stick with repeat, A to choose, B back, Start pause). Screens slide in (0.22 s) and
+  fade instead with reduced motion. Going back puts the focus where it was. Checked with a fake pad in Chrome.
+- **Loading** (`src/ui/loading.ts`): named stages with a bar, the arena behind as soon as it exists; a failure says
+  which step failed (the renderer, or the players' download, retried three times at 1 s and 2 s) and offers Try
+  again (a key, a click or the pad's A).
+- **Between points and games** (`src/ui/transitions.ts`): the sim puts the players back the instant the dead time
+  ends, so the picture dips to near black for a quarter second over that instant, as a broadcast cuts away, instead
+  of showing four players jump. After a game or a set a score card shows the match so far.
+- **No placeholders left**: names fall back to P1/Player 1 (never "undefined"), every setting has a description,
+  the sounds are all synthesised (Phase 6), the icon is ours.
+- **Settings** are stored in `localStorage` (`bandeja.settings.v1`) and every stored value is checked against its
+  allowed values on load (a bad or old file falls back field by field). Key remapping (`input/bindings.ts`): an
+  action whose keys were all removed stays empty; a key given to one action leaves the others' defaults.
+
+**Quality presets** (`src/render/quality.ts`): chosen by what costs GPU time here, pixels first. Low: pixel ratio 1,
+render scale 0.75, 1024 shadow map, no bloom. Medium: ratio 1, full scale, 2048, bloom. High (the game as it was):
+ratio up to 2. Ultra: 4096 shadows. Auto (the default) is High with dynamic resolution (`Game.adapt`): about half a
+second of frames over 18.5 ms takes the render scale down 0.1 (to 0.6 at least), 900 frames without one try a step
+up, and a step up that has to come back down within 10 s doubles the wait. Only the pixel ratio changes, so no
+shader compiles mid-point.
+
+**Frame rate** (30 s each)
+
+| Run | p50 ms | p99 ms | 1% low fps | frames > 20 ms |
+|---|---|---|---|---|
+| Phase 7, medium, CPU 4x (paired run) | 6.2 | 11.6 | 76 | |
+| Phase 8, medium, CPU 4x (paired run) | 5.5 | 8.8 | 87 | 1 |
+| Phase 8 final, medium, CPU 4x (load average 7.9 / 8.5) | 7.1 / 8.7 | 11.3 / 12.0 | 74 / 75 | 1 / 0 |
+| Integrated-GPU proxy, low | | 7.2 | 103 | 0 |
+| Integrated-GPU proxy, medium | | 9.3 | 92 | 0 |
+| Integrated-GPU proxy, high | | 11.4 | 77 | 0 |
+| Phase 7, high, 2x pixels, unpaced | 3.8 | 20.6 | 36 | 1.03% |
+| Phase 8, high, 2x pixels, unpaced | 3.3 | 21.2 | 37 | 1.05% |
+| Phase 8, high, 2x pixels, paced at 120 Hz | 8.3 | 8.3 | 120.4 | 0 (and no 120 Hz refresh missed) |
+
+- **The 1% low** is 1000 / the mean frame time of the slowest 1% of frames (0.1% likewise); every run reports it,
+  frames over 20 ms and frames over 9.33 ms (a missed 120 Hz refresh).
+- **The integrated-GPU proxy** throttles the CPU 4x and draws five times the pixels (`?gpuload=5` scales the pixel
+  ratio by √5): an M1 Max has about five times the fill rate and bandwidth of an Iris Xe or a Radeon 680M. Every
+  preset holds 60 Hz on it with no frame over 20 ms. It is a proxy (OPEN_QUESTIONS.md).
+- **The unpaced High runs' spikes are the GPU queue, not the game.** At 196 fps with nothing pacing the frames the
+  main thread's work per frame (p99 20.8 ms) equals the frame time: it is blocked submitting into a full queue. A
+  display paces frames; paced as a 120 Hz screen would (`?fpscap=120`), the same High run at twice the pixels holds
+  120 Hz to the frame: 3614 frames in 30 s, max 8.4 ms, CPU work p50 1.7 ms.
+- **GPU timestamps can't be used on Apple GPUs**: three's timestamp queries reported 27 ms of GPU time a frame at
+  140 fps (the passes' times overlap). They are opt-in (`?gputime=1`, `GPUTIME=1` for perf.mjs) and off otherwise.
+- **The JIT**: `node tools/perf.mjs 20 deopt` (V8's `--trace-deopt` over a match) shows only warm-up deoptimisations;
+  the attract match on the title screen warms the code before the first point is played.
+- **Garbage**: the page makes 17-27 MB/s of short-lived garbage, almost all inside three (render-object cache keys,
+  sorting, sampler updates; the avatar's IK while the JIT warms up). Minor GCs run about once a second, the longest
+  1.5-5.3 ms with the CPU throttled 4x; none breaks a 60 Hz frame, and the 1% lows above include them. The sim
+  itself stays inside its budget (`npm run alloc`).
+
+**Load time** (cold, CPU throttled 4x, 1.12 MB downloaded)
+
+| Network | title playable | Quick match → first frame | total |
+|---|---|---|---|
+| Broadband (25 Mbit/s, 40 ms) | 5.49 s | 3.46 s | 8.95 s |
+| Slow 4G (9 Mbit/s, 150 ms) | 6.46 s | 3.48 s | 9.94 s |
+| Broadband, no `scheduler.yield` (as Safari), before the fallback | 10.55 s | 8.65 s | 19.20 s |
+| Broadband, no `scheduler.yield`, with the fallback | 5.59 s | 3.52 s | 9.12 s |
+
+- **A `scheduler.yield` fallback** (`src/main.ts`): three's `compileAsync` yields to the page between objects with
+  `scheduler.yield`, and without it (Safari, Firefox) with one animation frame per object, which doubled the load. A
+  `MessageChannel` queue stands in for it.
+- **Shaders compile on the loading screen** for the whole scene (`Game.warmUp`), so none compiles mid-point. Most of
+  the load is that compile (2.6 s of the title's 5.5 s, 2.4 s of the match's 3.5 s with the CPU at 4x).
+- **A hidden tab stalls WebGL's compile**: three polls for shader readiness with animation frames, which a hidden tab
+  doesn't get. Only an issue for tools driving a hidden tab (the Browser pane).
+
+**Memory between matches** (`tools/lifecycle.mjs`, 12 cycles)
+- A finished game frees its geometries, materials, textures and shadow maps (`render/dispose.ts`). GPU objects stay
+  flat across cycles.
+- **The leak was three's bind groups.** Each match's new shadow-casting lights made every material build new
+  shadow uniforms, and three's `NodeBuilder` keeps every bind group it ever made in a cache keyed by the renderer
+  (`_bindingGroupsCache`, never freed): 0.81 MB of heap and 3.3 MB of buffers a match, and two DOM nodes. The arena's
+  lights are now made once and reused (`render/arena/lights.ts`, `pooledLight`; every property is set on each
+  build, tested against fresh lights): 0.32 MB a match, DOM flat.
+- **The residual** is the same cache: about 48 bind groups (~130 KB) a match from materials built for each match.
+  It is inside three; reusing every material between matches would remove it, at the cost of a far bigger change.
+  A hundred matches in one sitting cost about 30 MB. Worth reporting to three (it needs the owner's OK: it is
+  public).
+
+**Accessibility**
+- **Colours**: a colour-blind safe palette (blue Good, cyan Perfect, yellow early/late, dark orange a miss). Simulated
+  protanopia, deuteranopia and tritanopia (Machado et al. 2009) keep every pair of grades at ΔE ≥ 25 with it; the
+  default merges Good and Early/Late at ΔE 10.4 (protanopia). The words are always shown with the colours.
+  `tests/app/palette.test.ts`.
+- **Contrast**: every panel's text is checked against WCAG 1.4.3 (4.5:1, 3:1 for large text) over any scene behind
+  the panel, from black to white and the arenas' colours. Three failed and were brightened (menu group labels, the
+  help panel, the between-points card; the narrow-screen shade darkened a little). The coloured call subtitles keep
+  the approved look and fall to 1.8:1 over a white backdrop, so a **High contrast** setting makes the panels nearly
+  solid and backs the loose timing words; everything passes with it.
+- **Motion**: reduced (or the system's `prefers-reduced-motion`) turns off the camera kick on smashes and the score
+  banner's slam, fades menus instead of sliding them and stops the loading screen's ball.
+- **Text size** 100/125/150% for the HUD and menus.
+- **Screen readers**: the score, points, games and sets are announced through a polite live region
+  (`ui/announce.ts`); menu items are buttons and sliders with labels and value text, group titles are headings, the
+  description line is live, the menu is a modal dialog labelled by its title, decoration is hidden.
+- **Input**: every key can be remapped; everything works on a pad (menus included) and the rumble can be turned off.
+- **Timing help**: forgiving, standard or strict windows; positioning assist off to strong; auto timing (a held
+  swing fires itself, graded Good); and **one-tap swings** (Swing: One tap): a tap starts the swing and the game
+  times it, for players who can't hold and release on time.
+- **Pausing**: the game pauses when the window loses focus, the tab is hidden or the pad is unplugged (a point used to
+  play on while you were away).
+- Not verified with people or hardware: a real screen reader, physical controllers, colour-blind players
+  (OPEN_QUESTIONS.md).
