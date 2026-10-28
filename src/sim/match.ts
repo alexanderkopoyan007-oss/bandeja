@@ -57,6 +57,8 @@ export const E_CALL = 17;
 export const CALL_MINE = 0;
 export const CALL_YOURS = 1;
 export const CALL_SWITCH = 2;
+/** The ball touched a player's body (not the racket): the point ends on it (player = who was hit). */
+export const E_BODY = 18;
 /** E_WHIFF's y: the swing missed a ball in reach (timing) / there was no ball to hit (none in reach at the release,
  * or not legal to play) / the ball was out of reach (too far or too high or low) at the contact. */
 export const WHIFF_TIMING = 0;
@@ -1262,6 +1264,7 @@ export class MatchSim {
         // A committed swing about to connect wins over the body.
         if (p.swing === SW_COMMITTED && p.contactTime - this.time < 0.05) continue;
         this.rally.onBody(p.team);
+        this.emitP(E_BODY, i, 0, 0, 0, b.pos.x, b.pos.y, b.pos.z);
         return;
       }
     }

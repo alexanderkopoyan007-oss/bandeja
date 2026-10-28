@@ -415,11 +415,14 @@ export class Ball {
       this.flyAt = k * h;
       if (this.rolling) this.roll(world);
       else this.fly(world, rng, false);
-      // Which side of the net the ball is on can only change over the cable or beyond the posts.
+      // Which side of the net the ball is on can only change over the cable or beyond the posts. Over the cable
+      // means the centre passes the cable's plane above the cable's centre line: it can't go through the cable,
+      // and a ball rolling over the tape is touching it, so its bottom never clears the cable's top (QA army: a
+      // net cord that dropped past the net stayed on the hitter's side for a metre).
       cl.qx = p.x;
       cl.cableAt();
       const ax = p.x < 0 ? -p.x : p.x;
-      if (ax >= c.halfW || p.y - r > cl.cy + cl.spec.cableRadius) {
+      if (ax >= c.halfW || p.y > cl.cy) {
         const zc = ax < c.halfW ? cl.cz : 0;
         if (p.z !== zc) this.netSide = p.z > zc ? 1 : -1;
       }
