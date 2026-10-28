@@ -5,7 +5,8 @@
 // (path, face, speed, contact point, from timing, footwork, stretch and modifiers) and the impact physics turns
 // them into the ball that really leaves: a late swing pushes it, an open face lifts it and adds backspin, a ball
 // off the axis twists the face and loses pace, one off the face hits the frame.
-import { Ball, HIT_FLOOR, type BallWorld } from '../ball/ball.ts';
+import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, HIT_POST, LEFT_COURT, type BallWorld } from '../ball/ball.ts';
+import { SURF_GLASS, WALL_BACK_FAR, WALL_BACK_NEAR } from '../court/court.ts';
 import { V3 } from '../core/v3.ts';
 import { Rng } from '../core/rng.ts';
 import { DT } from '../core/constants.ts';
@@ -26,8 +27,14 @@ export const SHOT_VOLLEY = 8;
 export const SHOT_VIBORA = 9;
 /** Soft topspin that dips just over the net to the feet of players at the net (topspin key + precision). */
 export const SHOT_CHIQUITA = 10;
+/**
+ * Contrapared: the player turns to their own back glass and hits the ball up into it, so it comes off the glass and
+ * carries over the net (own walls are legal, own mesh is not: 13.l). For a ball that has got behind the player or
+ * dies near the glass and won't come out to be played facing the net.
+ */
+export const SHOT_CONTRAPARED = 11;
 
-export const SHOT_KEYS = ['drive', 'topspin', 'slice', 'lob', 'drop', 'serve', 'smash', 'bandeja', 'volley', 'vibora', 'chiquita'] as const;
+export const SHOT_KEYS = ['drive', 'topspin', 'slice', 'lob', 'drop', 'serve', 'smash', 'bandeja', 'volley', 'vibora', 'chiquita', 'contrapared'] as const;
 
 export const MOD_NONE = 0;
 export const MOD_POWER = 1;
@@ -51,6 +58,8 @@ export interface ShotShape {
   spinFloor?: number;
   /** The shot's timing windows against the drive's (smaller = harder to time). */
   timing?: number;
+  /** Contrapared: the height on the hitter's own glass the ball is aimed at (m); higher tries follow if it fails. */
+  glassHeight?: number;
 }
 
 interface ModSpec { netClear: number; speed: number; error: number }
@@ -401,6 +410,172 @@ export class ShotSolver {
   /** Flights used by the last solve (performance checks). */
   get lastEvals(): number {
     return this.evals;
+  }
+
+  // ---- contrapared: off the hitter's own back glass ---------------------------------------------------------
+
+  // Results of the last flyWalls(): the first wall the ball met (index, glass or not, height), whether anything but
+  // that first glass was touched before the landing (net, posts, a second wall after crossing), and the landing.
+  wallHit = -1;
+  wallGlass = false;
+  wallY = 0;
+  netTouched = false;
+  lateWall = false;
+  exited = false;
+
+  /**
+   * Flight with the walls and the net, as the prediction flies it (noise-free): until the first floor contact, the
+   * ball leaving the court or 5 s. Records the first wall and the net crossing for solveContra.
+   */
+  flyWalls(p: V3, v: V3, w: V3): void {
+    const g = ghost;
+    g.pos.copy(p);
+    g.vel.copy(v);
+    g.spin.copy(w);
+    g.outside = false;
+    g.rolling = false;
+    g.ahead = 0;
+    g.clearNet();
+    this.netY = NaN;
+    this.wallHit = -1;
+    this.wallGlass = false;
+    this.wallY = 0;
+    this.netTouched = false;
+    this.lateWall = false;
+    this.exited = false;
+    let z0 = p.z;
+    let y0 = p.y;
+    for (let t = 0; t < 5; t += DT) {
+      g.step(this.world, DT, null);
+      if (Number.isNaN(this.netY) && (z0 > 0) !== (g.pos.z > 0)) {
+        const f = z0 / (z0 - g.pos.z);
+        this.netY = y0 + (g.pos.y - y0) * f;
+      }
+      z0 = g.pos.z;
+      y0 = g.pos.y;
+      for (let k = 0; k < g.eventCount; k++) {
+        const e = g.events[k]!;
+        if (e.kind === HIT_FLOOR) {
+          this.landX = e.x;
+          this.landZ = e.z;
+          this.landT = t;
+          return;
+        }
+        if (e.kind === HIT_WALL) {
+          if (this.wallHit < 0) { this.wallHit = e.wall; this.wallGlass = e.surface === SURF_GLASS; this.wallY = e.y; }
+          else if (!Number.isNaN(this.netY)) this.lateWall = true;
+        } else if (e.kind === HIT_NET || e.kind === HIT_NETCORD || e.kind === HIT_POST) this.netTouched = true;
+        else if (e.kind === LEFT_COURT) this.exited = true;
+      }
+      if (this.exited) break;
+    }
+    this.landX = g.pos.x;
+    this.landZ = g.pos.z;
+    this.landT = 5;
+  }
+
+  // Residuals of the last evalContra(): landing distance and sideways miss in the unfolded plane (the court beyond
+  // the glass mirrored back), and the height the ball met the glass at against the one wanted.
+  private cR = 0;
+  private cL = 0;
+  private cG = 0;
+  private cDir = new V3();
+
+  /** Fly a contrapared launch (speed s, elevation th along cDir) and measure it against the unfolded target. */
+  private evalContra(p: V3, s: number, th: number, w: V3, zc: number, ux: number, uz: number, gh: number): void {
+    this.evals++;
+    const d = this.cDir;
+    tmpV.set(d.x * s * cos(th), s * sin(th), d.z * s * cos(th));
+    this.flyWalls(p, tmpV, w);
+    const back = zc > 0 ? WALL_BACK_NEAR : WALL_BACK_FAR;
+    // Unfold the path after the back glass (mirror it back through the glass plane).
+    const lz = this.wallHit === back ? 2 * zc - this.landZ : this.landZ;
+    const ex = this.landX - p.x;
+    const ez = lz - p.z;
+    const tx = ux - p.x;
+    const tz = uz - p.z;
+    const tl = sqrt(tx * tx + tz * tz);
+    this.cR = (ex * tx + ez * tz) / tl - tl;
+    this.cL = (ex * tz - ez * tx) / tl;
+    this.cG = this.wallHit === back ? this.wallY - gh : (this.wallHit < 0 ? -2 : 2);
+  }
+
+  /**
+   * The clean contrapared from contact p (on the hitter's half, the ball between the hitter and their back glass):
+   * up into the glass at about height `gh0`, off it over the net to land on (tx, tz). The elevation is set for the
+   * glass height, a secant on the speed finds the landing distance (in the unfolded plane: the court beyond the glass
+   * mirrored back) and the aim is turned for the sideways miss. If the ball would skim the net or miss the glass band,
+   * it tries higher on the glass. False if no launch within `cap` does it cleanly (the best try within the cap is
+   * written then). Writes velocity and spin.
+   */
+  solveContra(p: V3, tx: number, tz: number, rpm: number, cap: number, gh0: number, outV: V3, outW: V3): boolean {
+    this.evals = 0;
+    const c = this.world.court;
+    const side = p.z > 0 ? 1 : -1;
+    const r = this.world.spec.radius;
+    const zc = side * (c.halfL - r);
+    const glassTop = c.def.backWall.glassHeight;
+    const netH = c.netHeightAt(0);
+    const back = zc > 0 ? WALL_BACK_NEAR : WALL_BACK_FAR;
+    // The target seen in the glass: where a mirror would put it.
+    const ux = tx;
+    const uz = 2 * zc - tz;
+    let ax = ux - p.x;
+    let az = uz - p.z;
+    const dl = sqrt(ax * ax + az * az);
+    ax /= dl;
+    az /= dl;
+    const dg = max(0.15, (zc - p.z) / az);
+    let ok = false;
+    let bestS = min(cap, 20);
+    let bestTh = 0.8;
+    let bestYaw = 0;
+    let bestErr = 1e9;
+    for (let attempt = 0; attempt < 4 && !ok; attempt++) {
+      const gh = min(glassTop - 0.25, gh0 + 0.3 * attempt);
+      // Elevation through the glass point at a typical speed (the drop over a metre or two is small).
+      let s = 20;
+      let th = atan2(gh - p.y, dg);
+      for (let k = 0; k < 2; k++) {
+        const tf = dg / (s * cos(th));
+        th = atan2(gh - p.y + 4.9 * tf * tf, dg);
+      }
+      th = clamp(th, 0.1, 1.35);
+      let yaw = 0;
+      for (let outer = 0; outer < 3; outer++) {
+        this.cDir.set(ax, 0, az);
+        rotateYaw(this.cDir, yaw);
+        ShotSolver.spinFor(rpm, this.cDir.x, this.cDir.z, outW);
+        // Secant on the speed for the landing distance.
+        let s0 = s;
+        this.evalContra(p, s0, th, outW, zc, ux, uz, gh);
+        let r0 = this.cR;
+        let s1 = s0 * (r0 < 0 ? 1.12 : 0.9);
+        for (let it = 0; it < 7 && abs(r0) > 0.08; it++) {
+          this.evalContra(p, s1, th, outW, zc, ux, uz, gh);
+          const r1 = this.cR;
+          if (abs(r1 - r0) < 1e-6) break;
+          const s2 = clamp(s1 - r1 * (s1 - s0) / (r1 - r0), 3, 50);
+          s0 = s1; r0 = r1; s1 = s2;
+        }
+        s = abs(r0) <= 0.08 ? s0 : s1;
+        this.evalContra(p, s, th, outW, zc, ux, uz, gh);
+        if (abs(this.cL) < 0.1) break;
+        // The miss sideways, as the angle it subtends from the contact over the unfolded distance.
+        yaw += atan(this.cL / dl);
+      }
+      const clean = this.wallHit === back && this.wallGlass && this.wallY < glassTop - 0.08 && !this.netTouched && !this.lateWall
+        && !this.exited && !Number.isNaN(this.netY) && this.netY > netH + 0.15 && this.landZ * side < 0;
+      const err = abs(this.cR) + abs(this.cL);
+      if (clean && s <= cap && err < 0.4) { ok = true; bestS = s; bestTh = th; bestYaw = yaw; break; }
+      if (clean && err < bestErr) { bestErr = err; bestS = min(s, cap); bestTh = th; bestYaw = yaw; }
+      else if (bestErr === 1e9 && attempt === 0) { bestS = min(s, cap); bestTh = th; bestYaw = yaw; }
+    }
+    this.cDir.set(ax, 0, az);
+    rotateYaw(this.cDir, bestYaw);
+    ShotSolver.spinFor(rpm, this.cDir.x, this.cDir.z, outW);
+    outV.set(this.cDir.x * bestS * cos(bestTh), bestS * sin(bestTh), this.cDir.z * bestS * cos(bestTh));
+    return ok;
   }
 }
 
