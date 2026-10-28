@@ -134,7 +134,7 @@ export class Game {
     this.net = new NetView(this.sim.net);
     this.scene.add(this.net.group);
 
-    this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9);
+    this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0);
     const bl = this.arena.def.post?.bloom;
     if (bl && opts.bloom !== false) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
@@ -419,7 +419,9 @@ export class Game {
     this.tv?.update(this.sim);
     // The crowd follows the rally: calm between points, rising with a long one.
     this.arena.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : this.arena.excite * Math.exp(-frameDt / 0.8);
-    this.arena.update(now / 1000, this.cam.camera.position);
+    // Stands behind the camera are skipped, but not while it swings round (a very wide screen sees them) or in
+    // photo-match mode (the photo's camera can stand anywhere).
+    this.arena.update(now / 1000, this.cam.swinging || this.photo ? undefined : this.cam.camera.position);
 
     this.draw();
     if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);

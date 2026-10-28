@@ -19,6 +19,8 @@ export interface LightDef {
 
 export interface ArenaDef {
   name: string;
+  /** The broadcast camera's climb (m) at the middle of the change-of-ends swing (default 0). */
+  camera?: { swingRise?: number };
   kind: 'stadium' | 'hall' | 'outdoor';
   exposure: number;
   background: string;

@@ -164,7 +164,7 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     return positionLocal.add(vec3(sin(time.mul(f).add(ph)).mul(0.012 * amp), sin(time.mul(f.mul(2)).add(ph)).mul(excite).mul(0.05 * amp), 0));
   };
   // One instanced mesh per stand and part. Seen from 20-40 m a head is 5-10 pixels, so the shapes are low-poly
-  // (about 80 triangles a person; 192 before the review: 950k triangles for the stadium's 4,600 people).
+  // (74 triangles a person, 343k for the stadium's 4,640; 192 before the review: 891k).
   const groups: THREE.InstancedMesh[][] = [[], [], [], []];
   const crowd = (geo: THREE.BufferGeometry, colors: number[], rough: number): void => {
     const mat = new THREE.MeshStandardNodeMaterial({ roughness: rough });

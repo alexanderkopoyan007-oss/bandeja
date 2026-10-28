@@ -866,12 +866,15 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Lobs left the top of the frame (38 of 154 rallies over 6 AI matches, against 11 with the old camera): the
     camera tilts up with the ball, as the operator does, keeping it 2.5° below the top edge (up to 14°, 0.2 s lag,
     easing back at half that rate).
-  - The stadium crowd cost about 950k triangles: people are low-poly now (about 80 triangles each; a head is 5-10
-    pixels from the camera) and grouped by stand, and the stand behind the camera is not drawn.
+  - The stadium crowd cost 891k triangles (4,640 people at 192): people are low-poly now (74 each; a head is 5-10
+    pixels from the camera) and grouped by stand (draws 3 -> 12), and the stand behind the camera is not drawn
+    (302k drawn), except during the change-of-ends swing and in photo-match mode.
   - The change-of-ends swing went through the stadium's back rows: it goes round an ellipse (20.5 m at the side)
-    and climbs 2.5 m at its middle.
+    and, in the stadium only (`camera.swingRise`), climbs 2.5 m at its middle; in the hall that climb went through
+    the roof (re-review).
   - `bumpMap()` only works on textures (it offsets their UVs to difference the height), so the kit's folds and
-    the ball's fuzz did nothing: `render/bump.ts` differentiates the height in screen space (Mikkelsen 2010).
+    the ball's fuzz did nothing: `render/bump.ts` differentiates the height in screen space (Mikkelsen 2010), and
+    fades the bump where a pixel covers more than a quarter of a feature (a far player's folds would shimmer).
   - The kit's region code blended through the codes between two regions (a dark ring at each sock top, sleeves
     through the shorts' colour, black seams where every weight was 0): one weight per region now.
   - TV graphics: a double fault (an `E_FAULT` with b = 2, no `E_POINT`) had no strap and was never counted; a
