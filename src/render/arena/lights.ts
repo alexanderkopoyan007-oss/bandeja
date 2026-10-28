@@ -13,6 +13,12 @@ import type { LightDef } from './arena.ts';
 const LIGHTS = new Map<string, THREE.Light>();
 /** Tests: `on = false` makes every light new (what a kept light is compared with). */
 export const lightPool = { on: true };
+/** A pooled light or a pooled light's target (render/dispose.ts leaves them alone). */
+export function isPooled(o: THREE.Object3D): boolean {
+  for (const l of LIGHTS.values()) if (l === o || (l as unknown as { target?: THREE.Object3D }).target === o) return true;
+  return false;
+}
+
 export function pooledLight<T extends THREE.Light>(key: string, make: () => T): T {
   let l = lightPool.on ? LIGHTS.get(key) as T | undefined : undefined;
   if (!l) {

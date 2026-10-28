@@ -2,9 +2,14 @@ import * as THREE from 'three/webgpu';
 import { Game } from './game/game.ts';
 import { loadPlayerAsset, type PlayerAsset } from './render/avatar/asset.ts';
 import { findPhoto, PhotoOverlay } from './game/photoMatch.ts';
-import { App } from './app/app.ts';
+import { App, applyRootLook } from './app/app.ts';
 import { LoadingScreen } from './ui/loading.ts';
 import { directLaunch, optionsFromUrl } from './app/options.ts';
+import { loadSettings } from './app/settings.ts';
+import { sampleDisplay } from './render/display.ts';
+
+// The display's refresh, from the frames while the page loads (Auto quality judges slow frames against it).
+sampleDisplay();
 
 // three's compileAsync (the warm-up behind every loading screen) yields between objects with scheduler.yield, or
 // failing that waits a whole animation frame per object: a second or more of loading where there is no
@@ -43,6 +48,8 @@ async function makeRenderer(): Promise<THREE.WebGPURenderer> {
 
 /** The plain page: the loading screen, then the menus over an AI match (Phase 8). */
 async function startApp(): Promise<void> {
+  // Stored text size, reduced motion and contrast, before the first loading screen is drawn.
+  applyRootLook(loadSettings());
   const loading = new LoadingScreen();
   loading.stage('Starting the renderer', 0.03);
   let renderer: THREE.WebGPURenderer;

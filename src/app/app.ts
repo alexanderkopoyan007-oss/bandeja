@@ -30,7 +30,12 @@ export class App {
   /** The game is the player's match (not the title screen's AI match). */
   private playing = false;
   private seedBase = (Math.random() * 2 ** 31) | 0;
+  /** A match start or a return to the title is under way (repeat presses are ignored). */
   private busy = false;
+  /** The title's AI match being built again after it ended (a match start waits for it). */
+  private rebuilding: Promise<void> | null = null;
+  /** The frame-rate setting as last applied (F3 toggles the meter in a game; only a change of the setting overrides it). */
+  private fpsApplied: boolean | null = null;
 
   constructor(renderer: THREE.WebGPURenderer, hud: HTMLElement, params: URLSearchParams, loading: LoadingScreen) {
     this.renderer = renderer;
@@ -38,8 +43,9 @@ export class App {
     this.params = params;
     this.loading = loading;
     this.settings = loadSettings();
-    this.applyLook();
+    // The menu first: the look (reduced motion among it) is applied to it too.
     this.menu = new Menu(document.body);
+    this.applyLook();
     this.menu.onChange = () => { saveSettings(this.settings); this.applyLook(); this.game?.applyPrefs(this.prefs()); };
     this.menu.onSound = (k) => this.uiSound(k);
     addEventListener('resize', () => this.game?.resize());
@@ -95,30 +101,39 @@ export class App {
     g.onMenu = () => { if (this.playing && !this.menu.isOpen) this.pause(); };
     g.onMatchOver = (st) => {
       if (this.playing) this.results(st);
-      else void this.rebuildAttract();
+      // Not inside the game's own frame (the rebuild tears that game down): in a task of its own.
+      else setTimeout(() => this.rebuildAttract(), 0);
     };
     g.start();
     this.playing = !attract;
     if (this.settings.showFps && !attract) g.debug.toggle();
+    // The window was left while the match was loading (the blur came before there was a match to pause).
+    if (!attract && (document.hidden || !document.hasFocus())) g.onMenu();
   }
 
-  private async rebuildAttract(): Promise<void> {
-    if (this.busy) return;
-    this.busy = true;
-    try { await this.build(true, () => undefined); } finally { this.busy = false; }
+  private rebuildAttract(): void {
+    if (this.busy || this.rebuilding) return;
+    this.rebuilding = this.build(true, () => undefined)
+      .catch((err: unknown) => console.error('title match', err))
+      .finally(() => { this.rebuilding = null; });
   }
 
   private async startMatch(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    // Narrow singles is a singles court (an old store or a stale screen could hold it with doubles).
+    const st = this.settings.setup;
+    if (st.mode === 'doubles' && st.court === 'singles-narrow') st.court = 'standard';
     saveSettings(this.settings);
     this.menu.hide();
     this.loading.show('Setting up the court');
     try {
+      // Quick match while the title's match is being rebuilt: wait for it, then build ours.
+      if (this.rebuilding) await this.rebuilding;
       await this.build(false, (n, f) => this.loading.stage(n, f));
       await this.loading.done();
     } catch (err) {
-      this.loading.fail(String(err));
+      this.loading.fail(`The match could not start: ${readable(err)}.`);
       throw err;
     } finally {
       this.busy = false;
@@ -141,8 +156,12 @@ export class App {
     this.menu.hide();
     this.loading.show('Back to the club');
     try {
+      if (this.rebuilding) await this.rebuilding;
       await this.build(true, (n, f) => this.loading.stage(n, f));
       await this.loading.done();
+    } catch (err) {
+      this.loading.fail(`The title screen could not be built: ${readable(err)}.`);
+      throw err;
     } finally {
       this.busy = false;
     }
@@ -158,14 +177,11 @@ export class App {
 
   private applyLook(): void {
     const s = this.settings;
-    const root = document.documentElement;
-    root.style.setProperty('--ui-scale', String(s.textSize));
-    const calm = reducedMotion(s);
-    root.classList.toggle('calm', calm);
-    if (this.menu) this.menu.calm = calm;
+    applyRootLook(s);
+    this.menu.calm = reducedMotion(s);
     setSafeColours(s.safeColours);
-    root.classList.toggle('hc', s.contrast);
-    if (this.game && this.game.debug.visible !== s.showFps) this.game.debug.toggle();
+    if (this.game && s.showFps !== this.fpsApplied && this.game.debug.visible !== s.showFps) this.game.debug.toggle();
+    this.fpsApplied = s.showFps;
   }
 
   /** A soft tick for menu moves, a click for a choice (through the game's audio, once a key has unlocked it). */
@@ -183,10 +199,10 @@ export class App {
       id: 'title', title: 'Padel', sub: 'A match is on court one', back: null,
       items: [
         { kind: 'button', label: 'Play', primary: true, desc: 'Set up a match: doubles or singles, your partner and opponents, the venue, the scoring.', action: () => this.menu.open(this.setupScreen()) },
-        { kind: 'button', label: 'Quick match', desc: `Straight onto court with your last setup: ${this.setupLine()}.`, action: () => void this.startMatch() },
+        { kind: 'button', label: 'Quick match', desc: () => `Straight onto court with your last setup: ${this.setupLine()}.`, action: () => void this.startMatch() },
         { kind: 'button', label: 'Settings', desc: 'Timing, assists, picture quality, sound and accessibility.', action: () => this.menu.open(this.settingsScreen()) },
         { kind: 'button', label: 'Controls', desc: 'Every shot on the keyboard and the gamepad; change any key.', action: () => this.menu.open(this.controlsScreen()) },
-        { kind: 'button', label: 'Credits', desc: 'Who and what made the game.', action: () => this.menu.open(this.creditsScreen()) },
+        { kind: 'button', label: 'Credits', desc: 'The libraries, assets and references the game is built from.', action: () => this.menu.open(this.creditsScreen()) },
       ],
     };
   }
@@ -206,7 +222,11 @@ export class App {
     const st = this.settings.setup;
     const set = <K extends keyof MatchSetup>(k: K) => (v: unknown): void => {
       st[k] = v as MatchSetup[K];
-      if (k === 'mode' && st.mode === 'doubles' && st.court === 'singles-narrow') st.court = 'standard';
+      if (k === 'mode') {
+        if (st.mode === 'doubles' && st.court === 'singles-narrow') st.court = 'standard';
+        // The court's options and the opponents' label depend on the mode: the screen is made again.
+        this.menu.replace(this.setupScreen());
+      }
     };
     const ch = (k: keyof MatchSetup, label: string, options: Choice[], desc: string, hidden?: () => boolean): Item =>
       ({ kind: 'choice', label, options, get: () => st[k], set: set(k), desc, hidden });
@@ -227,7 +247,7 @@ export class App {
         ch('length', 'Length', [{ value: 'short', label: 'Short set (to 4)' }, { value: 'set', label: 'One set' }, { value: 'three', label: 'Best of three' }],
           'A tie-break at 6-6 (4-4 in a short set).'),
         ch('hand', 'You play', [{ value: 'right', label: 'Right-handed' }, { value: 'left', label: 'Left-handed' }], 'Your racket hand.'),
-        { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court.', action: () => void this.startMatch() },
+        { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court with this setup (it is kept for Quick match).', action: () => void this.startMatch() },
       ],
       focus: 0,
     };
@@ -249,17 +269,26 @@ export class App {
     const ch = (label: string, k: keyof Settings, options: Choice[], desc: string): Item =>
       ({ kind: 'choice', label, options, get: () => s[k], set: (v) => { (s as unknown as Record<string, unknown>)[k] = v; }, desc });
     const onOff: Choice[] = [{ value: true, label: 'On' }, { value: false, label: 'Off' }];
+    // The sim's own settings: a match is one configuration from its first tick (replays are the seed and the inputs).
+    const next = ' Applies from the next match.';
     return {
       id: 'settings', title: 'Settings', sub: 'Saved on this device',
       items: [
         { kind: 'group', label: 'Gameplay' },
         ch('Timing window', 'timing', [{ value: 'forgiving', label: 'Forgiving' }, { value: 'standard', label: 'Standard' }, { value: 'strict', label: 'Strict' }],
-          'How far from the perfect moment a release still counts as Good. Strict is the real window; forgiving is half as wide again.'),
+          'How far from the perfect moment a release still counts as Good. Strict is the real window; forgiving is half as wide again.' + next),
         ch('Positioning assist', 'assist', [{ value: 'off', label: 'Off' }, { value: 'light', label: 'Light' }, { value: 'normal', label: 'Normal' }, { value: 'strong', label: 'Strong' }],
-          'How much the game moves you towards the ball when you leave the keys alone. Off: you move yourself, always.'),
-        ch('Auto timing', 'autoTiming', onOff, 'A held swing fires itself at the right moment (graded Good): you choose the shot and the aim, the game times it.'),
+          'How much the game moves you towards the ball when you leave the keys alone. Off: you move yourself, always.' + next),
+        {
+          kind: 'choice', label: 'Auto timing', options: onOff,
+          // One-tap swings always time themselves: shown as on, and not changeable while Swing is One tap.
+          get: () => s.autoTiming || s.swing === 'tap', set: (v) => { s.autoTiming = v as boolean; }, disabled: () => s.swing === 'tap',
+          desc: () => s.swing === 'tap'
+            ? 'On with one-tap swings (they always time themselves). Set Swing to Hold and release to choose.'
+            : 'A held swing fires itself at the right moment (graded Good): you choose the shot and the aim, the game times it.' + next,
+        },
         ch('Swing', 'swing', [{ value: 'hold', label: 'Hold and release' }, { value: 'tap', label: 'One tap' }],
-          'One tap: press a shot key once and the swing goes off at the right moment by itself (auto timing on); the movement keys still aim. For when holding and releasing a key on time is hard.'),
+          'One tap: press a shot key once and the swing goes off at the right moment by itself (auto timing on); the movement keys still aim. For when holding and releasing a key on time is hard.' + next),
         ch('Timing cues', 'pro', [{ value: false, label: 'Shown' }, { value: true, label: 'Hidden (pro)' }], 'The closing ring, the meter, the trail and the bounce marker. Pro mode plays without them.'),
         ch('Aim with', 'mouseAim', [{ value: false, label: 'Keys' }, { value: true, label: 'Mouse' }], 'Keys: the movement keys steer the target while a shot key is held. Mouse: point at the far court.'),
         { kind: 'group', label: 'Picture' },
@@ -279,7 +308,7 @@ export class App {
         ch('Text size', 'textSize', [{ value: 1, label: '100%' }, { value: 1.25, label: '125%' }, { value: 1.5, label: '150%' }], 'The score, calls, hints and menus.'),
         ch('Announce the score', 'announce', onOff, 'A screen reader says each point, the score, games and sets.'),
         ch('Controller rumble', 'rumble', onOff, 'The pad buzzes on your hits.'),
-        { kind: 'button', label: 'Back', action: () => this.menu.back() },
+        { kind: 'button', label: 'Back', desc: 'Settings are saved as they change.', action: () => this.menu.back() },
       ],
     };
   }
@@ -299,12 +328,15 @@ export class App {
           bindKey(k, a.id, code);
           s.keys = k;
         },
-        desc: a.move ? 'Movement. While a shot key is held it steers the aim instead.' : `Hold as the ball comes, release to hit. Keys kept by the game: Esc (pause), F3, H, P, M, Tab, Enter.`,
+        desc: (a.move ? 'Movement. While a shot key is held it steers the aim instead.'
+          : a.id === 'power' ? 'Held with a shot key as it is let go: a harder ball (with Overhead a smash, with Volley a punch volley).'
+          : a.id === 'precision' ? 'Held with a shot key as it is let go: a placed ball (with Overhead a víbora, with Topspin a chiquita).'
+          : 'Hold as the ball comes, release to hit.') + ' Keys kept by the game: Esc (pause), F3, H, P, M, Tab, Enter.',
       });
     }
     items.push(
       { kind: 'button', label: 'Reset keys', desc: 'Back to J K L I U O N, Space and Shift, with WASD and the arrows.', action: () => { s.keys = { ...DEFAULT_KEYS }; saveSettings(s); this.menu.refresh(); this.game?.applyPrefs(this.prefs()); } },
-      { kind: 'button', label: 'Back', action: () => this.menu.back() },
+      { kind: 'button', label: 'Back', desc: 'Keys are saved as they change.', action: () => this.menu.back() },
     );
     return { id: 'controls', title: 'Controls', sub: 'Keyboard and gamepad', items, side: () => this.padCard() };
   }
@@ -325,17 +357,19 @@ export class App {
   private creditsScreen(): Screen {
     return {
       id: 'credits', title: 'Credits', sub: 'BANDEJA',
+      // What CREDITS.md lists.
       side: () => '<div class="card"><h2>Made with</h2><table>'
-        + '<tr><td class="l">Rendering</td><td>three.js (MIT)</td></tr>'
-        + '<tr><td class="l">Players</td><td>Y Bot and clips, Mixamo (Adobe)</td></tr>'
+        + '<tr><td class="l">Rendering</td><td>three.js 0.186 (MIT)</td></tr>'
+        + '<tr><td class="l">Build, tests</td><td>Vite, Vitest (MIT), TypeScript, Puppeteer (Apache-2.0)</td></tr>'
+        + '<tr><td class="l">Players</td><td>Y Bot and 10 clips, Mixamo (Adobe)</td></tr>'
         + '<tr><td class="l">Strokes</td><td>Authored in code</td></tr>'
-        + '<tr><td class="l">Sound</td><td>Synthesised in code</td></tr>'
+        + '<tr><td class="l">Sound</td><td>Synthesised in code (claps: the ClaPD model\u2019s figures)</td></tr>'
         + '<tr><td class="l">Courts</td><td>Generated in code</td></tr>'
-        + '<tr><td class="l">Rules</td><td>FIP Rules of Padel, 2026</td></tr>'
-        + '<tr><td class="l">Maths</td><td>fdlibm via musl</td></tr>'
+        + '<tr><td class="l">Rules</td><td>FIP Rules of Padel, 2026 (referenced)</td></tr>'
+        + '<tr><td class="l">Maths</td><td>fdlibm (Sun, 1993) via musl</td></tr>'
         + '</table></div>',
       items: [
-        { kind: 'button', label: 'Back', desc: 'Players and clubs are made up; the playing styles are nicknames, never real players. Full list: CREDITS.md in the source.', action: () => this.menu.back() },
+        { kind: 'button', label: 'Back', desc: 'Players and clubs are made up; the playing styles are nicknames, never real players. Sources and licences: CREDITS.md in the source.', action: () => this.menu.back() },
       ],
     };
   }
@@ -347,21 +381,21 @@ export class App {
     return {
       id: 'pause', title: 'Paused', sub, back: () => this.resume(),
       items: [
-        { kind: 'button', label: 'Resume', primary: true, action: () => this.resume() },
-        { kind: 'button', label: 'Settings', action: () => this.menu.open(this.settingsScreen()) },
-        { kind: 'button', label: 'Controls', action: () => this.menu.open(this.controlsScreen()) },
-        { kind: 'button', label: 'Restart match', desc: 'A new match with the same setup.', action: () => this.menu.open(this.confirm('Restart?', 'This match is lost.', () => void this.startMatch())) },
-        { kind: 'button', label: 'Quit to title', action: () => this.menu.open(this.confirm('Leave the match?', 'This match is lost.', () => void this.toTitle())) },
+        { kind: 'button', label: 'Resume', primary: true, desc: 'Back to the point, where it stopped.', action: () => this.resume() },
+        { kind: 'button', label: 'Settings', desc: 'Sound, picture and accessibility change at once; timing and assists from the next match.', action: () => this.menu.open(this.settingsScreen()) },
+        { kind: 'button', label: 'Controls', desc: 'Every shot on the keyboard and the gamepad; change any key.', action: () => this.menu.open(this.controlsScreen()) },
+        { kind: 'button', label: 'Restart match', desc: 'A new match with the same setup.', action: () => this.menu.open(this.confirm('Restart?', 'This match is lost.', 'Start the match again.', () => void this.startMatch())) },
+        { kind: 'button', label: 'Quit to title', desc: 'Leave the match for the title screen.', action: () => this.menu.open(this.confirm('Leave the match?', 'This match is lost.', 'To the title screen.', () => void this.toTitle())) },
       ],
     };
   }
 
-  private confirm(title: string, sub: string, yes: () => void): Screen {
+  private confirm(title: string, sub: string, yesDesc: string, yes: () => void): Screen {
     return {
       id: 'confirm', title, sub,
       items: [
-        { kind: 'button', label: 'No, go back', action: () => this.menu.back() },
-        { kind: 'button', label: 'Yes', action: yes },
+        { kind: 'button', label: 'No, go back', desc: 'Back to the pause menu.', action: () => this.menu.back() },
+        { kind: 'button', label: 'Yes', desc: yesDesc, action: yes },
       ],
     };
   }
@@ -390,11 +424,28 @@ export class App {
       id: 'results', title: won ? 'You win' : sim.doubles ? 'They win' : 'You lose', sub: `Game, set and match · ${sets}`, back: null, side: () => side,
       items: [
         { kind: 'button', label: 'Rematch', primary: true, desc: 'The same setup again.', action: () => void this.startMatch() },
-        { kind: 'button', label: 'Change setup', action: () => this.menu.open(this.setupScreen()) },
-        { kind: 'button', label: 'Title screen', action: () => void this.toTitle() },
+        { kind: 'button', label: 'Change setup', desc: 'Mode, opponents, venue, court and scoring, then onto court.', action: () => this.menu.open(this.setupScreen()) },
+        { kind: 'button', label: 'Title screen', desc: 'Back to the club.', action: () => void this.toTitle() },
       ],
     };
   }
+}
+
+/** The document-wide look from the settings (text size, reduced motion, high contrast): also used by main.ts before
+ * the app exists, so the first loading screen follows them. */
+export function applyRootLook(s: Settings): void {
+  const root = document.documentElement;
+  root.style.setProperty('--ui-scale', String(s.textSize));
+  root.classList.toggle('calm', reducedMotion(s));
+  // Motion set to Full: the CSS fallbacks for the system's reduced motion stand aside.
+  root.classList.toggle('full-motion', s.motion === 'full');
+  root.classList.toggle('hc', s.contrast);
+}
+
+/** An error as a sentence part (no "Error: " prefix). */
+function readable(err: unknown): string {
+  const m = err instanceof Error ? err.message : String(err);
+  return m.replace(/^(Type|Range)?Error:\s*/, '').replace(/\.$/, '');
 }
 
 function pct(a: number, b: number): string {

@@ -3,6 +3,7 @@
 // maps. Textures used only inside TSL nodes are freed by their owners (NetView, Arena). Anything shared between
 // games (the player body's geometry, cached textures) is safe to free: three uploads it again on its next use.
 import * as THREE from 'three/webgpu';
+import { isPooled } from './arena/lights.ts';
 
 export function disposeTree(root: THREE.Object3D): void {
   const seen = new Set<object>();
@@ -13,6 +14,9 @@ export function disposeTree(root: THREE.Object3D): void {
     }
   };
   root.traverse((o) => {
+    // The arenas' pooled lights (and their targets) live on into the next match with their shadow maps: disposing
+    // them would free the map and tell three to forget the light's shadow, only for both to be made again.
+    if (isPooled(o)) return;
     const m = o as THREE.Mesh;
     if (m.geometry && !seen.has(m.geometry)) {
       seen.add(m.geometry);

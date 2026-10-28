@@ -10,14 +10,25 @@ import { resolveKeys } from '../game/input/bindings.ts';
 import { qualityPreset } from '../render/quality.ts';
 import { type MatchSetup, type Settings, LEVEL_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
 
-/** URL parameters that only tune the page (renderer, quality), not which game starts: they keep the menus. */
-const PAGE_ONLY = new Set(['backend', 'dpr', 'quality', 'tone', 'bloom']);
+/**
+ * URL parameters that name a game (what optionsFromUrl and main.ts read to set one up): any of them launches it
+ * straight away, as every tool and test page does. The page-only ones (backend, dpr, quality, tone, bloom,
+ * gputime) tune the renderer and keep the menus, and anything else (a share link's fbclid, utm_source, gclid,
+ * ref) is ignored by the game.
+ */
+const GAME_PARAMS = new Set([
+  'autoplay', 'mode', 'seed', 'styles', 'scoring', 'court', 'floor', 'temp', 'alt', 'windx', 'windz', 'sets', 'games',
+  'ai', 'lefty', 'timing', 'assist', 'autotime', 'tap', 'server', 'pro', 'gfx', 'aim', 'runahead', 'sound', 'arena',
+  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot',
+]);
 
 /** Does the URL ask for a game straight away (tools and links from before the menus)? */
 export function directLaunch(params: URLSearchParams): boolean {
-  for (const k of params.keys()) if (!PAGE_ONLY.has(k)) return true;
+  for (const k of params.keys()) if (GAME_PARAMS.has(k)) return true;
   return false;
 }
+
+const QUALITY_KEYS = ['auto', 'low', 'medium', 'high', 'ultra'];
 
 /** Styles by player number, `?styles=` or dealt from the seed (the same deal the game has always made). */
 function dealStyles(seed: number, n: number): string[] {
@@ -80,7 +91,8 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     closeCam: params.get('cam') ?? undefined,
     closeCamPlayer: num('camp', 0),
     avatar,
-    prefs: { quality: qualityPreset(params.get('quality')) },
+    // ?quality=auto: High with the dynamic resolution on, as the menus' Auto (perf runs measure it this way).
+    prefs: { quality: qualityPreset(params.get('quality') === 'auto' ? 'high' : params.get('quality')), adapt: params.get('quality') === 'auto' },
   };
 }
 
@@ -109,7 +121,10 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
   const level = attract ? 0.85 : LEVEL_AI[setup.level];
   const len = attract ? LENGTH.three : LENGTH[setup.length];
   const calm = reducedMotion(s);
-  const auto = s.quality === 'auto';
+  // ?quality= (page-only: the menus stay) overrides the stored preset for this visit.
+  const urlQ = params.get('quality');
+  const quality = urlQ && QUALITY_KEYS.includes(urlQ) ? urlQ : s.quality;
+  const auto = quality === 'auto';
   return {
     match: {
       seed,
@@ -143,7 +158,8 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
     attract,
     prefs: {
       volume: s.volume, crowd: s.crowd, shake: !calm, rumble: s.rumble, announce: s.announce,
-      keys: resolveKeys(s.keys), quality: qualityPreset(auto ? 'high' : s.quality), adapt: auto, transitions: true,
+      keys: resolveKeys(s.keys), quality: qualityPreset(auto ? 'high' : quality), adapt: auto, transitions: true,
+      pro: s.pro, mouseAim: s.mouseAim,
     },
   };
 }

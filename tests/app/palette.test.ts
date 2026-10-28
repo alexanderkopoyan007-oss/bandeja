@@ -2,6 +2,8 @@
 // simulated colour blindness, and WCAG contrast of the menu's and HUD's panel text over any scene.
 import { describe, expect, it } from 'vitest';
 import { PALETTES, type Palette } from '../../src/ui/palette.ts';
+import { HUD_CSS } from '../../src/ui/hud.ts';
+import { MENU_CSS } from '../../src/ui/menu/menu.ts';
 
 // Machado, Oliveira & Fernandes 2009, "A physiologically-based model for simulation of color vision deficiency",
 // severity 1.0 (dichromacy), applied to linear RGB.
@@ -95,15 +97,49 @@ function worst(text: Rgba, layers: Rgba[]): number {
 }
 
 const rgb = (h: number, a = 1): Rgba => [(h >> 16) & 255, (h >> 8) & 255, h & 255, a];
-// The menu column sits over the left of the shade (rgba(5,7,10,.8) at the edge, .7 at 34%; .7 all over on a narrow
-// screen): the lighter end.
+
+// The panels' numbers are read from the CSS itself (hud.ts HUD_CSS, menu.ts MENU_CSS), so the cases below are
+// what the game draws. Rules inside @media blocks are left out (they are the narrow-screen and reduced-motion ones).
+function rules(css: string): Map<string, string> {
+  const flat = css.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = new Map<string, string>();
+  for (const m of flat.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    for (const sel of m[1]!.split(',')) out.set(sel.trim(), (out.get(sel.trim()) ?? '') + ';' + m[2]!);
+  }
+  return out;
+}
+const HUD = rules(HUD_CSS);
+const MENU = rules(MENU_CSS);
+function decl(r: Map<string, string>, sel: string, prop: string): string {
+  const body = r.get(sel);
+  expect(body, `no rule for ${sel}`).toBeDefined();
+  const m = body!.match(new RegExp(`(?:^|;)\\s*${prop.replace(/[-]/g, '\\-')}\\s*:\\s*([^;]+)`));
+  expect(m, `${sel} has no ${prop}`).not.toBeNull();
+  return m![1]!.trim();
+}
+/** rgba(r,g,b,a) or #rrggbb as an Rgba. */
+function colour(v: string): Rgba {
+  const m = v.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([.\d]+)\)/);
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  const h = v.match(/#([0-9a-f]{6})/i);
+  expect(h, v).not.toBeNull();
+  return rgb(parseInt(h![1]!, 16));
+}
+
+// The menu column sits over the left of the shade: .8 at the edge, .7 at the column's right edge plus a margin
+// (checked below), lighter only beyond it; .7 all over on a narrow screen. So .7 is the worst under any menu text.
 const SHADE = rgb(0x05070a, 0.7);
-const MENU_GLASS = rgb(0x090c11, 0.74);
-const HUD_GLASS = rgb(0x090c11, 0.66);
+const MENU_GLASS = colour(decl(MENU, '#menu', '--glass'));
+const HUD_GLASS = colour(decl(HUD, '#hud', '--glass'));
+const BUG = colour(decl(HUD, '#hud .bug', 'background'));
 // High-contrast panels (settings.contrast; the :root.hc rules in hud.ts and menu.ts).
-const HC_GLASS = rgb(0x090c11, 0.94);
-const HC_SHADE = rgb(0x05070a, 0.9);
-const HC_BACKING = rgb(0x090c11, 0.9);
+const HC_GLASS = colour(decl(HUD, ':root.hc #hud', '--glass'));
+const HC_MENU_GLASS = colour(decl(MENU, ':root.hc #menu', '--glass'));
+const HC_SHADE = colour(decl(MENU, ':root.hc #menu .shade', 'background'));
+const HC_BUG = colour(decl(HUD, ':root.hc #hud .bug', 'background'));
+/** The loose words over the court and the high-contrast backing each one has. */
+const LOOSE = ['.grade', '.shot', '.mate', '.ms'];
+const HC_BACKING = colour(decl(HUD, ':root.hc #hud .grade', 'background'));
 
 const hexOf = (h: number): string => `#${h.toString(16).padStart(6, '0')}`;
 // A call's subtitle takes the call's accent (hud.ts showCall): white, gold, cyan and the grade text colours.
@@ -113,7 +149,7 @@ const ACCENTS = [0xffffff, 0xffd84a, 0x5ff2ff, PALETTES.DEFAULT.good, PALETTES.D
 // partner lines are light grey (13 px).
 const GRADE_WORD = [PALETTES.DEFAULT.good, PALETTES.DEFAULT.perfect, PALETTES.DEFAULT.textOff, PALETTES.DEFAULT.textBad,
   PALETTES.SAFE.good, PALETTES.SAFE.textOff, PALETTES.SAFE.textBad];
-const LINES = [0xe6ebef, 0xcfd6dc];
+const LINES = ['.shot', '.mate', '.ms'].map((c) => ({ c, text: colour(decl(HUD, `#hud ${c}`, 'color')) }));
 
 const CASES: { what: string; text: Rgba; on: Rgba[]; min?: number }[] = [
   { what: 'menu item', text: rgb(0xdfe5ea), on: [MENU_GLASS, SHADE] },
@@ -124,7 +160,7 @@ const CASES: { what: string; text: Rgba; on: Rgba[]; min?: number }[] = [
   { what: 'primary button', text: rgb(0x111111), on: [rgb(0xffb13b, 0.9)] },
   { what: 'side card cell', text: rgb(0xcfd6dc), on: [MENU_GLASS, rgb(0x05070a, 0.08)] },
   { what: 'side card hint', text: rgb(0xffffff, 0.72), on: [MENU_GLASS, rgb(0x05070a, 0.08)] },
-  { what: 'score bug', text: rgb(0xcfd6dc), on: [rgb(0x0a0c10, 0.82)] },
+  { what: 'score bug', text: rgb(0xcfd6dc), on: [BUG] },
   { what: 'score bug points', text: rgb(0x111111), on: [rgb(0xf4d03f)] },
   { what: 'hint pill', text: rgb(0xe9f6ff), on: [HUD_GLASS] },
   { what: 'help panel', text: rgb(0xdfe5ea), on: [HUD_GLASS] },
@@ -132,10 +168,30 @@ const CASES: { what: string; text: Rgba; on: Rgba[]; min?: number }[] = [
   { what: 'call title', text: rgb(0xffffff), on: [HUD_GLASS] },
   // High-contrast panels: everything, the coloured call subtitles and the loose words included.
   { what: 'high contrast: menu group label', text: rgb(0xffffff, 0.72), on: [HC_SHADE] },
+  { what: 'high contrast: menu description', text: rgb(0xd3d9de), on: [HC_SHADE] },
+  { what: 'high contrast: menu item', text: rgb(0xdfe5ea), on: [HC_MENU_GLASS, HC_SHADE] },
+  { what: 'high contrast: score bug', text: rgb(0xcfd6dc), on: [HC_BUG] },
   ...ACCENTS.map((h) => ({ what: `high contrast: call subtitle ${hexOf(h)}`, text: rgb(h), on: [HC_GLASS] })),
   ...GRADE_WORD.map((h) => ({ what: `high contrast: grade word ${hexOf(h)}`, text: rgb(h), on: [HC_BACKING], min: 3 })),
-  ...LINES.map((h) => ({ what: `high contrast: shot line ${hexOf(h)}`, text: rgb(h), on: [HC_BACKING] })),
+  ...LINES.map((l) => ({ what: `high contrast: ${l.c} line`, text: l.text, on: [HC_BACKING] })),
 ];
+
+describe('the contrast cases are the CSS', () => {
+  it('high contrast backs every loose word over the court (one rule, one backing)', () => {
+    for (const c of LOOSE) expect(decl(HUD, `:root.hc #hud ${c}`, 'background'), c).toBe(decl(HUD, ':root.hc #hud .grade', 'background'));
+  });
+  it('the menu shade is .7 or darker under the whole column, whatever the window width', () => {
+    const g = decl(MENU, '#menu .shade', 'background');
+    const stops = [...g.matchAll(/rgba\(5,7,10,([.\d]+)\) ([^,]+?(?:\([^)]*\))?[^,]*)(?=,|\)$)/g)].map((m) => ({ a: Number(m[1]), at: m[2]!.trim() }));
+    expect(stops[0]!.a).toBeGreaterThanOrEqual(0.7);
+    // The second stop is at the column's right edge (6vw + its width) and beyond: tied to the column, not to a
+    // share of the window (34% passed under the 520 px column below about 1857 px).
+    expect(stops[1]!.a).toBeGreaterThanOrEqual(0.7);
+    expect(stops[1]!.at).toMatch(/calc\(6vw \+ var\(--col\) \+ \d+px\)/);
+    expect(decl(MENU, '#menu .panel', 'width')).toBe('var(--col)');
+    expect(decl(MENU, '#menu .panel', 'left')).toBe('6vw');
+  });
+});
 
 describe('panel text contrast (WCAG 1.4.3: 4.5:1, large text 3:1)', () => {
   for (const c of CASES) {
