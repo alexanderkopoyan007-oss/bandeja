@@ -1,0 +1,16 @@
+{
+  "name": "p4",
+  "macro": {
+    "gender": 1.0, "age": 0.48, "muscle": 0.66, "weight": 0.4, "proportions": 0.8, "height": 0.62,
+    "cupsize": 0.5, "firmness": 0.5,
+    "race": { "asian": 1.0, "caucasian": 0.0, "african": 0.0 }
+  },
+  "skin": "young_asian_male",
+  "eyes": "low-poly",
+  "eyebrows": "eyebrow004",
+  "eyelashes": "eyelashes01",
+  "hair": "short04",
+  "clothes": ["male_casualsuit06", "shoes05"],
+  "shorts": 0.6,
+  "height": 1.79
+}

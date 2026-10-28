@@ -4,7 +4,7 @@
 import * as THREE from 'three/webgpu';
 import { Game } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
-import { loadPlayerAsset, type PlayerAsset } from '../render/avatar/asset.ts';
+import { loadPlayerAsset, peopleFor, type PlayerAsset } from '../render/avatar/asset.ts';
 import { LoadingScreen } from '../ui/loading.ts';
 import { Menu, type Item, type Screen, type Choice } from '../ui/menu/menu.ts';
 import { setSafeColours } from '../ui/palette.ts';
@@ -59,7 +59,7 @@ export class App {
     const url = new URL('assets/player.bnz', document.baseURI).href;
     for (let attempt = 0; !this.asset; attempt++) {
       try {
-        this.asset = await loadPlayerAsset(url, (f) => L.stage('Fetching the players', 0.12 + 0.4 * f));
+        this.asset = await loadPlayerAsset(url, (f) => L.stage('Fetching the players', 0.12 + 0.4 * f), peopleFor(this.params));
       } catch (err) {
         if (attempt >= 2) throw new Error(`the players could not be downloaded (${String(err)}). Check the connection`);
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));

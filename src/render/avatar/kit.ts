@@ -6,8 +6,8 @@
 // turns shinier as it sweats. Shirt and shorts hems lag the body when it accelerates.
 import * as THREE from 'three/webgpu';
 import {
-  attribute, positionGeometry, positionLocal, uniform, vec3, float, mix, smoothstep, color,
-  mx_noise_float,
+  attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
+  mx_noise_float, texture, uv,
 } from 'three/tsl';
 import { heightBump } from '../bump.ts';
 import type { PlayerAsset } from './asset.ts';
@@ -41,7 +41,7 @@ export function kitRegions(asset: PlayerAsset): { region: Float32Array; frame: K
   let frame = FRAMES.get(asset);
   if (region && frame) return { region, frame };
   const g = asset.geometry;
-  const pos = g.attributes.position!.array as Float32Array;
+  const pos = asset.restPos;
   const si = g.attributes.skinIndex!.array as Uint16Array;
   const sw = g.attributes.skinWeight!.array as Float32Array;
   const n = pos.length / 3;
@@ -195,4 +195,103 @@ export function kitFor(idx: number): KitLook {
     k.shoes = team ? 0xf0f0f0 : 0x2a2d33;
   }
   return k;
+}
+
+/**
+ * A person's material (asset.look: an MPFB body, tools/assets/mpfb/): skin and eyes from the atlas; the shirt and
+ * shorts in the kit's colours shaded by the clothes' own ambient occlusion (their printed textures are not used);
+ * socks and shoes coloured as the mannequin's kit. Sweat, fabric folds and the hems' lag work as on the mannequin.
+ * The second material is the alpha-tested hair, brows and lashes.
+ */
+export function personMaterial(asset: PlayerAsset, look: KitLook): { material: THREE.MeshStandardNodeMaterial; hair: THREE.MeshStandardNodeMaterial; state: KitState } {
+  const body = asset.look!;
+  const frame = personFrame(asset);
+  const A = attribute<'vec3'>('bodyA', 'vec3'), B = attribute<'vec3'>('bodyB', 'vec3');
+  const shirtW = A.x, shortsW = A.y, skinW = A.z, sockW = B.x, shoeW = B.y, eyeW = B.z;
+  const fabric = shirtW.add(shortsW).add(sockW);
+  const p = positionGeometry; // the modelled pose: patterns stay on the body as it moves
+  const sweatU = uniform(new THREE.Vector2());
+  const sweat = sweatU.x;
+  const lag = uniform(new THREE.Vector3());
+  const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
+  const ao = float(0.32).add(tex.x.mul(0.68));
+
+  const blotch = mx_noise_float(p.mul(14)).mul(0.22);
+  const wetAux = attribute<'float'>('bodyWet', 'float');
+  const wet = smoothstep(0.02, 0.12, wetAux.add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
+
+  const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
+  const stripe = smoothstep(0.012, 0.004, p.y.sub(frame.floorY + 0.055).abs());
+  const shoeC = mix(mix(color(look.shoes), color(look.shirt), stripe.mul(0.9)), color(0x8a8378), sole);
+  let col: THREE.Node<'vec3'> = color(look.shirt).mul(ao).mul(shirtW)
+    .add(color(look.shorts).mul(ao).mul(shortsW))
+    .add(tex.xyz.mul(skinW.add(eyeW)))
+    .add(color(look.socks).mul(sockW))
+    .add(shoeC.mul(shoeW));
+  col = col.mul(float(1).sub(wet.mul(0.3)));
+  const m = new THREE.MeshStandardNodeMaterial();
+  m.colorNode = col;
+  m.roughnessNode = fabric.mul(float(0.88).sub(wet.mul(0.25)))
+    .add(skinW.mul(mix(float(0.55), float(0.34), sweat)))
+    .add(eyeW.mul(0.12)).add(shoeW.mul(0.45));
+  m.metalnessNode = float(0);
+  const folds = mx_noise_float(vec3(p.x.mul(16), p.y.mul(44), p.z.mul(16))).mul(0.6)
+    .add(mx_noise_float(p.mul(60)).mul(0.15));
+  m.normalNode = heightBump(folds.mul(fabric).mul(0.0025), 0.023);
+  const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
+  const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);
+  m.positionNode = positionLocal.add(lag.mul(shirtSway.add(shortsSway)));
+
+  const hair = new THREE.MeshStandardNodeMaterial();
+  const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
+  hair.colorNode = ht.xyz;
+  hair.opacityNode = ht.w;
+  hair.alphaTest = 0.5;
+  hair.side = THREE.DoubleSide;
+  hair.roughnessNode = float(0.62);
+  hair.metalnessNode = float(0);
+  return { material: m, hair, state: { sweat: sweatU, lag } };
+}
+
+const PERSON_FRAMES = new WeakMap<PlayerAsset, KitFrame>();
+
+/**
+ * A person's landmarks (rest pose) and per-vertex sweat weights (`bodyWet`: where a shirt gets wet first, as the
+ * mannequin's kit), computed once per asset.
+ */
+function personFrame(asset: PlayerAsset): KitFrame {
+  let frame = PERSON_FRAMES.get(asset);
+  if (frame) return frame;
+  const g = asset.geometry;
+  const rest = asset.restPos;
+  const A = g.getAttribute('bodyA').array as Float32Array;
+  const n = rest.length / 3;
+  const chest = at(asset, 'Spine2'), hips = at(asset, 'Hips');
+  const halfSpan = Math.abs(at(asset, 'LeftArm').x - at(asset, 'RightArm').x) / 2;
+  const g3 = (dx: number, dy: number, dz: number, rx: number, ry: number, rz: number): number =>
+    Math.exp(-((dx / rx) ** 2 + (dy / ry) ** 2 + (dz / rz) ** 2));
+  const wet = new Float32Array(n);
+  let floorY = Infinity, shortsHemY = Infinity, hemY = Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = rest[i * 3]!, y = rest[i * 3 + 1]!, z = rest[i * 3 + 2]!;
+    floorY = Math.min(floorY, y);
+    if (A[i * 3 + 1]! > 0.5) shortsHemY = Math.min(shortsHemY, y);
+    if (A[i * 3]! < 0.5) continue;
+    hemY = Math.min(hemY, y);
+    const dx = x - chest.x;
+    wet[i] = Math.max(
+      g3(dx, y - (chest.y + 0.02), z - (chest.z + 0.1), 0.06, 0.13, 0.09),
+      g3(dx, y - (chest.y - 0.12), z - (chest.z - 0.1), 0.055, 0.26, 0.09),
+      g3(Math.abs(dx) - halfSpan * 0.68, y - (chest.y + 0.02), z - chest.z, 0.05, 0.08, 0.09),
+      0.7 * g3(dx, y - (hips.y + 0.12), z - (chest.z - 0.1), 0.1, 0.08, 0.1),
+    );
+  }
+  g.setAttribute('bodyWet', new THREE.BufferAttribute(wet, 1));
+  frame = {
+    chest: chest.clone(), hips: hips.clone(), hemY: Number.isFinite(hemY) ? hemY : hips.y - 0.02,
+    shortsHemY: Number.isFinite(shortsHemY) ? shortsHemY : hips.y - 0.3,
+    armSpan: halfSpan * 2, floorY,
+  };
+  PERSON_FRAMES.set(asset, frame);
+  return frame;
 }

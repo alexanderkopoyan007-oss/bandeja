@@ -16,10 +16,13 @@ const secs = Number(process.argv[2] ?? 30);
 // Apple GPUs (this machine) passes overlap, so the begin-to-end times are no per-frame cost (27 ms "per frame" at
 // 140 fps in the first Phase 8 run).
 const GPUTIME = process.env.GPUTIME === '1';
+// PERF_PARAMS=a=1&b=2: extra URL parameters for every run (e.g. people=0 for the mannequin).
+const EXTRA = process.env.PERF_PARAMS ? '&' + process.env.PERF_PARAMS : '';
 const PORT = 4190;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 // OUTDIR=<dir> serves another build than dist/ (to measure one commit while dist/ is in use).
+// PERF_PARAMS=<query> adds URL parameters to every run (PERF_PARAMS=people=0: the mannequin bodies).
 const outDir = process.env.OUTDIR ? ['--outDir', process.env.OUTDIR] : [];
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort', ...outDir], { stdio: 'pipe' });
 await new Promise((resolve, reject) => {
@@ -89,7 +92,7 @@ async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = f
     const cdp = await page.createCDPSession();
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
   }
-  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}&gpuload=${gpuLoad}&fpscap=${cap}${GPUTIME ? '&gputime=1' : ''}`, { waitUntil: 'load' });
+  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}&gpuload=${gpuLoad}&fpscap=${cap}${GPUTIME ? '&gputime=1' : ''}${EXTRA}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 3000)); // settle after warm-up
   await page.evaluate(() => window.__bandeja.audio.unlock());
@@ -152,7 +155,7 @@ async function deopt(name, { dpr, throttle, quality }) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: dpr });
   if (throttle > 1) { const cdp = await page.createCDPSession(); await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle }); }
-  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}`, { waitUntil: 'load' });
+  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}${EXTRA}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 8000));
   const from = Date.now();

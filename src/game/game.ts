@@ -35,7 +35,7 @@ export interface GameOptions {
   gpuLoad?: number;
   /** Perf runs only: at most this many frames a second (a display's refresh, with the browser's limit off). */
   fpsCap?: number;
-  /** Review only (`?cam=hand|body|ball`, `&camp=N` the player): a close camera on a player's racket hand, the whole
+  /** Review only (`?cam=hand|body|ball|face`, `&camp=N` the player): a close camera on a player's racket hand, the whole
    * player, or the ball, instead of the broadcast camera. */
   closeCam?: string;
   closeCamPlayer?: number;
@@ -479,6 +479,11 @@ export class Game {
     } else if (kind === 'hand' && pv.avatar) {
       pv.avatar.racket.getWorldPosition(at);
       this.closeEye.set(at.x + 0.9, at.y + 0.25, at.z + 1.1 * side);
+    } else if (kind === 'face' && pv.avatar) {
+      // Into the face, a little off to the side (the body faces its root's +z).
+      pv.avatar.root.getObjectByName('Head')!.getWorldPosition(at);
+      at.y += 0.08;
+      this.closeEye.set(0.25, 0.02, 0.85).applyQuaternion(pv.root.quaternion).add(at);
     } else {
       at.set(root.x, 0.95, root.z);
       this.closeEye.set(at.x + 1.6, 1.35, at.z + 3.2 * side);

@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Game } from './game/game.ts';
-import { loadPlayerAsset, type PlayerAsset } from './render/avatar/asset.ts';
+import { loadPlayerAsset, peopleFor, type PlayerAsset } from './render/avatar/asset.ts';
 import { findPhoto, PhotoOverlay } from './game/photoMatch.ts';
 import { App } from './app/app.ts';
 import { LoadingScreen } from './ui/loading.ts';
@@ -73,7 +73,7 @@ async function start(): Promise<void> {
   }
   // The player body loads alongside the renderer; ?avatar=0 (or a failed load) plays with the M1 capsules.
   const avatar = params.get('avatar') === '0' ? Promise.resolve(null)
-    : loadPlayerAsset(new URL('assets/player.bnz', document.baseURI).href).catch((err: unknown): PlayerAsset | null => {
+    : loadPlayerAsset(new URL('assets/player.bnz', document.baseURI).href, undefined, peopleFor(params)).catch((err: unknown): PlayerAsset | null => {
       console.warn('player body not loaded, using capsules:', err);
       return null;
     });

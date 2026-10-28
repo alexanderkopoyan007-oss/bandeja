@@ -147,7 +147,9 @@ export class PlayerView {
 
   constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null) {
     if (asset) {
-      this.avatar = new Avatar(asset, kitFor(idx));
+      // Dressed as one of the people when they loaded (each player a different one), else the mannequin.
+      const people = asset.people;
+      this.avatar = new Avatar(people.length ? people[idx % people.length]! : asset, kitFor(idx));
       this.root = this.avatar.root;
       scene.add(this.root);
       return;

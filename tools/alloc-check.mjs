@@ -1,6 +1,7 @@
 // Runs AI-vs-AI matches under --trace-gc and counts garbage collections during the measured stretch.
 // The sim must allocate nothing per tick, so after JIT warm-up the count should be zero.
-// Mode 'avatars' also animates the four player bodies (src/render/avatar) once every two ticks (60 fps).
+// Mode 'avatars' also animates the four player bodies (src/render/avatar: the people, as the game dresses the
+// players) once every two ticks (60 fps).
 // Usage: node tools/alloc-check.mjs [ticks] [singles|doubles|avatars]   (all three when left out)
 // ALLOC_PROFILE=1 lists the top allocation sites of the measured stretch, garbage included.
 import { spawnSync } from 'node:child_process';
@@ -16,12 +17,14 @@ if (process.argv[2] === '--child') {
     const { readFileSync } = await import('node:fs');
     const { gunzipSync } = await import('node:zlib');
     const THREE = await import('three/webgpu');
-    const { parsePlayerAsset } = await import('../src/render/avatar/asset.ts');
+    const { parsePlayerAsset, parseBodyAsset, PEOPLE } = await import('../src/render/avatar/asset.ts');
     const { Avatar } = await import('../src/render/avatar/avatar.ts');
     const { kitFor } = await import('../src/render/avatar/kit.ts');
-    const raw = gunzipSync(readFileSync(new URL('../public/assets/player.bnz', import.meta.url)));
-    const asset = parsePlayerAsset(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
-    const av = [0, 1, 2, 3].map((i) => new Avatar(asset, kitFor(i)));
+    const gz = (f) => { const raw = gunzipSync(readFileSync(new URL('../public/assets/' + f, import.meta.url))); return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength); };
+    const asset = parsePlayerAsset(gz('player.bnz'));
+    // Dressed as the game dresses them: one of the people each (ALLOC_PEOPLE=0: the mannequin).
+    const people = process.env.ALLOC_PEOPLE === '0' ? [] : PEOPLE.map((n) => parseBodyAsset(gz(`people/${n}.bnz`), asset));
+    const av = [0, 1, 2, 3].map((i) => new Avatar(people[i] ?? asset, kitFor(i)));
     const scene = new THREE.Scene();
     for (const v of av) scene.add(v.root);
     let k = 0;

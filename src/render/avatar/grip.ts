@@ -63,16 +63,20 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
 
   // The palm's surface (how far out on the N side) and each finger segment's radius, from the mesh.
   const geo = asset.geometry;
-  const P = geo.getAttribute('position'), SI = geo.getAttribute('skinIndex'), SW = geo.getAttribute('skinWeight');
+  const SI = geo.getAttribute('skinIndex'), SW = geo.getAttribute('skinWeight');
+  const rest = asset.restPos;
   const hand = idx('Hand');
   const palm: Array<[number, number, number]> = [];
   const segR = new Map<number, number[]>();
+  /** The same along the middle of each segment only (away from the knuckles and, for the thumb, the palm's skin
+   * that its weights take in): the thumb's pad. */
+  const midR = new Map<number, number[]>();
   const v = new THREE.Vector3();
-  for (let i = 0; i < P.count; i++) {
+  for (let i = 0; i < rest.length / 3; i++) {
     let best = -1, bw = 0;
     for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; best = SI.getComponent(i, k); } }
     if (best < 0) continue;
-    v.fromBufferAttribute(P, i);
+    v.fromArray(rest, i * 3);
     if (best === hand) { palm.push(coord(v)); continue; }
     const name = asset.bones[best]!.name;
     if (!name.startsWith(side + 'Hand') || !/\d$/.test(name)) continue;
@@ -80,17 +84,26 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
     if (child < 0) continue;
     const a = new THREE.Vector3().setFromMatrixPosition(rw[best]!), b = new THREE.Vector3().setFromMatrixPosition(rw[child]!);
     const seg = b.clone().sub(a);
-    const t = THREE.MathUtils.clamp(v.clone().sub(a).dot(seg) / seg.lengthSq(), 0, 1);
+    const t0 = v.clone().sub(a).dot(seg) / seg.lengthSq();
+    const t = THREE.MathUtils.clamp(t0, 0, 1);
     let list = segR.get(best);
     if (!list) { list = []; segR.set(best, list); }
-    list.push(v.distanceTo(a.addScaledVector(seg, t)));
+    const d = v.distanceTo(a.addScaledVector(seg, t));
+    list.push(d);
+    if (t0 > 0.2 && t0 < 0.8) {
+      let mid = midR.get(best);
+      if (!mid) { mid = []; midR.set(best, mid); }
+      mid.push(d);
+    }
   }
-  const radius = (b: number): number => {
-    const l = segR.get(b);
+  const radius = (b: number, q = 0.8, from = segR): number => {
+    const l = from.get(b);
     if (!l || l.length < 4) return 0.01;
     l.sort((x, y) => x - y);
-    return l[Math.floor(l.length * 0.8)]!;
+    return l[Math.min(l.length - 1, Math.floor(l.length * q))]!;
   };
+  /** The thumb's outer segments: clear of the grip by their pad's full thickness less 1.5 mm of give. */
+  const padR = (b: number): number => Math.max(PRESS * radius(b), radius(b, 0.97, midR) - 0.0015);
   const surf = (f: number, k: number): number => {
     let m = -1;
     for (const [pf, pk, pn] of palm) if ((pf - f) ** 2 + (pk - k) ** 2 < 0.012 * 0.012 && pn > m) m = pn;
@@ -178,7 +191,11 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
       w0[j]!.decompose(v, rq, sc);
       return axisW.applyQuaternion(rq.invert());
     });
-    const R = ids.map((b) => HANDLE_R + PRESS * radius(b));
+    // How far each segment's bone line keeps from the handle's axis: a finger pressed in a little (PRESS of its
+    // radius); the thumb's two outer segments by their pad's full thickness less 1.5 mm (the bone runs near the
+    // thumb's back, so the pad, thicker than its typical radius, went 4-6.5 mm into the grip on the MPFB hands). Not
+    // the thumb's base: its skin is the ball of the thumb, which does press on the handle.
+    const R = ids.map((b, j) => HANDLE_R + (thumb && j === ids.length - 1 ? padR(b) : PRESS * radius(b)));
     const ang = ids.map(() => 0);
     const ratio = thumb ? THUMB_RATIO : FINGER_RATIO;
     // The whole finger closes (the joints in a power grip's proportions) until a segment touches the grip; the joints
@@ -218,7 +235,7 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
       const goal = target.clone();
       const qd = new THREE.Quaternion(), r0 = new THREE.Quaternion(), r0i = new THREE.Quaternion(), lim = new THREE.Quaternion();
       const pj = new THREE.Vector3(), pt = new THREE.Vector3(), d1 = new THREE.Vector3(), d2 = new THREE.Vector3();
-      for (let tries = 0; tries < 4; tries++) {
+      for (let tries = 0; tries < 5; tries++) {
         for (let it = 0; it < 30; it++) {
           for (let j = ids.length - 1; j >= 0; j--) {
             const wm = worldAt();
@@ -246,6 +263,15 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
           for (let u = 1; u <= 4; u++) deficit = Math.max(deficit, R[j]! - offAxis(p0.clone().lerp(p1, u / 4)));
         }
         if (deficit <= 0.002) break;
+        if (tries < 3) {
+          // A short thumb reaching round goes through the grip: its tip goes less far round the handle first (back
+          // towards where the thumb starts, a quarter radian a try), still on the grip's surface; only then out.
+          const base = new THREE.Vector3().setFromMatrixPosition(wm[0]!);
+          const fwd = goal.clone().sub(H0).applyAxisAngle(A, 0.25).add(H0);
+          const back = goal.clone().sub(H0).applyAxisAngle(A, -0.25).add(H0);
+          goal.copy(fwd.distanceTo(base) < back.distanceTo(base) ? fwd : back);
+          continue;
+        }
         const dd = goal.clone().sub(H0);
         const radial = dd.addScaledVector(A, -dd.dot(A)).normalize();
         goal.addScaledVector(radial, deficit);
@@ -281,7 +307,7 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
   while (dphi > Math.PI) dphi -= 2 * Math.PI;
   while (dphi < -Math.PI) dphi += 2 * Math.PI;
   const phiG = pb + Math.max(-1.2, Math.min(1.2, 0.5 * dphi));
-  const rG = HANDLE_R + PRESS * radius(idx('HandThumb3')) + 0.002;
+  const rG = HANDLE_R + padR(idx('HandThumb3')) + 0.002;
   const sG = sb + 0.7 * tb.distanceTo(tt);
   const goal = H0.clone().addScaledVector(A, sG).addScaledVector(N0, rG * Math.cos(phiG)).addScaledVector(S, rG * Math.sin(phiG));
   chain(['HandThumb1', 'HandThumb2', 'HandThumb3'], THUMB_MAX, true, goal);
@@ -292,11 +318,11 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
     const fa = idx('ForeArm');
     const fd = wrist.clone().sub(at('ForeArm')).normalize();
     let r = 0;
-    for (let i = 0; i < P.count; i++) {
+    for (let i = 0; i < rest.length / 3; i++) {
       let best = -1, bw = 0;
       for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; best = SI.getComponent(i, k); } }
       if (best !== fa) continue;
-      v.fromBufferAttribute(P, i).sub(wrist);
+      v.fromArray(rest, i * 3).sub(wrist);
       const along = v.dot(fd);
       if (along > 0.005 || along < -0.04) continue;
       r = Math.max(r, v.addScaledVector(fd, -along).length());

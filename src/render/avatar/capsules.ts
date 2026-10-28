@@ -29,7 +29,7 @@ export function fitCapsules(asset: PlayerAsset): CapsuleDef[] {
     ['shinR', 'RightLeg', 'RightFoot', ['RightLeg']],
   ];
   const g = asset.geometry;
-  const pos = g.getAttribute('position');
+  const rest = asset.restPos;
   const si = g.getAttribute('skinIndex');
   const sw = g.getAttribute('skinWeight');
   const at = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(asset.restWorld[asset.bone(n)]!);
@@ -39,14 +39,14 @@ export function fitCapsules(asset: PlayerAsset): CapsuleDef[] {
     const ids = new Set(bones.map((n) => asset.bone(n)));
     const A = at(a), B = at(b);
     const d: number[] = [];
-    for (let k = 0; k < pos.count; k++) {
+    for (let k = 0; k < rest.length / 3; k++) {
       let best = -1, bw = -1;
       for (let j = 0; j < 4; j++) {
         const w = (sw as THREE.BufferAttribute).getComponent(k, j);
         if (w > bw) { bw = w; best = (si as THREE.BufferAttribute).getComponent(k, j); }
       }
       if (!ids.has(best)) continue;
-      v.fromBufferAttribute(pos as THREE.BufferAttribute, k);
+      v.fromArray(rest, k * 3);
       d.push(pointSeg(v, A, B));
     }
     d.sort((x, y) => x - y);

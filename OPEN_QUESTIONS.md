@@ -281,3 +281,16 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   0.54 bandejas and víboras a point against 1.1-1.3 for pros, so the smash is 51% of overheads against 36%. A topspin
   (x3) smash shape isn't built. Settled by: the owner saying whether they want the x3 as its own stroke.
 
+
+## Phase 9 (expert review: the people)
+- **How they look to the owner.** Four MakeHuman men replace the mannequin (DECISIONS, "The people"). Their faces,
+  hair, builds and the kit over the T-shirt's shading have only been judged by me from captures. Settled by: the
+  owner playing a match and saying which looks wrong (`?people=0` shows the old mannequin to compare).
+- **Women's padel and more faces.** All four are men because the clips, strokes and grip were all tuned on a male
+  mannequin, and a female MPFB body is a different build (shoulders, hips, height). Four faces repeat across every
+  match. Settled by: whether the owner wants mixed or women's doubles and more people (each is a JSON file and about
+  30 s of building).
+- **Clothes.** One MakeHuman T-shirt and its trousers cut to shorts, both looser than padel kit. No CC0 sports kit
+  was in the packs. Settled by: a tighter shirt modelled for the game, or the owner accepting the casual fit.
+- **The thumb on the grip.** MPFB's short thumb ends 21-23 mm off the handle (the Y Bot's 14 mm) and the ball of the
+  thumb presses up to 4.8 mm into the grip. Settled by: a close look in `?cam=hand` and whether it reads as a grip.

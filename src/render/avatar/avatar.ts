@@ -17,7 +17,7 @@ import { solveGrip } from './grip.ts';
 import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
-import { kitMaterial, type KitLook, type KitState } from './kit.ts';
+import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import {
   BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
@@ -753,18 +753,35 @@ export class Avatar {
     });
     asset.bones.forEach((d, i) => { if (d.parent >= 0) this.bones[d.parent]!.add(this.bones[i]!); });
     let mat: THREE.Material;
-    if (typeof look === 'number') mat = new THREE.MeshStandardMaterial({ color: look, vertexColors: true, roughness: 0.55, metalness: 0.05 });
-    else {
+    let hairMat: THREE.Material | null = null;
+    if (typeof look === 'number') {
+      mat = new THREE.MeshStandardMaterial({ color: look, vertexColors: true, roughness: 0.55, metalness: 0.05 });
+      if (asset.look) hairMat = new THREE.MeshStandardMaterial({ color: look, roughness: 0.6, metalness: 0 });
+    } else if (asset.look) {
+      const k = personMaterial(asset, look);
+      mat = k.material;
+      hairMat = k.hair;
+      this.kit = k.state;
+    } else {
       const k = kitMaterial(asset, look);
       mat = k.material;
       this.kit = k.state;
     }
+    const skeleton = new THREE.Skeleton(this.bones, asset.boneInverses);
     this.mesh = new THREE.SkinnedMesh(asset.geometry, mat);
     this.mesh.add(this.bones[0]!);
-    this.mesh.bind(new THREE.Skeleton(this.bones, asset.boneInverses), new THREE.Matrix4());
+    this.mesh.bind(skeleton, new THREE.Matrix4());
     this.mesh.castShadow = true;
     this.mesh.frustumCulled = false;
     this.root.add(this.mesh);
+    if (asset.look && hairMat) {
+      // A person's hair, brows and lashes: alpha-tested, on the same skeleton.
+      const hair = new THREE.SkinnedMesh(asset.look.alphaGeometry, hairMat);
+      hair.bind(skeleton, new THREE.Matrix4());
+      hair.castShadow = true;
+      hair.frustumCulled = false;
+      this.root.add(hair);
+    }
 
     const b = (n: string): THREE.Bone => this.bones[asset.bone(n)]!;
     this.hips = b('Hips');

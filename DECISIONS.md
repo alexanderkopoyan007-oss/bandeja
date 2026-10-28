@@ -1353,3 +1353,60 @@ measured against an unchanged copy of the previous commit on the same seeds (AI 
   `tests/sim/splitstep.test.ts` (the 5-10 m split and the planner on long runs; both fail on the old profile),
   `tests/app/settings.test.ts` (`?ball=`, altitude, roofs from the URL and the menus), `tests/sim/ball.test.ts`
   (rolling). Allocation unchanged (`npm run alloc`, 3 runs: 3-4 GCs per 100k ticks for the sim, 7 with the bodies).
+
+**The people** (owner, 2026-10-28: "the ball doesn't look real, nor do the people"; approved downloading MPFB 2 and
+the MakeHuman CC0 asset packs). The players were the Y Bot mannequin, dressed by the shader. They are now four men
+made in MPFB 2 (MakeHuman's Blender add-on) from the CC0 MakeHuman base mesh, skins, eyes, brows, lashes, hair and
+clothes, on the game's own skeleton, so every clip, stroke, IK target and the grip work on them unchanged.
+- **Build** (`sh tools/assets/mpfb/build-all.sh`, about 30 s for four): `make-player.py` makes a body from
+  `data/players/<name>.json` (macro settings, skin, hair, brows, lashes, eyes, T-shirt and shorts, trainers) in a
+  background Blender with its own profile under `assets-src/` (the owner's Blender settings are never touched);
+  `finish-player.py` (the same session) bakes the shape, scales soles to skin top to the player's height (MPFB's
+  macro height is set so the scale is within 2% of 1: a 2.02 m body squashed to 1.80 m had a small head and long
+  shoulders), slices the trousers level into shorts, removes skin MPFB's masks leave under the clothes and posts
+  the rig. `build-people.mjs` puts it on the game skeleton and writes `public/assets/people/` (380 KB + 140-240 KB of
+  textures a person).
+- **Bound in the modelled pose.** The mesh stays in MPFB's A-pose and each bone's inverse bind matrix is
+  (T-pose world)^-1 x (its move from the A-pose to the T-pose), so at rest the skinned mesh is the T-pose posed
+  straight from the modelled shape: baking a T-pose first and skinning that again blends the weights twice (a
+  shoulder or elbow loses volume twice over). Only bones that differ from the game skeleton by pose are moved: arms,
+  hands and fingers (the forearm and hand also rolled so the palm faces as the game skeleton's), and the legs
+  straight down. Shoulders, spine, neck, head, hips and feet keep MPFB's own joints, with the game skeleton's rest
+  rotations: the first cut aimed every bone, and turning MPFB's clavicle (28 degrees down to its arm joint) to the
+  game skeleton's level one raised each shoulder 9 cm, a shrug. The game reads the T-pose skin (`asset.restPos`)
+  wherever it measures the body (soles, grip, capsules).
+- **Proportions**, against the mannequin at 1.80 m: hips 1.026 m (0.998), shoulder joint 1.445 (1.436), hand
+  0.734 (0.738). The clips' hips travel and the run cycles' ground speed are scaled by each body's hips height (1.01-
+  1.06). Soles were 4-5 mm under the floor in the T-pose (straight legs are longer than splayed ones); the skeleton
+  goes up by that (the bind matrices stay, so the skin rises with it).
+- **Clothes.** The suit's own texture has a printed logo on the shirt and jeans, and the trainers' texture is a
+  photograph of a branded shoe with its stripes: neither is used. The shirt and shorts are the kit's colours shaded
+  by the suit's ambient-occlusion map (its folds and seams), the trainers are coloured as the mannequin's were (gum
+  sole, a stripe in the shirt's colour) and the crew sock built into them (the thin tube above 11.8 cm) takes the
+  socks' colour. Sweat patches, fabric folds and the hems' lag work as on the mannequin (`personMaterial`).
+  Skin the shirt hugs poked through at the shoulders once the arm moved: the clothes go 3 mm out and skin that sees
+  them within 3 cm straight out is removed, except a 2.5 cm band next to open skin, so looking into a sleeve never
+  shows a hole in the arm.
+- **Two draw calls a person** (body and clothes in one atlas, 1536 x 1024; hair, brows and lashes alpha-tested in a
+  second, 768 x 512). Each about 29-31k triangles.
+- **The four**: young white man 1.80 m (p1), young black man 1.84 m with a short afro (p2), white man in his late
+  thirties 1.77 m (p3), young East Asian man 1.79 m (p4). A short side-swept fringe on p4 was swapped for short slick
+  hair (it read as a fashion model, not a padel player). Player n is person n (`PlayerView`), `?people=0` brings the
+  mannequin back.
+- **The grip on a smaller hand.** MPFB's thumb is 2 cm shorter than the Y Bot's and sits nearer the palm. Reaching
+  round the handle, its middle segment went through the grip, and the old fix (move the target outwards) left its
+  tip 27 mm off the handle. The target first turns back round the handle towards the thumb's base (three quarter-
+  radian tries), then goes out. The tip pad is now kept out by its own thickness, measured mid-segment: MPFB's
+  weights give the thumb's segments some palm skin, so their typical radius read 21 mm. Thumb tip now 21-23 mm off the
+  handle, its middle joint 7-8 mm (on it); fingertips 6.4-11.3 mm (mannequin 8.1-12.8). The ball of the thumb presses
+  4.5-4.8 mm into the grip where it wraps (the mannequin's deepest skin is 2.1 mm).
+- **Animation QA**, 60 s of seed 1 doubles each (mannequin | people): skate 17.2 | 12.8-14.5 cm/s, contact p50 7.2 |
+  5.9-8.3 mm, pops 23.3 | 18.3-22.5 per player-minute, racket in body 0.13 | 0.21-0.27%, hand in torso 0.09 |
+  0.25-0.41%, no flips or knee spins; all inside the mannequin's limits (`tests/render/people.test.ts`).
+- Allocation unchanged with the people (`npm run alloc` 3 runs: avatars 6-7 GCs per 100k ticks, as before).
+- **Frame rate**, built game, `PERF_PARAMS=people=0` (the mannequin) against the people, paired back to back on a
+  busy machine (load average 7-11; logs `tools/out/people-*.log`): Medium at CPU 4x 123.8 fps, 1% low 65.7, p99
+  13.0 ms | 121.4, 77.6, 11.5 ms; High 2x unpaced 211.2 fps, p99 23.9 ms | 219.4, 21.9 ms; High paced at 120 Hz held
+  120 Hz in all four runs, CPU work 1.4-1.5 | 1.9 ms a frame (the four extra skinned meshes). Draw calls 103 | 111,
+  triangles in view 896k | 695k (the mannequin's mesh is 55k triangles, a person 29-31k). The second Medium pair was
+  dropped: another project's browser check held the machine's one-Chrome lock.

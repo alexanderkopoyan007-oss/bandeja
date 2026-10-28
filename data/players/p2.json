@@ -1,0 +1,16 @@
+{
+  "name": "p2",
+  "macro": {
+    "gender": 1.0, "age": 0.45, "muscle": 0.7, "weight": 0.45, "proportions": 0.8, "height": 0.6,
+    "cupsize": 0.5, "firmness": 0.5,
+    "race": { "asian": 0.0, "caucasian": 0.0, "african": 1.0 }
+  },
+  "skin": "young_african_male",
+  "eyes": "low-poly",
+  "eyebrows": "eyebrow002",
+  "eyelashes": "eyelashes01",
+  "hair": "afro01",
+  "clothes": ["male_casualsuit06", "shoes05"],
+  "shorts": 0.62,
+  "height": 1.84
+}

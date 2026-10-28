@@ -20,6 +20,10 @@ Every third-party asset and library used by BANDEJA, with its source and licence
 |---|---|---|---|
 | Y Bot character and 10 animation clips (idle, run, run back, strafes, jog, jump, side step, fist pump, defeated) | [Mixamo](https://www.mixamo.com) (Adobe) | Mixamo terms: free to use in games; raw files not redistributed | `public/assets/player.bnz`, processed and packed by `tools/assets/build-player.mjs` from `assets-src/mixamo/` (gitignored); clip list in `docs/mixamo.md` |
 
+| Base mesh, skins (young caucasian, young african, middle-aged caucasian, young asian male), low-poly eyes, eyebrow001/002/004/006, eyelashes01, hair short01, short02, short04, afro01, male_casualsuit06 (its ambient-occlusion map only), shoes05 (its mesh only) | [MakeHuman](http://www.makehumancommunity.org) system assets and asset packs | CC0 (each asset file says so: "explicitly released as CC0 in september 2020"; holders at release Data Collection AB, Joel Palmius, Jonas Hauquier) | The four people, `public/assets/people/`, built by `tools/assets/mpfb/` from `data/players/*.json` (sources in `assets-src/`, gitignored) |
+
+Tools used to build assets (not shipped): [Blender](https://www.blender.org) 5.2 (GPL), [MPFB 2](https://static.makehumancommunity.org/mpfb.html) 2.0.18, MakeHuman's Blender add-on (GPL-3.0; its output, made from the CC0 assets, carries no GPL terms).
+
 The court is generated in code. Every stroke (groundstrokes, volleys, overheads, the serve, the ready position) is our own, authored in `src/render/avatar/strokes.ts`.
 
 Every sound (racket, ball, glass, mesh, posts, net, feet, voices, crowd, ambience, the arenas' reverb) is synthesised
