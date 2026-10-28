@@ -796,3 +796,8 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   Remaining gaps against the pros, all in `OPEN_QUESTIONS.md`: rallies over 11 s are 48% (pros 26%), shots off the
   back glass 27.5% (12.8%), forced errors 23% (29-33%), bandejas and víboras finish 3% of winners (13%), errors off
   the side wall 4.5% (17%).
+- **Frame rate, Phase 4 against Phase 3** (`npm run perf`, other sessions' Chromes also running on this machine): the
+  AI runs in the sim, which is a small share of a frame. Medium with the CPU throttled 4x p50 2.5 → 2.3 ms, p99 4.3
+  → 4.2 ms, max 12.8 ms, 0 frames over 20 ms, sim p99 1.1 ms; high at 2x p99 8.8-9.1 → 8.7 ms, 0.66% of frames over
+  20 ms (the queue stalls seen since M1). Draw calls 42, 473k triangles. Alloc: singles 3, doubles 5, avatars 6
+  GCs per 100k ticks (budget 10).
