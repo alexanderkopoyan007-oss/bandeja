@@ -220,6 +220,8 @@ export class Ball {
   coupled = false;
   /** Seconds since the ball last touched the netting or the cable. */
   private sinceTouch = 1;
+  /** Which side of the cable's line the centre was on last substep (stepCoupled; it starts on its netSide). */
+  private relSide = 1;
   /** Step length and event-time offset for fly() / roll() (fields: doubles passed as arguments get boxed). */
   private flyDt = 0;
   private flyAt = 0;
@@ -383,7 +385,7 @@ export class Ball {
     const r = world.spec.radius;
     if ((p.x < 0 ? -p.x : p.x) > c.halfW + 0.15) return false;
     if (p.y - r > c.def.net.heightPost + 0.06 - min(0, v.y) * this.stepDt) return false;
-    const reach = (cl.awake ? 0.9 : 0.04) + r + (v.z < 0 ? -v.z : v.z) * DT + 0.02;
+    const reach = (cl.awake ? 0.9 : 0.04 + cl.bulge) + r + (v.z < 0 ? -v.z : v.z) * DT + 0.02;
     return (p.z < 0 ? -p.z : p.z) < reach;
   }
 
@@ -394,6 +396,7 @@ export class Ball {
    */
   private stepCoupled(world: BallWorld, rng: Rng | null, cl: NetCloth): void {
     this.coupled = true;
+    this.relSide = this.netSide;
     const r = world.spec.radius;
     const c = world.court;
     cl.bw = 1 / world.spec.mass;
@@ -419,12 +422,17 @@ export class Ball {
       // means the centre passes the cable's plane above the cable's centre line: it can't go through the cable,
       // and a ball rolling over the tape is touching it, so its bottom never clears the cable's top (QA army: a
       // net cord that dropped past the net stayed on the hitter's side for a metre).
+      // It changes on crossing that line, not on being past it, and never while the netting grips it: smashes
+      // driven into the top of the net climbed out of the pocket with the centre past the cable and above it, and
+      // were put on the far side, still held or just let go (QA army).
       cl.qx = p.x;
       cl.cableAt();
       const ax = p.x < 0 ? -p.x : p.x;
-      if (ax >= c.halfW || p.y > cl.cy) {
-        const zc = ax < c.halfW ? cl.cz : 0;
-        if (p.z !== zc) this.netSide = p.z > zc ? 1 : -1;
+      const zc = ax < c.halfW ? cl.cz : 0;
+      const rel = p.z > zc ? 1 : p.z < zc ? -1 : 0;
+      if (rel !== 0 && rel !== this.relSide) {
+        if ((ax >= c.halfW || p.y > cl.cy) && !this.inNet) this.netSide = rel;
+        this.relSide = rel;
       }
       cl.side = this.netSide;
       cl.bx = p.x;

@@ -62,6 +62,7 @@ const FLOOR_Y = 0.004; // twine radius: knots rest on the floor here
 
 /** The settled rest shape per court and spec (deterministic, so computed once and shared). */
 const restCache = new Map<string, Float64Array>();
+const REST_CACHE_MAX = 16;
 
 export class NetCloth {
   readonly spec: NetClothSpec;
@@ -99,6 +100,12 @@ export class NetCloth {
   private chainAlpha = 0;
 
   awake = false;
+  /**
+   * How far the netting stands off the cable's line while asleep (largest |z| of a knot, m): the ball is coupled
+   * to a sleeping net within this of it. (QA army: a 4.6 m/s wind billowed the bottom 12 cm out towards a low
+   * drive, which was already past the netting when it came within the 4 cm allowed, and went through it.)
+   */
+  bulge = 0;
   private quiet = 0;
   windX = 0;
   windZ = 0;
@@ -231,6 +238,9 @@ export class NetCloth {
       }
       for (let i = 0; i < n * 3; i++) this.vel[i] = 0;
       settled = new Float64Array(this.pos);
+      // (bounded: the key has the air's density, which every climate changes; the QA army's 2000 climates grew
+      // the heap 9 KB a match)
+      if (restCache.size >= REST_CACHE_MAX) restCache.delete(restCache.keys().next().value!);
       restCache.set(key, settled);
     }
     this.pos.set(settled);
@@ -238,6 +248,25 @@ export class NetCloth {
     this.rest.set(settled);
     this.vel.fill(0);
     this.awake = false;
+    this.measureBulge();
+  }
+
+  /** Asleep where it is (settled; tests). */
+  sleep(): void {
+    this.awake = false;
+    this.vel.fill(0);
+    this.quiet = 0;
+    this.measureBulge();
+  }
+
+  private measureBulge(): void {
+    const p = this.pos;
+    let m = 0;
+    for (let i = 2; i < p.length; i += 3) {
+      const z = p[i]! < 0 ? -p[i]! : p[i]!;
+      if (z > m) m = z;
+    }
+    this.bulge = m;
   }
 
   private dist(a: number, b: number): number {
@@ -461,11 +490,7 @@ export class NetCloth {
     const s = this.spec.sleepSpeed * dt;
     if (m2 < s * s && !this.touchBody && !this.touchCable) {
       this.quiet += dt;
-      if (this.quiet >= this.spec.sleepTime) {
-        this.awake = false;
-        this.vel.fill(0);
-        this.quiet = 0;
-      }
+      if (this.quiet >= this.spec.sleepTime) this.sleep();
     } else this.quiet = 0;
   }
 
@@ -1139,6 +1164,7 @@ export class NetCloth {
     this.vel.fill(0);
     this.awake = false;
     this.quiet = 0;
+    this.measureBulge();
   }
 }
 

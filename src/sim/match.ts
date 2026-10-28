@@ -475,6 +475,9 @@ export class MatchSim {
   }
 
   private tossBounces = 0;
+  /** Where the dropped ball bounced (6.2: in the server's own area). */
+  private tossBX = 0;
+  private tossBZ = 0;
 
   private stepBall(dt: number, tStart: number): void {
     const b = this.ball;
@@ -488,7 +491,10 @@ export class MatchSim {
       const t = tStart + e.t;
       switch (e.kind) {
         case HIT_FLOOR:
-          if (this.phase === PH_TOSS && this.rally.hitter < 0) this.tossBounces++;
+          if (this.phase === PH_TOSS && this.rally.hitter < 0) {
+            if (this.tossBounces === 0) { this.tossBX = e.x; this.tossBZ = e.z; }
+            this.tossBounces++;
+          }
           else this.rally.onFloor(e.x, e.z);
           this.emitAt(E_FLOOR, t, e.surface, 0, e.speed, e.x, e.y, e.z);
           this.wallsSinceBounce = 0;
@@ -497,7 +503,7 @@ export class MatchSim {
           break;
         case HIT_WALL: {
           const wallSide = e.wall === WALL_SIDE_LEFT || e.wall === WALL_SIDE_RIGHT ? (e.z >= 0 ? 1 : -1) : e.z > 0 ? 1 : -1;
-          this.rally.onWall(e.surface, wallSide);
+          this.rally.onWall(e.surface, wallSide, e.x, e.y, e.z);
           this.emitAt(E_WALL, t, e.surface, e.wall, e.speed, e.x, e.y, e.z);
           this.wallsSinceBounce++;
           flags |= PF_WALL;
@@ -787,8 +793,24 @@ export class MatchSim {
     return lane * p.handed < 0;
   }
 
-  /** Partners can't stand in each other: push apart when closer than two bodies. */
+  /**
+   * The server's own area (6.1-6.2): behind the service line, between the centre line's prolongation and the side
+   * wall; a ball on a line has not crossed it. The server's side is across from the box served into.
+   */
+  private inServerArea(x: number, z: number, team: number): boolean {
+    const w = this.rally.lineTolerance;
+    const bx = this.box;
+    const across = (bx.x0 + bx.x1 > 0 ? -x : x);
+    return z * this.side(team) >= this.world.court.def.serviceLineFromNet - w && across >= -w;
+  }
+
+  /**
+   * Partners can't stand in each other: push apart when closer than two bodies. Before the serve the server stands
+   * where they are and the partner gives way (a push moved the server and the ball in hand over the line).
+   */
   private separatePartners(): void {
+    const setup = this.phase === PH_SETUP || this.phase === PH_TOSS;
+    const server = this.score.serverPlayer();
     for (let team = 0; team < 2; team++) {
       const p = this.players[team]!;
       const q = this.players[team + 2]!;
@@ -798,13 +820,14 @@ export class MatchSim {
       let d = sqrt(dx * dx + dz * dz);
       if (d >= minD) continue;
       if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
-      const push = (minD - d) * 0.5;
       const ux = dx / d;
       const uz = dz / d;
-      p.pos.x = clamp(p.pos.x - ux * push, p.minX, p.maxX);
-      p.pos.z = clamp(p.pos.z - uz * push, p.minZ, p.maxZ);
-      q.pos.x = clamp(q.pos.x + ux * push, q.minX, q.maxX);
-      q.pos.z = clamp(q.pos.z + uz * push, q.minZ, q.maxZ);
+      const pk = setup && server === team ? 0 : setup && server === team + 2 ? 1 : 0.5;
+      const pp = (minD - d) * pk, pq = (minD - d) * (1 - pk);
+      p.pos.x = clamp(p.pos.x - ux * pp, p.minX, p.maxX);
+      p.pos.z = clamp(p.pos.z - uz * pp, p.minZ, p.maxZ);
+      q.pos.x = clamp(q.pos.x + ux * pq, q.minX, q.maxX);
+      q.pos.z = clamp(q.pos.z + uz * pq, q.minZ, q.maxZ);
     }
   }
 
@@ -1157,7 +1180,10 @@ export class MatchSim {
       ? this.tossBounces === 1
       : b.sideZ * s > 0 && !b.inNet && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0)
         // The serve is returned by the receiver, not the partner (8.1).
-        && !(this.rally.isServe && i !== this.score.receiverPlayer());
+        && !(this.rally.isServe && i !== this.score.receiverPlayer())
+        // Before the serve only the server plays the ball: the partner's swing at the dropped ball misses (QA army:
+        // it was played on as a rally shot, a point with no serve).
+        && !(this.phase === PH_TOSS && this.rally.hitter < 0);
     // (a ball gone more than BEHIND_MAX past the hips, away from the net, is past the stroke: the same margin as reach)
     const past = !serving && s * (b.pos.z - p.pos.z) > BEHIND_MAX + 0.25;
     if (past && legal && d <= t.reachMax + 0.25) p.grade = G_TOO_LATE;
@@ -1228,6 +1254,10 @@ export class MatchSim {
 
     if (serving) {
       this.rally.onStrike(team, s, true, contactY, t.waistHeight);
+      // 6.2: dropped behind the service line on the server's own side of the centre line, and struck before the
+      // ball crossed either (a ball on a line has not crossed it). (QA army: a partner walking into the server
+      // pushed them 45 cm forward, the ball in hand with them, and the serve dropped inside the line was played.)
+      if (!this.inServerArea(this.tossBX, this.tossBZ, team) || !this.inServerArea(b.pos.x, b.pos.z, team)) this.rally.onServeArea();
       this.phase = PH_RALLY;
     } else {
       this.rally.onStrike(team, s, false);

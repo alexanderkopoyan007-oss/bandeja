@@ -889,6 +889,13 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     end got none). The crowd's excitement decays by time, not by frame. A photo without a solved camera keeps the
     photo's shape; the solver's starting pitch looked up; the ball lab's sky was cut by a 200 m far plane.
 
+- **Frame rate, Phase 4 → Phase 5** (`npm run perf`, 30 s, AI doubles, this M1 Max, other sessions' Chromes
+  running. Phase 4 drew nothing new, so "before" is the Phase 3 entry's run; Phase 5 was measured on the Phase 6
+  build with `?sound=0`, which draws the same): medium with the CPU throttled 4x frame p50 2.5 → 5.5 ms, p99 4.3 →
+  8.4 ms (178 fps after), 0 frames over 20 ms either way (it holds 60 and 120 Hz); high (2x pixel ratio) p99 8.8 →
+  22.7 ms, frames over 20 ms 0.66% → 1.95% (212 fps after). Draw calls 43 → 78, triangles 473k → 848k (arenas,
+  stands, crowd, glass, turf). The high preset's tail is a Phase 8 item.
+
 ## Phase 6: sound
 - **No recordings: synthesis.** `/reference/audio` doesn't exist and downloads need the owner's word, so every sound
   is synthesised (the brief's third option). Physical models where there is something to model, rendered in plain
@@ -1039,3 +1046,54 @@ twenty medium or low. Fixed:
     sound earlier; Safari doesn't report it, and the swish's lead covers the usual wired case.
   - **Partner calls aren't voiced** ("¡mía!", "¡tuya!"): the calls are on the HUD; voices would need recorded
     speech to sound like people (formant synthesis gives vowels, not words).
+- **Frame rate, sound off → on** (the same Phase 6 build, `QUERY=&sound=0` then without, back to back): medium 4x
+  178 → 141 fps, frame p50 5.5 → 7.1 ms, p99 8.4 → 9.8 ms, CPU work p50 4.9 → 6.3 ms (the soundscape and WebAudio's
+  main-thread share: about 0.35 ms a frame unthrottled), still 0 frames over 20 ms; high 212 → 202 fps, p99 22.7 →
+  29.0 ms, 1.95% over 20 ms both. The audio's cost is a Phase 8 item (voice pooling, fewer parameter writes).
+
+## Phase 7: rules and QA
+What was found and fixed, with the commands that reproduce it: `docs/qa/REPORT.md`. The decisions:
+- **Oracles from the rules text alone.** The referee and scorer that judge the army's matches
+  (`tools/qa/refereeOracle.ts`, `scoreOracle.ts`) were written from the FIP text without reading the game's rules
+  code, so a shared misreading can't hide; where the text is ambiguous the reading and its reason are in
+  `tools/qa/ORACLE-NOTES.md`. When the game and an oracle disagree, the FIP text decides, not either side. This
+  phase the text sided with the oracle every time; the per-tick checker was wrong twice (below).
+- **Three kinds of player.** The AI alone never mashes keys, holds a swing for seconds or walks into its partner,
+  and those found bugs: "bots" play the human code path well, "monkeys" press anything at any time
+  (`tools/qa/humans.ts`). Each army match draws its players, mode, court, floor, ball, climate, format, levels and
+  styles (`tools/qa/config.ts`).
+- **The corner (14.1.i).** FIP says a ball bouncing "in the angle where the wall joins the ground" is a correct
+  return. The game counted it only when the wall and the floor met in the same tick, so a ball a few millimetres up
+  the glass first lost the point (86 calls in 200 matches). A glass touch on the opponents' side before the bounce
+  with the ball's centre at most 6 cm up (its bottom within 2.7 cm of the floor) is now the bounce, and the floor
+  touch within 25 cm right after it is the same bounce: the oracle's reading, adopted because no referee can tell
+  2.7 cm from the corner. Mesh isn't a wall: a low touch of the opponents' mesh still loses (13.1.g).
+- **A net touch before the bounce counts on both sides of the plane** (9.1.a): a ball's centre can be 3-5 cm past
+  the net's plane while the ball still touches the tape.
+- **Before the serve only the server plays the ball**, and stands still: a partner walking into them gives way (a
+  push moved the server and the ball in hand 45 cm over the line). A drop or a contact outside the server's own area
+  (behind the service line, on their side of the centre line; a ball on a line hasn't crossed it) is a fault,
+  `WHY_SERVE_AREA` (6.2, 7.1.a).
+- **The final-set rule needs a deciding set**: in a one-set match there is no "one set all", so neither "no
+  tie-break" nor a match tie-break applies (the game applied the first and not the second).
+- **The ball changes sides only by crossing the cable's line above it** (or beyond the posts), never by being past
+  it and never while the netting grips it. Three versions of a smash into the top of the net put the ball on the far
+  side after it climbed out of the pocket. A ball the cable springs back under, above the tape, does go over (it is a
+  ball on the tape).
+- **A sleeping net in wind isn't at the cable's line.** A 4.6 m/s wind stands its bottom 12 cm out; the ball is now
+  coupled to a sleeping net within its measured bulge (`NetCloth.bulge`), or a drive went through it (8 of 64 such
+  drives in the test).
+- **Animation, from the animation army** (`tools/qa/anim-army.ts`): a soft zone at full reach for the elbows
+  (`IK_SOFT` 3 cm, a rational ease, not exp; the hand falls 1.5 cm short at exactly full reach), the elbow's bend
+  rate-limited to 1.8× a serve's forearm peak (1.25× made a human's late serve meet the ball a frame later still),
+  the reach lean followed at 20 rad/s (at 6 the hand was short of the ball at contact: p90 2.8 → 4.5 cm) and faded
+  where its direction is undefined (140-165° behind the spine's base), the arm's fade to its clip limited to
+  1500°/s. Keeping last frame's way round in that fade was tried first: it spun the arm the long way (27 of 60
+  configurations then turned a joint over 105° in a frame).
+- **Monkeys are judged on the AI's limits and 7 of 60 fail**, all on per-minute counts (pops, racket in the body,
+  hand in the torso). They swing three times as often as the AI and somewhat more jerkily per swing; the limits stay
+  where they are (OPEN_QUESTIONS.md).
+- **Checker fixes**: the through-net check took a pocket's entry below the tape for the crossing of a ball that
+  later went over the cable, and assumed the net at z = 0 (a pushed-back cable isn't).
+- **Not built**: out-of-court play (OPEN_QUESTIONS.md), touching the net (players are kept 0.3 m off it), a hall
+  ceiling.

@@ -111,21 +111,31 @@ export class Checks {
         this.crossT = t;
       }
       if (b.netSide !== this.lastNetSide && this.lastNetSide !== 0 && !b.outside && ph === PH_RALLY && this.lastPhase === PH_RALLY) {
-        // (the sim measures from the cable as it hangs, a few mm off z = 0: a ball at the plane is crossing it)
-        if (t - this.crossT > 0.6 && Math.abs(b.pos.z) < 0.08) { this.crossX = b.pos.x; this.crossY = b.pos.y; this.crossT = t; }
+        // (the sim measures from the cable as it hangs, a few mm off z = 0, or pushed back by a ball: a ball at the
+        // plane is crossing it, and so is one above the tape within a pocket's depth of it: smashes into the top of
+        // the net went in below the tape and climbed out of the pocket over the cable, or had the cable spring back
+        // under them, and the pocket's entry was taken for their crossing)
+        if ((t - this.crossT > 0.6 && Math.abs(b.pos.z) < 0.08) || (b.pos.y >= c.netHeightAt(b.pos.x) - 0.05 && Math.abs(b.pos.z) < 0.35)) {
+          this.crossX = b.pos.x; this.crossY = b.pos.y; this.crossT = t;
+        }
         if (t - this.crossT > 0.6) this.flag('through-net', 'no-crossing', `ball changed sides (to ${b.netSide}) at z ${f3(b.pos.z)} without crossing the net's plane in the last 0.6 s`);
         else if (Math.abs(this.crossX) < c.halfW - 0.1 && this.crossY < c.netHeightAt(this.crossX) - 0.05) {
           this.flag('through-net', 'below-tape', `ball crossed the net's plane at x ${f3(this.crossX)} y ${f3(this.crossY)} (tape at ${f3(c.netHeightAt(this.crossX))}) and changed sides, inNet ${b.inNet}`);
         }
       }
-      if (Math.sign(b.sideZ) !== Math.sign(this.lastSideZ) && this.lastSideZ !== 0 && b.sideZ !== 0 && !b.outside
+      // (judged where it crossed the plane if that was this tick: a ball 4 cm over the tape at the plane was past
+      // it and lower by the end of the tick its side changed in)
+      const crossedHigh = t - this.crossT < 0.02 && this.crossY >= c.netHeightAt(this.crossX) - 0.06;
+      if (Math.sign(b.sideZ) !== Math.sign(this.lastSideZ) && this.lastSideZ !== 0 && b.sideZ !== 0 && !b.outside && !crossedHigh
         && Math.abs(b.pos.x) < c.halfW - 0.1 && b.pos.y < c.netHeightAt(b.pos.x) - 0.06 && Math.abs(b.pos.z) < 0.5) {
         this.flag('side-flip-low', 'sideZ', `sideZ changed sign with the ball at y ${f3(b.pos.y)} z ${f3(b.pos.z)} (netSide ${b.netSide}, inNet ${b.inNet})`);
       }
       // Speeds a padel ball can't have, and energy from nowhere.
       if (speed > 60) this.flag('ball-too-fast', 'speed', `ball at ${speed.toFixed(1)} m/s`);
       const w = Math.hypot(b.spin.x, b.spin.y, b.spin.z);
-      if (w > 900) this.flag('spin-too-high', 'spin', `spin ${w.toFixed(0)} rad/s`);
+      // (a bounce can leave the ball rolling, a little over if it flattened: a 46 m/s smash off a hard floor left
+      // at 23 m/s with 911 rad/s, its rolling spin at a 2.6 cm contact radius; more than that is spin from nowhere)
+      if (w * r > 1.5 * speed + 8 || w > 1600) this.flag('spin-too-high', 'spin', `spin ${w.toFixed(0)} rad/s at ${speed.toFixed(1)} m/s`);
       if (b.pos.y > 14) this.flag('ball-very-high', 'height', `ball at ${b.pos.y.toFixed(1)} m`);
       // (spin counts: a felt ball is close to a thin shell, I = 2/3 m r^2, and a bounce turns spin into speed)
       const e = 0.5 * speed * speed + 9.81 * b.pos.y + (r * r / 3) * w * w;
