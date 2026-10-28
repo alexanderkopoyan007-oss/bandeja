@@ -15,6 +15,8 @@ export interface ContactWindow {
   /** Ball has come off a wall since its bounce (or since the strike). */
   afterWall: boolean;
   height: number;
+  /** A contrapared window: met facing the hitter's own back glass (findWindows with `contraGlass`). */
+  contra: boolean;
 }
 
 export const MAX_WINDOWS = 4;
@@ -22,7 +24,7 @@ export const MAX_WINDOWS = 4;
 export function makeWindows(): ContactWindow[] {
   const w: ContactWindow[] = [];
   for (let i = 0; i < MAX_WINDOWS; i++) {
-    w.push({ start: 0, end: 0, ideal: 0, idealIdx: 0, volley: false, afterWall: false, height: 0 });
+    w.push({ start: 0, end: 0, ideal: 0, idealIdx: 0, volley: false, afterWall: false, height: 0, contra: false });
   }
   return w;
 }
@@ -80,10 +82,20 @@ export function overheadCost(y: number, t: PlayerTuning, kind: number): number {
  */
 export const BEHIND_MAX = 0.4;
 
+/**
+ * `contraGlass` > 0: the player is going for a contrapared (positioning.ts CONTRA_*): windows are where the ball,
+ * after its bounce, is behind the player (further from the net) and in reach facing the glass, which is at
+ * |z| = contraGlass; the ball at least CONTRA_ROOM from it.
+ */
+const CONTRA_ROOM = 0.45;
+const CONTRA_TOP = 1.8;
+
 export function findWindows(
   pred: Prediction, px: number, pz: number, side: number, mustBounce: boolean, bouncesAllowed: number,
   t: PlayerTuning, out: ContactWindow[], fromTime: number, overhead = false, volley = false, ohKind = OH_ANY,
+  contraGlass = 0,
 ): number {
+  const contra = contraGlass > 0;
   let count = 0;
   let open = false;
   let bestCost = 1e9;
@@ -102,11 +114,15 @@ export function findWindows(
     if (legal && d < t.bodyRadius + 0.035 && y < t.height) break;
     // (off a wall, a ball still climbing past the shoulders can't be met until it comes down: riseMaxOffWall)
     // (and a ball more than BEHIND_MAX behind the body, further from the net than the hips, is past the stroke)
-    const ok = legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight
-      && !(y > riseOff && pred.walls[i]! > 0 && pred.vy[i]! > 0) && side * (z - pz) <= BEHIND_MAX;
+    const ok = contra
+      ? legal && b === 1 && d <= t.reachMax && y >= t.contactMinHeight && y <= CONTRA_TOP && side * (z - pz) >= 0.1
+        && contraGlass - abs(z) >= CONTRA_ROOM
+      : legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight
+        && !(y > riseOff && pred.walls[i]! > 0 && pred.vy[i]! > 0) && side * (z - pz) <= BEHIND_MAX;
     if (ok) {
       // A ball touching the floor or glass right now is not where anyone means to hit it.
-      const cost = (overhead ? abs(d - t.overheadReach) + overheadCost(y, t, ohKind)
+      const cost = contra ? abs(d - t.reachComfort) + heightCost(y, t.overheadHeight) + (nearImpact(pred, i) ? 0.5 : 0)
+        : (overhead ? abs(d - t.overheadReach) + overheadCost(y, t, ohKind)
         : abs(d - (b === 0 ? t.volleyReach : t.reachComfort)) + (volley && b === 0 ? volleyCost(y) : heightCost(y, t.overheadHeight))
           // Met in front of the body, not beside or behind it (a ball off the back glass passes the comfortable
           // distance once behind the player and once in front).
@@ -122,6 +138,7 @@ export function findWindows(
         w.volley = b === 0;
         w.afterWall = pred.walls[i]! > 0;
         w.height = y;
+        w.contra = contra;
         open = true;
         bestCost = cost;
       } else {

@@ -13,7 +13,8 @@ measured against published data, and lands with tests that check the model again
    - Racket-speed caps instead of ball-speed caps, so a hard incoming ball comes back faster off the same swing,
      as a blocked smash does.
    - Checked: ACOR 0.50 at 17 m/s and 0.37–0.41 at 29 m/s; curvature along and across the face; grip above about
-     55° and slide at 25°; smash median about 138 km/h against 133 for semi-pros.
+     55° and slide at 25°; AI smash median 132 km/h at the top level and 109 at the bottom (Phase 9: smash effort by
+     level) against 120.7-133 for semi-pros and 104.5-125 for amateurs.
 3. **Ball flight.** Done 2026-10-27: free-flight drag of a new ball (0.507), spin decay proportional to ω·v
    (k = 0.005/m), ball wear over a match (nap fluff +4.1% drag from Hawk-Eye; friction and rebound rise as IBV measured; no pressure loss within a match).
 4. **Bounce.** Checked 2026-10-27: the impulse model (restitution falling with normal speed, sliding friction,
@@ -92,8 +93,11 @@ measured against published data, and lands with tests that check the model again
 - **Smash speed (radar).** Semi-professionals average 133.1 km/h unopposed and 120.7 km/h with an opponent.
   Amateurs average 124.6 and 104.5 km/h. (Rivilla-García et al. 2019, *Kinesiology*,
   [hrcak.srce.hr/227742](https://hrcak.srce.hr/227742))
-- **The game's AI.** Its smash median was 157 km/h with ball-speed caps; with the racket model it is about 138 km/h
-  (12 seeds × 300 s of doubles, 2026-10-27).
+- **The game's AI.** Its smash median was 157 km/h with ball-speed caps; with the racket model about 138 km/h
+  (12 seeds × 300 s of doubles, 2026-10-27), drifting to 144 at every level by Phase 8. Phase 9 made the AI's
+  smash effort depend on its level (`data/ai-skill.json` smashEffort 0.70 / 0.80 / 0.88 of the full power swing):
+  median 132 km/h at level 1 and 109 at level 0 (24 × 600 s each), the opposed-to-unopposed band of semi-pros and
+  of amateurs. A human's power smash is unchanged.
 
 ### Player movement
 - **WPT men, 23 finals and semi-finals, 83 players, inertial units** (Miralles et al., *Biology of Sport* 2025,

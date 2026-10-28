@@ -4,7 +4,7 @@
 import * as THREE from 'three/webgpu';
 import { Game } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
-import { loadPlayerAsset, type PlayerAsset } from '../render/avatar/asset.ts';
+import { loadPlayerAsset, peopleFor, type PlayerAsset } from '../render/avatar/asset.ts';
 import { LoadingScreen } from '../ui/loading.ts';
 import { Menu, type Item, type Screen, type Choice } from '../ui/menu/menu.ts';
 import { setSafeColours } from '../ui/palette.ts';
@@ -65,7 +65,7 @@ export class App {
     const url = new URL('assets/player.bnz', document.baseURI).href;
     for (let attempt = 0; !this.asset; attempt++) {
       try {
-        this.asset = await loadPlayerAsset(url, (f) => L.stage('Fetching the players', 0.12 + 0.4 * f));
+        this.asset = await loadPlayerAsset(url, (f) => L.stage('Fetching the players', 0.12 + 0.4 * f), peopleFor(this.params));
       } catch (err) {
         if (attempt >= 2) throw new Error(`the players could not be downloaded (${String(err)}). Check the connection`);
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
@@ -361,7 +361,8 @@ export class App {
       side: () => '<div class="card"><h2>Made with</h2><table>'
         + '<tr><td class="l">Rendering</td><td>three.js 0.186 (MIT)</td></tr>'
         + '<tr><td class="l">Build, tests</td><td>Vite, Vitest (MIT), TypeScript, Puppeteer (Apache-2.0)</td></tr>'
-        + '<tr><td class="l">Players</td><td>Y Bot and 10 clips, Mixamo (Adobe)</td></tr>'
+        + '<tr><td class="l">Players</td><td>MakeHuman base mesh, skins, hair and clothes (CC0), made in MPFB 2 and Blender</td></tr>'
+        + '<tr><td class="l">Movement</td><td>Y Bot skeleton and 10 clips, Mixamo (Adobe)</td></tr>'
         + '<tr><td class="l">Strokes</td><td>Authored in code</td></tr>'
         + '<tr><td class="l">Sound</td><td>Synthesised in code (claps: the ClaPD model\u2019s figures)</td></tr>'
         + '<tr><td class="l">Courts</td><td>Generated in code</td></tr>'

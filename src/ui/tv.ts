@@ -6,7 +6,7 @@
 import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import { E_HIT, E_POINT, E_GAME, E_SET, E_MATCH, E_ENDS, E_FAULT } from '../sim/match.ts';
 import {
-  REASON_TEXT, WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP, WHY_OWN_SIDE,
+  REASON_TEXT, WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP, WHY_OWN_SIDE, WHY_ROOF, WHY_ROOF_AFTER_BOUNCE,
   WHY_WALL_BEFORE_BOUNCE, WHY_OWN_MESH, WHY_OUT, WHY_HIT_BODY_OWN,
 } from '../sim/rules/rally.ts';
 import { Score, EV_GAME, EV_SET, EV_MATCH, MODE_STAR, MODE_GOLDEN } from '../sim/rules/score.ts';
@@ -235,10 +235,10 @@ export class TvGraphics {
       const shots = sim.rally.shots;
       const hitter = sim.rally.hitter;
       let head: string;
-      if ((why === WHY_DOUBLE_BOUNCE || why === WHY_EXIT_AFTER_BOUNCE || why === WHY_HIT_BODY_OPP) && hitter === w) {
+      if ((why === WHY_DOUBLE_BOUNCE || why === WHY_EXIT_AFTER_BOUNCE || why === WHY_HIT_BODY_OPP || why === WHY_ROOF_AFTER_BOUNCE) && hitter === w) {
         this.stats[w]!.winners++;
         head = why === WHY_EXIT_AFTER_BOUNCE ? 'Out of the court' : shots <= 1 ? 'Ace' : 'Winner';
-      } else if ((why === WHY_OWN_SIDE || why === WHY_WALL_BEFORE_BOUNCE || why === WHY_OWN_MESH || why === WHY_OUT || why === WHY_HIT_BODY_OWN) && hitter === l) {
+      } else if ((why === WHY_OWN_SIDE || why === WHY_WALL_BEFORE_BOUNCE || why === WHY_OWN_MESH || why === WHY_OUT || why === WHY_HIT_BODY_OWN || why === WHY_ROOF) && hitter === l) {
         this.stats[l]!.errors++;
         head = 'Error · ' + (REASON_TEXT[why] ?? '');
       } else head = REASON_TEXT[why] ?? 'Point';

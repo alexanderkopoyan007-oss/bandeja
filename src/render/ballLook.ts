@@ -1,8 +1,8 @@
-// The ball's look (Phase 5): optic-yellow felt with a fuzzy sheen, the pale seam of the two dog-bone panels, the
-// spin turning it (seam blurring out when the spin outruns the frame rate, as a camera sees it), and a short
+// The ball's look (Phase 5, felt reworked in Phase 9): optic-yellow felt, uneven over each panel and matte with a
+// soft sheen, its nap standing off the outline, the sunk whitish seam of the two dog-bone panels, the spin turning it (seam blurring out when the spin outruns the frame rate, as a camera sees it), and a short
 // stretch along its path for the camera's shutter.
 import * as THREE from 'three/webgpu';
-import { attribute, float, mix, smoothstep, color, uniform, positionGeometry, mx_noise_float } from 'three/tsl';
+import { attribute, float, mix, smoothstep, color, uniform, positionGeometry, positionView, normalView, mx_noise_float } from 'three/tsl';
 import { heightBump } from './bump.ts';
 
 /**
@@ -45,22 +45,42 @@ export function makeBall(radius: number): BallLook {
   const m = new THREE.MeshPhysicalNodeMaterial();
   const blurU = uniform(new THREE.Vector2());
   const blur = blurU.x;
-  // A seam about 4 mm wide (the rubber showing between the panels), blurred towards the felt as the ball spins.
-  const seam = float(1).sub(smoothstep(0.0016, 0.0026, attribute<'float'>('seam', 'float'))).mul(float(1).sub(blur.mul(0.8)));
+  const seamD = attribute<'float'>('seam', 'float');
+  // The seam: the rubber line between the two felt panels, about 3.5 mm wide and a little sunk, whitish grey; blurred
+  // towards the felt as the ball spins.
+  const seam = float(1).sub(smoothstep(0.0013, 0.0021, seamD)).mul(float(1).sub(blur.mul(0.8)));
+  // The felt pressed into the seam's glue each side of it reads a touch darker.
+  const pressed = float(1).sub(smoothstep(0.0021, 0.0042, seamD));
   const p = positionGeometry.div(radius);
-  const fuzz = mx_noise_float(p.mul(38));
-  const felt = mix(color(0xcfe23a), color(0xe2f05a), fuzz.mul(0.5).add(0.5));
-  m.colorNode = mix(felt, color(0xf3f1df), seam.mul(0.85));
-  m.roughnessNode = mix(float(0.92), float(0.55), seam);
+  // Felt: soft unevenness over each panel, the nap's fibres, and a fine fuzz (three scales of noise, -1..1).
+  const patch = mx_noise_float(p.mul(7));
+  const fibre = mx_noise_float(p.mul(46));
+  const fine = mx_noise_float(p.mul(140));
+  const tone = patch.mul(0.35).add(fibre.mul(0.45)).add(fine.mul(0.2)).mul(0.5).add(0.5);
+  const felt = mix(color(0xb9ca33), color(0xe5f15c), tone).mul(float(1).sub(pressed.mul(0.12)));
+  m.colorNode = mix(felt, color(0xeeede2), seam.mul(0.9));
+  m.roughnessNode = mix(float(0.95), float(0.5), seam);
   m.metalness = 0;
-  // Felt: fibres scatter light at grazing angles (sheen), with a fine fuzz on the surface.
-  m.sheen = 1;
-  m.sheenColor = new THREE.Color(0xf4ffb0);
-  m.sheenRoughness = 0.6;
-  // Fuzz about 0.15 mm high on ~1 mm features; none on the seam.
-  m.normalNode = heightBump(fuzz.mul(float(1).sub(seam)).mul(0.00015), 0.0009);
+  // Fibres scatter light at grazing angles (sheen): softer and less bright than a satin, felt is matte.
+  m.sheen = 0.75;
+  m.sheenColor = new THREE.Color(0xeef8b8);
+  m.sheenRoughness = 0.8;
+  // Fuzz about 0.15 mm high on ~1 mm features off the seam, the seam sunk about 0.3 mm.
+  m.normalNode = heightBump(fibre.mul(0.00012).add(fine.mul(0.00005)).mul(float(1).sub(seam)).sub(seam.mul(0.0003)), 0.0009);
   const mesh = new THREE.Mesh(geo, m);
   mesh.castShadow = true;
+  // The nap standing off the surface: a thin shell of fibres, seen only towards the edge (where a felt ball's outline
+  // is soft, not a hard sphere's).
+  const shellM = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false });
+  const sp = positionGeometry.div(radius * 1.045);
+  const strands = smoothstep(0.05, 0.6, mx_noise_float(sp.mul(95)));
+  const edge = float(1).sub(normalView.dot(positionView.normalize().negate()).abs());
+  shellM.colorNode = color(0xd9e85a);
+  shellM.roughnessNode = float(1);
+  shellM.opacityNode = strands.mul(edge.pow(1.6)).mul(0.55);
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.045, 32, 20), shellM);
+  shell.renderOrder = 2;
+  mesh.add(shell);
   return { mesh, blur: blurU };
 }
 

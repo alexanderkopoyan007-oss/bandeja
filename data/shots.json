@@ -11,6 +11,8 @@
   "volley":  { "name": "Volley",    "netClear": 0.25, "spinRpm": -600,  "depth": 0.70, "racketMax": 12.3, "impact": 0.146, "errorScale": 0.9, "timing": 1.35 },
   "vibora":  { "name": "Víbora",    "netClear": 0.8, "spinRpm": -1500, "sideRpm": 1700, "depth": 0.78, "racketMax": 25.2, "impact": 0.083, "errorScale": 1.05, "timing": 0.76 },
   "chiquita": { "name": "Chiquita", "netClear": 0.32, "spinRpm": 1900,  "depth": 0.33, "racketMax": 13.6, "impact": 0.128, "errorScale": 0.75, "spinFloor": 0.8, "timing": 1.18 },
+  "//contrapared": "Contrapared (FIP 13.l: a ball may touch the hitter's own glass, not their mesh, before it crosses): hit up into the hitter's own back glass so it comes off it and over the net. glassHeight: the height on the glass aimed at (the glass is 3 m, above it mesh, which loses the point). An open face (a lob-like backspin). Pros still make unforced errors with it (Retos 2024, amateurs vs professionals), so its swing spread is wider than a lob's. No published speed or spin: racketMax is a lob's swing plus the pace the glass takes (the ball carries about 16 m after it); tuning.",
+  "contrapared": { "name": "Contrapared", "netClear": 1.2, "spinRpm": -400, "depth": 0.72, "racketMax": 19.0, "impact": 0.128, "errorScale": 1.35, "timing": 1.1, "glassHeight": 1.9 },
   "modifiers": {
     "power":     { "netClear": 0.75, "speed": 1.12, "error": 1.45 },
     "precision": { "netClear": 1.25, "speed": 0.86, "error": 0.6 }

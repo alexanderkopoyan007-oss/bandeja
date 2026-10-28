@@ -1363,3 +1363,181 @@ Integrated-GPU stand-in (`node tools/perf.mjs 30 igpu`, then `igpu60`): CPU 4x, 
   shows the old path leaving it charged) and `tools/pad-check.mjs` hold it.
 - Not verified with people or hardware: a real screen reader, physical controllers, colour-blind players
   (OPEN_QUESTIONS.md).
+
+## Phase 9: expert review
+**The contrapared** (owner's playtest, 2026-10-28: "I can't hit a shot off of it; when recovering the human does a
+weird move instead of possibly hitting it off of their back glass as they do in real life"). A ball that has bounced
+and got behind the player, close to their own back glass, is turned on and played up into that glass so it comes off
+it over the net (FIP 13.l: the hitter's own glass is legal before the ball crosses, their mesh is not).
+- **Shot** (`SHOT_CONTRAPARED`, `data/shots.json`): `ShotSolver.solveContra` aims at the target as seen in the glass
+  (the mirror image), takes the elevation through the aimed glass height (1.9 m, higher on a retry), finds the speed by
+  secant on the flown landing and turns the yaw for the sideways miss, all flown through the real ball with the walls
+  (`flyWalls`). A launch is clean only if the own back glass comes first, below its top, nothing else is touched, the
+  net is cleared by 15 cm and the ball comes down on the far half. 4-9 flights, 0.6 ms on average on the strike tick
+  (2 ms at most).
+- **When**: `planStand` adds a contrapared candidate for each sample after the bounce, 0.75-2.8 m from the glass and
+  0.3-1.55 m up, standing on the net side of the ball facing the glass, with a turn of 0.15 s on top of the run and a
+  cost of 1.1 over a comfortable stroke plus the same pace/hurry cost as any ball, so it is only played when no stroke
+  facing the net is on in time. Contact windows for it (`findWindows(..., contraGlass)`) are behind the body by 0.1 m
+  or more and 0.45 m or more off the glass. The AI plans it the same way and aims it deep cross or middle.
+- **Human path** (the owner's bug): the plan was there but the swing never took it. Two causes found by tracing the QA
+  bot: the turn was charged again on every re-plan, so in the last 0.2 s before the contact a contrapared plan was
+  always out of time and fell back to a stroke facing the net, which whiffed; and an out-of-time contrapared was left
+  out of the least-late fallback. Now the plan remembers that the player has turned (`StandPlan.turned`) and the
+  contrapared competes in the fallback. QA bot (10 seeds x 240 s): 23 of 33 contrapared plans played (was 4 of 21),
+  21 of them came back and the rally went on.
+- **AI** (6 seeds x 300 s): 1.4% of hits (was 0.3%), 13 of 14 returned. No published frequency was found; it is a
+  rare defensive save in pro play, which this matches in kind.
+- **Body**: its own stroke (`FH_CONTRA`/`BH_CONTRA`, `Family.glass`): the stance turns round to the glass, a short
+  low backswing (no room), a steep lift with the face well open, finishing high. The forehand facing the glass is on
+  the other side, so the sim's hand side flips too. Face centre to ball at contact p50 under 1 cm, stance square to the
+  glass at every contact (`tests/render/contrapared.test.ts`). The HUD hints "Contrapared · turn and play it up into
+  your own glass" (the existing hint pill; any shot key plays it).
+- Tests: `tests/sim/contrapared.test.ts` (solver, swing errors: over 80% still go glass-net-court, AI share and
+  legality, the human path).
+
+**The racket and the grip** (owner, 2026-10-28: "make the padel rackets look more accurate and fix their grip on it").
+- **Racket** (`render/avatar/racket.ts`, render only; the sim's racket stays `data/rackets.json`): to the FIP limits
+  and the sim's own frame (tip 14.5 cm above the face centre, butt 31 cm below): a round head 26 x 28 cm, 38 mm thick
+  with rounded edges, 52 holes of 13 mm in a hex pattern clear of the rim, the open throat ("heart") between two arms,
+  a 12.5 cm grip in white overgrip wound in a spiral, a flared butt cap, and the wrist cord looped round the wrist. The
+  cosmetic is generic (carbon twill, a glossy rim, one accent stripe). 5.5k triangles, shared geometry and materials.
+  It replaces a cylinder for a head and a stick for a handle.
+- **Grip** (`render/avatar/grip.ts`): the old handle ran along the fingers 30 degrees off them, its axis 3.5 mm off the
+  palm's bone line, so half the handle was inside the palm (84 skin vertices up to 4.5 mm inside it), finger joints
+  were inside the handle, and the wrist hung past the butt. Now it is the continental grip padel is played with: the
+  handle lies across the palm from the heel pad under the little finger to the base of the index finger (53 degrees
+  off the fingers on this hand, the racket at about 127 degrees to the forearm), a handle's radius off the palm's
+  surface as measured from the mesh, the heel pad just over the butt cap, the face turned 35 degrees from square to the
+  palm towards the thumb side. Each finger closes in a power grip's proportions (knuckle : middle : end joint 0.75 : 1 :
+  0.65) until a segment touches the tape, then its far joints go on closing; the thumb is solved onto the side of the
+  handle, part of the way round towards the fingers (a straight reach to the middle finger went through the handle).
+  Solved from the body's own mesh and skeleton at load (8-16 ms a hand), so another body grips as well.
+- Measured (`tests/render/grip.test.ts`, `node tools/anim-check.ts`): 9 skin vertices at most 2.1 mm inside the handle;
+  every finger joint outside it and the fingertips on it; hands mirror to under 2 mm. AI doubles, 3 seeds x 60 s: hand
+  in torso 0.05-0.13% of frames (was 0.7-2.1%), pops 7.5-12 a minute (was 15-22), racket to ball p50 8-9 mm, p90 2.6-3.6
+  cm, racket in body unchanged (0.1-0.2%).
+- Captures: a hidden tab runs no animation frames, so three's node frame never advanced and the post-processing's
+  scene pass kept its first render; `Game.renderOnce` advances it (captures with bloom on work again).
+
+**The ball's look** (owner, 2026-10-28: "the ball doesn't look real").
+- Felt (`render/ballLook.ts`): the old ball was one flat yellow with a thin seam line, so up close it read as a
+  plastic sphere. Now the felt is mottled at three scales (patches, fibre, fine nap) between a duller and a brighter
+  yellow-green, presses darker beside the seam, the seam is a whiter sunk rubber line (rougher felt 0.95, smoother
+  seam 0.5), a soft sheen gives the nap's glow at grazing angles, and a thin transparent shell 4.5% outside the ball
+  carries stray fibres on the silhouette only (opacity from noise times the edge term, no depth write). At the TV
+  camera the ball is 12-15 px across and reads as a felt ball with a seam; the extra cost is one draw call per ball.
+- Trail (`render/views.ts`): drawn only while a struck ball is in play. It used to be drawn from the toss, so during a
+  serve it hung under the dropped ball like a string, and it stayed behind a dead ball between points.
+
+**The physics audit** (owner, 2026-10-28: "make sure everything is right as well, physics wise, if it's not, fix
+it"). A workflow of auditors measured the sim against published figures and a second set re-measured and tried to
+refute each finding (scripts and traces in the session scratchpad, `physics-audit/`). Nine findings; one refuted (F3),
+three left open with what would settle them (F4, F7, and F6's pressure term: OPEN_QUESTIONS.md, Phase 9). Fixed, each
+measured against an unchanged copy of the previous commit on the same seeds (AI doubles, 24 matches x 600 s):
+- **F1, AI smash speed by level.** The in-play smash median was 144 km/h at every AI level (n 482), above every
+  measured figure (semi-professionals 133 unopposed and 121 against opponents, amateurs 125 and 105: Rivilla-Garcia et
+  al. 2019; trained men off fed lobs about 133: Saez de Villarreal et al. 2023). The auditor's cause (power counted
+  twice) was refuted: the 138 km/h calibration already had power held. The fix keeps a human's power smash and gives
+  the AI a smash effort by level (`data/ai-skill.json` smashEffort 0.70 / 0.80 / 0.88 of the full power swing, as
+  `ShotRequest.power`): median 132 km/h at level 1 (p10 113, p90 141) and 109 at level 0 (was 141). Rallies at level 1
+  are a little longer (12.1 strikes a point, was 10.4), since fewer smashes are winners.
+- **F2, the sprint's force-velocity profile.** Propulsion fell to zero at the run cap (6 m/s), so the push faded
+  early. It now falls to zero at its own intercept (`data/tuning.json` fvSpeed, scaled sideways and back by the
+  direction's top speed) and the run is capped as before; `Player.runTime()` follows the same law (exponential to
+  the cap, then on at it), so the planner agrees within 40 ms at 5 and 10 m (`tests/sim/splitstep.test.ts`). The
+  auditor proposed v0 8.5-9 m/s (field sports' 7.5-11) with accel 10.5-11; the verifier kept accel 8.5 (F0, under the
+  shoe's grip) and the start ramps as calibrated. I fitted v0 to the one padel sprint number that doesn't depend on
+  how the clock was started, the 5-10 m split (0.85-0.89 s): with the 6 m/s cap any v0 of 7 or more reaches the cap
+  by 4-5 m and gives 0.833 s, so v0 is 6.5 (0.858 s; 0.900 before). 5 m from a stance 1.53 s (was 1.56), after a
+  split-step 1.41 s (was 1.44).
+- **F5, the AI's run effort.** Every AI player hit its top speed every few minutes. Traced (wrapping `drift`): most
+  per-match peaks were formation moves with the deadline floored 0.4 s ahead and re-set every tick, so the time-left
+  speed asked for a flat-out sprint over any 2-3 m reposition. The AI now chases at 0.88 of the top speed that way
+  (`chaseEffort`) and moves into the formation at no more than 0.8 of it (`formationEffort`), flat out only when the
+  time left asks; what sets the peaks now is late chases (under 0.3 s left over about 2 m). Per-match peak at level 1:
+  raw 4.88 m/s, 0.5 s average 4.59, 1 s average 4.34, the same as before F2's stronger push (4.88 / 4.55 / 4.34);
+  WPT men's tracker-smoothed median is 4.2 m/s over 85-minute matches (Miralles et al. 2025). Reach is unchanged:
+  points ending on a double bounce 28.3% (30.7%).
+- **F6, the altitude ball.** `?ball=standard|altitude`, and above 1,000 m (`?alt=`) the altitude ball unless asked
+  otherwise (FIP allows it there; its drop test is 122-135 cm). The menus play at sea level. No pressure term: no
+  measured rebound-vs-altitude figure was found (OPEN_QUESTIONS.md).
+- **F8, the roof.** The hall's roof is drawn at 9 m and about 1 strike in 90 went through it. `Environment.ceiling`
+  (the arena's `hall.height`: club hall 9 m, stadium 19 m, outdoors none, `app/options.ts roofOf`) gives the ball a
+  roof (`BallWorld.roofY`, checked in `checkExit`): a touch is `HIT_ROOF`, scored by FIP (`Rally.onRoof`): before the
+  good bounce the hitter loses (13.1.g/h/l, `WHY_ROOF` "Hit the roof"), after it, a winner (14.1.d, "Winner off the
+  roof"). The ball comes back down off it (30% of its rise, 60% of its pace along: a guess) and the point is over.
+  Predictions and the solver's ghosts treat a touch as a dead ball. Players lob under it: the solver lowers the
+  height over the net until the flown top is `ROOF_MARGIN` 1.5 m under the roof (drag steepens the fall, so the real
+  flight peaks above the vacuum parabola: the first cut, on the parabola alone, peaked 0.2 m over its mark), and the
+  contrapared counts a ghost that peaks there as unclean. 0.5 m left 1.6% of lobs touching the 9 m roof (swing errors
+  add up to a metre to a steep lob from near the net) and 3.5% of points ending on it; at 1.5 m 3 lobs in 1,400 and
+  5 contrapareds in 24 matches (their rebound off the glass is very sensitive to the swing's errors). In the open the
+  sim's old "out above 12 m" became 30 m (a safety net; contrapared and lob heights are unchanged: p90 7.5 and 8.1 m).
+  The QA army's indoor configurations now have a roof (a third 9 m, the rest 19 m, no new random draw) and feed the
+  referee oracle's existing `object` fact (ORACLE-NOTES 23). QA army, 300 matches (`docs/qa/army-p9-physics.md`):
+  no disagreement between the game and the oracle; the only new flag was the 14 m height sanity bound, which a
+  monkey's wild serve outdoors now passes (the old 12 m "out" stopped it first; the bound is 25 m now).
+- **F9, rolling.** A rolling ball's slowdown (0.8 m/s per second, hard-coded) is now per floor in
+  `data/surfaces.json` (`rollDecel`, 0.8 on each until a ramp-roll test measures it).
+- Tests: `tests/sim/ceiling.test.ts` (the roof's physics, the calls, lobs under it, the arenas' roofs),
+  `tests/sim/splitstep.test.ts` (the 5-10 m split and the planner on long runs; both fail on the old profile),
+  `tests/app/settings.test.ts` (`?ball=`, altitude, roofs from the URL and the menus), `tests/sim/ball.test.ts`
+  (rolling). Allocation unchanged (`npm run alloc`, 3 runs: 3-4 GCs per 100k ticks for the sim, 7 with the bodies).
+
+**The people** (owner, 2026-10-28: "the ball doesn't look real, nor do the people"; approved downloading MPFB 2 and
+the MakeHuman CC0 asset packs). The players were the Y Bot mannequin, dressed by the shader. They are now four men
+made in MPFB 2 (MakeHuman's Blender add-on) from the CC0 MakeHuman base mesh, skins, eyes, brows, lashes, hair and
+clothes, on the game's own skeleton, so every clip, stroke, IK target and the grip work on them unchanged.
+- **Build** (`sh tools/assets/mpfb/build-all.sh`, about 30 s for four): `make-player.py` makes a body from
+  `data/players/<name>.json` (macro settings, skin, hair, brows, lashes, eyes, T-shirt and shorts, trainers) in a
+  background Blender with its own profile under `assets-src/` (the owner's Blender settings are never touched);
+  `finish-player.py` (the same session) bakes the shape, scales soles to skin top to the player's height (MPFB's
+  macro height is set so the scale is within 2% of 1: a 2.02 m body squashed to 1.80 m had a small head and long
+  shoulders), slices the trousers level into shorts, removes skin MPFB's masks leave under the clothes and posts
+  the rig. `build-people.mjs` puts it on the game skeleton and writes `public/assets/people/` (380 KB + 140-240 KB of
+  textures a person).
+- **Bound in the modelled pose.** The mesh stays in MPFB's A-pose and each bone's inverse bind matrix is
+  (T-pose world)^-1 x (its move from the A-pose to the T-pose), so at rest the skinned mesh is the T-pose posed
+  straight from the modelled shape: baking a T-pose first and skinning that again blends the weights twice (a
+  shoulder or elbow loses volume twice over). Only bones that differ from the game skeleton by pose are moved: arms,
+  hands and fingers (the forearm and hand also rolled so the palm faces as the game skeleton's), and the legs
+  straight down. Shoulders, spine, neck, head, hips and feet keep MPFB's own joints, with the game skeleton's rest
+  rotations: the first cut aimed every bone, and turning MPFB's clavicle (28 degrees down to its arm joint) to the
+  game skeleton's level one raised each shoulder 9 cm, a shrug. The game reads the T-pose skin (`asset.restPos`)
+  wherever it measures the body (soles, grip, capsules).
+- **Proportions**, against the mannequin at 1.80 m: hips 1.026 m (0.998), shoulder joint 1.445 (1.436), hand
+  0.734 (0.738). The clips' hips travel and the run cycles' ground speed are scaled by each body's hips height (1.01-
+  1.06). Soles were 4-5 mm under the floor in the T-pose (straight legs are longer than splayed ones); the skeleton
+  goes up by that (the bind matrices stay, so the skin rises with it).
+- **Clothes.** The suit's own texture has a printed logo on the shirt and jeans, and the trainers' texture is a
+  photograph of a branded shoe with its stripes: neither is used. The shirt and shorts are the kit's colours shaded
+  by the suit's ambient-occlusion map (its folds and seams), the trainers are coloured as the mannequin's were (gum
+  sole, a stripe in the shirt's colour) and the crew sock built into them (the thin tube above 11.8 cm) takes the
+  socks' colour. Sweat patches, fabric folds and the hems' lag work as on the mannequin (`personMaterial`).
+  Skin the shirt hugs poked through at the shoulders once the arm moved: the clothes go 3 mm out and skin that sees
+  them within 3 cm straight out is removed, except a 2.5 cm band next to open skin, so looking into a sleeve never
+  shows a hole in the arm.
+- **Two draw calls a person** (body and clothes in one atlas, 1536 x 1024; hair, brows and lashes alpha-tested in a
+  second, 768 x 512). Each about 29-31k triangles.
+- **The four**: young white man 1.80 m (p1), young black man 1.84 m with a short afro (p2), white man in his late
+  thirties 1.77 m (p3), young East Asian man 1.79 m (p4). A short side-swept fringe on p4 was swapped for short slick
+  hair (it read as a fashion model, not a padel player). Player n is person n (`PlayerView`), `?people=0` brings the
+  mannequin back.
+- **The grip on a smaller hand.** MPFB's thumb is 2 cm shorter than the Y Bot's and sits nearer the palm. Reaching
+  round the handle, its middle segment went through the grip, and the old fix (move the target outwards) left its
+  tip 27 mm off the handle. The target first turns back round the handle towards the thumb's base (three quarter-
+  radian tries), then goes out. The tip pad is now kept out by its own thickness, measured mid-segment: MPFB's
+  weights give the thumb's segments some palm skin, so their typical radius read 21 mm. Thumb tip now 21-23 mm off the
+  handle, its middle joint 7-8 mm (on it); fingertips 6.4-11.3 mm (mannequin 8.1-12.8). The ball of the thumb presses
+  4.5-4.8 mm into the grip where it wraps (the mannequin's deepest skin is 2.1 mm).
+- **Animation QA**, 60 s of seed 1 doubles each (mannequin | people): skate 17.2 | 12.8-14.5 cm/s, contact p50 7.2 |
+  5.9-8.3 mm, pops 23.3 | 18.3-22.5 per player-minute, racket in body 0.13 | 0.21-0.27%, hand in torso 0.09 |
+  0.25-0.41%, no flips or knee spins; all inside the mannequin's limits (`tests/render/people.test.ts`).
+- Allocation unchanged with the people (`npm run alloc` 3 runs: avatars 6-7 GCs per 100k ticks, as before).
+- **Frame rate**, built game, `QUERY=&people=0` (the mannequin) against the people, paired back to back on a
+  busy machine (load average 7-11; logs `tools/out/people-*.log`): Medium at CPU 4x 123.8 fps, 1% low 65.7, p99
+  13.0 ms | 121.4, 77.6, 11.5 ms; High 2x unpaced 211.2 fps, p99 23.9 ms | 219.4, 21.9 ms; High paced at 120 Hz held
+  120 Hz in all four runs, CPU work 1.4-1.5 | 1.9 ms a frame (the four extra skinned meshes). Draw calls 103 | 111,
+  triangles in view 896k | 695k (the mannequin's mesh is 55k triangles, a person 29-31k). The second Medium pair was
+  dropped: another project's browser check held the machine's one-Chrome lock.

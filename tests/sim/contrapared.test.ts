@@ -1,0 +1,130 @@
+// The contrapared: a ball that has bounced and got behind the player, near their own back glass, is played up into
+// that glass so it rebounds over the net (legal, FIP 13.l: only the own mesh is not). Solver, swing errors, who
+// plays it and when, and what comes of it, for the AI and for a human (the QA bot on the keys with the assist).
+import { describe, expect, it } from 'vitest';
+import { MatchSim, E_HIT, E_POINT, E_WHIFF } from '../../src/sim/match.ts';
+import { InputFrame } from '../../src/sim/input.ts';
+import { Ball } from '../../src/sim/ball/ball.ts';
+import { V3 } from '../../src/sim/core/v3.ts';
+import { Rng } from '../../src/sim/core/rng.ts';
+import { WALL_BACK_NEAR } from '../../src/sim/court/court.ts';
+import { WHY_OWN_MESH } from '../../src/sim/rules/rally.ts';
+import {
+  ShotSolver, strike, SHOT_CONTRAPARED, MOD_NONE, type ShotRequest, type ShotResult,
+} from '../../src/sim/contact/shots.ts';
+import { BotHuman } from '../../tools/qa/humans.ts';
+
+const m0 = new MatchSim({ seed: 1, doubles: true, human: [false, false, false, false] });
+const solver = new ShotSolver(m0.world);
+const glassTop = m0.world.court.def.backWall.glassHeight;
+const netH = m0.world.court.netHeightAt(0);
+
+/** Did the ghost go into the near back glass first, below its top, over the net clean and down on the far half? */
+function clean(s: ShotSolver): boolean {
+  return s.wallHit === WALL_BACK_NEAR && s.wallGlass && s.wallY < glassTop && !s.netTouched && !s.exited
+    && s.netY > netH + 0.05 && s.landZ < 0;
+}
+
+describe('contrapared', () => {
+  it('solver: up into the own back glass, over the net, down near the target', () => {
+    const p = new V3(), v = new V3(), w = new V3();
+    // (x, y, z) on the near half 1.0-2.5 m from the glass (z = 10), target on the far half.
+    for (const [x, y, z, tx, tz] of [[0, 0.8, 8.6, 0, -6.5], [-3, 0.6, 9.0, 2, -7], [3.5, 1.2, 8.3, -3, -5], [-2, 1.0, 7.5, 0, -6]]) {
+      p.set(x!, y!, z!);
+      expect(solver.solveContra(p, tx!, tz!, -400, 30, 1.9, v, w)).toBe(true);
+      solver.flyWalls(p, v, w);
+      expect(clean(solver)).toBe(true);
+      expect(Math.hypot(solver.landX - tx!, solver.landZ - tz!)).toBeLessThan(0.5);
+      // Struck upwards, at a pace a lifted shot gives (not a smash: 2.5 m from the glass to 6 m past the net is the
+      // hardest of these, 25 m/s).
+      expect(v.y).toBeGreaterThan(0);
+      expect(v.length()).toBeLessThan(28);
+    }
+  });
+
+  it('with the swing errors most still go glass, net, far court', () => {
+    const res: ShotResult = { reachable: false, speed: 0, idealX: 0, idealZ: 0 };
+    let n = 0, ok = 0;
+    for (const [x, y, z] of [[0.5, 0.8, 8.6], [-2.5, 0.6, 8.9], [2.5, 1.1, 8.2]]) {
+      for (let k = 0; k < 20; k++) {
+        const b = new Ball();
+        b.pos.set(x!, y!, z!);
+        b.vel.set(0.4, -1.2, 7);
+        b.spin.set(0, 0, 0);
+        const req: ShotRequest = {
+          shot: SHOT_CONTRAPARED, mod: MOD_NONE, targetX: 0, targetZ: -6.8, quality: 0.82, timingDelta: 0, handSide: 1,
+          moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, motor: 0, bodyX: x!, bodyZ: z! - 0.6,
+        };
+        strike(solver, b, req, new Rng(100 + k), res);
+        solver.flyWalls(b.pos, b.vel, b.spin);
+        n++;
+        if (clean(solver)) ok++;
+      }
+    }
+    // (FIP-level players miss it too: it is a defensive shot, errorScale 1.35 in data/shots.json)
+    expect(ok / n).toBeGreaterThan(0.8);
+  });
+
+  it('AI: a rare save off a ball behind the player, legal and mostly returned', () => {
+    let hits = 0, contra = 0, lost = 0, mesh = 0, behind = 0, deep = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false] });
+      const frames = [null, null, null, null];
+      let seq = 0, open = -1;
+      for (let k = 0; k < 300 * 120; k++) {
+        m.step(frames);
+        for (; seq < m.eventSeq; seq++) {
+          const e = m.events[seq % m.events.length]!;
+          if (e.kind === E_HIT) {
+            hits++;
+            open = -1;
+            if (e.a === SHOT_CONTRAPARED) {
+              contra++;
+              open = e.team;
+              const p = m.players[e.player]!, c = p.lastContact, s = m.side(p.team);
+              // (the window wants it 0.1 m behind; the body moves on through the swing)
+              if (s * (c.z - p.pos.z) > -0.3) behind++;
+              if (Math.abs(c.z) > 6.5) deep++;
+            }
+          } else if (e.kind === E_POINT && open >= 0) {
+            if (e.team !== open) { lost++; if (e.a === WHY_OWN_MESH) mesh++; }
+            open = -1;
+          }
+        }
+      }
+    }
+    expect(contra / hits).toBeGreaterThan(0.004);
+    expect(contra / hits).toBeLessThan(0.03);
+    expect(behind).toBe(contra);
+    expect(deep).toBe(contra);
+    expect(mesh).toBe(0);
+    expect(lost / contra).toBeLessThan(0.25);
+  });
+
+  it('human (QA bot with the assist): plays it when the plan says so, and it comes back', () => {
+    let plans = 0, contra = 0, back = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const m = new MatchSim({ seed, doubles: true, human: [true, false, false, false] });
+      const bot = new BotHuman(0, seed * 7);
+      const f = new InputFrame();
+      const frames = [f, null, null, null];
+      let seq = 0, planned = false, open = false;
+      for (let k = 0; k < 240 * 120; k++) {
+        bot.act(m, f);
+        m.step(frames);
+        const st = m.stand[0]!;
+        if (st.valid && st.contra) { if (!planned) plans++; planned = true; } else planned = false;
+        for (; seq < m.eventSeq; seq++) {
+          const e = m.events[seq % m.events.length]!;
+          if (e.kind === E_HIT && e.player === 0 && e.a === SHOT_CONTRAPARED) { contra++; open = true; }
+          else if (e.kind === E_HIT) { if (open && e.team !== 0) back++; open = false; }
+          else if ((e.kind === E_POINT || e.kind === E_WHIFF) && open) { if (e.kind === E_POINT && e.team === 0) back++; open = false; }
+        }
+      }
+    }
+    // Before the fix (turn charged on every re-plan, contrapared left out of the out-of-time fallback): 4 of 21.
+    expect(contra).toBeGreaterThan(12);
+    expect(contra / plans).toBeGreaterThan(0.5);
+    expect(back / contra).toBeGreaterThan(0.75);
+  });
+});

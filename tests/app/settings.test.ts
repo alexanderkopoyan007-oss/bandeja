@@ -122,3 +122,20 @@ describe('a menu setup as game options', () => {
     expect(o.prefs!.adapt).toBe(false);
   });
 });
+
+describe('world from the URL and the menus', () => {
+  const world = (q: string) => optionsFromUrl(new URLSearchParams(q), null).match.world!;
+  it('?ball= picks the ball; above 1000 m the altitude ball unless asked otherwise (FIP allows it there)', () => {
+    expect(world('autoplay=1').ball).toBe('standard');
+    expect(world('autoplay=1&ball=altitude').ball).toBe('altitude');
+    expect(world('autoplay=1&alt=1500').ball).toBe('altitude');
+    expect(world('autoplay=1&alt=1500&ball=standard').ball).toBe('standard');
+    expect(world('autoplay=1&alt=800').ball).toBe('standard');
+  });
+  it('the arena puts its roof over the court: club hall 9 m, outdoors none', () => {
+    expect(world('autoplay=1&arena=hall').env!.ceiling).toBe(9);
+    expect(world('autoplay=1&arena=club-day').env!.ceiling).toBe(Infinity);
+    const s = defaultSettings();
+    expect(optionsFromSetup({ ...s.setup, arena: 'hall' }, s, 1, null, false, new URLSearchParams('')).match.world!.env!.ceiling).toBe(9);
+  });
+});

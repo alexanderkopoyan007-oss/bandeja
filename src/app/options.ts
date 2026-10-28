@@ -1,7 +1,8 @@
 // Game options from the two ways a game starts: the menus (a match setup and the settings) and the URL (every tool,
 // test page and old link: `?autoplay=1`, `?mode=singles&seed=...`, which skip the menus as before Phase 8).
 import { MODE_ADVANTAGE, MODE_GOLDEN, MODE_STAR, FINAL_NORMAL } from '../sim/rules/score.ts';
-import type { FloorName } from '../sim/setup.ts';
+import type { BallName, FloorName } from '../sim/setup.ts';
+import arenaData from '../../data/arenas.json' with { type: 'json' };
 import { Rng } from '../sim/core/rng.ts';
 import { STYLE_KEYS } from '../sim/ai/styles.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
@@ -19,13 +20,25 @@ import { type MatchSetup, type Settings, LEVEL_AI, TIMING_SCALE, ASSIST_LEVEL, r
 const GAME_PARAMS = new Set([
   'autoplay', 'mode', 'seed', 'styles', 'scoring', 'court', 'floor', 'temp', 'alt', 'windx', 'windz', 'sets', 'games',
   'ai', 'lefty', 'timing', 'assist', 'autotime', 'tap', 'server', 'pro', 'gfx', 'aim', 'runahead', 'sound', 'arena',
-  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot',
+  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'people', 'ball', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot',
 ]);
 
 /** Does the URL ask for a game straight away (tools and links from before the menus)? */
 export function directLaunch(params: URLSearchParams): boolean {
   for (const k of params.keys()) if (GAME_PARAMS.has(k)) return true;
   return false;
+}
+
+/** The roof over an arena's court (m), Infinity in the open air: the sim's ceiling (FIP 13.1.g, 14.1.d). */
+export function roofOf(arena: string): number {
+  const a = (arenaData as unknown as Record<string, { kind?: string; hall?: { height?: number } }>)[arena];
+  if (!a || a.kind === 'outdoor') return Infinity;
+  return a.hall?.height ?? Infinity;
+}
+
+function ballFor(asked: string | null, altitudeM: number): BallName {
+  if (asked === 'standard' || asked === 'altitude') return asked;
+  return altitudeM > 1000 ? 'altitude' : 'standard';
 }
 
 const QUALITY_KEYS = ['auto', 'low', 'medium', 'high', 'ultra'];
@@ -54,7 +67,12 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
       world: {
         court: params.get('court') ?? 'standard',
         floor: (params.get('floor') as FloorName | null) ?? 'turf',
-        env: { temperatureC: num('temp', 20), altitudeM: num('alt', 0), windX: num('windx', 0), windZ: num('windz', 0) },
+        // ?ball=standard|altitude; above 1000 m the altitude ball is taken unless asked otherwise (FIP allows it there).
+        ball: ballFor(params.get('ball'), num('alt', 0)),
+        env: {
+          temperatureC: num('temp', 20), altitudeM: num('alt', 0), windX: num('windx', 0), windZ: num('windz', 0),
+          ceiling: roofOf(params.get('arena') ?? 'stadium'),
+        },
       },
       format: {
         mode: mode === 'golden' ? MODE_GOLDEN : mode === 'advantage' ? MODE_ADVANTAGE : MODE_STAR,
@@ -128,7 +146,7 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
   return {
     match: {
       seed,
-      world: { court, floor: 'turf', env: { temperatureC: 20, altitudeM: 0, windX: 0, windZ: 0 } },
+      world: { court, floor: 'turf', env: { temperatureC: 20, altitudeM: 0, windX: 0, windZ: 0, ceiling: roofOf(setup.arena) } },
       format: {
         mode: setup.scoring === 'golden' ? MODE_GOLDEN : setup.scoring === 'advantage' ? MODE_ADVANTAGE : MODE_STAR,
         setsToWin: len.setsToWin, gamesPerSet: len.gamesPerSet, finalSet: FINAL_NORMAL,

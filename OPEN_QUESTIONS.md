@@ -73,10 +73,12 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   don't exist.
 - **The camera kick.** Broadcast cameras don't shake on a smash; the brief asked for a camera response, so it is
   a small push-in and jolt. Whether to keep it is the owner's call.
-- **Sprint times.** The game's player covers 5 m forward in 1.56 s from a standstill and 1.45 s once moving. No
-  padel sprint time has been read: Portuguese national-tier players and the Kinesiology 8-week training study
-  both tested 5 m sprints, but their abstracts give no numbers. Settled by: the full texts' tables (5 m sprint
-  mean and how the timing gates were set up).
+- **Sprint times.** Read since (Phase 9): highly trained padel players run 5 m in 1.05-1.12 s and 10 m in 1.95-1.97 s
+  from a crouch on a sound (Saez de Villarreal et al. 2023), but the paper doesn't say what started the clock, and
+  that alone moves times 0.2-0.7 s (Haugen et al. 2012). The game now matches their 5-10 m split (0.86 s against
+  0.85-0.89), which doesn't depend on the start; from a standstill it covers 5 m in 1.53 s and 10 m in 2.38 s from
+  the first push. Settled by: the same test filmed or timed from the first movement (or the authors saying how the
+  clock started).
 - **Gamepad audio unlock.** A pad press may not count as a user gesture for starting audio in every browser; a
   pad-only player may need one key or click before sound starts. Settled by: a test on the owner's pad.
 - **Input edge cases left open** (Phase 2 review round 3, all low): a key event that reaches the page after its
@@ -265,3 +267,49 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   function that deopts more than once there is worth reading its rare branches up front, as `Player.move` does.
 - **three's bind-group cache** keeps about 130 KB a match (`_bindingGroupsCache`, DECISIONS.md). Reporting it to
   three is public, so it waits for the owner's OK.
+
+## Phase 9 (expert review: physics audit)
+- **The kick off the back glass.** A ball spinning forward off the floor kicks up off the glass (rigid-ball grip
+  physics, right in sign), so flat and topspin drives come off it still climbing; above the shoulders that rising part
+  can't be swung at (`riseMaxOffWall`, kept: high rebounds are let fall or taken coming down, and the falling part is
+  playable). A topspin drive (66 km/h, 1,600 rpm) peaks 1.89 m high 3.2 m out, so standing 1.5-2 m from the glass
+  it has no window on the rise. How big the kick really is has never been measured for a padel ball on glass (glass
+  friction comes from glazed tile, the floor-bounce spin from tennis). Settled by: 240 fps video of flat, topspin and
+  slice drives into a back glass (speed and angle in and out, height 1-3 m out, how far it comes back), then a refit
+  of glass friction and grip and the turf's spin.
+- **A standard ball at altitude.** Only the air changes with altitude: a standard ball's drop test rises 1.4% at
+  2,000 m from drag alone, but a pressurised ball's gauge pressure also rises as the air thins, which is why FIP
+  allows a lower-pressure ball above 1,000 m (122-135 cm). The game now takes the altitude ball above 1,000 m
+  (`?ball=standard` keeps the other); no rebound-vs-altitude figure was found, so there is no pressure term. Settled
+  by: drop tests of the same balls at two altitudes, or the ITF's high-altitude ball data.
+- **Temperature.** A warm pressurised ball bounces higher (the ITF tests at 20 ± 2 °C for that reason; Rose, Coe &
+  Haake 2000 measured 0-40 °C), but no per-degree figure was retrieved, so only the air density changes with
+  temperature. Settled by: the full text of Rose et al. 2000, then a factor on restitution, 1 at 20 °C.
+- **A rolling ball's slowdown** is 0.8 m/s per second on every floor (`data/surfaces.json` `rollDecel`); no padel or
+  tennis figure was found. It matters little (a rolling ball is nearly always dead). Settled by: a ramp-roll test on
+  padel turf (decel = v² / 2d for the distance rolled off a set ramp height).
+- **The roof's rebound.** A ball touching an indoor roof is dead (FIP 13.1.g / 14.1.d) and comes back down off it with
+  30% of its upward speed and 60% of its sideways speed, which is a guess (the club hall's roof is 9 m, the stadium's
+  19 m: `data/arenas.json`). Settled by: nothing needed for the rules; the look of it by eye in the hall.
+- **AI smash speed by level.** Fitted to radar in play: semi-professionals 120.7 ± 9.8 km/h against opponents (133.1
+  unopposed), amateurs 104.5 (124.6) (Rivilla-Garcia et al. 2019). The game's top level is pro-like and its bottom
+  is a beginner, so the two ends are matched to semi-professional and amateur figures, which is a reading. No
+  professional in-play radar was found. Settled by: Hawk-Eye or radar smash speeds from professional matches.
+- **The x3 smash and overhead choice** (audit F3, refuted as a physics fault): smashes leaving the court end 4.7% of
+  AI points, at or above what pros' topspin smashes win (about 3% of points). The gap is the AI's overhead choice:
+  0.54 bandejas and víboras a point against 1.1-1.3 for pros, so the smash is 51% of overheads against 36%. A topspin
+  (x3) smash shape isn't built. Settled by: the owner saying whether they want the x3 as its own stroke.
+
+
+## Phase 9 (expert review: the people)
+- **How they look to the owner.** Four MakeHuman men replace the mannequin (DECISIONS, "The people"). Their faces,
+  hair, builds and the kit over the T-shirt's shading have only been judged by me from captures. Settled by: the
+  owner playing a match and saying which looks wrong (`?people=0` shows the old mannequin to compare).
+- **Women's padel and more faces.** All four are men because the clips, strokes and grip were all tuned on a male
+  mannequin, and a female MPFB body is a different build (shoulders, hips, height). Four faces repeat across every
+  match. Settled by: whether the owner wants mixed or women's doubles and more people (each is a JSON file and about
+  30 s of building).
+- **Clothes.** One MakeHuman T-shirt and its trousers cut to shorts, both looser than padel kit. No CC0 sports kit
+  was in the packs. Settled by: a tighter shirt modelled for the game, or the owner accepting the casual fit.
+- **The thumb on the grip.** MPFB's short thumb ends 21-23 mm off the handle (the Y Bot's 14 mm) and the ball of the
+  thumb presses up to 4.8 mm into the grip. Settled by: a close look in `?cam=hand` and whether it reads as a grip.

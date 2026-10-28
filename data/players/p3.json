@@ -1,0 +1,16 @@
+{
+  "name": "p3",
+  "macro": {
+    "gender": 1.0, "age": 0.62, "muscle": 0.6, "weight": 0.52, "proportions": 0.75, "height": 0.5,
+    "cupsize": 0.5, "firmness": 0.5,
+    "race": { "asian": 0.0, "caucasian": 1.0, "african": 0.0 }
+  },
+  "skin": "middleage_caucasian_male",
+  "eyes": "low-poly",
+  "eyebrows": "eyebrow006",
+  "eyelashes": "eyelashes01",
+  "hair": "short01",
+  "clothes": ["male_casualsuit06", "shoes05"],
+  "shorts": 0.6,
+  "height": 1.77
+}

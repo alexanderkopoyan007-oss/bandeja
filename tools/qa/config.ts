@@ -12,7 +12,7 @@ export interface ArmyConfig {
   court: string;
   floor: 'turf' | 'hard' | 'carpet' | 'clay';
   ball: 'standard' | 'altitude';
-  env: { temperatureC: number; altitudeM: number; windX: number; windZ: number };
+  env: { temperatureC: number; altitudeM: number; windX: number; windZ: number; ceiling?: number };
   format: MatchFormat;
   aiLevel: [number, number];
   styles: string[];
@@ -79,6 +79,9 @@ export function makeConfig(seed0: number, index: number): ArmyConfig {
       altitudeM: altitude ? 1000 + 1500 * r() : 200 * r(),
       windX: outdoor ? (r() - 0.5) * 10 : 0,
       windZ: outdoor ? (r() - 0.5) * 10 : 0,
+      // Indoors: a third under a club hall's 9 m roof, the rest under a stadium's 19 m (no new draw, so every other
+      // configuration is as it was).
+      ...(outdoor ? {} : { ceiling: index % 3 === 0 ? 9 : 19 }),
     },
     format,
     aiLevel: [r(), r()],
@@ -114,7 +117,7 @@ export function describe(c: ArmyConfig): string {
   const f = c.format;
   const mode = ['adv', 'star', 'golden'][f.mode];
   const fin = ['normal', 'no-tb', 'tb7', 'stb10'][f.finalSet];
-  return `#${c.index} ${c.doubles ? 'doubles' : 'singles'} ${c.court} ${c.floor} ${c.ball}${c.env.windX || c.env.windZ ? ' wind' : ''} `
+  return `#${c.index} ${c.doubles ? 'doubles' : 'singles'} ${c.court} ${c.floor} ${c.ball}${c.env.windX || c.env.windZ ? ' wind' : ''}${c.env.ceiling ? ` roof${c.env.ceiling}` : ''} `
     + `${mode} bo${2 * f.setsToWin - 1} ${f.gamesPerSet}g ${fin} humans=${c.humans.join(',')} ai=${c.aiLevel.map((v) => v.toFixed(2)).join('/')}`;
 }
 
