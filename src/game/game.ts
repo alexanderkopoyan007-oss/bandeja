@@ -271,7 +271,12 @@ export class Game {
     this.announcer = prefs.announce && !opts.autoplay ? new Announcer(hudRoot) : null;
 
     addEventListener('resize', () => this.resize(), { signal: sig });
+    // Leaving the game (another window, a hidden tab, the controller gone) opens the pause menu, so a point
+    // isn't played on without you; outside a match onMenu does nothing.
+    addEventListener('blur', () => this.onMenu?.(), { signal: sig });
+    this.pad.onLost = () => this.onMenu?.();
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.onMenu?.();
       // Freeze the sim while the tab is hidden instead of fast-forwarding on return.
       this.audio.pause(document.hidden || this.menuPaused);
       if (document.hidden) this.hiddenAt = performance.now();

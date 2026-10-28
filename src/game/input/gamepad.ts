@@ -39,6 +39,8 @@ export class GamepadInput {
   private kb: KeyboardInput | null = null;
   /** The Start button (standard 9) went down: the pause menu. */
   onStart: (() => void) | null = null;
+  /** The pad in use was disconnected. */
+  onLost: (() => void) | null = null;
   private startDown = true;
   /** Rumble allowed (the Accessibility setting). */
   rumbleOn = true;
@@ -65,6 +67,7 @@ export class GamepadInput {
         this.held = 0;
         this.x = 0;
         this.y = 0;
+        this.onLost?.();
       }
     }, o);
     for (let i = 0; i < 17; i++) this.down.push(false);
