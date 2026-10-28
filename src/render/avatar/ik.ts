@@ -9,6 +9,8 @@ const U2 = new THREE.Vector3();
 const Q = new THREE.Quaternion();
 const QW = new THREE.Quaternion();
 const QP = new THREE.Quaternion();
+/** The knee's turn about its hinge, on its way into Q (fromArray: no double crosses a call). */
+const KV = new Float64Array(4);
 
 /** World rotation of an object (unit scale) from its current world matrix. */
 export function worldQuat(o: THREE.Object3D, out: THREE.Quaternion): THREE.Quaternion {
@@ -30,9 +32,13 @@ export function rotateWorld(o: THREE.Object3D, delta: THREE.Quaternion): void {
 /**
  * Turn `upper` and `mid` so the origin of `end` lands on `target`, bending the middle joint towards `pole`
  * (all world space). The chain's world matrices must be current, and are current again afterwards.
- * Out-of-reach targets are met as nearly as the chain allows.
+ * Out-of-reach targets are met as nearly as the chain allows. With `hinge` (the middle joint's bend axis in its
+ * own frame), the middle bone first turns about that hinge, as a knee bends, and only the small rest the shortest
+ * way: turned the shortest way alone, a shin that had to fold back past its clip's line (hips dropped low at a
+ * sprint, the swinging foot high behind) went over the top, twisting 177 degrees about itself in a frame.
  */
-export function twoBoneIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, target: THREE.Vector3, pole: THREE.Vector3): void {
+export function twoBoneIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, target: THREE.Vector3, pole: THREE.Vector3,
+  hinge: THREE.Vector3 | null = null): void {
   const mu = upper.matrixWorld.elements, mm = mid.matrixWorld.elements, me = end.matrixWorld.elements;
   const sx = mu[12]!, sy = mu[13]!, sz = mu[14]!;
   const ex = mm[12]!, ey = mm[13]!, ez = mm[14]!;
@@ -71,11 +77,37 @@ export function twoBoneIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, t
 
   // The lower bone from the new elbow towards the (reachable) target.
   const nx = mm[12]!, ny = mm[13]!, nz = mm[14]!;
-  const ux = me[12]! - nx, uy = me[13]! - ny, uz = me[14]! - nz;
-  const ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
+  let ux = me[12]! - nx, uy = me[13]! - ny, uz = me[14]! - nz;
+  let ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
   const vx = sx + dx * c - nx, vy = sy + dy * c - ny, vz = sz + dz * c - nz;
   const vl = Math.sqrt(vx * vx + vy * vy + vz * vz);
   if (ul < 1e-6 || vl < 1e-6) return;
+  if (hinge) {
+    // The hinge in world (unit scale: the matrix's rotation part), and both directions seen along it.
+    const hx = mm[0]! * hinge.x + mm[4]! * hinge.y + mm[8]! * hinge.z;
+    const hy = mm[1]! * hinge.x + mm[5]! * hinge.y + mm[9]! * hinge.z;
+    const hz = mm[2]! * hinge.x + mm[6]! * hinge.y + mm[10]! * hinge.z;
+    const u1 = (ux * hx + uy * hy + uz * hz) / ul, u2 = (vx * hx + vy * hy + vz * hz) / vl;
+    const ax = ux / ul - hx * u1, ay = uy / ul - hy * u1, az = uz / ul - hz * u1;
+    const bx = vx / vl - hx * u2, by = vy / vl - hy * u2, bz = vz / vl - hz * u2;
+    const al = Math.sqrt(ax * ax + ay * ay + az * az), bl = Math.sqrt(bx * bx + by * by + bz * bz);
+    // Faded out as either direction comes into line with the hinge (there the turn about it is undefined), so
+    // the hand-over to the shortest way is smooth (switching at a threshold twisted the shin 128 degrees).
+    const lo2 = al < bl ? al : bl;
+    const wk = lo2 <= 0.15 ? 0 : lo2 >= 0.45 ? 1 : (lo2 - 0.15) / 0.3;
+    if (wk > 0) {
+      const sn = hx * (ay * bz - az * by) + hy * (az * bx - ax * bz) + hz * (ax * by - ay * bx);
+      const th = Math.atan2(sn, ax * bx + ay * by + az * bz) * wk * wk * (3 - 2 * wk);
+      const s2 = Math.sin(th / 2);
+      KV[0] = hx * s2; KV[1] = hy * s2; KV[2] = hz * s2; KV[3] = Math.cos(th / 2);
+      Q.fromArray(KV);
+      rotateWorld(mid, Q);
+      mid.updateMatrixWorld(true);
+      ux = me[12]! - nx; uy = me[13]! - ny; uz = me[14]! - nz;
+      ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
+      if (ul < 1e-6) return;
+    }
+  }
   U1.x = ux / ul; U1.y = uy / ul; U1.z = uz / ul;
   U2.x = vx / vl; U2.y = vy / vl; U2.z = vz / vl;
   Q.setFromUnitVectors(U1, U2);

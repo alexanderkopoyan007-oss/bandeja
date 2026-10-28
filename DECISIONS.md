@@ -465,3 +465,23 @@ better-looking, more realistic court. Every decision and the reason for it goes 
 - **Inertializer allocation**: `expQ` and the predicted rotation wrote through `Quaternion.set`/`normalize`
   (boxed doubles when not inlined; the largest allocation site in the avatar run); they write through a
   Float64Array now. Avatars 7-8 → 6 GCs per 100k ticks.
+- **Legs: no more flips** (the worst pops left: knees and feet turning up to 177° in a frame). Four causes, each
+  traced frame by frame:
+  - The lunge (a planted foot stepping out towards a wide contact) was given to whichever foot was on the ball's
+    side, picked by a sign: with the ball nearly in front or behind, the whole 0.55 m moved to the other foot in a
+    frame, and it applied at a sprint to a foot in the air. It now needs the feet planted (scaled by `plantW`) and
+    is shared between the feet by a smooth weight on the ball's side.
+  - The knee turned the shortest way from the clip's shin onto the new one: a shin that had to fold back past its
+    clip's line went over the top, twisting about itself. The knee now turns about its hinge (measured from the
+    clips as the elbows' are) and only the small rest the shortest way, faded out where either direction comes
+    into line with the hinge (a hard switch there was a 128° twist of its own).
+  - The hips came back up out of a low reach at up to 5.7 m/s, following the stroke's key as it swung up after the
+    contact. They now rise no faster than 1.5 m/s (`HIP_RISE`, standing up out of a lunge).
+  - The drop and the reach together put the hip joints 0.28 m off the floor (the legs folded flat, nothing a
+    knee can do there). The hips bone now stops at 0.58 m (`HIP_FLOOR`: a deep lunge with the front thigh level,
+    hip joints at knee height), and the upper body bends up to 43° towards a ball still out of reach
+    (`SPINE_REACH`, was 30°), which kept the contact (seed 2 p90 9.9 → 8.4 cm; it was 12.5 cm with the floor alone).
+  - QA, 3 seeds x 120 s (before → after): pops 35-48 → 20.5-26 per player-minute, the worst pop 177° → 72°, knee
+    max 21300 → 6000°/s, ankle max 19300 → 11500°/s, contact p50 4-9 mm and p90 7.7-8.4 cm (6-10 before),
+    legs through 2.8-3.5% (unchanged). The QA test now fails on any one-frame spike of 120° or more, or more
+    than 35 pops per player-minute.

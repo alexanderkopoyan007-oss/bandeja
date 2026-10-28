@@ -1,8 +1,8 @@
 // The animation QA (src/render/avatar/animQa.ts, `node tools/anim-check.ts`) as a guard: two minutes of AI doubles
 // (one with two left-handers) must stay inside what Phase 3 reached, with some room for match-to-match spread.
-// Measured 2026-10-28 over 60 s each on seeds 1, 3, 5, 6: skate 16-21 cm/s, contact p50 0.6-6 mm, pops 34-49 per
-// player-minute, racket in body 1.3-2.9%, hand in torso 2.9-4.2%, thighs through each other 2.3-4.0%; serves:
-// hand in torso 0, racket in body 0-1.8%, pops 0-13 per minute.
+// Measured 2026-10-28 over 60 s each on seeds 1, 3, 5, 6: skate 17-21 cm/s, contact p50 0.6-6 mm (p90 4-11 cm),
+// pops 22-27 per player-minute (the worst 65-86 degrees), racket in body 1.3-2.2%, hand in torso 2.9-4.9%, thighs
+// through each other 2.3-3.9%; serves: hand in torso 0, racket in body 0-1.8%, pops 0-13 per minute.
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -29,7 +29,7 @@ describe('animation QA thresholds', () => {
       expect(r.contact.dist.p90).toBeLessThan(0.12);
       expect(r.contact.lag.p50).toBeLessThan(0.009);
       // Pops (one-frame spikes) and clipping.
-      expect(r.pops.perMinute).toBeLessThan(60);
+      expect(r.pops.perMinute).toBeLessThan(35);
       expect(r.clip.racketBody).toBeLessThan(0.035);
       expect(r.clip.handTorso).toBeLessThan(0.055);
       expect(r.clip.legs).toBeLessThan(0.05);
@@ -37,8 +37,9 @@ describe('animation QA thresholds', () => {
       expect(r.serve.handTorso).toBeLessThan(0.005);
       expect(r.serve.racketBody).toBeLessThan(0.03);
       expect(r.serve.popsPerMinute).toBeLessThan(25);
-      // Worst arm flips: no forearm or hand turning 150 degrees or more in a frame.
-      const flips = r.pops.worst.filter((e) => /Arm|Hand/.test(e.what) && e.value >= 150);
+      // Flips: no joint turning 120 degrees or more in a one-frame spike (arms, hands, knees and feet all did,
+      // up to 177 degrees, before the hinge solves and the hips' floor).
+      const flips = r.pops.worst.filter((e) => e.value >= 120);
       expect(flips).toEqual([]);
     }, 120_000);
   }

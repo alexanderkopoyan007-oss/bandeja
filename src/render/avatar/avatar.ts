@@ -69,7 +69,7 @@ function bendDir(a: THREE.Bone, m: THREE.Bone, e: THREE.Bone, fwd: THREE.Vector3
   let bx = mx - lx * t + fx * 0.004, by = my - ly * t + fy * 0.004, bz = mz - lz * t + fz * 0.004;
   const bl = Math.sqrt(bx * bx + by * by + bz * bz);
   if (bl < 1e-9) { bx = fx; by = fy; bz = fz; } else { bx /= bl; by /= bl; bz /= bl; }
-  out.set(bx, by, bz);
+  out.x = bx; out.y = by; out.z = bz;
 }
 const bendL = new THREE.Vector3();
 const bendR = new THREE.Vector3();
@@ -132,8 +132,9 @@ const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
 /**
  * An elbow's hinge, measured from the clips: the axis (forearm frame) of the forearm's turn from its rest rotation,
  * averaged over every clip frame bent more than 20 degrees (on the Y Bot it is the forearm's z, within a degree).
- * The knees stay on twoBoneIK: the clips turn the shin about 10 degrees off any one axis and run with the legs
- * nearly straight, and solving them as hinges threw that away and tripled the pops (measured).
+ * The knees stay on twoBoneIK (the clips turn the shin about 10 degrees off any one axis and run with the legs
+ * nearly straight, and solving them as hinges threw that away and tripled the pops, measured), but turn about
+ * their measured hinge before the shortest-arc remainder (`twoBoneIK`'s `hinge`).
  */
 function elbowHinge(asset: PlayerAsset, name: string): Elbow {
   const bi = asset.bone(name);
@@ -178,6 +179,15 @@ const HOVER = 0.85;
 const ARM_MIN = 0.35;
 /** Fastest the way from a shoulder to its hand may turn (rad/s; see keepOff). */
 const REACH_TURN_RATE = 40;
+/**
+ * Lowest the hips bone goes (m, world): a deep lunge with the front thigh level, the hip joints about 0.5 m up
+ * (knee height on the Y Bot).
+ */
+const HIP_FLOOR = 0.58;
+/** Most the upper body bends from the spine's base towards a ball out of the arm's reach (rad). */
+const SPINE_REACH = 0.75;
+/** Fastest the hips come back up from a drop (m/s): standing up out of a lunge. */
+const HIP_RISE = 1.5;
 /** Most the hips drop for a low or wide ball (crouch, lunge and reach together; m). */
 const DROP_MAX = 0.55;
 const FOLLOW = 0.3;
@@ -299,6 +309,8 @@ export class Avatar {
   // Split step: a small hop as the opponent strikes, landing with bent knees (feet kept planted).
   private lift = 0;
   private splitDrop = 0;
+  /** The hips' drop shown last frame (m; see HIP_RISE). */
+  private dropShown = 0;
   /** Planted feet (left, right): weight, where each is (world), its yaw, and a step under way (-1: none). */
   private plantW = 0;
   private sp = 0;
@@ -441,6 +453,9 @@ export class Avatar {
   private readonly tgt = new THREE.Vector3();
   private readonly pole = new THREE.Vector3();
   private readonly lean = new THREE.Quaternion();
+  /** Each knee's hinge (shin frame), measured from the clips as the elbows' are. */
+  private readonly kneeL: THREE.Vector3;
+  private readonly kneeR: THREE.Vector3;
   /** The free shoulder before the hips drop and push and the spine leans (world): its keys move with the trunk. */
   private readonly freeSh = new THREE.Vector3();
   /** Shoulder to wrist, arm straight (m). */
@@ -516,6 +531,8 @@ export class Avatar {
     this.armL = [b('LeftArm'), b('LeftForeArm'), b('LeftHand')];
     this.elbowR = elbowHinge(asset, 'RightForeArm');
     this.elbowL = elbowHinge(asset, 'LeftForeArm');
+    this.kneeL = elbowHinge(asset, 'LeftLeg').hinge;
+    this.kneeR = elbowHinge(asset, 'RightLeg').hinge;
     this.legL = [b('LeftUpLeg'), b('LeftLeg'), b('LeftFoot')];
     this.legR = [b('RightUpLeg'), b('RightLeg'), b('RightFoot')];
     this.toes = [b('LeftToeBase'), b('RightToeBase')];
@@ -1154,6 +1171,7 @@ export class Avatar {
     this.kyawI.reset();
     this.wI.reset();
     this.dropI.reset();
+    this.dropShown = 0;
     this.lockOn.fill(0);
     this.relT.fill(-1);
     this.elbowR.side.set(0, 0, 0);
@@ -1334,7 +1352,15 @@ export class Avatar {
       crouch = D.out[0]!;
     }
     // No lower than a deep lunge (hips about 0.4 m; crouch, reach and drop together reached 0.62).
-    const drop = Math.min(DROP_MAX, crouch + push * 0.35 + down + this.splitDrop) - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
+    let drop = Math.min(DROP_MAX, crouch + push * 0.35 + down + this.splitDrop) - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
+    // Up out of a low reach no faster than a body stands up from a lunge: the reach follows the stroke's key, which
+    // swings up and in after the contact, and the hips came up 0.19 m in four frames.
+    if (this.dt > 0 && drop < this.dropShown - HIP_RISE * this.dt) drop = this.dropShown - HIP_RISE * this.dt;
+    // Never lower than a deep lunge, thigh level (the drop and the reach together put the hip joints 0.28 m off the
+    // floor, the legs folded flat and turning over).
+    const room = this.hips.matrixWorld.elements[13]! - HIP_FLOOR;
+    if (drop > room) drop = room > 0 ? room : drop < 0 ? drop : 0;
+    this.dropShown = drop;
     const plant = this.plantW >= 0.01;
     const pushed = Math.abs(this.reachX) + Math.abs(this.reachZ);
 
@@ -1374,7 +1400,7 @@ export class Avatar {
       const bd = side === 0 ? bendL : bendR;
       v3.setFromMatrixPosition(leg[1]!.matrixWorld);
       this.pole.set(v3.x + bd.x * 0.8, v3.y + bd.y * 0.8, v3.z + bd.z * 0.8);
-      twoBoneIK(leg[0]!, leg[1]!, leg[2]!, side === 0 ? this.footL : this.footR, this.pole);
+      twoBoneIK(leg[0]!, leg[1]!, leg[2]!, side === 0 ? this.footL : this.footR, this.pole, side === 0 ? this.kneeL : this.kneeR);
       setWorldQuat(leg[2]!, side === 0 ? this.footQL : this.footQR);
       leg[2]!.updateMatrixWorld(true);
     }
@@ -1432,18 +1458,21 @@ export class Avatar {
     const s = this.plantW;
     const drift = LOCK_DRIFT + (STEP_DIST - LOCK_DRIFT) * s;
     const turnMax = LOCK_YAW + (STEP_YAW - LOCK_YAW) * s;
-    // Lunge: a stroke's contact wide of the racket shoulder moves where the foot on that side wants to be.
-    if (this.hasCon && (this.st === ST_PREP || this.st === ST_SWING)) {
+    // Lunge: a stroke's contact wide of the racket shoulder moves where the foot on that side wants to be. Only
+    // with the feet planted (running, the gait does the reaching: a swinging foot sent 0.55 m out at a sprint came
+    // back in a frame), and shared between the feet as the ball goes round in front or behind (picking one foot by
+    // the side the ball is on moved the whole lunge to the other foot in a frame, the knee turning 177 degrees).
+    if (this.hasCon && (this.st === ST_PREP || this.st === ST_SWING) && s > 0.01) {
       const sh = this.armRacket[0]!.matrixWorld.elements;
       const dx = this.conW.x - sh[12]!, dz = this.conW.z - sh[14]!;
       const d = Math.sqrt(dx * dx + dz * dz);
-      const out = Math.min(LUNGE_MAX, Math.max(0, d - LUNGE_FROM) * 1.3);
+      const out = Math.min(LUNGE_MAX, Math.max(0, d - LUNGE_FROM) * 1.3) * s;
       if (out > 0.04) {
-        // The model's left (+x) in world: which side of the body the ball is on.
-        const left = dx * Math.cos(yaw) - dz * Math.sin(yaw) > 0;
-        const A = left ? this.footL : this.footR;
-        A.x += (dx / d) * out;
-        A.z += (dz / d) * out;
+        // The model's left (+x) in world: which side of the body the ball is on, as a share.
+        const lw = smoothstep(-0.35, 0.35, (dx * Math.cos(yaw) - dz * Math.sin(yaw)) / d);
+        const ox = (dx / d) * out, oz = (dz / d) * out;
+        this.footL.x += ox * lw; this.footL.z += oz * lw;
+        this.footR.x += ox * (1 - lw); this.footR.z += oz * (1 - lw);
       }
     }
     for (let f = 0; f < 2; f++) {
@@ -1575,7 +1604,7 @@ export class Avatar {
     q3.multiplyQuaternions(q1, this.grip.qInv);
     this.tgt.copy(this.grip.pos).applyQuaternion(q3);
     this.tgt.subVectors(v1, this.tgt);
-    // Out of the arm's reach: bend the upper body towards it (up to 30 degrees), pivoting at the spine's base.
+    // Out of the arm's reach: bend the upper body towards it (up to SPINE_REACH), pivoting at the spine's base.
     const mu = ua.matrixWorld.elements;
     const sx = mu[12]! - this.tgt.x, sy = mu[13]! - this.tgt.y, sz = mu[14]! - this.tgt.z;
     const excess = Math.sqrt(sx * sx + sy * sy + sz * sz) - this.armLen * 0.98;
@@ -1587,7 +1616,7 @@ export class Avatar {
       const al = Math.sqrt(ax * ax + ay * ay + az * az), bl = Math.sqrt(bx * bx + by * by + bz * bz);
       const cs = (ax * bx + ay * by + az * bz) / Math.max(al * bl, 1e-9);
       const ang = Math.acos(cs < -1 ? -1 : cs > 1 ? 1 : cs);
-      const phi = Math.min(ang, excess / Math.max(al, 0.1), 0.52);
+      const phi = Math.min(ang, excess / Math.max(al, 0.1), SPINE_REACH);
       // Axis a x b.
       const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
       const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
