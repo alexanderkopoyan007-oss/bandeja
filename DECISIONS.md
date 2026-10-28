@@ -157,6 +157,11 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Left as is: a ball that dies right after a junction gains up to 12 ms of travel (it is dead; only where it
     rests moves), and after a flight longer than a tick (8.3 ms) the ball stands still for one tick (a few cm of
     hitch, in junctions only). Gameplay unchanged (24 x 300 s: 317 points, 47.0% / 46.1%, median 11 shots).
+- **Frame rate, before → after Phase 1** (`npm run build && npm run perf`, 30 s each, AI doubles, this M1 Max):
+  medium with the CPU throttled 4x (laptop proxy) p50 2.4 → 2.4 ms, p99 4.5 → 4.3 ms, max 15.6 → 12.0 ms, 0 frames
+  over 20 ms either way, sim p99 0.8 ms both; high (2x pixel ratio) 498 → 539 fps, p99 8.9 → 8.8 ms, 99 → 105
+  frames over 20 ms (0.66% → 0.65%; the same queue stalls with the frame limit off that M1 noted, not new). No
+  regression. 43 → 42 draw calls.
 - **A second V8 trap: exp() calls.** With the junction code, singles allocated in about one run in six (13-30 GCs
   per 100k ticks). `--no-concurrent-recompilation` made it repeat every run (15), and the heap profile showed
   smath's `exp` wrapper not inlined into `Ball.integrate` (spin decay) and `Player.runTime`: its argument and
