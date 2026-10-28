@@ -60,9 +60,10 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
     const plan = mateAi ? mateAi.standPlan : m.stand[i ^ 2]!;
     if (m.taker[team] === (i ^ 2) && plan.valid && plan.bx * s * lane > SWITCH_X) lane = -lane;
   } else if (m.lastStrikeTeam === team && m.lastStrikePlayer >= 0) {
-    // A switched pair of AIs crosses back while its ball is a long way from bouncing over there.
+    // A switched pair of AIs crosses back when its ball was a long way from bouncing over there (judged once,
+    // before the bounce: MatchSim.crossBack).
     const home = m.homeLane[i]!;
-    if (home !== 0 && home !== lane && m.ai[i] && m.ai[i ^ 2] && bounceIsFar(m)) lane = home;
+    if (home !== 0 && home !== lane && m.ai[i] && m.ai[i ^ 2] && m.crossBack[team] === 1) lane = home;
     // Our ball is going over. The serving pair takes the net; otherwise the striker's decision (an AI decides
     // as it picks its shot), or for a human striker: up after a shot from the front part of the court or a
     // lob that gets past the opponents.
@@ -85,7 +86,7 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
 
 /** The ball's next bounce on the floor is more than SWITCH_BACK_T away. (A boolean: a double returned from a call
  * V8 doesn't inline is boxed.) */
-function bounceIsFar(m: MatchSim): boolean {
+export function bounceIsFar(m: MatchSim): boolean {
   const pr = m.pred;
   for (let k = 0; k < pr.n; k++) if ((pr.flags[k]! & PF_FLOOR) !== 0) return pr.t[k]! - m.time > SWITCH_BACK_T;
   return false;

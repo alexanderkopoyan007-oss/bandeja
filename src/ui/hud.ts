@@ -44,7 +44,7 @@ const CSS = `
 #hud .shot { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
   color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
 /* The AI partner's call: the shot line's type, above the hint. */
-#hud .mate { position: absolute; left: 50%; bottom: 206px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
+#hud .mate { position: absolute; left: 50%; bottom: 224px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
   color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
 
 /* Hints: a glass pill with key caps. */

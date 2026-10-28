@@ -137,6 +137,10 @@ export class SimpleAi {
     this.reactAt = m.time + this.reaction() * (0.8 + 0.4 * m.aiRng.next());
     this.correctAt = -1;
     this.planVersion = -1;
+    // The plan was for the last ball: until this one is planned (after the reaction) nobody may read it as this
+    // ball's (the partner's lane switch did, and ran across and back on 13% of the balls its mate took).
+    this.st.valid = false;
+    this.reach = true;
     this.ohKind = OH_ANY;
     this.planned = false;
     this.pressed = false;
@@ -341,6 +345,12 @@ export class SimpleAi {
   /** From where we stand, the ball still passes within reach (trackRelease): else the swing is not made. */
   private reach = true;
 
+  /** Charging, and from where we stand the ball doesn't pass within reach: the avatar holds the backswing (it would
+   * otherwise swing all the way into nothing before the stand-down). */
+  get beaten(): boolean {
+    return this.pressed && !this.released && !this.reach;
+  }
+
   /** Where drift steers to, and by when (goBy 0: no hurry). Fields, not arguments: see think. */
   private goX = 0;
   private goZ = 0;
@@ -409,16 +419,21 @@ export class SimpleAi {
   /** The new prediction no longer brings the ball to the planned contact (within SURPRISE m at its moment). */
   private surprised(m: MatchSim): boolean {
     const pr = m.pred;
-    const st = this.st;
     const t = this.idealT;
-    if (!st.valid || t <= m.time) return false;
+    if (!this.st.valid || t <= m.time) return false;
     for (let i = 0; i < pr.n; i++) {
       if (pr.t[i]! < t) continue;
-      const dx = pr.x[i]! - st.bx, dy = pr.y[i]! - st.by, dz = pr.z[i]! - st.bz;
+      const dx = pr.x[i]! - this.refX, dy = pr.y[i]! - this.refY, dz = pr.z[i]! - this.refZ;
       return dx * dx + dy * dy + dz * dz > SURPRISE * SURPRISE;
     }
     return true;
   }
+
+  /** Where the plan's prediction put the ball at the planned moment (idealT): what a later bounce is judged against
+   * (a block's moment is not the stand plan's contact, so st.b* would call every block surprised). */
+  private refX = 0;
+  private refY = 0;
+  private refZ = 0;
 
   private plan(m: MatchSim): void {
     const pr = m.pred;
@@ -474,6 +489,11 @@ export class SimpleAi {
     this.standX = sx;
     this.standZ = sz;
     this.idealT = t;
+    for (let i = 0; i < pr.n; i++) {
+      if (pr.t[i]! < t) continue;
+      this.refX = pr.x[i]!; this.refY = pr.y[i]!; this.refZ = pr.z[i]!;
+      break;
+    }
     if (changed) this.noise = rng.normal() * this.timingSigma() * this.difficulty(m, height, st.afterWall);
     this.releaseAt = this.idealT + this.noise;
     this.planned = true;
