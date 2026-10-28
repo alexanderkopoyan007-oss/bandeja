@@ -285,12 +285,13 @@ export class Game {
       this.pad.poll(this.kb, now);
       if (this.pad.held !== 0) this.sound.unlock();
     }
-    // ...except the tick that holds the contact a held swing is waiting for: a release that arrives for a moment
-    // the sim has already run past would meet the ball up to a tick late. That tick waits until now reaches it.
+    // ...except while the human holds a swing: the release can come for any moment from now on, and one that
+    // arrives for a moment the sim has already run past would meet the ball up to a tick late. Until it goes the
+    // sim stays at or behind now (drawn from its newest state, at most a tick behind).
     const hp = this.sim.players[human]!;
-    const hold = ahead && !this.opts.autoplay && hp.swing === SW_CHARGE ? this.sim.focusIdeal(human) : -1;
+    const holding = ahead && !this.opts.autoplay;
     while ((ahead ? this.sim.time < simNow : this.sim.time + DT <= simNow) && n < MAX_TICKS_PER_FRAME) {
-      if (hold >= this.sim.time && hold < this.sim.time + DT && this.sim.time + DT > simNow) break;
+      if (holding && hp.swing === SW_CHARGE && this.sim.time + DT > simNow) break;
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
       this.sim.step(this.inputs);
       n++;

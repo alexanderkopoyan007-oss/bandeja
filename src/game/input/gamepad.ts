@@ -35,6 +35,8 @@ export class GamepadInput {
   private readonly down: boolean[] = [];
   private rumbleUntil = 0;
   private lastPoll = 0;
+  /** The queue button changes go into (set by poll). */
+  private kb: KeyboardInput | null = null;
 
   constructor(target: Window) {
     target.addEventListener('gamepadconnected', (e) => {
@@ -43,6 +45,10 @@ export class GamepadInput {
     target.addEventListener('gamepaddisconnected', (e) => {
       if ((e as GamepadEvent).gamepad.index === this.index) {
         this.index = -1;
+        // Let go of whatever was held (else the sim's swing waits for a release that never comes), and forget
+        // the buttons' states (else the next press of one after reconnecting reads as no change).
+        for (let b = 1; b <= this.held; b <<= 1) if (this.held & b) this.kb?.inject(false, b, e.timeStamp);
+        for (let k = 0; k < this.down.length; k++) this.down[k] = false;
         this.held = 0;
         this.x = 0;
         this.y = 0;
@@ -57,6 +63,7 @@ export class GamepadInput {
 
   /** Read the pad; button changes go into the keyboard's timestamped queue (one queue, one order). */
   poll(kb: KeyboardInput, now: number): void {
+    this.kb = kb;
     if (this.index < 0) return;
     const pad = navigator.getGamepads()[this.index];
     if (!pad || !pad.connected) return;
