@@ -183,8 +183,8 @@ export class MatchSim {
   serveNo = 1;
   tossIdeal = 0;
   tossEnd = 0;
-  /** Serve target box for the current point. */
-  readonly box = { x0: 0, x1: 0, z0: 0, z1: 0 };
+  /** Serve target box for the current point (-0s: doubles from the start, like Rally.box; z0/z1 swap 0 and a fraction). */
+  readonly box = { x0: -0, x1: -0, z0: -0, z1: -0 };
   /** Last strike: for body-hit grace and presentation. */
   lastStrikeTeam = -1;
   lastStrikePlayer = -1;

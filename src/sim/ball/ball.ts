@@ -688,8 +688,10 @@ export class Ball {
       if (al < E[i + 3]! || al > E[i + 4]!) continue;
       this.best = f;
       this.hitKind = HIT_EDGE;
-      this.hitSurface = E[i + 5]!;
-      this.hitWall = E[i + 6]!;
+      // `| 0`: Court.edges is a double array, and a double stored in these integer fields (the first edge a ball
+      // touches, mid-rally) changed the Ball's field representation and deoptimised the whole step tree at once.
+      this.hitSurface = E[i + 5]! | 0;
+      this.hitWall = E[i + 6]! | 0;
       const ss = s0 + ds * f;
       const tt = t0 + dt * f;
       const l = sqrt(ss * ss + tt * tt);
@@ -719,8 +721,8 @@ export class Ball {
       if (f < 0 || f >= this.best) continue;
       this.best = f;
       this.hitKind = HIT_EDGE;
-      this.hitSurface = K[i + 3]!;
-      this.hitWall = K[i + 4]!;
+      this.hitSurface = K[i + 3]! | 0;
+      this.hitWall = K[i + 4]! | 0;
       const sx = ox + dx * f, sy = oy + dy * f, sz = oz + dz * f;
       const l = sqrt(sx * sx + sy * sy + sz * sz);
       n.set(sx / l, sy / l, sz / l);
@@ -840,6 +842,10 @@ export class Ball {
   private resolve(world: BallWorld, rng: Rng | null): void {
     let surf: SurfaceSpec = world.floor;
     let flat = true;
+    // Every surface read here, on every contact: read only on its own rare branch (the first post or net-cord hit,
+    // mid-rally), a load has no type feedback yet and the function deoptimises there (CLAUDE.md's trap).
+    const S = world.surfaces;
+    const sGlass = S.glass, sSeam = S.seam, sNet = S.net, sPost = S.post;
     switch (this.hitKind) {
       case HIT_FLOOR:
         n.set(0, 1, 0);
@@ -851,16 +857,16 @@ export class Ball {
         break;
       case HIT_EDGE:
         // n was set by tryEdges. A frameless glass top is polished glass; anything else is a frame.
-        surf = this.hitSurface === SURF_GLASS ? world.surfaces.glass : world.surfaces.seam;
+        surf = this.hitSurface === SURF_GLASS ? sGlass : sSeam;
         this.hitKind = HIT_WALL;
         flat = false;
         break;
       case HIT_NETCORD:
-        surf = world.surfaces.net;
+        surf = sNet;
         flat = false;
         break;
       case HIT_POST:
-        surf = world.surfaces.post;
+        surf = sPost;
         flat = false;
         break;
       case HIT_NET: {
