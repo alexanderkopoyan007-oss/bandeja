@@ -4,24 +4,35 @@
 // Esc / Backspace / B, and follows the mouse. Focus is real DOM focus on real buttons, with ARIA roles, so a screen
 // reader follows it. Screens slide in (a fade only with reduced motion).
 
-const CSS = `
+export const MENU_CSS = `
 #menu { position: fixed; inset: 0; z-index: 10; display: none; font: 15px/1.3 ui-sans-serif, system-ui, sans-serif;
   color: #e8ecef; --display: "Avenir Next Condensed", "DIN Condensed", "Arial Narrow", system-ui, sans-serif;
-  --accent: #ffd84a; --glass: rgba(9,12,17,.74); --edge: rgba(255,255,255,.12); zoom: var(--ui-scale, 1); }
+  --accent: #ffd84a; --glass: rgba(9,12,17,.74); --edge: rgba(255,255,255,.12); zoom: var(--ui-scale, 1);
+  --col: min(520px, 88vw); }
 #menu.on { display: block; }
-#menu .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,7,10,.8) 0%, rgba(5,7,10,.7) 34%, rgba(5,7,10,.4) 52%, rgba(5,7,10,.08) 100%);
+#menu.wide { --col: min(760px, 88vw); }
+/* The shade stays at .7 or darker under the whole menu column at any width (its stop is tied to the column's
+   right edge, plus a margin), then fades over the scene; at 1920 px this is where the old 34% stop was. */
+#menu .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,7,10,.8) 0, rgba(5,7,10,.7) calc(6vw + var(--col) + 40px),
+  rgba(5,7,10,.4) calc(6vw + var(--col) + 40px + 18vw), rgba(5,7,10,.08) 100%);
   opacity: 0; transition: opacity .35s; }
 #menu.on .shade { opacity: 1; }
 #menu .brand { position: absolute; left: 6vw; top: 6vh; font: italic 800 30px/1 var(--display); letter-spacing: .1em; color: #fff; }
 #menu .brand b { color: var(--accent); font-weight: 800; }
-#menu .panel { position: absolute; left: 6vw; top: calc(6vh + 54px); bottom: calc(5vh + 34px); width: min(520px, 88vw);
+#menu .panel { position: absolute; left: 6vw; top: calc(6vh + 54px); bottom: calc(5vh + 34px); width: var(--col);
   display: flex; flex-direction: column; justify-content: center; }
-#menu .panel.wide { width: min(760px, 88vw); }
 #menu .screen { animation: menu-in .22s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; min-height: 0; max-height: 100%; }
 #menu .screen.back { animation-name: menu-back; }
 @keyframes menu-in { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes menu-back { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
 #menu.calm .screen { animation: menu-fade .2s linear; }
+#menu.calm .item.listening .val { animation: none; }
+/* Reduced motion from the system, before the settings have been read (and unless Motion is set to Full). */
+@media (prefers-reduced-motion: reduce) {
+  :root:not(.full-motion) #menu .screen { animation: menu-fade .2s linear; }
+  :root:not(.full-motion) #menu .item.listening .val { animation: none; }
+  :root:not(.full-motion) #menu .item, :root:not(.full-motion) #menu .shade { transition: none; }
+}
 @keyframes menu-fade { from { opacity: 0; } to { opacity: 1; } }
 #menu h1 { margin: 0 0 4px; font: italic 800 52px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; color: #fff;
   text-shadow: 0 4px 24px rgba(0,0,0,.5); }
@@ -48,7 +59,7 @@ const CSS = `
 #menu .group { margin: 14px 0 6px 4px; font: 700 11px/1 var(--display); letter-spacing: .26em; text-transform: uppercase; color: rgba(255,255,255,.72); }
 #menu .desc { min-height: 38px; flex: none; margin-top: 12px; font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; color: #d3d9de; max-width: 520px;
   text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.6); }
-#menu .side { position: absolute; left: calc(6vw + min(520px, 88vw) + 4vw); top: calc(6vh + 54px); bottom: calc(5vh + 34px);
+#menu .side { position: absolute; left: calc(6vw + var(--col) + 4vw); top: calc(6vh + 54px); bottom: calc(5vh + 34px);
   width: min(420px, 34vw); display: flex; flex-direction: column; justify-content: center; overflow-y: auto; }
 #menu .card { padding: 16px 18px; border-radius: 10px; background: var(--glass); box-shadow: inset 0 0 0 1px var(--edge); backdrop-filter: blur(12px); }
 #menu .card h2 { margin: 0 0 10px; font: 700 12px/1 var(--display); letter-spacing: .24em; text-transform: uppercase; color: var(--accent); }
@@ -78,8 +89,8 @@ export interface Choice<T = unknown> { value: T; label: string }
 export interface Item {
   kind: 'button' | 'choice' | 'slider' | 'key' | 'group';
   label: string;
-  /** What it does or means, shown under the list while focused. */
-  desc?: string;
+  /** What it does or means, shown under the list while focused (a function: worked out each time it is shown). */
+  desc?: string | (() => string);
   primary?: boolean;
   action?: () => void;
   options?: Choice[];
@@ -140,7 +151,7 @@ export class Menu {
     if (!document.getElementById('menu-css')) {
       const st = document.createElement('style');
       st.id = 'menu-css';
-      st.textContent = CSS;
+      st.textContent = MENU_CSS;
       document.head.appendChild(st);
     }
     this.root = parent.appendChild(document.createElement('div'));
@@ -218,10 +229,24 @@ export class Menu {
     this.visible = true;
     this.root.classList.add('on');
     this.padPrev.clear();
+    // A direction held from before (the stick still pushed as a menu opens) starts afresh: no repeat at once.
+    this.repeatAt.clear();
     this.primePad();
+    this.startPadLoop();
+  }
+
+  /**
+   * One pad loop at a time, only while a menu is up. The loop clears its id before it polls, so a hide() from
+   * inside the poll (a button that starts a match) ends it, and a show() from inside it (hide, then open another
+   * screen) starts the one next loop: cancelAnimationFrame can't stop a callback that is already running.
+   */
+  private startPadLoop(): void {
+    if (this.raf) return;
     const loop = (): void => {
+      this.raf = 0;
+      if (!this.visible) return;
       this.pollPad();
-      this.raf = requestAnimationFrame(loop);
+      if (this.visible && !this.raf) this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
   }
@@ -230,9 +255,16 @@ export class Menu {
     if (!this.visible) return;
     this.visible = false;
     this.root.classList.remove('on');
-    cancelAnimationFrame(this.raf);
+    if (this.raf) cancelAnimationFrame(this.raf);
+    this.raf = 0;
     this.stack = [];
+    // Nothing of the screen that was up can be pressed or changed any more (a late pad poll, a stray click).
+    this.items = [];
+    this.els = [];
+    this.focusIdx = 0;
+    this.descEl = null;
     this.listening = -1;
+    this.repeatAt.clear();
     (document.activeElement as HTMLElement | null)?.blur?.();
   }
 
@@ -240,7 +272,7 @@ export class Menu {
     const s = this.current;
     if (!s) return;
     this.listening = -1;
-    this.panel.classList.toggle('wide', !!s.wide);
+    this.root.classList.toggle('wide', !!s.wide);
     const scr = el('div', still ? 'screen still' : back ? 'screen back' : 'screen');
     if (still) scr.style.animation = 'none';
     const h1 = scr.appendChild(document.createElement('h1'));
@@ -284,11 +316,11 @@ export class Menu {
     this.descEl = scr.appendChild(el('div', 'desc'));
     this.descEl.setAttribute('aria-live', 'polite');
     const side = s.side?.() ?? '';
-    // Beside the list on a wide window, under it on a narrow one (one copy is hidden by the media query).
+    // Beside the list on a wide window, under it on a narrow one. The media query hides one copy with
+    // display: none, which also takes it out of the accessibility tree, so the copy on screen is the one read.
     if (side) {
       const inl = scr.appendChild(el('div', 'inline'));
       inl.innerHTML = side;
-      inl.setAttribute('aria-hidden', 'true');
     }
     this.panel.replaceChildren(scr);
     this.sideEl.innerHTML = side;
@@ -350,7 +382,7 @@ export class Menu {
     b.classList.add('focus');
     b.focus({ preventScroll: true });
     b.scrollIntoView({ block: 'nearest' });
-    if (this.descEl) this.descEl.textContent = this.items[i]!.desc ?? '';
+    if (this.descEl) this.descEl.textContent = descOf(this.items[i]!);
   }
 
   private move(d: number): void {
@@ -393,8 +425,10 @@ export class Menu {
       this.listening = this.focusIdx;
       const b = this.els[this.focusIdx]!;
       b.classList.add('listening');
-      b.querySelector('.v')!.textContent = 'Press a key · Esc cancels';
-      if (this.descEl) this.descEl.textContent = 'Press the key to use. Esc keeps the one there is.';
+      // Keys are pressed on the keyboard even from a pad; the pad's B cancels as Esc does.
+      const cancel = this.usingPad ? 'B' : 'Esc';
+      b.querySelector('.v')!.textContent = `Press a key · ${cancel} cancels`;
+      if (this.descEl) this.descEl.textContent = `Press the key to use. ${cancel} keeps the one there is.`;
     }
   }
 
@@ -433,6 +467,7 @@ export class Menu {
   }
 
   private pollPad(): void {
+    if (!this.visible) return;
     const p = firstPad();
     if (!p) return;
     const now = performance.now();
@@ -458,6 +493,7 @@ export class Menu {
       else if (id === 101) this.move(1);
       else if (id === 102) this.change(-1);
       else this.change(1);
+      if (!this.visible) return;
       this.drawFoot();
     }
     const a = edge(0, !!p.buttons[0]?.pressed);
@@ -472,12 +508,13 @@ export class Menu {
     if (a) this.activate();
     else if (b) this.back();
     else if (start) {
-      // Start: the pause screen resumes; elsewhere it confirms.
-      const s = this.current;
-      if (s?.id === 'pause') this.back();
-      else this.activate();
+      // Start: in the pause menu (on any of its screens: Settings, Controls) it resumes, as it paused; elsewhere
+      // it presses the focused button (never changes a setting).
+      const pause = this.stack.find((s) => s.id === 'pause');
+      if (pause?.back) { this.onSound?.('back'); pause.back(); }
+      else if (this.items[this.focusIdx]?.kind === 'button') this.activate();
     }
-    if (a || b || start) this.drawFoot();
+    if (this.visible && (a || b || start)) this.drawFoot();
   }
 
   private footShown = '';
@@ -494,6 +531,10 @@ export class Menu {
     this.footShown = html;
     this.foot.innerHTML = html;
   }
+}
+
+function descOf(it: Item): string {
+  return typeof it.desc === 'function' ? it.desc() : it.desc ?? '';
 }
 
 function firstPad(): Gamepad | null {
