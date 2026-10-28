@@ -184,7 +184,7 @@ const REACH_TURN_RATE = 40;
  * Lowest the hips bone goes (m, world): a deep lunge with the front thigh level, the hip joints about 0.5 m up
  * (knee height on the Y Bot).
  */
-const HIP_FLOOR = 0.58;
+const HIP_FLOOR = 0.66;
 /** The racket's points (its frame), flat. */
 const RACKET_P = Float64Array.from(RACKET_PTS.flatMap((p) => [p.x, p.y, p.z]));
 /**
@@ -210,6 +210,11 @@ function guardCaps(asset: PlayerAsset): { bones: Int32Array; r: Float64Array } {
 }
 /** How long the follow-through's share of the trunk's movement takes to let go when a new stroke starts (s). */
 const FINISH_EASE = 0.15;
+/**
+ * The share of a low ball's shortfall the hips take by dropping; the rest is left to the upper body bending towards
+ * it (SPINE_REACH, after the legs): taken by the hips alone every ball under 0.6 m was met in a full squat.
+ */
+const DOWN_SHARE = 0.55;
 /** Most the upper body bends from the spine's base towards a ball out of the arm's reach (rad). */
 const SPINE_REACH = 0.75;
 /** Fastest the hips come back up from a drop (m/s): standing up out of a lunge. */
@@ -259,6 +264,8 @@ const ml = new THREE.Matrix4();
 /** Lunge: a planned contact further than LUNGE_FROM (m, flat) from the racket shoulder steps the foot on its side out. */
 const LUNGE_FROM = 0.9;
 const LUNGE_MAX = 0.55;
+/** How far a low ball (under 0.45 m, from 0.95 m) steps the foot on its side towards it (m). */
+const LUNGE_LOW = 0.45;
 /** Locomotion: how close to halfway between two directions (a quarter turn = 1) their clips cross-fade. */
 const WARP_BAND = 0.1;
 
@@ -1392,7 +1399,7 @@ export class Avatar {
     const push = dh > 1e-3 ? Math.min(0.4, (short * dh) / len) : 0;
     this.reachX = dh > 1e-3 ? (dx / dh) * push : 0;
     this.reachZ = dh > 1e-3 ? (dz / dh) * push : 0;
-    const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) : 0;
+    const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * DOWN_SHARE : 0;
     // The knees bend no faster than a body drops (the crouch jumped when the stroke or its contact changed). The
     // reach follows the stroke's key, which is smoothed already.
     let crouch = this.crouch;
@@ -1518,7 +1525,10 @@ export class Avatar {
       const sh = this.armRacket[0]!.matrixWorld.elements;
       const dx = this.conW.x - sh[12]!, dz = this.conW.z - sh[14]!;
       const d = Math.sqrt(dx * dx + dz * dz);
-      const out = Math.min(LUNGE_MAX, Math.max(0, d - LUNGE_FROM) * 1.3) * s;
+      // A low ball steps the foot towards it too, so the body goes down into a lunge (front knee bent, the back one
+      // low) rather than a squat over feet at standing width (every ball under 0.6 m was met in a full squat).
+      const wide = Math.max(0, d - LUNGE_FROM) * 1.3, low = LUNGE_LOW * smoothstep(0.95, 0.45, this.conW.y);
+      const out = Math.min(LUNGE_MAX, wide > low ? wide : low) * s;
       if (out > 0.04) {
         // The model's left (+x) in world: which side of the body the ball is on, as a share.
         const lw = smoothstep(-0.35, 0.35, (dx * Math.cos(yaw) - dz * Math.sin(yaw)) / d);

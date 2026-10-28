@@ -537,3 +537,11 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   this machine): medium with the CPU throttled 4x p50 2.5 / 2.5 ms, p99 4.5 / 4.6 ms before; 2.5 ms, p99 4.3 ms
   after (one run at 2.8 / 5.1 ms overlapped a point-mix run); high at 2x p99 9.2 → 8.8-9.1 ms, 0.66% of frames
   over 20 ms both (the queue stalls seen since M1). Draw calls 42 → 43.
+- **Low balls: a lunge, not a squat.** Real-Chrome frames at stroke contacts showed every ball under 0.6 m met in
+  a full squat, knees splayed, the hips on the floor limit (90% of those contacts; hips bone at 0.58 m). Three
+  changes: a low ball steps the foot on its side towards it (`LUNGE_LOW` 0.45 m from a contact at 0.95 m down to
+  0.45 m, shared between the feet as the wide-ball lunge is), the hips take 55% of the arm's vertical shortfall
+  and leave the rest to the upper body bending towards the ball (`DOWN_SHARE`), the racket head drops further for
+  a low ball (48° below level at the lowest, was 33°: a low volley's head below the wrist), and the hips stop at
+  0.66 m (`HIP_FLOOR`, a deep lunge). Feet apart at low contacts p50 0.58 → 0.78 m; contact p90 7.7-8.0 cm
+  (unchanged within a few mm), pops 24-30.5 per player-minute.
