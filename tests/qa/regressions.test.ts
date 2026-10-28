@@ -7,7 +7,8 @@ import { Rally, R_LET, R_NONE, R_POINT, WHY_SERVE_MISSED, WHY_SERVE_LET, WHY_HIT
 import { SURF_GLASS, SURF_MESH } from '../../src/sim/court/court.ts';
 import { Ball } from '../../src/sim/ball/ball.ts';
 import { makeWorld, makeNetCloth } from '../../src/sim/setup.ts';
-import type { NetCloth } from '../../src/sim/court/netCloth.ts';
+import { Score, MODE_ADVANTAGE, FINAL_ADVANTAGE, FINAL_TIEBREAK7, FINAL_SUPERTB10, FINAL_NORMAL } from '../../src/sim/rules/score.ts';
+import { restCacheSize, type NetCloth } from '../../src/sim/court/netCloth.ts';
 
 /** A singles match with the human (player 0) serving, stepped to the moment they may drop the ball. */
 function serving(): { m: MatchSim; f: InputFrame } {
@@ -332,5 +333,123 @@ describe('the serve\'s drop behind the line (QA army, FIP 6.2 / 7.1.a)', () => {
     expect(sv.pos.x).toBe(sx);
     expect(sv.pos.z).toBe(sz);
     expect(m.ball.pos.z).toBe(bz);
+  });
+});
+
+describe('a ball coming down onto the top corner of the step in the side fence (QA army r3)', () => {
+  // Match 1463 (seed0 2): a ball falling from 4.6 m beside the side wall's 3 m centre section crossed into the 4 m
+  // section right at the step's top corner. Neither edge's line (the step, the 4 m top) covers its end point, and
+  // the face isn't there before the step: the ball went 3.2 cm into the side wall for a tick.
+  const w = makeWorld();
+  const r = w.spec.radius;
+
+  function drop(sx: number, sz: number, phase: number) {
+    const b = new Ball();
+    // The army's ball 3 ticks before the corner, moved along its path by a fraction of a tick.
+    const vx = -1.686 * sx, vy = -6.896, vz = -6.619 * sz;
+    b.pos.set(-4.957 * sx + vx * DT * phase, 4.154 + vy * DT * phase, -5.856 * sz + vz * DT * phase);
+    b.vel.set(vx, vy, vz);
+    b.spin.set(-47 * sz, -7 * sx * sz, 27 * sx);
+    let deepest = 0, bounced = false;
+    for (let t = 0; t < 0.25; t += DT) {
+      b.step(w, DT, null);
+      const p = b.pos;
+      // Inside the 4 m section below its top, the centre must stay a radius off the wall's plane.
+      if (Math.abs(p.z) > w.court.halfL - 4 + 1e-3 && p.y < 4 - 1e-3) deepest = Math.max(deepest, Math.abs(p.x) - (w.court.halfW - r));
+      if (b.vel.x * sx > 0) bounced = true;
+    }
+    return { deepest, bounced };
+  }
+
+  it('bounces off the corner and never goes into the wall, at all four step corners and any phase in the tick', () => {
+    for (const sx of [1, -1]) {
+      for (const sz of [1, -1]) {
+        for (let k = 0; k < 16; k++) {
+          const d = drop(sx, sz, k / 16);
+          expect(d.deepest, `corner ${sx},${sz} phase ${k}/16`).toBeLessThan(2e-3);
+          expect(d.bounced).toBe(true);
+        }
+      }
+    }
+  });
+});
+
+describe('the final-set rule in a one-set match (QA army, score oracle; FIP 1.score.4)', () => {
+  // A one-set match has no deciding set: its only set is a normal set, with a tie-break at 6-6 whatever the
+  // final-set rule says. Before the fix "no tie-break" applied there (4 matches' scores went on past 6-6, and every
+  // later call disagreed) while a match tie-break didn't.
+  function toSixAll(finalSet: number): Score {
+    const sc = new Score({ mode: MODE_ADVANTAGE, setsToWin: 1, gamesPerSet: 6, finalSet });
+    for (let g = 0; g < 12; g++) for (let k = 0; k < 4; k++) sc.pointWon(g & 1);
+    return sc;
+  }
+
+  it('plays a normal tie-break at 6-6 under every final-set rule', () => {
+    for (const fs of [FINAL_NORMAL, FINAL_ADVANTAGE, FINAL_TIEBREAK7, FINAL_SUPERTB10]) {
+      const sc = toSixAll(fs);
+      expect([sc.games[0], sc.games[1]], `final set ${fs}`).toEqual([6, 6]);
+      expect(sc.tiebreak, `final set ${fs}`).toBe(true);
+      // ...to 7 (a match tie-break would be to 7 or 10 and replace the set; a normal one is to 7, win by two).
+      for (let k = 0; k < 7; k++) sc.pointWon(0);
+      expect(sc.winner, `final set ${fs}`).toBe(0);
+    }
+  });
+});
+
+describe('a smash into the top of the net keeps its side while the netting holds it (QA army)', () => {
+  // Smashes driven down into the top of the net climbed out of the pocket with the centre past the cable's line and
+  // above it, and were put on the far side while the netting still held them (27 matches of the first 2000 showed
+  // it). The side changes only on crossing the cable's line above it, never while the netting grips the ball.
+  const w = makeWorld();
+  const r = w.spec.radius;
+
+  it('no ball struck from the near side is put on the far side while the netting holds it, and each lands on the side it is on', () => {
+    let held = 0, wrong = 0, back = 0, over = 0;
+    const bad: string[] = [];
+    // Where the climb-out happens (a 1344-ball sweep found it there and only there: 28 with the old rule, 0 now).
+    for (const x of [-2.5, 0.9, 2.1]) {
+      for (const dy of [-0.12, -0.1, -0.08, 0.01]) {
+        for (const speed of [30, 38]) {
+          for (const pitch of [-0.15, -0.45, -0.6]) {
+            for (const spin of [0, -150]) {
+              const net: NetCloth = makeNetCloth(w);
+              const b = new Ball();
+              b.cloth = net;
+              const d0 = 1.2;
+              b.pos.set(x, net.cableY(x) + dy - Math.tan(pitch) * d0, d0);
+              b.vel.set(0, speed * Math.sin(pitch), -speed * Math.cos(pitch));
+              b.spin.set(spin, 0, 0);
+              let first = 0, heldWrong = false;
+              for (let t = 0; t < 1.5 && first === 0; t += DT) {
+                net.beginTick();
+                b.step(w, DT, null);
+                if (!b.coupled && net.awake) net.freeTick();
+                if (b.inNet && b.netSide !== 1) heldWrong = true;
+                // The first floor contact well clear of the pocket.
+                if (b.pos.y < r + 0.005 && Math.abs(b.pos.z) > 0.4) first = b.pos.z > 0 ? 1 : -1;
+              }
+              const tag = `x ${x} dy ${dy} v ${speed} pitch ${pitch} spin ${spin}`;
+              if (heldWrong) { held++; if (bad.length < 4) bad.push(`${tag}: far side while held`); }
+              if (first === 0) continue;
+              if (first > 0) back++; else over++;
+              if (b.netSide !== first) { wrong++; if (bad.length < 4) bad.push(`${tag}: down at z ${b.pos.z.toFixed(2)}, side ${b.netSide}`); }
+            }
+          }
+        }
+      }
+    }
+    expect(held + wrong, bad.join('; ')).toBe(0);
+    // The sweep holds both kinds: smashes that stay on the hitter's side and ones that go over.
+    expect(back).toBeGreaterThan(10);
+    expect(over).toBeGreaterThan(0);
+  });
+});
+
+describe('the net\'s settled-shape cache stays bounded (QA army heap check)', () => {
+  // The cache was keyed on the air's density and never emptied: 2000 climates grew the army's heap 9 KB a match.
+  it('keeps at most 16 shapes however many climates are played', () => {
+    for (let k = 0; k < 24; k++) makeNetCloth(makeWorld({ env: { temperatureC: 5 + k, altitudeM: 40 * k } }));
+    expect(restCacheSize()).toBeLessThanOrEqual(16);
+    expect(restCacheSize()).toBeGreaterThan(8);
   });
 });

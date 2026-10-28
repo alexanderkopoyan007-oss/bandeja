@@ -1424,8 +1424,10 @@ export class MatchSim {
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);
     h.num(this.crossBack[0]!).num(this.crossBack[1]!).num(this.claimGap[0]!).num(this.claimGap[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
+    h.num(this.tossBounces).num(this.tossBX).num(this.tossBZ);
     const st: number[] = [];
     this.score.writeState(st);
+    this.rally.writeState(st);
     for (const v of st) h.num(v);
     return h.h;
   }

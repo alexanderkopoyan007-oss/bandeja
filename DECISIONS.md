@@ -1091,9 +1091,24 @@ What was found and fixed, with the commands that reproduce it: `docs/qa/REPORT.m
   1500°/s. Keeping last frame's way round in that fade was tried first: it spun the arm the long way (27 of 60
   configurations then turned a joint over 105° in a frame).
 - **Monkeys are judged on the AI's limits and 7 of 60 fail**, all on per-minute counts (pops, racket in the body,
-  hand in the torso). They swing three times as often as the AI and somewhat more jerkily per swing; the limits stay
-  where they are (OPEN_QUESTIONS.md).
-- **Checker fixes**: the through-net check took a pocket's entry below the tape for the crossing of a ball that
-  later went over the cable, and assumed the net at z = 0 (a pushed-back cable isn't).
+  hand in the torso). They swing far more often than the AI (46 swings to 16 in one configuration's 90 s); per swing
+  the two overlap (1.1-4.0 pops a swing against 0.5-4.8 over six configurations). The limits stay where they are
+  (OPEN_QUESTIONS.md).
+- **Edge end points are contacts** (second army run, match 1463): a ball coming down onto the top corner of the
+  side fence's step (3 m to 4 m) met neither edge's line within its length and no face, and went 3.2 cm into the
+  wall for a tick. `Court.corners` lists every edge's end points once and `Ball.tryCorners` tests the ball's path
+  against a sphere round each, near the walls only. `npm run alloc` six times after: singles 3, doubles 4-5 GCs per
+  100k ticks, as before.
+- **Checker fixes** (four): the through-net check took a pocket's entry below the tape for the crossing of a ball
+  that later went over the cable, and assumed the net at z = 0 (a pushed-back cable isn't); the spin check's flat
+  900 rad/s flagged balls leaving a gripping bounce (now rim speed over 1.5 x the ball's speed + 8 m/s, or over
+  1600 rad/s); the low side-flip check read a crossing just above the tape as one under it.
+- **Regression tests for every fix**, each checked to fail on the code before it (the verifier found #8, #10 and the
+  animation fixes had none): `tests/qa/regressions.test.ts` (rules, physics, the bounded cache) and
+  `tests/qa/animRegressions.test.ts` (the four animation-army configurations that turned a joint 97-137 degrees in a
+  frame before the fixes and 37-49 after; all four fail on the old avatar code). The smash test needed a steeper
+  sweep than the first one tried: of 1344 smashes into the net top, 28 were put on the far side while held under the
+  old rule, none now.
+- **The rally's state and the serve's drop point are in `MatchSim.hash()`** (new state goes in the hash).
 - **Not built**: out-of-court play (OPEN_QUESTIONS.md), touching the net (players are kept 0.3 m off it), a hall
   ceiling.
