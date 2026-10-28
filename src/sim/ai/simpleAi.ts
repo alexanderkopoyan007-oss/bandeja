@@ -19,6 +19,13 @@ import skillData from '../../../data/ai-skill.json' with { type: 'json' };
 const PACE_SHARE = 0.5;
 /** How far (m) a ball event must move the planned contact to need a correction (AI.correctAt). */
 const SURPRISE = 0.15;
+/**
+ * Extra timing spread (per unit of the SD) for a ball off the glass: a wall shot is read and met on a ball that
+ * changed direction, and is the least accurate stroke (Delgado García et al. 2017's target test). At 0.3 the top
+ * AI erred on 3.1-3.5% of its back-wall shots against the pros' 5.4-6.3% (and rallies ran 11.7 shots); 1.5 gives
+ * 5.5% (and 11.2).
+ */
+const AFTER_WALL = 1.5;
 /** Chance a pair follows its chiquita in to the net, per unit of the style's net. */
 const CHIQ_NET = 0.35;
 const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number };
@@ -258,6 +265,13 @@ export class SimpleAi {
         this.pressed = true;
       }
       if (this.pressed && !this.released && p.swing === SW_CHARGE && !correcting) this.trackRelease(m, s);
+      if (this.pressed && !this.released && p.swing === SW_CHARGE && t1 > this.releaseAt && !this.reach) {
+        // Beaten: the ball no longer passes within reach of where we are. A player stretches for it or lets it go;
+        // they don't take a full swing at the air (40% of points at the top level ended on such a swing: the
+        // opponents' winners).
+        m.standDown(this.index);
+        this.released = true;
+      }
       if (this.pressed && !this.released && p.swing === SW_CHARGE && t1 > this.releaseAt) {
         this.aimAbs(f);
         if (p.shot === SHOT_BANDEJA && this.smash) f.held |= BTN_POWER;
@@ -296,6 +310,7 @@ export class SimpleAi {
   private trackRelease(m: MatchSim, s: number): void {
     const p = m.players[this.index]!;
     const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3, p.shot === SHOT_BANDEJA, false, this.ohKind);
+    this.reach = n > 0;
     let best = -1;
     for (let i = 0; i < n; i++) {
       if (best < 0 || abs(this.wins[i]!.ideal - this.idealT) < abs(this.wins[best]!.ideal - this.idealT)) best = i;
@@ -323,6 +338,8 @@ export class SimpleAi {
    * contact height (MatchSim reads it for the windows).
    */
   ohKind = OH_ANY;
+  /** From where we stand, the ball still passes within reach (trackRelease): else the swing is not made. */
+  private reach = true;
 
   /** Where drift steers to, and by when (goBy 0: no hurry). Fields, not arguments: see think. */
   private goX = 0;
@@ -474,7 +491,7 @@ export class SimpleAi {
   private difficulty(m: MatchSim, height: number, afterWall: boolean): number {
     const v = m.ball.vel;
     const speed = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-    return 1 + 0.55 * clamp((speed - 12) / 14, 0, 1.6) + (afterWall ? 0.3 : 0) + (height < 0.5 ? 0.3 : 0);
+    return 1 + 0.55 * clamp((speed - 12) / 14, 0, 1.6) + (afterWall ? AFTER_WALL : 0) + (height < 0.5 ? 0.3 : 0);
   }
 
   /** The predicted path climbs well above head height over our half before it bounces: a lob. */

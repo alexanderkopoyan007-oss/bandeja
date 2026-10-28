@@ -716,6 +716,12 @@ export class MatchSim {
     else if (this.ai[mate]) this.emitP(E_CALL, mate, CALL_YOURS);
   }
 
+  /** An AI beaten by the ball it is charged for lets the swing go unmade (ai/simpleAi.ts: no swing at the air). */
+  standDown(i: number): void {
+    const p = this.players[i]!;
+    if (this.ai[i] && p.swing === SW_CHARGE) p.swing = SW_IDLE;
+  }
+
   private setTaker(team: number, i: number): void {
     const prev = this.taker[team]!;
     // An AI that was getting ready for a ball its partner now takes stands down.

@@ -35,7 +35,7 @@ function ladder(level: number, points: number) {
 describe('AI difficulty', () => {
   it('rallies lengthen with level, on the amateur-to-pro ladder, and beginners still rally', () => {
     const lo = ladder(0, 150), mid = ladder(0.5, 150), top = ladder(1, 150);
-    // Measured over 1,500 points: 4.9-5.2 / 7.1 / 11.3-11.8 shots a point. Novices about 5.6 (the serve 21.5% of
+    // Measured over 1,500-3,000 points: 5.4 / 7.6 / 11.2 shots a point. Novices about 5.6 (the serve 21.5% of
     // their shots), trained recreational players about 7.3 (15.8%), pros 10-11 (docs/research §1, §5).
     expect(lo.perPoint).toBeGreaterThan(3.5);
     expect(lo.perPoint).toBeLessThan(7);
@@ -45,7 +45,7 @@ describe('AI difficulty', () => {
     expect(top.perPoint).toBeLessThan(13.5);
     expect(lo.perPoint).toBeLessThan(mid.perPoint);
     expect(mid.perPoint).toBeLessThan(top.perPoint);
-    // Human mistakes, not robotic ones: a beginner's serve goes in most of the time (22-25% first-serve faults
+    // Human mistakes, not robotic ones: a beginner's serve goes in most of the time (14% first-serve faults
     // measured; the beginner AI used to fault 55%), and swings that miss the ball altogether stay rare.
     expect(lo.firstFaults).toBeLessThan(0.35);
     expect(top.firstFaults).toBeLessThan(0.16);
