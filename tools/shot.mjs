@@ -1,4 +1,6 @@
 // Screenshot a page in real Chrome. Usage: node tools/shot.mjs <url> <out.png> [waitMs] [width] [height]
+// PRE='<js>' runs before the page's own scripts (e.g. stored settings); KEYS=ArrowDown,Enter presses keys after the
+// wait (0.35 s apart) and waits AFTER ms (1000) more before the shot.
 import puppeteer from 'puppeteer-core';
 
 const [url = 'http://localhost:5190/', out = 'tools/out/shot.png', wait = '2500', w = '1600', h = '900'] = process.argv.slice(2);
@@ -11,8 +13,16 @@ const page = await browser.newPage();
 await page.setViewport({ width: +w, height: +h, deviceScaleFactor: 1 });
 page.on('console', (m) => console.log('[console]', m.type(), m.text()));
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
+if (process.env.PRE) await page.evaluateOnNewDocument(process.env.PRE);
 await page.goto(url, { waitUntil: 'load' });
 await new Promise((r) => setTimeout(r, +wait));
+if (process.env.KEYS) {
+  for (const k of process.env.KEYS.split(',')) {
+    await page.keyboard.press(k);
+    await new Promise((r) => setTimeout(r, 350));
+  }
+  await new Promise((r) => setTimeout(r, +(process.env.AFTER ?? 1000)));
+}
 console.log('hud:', await page.$eval('#hud', (e) => e.textContent).catch(() => '(none)'));
 await page.screenshot({ path: out });
 await browser.close();

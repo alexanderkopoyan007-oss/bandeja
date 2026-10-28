@@ -16,7 +16,7 @@ const CSS = `
   color: var(--ball); margin-bottom: 10px; }
 #hud .card .r { display: grid; grid-template-columns: 1fr repeat(var(--cols), 30px); align-items: center; height: 26px; }
 #hud .card .r + .r { border-top: 1px solid rgba(255,255,255,.1); }
-#hud .card .r span { text-align: center; color: #cfd6dc; }
+#hud .card .r span { text-align: center; color: #dfe5ea; }
 #hud .card .r span.nm { text-align: left; color: #fff; padding-right: 14px; white-space: nowrap; text-transform: uppercase; }
 #hud .card .r span.now { color: #111; background: var(--ball); border-radius: 4px; height: 20px; line-height: 21px; }
 @media (prefers-reduced-motion: reduce) { #hud .card { transition: opacity .3s; transform: translate(-50%, 0); } }

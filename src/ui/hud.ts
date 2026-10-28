@@ -77,9 +77,13 @@ const CSS = `
 @keyframes hud-slam { from { transform: translate(-50%, 0) scale(1.6); opacity: 0; } to { transform: translate(-50%, 0) scale(1); opacity: 1; } }
 
 #hud .help { position: absolute; right: 16px; bottom: 16px; padding: 12px 14px; border-radius: 10px; background: var(--glass);
-  border: 1px solid var(--edge); backdrop-filter: blur(8px); font: 12px/1.9 ui-sans-serif, system-ui; color: #cfd6dc;
+  border: 1px solid var(--edge); backdrop-filter: blur(8px); font: 12px/1.9 ui-sans-serif, system-ui; color: #dfe5ea;
   max-width: 470px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 #hud .help .key { font-size: 11px; min-width: 16px; padding: 2px 4px 1px; }
+
+/* High-contrast panels (Accessibility): nearly solid glass, and a backing behind the loose timing words. */
+:root.hc #hud { --glass: rgba(9,12,17,.94); }
+:root.hc #hud .grade, :root.hc #hud .shot, :root.hc #hud .mate { background: rgba(9,12,17,.9); padding: 5px 10px; border-radius: 6px; }
 `;
 
 /** The predicted path climbs well above head height over our half before it bounces: a lob. */

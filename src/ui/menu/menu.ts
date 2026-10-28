@@ -45,7 +45,7 @@ const CSS = `
 @keyframes menu-blink { 50% { opacity: .35; } }
 #menu .bar { width: 120px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
 #menu .bar i { display: block; height: 100%; background: var(--accent); }
-#menu .group { margin: 14px 0 6px 4px; font: 700 11px/1 var(--display); letter-spacing: .26em; text-transform: uppercase; color: rgba(255,255,255,.5); }
+#menu .group { margin: 14px 0 6px 4px; font: 700 11px/1 var(--display); letter-spacing: .26em; text-transform: uppercase; color: rgba(255,255,255,.72); }
 #menu .desc { min-height: 38px; flex: none; margin-top: 12px; font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; color: #d3d9de; max-width: 520px;
   text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.6); }
 #menu .side { position: absolute; left: calc(6vw + min(520px, 88vw) + 4vw); top: calc(6vh + 54px); bottom: calc(5vh + 34px);
@@ -65,10 +65,12 @@ const CSS = `
 #menu .keys td { text-align: left; }
 #menu .keys td.k { text-align: right; white-space: nowrap; }
 #menu .inline { display: none; margin-top: 12px; flex: none; }
-@media (max-width: 1000px) { #menu .side { display: none; } #menu .inline { display: block; } #menu .shade { background: rgba(5,7,10,.62); } }
+@media (max-width: 1000px) { #menu .side { display: none; } #menu .inline { display: block; } #menu .shade { background: rgba(5,7,10,.7); } }
 #menu .foot span { white-space: nowrap; }
 #menu .foot { flex-wrap: wrap; row-gap: 8px; }
 @media (max-height: 640px) { #menu h1 { font-size: 38px; } #menu .item { height: 40px; } }
+:root.hc #menu { --glass: rgba(9,12,17,.94); }
+:root.hc #menu .shade { background: rgba(5,7,10,.9); }
 `;
 
 export interface Choice<T = unknown> { value: T; label: string }

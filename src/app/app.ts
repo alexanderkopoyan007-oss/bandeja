@@ -164,6 +164,7 @@ export class App {
     root.classList.toggle('calm', calm);
     if (this.menu) this.menu.calm = calm;
     setSafeColours(s.safeColours);
+    root.classList.toggle('hc', s.contrast);
     if (this.game && this.game.debug.visible !== s.showFps) this.game.debug.toggle();
   }
 
@@ -273,6 +274,8 @@ export class App {
           'Reduced: no camera kick on smashes, menus fade instead of sliding, no bouncing ball on the loading screen.'),
         ch('Colours', 'safeColours', [{ value: false, label: 'Standard' }, { value: true, label: 'Colour-blind safe' }],
           'Timing colours a red-green colour-blind player can tell apart: blue for Good, cyan for Perfect, yellow for early or late, dark orange for a miss.'),
+        ch('Panels', 'contrast', [{ value: false, label: 'Standard' }, { value: true, label: 'High contrast' }],
+          'Darker, nearly solid panels behind the score, calls, hints and menus, and a backing behind the timing words, so text reads over a bright court.'),
         ch('Text size', 'textSize', [{ value: 1, label: '100%' }, { value: 1.25, label: '125%' }, { value: 1.5, label: '150%' }], 'The score, calls, hints and menus.'),
         ch('Announce the score', 'announce', onOff, 'A screen reader says each point, the score, games and sets.'),
         ch('Controller rumble', 'rumble', onOff, 'The pad buzzes on your hits.'),

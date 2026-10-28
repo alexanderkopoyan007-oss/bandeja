@@ -46,6 +46,8 @@ export interface Settings {
   motion: 'system' | 'full' | 'reduced';
   /** Cue and grade colours a red-green colour-blind player can tell apart. */
   safeColours: boolean;
+  /** High-contrast panels: the HUD's and menus' glass nearly opaque, a backing behind the HUD's loose words. */
+  contrast: boolean;
   /** HUD and menu text size. */
   textSize: 1 | 1.25 | 1.5;
   /** Speak points, games and the score through a screen reader (an ARIA live region). */
@@ -67,7 +69,7 @@ export function defaultSettings(): Settings {
     timing: 'forgiving', assist: 'normal', autoTiming: false, swing: 'hold', pro: false, mouseAim: false,
     quality: 'auto', showFps: false,
     volume: 0.8, crowd: 1,
-    motion: 'system', safeColours: false, textSize: 1, announce: true, rumble: true,
+    motion: 'system', safeColours: false, contrast: false, textSize: 1, announce: true, rumble: true,
     keys: {},
   };
 }
