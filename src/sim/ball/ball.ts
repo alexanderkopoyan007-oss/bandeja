@@ -718,7 +718,9 @@ export class Ball {
       const plane = s * r; // approaching from the side where sign(z) = s
       if ((s > 0 && q.z >= plane && p.z < plane) || (s < 0 && q.z <= plane && p.z > plane)) {
         const f = (q.z - plane) / (q.z - p.z);
-        if (f < this.best) {
+        // A ball pushed out onto the plane and curved back by its spin is not a new contact unless it is moving in
+        // (caught again at f = 0 every substep, it hung in the air: review round 5).
+        if (f < this.best && (f > 0 || s * this.vel.z < 0)) {
           const x = q.x + (p.x - q.x) * f;
           const y = q.y + (p.y - q.y) * f;
           if (abs(x) <= c.halfW && y < c.netHeightAt(x) - NET_TAPE_RADIUS) {

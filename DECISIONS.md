@@ -171,6 +171,24 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Checked and fine: the wall recovery band fired only at the enclosure step's top corner (a ball over the 3 m
     section into the 4 m one sits up to 2.3 cm in the mesh for 3 ticks, then comes off its face; round 2 sent
     those through it); determinism across runs and interpreter-only; 0 tunnels, embeds, energy gains, stuck balls.
+- **Review round 5** (fresh-eyes, read-only): **nothing new and serious; Phase 1 is verified.** The reviewer
+  built an independent contact model (spring-damper ball, 2 µs steps against every plane; agrees with the sim's
+  single bounces within 0.1-0.5 m/s) and compared calls at junctions on 40k realistic shots per court/floor
+  (ShotSolver with swing errors), balls placed at wall feet, 20k door shots, the round-4 fuzzers on every court,
+  AI matches, alloc over 6 seeds (3-8 GCs per 100k ticks), determinism with the JIT off. Calls differ from the
+  reference on about 0.1% of shots near walls, about 60% of those the 5 mm nick allowance, and round 4 has as
+  many or fewer than round 3 everywhere. The one band that moved: a ball already bounced coming down onto the
+  back glass within 5 cm of the floor, wrong calls 5.3% → 3.4% (missed double bounces 5.0% → 1.05%, phantom ones
+  0.3% → 2.3%, nearly all balls the reference brings within 3 mm of the floor). AI play reaches that band in 2
+  of 425 wall contacts. Fixed: *a ball pushed out of the rigid net (predictions and solver ghosts only) hung in
+  the air*: spin curved it back onto the net's plane, where it was caught again at f = 0 every substep (once in
+  20k short shots); the body planes now only catch a ball at the start of a step if it is moving in (alloc singles 6-7 before, 7-8 after over 3-4 runs: noise, budget 10). Test in
+  `tests/sim/net.test.ts`. Left as Low (OPEN_QUESTIONS.md): the friction-aware "reached" refinement the
+  reviewer prototyped (wrong calls in that band 673 → 411 per 20k), within the reference model's own
+  uncertainty; the junction applying the second surface's squeeze to a ball that never reaches it (serves within
+  1 cm of the side mesh miss a fence fault, 63 in 20k on the narrow singles court, about 1 in 20k on standard);
+  the nick being a distance (5 mm) rather than a time; the dying-ball rule placing a ball on the floor 1-2 cm
+  early.
 - **Frame rate, before → after Phase 1** (`npm run build && npm run perf`, 30 s each, AI doubles, this M1 Max):
   medium with the CPU throttled 4x (laptop proxy) p50 2.4 → 2.4 ms, p99 4.5 → 4.3 ms, max 15.6 → 12.0 ms, 0 frames
   over 20 ms either way, sim p99 0.8 ms both; high (2x pixel ratio) 498 → 539 fps, p99 8.9 → 8.8 ms, 99 → 105
@@ -318,6 +336,45 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Left: the HUD meter reads `sim.time` and the ring the render time (up to a tick apart, cosmetic); unplugging
     the pad mid-charge swings at that moment rather than cancelling (the sim has no cancel); for rollback later,
     `Player.writeState` leaves out the half bounds and the human's stand plans are not hashed (both before Phase 2).
+- **Frame rate, Phase 1 → Phase 2** (`npm run build && npm run perf`, 30 s each, AI doubles, this M1 Max; build
+  a8f763d): medium with the CPU throttled 4x (laptop proxy) p50 2.4 → 2.4 ms, p99 4.3 → 4.1 ms, max 12.0 → 10.2
+  ms, 0 frames over 20 ms, sim p99 0.8 → 0.9 ms; high (2x pixel ratio) 539 → 498 fps, p99 8.8 → 8.8 ms, 105 → 99
+  frames over 20 ms (0.65% → 0.66%, the queue stalls M1 noted). No regression: the average at high moves ±8%
+  between runs of the same build (Phase 1's own before/after went 498 → 539 with no rendering change); p99 and
+  the stalls are the same. 42 draw calls, 473k triangles. Round 3's change is in when the loop steps, not what
+  it draws.
+- **Fresh-eyes round 3** (independent, read-only; 189 tests, typecheck, point mix 24 x 300 s, alloc over four
+  seeds, render-side determinism, the modifier fix end to end with the real `KeyboardInput`, an emulation of
+  `Game.tick` against the real sim at 60-240 Hz). Fixed:
+  - *The picture jumped at the human's release and repeated frames until the contact* (medium-high, new in round 2):
+    run-ahead resumed as soon as the swing left CHARGE while the render lag was still a tick, so the sim ran to now,
+    the clamp pulled the drawn moment forward by up to a tick in one frame (onto the hit itself when the release
+    tick is the contact tick), and an early release was drawn unblended (alpha 0) until the contact. Releases with
+    a step more than 2 ms beyond the frame: 33% at 60 Hz, 68% at 120 Hz, 63-77% at 144-165 Hz; a repeated frame in
+    21-26% at 144-165 Hz. The lag is now worked out before stepping and the sim is stepped to the drawn moment (now
+    less the lag), keeping the hold break; a dropped backlog draws from the new clock (it stepped back up to 3 ms
+    after a hitch over 100 ms). Emulation after: 0 repeated frames, 0 steps beyond the ease, 0 late strikes at 60,
+    144 and 165 Hz (the reviewer's prototype, also 0 at 75-240 Hz, with 3 ms jitter and with hitches).
+  - *The timing ring counted down on the drawn clock* (medium): while a swing is held the picture is a tick behind,
+    so a release as the ring closed was graded +20 ms at 60 Hz and +12 ms at 144 Hz (a bot with no reaction delay;
+    +10 / +4 counted on now). The ring now counts down on the clock releases are judged on (render time + lag =
+    now) and stays drawn on the ball. Its look is unchanged; only when it closes moved, by at most a tick.
+  - Left (low): a key event that reaches the page after its timestamp can strike late (1 ms transit: 1% of releases,
+    max 0.3 ms; Chrome's transit is about 1 ms); the pad and the keyboard holding the same button share one bit (one
+    letting go releases it); with `?assist=0` aim reads the movement keys at frame time, not at the release (moves
+    are axes, not queued events). In OPEN_QUESTIONS.md.
+- **Fresh-eyes round 4** (independent, read-only; an emulation of the new `Game.tick` against the real sim at 60-240
+  Hz with jitter, hitches, tab hide/show, `?runahead=0`, autotime, doubles, volley and overhead keys and 127 serves;
+  determinism without the render-side calls over ~20 runs; alloc over five seeds): **nothing Medium or above;
+  Phase 2 is verified.** No late strikes for holds of 20 ms or more at any refresh rate; a bot releasing as the
+  ring closes is graded 0.0 ms at the median. Fixed from its Low list: the ring now counts down on the sim's own
+  clock (`simNow`, or the sim's time after a dropped backlog), exact on every frame including the press frame
+  (render time + lag fell 5-8 ms behind there at 60 Hz); and a dropped backlog (a hitch over 100 ms) moves the
+  queued keys' stamps up to now (they were in the sim's past: releases graded up to 220 ms early and struck up to
+  67 ms late, 6 of 185 in the reviewer's hitch run; 0 with the clamp). Left (OPEN_QUESTIONS.md): a few repeated
+  frames while the lag eases in after a press at 165-240 Hz; taps under 15 ms can strike late; the camera kick
+  and rumble can lead the drawn hit by up to a tick; `npm run alloc` drives only AI players (a human-path bot
+  measured 7-15 GCs per 100k ticks, mean 10.2, against 8.6 on Phase 1's code: within match noise).
 
 ## Phase 3: animation realism
 - **Measure first** (`node tools/anim-check.ts <tag> [secs] [seeds]`, `src/render/avatar/animQa.ts`, results in

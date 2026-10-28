@@ -210,3 +210,22 @@ describe('net cloth', () => {
     expect(bulged).toBeGreaterThan(0);
   }, 300_000);
 });
+
+describe('rigid net (predictions)', () => {
+  // Review round 5: a ball pushed out of the rigid net onto its plane, curved back by its spin, was caught again
+  // at f = 0 every substep and hung in the air logging two net hits a tick.
+  it('does not hold a ball pushed out onto its plane', () => {
+    const b = new Ball();
+    b.pos.set(-4.376986, 0.401279, 0.0327893);
+    b.vel.set(-1.0134087, -3.6321404, -0.0018246);
+    b.spin.set(82.5386, -25.64215, -18.72274);
+    b.inNet = true; b.netW = 71.7427925; b.netZeta = 0.610816; b.netSide = 1;
+    let netHits = 0;
+    for (let k = 0; k < 120; k++) {
+      b.step(w, DT, null);
+      for (let i = 0; i < b.eventCount; i++) if (b.events[i]!.kind === HIT_NET) netHits++;
+    }
+    expect(netHits).toBeLessThan(5);
+    expect(b.pos.y).toBeLessThan(0.3);
+  });
+});

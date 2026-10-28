@@ -11,23 +11,30 @@ derived from data, or tuning (then it says so). Change a value here and in its d
 | Key events carry `event.timeStamp`; pad events `Gamepad.timestamp` | `src/game/input/keyboard.ts`, `gamepad.ts` | A release is judged at the moment it happened, not when the next frame polls it: the frame rate never moves your timing. |
 | Sim at 120 Hz, fixed step | `src/sim/core/constants.ts` | Deterministic; an input inside a tick is placed at its exact time in it. |
 | Run-ahead render (default on, `?runahead=0` off) | `src/game/game.ts` tick() | The sim steps until it is at or just past *now* and the render blends the last two ticks to now, instead of drawing a tick behind. Saves one tick (8.3 ms) between a key and the screen. Measured with `tools/latency.mjs` (key → used by the sim → drawn → GPU done, both modes): see Latency results below. |
-| ...except while you hold a swing | same | While a swing is held the sim is not run ahead of now, and the picture is drawn one tick behind, blended between ticks as `?runahead=0` draws (drawing the newest tick as it is repeated frames: 17% at 144 Hz, 27% at 165 Hz, 5-25% at 120 Hz by frame phase). The lag eases in and out with the render clock 25% slow or fast, and stays until the contact so the catch-up isn't drawn over the hit. The cost: a release is drawn a tick later than a press. Otherwise a release arriving next frame for a moment the sim had already passed met the ball up to a tick late: 18-33% of releases at 60 Hz and 34-36% at 120-144 Hz, up to 7.7 ms late. Holding back only the tick with the ideal moment (the first fix) left 6-34%, all releases after the ideal; this gives 0 at 60, 120 and 144 Hz (an emulation of `Game.tick` against the sim, releases at ideal ± 30 ms). |
+| ...except while you hold a swing | same | While a swing is held the sim is not run ahead of now, and the picture is drawn one tick behind, blended between ticks as `?runahead=0` draws (drawing the newest tick as it is repeated frames: 17% at 144 Hz, 27% at 165 Hz, 5-25% at 120 Hz by frame phase). The lag eases in and out with the render clock 25% slow or fast, and stays until the contact; the sim is stepped to the drawn moment (now less the lag), so the release neither pulls the picture forward nor leaves it unblended (round 3: before, 63-77% of releases at 144-165 Hz jumped and a fifth repeated a frame). The timing ring counts down on now (render time + lag), not on the drawn moment, so releasing as it closes is not graded a tick late. The cost: a release is drawn a tick later than a press. Otherwise a release arriving next frame for a moment the sim had already passed met the ball up to a tick late: 18-33% of releases at 60 Hz and 34-36% at 120-144 Hz, up to 7.7 ms late. Holding back only the tick with the ideal moment (the first fix) left 6-34%, all releases after the ideal; this gives 0 at 60, 120 and 144 Hz (an emulation of `Game.tick` against the sim, releases at ideal ± 30 ms). |
 | Up to 12 ticks a frame, then drop the backlog | `MAX_TICKS_PER_FRAME` | A stall never turns into a fast-forward spiral. |
 
-**Latency results** (`tools/latency.mjs 80`: 160 key events at random intervals, 1600x900, this M1 Max, the
-build before the fresh-eyes fixes; presses are unaffected by them):
+**Latency results** (`tools/latency.mjs 80`: 160 key events at random intervals, 1600x900, this M1 Max). First
+run (the build before the fresh-eyes fixes, run-ahead pass first):
 
 | | key → frame that uses it | key → drawn (render submit) | key → GPU done |
 |---|---|---|---|
 | Run-ahead (default) | p50 3.9, p95 8.3 ms | p50 4.4, p95 9.0 ms | p50 9.6, p95 60.6 ms |
 | One tick behind (`?runahead=0`) | p50 5.0, p95 8.4 ms | p50 9.2, p95 10.4 ms | p50 14.5, p95 17.8 ms |
 
-Run-ahead saves 4.8 ms at the median, key to drawn. The display adds about half a refresh before the next frame
-starts plus one compositor frame (60 Hz: about 8 + 17 ms; 120 Hz: about 4 + 8 ms). The run-ahead pass also had a
-tail the other did not (GPU done p95 60.6 ms, max 0.5 s); it ran first, so a re-run with the order swapped
-(`LAT_REVERSE=1`) is queued to tell the loop from the pass order. Half of these events are releases of a held
-key, which the fresh-eyes rounds since changed (drawn a tick behind while held); the re-run reports presses and
-releases apart.
+Re-run with the passes swapped (`LAT_REVERSE=1`, build a8f763d, after fresh-eyes round 2):
+
+| | key → drawn | presses → drawn | releases → drawn | key → GPU done |
+|---|---|---|---|---|
+| Run-ahead (default) | p50 5.0, p95 8.7 ms | p50 4.8, p95 8.7 ms | p50 5.6, p95 8.7 ms | p50 10.6, p95 14.3 ms |
+| One tick behind (`?runahead=0`) | p50 9.1, p95 11.4 ms | p50 9.2, p95 10.6 ms | p50 9.1, p95 11.9 ms | p50 14.2, p95 17.3 ms |
+
+Run-ahead saves 4.1-4.8 ms at the median, key to drawn. The first run's GPU-done tail (p95 60.6 ms) was the
+first pass warming up, not the loop: with the order swapped the run-ahead pass has the shorter tail (p95 14.3
+ms). The display adds about half a refresh before the next frame starts plus one compositor frame (60 Hz: about
+8 + 17 ms; 120 Hz: about 4 + 8 ms). Fresh-eyes round 3 changed how a release is drawn (the picture stays a tick
+behind until the contact instead of catching up at the release), so a release is now drawn about a tick later
+than the re-run's 5.6 ms; presses are unchanged.
 
 ## 2. Timing windows
 
