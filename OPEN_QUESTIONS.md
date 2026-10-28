@@ -149,3 +149,19 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   after watching AI matches.
 - **Personalities.** The four styles' traits are set by design (recognisable, not measured from real players); they
   are tested to stay distinct (`tests/sim/ai.test.ts`) but no player's real profile is behind any of them, by rule.
+
+## Phase 5 (visual realism)
+- **A realistic body and face.** The players are the Y Bot mannequin (separate shells for the chest, belly and
+  joints, no face), dressed in the shader. Skin, hair and clothing can only go so far on it. Settled by: a
+  realistic rigged human the licence allows (Mixamo's other characters, downloaded by the owner with their Adobe
+  ID, or a CC0 base body from MakeHuman/MPFB, which needs Blender), then rebinding it to our skeleton.
+- **Glass reflections of the players.** The arena-glass photo shows the players mirrored in the side glass at
+  grazing angles; our glass reflects only the arena baked at load. Settled by: a planar reflection per glass wall
+  on the High preset (Phase 8 measures its cost).
+- **The broadcast lens.** The camera's height and distance come from Javadiha et al. 2021; the lens (26°) is chosen
+  so the court fills the frame as TV frames do, not measured. Settled by: one broadcast frame with the court's
+  corners marked, solved with `tools/photo-solve.ts` (a still from the owner's own screen is enough; it is not
+  shipped).
+- **Sweat timing.** How fast shirts darken (fully after about 40 minutes or 5 km) is a guess; no study gives sweat
+  patch growth in padel. Settled by: photos of the same players early and late in a match.
+

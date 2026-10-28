@@ -796,3 +796,63 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   Remaining gaps against the pros, all in `OPEN_QUESTIONS.md`: rallies over 11 s are 48% (pros 26%), shots off the
   back glass 27.5% (12.8%), forced errors 23% (29-33%), bandejas and víboras finish 3% of winners (13%), errors off
   the side wall 4.5% (17%).
+
+## Phase 5: visual realism (photo-match)
+- **Photo-match mode** (`?photo=<id>`, `src/game/photoMatch.ts`, `tools/photo-solve.ts`, `reference/photos.json`):
+  11 public reference photos (Wikimedia Commons, CC0 / CC BY / CC BY-SA; `reference/SOURCES.md`) of indoor and
+  outdoor courts by day and night, kept out of git and out of the build. For each, court points marked by hand
+  give the camera (position, yaw, pitch, roll, vertical FOV and one radial distortion term) by Levenberg-Marquardt
+  over many starts; arena-wide-2 fits to 2.4 px RMS and its service lines, which were not fitted, land on the
+  photo's. The game renders through the solved camera with the photo over it: a wipe (drag or [ ]), a blend, the
+  photo alone, the game alone (O cycles), and `&lines=1` draws the solve.
+- **Arenas** (`data/arenas.json`, `src/render/arena/`, `?arena=stadium|hall|club-day|club-night`, default
+  stadium): a stadium with stands on four sides, a seated crowd that sways as rallies grow, generic boards
+  ("BANDEJA / PADEL / OPEN", no real event's branding), hall walls, trusses and a lit roof; a covered club hall
+  (portal frames, translucent roof, high-bays, daylight past the open sides); an outdoor club by day and under
+  floodlights, with neighbour courts beside ours (clubs build in rows). Colours were picked off the photos: the
+  stadium's blue turf and red surround off arena-wide-2, the night court off the night photo (turf measured
+  180-191 / 207-234 / 135-139 against the photo's 169-195 / 187-217 / 117-128 sRGB).
+- **Turf** (`src/render/turf.ts`): sand-filled artificial grass, the most common padel surface: fibre and sand
+  detail at two scales, wear where players stand (the service boxes and the back), roll seams 4 m apart, paler
+  and dustier at grazing angles (sand shows between the fibres), and the lines painted in the shader.
+- **Glass**: what you see through it, plus Fresnel reflection (8% face-on for two faces, rising to grazing) of an
+  environment rendered from the arena once at load, box-projected onto the hall or the club's surroundings so
+  each wall reflects its own side (a plain lookup made the near glass at night reflect the floodlit court), a
+  faint iron green, ball prints (faint felt rings smeared along the skid) and dust at the foot that fade with
+  distance. Not reflected: the players and the ball (needs a planar reflection per wall; a Phase 8 preset).
+- **Tone mapping**: Khronos PBR Neutral (AgX turned the photos' saturated blues and reds to periwinkle and salmon;
+  `?tone=agx|aces` compares).
+- **Players dressed** (`src/render/avatar/kit.ts`): the mannequin mesh becomes a padel player in the shader: each
+  vertex gets a region from the bone that moves it most and where it sits on that bone (a short-sleeved shirt to
+  mid upper arm and over the hips, shorts to mid thigh, socks, shoes with a gum sole and a stripe, a hair cap,
+  skin elsewhere); partners wear the same kit, each has their own skin and hair. Collar and sleeve hems in the
+  kit's trim colour (side panels were tried and read as blotches). Sweat: wet patches grow from where shirts
+  darken first (the middle of the chest, the spine, under the arms, the small of the back) with the match's
+  length (fully wet after 40 min) and the metres run (5 km), and skin turns shinier; the darkening is 30% (42%
+  read as camouflage on the red shirt). Folds: a bump pattern fixed to the body. Hems lag the body: a point on a
+  spring (about 2 Hz, damped against the body's own velocity, so a steady run has no lag) chases the hips, and the
+  shirt from the chest down and the shorts' legs trail by its offset, at most 5 cm.
+- **Ball** (`src/render/ballLook.ts`): optic-yellow felt with sheen and fuzz, the seam's dog-bone curve as a pale
+  4 mm line, turned by the sim's spin each frame; the seam blurs into the felt when a frame's turn passes what a
+  camera can follow. A shutter stretch along the path (1/500 s; 1/250 s read as an egg up close).
+- **Bloom** (`src/render/post.ts`): the scene renders to an HDR target; what is brighter than a per-arena threshold
+  (above the sunlit lines: 3-5 linear) blooms, as a broadcast lens blooms floodlight lenses and roof panels, which
+  are now HDR emitters (4-14x white). The first threshold (1.4 at night) bloomed the floodlit turf itself. `?bloom=0`
+  renders straight to the screen. Under a 0 x 0 canvas (a hidden tab) the pass draws nothing: WebGL targets made at
+  zero size stayed black after a resize.
+- **Broadcast camera at the TV position**: the de facto standard padel broadcast view is about 7.6 m above the
+  floor and 15.5 m behind the back glass (Javadiha et al. 2021, Sensors 21(10) 3368, from professional footage). We
+  had 6.3 m up, 9.2 m back and a 42° lens; now 7.6 m, 15.5 m and 26°. Check: from there the near end's mesh (3-4 m
+  high) covers the far court from the foot of the net to the far service line, as the paper describes TV frames,
+  and as our render now shows. The smash kick's zoom is now a share of the lens (2.9%). The sky dome shrank to
+  240 m so its far side stays inside the camera's 300 m far plane from the new position.
+- **Broadcast graphics** (`src/ui/tv.ts`, `?gfx=tv`; off by default until the owner has seen it, by the rule that
+  the HUD isn't restyled unseen): a score bug in the kits' colours with the server's ball, a tag sliding out of it
+  (break, set and match point worked out on a copy of the score; star and golden point; deuce n; tie-break), a
+  radar readout of serve and smash speeds, a strap after each point (winner, error and its cause, ace, double fault,
+  out of the court; the rally's length) and after a first-serve fault, the scoreboard after each game, and match
+  stats at each change of ends (points, winners, errors, double faults, won on serve, fastest smash, longest
+  rally). The graphics run on the match clock; a strap still waiting is replaced, not queued, when the next comes.
+  Generic: "BDJ OPEN", no real tour's names or look.
+- **Trees**: crowns of nine jittered clumps lit with normals out from the crown's centre (foliage scatters light
+  as a volume), darker underneath and inside; they had been three spheres.
