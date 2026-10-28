@@ -37,8 +37,9 @@ function ladder(level: number, points: number) {
 describe('AI difficulty', () => {
   it('rallies lengthen with level, on the amateur-to-pro ladder, and beginners still rally', () => {
     const lo = ladder(0, 150), mid = ladder(0.5, 150), top = ladder(1, 150);
-    // Measured over 1,500-3,000 points: 5.4 / 7.6 / 11.2 shots a point. Novices about 5.6 (the serve 21.5% of
-    // their shots), trained recreational players about 7.3 (15.8%), pros 10-11 (docs/research §1, §5).
+    // Measured at the end of Phase 4 (300-1,000 matches): 5.2 / 7.1 / 10.9 shots a point. Novices about 5.6 and
+    // trained recreational players about 7.3 (derived from the serve's share of their shots; docs/ai.md), pros
+    // 10-11 (docs/research §1, §5).
     expect(lo.perPoint).toBeGreaterThan(3.5);
     expect(lo.perPoint).toBeLessThan(7);
     expect(mid.perPoint).toBeGreaterThan(5.5);
@@ -47,7 +48,7 @@ describe('AI difficulty', () => {
     expect(top.perPoint).toBeLessThan(13.5);
     expect(lo.perPoint).toBeLessThan(mid.perPoint);
     expect(mid.perPoint).toBeLessThan(top.perPoint);
-    // Human mistakes, not robotic ones: a beginner's serve goes in most of the time (14% first-serve faults
+    // Human mistakes, not robotic ones: a beginner's serve goes in most of the time (16.8% first-serve faults
     // measured; the beginner AI used to fault 55%), and swings that miss the ball altogether stay rare.
     expect(lo.firstFaults).toBeLessThan(0.35);
     expect(top.firstFaults).toBeLessThan(0.16);
@@ -91,9 +92,9 @@ describe('AI personalities', () => {
   }
 
   it('Martillo drives and smashes and errs, El Muro lobs and plays safe, La Serpiente plays víboras and touch', () => {
-    // Measured over 60 seeds (about 2,400 shots each): lobs Muro 28% / Martillo 12%; drives Martillo 29% / Muro 6%;
-    // smashes of overheads Martillo 65% / Muro 12%; víboras of overheads Serpiente 65% / Relojero 16%; errors per
-    // shot Martillo 7.8% / Relojero 4.9% / Muro 4.1%; pace Martillo 62.1 / Muro 58.8 km/h.
+    // Measured over 60 seeds at the end of Phase 4 (about 2,400 shots each): lobs Muro 28% / Martillo 11%; drives
+    // Martillo 27% / Muro 6%; smashes of overheads Martillo 71% / Muro 16%; víboras of overheads Serpiente 68% /
+    // Relojero 14%; errors per shot Martillo 8.3% / Muro 5.3% / Relojero 4.7%; pace Martillo 60.8 / Muro 57.9 km/h.
     const r = signatures(24, 300);
     expect(r.share('muro', 'lob')).toBeGreaterThan(1.6 * r.share('martillo', 'lob'));
     expect(r.share('martillo', 'drive')).toBeGreaterThan(2.5 * r.share('muro', 'drive'));

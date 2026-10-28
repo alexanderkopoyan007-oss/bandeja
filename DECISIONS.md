@@ -709,14 +709,14 @@ better-looking, more realistic court. Every decision and the reason for it goes 
 - **Volley play**: a ball below the tape is lifted soft with margin (precision), a high one near the net put away
   (power), right 40-90% of the time by level and the wrong way round otherwise (a mistake of choice, not a miss).
   Volley errors 10% → 6-7%.
-- **Smash range** (`KILL_DEPTH` 6.0 m, was 5.5): measured value of an overhead by where it lands: a smash wins about
-  half its points from landings within 7 m, a bandeja 9-19%. Then: smashes 5.2% of shots (pros 6-6.9) and 47.7%
+- **Smash range** (`KILL_DEPTH` 6.0 m, was 5.5): measured value of an overhead by depth: a smash taken within 7 m of
+  the net wins about half its points (54% by contact depth; 34% by where it lands), a bandeja 11-18%. Then: smashes 5.2% of shots (pros 6-6.9) and 47.7%
   of winners (pros 43).
 - **Skill**: motor 0.75 and pressure 1.15 from a sweep (routine errors up, pressured errors down): rallies 16.5 →
   12.0 shots. Refit at the end (below).
 - **Smash jump and reflex blocks** (avatar): the smash is hit in the air, a ballistic hop peaking at the contact as
   high as the ball is above the toes' reach (at most 0.3 m; no padel figure, OPEN_QUESTIONS.md), landing on bent
-  knees: smash contact p50 9.5 cm → 0.2 cm. A ball on the player before a full backswing fits gets a backswing cut
+  knees: smash contact p50 9.5 cm → about 0.8 cm (pooled over seeds; one seed read 0.2 cm). A ball on the player before a full backswing fits gets a backswing cut
   to 0.6 of the time left (at least 0.06 s): blocks of smashes 0.15 s after the reaction had missed by 40 cm, the
   arm only halfway into the stroke at the fixed 0.28 s ramp. The AI's choice there was right: that smash comes back
   over the net off the glass, so the block before the glass is the only play.
@@ -724,7 +724,7 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   middle (forehand in the middle on a tie). Switching sides was missing: when the partner took a lob over us on the
   diagonal, the lobbed player dropped back on their own side, outside the partner, and the pair defended 1.2 m
   apart with the other side open (0 of 29 such lobs ended switched). Now the player whose side the partner goes to
-  (over 0.8 m across the centre) crosses over (10 of 16 switched), and a switched pair of AIs crosses back once its
+  (over 0.8 m across the centre) crosses over (10 of 16 switched on the first seeds; 68-74% over 12-36 seeds), and a switched pair of AIs crosses back once its
   ball is over 1 s from bouncing over there (crossing back is coaching practice: players have their side). Calls
   (`E_CALL`): a contested ball (runs within 1.5 m) or a switch is called once, 0.25 s after the strike, "Mine!",
   "Yours!" or "Switch!", about two a point; the human's AI partner calls for the pair and the HUD shows it on a
@@ -732,10 +732,12 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   this (OPEN_QUESTIONS.md).
 - **Difficulty fitted to the amateur-to-pro ladder.** Level 0 had played 2.5 shots a point with 55% of first serves
   and 42% of second serves faulted: robotic, not human. The skill table (`data/ai-skill.json`) now holds values at
-  levels 0, 0.5 and 1, fitted by sweeps to the published ladder: novices about 5.6 shots a point (the serve 21.5%
-  of their shots, Sánchez-Alcaraz et al. 2021), trained recreational players about 7.3 (15.8%), national 8-9.4
-  (Ramón-Llin et al. 2020), pros 10-11. Weaker AIs also make a weaker player's mistakes: they attack from further
-  back (club players about 4.5 m from the net, pros 3.8 m), move with the ball less as a pair, lob a net pair less
+  levels 0, 0.5 and 1, fitted by sweeps to the published ladder: novices about 5.6 shots a point and trained
+  recreational players about 7.3 (derived, not measured: the serve is 21.5% and 15.8% of their shots, Sánchez-Alcaraz
+  et al. 2021, and serves a point are taken as 1 plus an assumed first-serve fault share of about 0.2 and 0.15),
+  national 8.0 (Ramón-Llin et al. 2020; the 9.38 often quoted beside it is elite play, Torres-Luque et al. 2015),
+  pros 10-11. Weaker AIs also make a weaker player's mistakes: they attack from further back (regional players
+  about 4.5 m from the net, national 3.8 m: Ramón-Llin et al. 2019; our top level stands at 3.1 m), move with the ball less as a pair, lob a net pair less
   and drive into the volleyers more, and take the net less (novices volley 15.5% of their shots, trained players
   25.1%). Making the weaker servers aim safer was tried and dropped: with the fitted skill, the pro aims already
   give 14% first-serve faults at level 0 and 11% at 0.5 (no amateur figures are published).
@@ -743,13 +745,15 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   more; El Muro erred more than it, not less. Added: a `pace` trait (power or precision on drives, slices, lobs
   and mid-height volleys, and drives chosen over slices or the reverse), the smash trait widening the smash range,
   the net trait setting how close in a pair stands and how good a lob must be to follow it in, and a chiquita as a
-  way to the net (lobs are 60.6% of net takes: Muñoz et al. 2017). Over 60 mixed matches (`docs/ai.md` has the
-  table): Martillo drives 27% of its shots and smashes 72% of its overheads, errs most (8.5% a shot) and wins most
-  (4.6%); El Muro lobs 30%, smashes 13% of its overheads, errs least (4.6%) and wins least (1.9%); La Serpiente
-  plays 62% of its overheads as víboras and the most drops and chiquitas.
+  way to the net (lobs are 60.6% of net takes: Muñoz et al. 2017). Over 60 mixed matches at the end of Phase 4
+  (`docs/ai.md` has the table): Martillo drives 27% of its shots, smashes 71% of its overheads and errs most (8.3% a
+  shot); El Muro lobs 28%, smashes 16% of its overheads and wins least (2.8%), though its many slices make it err a
+  little more than the neutral style (5.3% against 4.7%); La Serpiente plays 68% of its overheads as víboras and the
+  most drops and chiquitas.
 - **Correction delay.** Every bounce re-predicts the ball, and the AI replanned on that tick: after a random bounce
   (turf, mesh, glass joins, the net cord) it saw the new path 110-170 ms sooner than a player can correct. Now a
-  bounce that moves the planned contact more than 0.15 m is corrected after 0.17 − 0.06 × level s (×0.8-1.2).
+  bounce that moves the planned contact more than 0.15 m is corrected after 0.17 − 0.06 × level s (×0.8-1.2:
+  0.09-0.20 s over all levels, 0.09-0.13 s at the top).
   About 22 corrections per 100 shots, mostly turf bounces 15-30 cm off; it bites only when the contact comes soon
   after the bounce.
 - **Off the glass.** The AI's timing error had no real cost for a ball off the glass (difficulty +0.3): it erred on
@@ -758,21 +762,37 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   refit with it: timing [0.030, 0.023, 0.018] s and motor [1.10, 0.92, 0.65].
 - **The AI judged on each shot's own windows**, as humans are (`data/shots.json` `timing`: a volley's window 1.35x,
   a smash's 0.71x). The code had kept one window for every AI shot until Phase 4 refit the AI's timing. Volley
-  errors 6.1% → 4.8-5.0% (pros 3.4-4.8); rallies lengthened to 11.9 shots, so `AFTER_WALL` went to 1.8: back-wall
-  errors 6.4-6.5% (pros 5.4-6.3), 11.2-11.3 shots and 15.1-15.3 s a point; the lower levels stay on the ladder
-  (5.4 and 7.3 shots at levels 0 and 0.5).
+  errors barely moved (5.3% → 5.2% of volleys; the verifier's re-run); rallies lengthened to 11.9 shots, so
+  `AFTER_WALL` went to 1.8: back-wall unforced errors 6.0% (pros 5.4-6.3). Final 1,000-match run: 10.9 shots and
+  14.9 s a point; levels 0 / 0.5 / 0.75 at 5.2 / 7.1 / 8.7 shots (`docs/ai.md`).
 - **No strokes at a ball behind the body.** A contact was any ball within reach, wherever it was: 1.4% of the AI's
   contacts were 0.6-1.4 m behind the hitter (a ball that bounced past a net player, slices and lobs off it), and the
   avatar's racket missed them by up to 59 cm (the animation test's seed 1 failed at a contact p90 of 16.8 cm). Now a
   ball more than 0.4 m behind the hips (`BEHIND_MAX`, away from the net; contacts are met 0.4-0.6 m in front of the
   body: Sánchez-Alcaraz et al. 2021) is no window, and at the contact more than 0.65 m behind (the reach check's
   0.25 m margin) is a miss: none beyond 0.65 m now.
-- **No swings at the air.** 40% of top-level points (15% at level 0) ended on an AI's full swing at a ball out of
+- **No swings at the air.** 35% of top-level points (15% at level 0) ended on an AI's full swing at a ball out of
   its reach: the opponents' winners, each drawn as a swing at nothing. Now an AI that, at its release, has no window
-  within reach of where it stands lets the swing go unmade (`MatchSim.standDown`). 9% of points still end on a
-  swing that misses: late swings at fast balls off the glass and balls that died below reach (OPEN_QUESTIONS.md).
+  within reach of where it stands lets the swing go unmade (`MatchSim.standDown`). Points that still end on a swing
+  that misses, measured by the verifier before the review fixes below: 13.5% at level 0, 12.5% at 0.5, 10.3% at the
+  top (late swings at fast balls off the glass and balls that died below reach; OPEN_QUESTIONS.md).
 - **Tests.** `tests/sim/ai.test.ts`: the ladder (rally length by level, beginners still rallying, serve faults,
   whiffs) and the four styles' signatures; `tests/sim/doubles.test.ts`: teamwork (depth split, switches after
   partner takes, calls) and the human's partner calling their balls. A faulted serve no longer counts as a ball the
   human failed to return (7 of the 14 'missed' balls were faults). The smash-exit check runs 40 matches: the AI lobs
   deep and smashes from 6-8 m can't leave the court; 10 of 58 matches had one, none of the first 25.
+- **Review fixes** (end-of-phase verifier and fresh-eyes review, commit d9d905b): a strike by the other side voids
+  the AI's stand plan (partners had switched lanes off the plan for the previous ball: 94 such episodes in 4 × 300 s,
+  now 10); a bounce is judged surprising against where the ball was predicted at the planned moment, so blocks are
+  no longer "corrected" for nothing (27 of 153 corrections, now 0); a beaten AI holds its backswing instead of
+  swinging at the air (stand-downs had swung 90-100% of the way; now 17 of 19 make no forward swing), and no
+  forward swing is quicker than the quickest real one; a late release at a ball already past the body is graded Too
+  late, not filed as out of reach (Good volleys 70 ms late had been cut: 13 of 237, now 1 of 208); the switch call
+  follows the formation's own rule on the taker's real plan (a call followed by the swap 12 of 26 → 17 of 28; the
+  taker's "Mine!" is consistent with its play 89 of 92); a cross-back is decided once per ball before its bounce and
+  held (`MatchSim.crossBack`, in the state hash: 6 of 6 complete, none after the bounce; 7 of 13 had twitched).
+- **Final measurement** (1,000 matches at level 1, 300 at levels 0, 0.5, 0.75; the table is in `docs/ai.md`): 10.9
+  shots and 14.9 s a point, W/FE/UE 42.5 / 22.9 / 34.6%, serving pair wins 62.6%, errors into the net 70.6%.
+  Remaining gaps against the pros, all in `OPEN_QUESTIONS.md`: rallies over 11 s are 48% (pros 26%), shots off the
+  back glass 27.5% (12.8%), forced errors 23% (29-33%), bandejas and víboras finish 3% of winners (13%), errors off
+  the side wall 4.5% (17%).
