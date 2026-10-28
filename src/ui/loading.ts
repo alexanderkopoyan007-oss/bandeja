@@ -55,6 +55,8 @@ export class LoadingScreen {
   private readonly tip: HTMLElement;
   private shown = 0;
   private tipTimer = 0;
+  /** Each stage's start (ms since navigation), read by tools as window.__loadLog. */
+  readonly log: { name: string; t: number }[] = [];
 
   constructor() {
     if (!document.getElementById('loading-css')) {
@@ -66,6 +68,7 @@ export class LoadingScreen {
     const existing = document.getElementById('loading');
     this.root = existing ?? document.body.appendChild(document.createElement('div'));
     this.root.id = 'loading';
+    (window as unknown as { __loadLog: unknown }).__loadLog = this.log;
     this.root.setAttribute('role', 'progressbar');
     this.root.setAttribute('aria-label', 'Loading BANDEJA');
     this.root.setAttribute('aria-valuemin', '0');
@@ -83,6 +86,8 @@ export class LoadingScreen {
 
   /** A stage and how far along the whole load is (0..1). */
   stage(name: string, frac: number): void {
+    // The stages' times, for tools/perf.mjs load (a short list per load; reset by show()).
+    if (this.log.at(-1)?.name !== name) this.log.push({ name, t: Math.round(performance.now()) });
     this.shown = Math.max(this.shown, Math.min(1, frac));
     this.bar.style.width = `${(this.shown * 100).toFixed(1)}%`;
     this.stageEl.textContent = name;
@@ -92,6 +97,7 @@ export class LoadingScreen {
 
   /** Back on screen (between a menu and a match): a quick cover while the next one builds. */
   show(name: string): void {
+    this.log.length = 0;
     this.shown = 0;
     this.bar.style.transition = 'none';
     this.bar.style.width = '0';
@@ -105,6 +111,7 @@ export class LoadingScreen {
   /** Fade out (the game is drawing underneath). */
   done(): Promise<void> {
     this.stage('Ready', 1);
+    this.log.push({ name: 'shown', t: Math.round(performance.now()) });
     this.root.classList.add('out');
     return new Promise((r) => setTimeout(() => { this.root.style.display = 'none'; r(); }, 520));
   }

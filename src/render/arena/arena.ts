@@ -9,6 +9,7 @@ import type { EnvProbe } from '../courtView.ts';
 import { buildStadium } from './stadium.ts';
 import { buildOutdoor } from './outdoor.ts';
 import { buildHall } from './hall.ts';
+import { addArenaLights } from './lights.ts';
 
 export interface LightDef {
   env: number;
@@ -92,20 +93,7 @@ export class Arena {
 
     // Lights: a key light (the sun, or the roof's main lights) for the shadows, a hemisphere fill; the rest of the
     // light, and every reflection, comes from the environment map baked from the arena itself (bakeEnvironment).
-    const L = def.light;
-    const hemi = new THREE.HemisphereLight(L.hemi.sky, L.hemi.ground, L.hemi.intensity);
-    this.group.add(hemi);
-    this.key = new THREE.DirectionalLight(L.key.color, L.key.intensity);
-    const kd = new THREE.Vector3().fromArray(L.key.dir).normalize();
-    this.key.position.copy(kd).multiplyScalar(30);
-    this.key.castShadow = L.key.shadow && L.key.intensity > 0;
-    this.key.shadow.mapSize.set(2048, 2048);
-    this.key.shadow.bias = -0.0004;
-    this.key.shadow.normalBias = 0.02;
-    this.key.shadow.radius = L.key.radius;
-    Object.assign(this.key.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 2, far: 70 });
-    this.group.add(this.key);
-    this.group.add(this.key.target);
+    this.key = addArenaLights(this.group, def.light);
 
     if (def.kind === 'stadium') this.parts.push(buildStadium(this.group, def, court));
     else if (def.kind === 'hall') this.parts.push(buildHall(this.group, def, court));

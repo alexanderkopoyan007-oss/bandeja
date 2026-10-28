@@ -5,6 +5,7 @@
 import * as THREE from 'three/webgpu';
 import type { Court } from '../../sim/court/court.ts';
 import type { ArenaDef, ArenaPart } from './arena.ts';
+import { pooledLight } from './lights.ts';
 import { BoxBatch, mergeGeometries } from './stadium.ts';
 import { floorMaterial } from '../turf.ts';
 
@@ -196,6 +197,7 @@ export function buildOutdoor(root: THREE.Group, def: ArenaDef, court: Court, sce
   const lensGeo = new THREE.PlaneGeometry(0.44, 0.32);
   const fl = def.light.floods;
   let shadows = fl?.shadow ?? 0;
+  let spots = 0;
   for (const hd of heads) {
     const g = new THREE.Group();
     g.position.copy(hd.at);
@@ -208,7 +210,14 @@ export function buildOutdoor(root: THREE.Group, def: ArenaDef, court: Court, sce
     g.add(box, lens);
     root.add(g);
     if (night && fl && hd.ours) {
-      const sp = new THREE.SpotLight(def.poles?.color2 ?? '#ffffff', fl.intensity, 45, fl.angle, fl.penumbra, fl.decay);
+      const sp = pooledLight(`spot${spots++}`, () => new THREE.SpotLight());
+      sp.color.set(def.poles?.color2 ?? '#ffffff');
+      sp.intensity = fl.intensity;
+      sp.distance = 45;
+      sp.angle = fl.angle;
+      sp.penumbra = fl.penumbra;
+      sp.decay = fl.decay;
+      sp.castShadow = false;
       sp.position.copy(hd.at);
       sp.target.position.copy(hd.aim);
       if (shadows > 0) {

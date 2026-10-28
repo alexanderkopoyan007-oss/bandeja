@@ -278,7 +278,6 @@ export class App {
         ch('Controller rumble', 'rumble', onOff, 'The pad buzzes on your hits.'),
         { kind: 'button', label: 'Back', action: () => this.menu.back() },
       ],
-      focus: 1,
     };
   }
 
@@ -304,7 +303,7 @@ export class App {
       { kind: 'button', label: 'Reset keys', desc: 'Back to J K L I U O N, Space and Shift, with WASD and the arrows.', action: () => { s.keys = { ...DEFAULT_KEYS }; saveSettings(s); this.menu.refresh(); this.game?.applyPrefs(this.prefs()); } },
       { kind: 'button', label: 'Back', action: () => this.menu.back() },
     );
-    return { id: 'controls', title: 'Controls', sub: 'Keyboard and gamepad', items, side: () => this.padCard(), focus: 1 };
+    return { id: 'controls', title: 'Controls', sub: 'Keyboard and gamepad', items, side: () => this.padCard() };
   }
 
   private padCard(): string {

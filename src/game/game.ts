@@ -31,6 +31,10 @@ const MAX_TICKS_PER_FRAME = 12;
 
 export interface GameOptions {
   match: MatchConfig;
+  /** Perf runs only: draw this many times the pixels (a slower GPU's stand-in; tools/perf.mjs igpu). */
+  gpuLoad?: number;
+  /** Perf runs only: at most this many frames a second (a display's refresh, with the browser's limit off). */
+  fpsCap?: number;
   /** The human's player number (team + 2 * slot); ignored with autoplay. */
   human: number;
   autoplay: boolean;
@@ -316,7 +320,8 @@ export class Game {
   /** The preset's pixel ratio times the render scale (`?dpr=` caps it for tools). */
   applyPixelRatio(): void {
     const cap = Math.min(devicePixelRatio || 1, this.preset.maxDpr, this.opts.dprCap ?? 4);
-    const r = Math.max(0.5, cap * this.preset.scale * this.renderScale);
+    // ?gpuload=N (perf runs): N times the pixels, a stand-in for a GPU N times slower at fill-rate-bound work.
+    const r = Math.max(0.5, cap * this.preset.scale * this.renderScale) * Math.sqrt(this.opts.gpuLoad ?? 1);
     if (Math.abs(r - this.renderer.getPixelRatio()) > 1e-3) {
       this.renderer.setPixelRatio(r);
       this.resize();
@@ -469,6 +474,10 @@ export class Game {
 
   private tick(): void {
     const now = performance.now();
+    // ?fpscap=N (perf runs with the browser's frame limit off): draw at most N frames a second, as a display's
+    // refresh would pace them, so the GPU queue never fills the way an unpaced run fills it.
+    const cap = this.opts.fpsCap ?? 0;
+    if (cap > 0 && this.lastFrame > 0 && now - this.lastFrame < 1000 / cap - 0.3) return;
     this.frameNow = now;
     const simNow = (now - this.epoch) / 1000;
     const s0 = performance.now();

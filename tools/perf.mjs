@@ -4,12 +4,18 @@
 //   standard   medium-4x: 1080p, the Medium preset, CPU throttled 4x (stand-in for a mid-range laptop);
 //              high: 1080p at 2x pixel ratio, the High preset; both with the frame-rate limit off.
 //   presets    every preset (low, medium, high, ultra) at 1080p, CPU 4x, limit off.
+//   igpu       the presets with the CPU 4x throttled and 5x the pixels (integrated-graphics stand-in).
 //   trace      standard's two runs with a Chrome trace (GCs, long tasks) and the page's top allocation sites.
+//   deopt      which functions V8 deoptimises during play, and why (build with --minify false for names).
 //   load       cold-cache loads through the menus (title screen, then a match) on throttled networks and CPU.
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process';
 
 const secs = Number(process.argv[2] ?? 30);
+// GPUTIME=1: GPU timestamp queries (?gputime=1). Off by default: the read-back costs frames of its own, and on
+// Apple GPUs (this machine) passes overlap, so the begin-to-end times are no per-frame cost (27 ms "per frame" at
+// 140 fps in the first Phase 8 run).
+const GPUTIME = process.env.GPUTIME === '1';
 const PORT = 4190;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
@@ -67,7 +73,7 @@ function heapTop(profile, secs, n = 14) {
   for (const [k, v] of [...self].sort((a, b) => b[1] - a[1]).slice(0, n)) console.log(`    ${(v / 1e3 / secs).toFixed(1).padStart(7)} KB/s  ${k}`);
 }
 
-async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = false }) {
+async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = false, gpuLoad = 1, cap = 0 }) {
   // Audio on (Phase 6): no gesture in a headless run, so let the page start it; its main-thread cost is measured.
   // Developer features give the GPU timestamps full precision (Chrome rounds them to 100 µs otherwise).
   const args = ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required',
@@ -83,7 +89,7 @@ async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = f
     const cdp = await page.createCDPSession();
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
   }
-  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}&gputime=1`, { waitUntil: 'load' });
+  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}&gpuload=${gpuLoad}&fpscap=${cap}${GPUTIME ? '&gputime=1' : ''}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 3000)); // settle after warm-up
   await page.evaluate(() => window.__bandeja.audio.unlock());
@@ -118,14 +124,56 @@ async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = f
   console.log(`\n[${name}] ${d.backend}, quality ${quality}, pixel ratio ${d.ratio}, ${f.length} frames in ${secs}s`);
   console.log(`  fps ${(1000 / avg).toFixed(1)}   1% low ${low(f, 0.01).toFixed(1)}   0.1% low ${low(f, 0.001).toFixed(1)}`);
   console.log(`  frame ms p50 ${pct(f, 0.5).toFixed(2)}  p95 ${pct(f, 0.95).toFixed(2)}  p99 ${pct(f, 0.99).toFixed(2)}  max ${Math.max(...f).toFixed(2)}`);
-  console.log(`  frames > 20 ms: ${long} (${(100 * long / f.length).toFixed(2)}%)`);
+  const miss = f.filter((x) => x > 9.33).length;
+  console.log(`  frames > 20 ms: ${long} (${(100 * long / f.length).toFixed(2)}%)   > 9.33 ms (a 120 Hz refresh missed): ${miss} (${(100 * miss / f.length).toFixed(2)}%)`);
   console.log(`  CPU work/frame ms p50 ${pct(d.works, 0.5).toFixed(2)}  p99 ${pct(d.works, 0.99).toFixed(2)}  max ${Math.max(...d.works).toFixed(2)}`);
   console.log(`  sim ms/frame p50 ${pct(d.sims, 0.5).toFixed(3)}  p99 ${pct(d.sims, 0.99).toFixed(3)}  max ${Math.max(...d.sims).toFixed(3)}`);
-  if (d.gpus.length) console.log(`  GPU ms/frame p50 ${pct(d.gpus, 0.5).toFixed(2)}  p99 ${pct(d.gpus, 0.99).toFixed(2)}  max ${Math.max(...d.gpus).toFixed(2)}  (${d.gpus.length} samples)`);
-  else console.log('  GPU ms/frame: no timestamp queries on this backend');
+  if (d.gpus.length) console.log(`  GPU pass time ms p50 ${pct(d.gpus, 0.5).toFixed(2)}  p99 ${pct(d.gpus, 0.99).toFixed(2)}  max ${Math.max(...d.gpus).toFixed(2)}  (${d.gpus.length} samples; begin-to-end of each pass summed: Apple GPUs overlap passes, so not a per-frame cost there)`);
+  else if (GPUTIME) console.log('  GPU ms/frame: no timestamp queries on this backend');
   console.log(`  draw calls ${d.draws}  triangles ${d.tris}  audio ${d.audio ? 'on' : 'off'}`);
   if (errors.length) console.log('  errors:', errors.slice(0, 5));
   return { avg, long, p99: pct(f, 0.99) };
+}
+
+/**
+ * Which functions V8 deoptimises during play, and why (Chrome with --trace-deopt and --trace-opt; use an unminified
+ * build for readable names). A hot function that keeps deoptimising runs in the interpreter, where every
+ * floating-point result is a new heap number: per-frame garbage in code that allocates nothing when optimised.
+ */
+async function deopt(name, { dpr, throttle, quality }) {
+  const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, dumpio: false,
+    args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--disable-frame-rate-limit', '--disable-gpu-vsync',
+      '--js-flags=--trace-deopt --trace-opt'] });
+  const lines = [];
+  const proc = browser.process();
+  const grab = (d) => { for (const l of String(d).split('\n')) if (l.includes('bailout') || l.includes('completed optimizing') || l.includes('completed compiling')) lines.push({ t: Date.now(), l }); };
+  proc.stdout.on('data', grab);
+  proc.stderr.on('data', grab);
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: dpr });
+  if (throttle > 1) { const cdp = await page.createCDPSession(); await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle }); }
+  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
+  await new Promise((r) => setTimeout(r, 8000));
+  const from = Date.now();
+  await new Promise((r) => setTimeout(r, secs * 1000));
+  await browser.close();
+  const fn = (l) => (l.match(/<JSFunction ([^ >]*)/) ?? [])[1] ?? '?';
+  const deopts = new Map(), opts = new Map();
+  for (const { t, l } of lines) {
+    if (t < from) continue;
+    const f = fn(l);
+    if (l.includes('bailout')) {
+      const why = (l.match(/reason: ([^\]]*)/) ?? [])[1] ?? '';
+      const k = `${f} :: ${why.trim()}`;
+      deopts.set(k, (deopts.get(k) ?? 0) + 1);
+    } else opts.set(f, (opts.get(f) ?? 0) + 1);
+  }
+  console.log(`\n[deopt: ${name}] after an 8 s warm-up, ${secs} s of play`);
+  console.log('  deoptimisations (function :: reason, count):');
+  for (const [k, n] of [...deopts].sort((a, b) => b[1] - a[1]).slice(0, 30)) console.log(`    ${String(n).padStart(5)}  ${k.slice(0, 150)}`);
+  console.log('  (re)optimised in that time (function, count):');
+  for (const [k, n] of [...opts].sort((a, b) => b[1] - a[1]).slice(0, 20)) console.log(`    ${String(n).padStart(5)}  ${k}`);
 }
 
 /**
@@ -149,19 +197,23 @@ async function load(name, { down, up, rtt, throttle }) {
   await page.waitForFunction(() => window.__app?.menu?.isOpen, { timeout: 120000, polling: 50 });
   const r = await page.evaluate(async () => {
     const title = performance.now();
+    const boot = window.__loadLog.map((e) => `${e.name} ${(e.t / 1000).toFixed(2)}`).join(' | ');
     const paint = performance.getEntriesByType('paint').find((e) => e.name === 'first-contentful-paint')?.startTime ?? -1;
     const bytes = performance.getEntriesByType('resource').reduce((a, e) => a + (e.encodedBodySize || 0), 0)
       + (performance.getEntriesByType('navigation')[0]?.encodedBodySize ?? 0);
     const t = performance.now();
     await window.__app.startMatch();
     await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
-    return { paint, title, match: performance.now() - t, bytes };
+    const build = window.__loadLog.map((e) => `${e.name} +${((e.t - t) / 1000).toFixed(2)}`).join(' | ');
+    return { paint, title, match: performance.now() - t, bytes, boot, build };
   });
   await browser.close();
   const s = (ms) => `${(ms / 1000).toFixed(2)} s`;
   console.log(`\n[load: ${name}] ${down} Mbit/s down, ${rtt} ms RTT, CPU ${throttle}x`);
   console.log(`  first paint ${s(r.paint)}   title playable ${s(r.title)}   Quick match to its first frame ${s(r.match)}   total ${s(r.title + r.match)}`);
   console.log(`  downloaded ${(r.bytes / 1e6).toFixed(2)} MB (compressed)`);
+  console.log(`  boot stages (s): ${r.boot}`);
+  console.log(`  match stages (s after Quick match): ${r.build}`);
   if (errors.length) console.log('  errors:', errors.slice(0, 5));
   return r;
 }
@@ -176,6 +228,14 @@ try {
   } else if (which === 'trace') {
     await run('medium-4x traced', { dpr: 1, throttle: 4, unlimited: true, quality: 'medium', trace: true });
     await run('high traced', { dpr: 2, throttle: 1, unlimited: true, quality: 'high', trace: true });
+  } else if (which === 'igpu') {
+    // Integrated graphics, as well as this machine can stand in for it: the CPU throttled 4x and five times the
+    // pixels (an M1 Max GPU has about five times the fill rate and bandwidth of a mid-range laptop's Iris Xe or
+    // Radeon 680M). Each preset at a 1080p screen with a pixel ratio of 1, the frame limit off.
+    const verdict = (r) => `  holds 60 Hz: ${r.p99 < 16.7 ? 'yes' : 'NO'}`;
+    for (const q of ['low', 'medium', 'high']) console.log(verdict(await run(`igpu-proxy ${q}`, { dpr: 1, throttle: 4, unlimited: true, quality: q, gpuLoad: 5 })));
+  } else if (which === 'deopt') {
+    await deopt('medium-4x', { dpr: 1, throttle: 4, quality: 'medium' });
   } else if (which === 'load') {
     // Typical home broadband, then a slow connection (a phone's 4G hotspot), both on the laptop proxy's CPU.
     await load('broadband', { down: 25, up: 5, rtt: 40, throttle: 4 });
@@ -191,6 +251,8 @@ try {
     } else {
       console.log(verdict(await run('medium-4x (laptop proxy)', { dpr: 1, throttle: 4, unlimited: true, quality: 'medium' })));
       console.log(verdict(await run('high (2x pixel ratio)', { dpr: 2, throttle: 1, unlimited: true, quality: 'high' })));
+      // Paced as a 120 Hz display paces it: the unpaced run above fills the GPU queue, and its stalls are that.
+      console.log(verdict(await run('high at 120 Hz (2x pixel ratio, paced)', { dpr: 2, throttle: 1, unlimited: true, quality: 'high', cap: 120 })));
     }
   }
 } finally {

@@ -116,6 +116,8 @@ export class Menu {
   private readonly foot: HTMLElement;
   private readonly brand: HTMLElement;
   private stack: Screen[] = [];
+  /** The focus a screen had when another was opened over it. */
+  private readonly lastFocus = new WeakMap<Screen, number>();
   private els: HTMLElement[] = [];
   private items: Item[] = [];
   private focusIdx = 0;
@@ -172,6 +174,9 @@ export class Menu {
   /** Show a screen on top of the stack (or as the only one with `reset`). */
   open(s: Screen, reset = false): void {
     if (reset) this.stack = [];
+    // Coming back to the screen underneath puts the focus where it was.
+    const under = this.current;
+    if (under && this.visible) this.lastFocus.set(under, this.focusIdx);
     this.stack.push(s);
     this.show();
     this.render(false);
@@ -195,7 +200,8 @@ export class Menu {
 
   pop(): void {
     this.stack.pop();
-    if (this.stack.length) this.render(true);
+    const s = this.current;
+    if (s) this.render(true, this.lastFocus.get(s) ?? -1);
     else this.hide();
   }
 

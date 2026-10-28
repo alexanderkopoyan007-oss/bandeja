@@ -75,6 +75,8 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     sound: params.get('sound') !== '0',
     arena: params.get('arena') ?? 'stadium',
     dprCap: num('dpr', 2),
+    gpuLoad: num('gpuload', 1),
+    fpsCap: num('fpscap', 0),
     avatar,
     prefs: { quality: qualityPreset(params.get('quality')) },
   };
