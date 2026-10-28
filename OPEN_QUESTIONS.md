@@ -75,3 +75,11 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   the swing while the other still holds it; with `?assist=0` the aim reads the movement keys at frame time rather
   than at the release moment (moves reach the sim as axes, not as timestamped events). Settled by: the owner's
   playtest on their own machine and pad, if any of them shows.
+- **Render and feedback timing left open** (Phase 2 review round 4, all Low): while the render lag eases in after a
+  press (about 33 ms) the hold keeps the sim at the last tick before now, so on 165-240 Hz screens a few frames
+  repeat or step past the ease (165 Hz: 23 repeats a match-minute's worth of presses; skipping the hold while the
+  lag eases in removes them but makes 10-20 ms taps strike late more often). A tap shorter than about 15 ms can
+  strike up to 7.6 ms late (the press frame may already have run the sim past now). The camera kick and rumble can
+  start up to a tick before the hit is drawn (sound already waits for it). `npm run alloc` drives AI players only;
+  a human-path mode would close that gap. Settled by: the owner's playtest on a fast screen; none is visible at 60
+  or 120 Hz in the emulation.

@@ -85,6 +85,14 @@ export class KeyboardInput {
     }
   }
 
+  /** Move every queued event stamped before `t` up to `t` (the game dropped a backlog: those moments are gone). */
+  clampQueue(t: number): void {
+    for (let k = this.head; k < this.tail; k++) {
+      const q = this.queue[k % QUEUE]!;
+      if (q.ts < t) q.ts = t;
+    }
+  }
+
   private push(press: boolean, button: number, ts: number): void {
     const q = this.queue[this.tail % QUEUE]!;
     q.press = press;

@@ -345,3 +345,15 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     max 0.3 ms; Chrome's transit is about 1 ms); the pad and the keyboard holding the same button share one bit (one
     letting go releases it); with `?assist=0` aim reads the movement keys at frame time, not at the release (moves
     are axes, not queued events). In OPEN_QUESTIONS.md.
+- **Fresh-eyes round 4** (independent, read-only; an emulation of the new `Game.tick` against the real sim at 60-240
+  Hz with jitter, hitches, tab hide/show, `?runahead=0`, autotime, doubles, volley and overhead keys and 127 serves;
+  determinism without the render-side calls over ~20 runs; alloc over five seeds): **nothing Medium or above;
+  Phase 2 is verified.** No late strikes for holds of 20 ms or more at any refresh rate; a bot releasing as the
+  ring closes is graded 0.0 ms at the median. Fixed from its Low list: the ring now counts down on the sim's own
+  clock (`simNow`, or the sim's time after a dropped backlog), exact on every frame including the press frame
+  (render time + lag fell 5-8 ms behind there at 60 Hz); and a dropped backlog (a hitch over 100 ms) moves the
+  queued keys' stamps up to now (they were in the sim's past: releases graded up to 220 ms early and struck up to
+  67 ms late, 6 of 185 in the reviewer's hitch run; 0 with the clamp). Left (OPEN_QUESTIONS.md): a few repeated
+  frames while the lag eases in after a press at 165-240 Hz; taps under 15 ms can strike late; the camera kick
+  and rumble can lead the drawn hit by up to a tick; `npm run alloc` drives only AI players (a human-path bot
+  measured 7-15 GCs per 100k ticks, mean 10.2, against 8.6 on Phase 1's code: within match noise).

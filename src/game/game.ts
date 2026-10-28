@@ -318,11 +318,15 @@ export class Game {
       this.sim.step(this.inputs);
       n++;
     }
+    let cueNow = simNow;
     if (n === MAX_TICKS_PER_FRAME) {
       // Drop a backlog rather than spiral; draw from the new clock (the old one would draw the newest tick and step
-      // back next frame).
+      // back next frame). Keys still queued keep their wall-clock stamps, which are now in the sim's past: they are
+      // moved up to now, or a release made during the hitch is graded up to 0.2 s early and struck late.
       this.epoch = now - this.sim.time * 1000;
       drawn = this.sim.time - this.renderLag;
+      cueNow = this.sim.time;
+      this.kb.clampQueue(now);
     }
     const simMs = performance.now() - s0;
     const renderTime = Math.min(this.sim.time, Math.max(this.sim.time - DT, drawn));
@@ -356,7 +360,7 @@ export class Game {
     this.feedback.update(this.sim, who, renderTime, now);
     this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
-      now / 1000, frameDt, renderTime + this.renderLag);
+      now / 1000, frameDt, cueNow);
     this.hud.update(this.sim, who, now / 1000);
 
     this.renderer.render(this.scene, this.cam.camera);
