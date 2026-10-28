@@ -157,6 +157,20 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Left as is: a ball that dies right after a junction gains up to 12 ms of travel (it is dead; only where it
     rests moves), and after a flight longer than a tick (8.3 ms) the ball stands still for one tick (a few cm of
     hitch, in junctions only). Gameplay unchanged (24 x 300 s: 317 points, 47.0% / 46.1%, median 11 shots).
+- **Review round 4** (fresh-eyes, read-only; the round-3 fuzzers again on every court and floor, 40k balls at wall
+  tops, doors and mesh, realistic drives, lobs and slices landing around the glass foot). Fixed:
+  - *A topspin nick at the foot of the back glass lost the point* (medium, new in round 3): logging the second
+    surface only when the flight after the first reaches it missed a ball already touching the floor whose
+    topspin the glass turns upward: the flight never closes on the floor, so no floor contact was logged and the
+    referee called the wall before the bounce (0.7-0.8% of balls landing within 5 cm of the back glass's foot went
+    to the wrong team). The second surface also counts as reached when the ball would meet it within half a
+    contact time at its incoming speed (it keeps closing while it compresses against the first), or when it is
+    the floor within `nickGap` (that field's meaning); logged at the first contact then. Test: the reviewer's
+    ball logs its floor contact, then the wall. The round-3 cases (6-9 mm gaps with topspin, a serve 3.6 mm from
+    the side mesh) stay unlogged.
+  - Checked and fine: the wall recovery band fired only at the enclosure step's top corner (a ball over the 3 m
+    section into the 4 m one sits up to 2.3 cm in the mesh for 3 ticks, then comes off its face; round 2 sent
+    those through it); determinism across runs and interpreter-only; 0 tunnels, embeds, energy gains, stuck balls.
 - **Frame rate, before → after Phase 1** (`npm run build && npm run perf`, 30 s each, AI doubles, this M1 Max):
   medium with the CPU throttled 4x (laptop proxy) p50 2.4 → 2.4 ms, p99 4.5 → 4.3 ms, max 15.6 → 12.0 ms, 0 frames
   over 20 ms either way, sim p99 0.8 ms both; high (2x pixel ratio) 498 → 539 fps, p99 8.9 → 8.8 ms, 99 → 105
