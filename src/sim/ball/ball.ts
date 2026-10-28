@@ -6,7 +6,7 @@ import { Rng } from '../core/rng.ts';
 import { GRAVITY, DT } from '../core/constants.ts';
 import { abs, clamp, cos, exp, expF, FIO, max, min, pow, sin, sqrt, PI } from '../core/smath.ts';
 import {
-  Court, SURF_GLASS, SURF_MESH, SURF_OPEN, SURF_FLOOR, SURF_NET, EDGE_X, EDGE_Y, EDGE_STRIDE,
+  Court, SURF_GLASS, SURF_MESH, SURF_OPEN, SURF_FLOOR, SURF_NET, EDGE_X, EDGE_Y, EDGE_STRIDE, CORNER_STRIDE,
   WALL_BACK_NEAR, WALL_BACK_FAR, WALL_SIDE_LEFT, WALL_SIDE_RIGHT, type ZoneHit,
 } from '../court/court.ts';
 import type { NetCloth } from '../court/netCloth.ts';
@@ -220,6 +220,8 @@ export class Ball {
   coupled = false;
   /** Seconds since the ball last touched the netting or the cable. */
   private sinceTouch = 1;
+  /** Which side of the cable's line the centre was on last substep (stepCoupled; it starts on its netSide). */
+  private relSide = 1;
   /** Step length and event-time offset for fly() / roll() (fields: doubles passed as arguments get boxed). */
   private flyDt = 0;
   private flyAt = 0;
@@ -383,7 +385,7 @@ export class Ball {
     const r = world.spec.radius;
     if ((p.x < 0 ? -p.x : p.x) > c.halfW + 0.15) return false;
     if (p.y - r > c.def.net.heightPost + 0.06 - min(0, v.y) * this.stepDt) return false;
-    const reach = (cl.awake ? 0.9 : 0.04) + r + (v.z < 0 ? -v.z : v.z) * DT + 0.02;
+    const reach = (cl.awake ? 0.9 : 0.04 + cl.bulge) + r + (v.z < 0 ? -v.z : v.z) * DT + 0.02;
     return (p.z < 0 ? -p.z : p.z) < reach;
   }
 
@@ -394,6 +396,7 @@ export class Ball {
    */
   private stepCoupled(world: BallWorld, rng: Rng | null, cl: NetCloth): void {
     this.coupled = true;
+    this.relSide = this.netSide;
     const r = world.spec.radius;
     const c = world.court;
     cl.bw = 1 / world.spec.mass;
@@ -415,13 +418,23 @@ export class Ball {
       this.flyAt = k * h;
       if (this.rolling) this.roll(world);
       else this.fly(world, rng, false);
-      // Which side of the net the ball is on can only change over the cable or beyond the posts.
+      // Which side of the net the ball is on can only change over the cable or beyond the posts. Over the cable
+      // means the centre passes the cable's plane above the cable's centre line: it can't go through the cable,
+      // and a ball rolling over the tape is touching it, so its bottom never clears the cable's top (QA army: a
+      // net cord that dropped past the net stayed on the hitter's side for a metre).
+      // It changes on crossing that line, not on being past it, and never while the netting grips it: smashes
+      // driven into the top of the net climbed out of the pocket with the centre past the cable and above it, and
+      // were put on the far side, still held or just let go (QA army). Crossing is judged within a coupled tick:
+      // `relSide` starts each one at `netSide`, so a ball already past the line and above the cable when a tick
+      // starts (the cable sprang back under it) counts as a crossing then.
       cl.qx = p.x;
       cl.cableAt();
       const ax = p.x < 0 ? -p.x : p.x;
-      if (ax >= c.halfW || p.y - r > cl.cy + cl.spec.cableRadius) {
-        const zc = ax < c.halfW ? cl.cz : 0;
-        if (p.z !== zc) this.netSide = p.z > zc ? 1 : -1;
+      const zc = ax < c.halfW ? cl.cz : 0;
+      const rel = p.z > zc ? 1 : p.z < zc ? -1 : 0;
+      if (rel !== 0 && rel !== this.relSide) {
+        if ((ax >= c.halfW || p.y > cl.cy) && !this.inNet) this.netSide = rel;
+        this.relSide = rel;
       }
       cl.side = this.netSide;
       cl.bx = p.x;
@@ -636,7 +649,10 @@ export class Ball {
       this.tryPost(c, p);
       // Wall tops and door frames, near the walls only.
       const m = 0.5;
-      if (abs(p.x) > c.halfW - m || abs(p.z) > c.halfL - m || abs(q.x) > c.halfW - m || abs(q.z) > c.halfL - m) this.tryEdges(c, p);
+      if (abs(p.x) > c.halfW - m || abs(p.z) > c.halfL - m || abs(q.x) > c.halfW - m || abs(q.z) > c.halfL - m) {
+        this.tryEdges(c, p);
+        this.tryCorners(c, p);
+      }
     }
     return this.best <= 1;
   }
@@ -680,6 +696,34 @@ export class Ball {
       if (axis === EDGE_X) n.set(0, ss / l, tt / l);
       else if (axis === EDGE_Y) n.set(ss / l, 0, tt / l);
       else n.set(ss / l, tt / l, 0);
+    }
+  }
+
+  /** The edges' end points (Court.corners): the centre path against a sphere of the ball's radius round each. */
+  private tryCorners(c: Court, p: V3): void {
+    const q = this.pos;
+    const r = this.radius;
+    const K = c.corners;
+    const dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+    const A = dx * dx + dy * dy + dz * dz;
+    if (A < 1e-18) return;
+    for (let i = 0; i < K.length; i += CORNER_STRIDE) {
+      const ox = q.x - K[i]!, oy = q.y - K[i + 1]!, oz = q.z - K[i + 2]!;
+      const C = ox * ox + oy * oy + oz * oz - r * r;
+      if (C <= 0) continue;
+      const B = 2 * (ox * dx + oy * dy + oz * dz);
+      if (B >= 0) continue;
+      const disc = B * B - 4 * A * C;
+      if (disc < 0) continue;
+      const f = (-B - sqrt(disc)) / (2 * A);
+      if (f < 0 || f >= this.best) continue;
+      this.best = f;
+      this.hitKind = HIT_EDGE;
+      this.hitSurface = K[i + 3]!;
+      this.hitWall = K[i + 4]!;
+      const sx = ox + dx * f, sy = oy + dy * f, sz = oz + dz * f;
+      const l = sqrt(sx * sx + sy * sy + sz * sz);
+      n.set(sx / l, sy / l, sz / l);
     }
   }
 

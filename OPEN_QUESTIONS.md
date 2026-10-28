@@ -199,3 +199,22 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **Output latency.** Sounds are scheduled at the event's time; the device's output latency (10-40 ms wired,
   150 ms+ on Bluetooth) is not taken off, and Safari doesn't report it. Whether it is noticeable is for a player to say.
 
+
+## Phase 7 (rules and QA)
+- **Out-of-court play** (FIP 13.1.e, 14.1.j, rule 16) isn't built. No court allows it, so a ball that leaves the
+  court after a good bounce ends the point, which is the rule on courts without it (13.1.d). Pro events play it on
+  courts with space round them, and it is padel's most spectacular rally. Building it means the floor outside the
+  court, players and the AI running out through the doors (and round the side for an end-wall ball), returns from
+  outside, and new rules tests: days of work. Settled by: the owner saying whether they want it, and for which
+  arenas.
+- **The FIP readings the oracles chose** (`tools/qa/ORACLE-NOTES.md`, 44 of them) are one careful reading of an
+  ambiguous text: which box is "left" in 6.5, 7.1.d reaching the serving pair only before the bounce, a corner nick
+  being a glass touch with the ball's centre within 6 cm of the floor, and so on. The game now agrees with all of
+  them. Settled by: a referee, or the FIP's own clarifications, on the ones marked as judgement calls.
+- **The corner's height** (6 cm for the ball's centre, 2.7 cm for its bottom) is the oracle's reading of "the angle
+  where the wall joins the ground", not a measured referee's eye. Settled by: footage of called corner balls.
+- **The server's partner and the dropped ball.** Before the serve only the server's racket meets the ball; another
+  player's swing at it misses. FIP has no rule for a partner hitting the server's drop (it never happens); the oracle
+  read it as the serve's fault. Either is defensible.
+- **Monkey thresholds.** Random-input players fail per-minute animation limits set for AI play (they swing three
+  times as often). Whether random mashing should look as clean as real play is a call for the owner.

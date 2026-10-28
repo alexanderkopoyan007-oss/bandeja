@@ -62,6 +62,9 @@ export class SimpleAi {
   standZ = 0;
   idealT = 0;
   releaseAt = 0;
+  /** The ideal moment of the window the release is timed off: an early release meets the ball then (the sim's
+   * contact is the later of the two), which the animation times the swing to. */
+  releaseIdeal = 0;
   shot = SHOT_DRIVE;
   targetX = 0;
   targetZ = 0;
@@ -322,6 +325,7 @@ export class SimpleAi {
     if (best < 0) return;
     const ideal = this.wins[best]!.ideal;
     this.releaseAt = ideal + this.noise;
+    this.releaseIdeal = ideal;
     // Nobody waits for a ball to reach their chest: a late swing at a ball coming at the body still goes in time.
     const k = m.bodyHitIdx(this.index, s);
     const hit = k >= 0 ? m.pred.t[k]! : -1;
@@ -496,6 +500,7 @@ export class SimpleAi {
     }
     if (changed) this.noise = rng.normal() * this.timingSigma() * this.difficulty(m, height, st.afterWall);
     this.releaseAt = this.idealT + this.noise;
+    this.releaseIdeal = this.idealT;
     this.planned = true;
     this.pressed = p.swing !== SW_IDLE;
     this.released = false;

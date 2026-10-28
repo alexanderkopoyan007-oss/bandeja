@@ -152,8 +152,13 @@ export class Score {
     return -1;
   }
 
+  /**
+   * One set all (generalised: both pairs a set short). Never in a one-set match: there is no deciding set, so the
+   * final-set rule does not apply (QA army: "no tie-break" did, a match tie-break did not; the score oracle reads
+   * 1.score.4 the same way).
+   */
   private isFinalSet(): boolean {
-    return this.sets[0] === this.format.setsToWin - 1 && this.sets[1] === this.format.setsToWin - 1;
+    return this.format.setsToWin >= 2 && this.sets[0] === this.format.setsToWin - 1 && this.sets[1] === this.format.setsToWin - 1;
   }
 
   /** Record a point for `team`. Returns EV_* flags. */

@@ -26,18 +26,22 @@ export const WHY_RECEIVER_VOLLEYED_SERVE = 15; // 8.5
 export const WHY_SERVE_DOOR = 16; // 7.1.f
 export const WHY_SERVE_WALL_FIRST = 17; // serve must bounce in the box first
 export const WHY_WHIFF = 18; // swung and missed: ball goes on to bounce twice
+export const WHY_SERVE_AREA = 19; // 6.2 / 7.1.a: dropped, or struck, over the service line or the centre line
 
 export const REASON_TEXT: readonly string[] = [
   '', 'Double bounce', 'Into the net', 'Hit the wall before bouncing', 'Hit own fence', 'Out',
   'Winner', 'Ball hit the player', 'Hit own partner', 'Fault: out of the box', 'Fault: touched the fence',
   'Fault: into the net', 'Fault: missed', 'Fault: above the waist', 'Let', 'Receiver volleyed the serve',
-  'Fault: out through the door', 'Fault: hit the wall first', 'Missed',
+  'Fault: out through the door', 'Fault: hit the wall first', 'Missed', 'Fault: over the line',
 ];
 
 export interface ServeBox {
   /** x range and z range of the target box (absolute court coordinates). */
   x0: number; x1: number; z0: number; z1: number;
 }
+
+/** A floor touch this close (m) after a corner touch is its floor half, not a further bounce (rules oracle: 25 cm). */
+const CORNER_SAME = 0.25;
 
 export class Rally {
   /** Team that hit the ball last (-1 before the serve is struck). */
@@ -60,6 +64,17 @@ export class Rally {
   readonly box: ServeBox = { x0: 0, x1: 0, z0: 0, z1: 0 };
   lineTolerance = 0.025;
   outOfCourtPlay = false;
+  /**
+   * A touch of the opponents' glass before the bounce this low (the ball's centre, m; its radius is 3.2-3.4 cm) is
+   * the angle where the wall joins the ground, and counts as the bounce (14.1.i). (QA army: the game took only a
+   * wall and floor met in the same tick as the corner, and a ball 2.7 cm off the floor at the glass, on the floor
+   * 8 ms later, lost the point; no referee can see that, and the oracle written from the rules called it good.)
+   */
+  cornerY = 0.06;
+  /** That corner touch, while the next contact may still be its floor half (within CORNER_SAME): x, z. */
+  private cornerOn = false;
+  private cornerX = 0;
+  private cornerZ = 0;
 
   reset(): void {
     this.hitter = -1;
@@ -73,6 +88,7 @@ export class Rally {
     this.result = R_NONE;
     this.winner = -1;
     this.why = 0;
+    this.cornerOn = false;
   }
 
   get over(): boolean {
@@ -115,6 +131,7 @@ export class Rally {
   /** A racket strike by `team` standing on half `side`. `contactHeight`/`waist` only matter for the serve. */
   onStrike(team: number, side: number, serve: boolean, contactHeight = 0, waist = 2): void {
     if (this.over) return;
+    this.cornerOn = false;
     if (serve) {
       this.reset();
       this.isServe = true;
@@ -142,6 +159,11 @@ export class Rally {
     this.shots++;
   }
 
+  /** The serve was dropped or struck outside the server's own area (over the service line or the centre line). */
+  onServeArea(): void {
+    if (this.isServe && this.shots === 1) this.fault(WHY_SERVE_AREA);
+  }
+
   /** The server swung at the dropped ball and missed it. */
   onServeMissed(): void {
     this.isServe = true;
@@ -156,6 +178,12 @@ export class Rally {
 
   onFloor(x: number, z: number): void {
     if (this.hitter < 0 || this.over) return;
+    if (this.cornerOn) {
+      // The floor half of a corner touch: the same bounce.
+      this.cornerOn = false;
+      const dx = x - this.cornerX, dz = z - this.cornerZ;
+      if (dx * dx + dz * dz <= CORNER_SAME * CORNER_SAME) return;
+    }
     const ballSide = z >= 0 ? 1 : -1;
     if (!this.crossed || ballSide === this.hitterSide && this.bounces === 0) {
       // Never got over the net (13.l) / serve into the net.
@@ -179,9 +207,10 @@ export class Rally {
     this.receiverLoses(WHY_DOUBLE_BOUNCE);
   }
 
-  /** A wall contact. `wallSide` is the half of the court the touched wall section belongs to. */
-  onWall(surface: number, wallSide: number): void {
+  /** A wall contact at (x, y, z). `wallSide` is the half of the court the touched wall section belongs to. */
+  onWall(surface: number, wallSide: number, x = 0, y = 1, z = 0): void {
     if (this.hitter < 0 || this.over) return;
+    this.cornerOn = false;
     if (!this.crossed) {
       // Still on the hitter's side: own glass is legal (contrapared), own mesh is not (13.l).
       if (this.isServe) this.fault(WHY_SERVE_WALL_FIRST);
@@ -191,6 +220,12 @@ export class Rally {
     if (this.bounces === 0) {
       // Crossed but touched a wall before bouncing in the opponent's court (13.g).
       if (wallSide === this.hitterSide && surface === SURF_GLASS && !this.isServe) return; // came back to own glass mid-air: still in flight
+      // The corner (14.1.i): the bounce, where the glass meets the floor; the serve's box against the side glass too.
+      if (surface === SURF_GLASS && y <= this.cornerY && wallSide !== this.hitterSide) {
+        this.onFloor(x, z);
+        if (!this.over) { this.cornerOn = true; this.cornerX = x; this.cornerZ = z; }
+        return;
+      }
       this.hitterLoses(WHY_WALL_BEFORE_BOUNCE, WHY_SERVE_WALL_FIRST);
       return;
     }
@@ -200,7 +235,10 @@ export class Rally {
 
   onNet(): void {
     if (this.hitter < 0 || this.over) return;
-    if (!this.crossed) this.netTouched = true;
+    this.cornerOn = false;
+    // Before the bounce, either side of the plane: a ball whose centre is just over still touches the tape from
+    // beyond it (QA army: that net serve was played on instead of replayed, 9.1.a).
+    if (this.bounces === 0) this.netTouched = true;
   }
 
   /** The ball left the enclosure. */
@@ -221,6 +259,13 @@ export class Rally {
   /** The ball touched a player's body (not the racket). */
   onBody(team: number): void {
     if (this.hitter < 0 || this.over) return;
+    this.cornerOn = false;
+    // 9.1: a serve that touched the net (or a post) is a "net" if it then lands in the box (9.1.a) or touches any
+    // player (9.1.b), whoever it is: the serve is played again.
+    if (this.isServe && this.netTouched && (this.pendingLet || this.bounces === 0)) {
+      this.letServe();
+      return;
+    }
     if (team === this.hitter) {
       if (this.isServe) this.fault(WHY_HIT_BODY_OWN);
       else this.point(1 - team, WHY_HIT_BODY_OWN);
@@ -235,13 +280,15 @@ export class Rally {
 
   writeState(out: number[]): void {
     out.push(this.hitter, this.hitterSide, this.isServe ? 1 : 0, this.crossed ? 1 : 0, this.bounces,
-      this.netTouched ? 1 : 0, this.pendingLet ? 1 : 0, this.shots, this.result, this.winner, this.why);
+      this.netTouched ? 1 : 0, this.pendingLet ? 1 : 0, this.shots, this.result, this.winner, this.why,
+      this.cornerOn ? 1 : 0, this.cornerX, this.cornerZ);
   }
 
   readState(s: number[], i: number): number {
     this.hitter = s[i++]!; this.hitterSide = s[i++]!; this.isServe = s[i++] === 1; this.crossed = s[i++] === 1;
     this.bounces = s[i++]!; this.netTouched = s[i++] === 1; this.pendingLet = s[i++] === 1; this.shots = s[i++]!;
     this.result = s[i++]!; this.winner = s[i++]!; this.why = s[i++]!;
+    this.cornerOn = s[i++] === 1; this.cornerX = s[i++]!; this.cornerZ = s[i++]!;
     return i;
   }
 }

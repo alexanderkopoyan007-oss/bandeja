@@ -10,7 +10,7 @@ import type { StandPlan } from '../../sim/player/positioning.ts';
 import { DT } from '../../sim/core/constants.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
-import { hingeIK, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
+import { hingeIK, IK_BEND, IK_SOFT, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import { fitCapsules, RACKET_PTS } from './capsules.ts';
 import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
@@ -84,6 +84,19 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 /** Blend weight for lerpV / nlerpQ, in a field: V8 boxes a double passed to a call it doesn't inline. */
 const BL = { u: 0 };
 
+/** Quaternion scratch for blendTo (Quaternion.set boxes its doubles when V8 doesn't inline it). */
+const QB4 = new Float64Array(4);
+
+/** q = normalised lerp from `from` to q by BL.u, the short way (a fade between two near poses). */
+function blendTo(q: THREE.Quaternion, from: THREE.Quaternion): void {
+  const u = BL.u, d = from.x * q.x + from.y * q.y + from.z * q.z + from.w * q.w;
+  const s = d < 0 ? -u : u, v = 1 - u;
+  const x = from.x * v + q.x * s, y = from.y * v + q.y * s, z = from.z * v + q.z * s, w = from.w * v + q.w * s;
+  const l = Math.sqrt(x * x + y * y + z * z + w * w);
+  QB4[0] = x / l; QB4[1] = y / l; QB4[2] = z / l; QB4[3] = w / l;
+  q.fromArray(QB4);
+}
+
 /** a = lerp(a, b, BL.u). */
 function lerpV(a: THREE.Vector3, b: THREE.Vector3): void {
   const u = BL.u;
@@ -153,6 +166,12 @@ type Elbow = HingeLimb & { dir: THREE.Vector3 };
 /** How fast an elbow's side may swing round the shoulder-to-hand line (rad/s): the shoulder's rotation speed limit. */
 const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
 /**
+ * How fast an elbow may bend or straighten (rad/s): 1.8x the forearm's peak in a serve (LIMITS, 2050 deg/s), so
+ * no swing comes near it and it stops only the jumps (80-99 degrees in a frame; at 1.25x a human's late serve met
+ * the ball a frame later still).
+ */
+const ELBOW_BEND_RATE = (1.8 * 2050 * Math.PI) / 180;
+/**
  * Cloth lag (kit.ts): spring stiffness (1/s², about 2 Hz, a shirt hem's swing) and damping (1/s, ζ ≈ 0.6) of the
  * point the hems follow, and the most they trail (m). Sweat: the time term and the distance term add; at the AI's
  * pace (about 4.4 km an hour of play, more than the 2 km/h Miralles 2025 measured for pros, since the AI shuffles more)
@@ -191,8 +210,19 @@ function elbowHinge(asset: PlayerAsset, name: string): Elbow {
     }
   }
   if (acc.lengthSq() < 1e-9) acc.set(0, 0, name.startsWith('Right') ? -1 : 1);
-  return { hinge: acc.normalize(), rest, side: new THREE.Vector3(), dir: new THREE.Vector3() };
+  return { hinge: acc.normalize(), rest, side: new THREE.Vector3(), dir: new THREE.Vector3(), bend: new Float64Array(2) };
 }
+
+/**
+ * Fastest an arm joint turns while its solve fades to the clip (rad/s): the two can be near 180 degrees apart (the
+ * ready pose's racket up in front against the clip's hanging by the side), where the short way between them flips
+ * from one side to the other: the upper arm and hand turned over 148 degrees in a frame. At this rate it takes
+ * about a tenth of a second. (Keeping last frame's way round instead spun the arm the long way.)
+ */
+const FADE_TURN_RATE = (1500 * Math.PI) / 180;
+
+/** The arms' soft zone at full reach (m; ik.ts IK_SOFT): at a target exactly at full reach the hand falls 1.5 cm short. */
+const ARM_SOFT = 0.03;
 
 /** The free arm's elbow hangs down and back. */
 const OFF_POLE = new THREE.Vector3(0.5, 0.75, -0.3);
@@ -252,6 +282,14 @@ const FINISH_EASE = 0.15;
 const DOWN_SHARE = 0.55;
 /** Most the upper body bends from the spine's base towards a ball out of the arm's reach (rad). */
 const SPINE_REACH = 0.75;
+/**
+ * Fastest that bend changes (rad/s): taken fresh each frame it flipped sides when the target passed under the
+ * spine's base (a 52 degree jump of the lower back in a frame). Fast enough to follow a lunge for the ball: at 6 the
+ * hand was still short of it at contact (contact distance p90 2.8 -> 4.5 cm over the animation army).
+ */
+const SPINE_REACH_RATE = 20;
+/** The bend fades out as the target goes round behind the spine's base, where its way is undefined (rad). */
+const SPINE_REACH_BACK0 = (140 * Math.PI) / 180, SPINE_REACH_BACK1 = (165 * Math.PI) / 180;
 /** Fastest the hips come back up from a drop (m/s): standing up out of a lunge. */
 const HIP_RISE = 1.5;
 /** Fastest the hips drop (m/s): into a lunge, about 0.3 m in 0.15 s. */
@@ -348,8 +386,33 @@ const LUNGE_RATE = 3;
 const LUNGE_REACH = 0.95;
 /** How far a low ball (under 0.45 m, from 0.95 m) steps the foot on its side towards it (m). */
 const LUNGE_LOW = 0.45;
+/** Below this weight (the stroke's or the ready position's) the arm solve fades into the clip's arm. */
+const ARM_FADE = 0.15;
+/** Furthest a swing reaches past the arm (m: hand to the face's centre and the hips' reach), and the heights an
+ * out-of-reach contact is swung at between (m). */
+const CON_REACH = 1.0;
+const CON_LOW = 0.25;
+const CON_TOP = 2.7;
 /** Locomotion: how close to halfway between two directions (a quarter turn = 1) their clips cross-fade. */
 const WARP_BAND = 0.1;
+/**
+ * Side-on run: across faster than SIDE_RUN_ON (m/s) the legs turn onto the way the body is going and run (the
+ * forward run, warped up to SIDE_RUN_MAX quarter turns), back to the strafes below SIDE_RUN_OFF. The strafe clips
+ * step no faster than 2.8-3.4 m/s at the cadence cap, the sim's players go 4.8 m/s across: the stance foot was held
+ * up to 25 cm behind and swung through the other leg on release (QA army: legs through each other in 6-8% of
+ * frames in singles). Players turn their hips and run for a wide ball.
+ */
+const SIDE_RUN_ON = 2.6;
+const SIDE_RUN_OFF = 2.1;
+const SIDE_RUN_MAX = 1.35;
+/** Most the spine turns back against the legs' warp (rad); past it the chest turns with the hips. */
+const WARP_SPINE_MAX = Math.PI / 4;
+/** How fast the chest turns with the hips into a side-on run and back out of it (rad/s): switched at once, the
+ * chest, arms and head jumped up to 45 degrees in a frame. */
+const WARP_CHEST_RATE = 3.5;
+/** How fast the legs turn into a side-on run and back out of it (rad/s): a quarter turn in 0.2 s. Switched at once,
+ * the hips and the spine's turn back jumped together and their inertialization undid the cancelling (pops tripled). */
+const WARP_SWITCH_RATE = 8;
 
 /**
  * How fast each joint can turn (deg/s), for inertialization: a target moving faster than 1.25x this in a frame is a
@@ -467,6 +530,12 @@ export class Avatar {
   private readonly cycleW = new Float64Array(5);
   /** Orientation warp (rad): how far the legs turn from the playing clip's direction onto the body's travel. */
   private warp = 0;
+  /** Running side-on (SIDE_RUN_ON). */
+  private sideRun = false;
+  /** How far the chest has turned with the legs' warp (rad), following WARP_CHEST_RATE. */
+  private chestWarp = 0;
+  /** What the warp has still to turn after a switch into or out of a side-on run (rad), going at WARP_SWITCH_RATE. */
+  private warpOff = 0;
   private readonly pose: Pose;
   private readonly tmp: Pose;
   private phase = 0;
@@ -541,6 +610,13 @@ export class Avatar {
   private fadeStart = 0;
   private fadeFromW = 0;
   private readonly conW = new THREE.Vector3();
+  /** The clip's arm rotations before the arm solve (racket arm, then free arm). */
+  private readonly armClipQ = [0, 1, 2, 3, 4, 5].map(() => new THREE.Quaternion());
+  /** Last frame's arm rotations after the fade (fadeArm turns no faster than FADE_TURN_RATE from these), and whether each arm's are there. */
+  private readonly fadePrev = [0, 1, 2, 3, 4, 5].map(() => new THREE.Quaternion());
+  private readonly fadeOk = new Uint8Array(2);
+  /** The contact pulled in to reach (contactKey). */
+  private readonly conClamp = new THREE.Vector3();
   private hasCon = false;
   /** Stroke weight (0 = pure locomotion) and the blended key it is pulling towards (model space). */
   w = 0;
@@ -578,7 +654,10 @@ export class Avatar {
   private readonly footQR = new THREE.Quaternion();
   private readonly tgt = new THREE.Vector3();
   private readonly pole = new THREE.Vector3();
+  /** The upper body's bend towards a ball out of reach (world), and whether last frame's is there to follow from. */
   private readonly lean = new THREE.Quaternion();
+  private readonly leanT = new THREE.Quaternion();
+  private leanOk = false;
   /** Each knee's hinge (shin frame), measured from the clips as the elbows' are. */
   private readonly kneeL: THREE.Vector3;
   private readonly kneeR: THREE.Vector3;
@@ -603,6 +682,8 @@ export class Avatar {
   private racketQOk = false;
   private readonly dir0 = new THREE.Vector3();
   private readonly side0 = new THREE.Vector3();
+  /** Last frame's racket elbow bend, for the second solve (racketClear). */
+  private bend0 = 0;
   /** The capsules the racket is kept out of (pelvis, chest, head). */
   private readonly guardBones: Int32Array;
   private readonly guardR: Float64Array;
@@ -971,12 +1052,25 @@ export class Avatar {
     this.kyaw = a.yaw + (b.yaw - a.yaw) * u;
   }
 
-  /** Contact key: the family's, at the ball, the racket head dropped for a low ball. */
+  /**
+   * Contact key: the family's, at the ball, the racket head dropped for a low ball. A contact out of reach (a human
+   * letting go while still running to the ball, a whiff) is swung at in its direction, no further out than
+   * CON_REACH beyond the arm, and a whiff keeps the point it was swinging at: keyed 5 m out, then switched to the
+   * family's own contact by the body at the release, the racket swept a metre in four frames and the arm flipped
+   * 118 degrees (QA army, a bot letting go early).
+   */
   private contactKey(): Key {
     const k = this.con;
     const f = this.fam;
-    if (this.hasCon) this.toModel(this.conW, k.p);
-    else k.p.copy(f.contact.p);
+    const sh = this.racketSh, cw = this.conW;
+    const dx = cw.x - sh.x, dy = cw.y - sh.y, dz = cw.z - sh.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz), R = this.armLen + CON_REACH;
+    if (sh.x === 0 && sh.y === 0 && sh.z === 0) k.p.copy(f.contact.p);
+    else if (d > R) {
+      const u = R / d, cc = this.conClamp;
+      cc.set(sh.x + dx * u, Math.min(CON_TOP, Math.max(CON_LOW, sh.y + dy * u)), sh.z + dz * u);
+      this.toModel(cc, k.p);
+    } else this.toModel(cw, k.p);
     k.q.copy(f.contact.q);
     if (f.low) k.q.slerp(f.low, smoothstep(0.95, 0.4, k.p.y));
     k.pole.copy(f.contact.pole);
@@ -1022,14 +1116,17 @@ export class Avatar {
     this.beaten = false;
     const st = this.plan(sim, idx);
     if (!st.valid) return -1;
-    // An AI lets go at its own release time (the window it tracks, its timing error included), and the release
-    // is the contact: time the swing to that, at wherever the ball will be then.
+    // An AI lets go at its own release time (the window it tracks, its timing error included); a late release is
+    // the contact, an early one meets the ball at the window's ideal moment: time the swing to that, at wherever
+    // the ball will be then (timed to an early release, the overhead's target jumped 27 cm at the release and the
+    // forearm turned 82 degrees in a frame; QA army).
     const ai = sim.ai[idx];
     this.beaten = ai ? ai.beaten : false;
     if (ai && ai.pressed && !ai.released && ai.releaseAt > sim.time - 0.05) {
       this.known = true;
-      this.predAt(sim, ai.releaseAt, this.conW);
-      return ai.releaseAt;
+      const at = ai.releaseAt > ai.releaseIdeal ? ai.releaseAt : ai.releaseIdeal;
+      this.predAt(sim, at, this.conW);
+      return at;
     }
     this.conW.set(st.bx, st.by, st.bz);
     return st.t;
@@ -1236,8 +1333,17 @@ export class Avatar {
     // puts the feet under the floor; the crossover itself, its legs passing front and back, is what players do.
     let wf = 1, wl = 0, wb = 0, wr = 0;
     this.warp = 0;
-    if (sp > 1e-3) {
-      const q = Math.atan2(mx, mz) / (Math.PI / 2);
+    const qd = sp > 1e-3 ? Math.atan2(mx, mz) / (Math.PI / 2) : 0;
+    const aq = qd < 0 ? -qd : qd;
+    const was = this.sideRun;
+    if (this.sideRun) { if (sp < SIDE_RUN_OFF || aq < 0.4 || aq > SIDE_RUN_MAX + 0.1) this.sideRun = false; }
+    else if (sp > SIDE_RUN_ON && aq > 0.5 && aq < SIDE_RUN_MAX) this.sideRun = true;
+    // The side-on run's warp: the forward run (jog or run by speed, below), its legs turned onto the way it goes.
+    const sideWarp = qd * (Math.PI / 2) * move;
+    if (this.sideRun) {
+      this.warp = sideWarp;
+    } else if (sp > 1e-3) {
+      const q = qd;
       const k = Math.round(q);
       const r = q - k;
       const ar = r < 0 ? -r : r;
@@ -1250,6 +1356,18 @@ export class Avatar {
         if (sec === 0) wf += wt; else if (sec === 1) wl += wt; else if (sec === 2) wb += wt; else wr += wt;
       }
       this.warp = (r - x * (r < 0 ? -1 : 1)) * (Math.PI / 2) * move;
+    }
+    // A switch turns the legs from one warp to the other no faster than WARP_SWITCH_RATE (the clip itself changes
+    // at once: its pose's jump is the inertialization's).
+    if (was !== this.sideRun) {
+      this.warpOff += this.sideRun ? sideWarp - this.strafeWarp(qd, move) : this.warp - sideWarp;
+      // The run's posture differs from the strafe's by a few degrees in every joint, under the limits: carried over.
+      this.inertia.force = true;
+    }
+    {
+      const lim = WARP_SWITCH_RATE * this.dt, o = this.warpOff;
+      this.warpOff = o > lim ? o - lim : o < -lim ? o + lim : 0;
+      this.warp -= this.warpOff;
     }
     const run = smoothstep(2.6, 4.4, sp);
     const W = this.cycleW;
@@ -1280,6 +1398,15 @@ export class Avatar {
       accumulate(acc, tmp);
     }
     normalize(acc);
+  }
+
+  /** The strafes' warp for direction q (quarter turns from forward), as locomote has it outside a side-on run. */
+  private strafeWarp(q: number, move: number): number {
+    const k = Math.round(q);
+    const r = q - k;
+    const ar = r < 0 ? -r : r;
+    const x = ar > 0.5 - WARP_BAND ? 0.5 * smoothstep(0.5 - WARP_BAND, 0.5, ar) : 0;
+    return (r - x * (r < 0 ? -1 : 1)) * (Math.PI / 2) * move;
   }
 
   // ---- per frame ----
@@ -1328,6 +1455,8 @@ export class Avatar {
     }
     this.dt = dt;
     IK_TURN[0] = dt > 0 ? ELBOW_SIDE_RATE * dt : Math.PI;
+    IK_BEND[0] = dt > 0 ? ELBOW_BEND_RATE * dt : Math.PI;
+    IK_SOFT[0] = ARM_SOFT;
     const ys = this.yaw + Math.PI;
     this.stanceC = Math.cos(ys);
     this.stanceS = Math.sin(ys);
@@ -1364,14 +1493,23 @@ export class Avatar {
     }
     const h = this.pose.hips;
     this.hips.position.set(h[0]!, h[1]!, h[2]!);
-    // Orientation warp: hips and legs (and the hips' sway) turned, the spine turned back.
-    if (this.warp !== 0) {
+    // Orientation warp: hips and legs (and the hips' sway) turned, the spine turned back: the chest's world rotation
+    // unchanged up to WARP_SPINE_MAX of warp; past it (a side-on run) the chest turns with the hips, no faster than
+    // WARP_CHEST_RATE.
+    {
+      const wa = this.warp;
+      const want = wa > WARP_SPINE_MAX ? wa - WARP_SPINE_MAX : wa < -WARP_SPINE_MAX ? wa + WARP_SPINE_MAX : 0;
+      const lim = cut ? Math.PI : WARP_CHEST_RATE * dt, d = want - this.chestWarp;
+      this.chestWarp += d > lim ? lim : d < -lim ? -lim : d;
+    }
+    if (this.warp !== 0 || this.chestWarp !== 0) {
       const wa = this.warp;
       q1.setFromAxisAngle(UP, wa);
       const hq = this.hips.quaternion;
-      // spine' = hips^-1 * warp^-1 * hips * spine: the chest's world rotation unchanged.
+      // spine' = hips^-1 * back^-1 * hips * spine.
+      const back = wa - this.chestWarp;
+      q3.setFromAxisAngle(UP, -back).multiply(hq);
       q2.copy(hq).invert();
-      q3.copy(q1).invert().multiply(hq);
       q2.multiply(q3);
       this.spine[0]!.quaternion.premultiply(q2);
       hq.premultiply(q1);
@@ -1415,6 +1553,8 @@ export class Avatar {
       this.outReady.set(0, 0, 0, 0); this.outKey.set(0, 0, 0, 0);
       this.clearOff.set(0, 0, 0);
       this.racketQOk = false;
+      // (the next fade starts afresh, not from a frame long gone)
+      this.fadeOk.fill(0);
     }
 
     // The head after looking (the ball can move faster than a head turns).
@@ -1456,6 +1596,11 @@ export class Avatar {
   }
 
   private resetInertia(): void {
+    this.warpOff = 0;
+    this.leanOk = false;
+    this.fadeOk.fill(0);
+    this.elbowR.bend[1] = 0;
+    this.elbowL.bend[1] = 0;
     this.inertia.reset();
     this.headInertia.reset();
     this.yawI.reset();
@@ -2105,6 +2250,7 @@ export class Avatar {
     this.tgt.x = mh[12]! + vx; this.tgt.y = mh[13]! + vy; this.tgt.z = mh[14]! + vz;
     this.elbowRacket.dir.copy(this.dir0);
     this.elbowRacket.side.copy(this.side0);
+    this.elbowRacket.bend[0] = this.bend0;
     this.keepOff(ua, this.tgt, this.elbowRacket.dir);
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
     setWorldQuat(hand, q3);
@@ -2115,6 +2261,10 @@ export class Avatar {
   private solveArms(): void {
     const w = this.w;
     const ua = this.armRacket[0]!, fa = this.armRacket[1]!, hand = this.armRacket[2]!;
+    // The clip's arms, to fade the solve out into as the arms let go (ARM_FADE).
+    const AQ = this.armClipQ;
+    AQ[0]!.copy(ua.quaternion); AQ[1]!.copy(fa.quaternion); AQ[2]!.copy(hand.quaternion);
+    AQ[3]!.copy(this.armFree[0]!.quaternion); AQ[4]!.copy(this.armFree[1]!.quaternion); AQ[5]!.copy(this.armFree[2]!.quaternion);
     const ready = this.readyKey;
     // Where the animation has the racket, pulled to the ready position, then to the stroke's key (world).
     this.racket.updateMatrixWorld();
@@ -2160,24 +2310,36 @@ export class Avatar {
     const mu = ua.matrixWorld.elements;
     const sx = mu[12]! - this.tgt.x, sy = mu[13]! - this.tgt.y, sz = mu[14]! - this.tgt.z;
     const excess = Math.sqrt(sx * sx + sy * sy + sz * sz) - this.armLen * 0.98;
+    const base = this.spine[0]!;
+    this.leanT.identity();
     if (excess > 0) {
-      const base = this.spine[0]!;
       const mb = base.matrixWorld.elements;
       const ax = mu[12]! - mb[12]!, ay = mu[13]! - mb[13]!, az = mu[14]! - mb[14]!;
       const bx = this.tgt.x - mb[12]!, by = this.tgt.y - mb[13]!, bz = this.tgt.z - mb[14]!;
       const al = Math.sqrt(ax * ax + ay * ay + az * az), bl = Math.sqrt(bx * bx + by * by + bz * bz);
       const cs = (ax * bx + ay * by + az * bz) / Math.max(al * bl, 1e-9);
       const ang = Math.acos(cs < -1 ? -1 : cs > 1 ? 1 : cs);
-      const phi = Math.min(ang, excess / Math.max(al, 0.1), SPINE_REACH);
+      const phi = Math.min(ang, excess / Math.max(al, 0.1), SPINE_REACH) * smoothstep(SPINE_REACH_BACK1, SPINE_REACH_BACK0, ang);
       // Axis a x b.
       const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
       const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
       if (phi > 1e-3 && cl > 1e-6) {
         v3.x = cx / cl; v3.y = cy / cl; v3.z = cz / cl;
-        this.lean.setFromAxisAngle(v3, phi);
-        rotateWorld(base, this.lean);
-        base.updateMatrixWorld(true);
+        this.leanT.setFromAxisAngle(v3, phi);
       }
+    }
+    // Followed no faster than SPINE_REACH_RATE (a cut starts at the new one).
+    const LN = this.lean, LT = this.leanT;
+    if (this.leanOk && this.dt > 0) {
+      const d = Math.min(1, Math.abs(LN.x * LT.x + LN.y * LT.y + LN.z * LT.z + LN.w * LT.w));
+      const ang = 2 * Math.acos(d), lim = SPINE_REACH_RATE * this.dt;
+      if (ang > lim) LN.slerp(LT, lim / ang);
+      else LN.copy(LT);
+    } else LN.copy(LT);
+    this.leanOk = true;
+    if (LN.w < 0.99999985) {
+      rotateWorld(base, LN);
+      base.updateMatrixWorld(true);
     }
     v3.copy(ready.pole);
     BL.u = w;
@@ -2195,16 +2357,19 @@ export class Avatar {
     // from the first solve's, or the rate limits would be doubled on those frames.
     this.dir0.copy(this.elbowRacket.dir);
     this.side0.copy(this.elbowRacket.side);
+    this.bend0 = this.elbowRacket.bend[0]!;
     this.keepOff(ua, this.tgt, this.elbowRacket.dir);
     // Last frame's push out of the body, dying away (see racketClear).
     // Gone by the contact (the racket has to be on the ball then), let go over the last fifth of the forward swing.
+    // The let-go caps the push in proportion to the swing left (multiplying the carried push down every frame
+    // instead compounded: a 20 cm push went in two frames and the elbow straightened 99 degrees in one; QA army).
     const before = (this.st === ST_PREP && this.hasCon) || (this.st === ST_SWING && this.lastT < this.tCon);
     const sLeft = before ? Math.max(0, 1 - this.keyS) / 0.2 : 1;
-    const co = this.clearOff, k = this.dt > 0 ? Math.exp(-this.dt / CLEAR_EASE) * Math.min(1, sLeft) : 0;
+    const co = this.clearOff, k = this.dt > 0 ? Math.exp(-this.dt / CLEAR_EASE) : 0;
     co.x *= k; co.y *= k; co.z *= k;
     // The push fades with the arm's weight, gone as the arms switch off (at ready 0.01 a 19 cm push was still held,
     // and the hand went back to the clip 143° in a frame).
-    this.clearW = smoothstep(0.01, 0.15, Math.max(this.ready, w));
+    this.clearW = smoothstep(0.01, 0.15, Math.max(this.ready, w)) * Math.min(1, sLeft);
     const cl0 = Math.sqrt(co.x * co.x + co.y * co.y + co.z * co.z), cap0 = CLEAR_MAX * this.clearW;
     if (cl0 > cap0) { const r = cl0 > 1e-9 ? cap0 / cl0 : 0; co.x *= r; co.y *= r; co.z *= r; }
     const t0x = this.tgt.x, t0y = this.tgt.y, t0z = this.tgt.z;
@@ -2248,5 +2413,32 @@ export class Avatar {
     }
     this.keepOff(ul, v1, this.elbowFree.dir);
     hingeIK(ul, fl, hl, v1, this.pole, this.elbowFree);
+    // Fade into the clip's arms below ARM_FADE of weight: the hinge solve has its own elbow side and upper-arm roll,
+    // so at a weight of 0.01 the arm was still far from the clip's and went back to it in a frame when the arms
+    // switched off (the free arm 55-72 degrees, between points; QA army).
+    this.fadeArm(this.armRacket, 0, smoothstep(0.01, ARM_FADE, Math.max(this.ready, w)));
+    this.fadeArm(this.armFree, 3, smoothstep(0.01, ARM_FADE, Math.max(this.ready, w * 0.85)));
+  }
+
+  /** The arm's three bones from the clip's (armClipQ from `k`) to the solve's by `f`. */
+  private fadeArm(arm: THREE.Bone[], k: number, f: number): void {
+    const ok = this.fadeOk[k / 3] === 1 && this.dt > 0;
+    this.fadeOk[k / 3] = 1;
+    if (f < 1) {
+      BL.u = f;
+      const lim = FADE_TURN_RATE * this.dt;
+      for (let j = 0; j < 3; j++) {
+        const q = arm[j]!.quaternion, pv = this.fadePrev[k + j]!;
+        blendTo(q, this.armClipQ[k + j]!);
+        // No faster than FADE_TURN_RATE from last frame's.
+        if (ok) {
+          const d = Math.min(1, Math.abs(q.x * pv.x + q.y * pv.y + q.z * pv.z + q.w * pv.w));
+          const ang = 2 * Math.acos(d);
+          if (ang > lim) q.copy(pv.slerp(q, lim / ang));
+        }
+      }
+      arm[0]!.updateMatrixWorld(true);
+    }
+    for (let j = 0; j < 3; j++) this.fadePrev[k + j]!.copy(arm[j]!.quaternion);
   }
 }
