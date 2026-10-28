@@ -60,6 +60,8 @@ export interface QaReport {
     /** Angle between the face normal and the ball's way out at the closest moment (degrees). */
     face: Dist;
     byShot: Record<string, { n: number; p50: number; p90: number }>;
+    /** The furthest contacts (value: face centre to ball, m; what: the shot and the ball's height). */
+    worst: QaEvent[];
   };
   pops: {
     /** One-frame spikes in a joint's rotation, per minute of play (all joints, all players). */
@@ -508,6 +510,8 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       lag: dist(hits.map((h) => Math.abs(h.at))),
       face: dist(hits.map((h) => h.face)),
       byShot,
+      worst: [...hits].sort((a, b) => b.best - a.best).slice(0, 8)
+        .map((h) => ({ t: h.t, player: h.player, what: `${h.shot} at ${h.ball.y.toFixed(2)} m`, value: h.best })),
     },
     pops: { perMinute: pops / Math.max(1e-9, minutes * np), count: pops, byJoint: popsBy, peaks: peakOut, worst: popWorst, turnWorst, kneeSpins },
     repeat: { frames: repeatFrames, maxDeg: repeatMax },

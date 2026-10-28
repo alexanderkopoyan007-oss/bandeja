@@ -131,6 +131,9 @@ describe('a human with an AI partner', () => {
           waiting = false;
           pending = e.team === 1;
         }
+        // A faulted serve is not a ball to return either (it was counted against the human: seven of the fourteen
+        // 'missed' balls in 900 s were out-of-box, net and glass-first faults).
+        if (e.kind === E_FAULT && waiting) { out.given--; waiting = false; }
         if (e.kind === E_POINT) {
           // The opponents' shot ended in the net or out before it reached us: not a ball we had to play.
           if (waiting && e.team === 0) out.given--;
