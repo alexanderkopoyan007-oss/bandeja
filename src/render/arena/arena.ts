@@ -63,6 +63,8 @@ export class Arena {
   private readonly parts: ArenaPart[] = [];
   /** 0 calm .. 1 on its feet: the crowd (and later the sound) follow the rally. */
   excite = 0;
+  /** The baked environment and filtered skies (not in the scene graph): freed by dispose(). */
+  private readonly baked: Array<{ dispose(): void }> = [];
 
   constructor(def: ArenaDef, court: Court, scene: THREE.Scene, renderer: THREE.WebGPURenderer) {
     this.def = def;
@@ -114,6 +116,12 @@ export class Arena {
    * Render the arena round the court into a filtered cube map and use it for every material's ambient light and
    * reflections (the glass shows the stands, the roof lights, the sky). Done once, before the first frame.
    */
+  /** Free the baked environment (the arena's meshes go with the scene: render/dispose.ts). */
+  dispose(): void {
+    for (const b of this.baked) b.dispose();
+    this.baked.length = 0;
+  }
+
   bakeEnvironment(renderer: THREE.WebGPURenderer, scene: THREE.Scene, hide: THREE.Object3D[]): EnvProbe {
     const was = hide.map((o) => o.visible);
     for (const o of hide) o.visible = false;
@@ -123,7 +131,9 @@ export class Arena {
     for (const part of this.parts) {
       const sky = part.sky;
       if (!sky) continue;
-      const filtered = pmrem.fromEquirectangular(sky).texture;
+      const frt = pmrem.fromEquirectangular(sky);
+      this.baked.push(frt);
+      const filtered = frt.texture;
       this.group.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
         if (m && m.envMap === sky) m.envMap = filtered;
@@ -131,6 +141,7 @@ export class Arena {
     }
     const at = new THREE.Vector3(0, 1.6, 0);
     const rt = pmrem.fromScene(scene, 0.02, 0.1, 400, { size: 256, position: at });
+    this.baked.push(rt);
     hide.forEach((o, i) => { o.visible = was[i]!; });
     pmrem.dispose();
     scene.environment = rt.texture;

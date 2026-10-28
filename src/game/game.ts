@@ -1,6 +1,6 @@
 // The browser game: fixed-step sim driven by requestAnimationFrame, timestamped input, render interpolation.
 import * as THREE from 'three/webgpu';
-import { MatchSim, PH_RALLY, type MatchConfig } from '../sim/match.ts';
+import { MatchSim, PH_RALLY, PH_OVER, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import { InputFrame } from '../sim/input.ts';
 import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
@@ -21,6 +21,11 @@ import { Post } from '../render/post.ts';
 import { kitFor } from '../render/avatar/kit.ts';
 import { DebugOverlay } from '../ui/debug.ts';
 import { applyPhotoCam, type PhotoOverlay } from './photoMatch.ts';
+import { MatchStats } from './stats.ts';
+import { disposeTree } from '../render/dispose.ts';
+import { Transitions } from '../ui/transitions.ts';
+import { Announcer } from '../ui/announce.ts';
+import { QUALITY, type QualityPreset } from '../render/quality.ts';
 
 const MAX_TICKS_PER_FRAME = 12;
 
@@ -48,6 +53,30 @@ export interface GameOptions {
   gfx?: string;
   /** Lens bloom (render/post.ts); `?bloom=0` renders straight to the screen. */
   bloom?: boolean;
+  /** `?dpr=`: the most pixels per CSS pixel to draw, whatever the preset (tools). */
+  dprCap?: number;
+  /** The AI match behind the title screen: no HUD, no banners. */
+  attract?: boolean;
+  /** Phase 8: what the settings change in a game (all optional; tools leave them out). */
+  prefs?: GamePrefs;
+}
+
+export interface GamePrefs {
+  /** Master volume and the crowd's level, 0..1. */
+  volume?: number;
+  crowd?: number;
+  /** Camera kick on smashes (off with reduced motion). */
+  shake?: boolean;
+  rumble?: boolean;
+  /** Speak points and the score through an ARIA live region. */
+  announce?: boolean;
+  /** Keyboard bindings (input/bindings.ts). */
+  keys?: Record<string, string[]>;
+  /** Quality preset (render/quality.ts); the pixel ratio also adapts (render scale) when `adapt` is on. */
+  quality?: QualityPreset;
+  adapt?: boolean;
+  /** The dip between points and the score card between games (ui/transitions.ts). */
+  transitions?: boolean;
 }
 
 /** One button event's trip to the screen, performance.now() ms (tools/latency.mjs reads these). */
@@ -124,16 +153,47 @@ export class Game {
   photo: PhotoOverlay | null = null;
   /** The sim stands still (the scene is still drawn): photo-match comparisons. */
   paused = false;
+  /** Paused by a menu (Esc, Start): the sim, the sound and the input all wait. */
+  private menuPaused = false;
+  /** Every listener this game adds goes when it is torn down. */
+  private readonly ac = new AbortController();
+  /** This game's own layer of the HUD (removed with it). */
+  private readonly hudLayer: HTMLElement;
+  /** Results-screen numbers. */
+  readonly stats = new MatchStats();
+  private readonly transitions: Transitions | null;
+  private readonly announcer: Announcer | null;
+  /** Esc or the pad's Start: the app opens the pause menu. */
+  onMenu: (() => void) | null = null;
+  /** The match is over and its last call has been shown. */
+  onMatchOver: ((stats: MatchStats) => void) | null = null;
+  private overAt = -1;
+  private overSent = false;
+  /** Render scale under the preset's pixel ratio (1 = full); adapted when frames run long (prefs.adapt). */
+  renderScale = 1;
+  private readonly preset: QualityPreset;
+  private slowFrames = 0;
+  private fastFrames = 0;
+  private disposed = false;
 
   constructor(opts: GameOptions, renderer: THREE.WebGPURenderer, hudRoot: HTMLElement) {
     this.opts = opts;
     this.renderer = renderer;
     this.mouseAim = opts.mouseAim;
+    const prefs = opts.prefs ?? {};
+    this.preset = prefs.quality ?? QUALITY.high;
+    this.hudLayer = hudRoot.appendChild(document.createElement('div'));
+    this.hudLayer.className = 'layer';
+    this.hudLayer.style.cssText = opts.attract ? 'display:none' : 'position:absolute;inset:0';
+    hudRoot = this.hudLayer;
     this.sim = new MatchSim(opts.match);
     const court = this.sim.world.court;
 
     // The arena: floor, lights, surroundings; the court's glass, mesh and frame in its colours.
     this.arena = new Arena(arenaDef(opts.arena ?? 'stadium'), court, this.scene, renderer);
+    // The preset's shadow map (before anything is drawn: the map is made at the first shadow pass).
+    if (this.preset.shadow > 0) this.arena.key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
+    else this.arena.key.castShadow = false;
     this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base });
     this.scene.add(this.court.group);
     this.arena.addNeighbours(this.court.group, court);
@@ -142,7 +202,7 @@ export class Game {
 
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0);
     const bl = this.arena.def.post?.bloom;
-    if (bl && opts.bloom !== false) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
+    if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar));
@@ -163,20 +223,25 @@ export class Game {
     for (const pv of this.players) moving.push(pv.root);
     this.court.setEnvironment(this.arena.bakeEnvironment(renderer, this.scene, moving));
 
-    this.kb = new KeyboardInput(window);
-    this.pad = new GamepadInput(window);
+    const sig = this.ac.signal;
+    this.kb = new KeyboardInput(window, sig, prefs.keys);
+    this.pad = new GamepadInput(window, sig);
+    this.pad.rumbleOn = prefs.rumble !== false;
+    this.pad.onStart = () => this.onMenu?.();
     // Sound: the bank renders in a worker from now; audio starts at the first key, click or pad press (browsers
     // allow it only from a gesture). Autoplay too: a click and the AI match has sound.
     const floor = Math.max(0, FLOOR_NAMES.indexOf(opts.match.world?.floor ?? 'turf'));
     this.audio = new AudioEngine({ floor, arena: opts.arena ?? 'stadium' });
     this.audio.enabled = opts.sound !== false;
+    this.audio.setLevels(prefs.volume ?? 1, prefs.crowd ?? 1);
     this.audio.load();
     this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? []);
     this.feetSrc = this.players.map((pv) => ({ feet: pv.avatar ? pv.avatar.feet : null }));
     const unlock = (): void => this.audio.unlock();
-    addEventListener('keydown', unlock);
-    addEventListener('pointerdown', unlock);
+    addEventListener('keydown', unlock, { signal: sig });
+    addEventListener('pointerdown', unlock, { signal: sig });
     this.feedback = new Feedback(this.pad, this.cam);
+    this.feedback.shake = prefs.shake !== false;
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
     // Score rows name the players: YOU, and each AI by its playing style.
     const who = (i: number, short: boolean): string => {
@@ -196,22 +261,27 @@ export class Game {
     this.ball.showMarker = !opts.pro;
     this.debug = new DebugOverlay(hudRoot);
     this.kb.onKey = (code) => this.onKey(code);
+    this.transitions = prefs.transitions === false || opts.autoplay ? null : new Transitions(hudRoot, names);
+    this.announcer = prefs.announce && !opts.autoplay ? new Announcer(hudRoot) : null;
 
-    addEventListener('resize', () => this.resize());
+    addEventListener('resize', () => this.resize(), { signal: sig });
     document.addEventListener('visibilitychange', () => {
       // Freeze the sim while the tab is hidden instead of fast-forwarding on return.
-      this.audio.pause(document.hidden);
+      this.audio.pause(document.hidden || this.menuPaused);
       if (document.hidden) this.hiddenAt = performance.now();
       else if (this.hiddenAt >= 0) {
         this.epoch += performance.now() - this.hiddenAt;
         this.hiddenAt = -1;
       }
-    });
+    }, { signal: sig });
     this.probe.backend = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'WebGPU' : 'WebGL2';
+    this.applyPixelRatio();
   }
 
   private onKey(code: string): void {
-    if (code === 'F3') this.debug.toggle();
+    if (this.menuPaused) return;
+    if (code === 'Escape') this.onMenu?.();
+    else if (code === 'F3') this.debug.toggle();
     else if (code === 'KeyH') this.hud.toggleHelp();
     else if (code === 'KeyP') {
       this.hud.pro = !this.hud.pro;
@@ -238,6 +308,56 @@ export class Game {
     this.renderer.setSize(innerWidth, innerHeight);
     this.cam.camera.aspect = innerWidth / innerHeight;
     this.cam.camera.updateProjectionMatrix();
+  }
+
+  /** The preset's pixel ratio times the render scale (`?dpr=` caps it for tools). */
+  applyPixelRatio(): void {
+    const cap = Math.min(devicePixelRatio || 1, this.preset.maxDpr, this.opts.dprCap ?? 4);
+    const r = Math.max(0.5, cap * this.preset.scale * this.renderScale);
+    if (Math.abs(r - this.renderer.getPixelRatio()) > 1e-3) {
+      this.renderer.setPixelRatio(r);
+      this.resize();
+    }
+  }
+
+  /** Stop the sim, the sound and the input for a menu; resume where it was. */
+  setMenuPaused(on: boolean): void {
+    if (on === this.menuPaused) return;
+    this.menuPaused = on;
+    this.kb.flush();
+    this.audio.pause(on || document.hidden);
+    this.hudLayer.classList.toggle('paused', on);
+  }
+
+  get isMenuPaused(): boolean {
+    return this.menuPaused;
+  }
+
+  /** Settings changed in a menu while this game runs. */
+  applyPrefs(p: GamePrefs): void {
+    if (p.volume !== undefined || p.crowd !== undefined) this.audio.setLevels(p.volume ?? 1, p.crowd ?? 1);
+    if (p.shake !== undefined) this.feedback.shake = p.shake;
+    if (p.rumble !== undefined) this.pad.rumbleOn = p.rumble;
+    if (p.keys) this.kb.setKeys(p.keys);
+    this.hud.applyPalette();
+  }
+
+  /** Tear the game down: the loop, listeners, sound, the HUD layer and every GPU resource. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.running = false;
+    this.renderer.setAnimationLoop(null);
+    this.ac.abort();
+    this.audio.close();
+    this.hudLayer.remove();
+    this.post?.dispose();
+    this.net.dispose();
+    this.arena.dispose();
+    disposeTree(this.scene);
+    this.scene.clear();
+    this.scene.environment = null;
+    this.scene.background = null;
   }
 
   /** Compile every pipeline before the first point so nothing compiles mid-rally. */
@@ -374,7 +494,7 @@ export class Game {
     const ease = this.lastFrame ? 0.25 * Math.min(0.1, (now - this.lastFrame) / 1000) : DT;
     this.renderLag = lagTo > this.renderLag ? Math.min(lagTo, this.renderLag + ease) : Math.max(lagTo, this.renderLag - ease);
     let drawn = simNow - this.renderLag;
-    if (this.paused) {
+    if (this.paused || this.menuPaused) {
       this.epoch = now - this.sim.time * 1000;
       drawn = this.sim.time;
     }
@@ -438,6 +558,14 @@ export class Game {
       now / 1000, frameDt, cueNow);
     this.hud.update(this.sim, who, now / 1000);
     this.tv?.update(this.sim);
+    this.stats.update(this.sim);
+    this.transitions?.update(this.sim, team, now / 1000);
+    this.announcer?.update(this.sim, team);
+    // The match is over: once its last call has been up a while, the app shows the results.
+    if (this.sim.phase === PH_OVER && !this.overSent) {
+      if (this.overAt < 0) this.overAt = now;
+      else if (now - this.overAt > 3200 && this.onMatchOver) { this.overSent = true; this.onMatchOver(this.stats); }
+    }
     // The crowd follows the rally: calm between points, rising with a long one.
     this.arena.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : this.arena.excite * Math.exp(-frameDt / 0.8);
     // Stands behind the camera are skipped, but not while it swings round (a very wide screen sees them) or in
@@ -457,5 +585,34 @@ export class Game {
       this.probe.works.push(performance.now() - now);
     }
     this.debug.frame(now, simMs, n, info.drawCalls, info.triangles, this.probe.backend, this.renderer.getPixelRatio());
+    if (this.opts.prefs?.adapt) this.adapt(dt);
   }
+
+  /**
+   * Dynamic resolution (quality "auto"): frames that miss 60 Hz for about half a second bring the render scale down a
+   * step; a long run with none tries a step up again, waiting twice as long each time a step up had to come back
+   * down (on a 60 Hz screen every frame takes 16.7 ms, so headroom can only be found by trying). Only the pixel
+   * ratio changes: no shader compiles mid-point.
+   */
+  private adapt(dt: number): void {
+    if (dt <= 0 || dt > 100 || this.menuPaused) return;
+    if (dt > 18.5) { this.slowFrames++; this.fastFrames = 0; }
+    else { this.fastFrames++; this.slowFrames = Math.max(0, this.slowFrames - 0.25); }
+    if (this.slowFrames > 30 && this.renderScale > 0.6) {
+      this.renderScale = Math.max(0.6, this.renderScale - 0.1);
+      this.slowFrames = 0;
+      this.fastFrames = 0;
+      if (this.raisedAt > 0 && performance.now() - this.raisedAt < 10000) this.upWait = Math.min(7200, this.upWait * 2);
+      this.applyPixelRatio();
+    } else if (this.fastFrames > this.upWait && this.renderScale < 1) {
+      this.renderScale = Math.min(1, this.renderScale + 0.1);
+      this.fastFrames = 0;
+      this.raisedAt = performance.now();
+      this.applyPixelRatio();
+    }
+  }
+
+  /** Frames without a slow one before trying a step up (doubles after a failed try). */
+  private upWait = 900;
+  private raisedAt = 0;
 }

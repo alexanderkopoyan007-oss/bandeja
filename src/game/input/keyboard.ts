@@ -1,32 +1,17 @@
 // Keyboard + mouse input with exact timestamps. Key events carry event.timeStamp (performance.now() time base),
 // so a release is judged at the moment it happened, not when the next frame polls it.
-import { BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP, BTN_OVERHEAD, BTN_VOLLEY, BTN_POWER, BTN_PRECISION } from '../../sim/input.ts';
+// Which key is which button comes from the bindings (input/bindings.ts; remappable since Phase 8).
+import { DEFAULT_KEYS, keyTables } from './bindings.ts';
 
 export interface TimedButton { press: boolean; button: number; ts: number }
 
-const BUTTON_KEYS: Record<string, number> = {
-  KeyJ: BTN_DRIVE,
-  KeyK: BTN_TOPSPIN,
-  KeyL: BTN_SLICE,
-  KeyI: BTN_LOB,
-  KeyU: BTN_DROP,
-  KeyO: BTN_OVERHEAD,
-  KeyN: BTN_VOLLEY,
-  Space: BTN_POWER,
-  ShiftLeft: BTN_PRECISION,
-  ShiftRight: BTN_PRECISION,
-};
-
-const MOVE_KEYS: Record<string, [number, number]> = {
-  KeyW: [0, 1], KeyS: [0, -1], KeyA: [-1, 0], KeyD: [1, 0],
-  ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
-};
-
-const MOVE_CODES = Object.keys(MOVE_KEYS);
 const QUEUE = 32;
 
 export class KeyboardInput {
   held = 0;
+  private buttonKeys: Record<string, number> = {};
+  private moveKeys: Record<string, [number, number]> = {};
+  private moveCodes: string[] = [];
   private readonly moveHeld: Record<string, boolean> = {};
   /** Button keys down by code: two keys can make one button (both Shifts), held while either is. */
   private readonly codeDown: Record<string, boolean> = {};
@@ -40,31 +25,50 @@ export class KeyboardInput {
   mouseActive = false;
   onKey: ((code: string, ev: KeyboardEvent) => void) | null = null;
 
-  constructor(target: Window) {
+  /** `signal` removes the listeners (a game being torn down); `keys`: action -> key codes (bindings.ts). */
+  constructor(target: Window, signal?: AbortSignal, keys: Record<string, string[]> = DEFAULT_KEYS) {
     for (let i = 0; i < QUEUE; i++) this.queue.push({ press: false, button: 0, ts: 0 });
-    target.addEventListener('keydown', (e) => this.key(e, true));
-    target.addEventListener('keyup', (e) => this.key(e, false));
-    target.addEventListener('blur', () => this.releaseAll(performance.now()));
+    this.setKeys(keys);
+    const o = { signal };
+    target.addEventListener('keydown', (e) => this.key(e, true), o);
+    target.addEventListener('keyup', (e) => this.key(e, false), o);
+    target.addEventListener('blur', () => this.releaseAll(performance.now()), o);
     target.addEventListener('pointermove', (e) => {
       this.mouseX = (e.clientX / innerWidth) * 2 - 1;
       this.mouseY = -(e.clientY / innerHeight) * 2 + 1;
       this.mouseActive = true;
-    });
+    }, o);
+  }
+
+  /** New bindings: everything held is let go first (a held key may no longer be that button). */
+  setKeys(keys: Record<string, string[]>): void {
+    this.releaseAll(performance.now());
+    const t = keyTables(keys);
+    this.buttonKeys = t.buttons;
+    this.moveKeys = t.moves;
+    this.moveCodes = Object.keys(t.moves);
+    for (const c of this.moveCodes) this.moveHeld[c] = false;
+  }
+
+  /** While input goes to a menu (paused): drop queued events and let go of everything, so nothing reaches the sim. */
+  flush(): void {
+    this.releaseAll(performance.now());
+    this.head = this.tail;
   }
 
   private key(e: KeyboardEvent, down: boolean): void {
-    const btn = BUTTON_KEYS[e.code];
-    if (btn !== undefined || MOVE_KEYS[e.code]) e.preventDefault();
+    const btn = this.buttonKeys[e.code];
+    if (btn !== undefined || this.moveKeys[e.code]) e.preventDefault();
     if (e.repeat) return;
     if (btn !== undefined) {
       this.codeDown[e.code] = down;
       let any = false;
-      for (const c in BUTTON_KEYS) if (BUTTON_KEYS[c] === btn && this.codeDown[c]) any = true;
+      for (const c in this.buttonKeys) if (this.buttonKeys[c] === btn && this.codeDown[c]) any = true;
       const was = (this.held & btn) !== 0;
       if (any === was) return;
       this.held = any ? this.held | btn : this.held & ~btn;
       this.push(any, btn, e.timeStamp);
-    } else if (MOVE_KEYS[e.code]) {
+    } else if (this.moveKeys[e.code]) {
       this.moveHeld[e.code] = down;
     }
     if (down) this.onKey?.(e.code, e);
@@ -103,15 +107,15 @@ export class KeyboardInput {
   }
 
   private releaseAll(ts: number): void {
-    for (const code of Object.keys(BUTTON_KEYS)) {
-      const b = BUTTON_KEYS[code]!;
+    for (const code of Object.keys(this.buttonKeys)) {
+      const b = this.buttonKeys[code]!;
       this.codeDown[code] = false;
       if (this.held & b) {
         this.held &= ~b;
         this.push(false, b, ts);
       }
     }
-    for (const c of MOVE_CODES) this.moveHeld[c] = false;
+    for (const c of this.moveCodes) this.moveHeld[c] = false;
   }
 
   /** Movement axes from the keys: x right, y forward. */
@@ -119,10 +123,11 @@ export class KeyboardInput {
     let x = 0;
     let y = 0;
     // Plain indexed loop: no iterator garbage every frame.
-    for (let i = 0; i < MOVE_CODES.length; i++) {
-      const code = MOVE_CODES[i]!;
+    const codes = this.moveCodes;
+    for (let i = 0; i < codes.length; i++) {
+      const code = codes[i]!;
       if (!this.moveHeld[code]) continue;
-      const m = MOVE_KEYS[code]!;
+      const m = this.moveKeys[code]!;
       x += m[0];
       y += m[1];
     }

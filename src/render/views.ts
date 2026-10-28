@@ -1,5 +1,6 @@
 // Ball, players, assists and the broadcast camera. Everything here only reads the sim.
 import * as THREE from 'three/webgpu';
+import { PAL, gradeColour } from '../ui/palette.ts';
 import type { MatchSim } from '../sim/match.ts';
 import { PH_RALLY, PH_TOSS } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
@@ -417,13 +418,7 @@ function lensScale(camera: THREE.Camera): number {
 }
 
 const C_WHITE = 0xffffff;
-const C_LOCK = 0x8fe36b;
-const C_GOOD = 0x8fe36b;
-const C_PERFECT = 0x5ff2ff;
-const C_OFF = 0xffc04a;
-const C_BAD = 0xff5a4a;
 const C_AIM = 0xffd84a;
-const GRADE_HEX = [C_BAD, C_OFF, C_GOOD, C_PERFECT, C_OFF, C_BAD];
 
 /**
  * Cues for the human player.
@@ -519,7 +514,7 @@ export class AssistView {
       this.spot.rotation.z = now * 0.8;
       const sc = 1 + 0.05 * Math.sin(now * 5) - 0.12 * this.locked;
       this.spot.scale.set(sc, sc, 1);
-      this.spotMat.color.setHex(!st.inTime ? C_OFF : this.locked > 0.5 ? C_LOCK : C_WHITE);
+      this.spotMat.color.setHex(!st.inTime ? PAL.off : this.locked > 0.5 ? PAL.good : C_WHITE);
       this.spotRoot.visible = true;
     }
 
@@ -530,7 +525,7 @@ export class AssistView {
     const sinceRelease = renderTime - p.release;
     if (p.grade >= 0 && sinceRelease >= 0 && sinceRelease < 0.35) {
       this.target.set(tr * (1 + sinceRelease * 1.6), lw * 1.6);
-      this.target.mat.color.setHex(GRADE_HEX[p.grade] ?? C_WHITE);
+      this.target.mat.color.setHex(p.grade >= 0 && p.grade <= 5 ? gradeColour(p.grade) : C_WHITE);
       this.target.mat.opacity = 1 - sinceRelease / 0.35;
       this.place(this.target.mesh, ball, camera);
       return;
@@ -546,7 +541,7 @@ export class AssistView {
     const k = charging || sim.phase === PH_TOSS ? sim.windowScale(human) : timingScale;
     const a = Math.abs(left);
     const reach = sim.focusInReach;
-    const col = !reach ? C_OFF : a <= TIMING.perfect * k ? C_PERFECT : a <= TIMING.good * k ? C_GOOD : C_WHITE;
+    const col = !reach ? PAL.off : a <= TIMING.perfect * k ? PAL.perfect : a <= TIMING.good * k ? PAL.good : C_WHITE;
     const fade = left < 0 ? Math.max(0, 1 + left / 0.15) : 1;
 
     this.target.set(tr, lw);

@@ -15,6 +15,7 @@ export interface PostLook {
 export class Post {
   private readonly pipeline: THREE.RenderPipeline;
   private readonly canvas: HTMLCanvasElement;
+  private readonly nodes: Array<{ dispose(): void }>;
 
   constructor(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, look: PostLook) {
     this.canvas = renderer.domElement;
@@ -22,6 +23,13 @@ export class Post {
     const color = scenePass.getTextureNode('output');
     const glow = bloom(color, look.strength, look.radius, look.threshold);
     this.pipeline = new THREE.RenderPipeline(renderer, color.add(glow));
+    this.nodes = [scenePass, glow];
+  }
+
+  /** Free the HDR target and the bloom's targets. */
+  dispose(): void {
+    for (const n of this.nodes) n.dispose();
+    this.pipeline.dispose();
   }
 
   render(): void {

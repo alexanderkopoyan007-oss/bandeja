@@ -37,11 +37,24 @@ export class GamepadInput {
   private lastPoll = 0;
   /** The queue button changes go into (set by poll). */
   private kb: KeyboardInput | null = null;
+  /** The Start button (standard 9) went down: the pause menu. */
+  onStart: (() => void) | null = null;
+  private startDown = true;
+  /** Rumble allowed (the Accessibility setting). */
+  rumbleOn = true;
 
-  constructor(target: Window) {
+  /** `signal` removes the listeners (a game being torn down). */
+  constructor(target: Window, signal?: AbortSignal) {
+    const o = { signal };
+    // A pad connected before this game was built sends no new event: take the first one there is.
+    try {
+      for (const p of navigator.getGamepads?.() ?? []) if (p && p.connected && this.index < 0) this.index = p.index;
+    } catch {
+      // getGamepads can throw where a permissions policy blocks it: no pad.
+    }
     target.addEventListener('gamepadconnected', (e) => {
       if (this.index < 0) this.index = (e as GamepadEvent).gamepad.index;
-    });
+    }, o);
     target.addEventListener('gamepaddisconnected', (e) => {
       if ((e as GamepadEvent).gamepad.index === this.index) {
         this.index = -1;
@@ -53,7 +66,7 @@ export class GamepadInput {
         this.x = 0;
         this.y = 0;
       }
-    });
+    }, o);
     for (let i = 0; i < 17; i++) this.down.push(false);
   }
 
@@ -90,6 +103,10 @@ export class GamepadInput {
       this.held = any ? this.held | m[1] : this.held & ~m[1];
       kb.inject(any, m[1], ts);
     }
+    // Start opens the pause menu (on the press; held from before, e.g. the press that closed a menu, it waits).
+    const st = pad.buttons[9]?.pressed ?? false;
+    if (st && !this.startDown) this.onStart?.();
+    this.startDown = st;
     const ax = pad.axes[0] ?? 0;
     const ay = pad.axes[1] ?? 0;
     const l = Math.hypot(ax, ay);
@@ -107,7 +124,7 @@ export class GamepadInput {
    * A new effect is dropped while another is still playing (the actuator would cut the first one off).
    */
   rumble(strong: number, weak: number, ms: number, now: number): void {
-    if (this.index < 0) return;
+    if (this.index < 0 || !this.rumbleOn) return;
     const pad = navigator.getGamepads()[this.index];
     const act = (pad as unknown as { vibrationActuator?: Actuator } | null)?.vibrationActuator;
     if (!act || now < this.rumbleUntil - 20) return;

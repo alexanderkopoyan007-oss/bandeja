@@ -10,6 +10,7 @@ import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/c
 import { SW_CHARGE } from '../sim/player/player.ts';
 import { SHAPES, SHOT_BANDEJA, SHOT_VOLLEY } from '../sim/contact/shots.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
+import { PAL, gradeColour, hex } from './palette.ts';
 
 /** E_CALL's words (CALL_MINE, CALL_YOURS, CALL_SWITCH), as a pair shouts them. */
 const CALL_TEXT = ['Mine!', 'Yours!', 'Switch!'];
@@ -91,7 +92,6 @@ function isLob(sim: MatchSim, team: number): boolean {
   return false;
 }
 
-const GRADE_COLORS = ['#ff5a4f', '#ffb13b', '#8fe36b', '#5ff2ff', '#ffb13b', '#ff5a4f'];
 
 /** Text with [X] key caps turned into styled keys (only our own strings go through here). */
 function keys(text: string): string {
@@ -129,9 +129,12 @@ export class Hud {
 
   constructor(root: HTMLElement, names: [string, string], sets: number) {
     this.root = root;
-    const style = document.createElement('style');
-    style.textContent = CSS;
-    document.head.appendChild(style);
+    if (!document.getElementById('hud-css')) {
+      const style = document.createElement('style');
+      style.id = 'hud-css';
+      style.textContent = CSS;
+      document.head.appendChild(style);
+    }
     const bug = el('div', 'bug');
     bug.style.setProperty('--sets', String(sets));
     // Doubles rows name two players.
@@ -158,11 +161,10 @@ export class Hud {
     this.meter = root.appendChild(el('div', 'meter'));
     // Meter zones: perfect window in the middle, good either side (sized by setTiming).
     const good = el('div', 'zone');
-    good.style.background = 'rgba(143,227,107,.55)';
     const perf = el('div', 'zone');
-    perf.style.background = 'rgba(95,242,255,.9)';
     this.meter.append(good, perf);
     this.zones.push(good, perf);
+    this.applyPalette();
     this.mark = this.meter.appendChild(el('div', 'mark'));
     this.ms = root.appendChild(el('div', 'ms'));
     this.hint = root.appendChild(el('div', 'hint'));
@@ -177,6 +179,13 @@ export class Hud {
       '[Space] power &nbsp; [Shift] precision &nbsp; [M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide<br>' +
       'Gamepad: stick moves &nbsp; A drive &nbsp; X topspin &nbsp; B slice &nbsp; Y lob &nbsp; d-pad drop &nbsp; LB volley &nbsp; RB overhead &nbsp; RT power &nbsp; LT precision',
     );
+  }
+
+  /** The meter's zones in the palette's colours (ui/palette.ts; call again after the colour setting changes). */
+  applyPalette(): void {
+    const rgba = (c: number, a: number): string => `rgba(${c >> 16},${(c >> 8) & 255},${c & 255},${a})`;
+    this.zones[0]!.style.background = rgba(PAL.good, 0.55);
+    this.zones[1]!.style.background = rgba(PAL.perfect, 0.9);
   }
 
   /** Size the meter's Good/Perfect zones to the timing windows (meter spans +-0.25 s). */
@@ -309,7 +318,7 @@ export class Hud {
           const outOfReach = e.kind === E_WHIFF && e.x > 0;
           this.set(this.grade, outOfReach ? 'Out of reach'
             : e.kind === E_WHIFF && e.b !== G_TOO_EARLY && e.b !== G_TOO_LATE ? `${GRADE_TEXT[e.b]} · miss` : GRADE_TEXT[e.b]!);
-          this.grade.style.color = outOfReach ? '#ffb13b' : GRADE_COLORS[e.b]!;
+          this.grade.style.color = hex(outOfReach ? PAL.textOff : gradeColour(e.b, true));
           this.grade.style.opacity = '1';
           const ms = Math.round(Math.abs(e.c) * 1000);
           this.set(this.ms, outOfReach ? `${e.x.toFixed(1)} m away: get to the spot first` : ms === 0 ? 'spot on' : `${ms} ms ${e.c < 0 ? 'early' : 'late'}`);
@@ -339,7 +348,7 @@ export class Hud {
         break;
       case E_POINT: {
         const who = team < 0 ? (e.team === 0 ? 'Near side' : 'Far side') : e.team === team ? 'Your point' : 'Their point';
-        const accent = team < 0 ? '#ffffff' : e.team === team ? '#8fe36b' : '#ff5a4f';
+        const accent = team < 0 ? '#ffffff' : hex(e.team === team ? PAL.good : PAL.textBad);
         if (e.a === WHY_EXIT_AFTER_BOUNCE) {
           // Out of the court after a good bounce: over the back fence is "por cuatro", over the side or out
           // through a door "por tres".
@@ -350,7 +359,7 @@ export class Hud {
         break;
       }
       case E_FAULT:
-        this.showCall(REASON_TEXT[e.a]!, e.b === 2 ? 'Double fault' : 'Second serve', '#ffb13b', now, 1.2);
+        this.showCall(REASON_TEXT[e.a]!, e.b === 2 ? 'Double fault' : 'Second serve', hex(PAL.textOff), now, 1.2);
         break;
       case E_LET:
         this.showCall('Let', 'Replay the serve', '#5ff2ff', now, 1.2);

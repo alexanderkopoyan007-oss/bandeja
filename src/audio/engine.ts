@@ -52,6 +52,11 @@ export class AudioEngine implements AudioSink {
   private readonly lastCam = new Float64Array(7).fill(NaN);
   /** The page wants sound (not hidden): resume whenever the context stops for any other reason. */
   private wantRunning = true;
+  private master: GainNode | null = null;
+  private closed = false;
+  /** The player's volume and crowd level (0..1, applied on an audio taper: gain = level squared). */
+  private volume = 1;
+  private crowdLevel = 1;
 
   constructor(env: BankEnv) {
     this.env = env;
@@ -89,6 +94,7 @@ export class AudioEngine implements AudioSink {
   }
 
   private receive(m: { name?: string; samples?: Sample[][]; room?: Sample; done?: boolean }): void {
+    if (this.closed) return;
     if (m.name && m.samples) {
       this.raw.set(m.name, m.samples);
       this.makeBuffers(m.name);
@@ -105,7 +111,7 @@ export class AudioEngine implements AudioSink {
 
   /** Browsers only start audio from a user gesture: call from the first key, pointer or pad press. */
   unlock(): void {
-    if (!this.enabled) return;
+    if (!this.enabled || this.closed) return;
     if (!this.ctx) {
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
@@ -115,7 +121,7 @@ export class AudioEngine implements AudioSink {
       // transparent below their thresholds: a DynamicsCompressor adds its own make-up gain, (1 / gain at full
       // scale)^0.6 (WebAudio spec), which the gain after it takes back out.
       const master = ctx.createGain();
-      master.gain.value = db(AUDIO.master);
+      this.master = master;
       const lim = ctx.createDynamicsCompressor();
       const T = AUDIO.limiter.threshold, R = AUDIO.limiter.ratio;
       lim.threshold.value = T;
@@ -135,6 +141,7 @@ export class AudioEngine implements AudioSink {
         g.connect(master);
         this.buses.push(g);
       }
+      this.applyLevels();
       const wet = ctx.createGain();
       wet.gain.value = db(arenaAudio(this.env.arena).wet);
       this.wet = wet;
@@ -354,6 +361,57 @@ export class AudioEngine implements AudioSink {
       (l as unknown as { setOrientation(a: number, b: number, c: number, d: number, e: number, f: number): void })
         .setOrientation(this.fwd.x, this.fwd.y, this.fwd.z, this.up.x, this.up.y, this.up.z);
     }
+  }
+
+  /** The settings' volume and crowd level (0..1). */
+  setLevels(volume: number, crowd: number): void {
+    this.volume = Math.max(0, Math.min(1, volume));
+    this.crowdLevel = Math.max(0, Math.min(1, crowd));
+    this.applyLevels();
+  }
+
+  private applyLevels(): void {
+    if (!this.master || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(db(AUDIO.master) * this.volume * this.volume, t, 0.02);
+    this.buses[BUS_CROWD]?.gain.setTargetAtTime(this.crowdLevel * this.crowdLevel, t, 0.02);
+  }
+
+  /**
+   * Menu sounds: a soft wooden tick for a move, a brighter one for a choice, a lower one for back. Two damped modes
+   * of a struck bar (no samples), well under the game's levels.
+   */
+  uiBlip(kind: 'move' | 'ok' | 'back'): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.master) return;
+    const f = kind === 'ok' ? 1320 : kind === 'back' ? 660 : 980;
+    const t = ctx.currentTime;
+    for (const [mul, amp, decay] of [[1, 0.05, 0.04], [2.76, 0.02, 0.018]] as const) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = f * mul;
+      g.gain.setValueAtTime(amp, t);
+      g.gain.setTargetAtTime(0, t + 0.002, decay / 3);
+      o.connect(g).connect(this.master);
+      o.start(t);
+      o.stop(t + decay * 3 + 0.02);
+    }
+  }
+
+  /** The game is torn down: stop rendering the bank and close the context (browsers cap how many can be open). */
+  close(): void {
+    this.closed = true;
+    this.worker?.terminate();
+    this.worker = null;
+    this.wantRunning = false;
+    const ctx = this.ctx;
+    this.ctx = null;
+    this.raw.clear();
+    this.buffers.clear();
+    this.voices = [];
+    this.buses = [];
+    this.master = null;
+    if (ctx) void ctx.close().catch(() => undefined);
   }
 
   /** The tab is hidden (the game freezes the sim): stop the audio clock too, and pick up again on return. */

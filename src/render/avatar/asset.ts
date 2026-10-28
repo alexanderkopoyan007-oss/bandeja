@@ -52,10 +52,24 @@ interface Header {
 /** Joint colour relative to the body colour (the body is tinted per player). */
 const JOINT_SHADE = 0.22;
 
-export async function loadPlayerAsset(url: string): Promise<PlayerAsset> {
+/** `progress`: the share of the file downloaded so far (0..1), for the loading screen. */
+export async function loadPlayerAsset(url: string, progress?: (frac: number) => void): Promise<PlayerAsset> {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`player asset: HTTP ${res.status}`);
-  const buf = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  const total = Number(res.headers.get('content-length') ?? 0);
+  let body = res.body as ReadableStream<BufferSource>;
+  if (progress && total > 0) {
+    let got = 0;
+    body = body.pipeThrough(new TransformStream<BufferSource, BufferSource>({
+      transform(chunk, ctl) {
+        got += chunk.byteLength;
+        progress(Math.min(1, got / total));
+        ctl.enqueue(chunk);
+      },
+    }));
+  }
+  const buf = await new Response(body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  progress?.(1);
   return parsePlayerAsset(buf);
 }
 

@@ -16,8 +16,8 @@ const CSS = `
 #hud .tv { --tv-ink: #f4f6fa; --tv-dim: #a9b3c4; --tv-bg: rgba(11,17,38,.9); --tv-bg2: rgba(20,29,61,.92); --tv-gold: #f2c14e;
   --tv-font: "Avenir Next Condensed", "DIN Condensed", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
   position: absolute; inset: 0; pointer-events: none; font-family: var(--tv-font); color: var(--tv-ink); }
-#hud.tvmode .bug, #hud.tvmode .call:not(.big) { display: none; }
-#hud.tvmode .help:not(.shown) { display: none; }
+#hud .tvmode .bug, #hud .tvmode .call:not(.big) { display: none; }
+#hud .tvmode .help:not(.shown) { display: none; }
 #hud .tv .tvbug { position: absolute; left: 3.2vw; top: 3.4vh; display: flex; align-items: stretch; filter: drop-shadow(0 4px 14px rgba(0,0,0,.45)); }
 #hud .tv .tvbug .tvlogo { width: 46px; background: linear-gradient(160deg, #1d2b63, #0b1126); display: grid; place-items: center;
   border-radius: 6px 0 0 6px; font: 800 11px/1.05 var(--tv-font); letter-spacing: .08em; text-align: center; color: var(--tv-gold); }
@@ -98,9 +98,12 @@ export class TvGraphics {
 
   constructor(hud: HTMLElement, names: [string, string], colors: [string, string], sets: number, sim: MatchSim) {
     hud.classList.add('tvmode');
-    const style = document.createElement('style');
-    style.textContent = CSS;
-    document.head.appendChild(style);
+    if (!document.getElementById('tv-css')) {
+      const style = document.createElement('style');
+      style.id = 'tv-css';
+      style.textContent = CSS;
+      document.head.appendChild(style);
+    }
     this.names = names;
     this.colors = colors;
     this.root = el('div', 'tv', hud);

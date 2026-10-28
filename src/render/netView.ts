@@ -24,6 +24,11 @@ export class NetView {
   private readonly tex: THREE.DataTexture;
   private synced = false;
 
+  /** The knot texture lives in the vertex shader's nodes, out of reach of render/dispose.ts. */
+  dispose(): void {
+    this.tex.dispose();
+  }
+
   constructor(cloth: NetCloth) {
     this.cloth = cloth;
     const nx = cloth.nx;
