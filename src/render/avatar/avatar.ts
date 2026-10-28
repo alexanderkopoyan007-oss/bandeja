@@ -124,7 +124,8 @@ function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion
   prev.copy(a);
 }
 
-type Elbow = HingeLimb;
+/** An arm's hinge, plus the way from its shoulder to the hand last frame (zero: none yet), for keepOff. */
+type Elbow = HingeLimb & { dir: THREE.Vector3 };
 /** How fast an elbow's side may swing round the shoulder-to-hand line (rad/s): the shoulder's rotation speed limit. */
 const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
 
@@ -153,7 +154,7 @@ function elbowHinge(asset: PlayerAsset, name: string): Elbow {
     }
   }
   if (acc.lengthSq() < 1e-9) acc.set(0, 0, name.startsWith('Right') ? -1 : 1);
-  return { hinge: acc.normalize(), rest, side: new THREE.Vector3() };
+  return { hinge: acc.normalize(), rest, side: new THREE.Vector3(), dir: new THREE.Vector3() };
 }
 
 /** The free arm's elbow hangs down and back. */
@@ -173,6 +174,10 @@ const MIN_SWING = 0.11;
 const LEAD = 0.16;
 /** ...and waits this far along (0..1) for the release. */
 const HOVER = 0.85;
+/** Nearest a hand is put to its own shoulder, as a share of the arm's length (see keepOff). */
+const ARM_MIN = 0.35;
+/** Fastest the way from a shoulder to its hand may turn (rad/s; see keepOff). */
+const REACH_TURN_RATE = 40;
 /** Most the hips drop for a low or wide ball (crouch, lunge and reach together; m). */
 const DROP_MAX = 0.55;
 const FOLLOW = 0.3;
@@ -436,6 +441,8 @@ export class Avatar {
   private readonly tgt = new THREE.Vector3();
   private readonly pole = new THREE.Vector3();
   private readonly lean = new THREE.Quaternion();
+  /** The free shoulder before the hips drop and push and the spine leans (world): its keys move with the trunk. */
+  private readonly freeSh = new THREE.Vector3();
   /** Shoulder to wrist, arm straight (m). */
   private readonly armLen: number;
   /**
@@ -1104,9 +1111,13 @@ export class Avatar {
     if (this.look >= 0.01) this.watchBall(sim);
 
     this.plantW += (1 - smoothstep(0.25, 0.7, this.sp) - this.plantW) * (dt > 0 ? 1 - Math.exp(-dt / 0.08) : 0);
+    this.freeSh.setFromMatrixPosition(this.armFree[0]!.matrixWorld);
     this.solveLegs();
     if (this.w > 0 || this.ready >= 0.01) this.solveArms();
-    else { this.elbowR.side.set(0, 0, 0); this.elbowL.side.set(0, 0, 0); this.outReady.set(0, 0, 0, 0); this.outKey.set(0, 0, 0, 0); }
+    else {
+      this.elbowR.side.set(0, 0, 0); this.elbowL.side.set(0, 0, 0); this.elbowR.dir.set(0, 0, 0); this.elbowL.dir.set(0, 0, 0);
+      this.outReady.set(0, 0, 0, 0); this.outKey.set(0, 0, 0, 0);
+    }
 
     // The head after looking (the ball can move faster than a head turns).
     if (this.inertial && (Avatar.inertMask & 2) !== 0) {
@@ -1147,6 +1158,8 @@ export class Avatar {
     this.relT.fill(-1);
     this.elbowR.side.set(0, 0, 0);
     this.elbowL.side.set(0, 0, 0);
+    this.elbowR.dir.set(0, 0, 0);
+    this.elbowL.dir.set(0, 0, 0);
     this.outReady.set(0, 0, 0, 0);
     this.outKey.set(0, 0, 0, 0);
     this.outAddr.set(0, 0, 0, 0);
@@ -1491,6 +1504,49 @@ export class Avatar {
     }
   }
 
+  /**
+   * A hand target no nearer its shoulder than ARM_MIN of the arm's length. A key blend can pass the hand through the
+   * shoulder (a left-hander's slice put the free hand 2 cm from it, a backhand's recovery the racket hand), and
+   * there the line from the shoulder to the hand turns over in a frame, the whole arm with it. So the way from the
+   * shoulder to the hand (`dir`, kept per arm) turns no faster than REACH_TURN_RATE (a hand 0.6 m out at 24 m/s;
+   * swings stay under it, so away from the shoulder it is exact), and the hand is put along it, at least ARM_MIN out.
+   * Pushing straight out alone flips across the shoulder: no smooth rule pushes every point out of a ball.
+   */
+  private keepOff(upper: THREE.Bone, target: THREE.Vector3, dir: THREE.Vector3): void {
+    const e = upper.matrixWorld.elements;
+    const dx = target.x - e[12]!, dy = target.y - e[13]!, dz = target.z - e[14]!;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d < 1e-6) {
+      if (dir.x === 0 && dir.y === 0 && dir.z === 0) return;
+    } else {
+      const rx = dx / d, ry = dy / d, rz = dz / d;
+      const c = dir.x * rx + dir.y * ry + dir.z * rz;
+      const turn = this.dt > 0 ? REACH_TURN_RATE * this.dt : Math.PI;
+      const fresh = dir.x === 0 && dir.y === 0 && dir.z === 0;
+      if (fresh || c >= Math.cos(turn)) {
+        dir.x = rx; dir.y = ry; dir.z = rz;
+      } else {
+        // Turn dir towards r by `turn`, in their plane.
+        let px = rx - c * dir.x, py = ry - c * dir.y, pz = rz - c * dir.z;
+        let pl = Math.sqrt(px * px + py * py + pz * pz);
+        if (pl < 1e-6) {
+          // Straight behind: any way round.
+          px = -dir.z; py = 0; pz = dir.x;
+          pl = Math.sqrt(px * px + pz * pz);
+          if (pl < 1e-6) { px = 1; py = 0; pz = 0; pl = 1; }
+        }
+        const cs = Math.cos(turn), sn = Math.sin(turn);
+        const nx = dir.x * cs + (px / pl) * sn, ny = dir.y * cs + (py / pl) * sn, nz = dir.z * cs + (pz / pl) * sn;
+        const nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        dir.x = nx / nl; dir.y = ny / nl; dir.z = nz / nl;
+      }
+    }
+    const r = Math.max(d, ARM_MIN * this.armLen);
+    target.x = e[12]! + dir.x * r;
+    target.y = e[13]! + dir.y * r;
+    target.z = e[14]! + dir.z * r;
+  }
+
   /** Racket arm to the key (blended with the animation by the stroke weight), free hand to its key. */
   private solveArms(): void {
     const w = this.w;
@@ -1554,6 +1610,7 @@ export class Avatar {
       BL.u = 1 - ik;
       lerpV(this.pole, v2);
     }
+    this.keepOff(ua, this.tgt, this.elbowRacket.dir);
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
     setWorldQuat(hand, q3);
     hand.updateMatrixWorld(true);
@@ -1561,12 +1618,18 @@ export class Avatar {
     // Free hand.
     const ul = this.armFree[0]!, fl = this.armFree[1]!, hl = this.armFree[2]!;
     v1.setFromMatrixPosition(hl.matrixWorld);
+    // The keys are placed for a standing body: when the hips drop or push and the spine leans, the free hand goes
+    // with the shoulder (a low slice's crouch had brought the shoulder down onto the hand's key).
+    const mf = ul.matrixWorld.elements;
+    const fx = mf[12]! - this.freeSh.x, fy = mf[13]! - this.freeSh.y, fz = mf[14]! - this.freeSh.z;
     if (this.ready > 0) {
       this.toWorld(ready.off, v2);
+      v2.x += fx; v2.y += fy; v2.z += fz;
       BL.u = this.ready;
       lerpV(v1, v2);
     }
     this.toWorld(this.koff, v2);
+    v2.x += fx; v2.y += fy; v2.z += fz;
     BL.u = w * 0.85;
     lerpV(v1, v2);
     // The free elbow hangs down and back from the chest, which has turned with the stroke (in the stance frame a
@@ -1581,6 +1644,7 @@ export class Avatar {
       BL.u = 1 - ikF;
       lerpV(this.pole, v2);
     }
+    this.keepOff(ul, v1, this.elbowFree.dir);
     hingeIK(ul, fl, hl, v1, this.pole, this.elbowFree);
   }
 }

@@ -34,13 +34,21 @@ function logQ(q: THREE.Quaternion): void {
   RV[0] = x * a; RV[1] = y * a; RV[2] = z * a;
 }
 
+/** Quaternion scratch: `Quaternion.set` and `normalize` box their doubles when V8 doesn't inline them. */
+const QE = new Float64Array(4);
+
 /** q = exp(RV). */
 function expQ(q: THREE.Quaternion): THREE.Quaternion {
   const x = RV[0]!, y = RV[1]!, z = RV[2]!;
   const a = Math.sqrt(x * x + y * y + z * z);
-  if (a < 1e-9) return q.set(x * 0.5, y * 0.5, z * 0.5, 1).normalize();
-  const s = Math.sin(a * 0.5) / a;
-  return q.set(x * s, y * s, z * s, Math.cos(a * 0.5));
+  if (a < 1e-9) {
+    const l = Math.sqrt(0.25 * a * a + 1);
+    QE[0] = (x * 0.5) / l; QE[1] = (y * 0.5) / l; QE[2] = (z * 0.5) / l; QE[3] = 1 / l;
+  } else {
+    const s = Math.sin(a * 0.5) / a;
+    QE[0] = x * s; QE[1] = y * s; QE[2] = z * s; QE[3] = Math.cos(a * 0.5);
+  }
+  return q.fromArray(QE);
 }
 
 function wrap(a: number): number {
@@ -194,7 +202,10 @@ function stepRotation(target: THREE.Quaternion, prev: THREE.Quaternion, shown: T
     const wx = tv[k]! + v[k]!, wy = tv[k + 1]! + v[k + 1]!, wz = tv[k + 2]! + v[k + 2]!;
     RV[0] = wx * dt; RV[1] = wy * dt; RV[2] = wz * dt;
     expQ(q2);
-    q2.multiply(shown).normalize();
+    q2.multiply(shown);
+    const l = Math.sqrt(q2.x * q2.x + q2.y * q2.y + q2.z * q2.z + q2.w * q2.w);
+    QE[0] = q2.x / l; QE[1] = q2.y / l; QE[2] = q2.z / l; QE[3] = q2.w / l;
+    q2.fromArray(QE);
     // The offset that shows that: offset * target = predicted.
     q3.copy(target).invert().premultiply(q2);
     logQ(q3);
@@ -261,7 +272,7 @@ export class Inertializer {
       const h = this.hips;
       h.in[0] = hips.x; h.in[1] = hips.y; h.in[2] = hips.z;
       h.step();
-      hips.set(h.out[0]!, h.out[1]!, h.out[2]!);
+      hips.x = h.out[0]!; hips.y = h.out[1]!; hips.z = h.out[2]!;
     }
   }
 }

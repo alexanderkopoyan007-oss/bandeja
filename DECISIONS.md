@@ -448,3 +448,20 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   17-18 cm/s, soles under the floor 0, avatars 6-7 GCs per 100k ticks. Left: the leg flips (up to 177° at the
   knee and foot in a stretch at a sprint, a few per match), and the leg pops that make up most of the count
   (small, at foot plants and lifts).
+- **Hands kept off their own shoulders** (`keepOff`). The free hand's keys are placed for a standing body, so a
+  low slice's crouch brought the free shoulder down onto the hand's key (a left-hander's free hand 2 cm from its
+  shoulder), and a backhand's recovery passed the racket hand through its shoulder. There the line from the
+  shoulder to the hand turns over in a frame and the whole arm with it (167° and 123° pops). Two changes: the free
+  hand's keys move with the free shoulder when the hips drop or push and the spine leans; and the way from each
+  shoulder to its hand turns no faster than 40 rad/s (a hand 0.6 m out at 24 m/s; swings stay under it, so away
+  from the shoulder it changes nothing), with the hand put along it at least 35% of the arm's length out. Pushing
+  the hand straight out from the shoulder alone moved the flip, not removed it: no smooth rule pushes every point
+  out of a ball, so the push needs memory. Shoulder joint speed max 15400 → 7800°/s, frames over the limit 42 → 5;
+  wrist max 13200 → 6000°/s; contact unchanged.
+- **QA as a test** (`tests/render/animQa.test.ts`): 60 s of seed 1 and seed 3 (two left-handers) with thresholds
+  a little above today's numbers (skate, soles under the floor, planted feet, contact distance and lag, pops,
+  clipping, the serve's own numbers, and no arm or hand turning 150° or more in a frame), so a change that brings
+  a flip back fails `npm test`.
+- **Inertializer allocation**: `expQ` and the predicted rotation wrote through `Quaternion.set`/`normalize`
+  (boxed doubles when not inlined; the largest allocation site in the avatar run); they write through a
+  Float64Array now. Avatars 7-8 → 6 GCs per 100k ticks.
