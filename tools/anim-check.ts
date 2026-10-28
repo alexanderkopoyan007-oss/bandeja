@@ -44,6 +44,7 @@ L.push('', '## Pops by joint, and the worst moments', '');
 for (const { seed, r } of runs) {
   L.push(`- Seed ${seed}: ${r.pops.count} pops ${JSON.stringify(r.pops.byJoint)}; worst: ` + r.pops.worst.slice(0, 6).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)} ${f(e.value)}°`).join(', '));
   L.push(`  fastest one-frame turns: ` + r.pops.turnWorst.slice(0, 4).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)} ${f(e.value)}°`).join(', ') + `; the same moment drawn twice (${r.repeat.frames} frames): ${f(r.repeat.maxDeg, 3)}° at most`);
+  L.push(`  knee spins (more than 150° within 0.1 s): ${r.pops.kneeSpins.length}` + (r.pops.kneeSpins.length ? ': ' + r.pops.kneeSpins.slice(0, 4).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)} ${f(e.value)}°`).join(', ') : ''));
   L.push(`  clipping worst: ` + r.clip.worst.slice(0, 8).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)}${e.value ? ' ' + f(e.value * 100) + ' cm' : ''}`).join(', '));
   L.push(`  serve (${(r.serve.frames / 120).toFixed(0)} s of serving): racket in body ${pct(r.serve.racketBody)}, hand in torso ${pct(r.serve.handTorso)}, legs through ${pct(r.serve.legs)}, pops ${f(r.serve.popsPerMinute, 1)} per minute`);
   L.push(`  contact by shot: ` + Object.entries(r.contact.byShot).map(([k, v]) => `${k} ${v.n} (p50 ${f(v.p50, 3)}, p90 ${f(v.p90, 3)})`).join(', '));

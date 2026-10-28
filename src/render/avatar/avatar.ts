@@ -156,8 +156,9 @@ const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
  * An elbow's hinge, measured from the clips: the axis (forearm frame) of the forearm's turn from its rest rotation,
  * averaged over every clip frame bent more than 20 degrees (on the Y Bot it is the forearm's z, within a degree).
  * The knees stay on twoBoneIK (the clips turn the shin about 10 degrees off any one axis and run with the legs
- * nearly straight, and solving them as hinges threw that away and tripled the pops, measured), but turn about
- * their measured hinge before the shortest-arc remainder (`twoBoneIK`'s `hinge`).
+ * nearly straight; solving them as hinges threw that away: tried twice, it tripled the pops and, on 2026-10-28,
+ * raised them from 13.6 to 115 per player-minute over 24 seeds both ways), but turn about their measured hinge
+ * before the shortest-arc remainder (`twoBoneIK`'s `hinge`).
  */
 function elbowHinge(asset: PlayerAsset, name: string): Elbow {
   const bi = asset.bone(name);
@@ -241,6 +242,11 @@ const DOWN_SHARE = 0.55;
 const SPINE_REACH = 0.75;
 /** Fastest the hips come back up from a drop (m/s): standing up out of a lunge. */
 const HIP_RISE = 1.5;
+/** Fastest the hips drop (m/s): into a lunge, about 0.3 m in 0.15 s. */
+const HIP_FALL = 2;
+/** Time before the contact (s) the hips start leaning towards it, and lean fully. */
+const LEAN_FROM = 0.4;
+const LEAN_FULL = 0.1;
 /** Fastest the hips' reach towards the ball changes after the contact (m/s, over the feet): the follow-through moves
  * the key at racket speed, and a reach following it swung the hips 0.38 m in five frames, a foot turning 123° in one. */
 const REACH_RATE = 2.5;
@@ -1490,7 +1496,10 @@ export class Avatar {
     }
     const dx = v1.x - v3.x - v2.x, dy = v1.y - v3.y - v2.y, dz = v1.z - v3.z - v2.z;
     const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const short = len > 1e-3 ? Math.max(0, len - this.armLen * 0.96) * this.w : 0;
+    // Leaning in over the last LEAN_FROM s before the contact, not from the start of the prep (from the contact's key
+    // the hips leaned 18 cm towards a ball 0.4 s away at p90, and 20-29 cm through a serve's toss).
+    const lean = before ? smoothstep(LEAN_FROM, LEAN_FULL, left) : 1;
+    const short = len > 1e-3 ? Math.max(0, len - this.armLen * 0.96) * this.w * lean : 0;
     const dh = Math.sqrt(dx * dx + dz * dz);
     const push = dh > 1e-3 ? Math.min(0.4, (short * dh) / len) : 0;
     let rx = dh > 1e-3 ? (dx / dh) * push : 0;
@@ -1520,6 +1529,9 @@ export class Avatar {
     // Up out of a low reach no faster than a body stands up from a lunge: the reach follows the stroke's key, which
     // swings up and in after the contact, and the hips came up 0.19 m in four frames.
     if (this.dt > 0 && drop < this.dropShown - HIP_RISE * this.dt) drop = this.dropShown - HIP_RISE * this.dt;
+    // Down no faster than a body drops into a lunge: the contact's key jumps when the contact is replanned at the
+    // release (an overhead planned at 2.0 m taken at 1.2 m), and the hips fell 20-30 cm in a frame, the knees 50-97°.
+    if (this.dt > 0 && drop > this.dropShown + HIP_FALL * this.dt) drop = this.dropShown + HIP_FALL * this.dt;
     // Never lower than a deep lunge, thigh level (the drop and the reach together put the hip joints 0.28 m off the
     // floor, the legs folded flat and turning over).
     const room = this.hips.matrixWorld.elements[13]! - HIP_FLOOR;
@@ -1567,12 +1579,15 @@ export class Avatar {
     for (let side = 0; side < 2; side++) {
       const leg = side === 0 ? this.legL : this.legR;
       const bd = side === 0 ? bendL : bendR;
-      v3.setFromMatrixPosition(leg[1]!.matrixWorld);
-      this.pole.set(v3.x + bd.x * 0.8, v3.y + bd.y * 0.8, v3.z + bd.z * 0.8);
       // An ankle no nearer its hip than LEG_FOLD of the leg: with the hips low, a lifted foot left at the clip's
       // height folded the leg flat, the knee down at the ankle (where its side is undefined). Lowered, not moved.
       const A = side === 0 ? this.footL : this.footR;
       const mh = leg[0]!.matrixWorld.elements;
+      // The pole: the clip's bend direction out from the middle of the hip-to-ankle line as it is now. Out from the
+      // clip's own knee it carried where the clip had the foot: a foot put down elsewhere (a step released in front
+      // while backpedalling with the hips low) took the pole across the leg and the knee swung round 150-165 degrees
+      // over a tenth of a second (14 times in 24 seeds both ways x 120 s; none since).
+      this.pole.set((mh[12]! + A.x) * 0.5 + bd.x * 0.8, (mh[13]! + A.y) * 0.5 + bd.y * 0.8, (mh[14]! + A.z) * 0.5 + bd.z * 0.8);
       const fx = A.x - mh[12]!, fy = A.y - mh[13]!, fz = A.z - mh[14]!;
       const minD = this.legLen * LEG_FOLD;
       if (fx * fx + fy * fy + fz * fz < minD * minD) {
@@ -1746,14 +1761,19 @@ export class Avatar {
         // Left this far behind (a body spinning into a stroke while this foot waited for the other): it steps at
         // once, as it would forced (it went there in a frame, 0.65 m; a cut between points resets the locks anyway).
         const snap = far > STEP_SNAP * STEP_SNAP;
-        // From the hip as it will be, after the drop and the reach (measured from the clip's hip, standing taller,
-        // a held lunge was always out of reach: the foot let go and stepped back to the same place, over and over).
+        // From the hip as it will be, after the drop (measured from the clip's hip, standing taller, a held lunge was
+        // always out of reach: the foot let go and stepped back to the same place, over and over), with or without the
+        // reach towards the ball, whichever is nearer: the reach brings a lunging foot's hip over it, and takes it
+        // away from the back foot, which stays planted as the body leans (released, it stepped mid-lunge and the
+        // knee spun round over the next frames).
         const hip = (f === 0 ? this.legL : this.legR)[0]!.matrixWorld.elements;
-        const hx = L.x - hip[12]! - this.reachX, hy = A.y - hip[13]! + this.dropShown, hz = L.z - hip[14]! - this.reachZ;
+        const hx = L.x - hip[12]!, hy = A.y - hip[13]! + this.dropShown, hz = L.z - hip[14]!;
+        const hx2 = hx - this.reachX, hz2 = hz - this.reachZ;
+        const d2 = Math.min(hx * hx + hz * hz, hx2 * hx2 + hz2 * hz2) + hy * hy;
         const reach = this.legLen * 0.985;
         const lifted = low > LOCK_OFF;
         const turned = Math.abs(wrapAngle(yaw - this.lockYaw[f]!));
-        const forced = far > drift * drift || turned > turnMax || hx * hx + hy * hy + hz * hz > reach * reach;
+        const forced = far > drift * drift || turned > turnMax || d2 > reach * reach;
         // Standing, one foot steps at a time (the other waits, still held), unless it is being left far behind.
         const o = 1 - f;
         const waits = !lifted && s > 0.5 && this.relLift[o] === 1 && this.relT[o]! >= 0 && turned < WAIT_TURN_MAX;

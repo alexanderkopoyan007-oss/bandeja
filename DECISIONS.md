@@ -631,13 +631,52 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Two stale joint maxima above (wrist 7332, hip 9489).
   - **After** (3 seeds x 120 s, `docs/lab/anim-check-cur.md`): pops 19.3 / 16.8 / 15.9 per player-minute (were
     29.1 / 25.3 / 22.4), skating 16.1 / 18.6 / 18.5 cm/s (16.7 / 19.2 / 18.7), contact p50 4-8 mm and p90 7.8-8.3 cm,
-    racket in body 0.15-0.20%, no sole below the floor, ankle maxima 4222 / 2494 °/s (were 10979 / 9113). Over 24
-    seeds both ways x 120 s: pops 15.7 per player-minute on average (21.5 before this round), skating 17.2 cm/s
-    (17.8), and the fastest one-frame turn of any joint 96° (a left-hander's racket hand in a fast swing; no leg
-    over 80°). The test now fails at pops 30 per minute (was 40) and any joint turning 105° in a frame (was 120).
-    Avatars 4 GCs per 100k ticks.
+    racket in body 0.15-0.20%, no sole below the floor, ankle maxima 2522 / 2494 / 2586 °/s (were 10979 / 9113;
+    corrected by the final review, which read 4222 here). Over 24 seeds both ways x 120 s: pops 15.7 per
+    player-minute on average (21.5 before this round), skating 17.2 cm/s (17.8), and the fastest one-frame turn of
+    any joint 96° (a left-hander's racket hand in a fast swing; no leg over 80° on these seeds: the final review
+    found 83-97° beyond them, below). The test now fails at pops 30 per minute (was 40) and any joint turning 105°
+    in a frame (was 120). Avatars 4 GCs per 100k ticks.
   - Left as they are: within two frames of the contact the racket face can be up to 15-19° short of its key where
     the turn limit holds it (11 frames in 16 matches; the face's p50 / p90 are unchanged). The limit also hides a
     ready-to-stroke blend that asks for up to 141° in a frame as the stroke weight crosses about 0.5 with the ready
     weight high (seed 7 L, t=107.13: the racket turns about 200° in 58 ms at the cap); a slerp there instead of the
     nlerp is the fix, not done yet.
+- **Final fresh review** (the fourth phase-end agent: a new read-only reviewer with its own probes, against 0529a23
+  for "before"; two serious findings and five smaller ones). Fixed:
+  - **The hips fell 20-30 cm in a frame, the knees 50-97° with them** (a regression of the second review's fix: before
+    the contact the reach comes from the contact's key, which jumps when a release changes the contact, e.g. an
+    overhead planned at 2.0 m taken at 1.2 m, and nothing limited the hips going down). The drop now falls no faster
+    than 2 m/s (`HIP_FALL`, the reviewer's suggestion), as it already rose no faster than `HIP_RISE`. Frames with the
+    hips' height changing more than 8 cm, seeds 25-40 both ways x 120 s: 0 (49 at review, 20 on the old tree).
+  - **Knee spins**: a knee turning round 150-165° over a tenth of a second, 17-33° a frame, which neither the pop
+    rule nor the one-frame limit sees (14 in 24 seeds both ways x 120 s; 4 on seeds 1-12 in the old tree). Traced
+    frame by frame (seed 5 L, player 0, t=35.0: backpedalling at 4 m/s into a low backhand slice, the hips 23 cm
+    down, a step released in front): the knee's pole was the clip's knee plus its bend direction, and the clip's knee
+    carries where the clip has the foot. With the foot put down somewhere else (a lock, a lunge, a released step)
+    the pole crossed to the other side of the hip-to-ankle line and the knee swung round, smeared by the side's rate
+    limit and `limitShins`. The pole is now the clip's bend direction out from the middle of the hip-to-ankle line as
+    it is: the same knee where the foot is the clip's, no flip where it isn't. Knee spins over 24 seeds both ways x
+    120 s: 0; pops, contact, skating and the worst one-frame turn unchanged (13.6 vs 13.6 per player-minute, 96°);
+    thighs through each other 2.8% (2.7%). `animQa` now reports them (`pops.kneeSpins`: the knee's local rotation
+    more than 150° from any of its last 12 frames) and the test fails on any.
+    - Tried first, as the reviewer suggested: knees solved as hinges like the elbows (`hingeIK`). No spins, but pops
+      rose from 13.6 to 115 per player-minute (leg joints jerking a few degrees a frame), as the first attempt found;
+      the knees stay on `twoBoneIK` (the doc comment above `elbowHinge` says why).
+  - **The hips leaned towards the contact far earlier than before** (the reach from the contact's key applies from
+    the start of the preparation: standing p50 11.6 cm, more than 0.4 s before the contact p90 17.9 cm, against 0
+    and 1.3 cm on the old tree). The reach before the contact now comes in over the last 0.4 to 0.1 s (`LEAN_FROM`,
+    `LEAN_FULL`): more than 0.4 s before, p50 / p90 / p99 0 / 0 / 0 cm; standing p50 4.0 cm; hips off the root
+    running above 3 m/s p99 12.6 cm (18.1 at review, 11.1 old). Serve pops over seeds 25-40 both ways: 4.8 per
+    minute (8.8 at review, 6.1 old; the worst, seed 27 R, 15.5, was 23.3).
+  - **Foot taps** (a lock let go for reach with less than 3 cm to step): the lock's reach check is now measured from
+    the nearer of the hip as the clip has it and as it will be after the reach (a deep lunge's back foot was let go
+    and stepped back to where it was). 6.8 per player-minute (22.7 at review, 31.5 old).
+  - Stale numbers above corrected (ankle maxima; "no leg over 80°" holds on seeds 1-24 only).
+  - Not changed: a few low-ball contacts are worse than on the old tree (the reviewer's seed 37 R: a slice from 15 to
+    36 cm), 4 worse and 1 better by more than 5 cm out of 1543 hits on seeds 1-12; contact p90 over 24 seeds both
+    ways 5.9 cm, the same as before these fixes.
+  - **After** (`docs/lab/anim-check-cur.md`, 3 seeds x 120 s): pops 18.3 / 15.5 / 14.8 per player-minute, skating
+    16.1 / 18.6 / 18.4 cm/s, contact p50 4-8 mm and p90 7.8-8.3 cm, racket in body 0.15-0.19%, no sole below the
+    floor, ankle maxima 2322 / 2047 / 1991 °/s, no knee spins. `npm test` 193/193, both typechecks, `npm run alloc`
+    singles 5, doubles 4, avatars 4 GCs per 100k ticks.
