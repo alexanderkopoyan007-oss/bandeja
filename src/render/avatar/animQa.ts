@@ -16,6 +16,7 @@ import { MatchSim, E_HIT, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts
 import { SHOT_KEYS } from '../../sim/contact/shots.ts';
 import { Avatar } from './avatar.ts';
 import type { PlayerAsset } from './asset.ts';
+import { fitSoles } from './soles.ts';
 
 export interface QaOptions {
   seed: number;
@@ -190,42 +191,6 @@ function fitCapsules(asset: PlayerAsset): CapsuleDef[] {
     }
     d.sort((x, y) => x - y);
     out.push({ name, a, b, bones, r: d.length ? d[d.length >> 1]! : 0.04, ia: asset.bone(a), ib: asset.bone(b) });
-  }
-  return out;
-}
-
-interface SolePoint { bone: number; local: THREE.Vector3 }
-
-/** Points on each sole (heel, ball, toe tip, both edges), in their bone's frame, from the mesh's lowest vertices. */
-function fitSoles(asset: PlayerAsset): SolePoint[][] {
-  const g = asset.geometry;
-  const pos = g.getAttribute('position') as THREE.BufferAttribute;
-  const si = g.getAttribute('skinIndex') as THREE.BufferAttribute;
-  const sw = g.getAttribute('skinWeight') as THREE.BufferAttribute;
-  const out: SolePoint[][] = [];
-  for (const side of ['Left', 'Right']) {
-    const ids = new Set([asset.bone(side + 'Foot'), asset.bone(side + 'ToeBase'), asset.bone(side + 'Toe_End')]);
-    const verts: Array<{ v: THREE.Vector3; bone: number }> = [];
-    let minY = Infinity;
-    for (let k = 0; k < pos.count; k++) {
-      let best = -1, bw = -1;
-      for (let j = 0; j < 4; j++) { const w = sw.getComponent(k, j); if (w > bw) { bw = w; best = si.getComponent(k, j); } }
-      if (!ids.has(best)) continue;
-      const v = new THREE.Vector3().fromBufferAttribute(pos, k);
-      verts.push({ v, bone: best });
-      if (v.y < minY) minY = v.y;
-    }
-    const sole = verts.filter((x) => x.v.y < minY + 0.012);
-    const pick = (f: (x: { v: THREE.Vector3 }) => number): { v: THREE.Vector3; bone: number } =>
-      sole.reduce((m, x) => (f(x) > f(m) ? x : m), sole[0]!);
-    const pts = [pick((x) => -x.v.z), pick((x) => x.v.z), pick((x) => x.v.x), pick((x) => -x.v.x)];
-    out.push(pts.map((p) => {
-      const inv = asset.restWorld[p.bone]!.clone().invert();
-      // Measured from the floor the model stands on (its lowest sole vertex is the ground).
-      const w = p.v.clone();
-      w.y -= minY;
-      return { bone: p.bone, local: w.applyMatrix4(inv) };
-    }));
   }
   return out;
 }

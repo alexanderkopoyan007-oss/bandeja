@@ -11,6 +11,7 @@ import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import { Inertializer, InertN, InertQ } from './inertia.ts';
+import { fitSoles, type SolePoint } from './soles.ts';
 import {
   BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
@@ -147,9 +148,30 @@ const STEP_YAW = 0.55;
 const STEP_TIME = 0.15;
 const STEP_LIFT = 0.05;
 const STEP_SNAP = 0.7;
+/**
+ * Foot locks while moving: a clip's stance foot drifts over the floor (its stride doesn't match the body's speed
+ * exactly, the blend of two directions shortens it, the body turns over it), so a foot whose sole comes within
+ * LOCK_ON (m) of the floor stays where it was put down, at the yaw it had, until the clip lifts it past LOCK_OFF,
+ * has moved on LOCK_DRIFT (m) or turned LOCK_YAW (rad) from it, or the leg can't reach it; then it goes back onto
+ * the clip's foot over LOCK_RELEASE (s).
+ */
+const LOCK_ON = 0.015;
+const LOCK_OFF = 0.035;
+const LOCK_DRIFT = 0.25;
+const LOCK_YAW = 0.7;
+const LOCK_RELEASE = 0.12;
+/** Sole points per asset (fitted once from the mesh). */
+const SOLES = new WeakMap<PlayerAsset, SolePoint[][]>();
+const vs = new THREE.Vector3();
+const vsc = new THREE.Vector3();
+const mf = new THREE.Matrix4();
+const mt = new THREE.Matrix4();
+const ml = new THREE.Matrix4();
 /** Lunge: a planned contact further than LUNGE_FROM (m, flat) from the racket shoulder steps the foot on its side out. */
 const LUNGE_FROM = 0.9;
 const LUNGE_MAX = 0.55;
+/** Locomotion: how close to halfway between two directions (a quarter turn = 1) their clips cross-fade. */
+const WARP_BAND = 0.1;
 
 /**
  * How fast each joint can turn (deg/s), for inertialization: a target moving faster than 1.25x this in a frame is a
@@ -226,14 +248,34 @@ export class Avatar {
   private splitDrop = 0;
   /** Planted feet (left, right): weight, where each is (world), its yaw, and a step under way (-1: none). */
   private plantW = 0;
-  private planted = false;
   private sp = 0;
-  private readonly plantPos = [new THREE.Vector3(), new THREE.Vector3()];
-  private readonly plantYaw = new Float64Array(2);
-  private readonly stepFrom = [new THREE.Vector3(), new THREE.Vector3()];
-  private readonly stepYawFrom = new Float64Array(2);
-  private readonly stepT = new Float64Array([-1, -1]);
+  /** Sole points per foot, and hip-to-ankle length at rest. */
+  private readonly soles: SolePoint[][];
+  private readonly legLen: number;
+  /** The clip's feet before IK: ankle height and lowest sole point (world). */
+  private readonly fkY = new Float64Array(2);
+  private readonly lowY = new Float64Array(2);
+  /** Foot locks (see LOCK_ON): on, where, the body's yaw then, and a release under way (-1: none) from where. */
+  private readonly lockOn = new Uint8Array(2);
+  private readonly lockPos = [new THREE.Vector3(), new THREE.Vector3()];
+  private readonly lockYaw = new Float64Array(2);
+  private readonly relT = new Float64Array([-1, -1]);
+  private readonly relFrom = [new THREE.Vector3(), new THREE.Vector3()];
+  /** The foot's world rotation while locked (it doesn't roll over the floor), and where its release starts. */
+  private readonly lockQ = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private readonly relQ = [new THREE.Quaternion(), new THREE.Quaternion()];
+  /** A release forced while the foot is still down steps it (lifted), rather than sliding it; and its length (s). */
+  private readonly relLift = new Uint8Array(2);
+  private readonly relDur = new Float64Array([LOCK_RELEASE, LOCK_RELEASE]);
+  /** Toes: their local rotation while locked (they don't bend over the floor either), and at the release. */
+  private readonly toes: THREE.Bone[];
+  private readonly lockToe = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private readonly relToe = [new THREE.Quaternion(), new THREE.Quaternion()];
+  /** Bits: 1 foot locks, 2 soles kept above the floor (for comparisons). */
+  static feetMask = 3;
   private readonly cycleW = new Float64Array(5);
+  /** Orientation warp (rad): how far the legs turn from the playing clip's direction onto the body's travel. */
+  private warp = 0;
   private readonly pose: Pose;
   private readonly tmp: Pose;
   private phase = 0;
@@ -391,6 +433,14 @@ export class Avatar {
     this.armL = [b('LeftArm'), b('LeftForeArm'), b('LeftHand')];
     this.legL = [b('LeftUpLeg'), b('LeftLeg'), b('LeftFoot')];
     this.legR = [b('RightUpLeg'), b('RightLeg'), b('RightFoot')];
+    this.toes = [b('LeftToeBase'), b('RightToeBase')];
+    let soles = SOLES.get(asset);
+    if (!soles) { soles = fitSoles(asset); SOLES.set(asset, soles); }
+    this.soles = soles;
+    v1.setFromMatrixPosition(asset.restWorld[asset.bone('LeftUpLeg')]!);
+    v2.setFromMatrixPosition(asset.restWorld[asset.bone('LeftLeg')]!);
+    v3.setFromMatrixPosition(asset.restWorld[asset.bone('LeftFoot')]!);
+    this.legLen = v1.distanceTo(v2) + v2.distanceTo(v3);
     this.clips = {
       idle: asset.clip('idle'),
       cycle: [asset.clip('jog'), asset.clip('run'), asset.clip('strafeLeft'), asset.clip('runBack'), asset.clip('strafeRight')],
@@ -775,14 +825,27 @@ export class Avatar {
     const sp = Math.sqrt(mx * mx + mz * mz);
     this.sp = sp;
     const move = smoothstep(0.12, 0.9, sp);
-    // Four directions: forward (jog or run by speed), left, back, right; the two either side of the heading.
+    // Four directions: forward (jog or run by speed), left, back, right. The nearest one plays, its legs turned
+    // onto the way the body is going (orientation warping, up to 45 degrees; the spine turns back so the upper body
+    // faces as it did); only near halfway between two (WARP_BAND) do they cross-fade. A blend of two directions'
+    // strides passes the legs through each other (a strafe's crossover step averaged with a forward stride) and
+    // puts the feet under the floor; the crossover itself, its legs passing front and back, is what players do.
     let wf = 1, wl = 0, wb = 0, wr = 0;
+    this.warp = 0;
     if (sp > 1e-3) {
       const q = Math.atan2(mx, mz) / (Math.PI / 2);
-      if (q >= 0 && q < 1) { wf = 1 - q; wl = q; }
-      else if (q >= 1) { wf = 0; wl = 2 - q; wb = q - 1; }
-      else if (q >= -1) { wf = 1 + q; wr = -q; }
-      else { wf = 0; wr = 2 + q; wb = -1 - q; }
+      const k = Math.round(q);
+      const r = q - k;
+      const ar = r < 0 ? -r : r;
+      const x = ar > 0.5 - WARP_BAND ? 0.5 * smoothstep(0.5 - WARP_BAND, 0.5, ar) : 0;
+      const nb = k + (r < 0 ? -1 : 1);
+      wf = 0;
+      for (let j = 0; j < 2; j++) {
+        const sec = ((j === 0 ? k : nb) % 4 + 4) % 4;
+        const wt = j === 0 ? 1 - x : x;
+        if (sec === 0) wf += wt; else if (sec === 1) wl += wt; else if (sec === 2) wb += wt; else wr += wt;
+      }
+      this.warp = (r - x * (r < 0 ? -1 : 1)) * (Math.PI / 2) * move;
     }
     const run = smoothstep(2.6, 4.4, sp);
     const W = this.cycleW;
@@ -866,6 +929,21 @@ export class Avatar {
     }
     const h = this.pose.hips;
     this.hips.position.set(h[0]!, h[1]!, h[2]!);
+    // Orientation warp: hips and legs (and the hips' sway) turned, the spine turned back.
+    if (this.warp !== 0) {
+      const wa = this.warp;
+      q1.setFromAxisAngle(UP, wa);
+      const hq = this.hips.quaternion;
+      // spine' = hips^-1 * warp^-1 * hips * spine: the chest's world rotation unchanged.
+      q2.copy(hq).invert();
+      q3.copy(q1).invert().multiply(hq);
+      q2.multiply(q3);
+      this.spine[0]!.quaternion.premultiply(q2);
+      hq.premultiply(q1);
+      const cw = Math.cos(wa), sw = Math.sin(wa), hx = this.hips.position.x, hz = this.hips.position.z;
+      this.hips.position.x = hx * cw + hz * sw;
+      this.hips.position.z = -hx * sw + hz * cw;
+    }
     // Shoulder turn and lean in the spine.
     if (this.w > 0) {
       const spineTurn = (turn * (1 - BODY_TURN)) / 3;
@@ -887,7 +965,6 @@ export class Avatar {
     if (this.look >= 0.01) this.watchBall(sim);
 
     this.plantW += (1 - smoothstep(0.25, 0.7, this.sp) - this.plantW) * (dt > 0 ? 1 - Math.exp(-dt / 0.08) : 0);
-    if (this.plantW < 0.01) this.planted = false;
     this.solveLegs();
     if (this.w > 0 || this.ready >= 0.01) this.solveArms();
 
@@ -909,6 +986,8 @@ export class Avatar {
     this.kyawI.reset();
     this.wI.reset();
     this.dropI.reset();
+    this.lockOn.fill(0);
+    this.relT.fill(-1);
   }
 
   /**
@@ -1068,13 +1147,26 @@ export class Avatar {
     const drop = crouch + push * 0.35 + down + this.splitDrop - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
     const plant = this.plantW >= 0.01;
     const pushed = Math.abs(this.reachX) + Math.abs(this.reachZ);
-    if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant) return;
 
     this.footL.setFromMatrixPosition(this.legL[2]!.matrixWorld);
     this.footR.setFromMatrixPosition(this.legR[2]!.matrixWorld);
     worldQuat(this.legL[2]!, this.footQL);
     worldQuat(this.legR[2]!, this.footQR);
-    if (plant) this.plantFeet();
+    this.measureSoles();
+    const fx0 = this.footL.x, fz0 = this.footL.z, gx0 = this.footR.x, gz0 = this.footR.z;
+    if ((Avatar.feetMask & 1) !== 0) this.lockFeet();
+    // No sole below the floor (a blend of two directions' strides can put one 6 cm under), measured as the foot
+    // will be: at its target, turned as the locks hold it, the toes as they are.
+    let lifted = false;
+    if ((Avatar.feetMask & 2) !== 0) {
+      for (let f = 0; f < 2; f++) {
+        const A = f === 0 ? this.footL : this.footR;
+        const low = this.soleLow(f, A, f === 0 ? this.footQL : this.footQR);
+        if (low < 0) { A.y -= low; lifted = true; }
+      }
+    }
+    const moved = Math.abs(this.footL.x - fx0) + Math.abs(this.footL.z - fz0) + Math.abs(this.footR.x - gx0) + Math.abs(this.footR.z - gz0);
+    if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant && !lifted && moved < 1e-4 && this.lockOn[0] === 0 && this.lockOn[1] === 0) return;
     // Hips are a child of the (turned) model: move them in its frame.
     const c = Math.cos(this.root.rotation.y), s = Math.sin(this.root.rotation.y);
     // How the knees bend in the clip, before the hips move.
@@ -1096,21 +1188,56 @@ export class Avatar {
     }
   }
 
-  /**
-   * Keep the feet where they were put down while the body turns and drifts over them; a foot steps to where the
-   * animation has it once it falls too far behind. Rewrites the foot targets (footL/R, footQL/R).
-   */
-  private plantFeet(): void {
-    const yaw = this.yRoot;
-    if (!this.planted) {
-      this.plantPos[0]!.copy(this.footL);
-      this.plantPos[1]!.copy(this.footR);
-      this.plantYaw[0] = yaw;
-      this.plantYaw[1] = yaw;
-      this.stepT[0] = -1;
-      this.stepT[1] = -1;
-      this.planted = true;
+  /** The lowest point of foot f's sole with the ankle at A turned to Q (the toes as they are now). */
+  private soleLow(f: number, A: THREE.Vector3, Q: THREE.Quaternion): number {
+    const foot = (f === 0 ? this.legL : this.legR)[2]!;
+    vsc.setFromMatrixScale(foot.matrixWorld);
+    mf.compose(A, Q, vsc);
+    const S = this.soles[f]!;
+    let low = Infinity;
+    for (let k = 0; k < S.length; k++) {
+      const sp = S[k]!;
+      const b = this.bones[sp.bone]!;
+      if (b === foot) vs.copy(sp.local).applyMatrix4(mf);
+      else {
+        // A toe bone: its local transform under the foot (one or two bones down).
+        mt.compose(b.position, b.quaternion, b.scale);
+        if (b.parent !== foot && b.parent) { ml.compose(b.parent.position, b.parent.quaternion, b.parent.scale); mt.premultiply(ml); }
+        mt.premultiply(mf);
+        vs.copy(sp.local).applyMatrix4(mt);
+      }
+      if (vs.y < low) low = vs.y;
     }
+    return low;
+  }
+
+  /** The clip's ankle heights and the lowest point of each sole (fkY, lowY), before any IK. */
+  private measureSoles(): void {
+    for (let f = 0; f < 2; f++) {
+      const S = this.soles[f]!;
+      let low = Infinity;
+      for (let k = 0; k < S.length; k++) {
+        const sp = S[k]!;
+        vs.copy(sp.local).applyMatrix4(this.bones[sp.bone]!.matrixWorld);
+        if (vs.y < low) low = vs.y;
+      }
+      this.lowY[f] = low;
+      this.fkY[f] = f === 0 ? this.footL.y : this.footR.y;
+    }
+  }
+
+  /**
+   * The feet stay where they were put down (see LOCK_ON), rolling and bending no more than the floor lets them. A
+   * foot the clip lifts goes back onto the clip's; one held down too long (the body drifted or turned over it, the
+   * leg can't reach, or a stroke's lunge wants it out wide) steps there, lifted, one foot at a time while standing.
+   * Standing (plantW 1) the steps come sooner (STEP_DIST, STEP_YAW) than running (LOCK_DRIFT, LOCK_YAW). Rewrites
+   * the foot targets (footL/R, footQL/R) and the toes.
+   */
+  private lockFeet(): void {
+    const yaw = this.yRoot;
+    const s = this.plantW;
+    const drift = LOCK_DRIFT + (STEP_DIST - LOCK_DRIFT) * s;
+    const turnMax = LOCK_YAW + (STEP_YAW - LOCK_YAW) * s;
     // Lunge: a stroke's contact wide of the racket shoulder moves where the foot on that side wants to be.
     if (this.hasCon && (this.st === ST_PREP || this.st === ST_SWING)) {
       const sh = this.armRacket[0]!.matrixWorld.elements;
@@ -1125,51 +1252,61 @@ export class Avatar {
         A.z += (dz / d) * out;
       }
     }
-    // Which foot is furthest from where the animation wants it (scaled so a turn counts like a distance).
-    let worst = -1, worstE = 1;
     for (let f = 0; f < 2; f++) {
       const A = f === 0 ? this.footL : this.footR;
-      const P = this.plantPos[f]!;
-      const ex = A.x - P.x, ez = A.z - P.z;
-      const d = Math.sqrt(ex * ex + ez * ez);
-      if (d > STEP_SNAP) { P.copy(A); this.plantYaw[f] = yaw; this.stepT[f] = -1; continue; }
-      const e = Math.max(d / STEP_DIST, Math.abs(wrapAngle(yaw - this.plantYaw[f]!)) / STEP_YAW);
-      if (e > worstE) { worstE = e; worst = f; }
-    }
-    if (worst >= 0 && this.stepT[0]! < 0 && this.stepT[1]! < 0) {
-      this.stepT[worst] = 0;
-      this.stepFrom[worst]!.copy(this.plantPos[worst]!);
-      this.stepYawFrom[worst] = this.plantYaw[worst]!;
-    }
-    const w = this.plantW;
-    for (let f = 0; f < 2; f++) {
-      const A = f === 0 ? this.footL : this.footR;
-      const P = this.plantPos[f]!;
-      let st = this.stepT[f]!;
-      let tx = P.x, tz = P.z, ty = A.y, ta = this.plantYaw[f]!;
-      if (st >= 0) {
-        st += this.dt / STEP_TIME;
-        if (st >= 1) {
-          st = -1;
-          P.copy(A);
-          this.plantYaw[f] = yaw;
-          tx = A.x; tz = A.z; ta = yaw;
-        } else {
-          const e = smoothstep(0, 1, st);
-          const F = this.stepFrom[f]!;
-          tx = F.x + (A.x - F.x) * e;
-          tz = F.z + (A.z - F.z) * e;
-          ty = A.y + STEP_LIFT * Math.sin(Math.PI * st);
-          ta = this.stepYawFrom[f]! + wrapAngle(yaw - this.stepYawFrom[f]!) * e;
+      const Q = f === 0 ? this.footQL : this.footQR;
+      const toe = this.toes[f]!;
+      const L = this.lockPos[f]!;
+      const low = this.lowY[f]!;
+      if (this.lockOn[f] === 1) {
+        const ex = A.x - L.x, ez = A.z - L.z;
+        const far = ex * ex + ez * ez;
+        if (far > STEP_SNAP * STEP_SNAP) { this.lockOn[f] = 0; this.relT[f] = -1; continue; }
+        const hip = (f === 0 ? this.legL : this.legR)[0]!.matrixWorld.elements;
+        const hx = L.x - hip[12]!, hy = A.y - hip[13]!, hz = L.z - hip[14]!;
+        const reach = this.legLen * 0.985;
+        const lifted = low > LOCK_OFF;
+        const forced = far > drift * drift || Math.abs(wrapAngle(yaw - this.lockYaw[f]!)) > turnMax || hx * hx + hy * hy + hz * hz > reach * reach;
+        // Standing, one foot steps at a time (the other waits, still held).
+        const o = 1 - f;
+        const waits = !lifted && s > 0.5 && this.relLift[o] === 1 && this.relT[o]! >= 0;
+        if (lifted || (forced && !waits)) {
+          this.lockOn[f] = 0;
+          this.relT[f] = 0;
+          this.relFrom[f]!.copy(L);
+          this.relQ[f]!.copy(this.lockQ[f]!);
+          this.relToe[f]!.copy(this.lockToe[f]!);
+          this.relLift[f] = lifted ? 0 : 1;
+          this.relDur[f] = lifted ? LOCK_RELEASE : STEP_TIME;
         }
-        this.stepT[f] = st;
+      } else if (low < LOCK_ON && this.relT[f]! < 0) {
+        this.lockOn[f] = 1;
+        L.copy(A);
+        this.lockYaw[f] = yaw;
+        this.lockQ[f]!.copy(Q);
+        this.lockToe[f]!.copy(toe.quaternion);
       }
-      A.x += (tx - A.x) * w;
-      A.y += (ty - A.y) * w;
-      A.z += (tz - A.z) * w;
-      // The animated foot, turned back to the yaw it was planted at.
-      q1.setFromAxisAngle(UP, wrapAngle(ta - yaw) * w);
-      (f === 0 ? this.footQL : this.footQR).premultiply(q1);
+      if (this.lockOn[f] === 1) {
+        A.x = L.x;
+        A.z = L.z;
+        Q.copy(this.lockQ[f]!);
+        toe.quaternion.copy(this.lockToe[f]!);
+      } else if (this.relT[f]! >= 0) {
+        let t = this.relT[f]! + this.dt / this.relDur[f]!;
+        if (t >= 1) t = -1;
+        this.relT[f] = t;
+        if (t >= 0) {
+          const e = smoothstep(0, 1, t);
+          const F = this.relFrom[f]!;
+          A.x = F.x + (A.x - F.x) * e;
+          A.z = F.z + (A.z - F.z) * e;
+          if (this.relLift[f] === 1) A.y += STEP_LIFT * Math.sin(Math.PI * t);
+          q1.copy(this.relQ[f]!).slerp(Q, e);
+          Q.copy(q1);
+          q1.copy(this.relToe[f]!).slerp(toe.quaternion, e);
+          toe.quaternion.copy(q1);
+        }
+      }
     }
   }
 
