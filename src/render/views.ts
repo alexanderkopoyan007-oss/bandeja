@@ -412,7 +412,7 @@ export class AssistView {
 
   update(
     sim: MatchSim, human: number, ball: THREE.Vector3, camera: THREE.Camera, renderTime: number, timingScale: number,
-    now: number, dt: number,
+    now: number, dt: number, cueTime = renderTime,
   ): void {
     this.approach.mesh.visible = false;
     this.target.mesh.visible = false;
@@ -462,7 +462,9 @@ export class AssistView {
     const charging = p.swing === SW_CHARGE;
     const ideal = sim.focusIdeal(human);
     if (ideal < 0 || (!charging && sim.phase !== PH_TOSS && sim.phase !== PH_RALLY)) return;
-    const left = ideal - renderTime;
+    // Counted down on the clock the release is judged on (now), not the drawn moment: while a swing is held the
+    // picture is a tick behind, and a ring closing at the drawn moment sends every release on it a tick late.
+    const left = ideal - cueTime;
     if (left > APPROACH_SHOW || left < -0.15) return;
     // The shot's own windows (a volley is easier to time than a víbora), times the timing setting.
     const k = charging || sim.phase === PH_TOSS ? sim.windowScale(human) : timingScale;

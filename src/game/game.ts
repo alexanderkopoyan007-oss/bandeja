@@ -297,27 +297,35 @@ export class Game {
     }
     // ...except while the human holds a swing: the release can come for any moment from now on, and one that
     // arrives for a moment the sim has already run past would meet the ball up to a tick late. Until it goes the
-    // sim stays at or behind now (drawn from its newest state, at most a tick behind).
+    // sim stays at or behind now, and is drawn a tick behind (the render clock below).
     const hp = this.sim.players[human]!;
     const holding = ahead && !this.opts.autoplay;
-    while ((ahead ? this.sim.time < simNow : this.sim.time + DT <= simNow) && n < MAX_TICKS_PER_FRAME) {
+    // The render clock: now, less a lag. While a swing is held the sim stays at or behind now, so drawing now would
+    // mean drawing the newest tick as it is (no blend: a repeated frame whenever a frame has no new tick, every
+    // sixth frame at 144 Hz). Instead the lag eases to one tick while a swing is held (blended, as ?runahead=0
+    // draws) and back to none after, the render clock running 25% slow or fast meanwhile. It stays until the
+    // contact. The sim is stepped to the drawn moment (now less the lag), not to now: stepped to now while the lag
+    // is still a tick, the oldest state it keeps (a tick before its newest) is past the drawn moment and the picture
+    // is pulled forward by up to a tick at the release, then drawn unblended, frames repeating, until the contact.
+    const swinging = hp.swing === SW_CHARGE || hp.swing === SW_COMMITTED;
+    const lagTo = !ahead || (holding && swinging) ? DT : 0;
+    const ease = this.lastFrame ? 0.25 * Math.min(0.1, (now - this.lastFrame) / 1000) : DT;
+    this.renderLag = lagTo > this.renderLag ? Math.min(lagTo, this.renderLag + ease) : Math.max(lagTo, this.renderLag - ease);
+    let drawn = simNow - this.renderLag;
+    while (this.sim.time < drawn && n < MAX_TICKS_PER_FRAME) {
       if (holding && hp.swing === SW_CHARGE && this.sim.time + DT > simNow) break;
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
       this.sim.step(this.inputs);
       n++;
     }
-    if (n === MAX_TICKS_PER_FRAME) this.epoch = now - this.sim.time * 1000; // drop a backlog rather than spiral
+    if (n === MAX_TICKS_PER_FRAME) {
+      // Drop a backlog rather than spiral; draw from the new clock (the old one would draw the newest tick and step
+      // back next frame).
+      this.epoch = now - this.sim.time * 1000;
+      drawn = this.sim.time - this.renderLag;
+    }
     const simMs = performance.now() - s0;
-    // The render clock: now, less a lag. While a swing is held the sim stays at or behind now, so drawing now would
-    // mean drawing the newest tick as it is (no blend: a repeated frame whenever a frame has no new tick, every
-    // sixth frame at 144 Hz). Instead the lag eases to one tick while a swing is held (blended, as ?runahead=0
-    // draws) and back to none after, the render clock running 25% slow or fast meanwhile. It stays until the
-    // contact, so the catch-up isn't drawn over the hit.
-    const swinging = hp.swing === SW_CHARGE || hp.swing === SW_COMMITTED;
-    const lagTo = !ahead || (holding && swinging) ? DT : 0;
-    const ease = this.lastFrame ? 0.25 * Math.min(0.1, (now - this.lastFrame) / 1000) : DT;
-    this.renderLag = lagTo > this.renderLag ? Math.min(lagTo, this.renderLag + ease) : Math.max(lagTo, this.renderLag - ease);
-    const renderTime = Math.min(this.sim.time, Math.max(this.sim.time - DT, simNow - this.renderLag));
+    const renderTime = Math.min(this.sim.time, Math.max(this.sim.time - DT, drawn));
     const alpha = (renderTime - (this.sim.time - DT)) / DT;
 
     // Mouse aim: project the pointer onto the opponent's half. The faint marker is the pointer; while a shot can
@@ -348,7 +356,7 @@ export class Game {
     this.feedback.update(this.sim, who, renderTime, now);
     this.cam.update(this.sim, team, this.ball.mesh.position.x, now / 1000);
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
-      now / 1000, frameDt);
+      now / 1000, frameDt, renderTime + this.renderLag);
     this.hud.update(this.sim, who, now / 1000);
 
     this.renderer.render(this.scene, this.cam.camera);

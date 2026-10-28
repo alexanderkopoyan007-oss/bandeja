@@ -318,3 +318,23 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Left: the HUD meter reads `sim.time` and the ring the render time (up to a tick apart, cosmetic); unplugging
     the pad mid-charge swings at that moment rather than cancelling (the sim has no cancel); for rollback later,
     `Player.writeState` leaves out the half bounds and the human's stand plans are not hashed (both before Phase 2).
+- **Fresh-eyes round 3** (independent, read-only; 189 tests, typecheck, point mix 24 x 300 s, alloc over four
+  seeds, render-side determinism, the modifier fix end to end with the real `KeyboardInput`, an emulation of
+  `Game.tick` against the real sim at 60-240 Hz). Fixed:
+  - *The picture jumped at the human's release and repeated frames until the contact* (medium-high, new in round 2):
+    run-ahead resumed as soon as the swing left CHARGE while the render lag was still a tick, so the sim ran to now,
+    the clamp pulled the drawn moment forward by up to a tick in one frame (onto the hit itself when the release
+    tick is the contact tick), and an early release was drawn unblended (alpha 0) until the contact. Releases with
+    a step more than 2 ms beyond the frame: 33% at 60 Hz, 68% at 120 Hz, 63-77% at 144-165 Hz; a repeated frame in
+    21-26% at 144-165 Hz. The lag is now worked out before stepping and the sim is stepped to the drawn moment (now
+    less the lag), keeping the hold break; a dropped backlog draws from the new clock (it stepped back up to 3 ms
+    after a hitch over 100 ms). Emulation after: 0 repeated frames, 0 steps beyond the ease, 0 late strikes at 60,
+    144 and 165 Hz (the reviewer's prototype, also 0 at 75-240 Hz, with 3 ms jitter and with hitches).
+  - *The timing ring counted down on the drawn clock* (medium): while a swing is held the picture is a tick behind,
+    so a release as the ring closed was graded +20 ms at 60 Hz and +12 ms at 144 Hz (a bot with no reaction delay;
+    +10 / +4 counted on now). The ring now counts down on the clock releases are judged on (render time + lag =
+    now) and stays drawn on the ball. Its look is unchanged; only when it closes moved, by at most a tick.
+  - Left (low): a key event that reaches the page after its timestamp can strike late (1 ms transit: 1% of releases,
+    max 0.3 ms; Chrome's transit is about 1 ms); the pad and the keyboard holding the same button share one bit (one
+    letting go releases it); with `?assist=0` aim reads the movement keys at frame time, not at the release (moves
+    are axes, not queued events). In OPEN_QUESTIONS.md.

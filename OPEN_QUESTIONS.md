@@ -69,3 +69,9 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   mean and how the timing gates were set up).
 - **Gamepad audio unlock.** A pad press may not count as a user gesture for starting audio in every browser; a
   pad-only player may need one key or click before sound starts. Settled by: a test on the owner's pad.
+- **Input edge cases left open** (Phase 2 review round 3, all low): a key event that reaches the page after its
+  timestamp can strike up to a few ms late (1 ms transit, Chrome's usual: 1% of releases, max 0.3 ms; 6 ms: up to
+  22%, max 4.9 ms); the pad and the keyboard holding the same button share one bit, so letting go of one releases
+  the swing while the other still holds it; with `?assist=0` the aim reads the movement keys at frame time rather
+  than at the release moment (moves reach the sim as axes, not as timestamped events). Settled by: the owner's
+  playtest on their own machine and pad, if any of them shows.
