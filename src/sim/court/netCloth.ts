@@ -1155,7 +1155,7 @@ export class NetCloth {
   }
 
   hashInto(h: Hasher): void {
-    h.num(this.awake ? 1 : 0).num(this.quiet);
+    h.num(this.awake ? 1 : 0).num(this.quiet).num(this.bulge);
     if (!this.awake) return;
     const p = this.pos;
     const v = this.vel;
