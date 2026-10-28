@@ -714,12 +714,8 @@ export class Game {
     if (dt <= 0 || dt > 100 || this.menuPaused) return;
     this.gaps[this.gapN & 255] = dt;
     this.gapN++;
-    if ((this.gapN & 63) === 0 && this.gapN >= 256) {
-      const s = this.gapSort;
-      s.set(this.gaps);
-      s.sort();
-      const p10 = s[25]!;
-      this.gapMedian = s[128]!;
+    if ((this.gapN & 31) === 0) {
+      const p10 = this.gapStats();
       if (this.period === 0 || p10 < 0.8 * this.period) this.period = p10;
       // At the floor for a whole window: did the smaller picture make the frames faster?
       if (this.medAtFull > 0 && this.renderScale <= 0.6 + 1e-6 && this.atFloor >= 256) {
@@ -739,7 +735,7 @@ export class Game {
     if (dt > limit) { this.slowFrames++; this.fastFrames = 0; }
     else { this.fastFrames++; this.slowFrames = Math.max(0, this.slowFrames - 0.25); }
     if (this.slowFrames > 30 && this.renderScale > 0.6) {
-      if (this.renderScale >= 1 - 1e-6 && this.gapMedian > 0) this.medAtFull = this.gapMedian;
+      if (this.renderScale >= 1 - 1e-6) { this.gapStats(); this.medAtFull = this.gapMedian; }
       this.renderScale = Math.max(0.6, this.renderScale - 0.1);
       this.slowFrames = 0;
       this.fastFrames = 0;
@@ -751,6 +747,17 @@ export class Game {
       this.raisedAt = performance.now();
       this.applyPixelRatio();
     }
+  }
+
+  /** The 10th percentile of the frames held (up to the last 256), and their median into `gapMedian`. */
+  private gapStats(): number {
+    const n = Math.min(this.gapN, 256);
+    const s = this.gapSort;
+    s.set(this.gaps);
+    if (n < 256) s.fill(Infinity, n);
+    s.sort();
+    this.gapMedian = s[n >> 1]!;
+    return s[(n * 0.1) | 0]!;
   }
 
   /** Auto quality's record: the last 256 frame intervals (ms), a sorting copy, the display period (0 = unknown). */
