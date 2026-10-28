@@ -341,6 +341,21 @@ describe('ball lab: junctions, edges and rolling', () => {
     expect(junctions).toBeGreaterThan(100);
   });
 
+  it('a topspin ball in the nick at the foot of the back glass logs its floor contact first, though the glass kicks it up', () => {
+    // Review round 4: the round-3 rule (log the second surface only if the flight reaches it) missed this one: the
+    // glass's friction lifts the ball, so the flight never closes on the floor it is already touching.
+    const b = new Ball();
+    b.pos.set(0.3975, 0.0502, -9.5762);
+    b.vel.set(-3.2768, -0.9273, -23.369);
+    b.spin.set(-72.1376, 65.7615, -19.452);
+    const kinds: number[] = [];
+    for (let k = 0; k < 6; k++) {
+      b.step(turf, DT, null);
+      for (let e = 0; e < b.eventCount; e++) kinds.push(b.events[e]!.kind);
+    }
+    expect(kinds.slice(0, 2)).toEqual([HIT_FLOOR, HIT_WALL]);
+  });
+
   it('a ball in the nick lands first for the rules (FIP: good in the corner where wall meets floor)', () => {
     const c = rincon(2).contacts;
     expect(c[0]!.kind).toBe(HIT_FLOOR);
