@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { settingsFrom, defaultSettings } from '../../src/app/settings.ts';
 import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyTables, resolveKeys } from '../../src/game/input/bindings.ts';
-import { directLaunch, optionsFromSetup } from '../../src/app/options.ts';
+import { directLaunch, optionsFromSetup, optionsFromUrl } from '../../src/app/options.ts';
 
 describe('settings store', () => {
   it('keeps known values and ignores anything else', () => {
@@ -102,5 +102,22 @@ describe('a menu setup as game options', () => {
     expect(directLaunch(new URLSearchParams('backend=webgl&dpr=1&quality=low'))).toBe(false);
     expect(directLaunch(new URLSearchParams('autoplay=1'))).toBe(true);
     expect(directLaunch(new URLSearchParams('mode=singles'))).toBe(true);
+  });
+});
+
+describe('world from the URL and the menus', () => {
+  const world = (q: string) => optionsFromUrl(new URLSearchParams(q), null).match.world!;
+  it('?ball= picks the ball; above 1000 m the altitude ball unless asked otherwise (FIP allows it there)', () => {
+    expect(world('autoplay=1').ball).toBe('standard');
+    expect(world('autoplay=1&ball=altitude').ball).toBe('altitude');
+    expect(world('autoplay=1&alt=1500').ball).toBe('altitude');
+    expect(world('autoplay=1&alt=1500&ball=standard').ball).toBe('standard');
+    expect(world('autoplay=1&alt=800').ball).toBe('standard');
+  });
+  it('the arena puts its roof over the court: club hall 9 m, outdoors none', () => {
+    expect(world('autoplay=1&arena=hall').env!.ceiling).toBe(9);
+    expect(world('autoplay=1&arena=club-day').env!.ceiling).toBe(Infinity);
+    const s = defaultSettings();
+    expect(optionsFromSetup({ ...s.setup, arena: 'hall' }, s, 1, null, false, new URLSearchParams('')).match.world!.env!.ceiling).toBe(9);
   });
 });

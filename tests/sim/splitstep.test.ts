@@ -87,3 +87,47 @@ describe('split-step', () => {
     }
   });
 });
+
+/** A straight sprint forward (looking where it runs) from a stance: seconds to 5 m and to 10 m, and the planner's. */
+function sprint(): { t5: number; t10: number; plan5: number; plan10: number } {
+  const p = new Player(0);
+  p.minX = -50; p.maxX = 50; p.minZ = -50; p.maxZ = 50;
+  p.pos.set(0, 0, 0);
+  p.facing = 0;
+  let t5 = 0, t10 = 0;
+  for (let i = 0; i < 1000 && t10 === 0; i++) {
+    p.clock = 10 + i * DT;
+    p.driveX = 0;
+    p.driveZ = -1;
+    p.move();
+    const d = -p.pos.z;
+    if (t5 === 0 && d >= 5) t5 = (i + 1) * DT;
+    if (d >= 10) t10 = (i + 1) * DT;
+  }
+  const q = new Player(0);
+  q.pos.set(0, 0, 0);
+  q.facing = 0;
+  q.clock = 10;
+  q.splitAt = -100;
+  q.runX = 0; q.runZ = -1;
+  q.runD = 5; q.runTime();
+  const plan5 = q.runT;
+  q.runD = 10; q.runTime();
+  return { t5, t10, plan5, plan10: q.runT };
+}
+
+describe('sprinting (force-velocity profile, data/tuning.json player)', () => {
+  it('the 5-10 m split is a padel player\'s: 0.85-0.89 s (Saez de Villarreal et al. 2023)', () => {
+    // The one sprint number that doesn't depend on what started the clock. With the profile's intercept at the
+    // run cap it was 0.90 s; at the field-sport v0 of 7.5-11 m/s it would be 0.83 s (the run reaches the cap by 4 m).
+    const s = sprint();
+    expect(s.t10 - s.t5).toBeGreaterThan(0.845);
+    expect(s.t10 - s.t5).toBeLessThan(0.89);
+  });
+
+  it('the planner runs the same profile, up to the cap and on at it (within 40 ms at 5 and 10 m)', () => {
+    const s = sprint();
+    expect(Math.abs(s.plan5 - s.t5)).toBeLessThan(0.04);
+    expect(Math.abs(s.plan10 - s.t10)).toBeLessThan(0.04);
+  });
+});

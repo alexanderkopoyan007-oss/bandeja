@@ -2,7 +2,7 @@
 // relative to where the player looks, braking and turning held by the shoe's grip), split-step, and the swing
 // state machine (charge -> committed -> recover).
 import { V3 } from '../core/v3.ts';
-import { clamp, sqrt, atan2, sin, cos, expF, FIO } from '../core/smath.ts';
+import { clamp, sqrt, atan2, sin, cos, expF, logF, FIO } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import tuningData from '../../../data/tuning.json' with { type: 'json' };
 
@@ -128,6 +128,7 @@ export class Player {
     const preload = t.splitPreload;
     const rampT = t.startRamp;
     const from0 = t.startFrom;
+    const fv = t.fvSpeed / t.maxSpeed;
     // In the air during the split-step's hop: no grip, so no push, braking or turning; the feet land loaded.
     const land = this.splitAt + air;
     const flying = now >= this.splitAt && now < land;
@@ -144,12 +145,13 @@ export class Player {
     } else if (sp > 0.05) {
       const ux = this.vel.x / sp;
       const uz = this.vel.z / sp;
-      // Propulsion falls with speed towards the top speed for the way the player is running (a sprint's
-      // force-velocity profile); braking is limited apart; braking, turning and pushing all share the grip.
+      // Propulsion falls with speed towards the profile's intercept for the way the player is running (a
+      // sprint's force-velocity profile; the run itself is capped at that way's top speed); braking is limited
+      // apart; braking, turning and pushing all share the grip.
       this.qx = ux;
       this.qz = uz;
       this.topToward(lx, lz);
-      const push = t.accel * ramp * (1 - sp / (this.qTop * slow));
+      const push = t.accel * ramp * (1 - sp / (this.qTop * fv * slow));
       let along = ax * ux + az * uz;
       let cross = -ax * uz + az * ux;
       along = clamp(along, -t.brake, push > 0 ? push : 0);
@@ -201,8 +203,8 @@ export class Player {
 
   /**
    * Seconds to run `runD` metres to a stop-free arrival along (runX, runZ) (unit), from the current velocity,
-   * with the force-velocity profile: v(t) = vT - (vT - v0) e^(-t/tau), tau = vT / accel. Into runT, and the
-   * speed on arrival into runV.
+   * with move()'s force-velocity profile: v(t) = vF - (vF - v0) e^(-t/tau), tau = vF / accel (vF the intercept
+   * that way), up to the top speed vT and on at vT. Into runT, and the speed on arrival into runV.
    */
   runD = 0;
   runX = 0;
@@ -228,9 +230,21 @@ export class Player {
       v0 = 0;
     }
     if (v0 > vT) v0 = vT;
-    const tau = vT / t.accel;
-    const dn = d / (vT * tau);
-    const k = 1 - v0 / vT;
+    const vF = vT * (t.fvSpeed / t.maxSpeed);
+    const tau = vF / t.accel;
+    // Reaching the top speed: after tc = tau ln((vF - v0) / (vF - vT)), having run vF tc - tau (vT - v0).
+    FIO[0] = (vF - v0) / (vF - vT);
+    logF();
+    const tc = tau * FIO[0]!;
+    const dc = vF * tc - tau * (vT - v0);
+    if (d >= dc) {
+      this.startLag();
+      this.runT = extra + tc + (d - dc) / vT + this.lagT;
+      this.runV = vT;
+      return;
+    }
+    const dn = d / (vF * tau);
+    const k = 1 - v0 / vF;
     // Solve dn = s - k (1 - e^-s) for s = time / tau (Newton from the from-rest closed form's neighbourhood).
     let s = sqrt(dn * (dn + 2));
     for (let i = 0; i < 3; i++) {
@@ -247,7 +261,7 @@ export class Player {
     this.runT = extra + s * tau + this.lagT;
     FIO[0] = -s;
     expF();
-    this.runV = vT - (vT - v0) * FIO[0]!;
+    this.runV = vF - (vF - v0) * FIO[0]!;
   }
 
   /**

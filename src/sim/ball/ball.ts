@@ -41,6 +41,8 @@ export interface SurfaceSpec {
   speedJitter: number;
   /** Random sideways turn of the rebound about the surface normal (sd, degrees). */
   turnDeg: number;
+  /** Floors: how fast a ball rolling on it slows (m/s per second). */
+  rollDecel?: number;
 }
 
 /** Two surfaces met at once: floor and wall, or a corner (data/surfaces.json, junction). */
@@ -80,6 +82,8 @@ export interface Environment {
   altitudeM: number;
   windX: number;
   windZ: number;
+  /** Height of an indoor roof over the court (m); Infinity or absent in the open air. */
+  ceiling?: number;
 }
 
 export const SEA_LEVEL_AIR = 1.204;
@@ -97,6 +101,8 @@ export const HIT_NET = 3;
 export const HIT_NETCORD = 4;
 export const LEFT_COURT = 5;
 export const HIT_POST = 6;
+/** The roof (or the lights hung under it) of an indoor court: a dead ball (FIP 13.1.g / 14.1.d). */
+export const HIT_ROOF = 8;
 /** A free edge (a wall top, a door frame): internal, reported as HIT_WALL. */
 const HIT_EDGE = 7;
 
@@ -131,6 +137,10 @@ export class BallWorld {
   /** Spin decay per metre of air flown through (spinDecayPerM scaled by air density). */
   readonly kSpin: number;
   readonly inertia: number;
+  /** A rolling ball's deceleration on this floor (m/s^2). */
+  readonly rollDecel: number;
+  /** Height of the ball's centre when it touches the roof (Infinity in the open air). */
+  readonly roofY: number;
 
   constructor(spec: BallSpec, court: Court, floor: SurfaceSpec, surfaces: SurfaceTable, env: Environment) {
     this.spec = spec;
@@ -144,6 +154,9 @@ export class BallWorld {
     this.kLift = (0.5 * this.rho * area) / spec.mass;
     this.kSpin = (spec.spinDecayPerM * this.rho) / SEA_LEVEL_AIR;
     this.inertia = spec.inertiaFactor * spec.mass * spec.radius * spec.radius;
+    this.rollDecel = floor.rollDecel ?? 0.8;
+    const roof = env.ceiling ?? Infinity;
+    this.roofY = roof > 0 && roof < Infinity ? roof - spec.radius : Infinity;
   }
 }
 
@@ -540,7 +553,7 @@ export class Ball {
     const dt = this.flyDt;
     const v = this.vel;
     const s = sqrt(v.x * v.x + v.z * v.z);
-    const decel = 0.8 * dt;
+    const decel = world.rollDecel * dt;
     const k = s > decel ? (s - decel) / s : 0;
     v.set(v.x * k, 0, v.z * k);
     this.pos.addScaled(v, dt);
@@ -1415,7 +1428,25 @@ export class Ball {
     if (this.outside) return;
     const c = world.court;
     const p = this.pos;
-    if (abs(p.x) > c.halfW || abs(p.z) > c.halfL || p.y > 12) {
+    if (p.y > world.roofY && this.vel.y > 0) {
+      // The roof: a dead ball, reported once. It comes back down off it (the panels and purlins soak most of the
+      // pace: tuning, nothing published) and stays in play physically, so it falls into the court as it would.
+      p.y = world.roofY;
+      this.vel.y = -0.3 * this.vel.y;
+      this.vel.x *= 0.6;
+      this.vel.z *= 0.6;
+      if (this.eventCount < MAX_EVENTS) {
+        const e = this.events[this.eventCount++]!;
+        e.kind = HIT_ROOF;
+        e.surface = SURF_OPEN;
+        e.wall = -1;
+        e.t = this.exitAt;
+        e.x = p.x; e.y = p.y; e.z = p.z;
+        e.speed = 0;
+      }
+      return;
+    }
+    if (abs(p.x) > c.halfW || abs(p.z) > c.halfL || p.y > 30) {
       this.outside = true;
       if (this.eventCount < MAX_EVENTS) {
         const e = this.events[this.eventCount++]!;

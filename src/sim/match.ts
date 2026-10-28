@@ -1,6 +1,6 @@
 // MatchSim: the whole deterministic match. step(inputs) advances one 120 Hz tick.
 // Rendering, audio and UI read its state and its event ring; nothing outside the sim writes to it.
-import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, HIT_POST, LEFT_COURT, type BallWorld } from './ball/ball.ts';
+import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, HIT_POST, HIT_ROOF, LEFT_COURT, type BallWorld } from './ball/ball.ts';
 import { Prediction, PF_FLOOR, PF_WALL } from './ball/predict.ts';
 import { Rng } from './core/rng.ts';
 import { DT, TEAM_NEAR } from './core/constants.ts';
@@ -49,6 +49,8 @@ export const E_WHIFF = 11;
 export const E_SPLIT = 12;
 export const E_TOSS = 13;
 export const E_EXIT = 14;
+/** The ball touched an indoor roof (x, y, z where). */
+export const E_ROOF = 19;
 export const E_ENDS = 15;
 export const E_SWING = 16;
 /** Doubles: a player calls the ball (a: CALL_*). */
@@ -528,6 +530,10 @@ export class MatchSim {
           this.emitAt(E_EXIT, t, throughOpening ? 1 : 0, e.wall, 0, e.x, e.y, e.z);
           break;
         }
+        case HIT_ROOF:
+          this.rally.onRoof();
+          this.emitAt(E_ROOF, t, 0, 0, 0, e.x, e.y, e.z);
+          break;
       }
     }
     // Caught in the net, or under a pocket of it, the ball can be past the net line without having crossed.
@@ -1263,7 +1269,8 @@ export class MatchSim {
     r.handSide = (dx * s * p.handed >= 0) !== (shot === SHOT_CONTRAPARED) ? 1 : -1;
     r.moving = clamp(p.speed() / t.maxSpeed, 0, 1);
     r.stretch = clamp((d - t.reachComfort) / (t.reachMax - t.reachComfort), 0, 1);
-    r.power = 1;
+    const ai0 = this.ai[i];
+    r.power = ai0 && shot === SHOT_SMASH ? ai0.smashEffort() : 1;
     r.control = 1;
     // Serve spin follows the key (slice, kick, flat); it is solved with, so the serve still lands on its target.
     r.spinScale = serving ? (p.shot === SHOT_TOPSPIN ? -0.9 : p.shot === SHOT_DRIVE ? 0.15 : 1) : 1;

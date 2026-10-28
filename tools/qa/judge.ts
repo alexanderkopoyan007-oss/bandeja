@@ -21,7 +21,7 @@ const PH_SETUP = 0;
 const PH_TOSS = 1;
 const PH_RALLY = 2;
 
-const E_HIT = 1, E_FLOOR = 2, E_WALL = 3, E_NET = 4, E_POINT = 5, E_FAULT = 6, E_LET = 7, E_WHIFF = 11, E_TOSS = 13, E_EXIT = 14, E_BODY = 18;
+const E_HIT = 1, E_FLOOR = 2, E_WALL = 3, E_NET = 4, E_POINT = 5, E_FAULT = 6, E_LET = 7, E_WHIFF = 11, E_TOSS = 13, E_EXIT = 14, E_BODY = 18, E_ROOF = 19;
 const EVENT_RING = 64;
 /** Facts kept for the log around a disagreement. */
 const KEEP = 24;
@@ -193,6 +193,7 @@ export class Judge {
         case E_NET: this.feed({ k: 'net', part: e.a === 1 ? 'tape' : e.a === 2 ? 'post' : 'net', x: e.x, y: e.y, z: e.z }); break;
         case E_EXIT: this.feed({ k: 'exit', door: e.a === 1, wall: wallName(e.b), x: e.x, y: e.y, z: e.z }); break;
         case E_BODY: this.feed({ k: 'body', player: e.player }); break;
+        case E_ROOF: this.feed({ k: 'object' }); break;
         case E_POINT: result = { result: 'point', winner: e.team, rule: REASON_TEXT[e.a] ?? String(e.a) }; break;
         case E_FAULT:
           result = e.b === 2 ? { result: 'point', winner: 1 - e.team, rule: `double fault (${REASON_TEXT[e.a]})` } : { result: 'fault', winner: -1, rule: REASON_TEXT[e.a] ?? '' };

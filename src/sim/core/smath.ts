@@ -16,7 +16,7 @@ export function exp(x: number): number { IO[0] = x; expIO(); return IO[0]!; }
  * past V8's inlining budget: exp() itself is then a real call, its argument and result each boxed (16 bytes a
  * call; the ball's spin decay alone made 30 MB of garbage per 100k ticks that way).
  */
-export { IO as FIO, expIO as expF };
+export { IO as FIO, expIO as expF, logIO as logF };
 export function log(x: number): number { IO[0] = x; logIO(); return IO[0]!; }
 export function pow(x: number, y: number): number { IO[0] = x; IO[1] = y; powIO(); return IO[0]!; }
 export function sqrt(x: number): number { return Math.sqrt(x); } // IEEE-exact everywhere

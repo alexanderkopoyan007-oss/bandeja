@@ -28,7 +28,7 @@ const SURPRISE = 0.15;
 const AFTER_WALL = 1.8;
 /** Chance a pair follows its chiquita in to the net, per unit of the style's net. */
 const CHIQ_NET = 0.35;
-const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number };
+const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number };
 /** A value by level: v holds it at evenly spaced levels from 0 to 1 (two or more), interpolated linearly between. */
 function byLevel(v: number[], level: number): number {
   const n = v.length - 1;
@@ -126,6 +126,11 @@ export class SimpleAi {
   /** Standard deviation of the release timing error (seconds). */
   private timingSigma(): number {
     return byLevel(SKILL.timing, this.level);
+  }
+
+  /** How hard this AI swings a smash (ShotRequest.power): weaker players smash slower (data/ai-skill.json). */
+  smashEffort(): number {
+    return byLevel(SKILL.smashEffort, this.level);
   }
 
   /** Swing-to-swing spread at contact (ShotRequest.motor), growing with the ball's pressure. */
@@ -373,8 +378,9 @@ export class SimpleAi {
   private tick = 0;
 
   /**
-   * Steer towards (goX, goZ) and arrive without overshooting: flat out for the ball, brisk into the formation,
-   * and no shuffling for a few centimetres (real players then stand: most of a match is spent below 6 km/h).
+   * Steer towards (goX, goZ) and arrive without overshooting: hard for the ball (flat out only when the time left
+   * asks), brisk into the formation, and no shuffling for a few centimetres (real players then stand: most of a
+   * match is spent below 6 km/h).
    */
   private drift(f: InputFrame, p: Player, s: number): void {
     const now = this.nowT;
@@ -406,11 +412,17 @@ export class SimpleAi {
     p.qz = dz / d;
     p.topToward(lx, lz);
     const top = p.qTop;
-    // Going for the ball: flat out. Taking up a position: brisk (being in place before the next strike is what
-    // reaches balls; a relaxed 2.6 m/s left a tenth more of them unreached), faster if the time left asks.
+    // Going for the ball: hard (chaseEffort of the top speed that way), flat out if the time left asks. Taking up
+    // a position: brisk (being in place before the next strike is what reaches balls; a relaxed 2.6 m/s left a
+    // tenth more of them unreached), faster if the time left asks.
     const need = left < 1e8 ? (d / (left > 0.08 ? left : 0.08)) * 1.35 : 0;
     const brisk = 4.5;
-    let v = chase ? top : need > brisk ? need : brisk;
+    const hard = top * SKILL.chaseEffort;
+    let v = chase ? (need > hard ? need : hard) : need > brisk ? need : brisk;
+    // Into the formation never flat out: the deadline (the next bounce) is a guess at the next strike, and a player
+    // a step short of their spot is still in the point (flat out, every AI hit its top speed every few minutes).
+    const easy = top * SKILL.formationEffort;
+    if (!chase && v > easy) v = easy;
     if (v > top) v = top;
     const stop = sqrt(2 * t.brake * 0.8 * d);
     if (v > stop) v = stop;

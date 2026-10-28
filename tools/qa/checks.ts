@@ -136,7 +136,9 @@ export class Checks {
       // (a bounce can leave the ball rolling, a little over if it flattened: a 46 m/s smash off a hard floor left
       // at 23 m/s with 911 rad/s, its rolling spin at a 2.6 cm contact radius; more than that is spin from nowhere)
       if (w * r > 1.5 * speed + 8 || w > 1600) this.flag('spin-too-high', 'spin', `spin ${w.toFixed(0)} rad/s at ${speed.toFixed(1)} m/s`);
-      if (b.pos.y > 14) this.flag('ball-very-high', 'height', `ball at ${b.pos.y.toFixed(1)} m`);
+      // (outdoors there is no roof: a wild frame shot can climb past 14 m; until Phase 9 the sim called anything over
+      // 12 m out, so this never fired)
+      if (b.pos.y > 25) this.flag('ball-very-high', 'height', `ball at ${b.pos.y.toFixed(1)} m`);
       // (spin counts: a felt ball is close to a thin shell, I = 2/3 m r^2, and a bounce turns spin into speed)
       const e = 0.5 * speed * speed + 9.81 * b.pos.y + (r * r / 3) * w * w;
       // (the cloth gives back what the ball stored in it: only free flight and bounces are held to this)
@@ -212,8 +214,8 @@ export class Checks {
     const b = s.ball;
     const c = s.world.court;
     const px = s.prevBall.x, py = s.prevBall.y, pz = s.prevBall.z;
-    if (b.pos.y > 12 && Math.abs(b.pos.x) <= c.halfW && Math.abs(b.pos.z) <= c.halfL) {
-      this.flag('ball-very-high', 'exit-top', `ball left the court over 12 m up at ${f3(b.pos.x)},${f3(b.pos.z)}`);
+    if (b.pos.y > 29 && Math.abs(b.pos.x) <= c.halfW && Math.abs(b.pos.z) <= c.halfL) {
+      this.flag('ball-very-high', 'exit-top', `ball left the court over 30 m up at ${f3(b.pos.x)},${f3(b.pos.z)}`);
       return;
     }
     if (Math.abs(b.pos.x) > c.halfW && Math.abs(px) <= c.halfW) {

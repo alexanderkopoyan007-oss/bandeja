@@ -1,7 +1,7 @@
 // Noise-free look-ahead of the ball's path (walls and net included). Players and the AI read it to find
 // contact windows. Mesh and seam bounces are random in the real sim, so the path is re-predicted after
 // every contact: reading a mesh rebound is as hard here as it is on a real court.
-import { Ball, HIT_FLOOR, HIT_WALL, LEFT_COURT, type BallWorld } from './ball.ts';
+import { Ball, HIT_FLOOR, HIT_WALL, HIT_ROOF, LEFT_COURT, type BallWorld } from './ball.ts';
 import { DT } from '../core/constants.ts';
 
 export const PRED_MAX = 480; // 4 s at 120 Hz
@@ -55,7 +55,7 @@ export class Prediction {
         const e = g.events[k]!;
         if (e.kind === HIT_FLOOR) { bounces++; walls = 0; flags |= PF_FLOOR; }
         else if (e.kind === HIT_WALL) { walls++; flags |= PF_WALL; }
-        else if (e.kind === LEFT_COURT) flags |= PF_EXIT;
+        else if (e.kind === LEFT_COURT || e.kind === HIT_ROOF) flags |= PF_EXIT;
       }
       if (g.inNet) flags |= PF_NET;
       this.write(i, now + i * DT, g, bounces, walls, flags);

@@ -340,3 +340,18 @@ describe('no tunnelling', () => {
     }
   });
 });
+
+describe('rolling', () => {
+  it('a rolling ball slows at its floor\'s rollDecel (data/surfaces.json), the same 0.8 m/s per second on each until measured', () => {
+    for (const floor of ['hard', 'turf', 'carpet', 'clay'] as const) {
+      const w = makeWorld({ floor });
+      expect(w.rollDecel).toBe(0.8);
+      const b = new Ball();
+      b.pos.set(0, w.spec.radius, 3);
+      b.vel.set(0, 0, -3);
+      b.rolling = true;
+      for (let t = 0; t < 1 - 1e-9; t += DT) b.step(w, DT, null);
+      expect(Math.hypot(b.vel.x, b.vel.z)).toBeCloseTo(3 - 0.8, 2);
+    }
+  });
+});

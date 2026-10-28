@@ -5,7 +5,7 @@
 import type { MatchSim } from '../sim/match.ts';
 import { E_HIT, E_POINT, E_FAULT } from '../sim/match.ts';
 import {
-  WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP, WHY_OWN_SIDE, WHY_WALL_BEFORE_BOUNCE, WHY_OWN_MESH, WHY_OUT,
+  WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP, WHY_OWN_SIDE, WHY_WALL_BEFORE_BOUNCE, WHY_OWN_MESH, WHY_OUT, WHY_ROOF, WHY_ROOF_AFTER_BOUNCE,
   WHY_HIT_BODY_OWN, WHY_WHIFF,
 } from '../sim/rules/rally.ts';
 
@@ -54,13 +54,13 @@ export class MatchStats {
         this.team[server]!.serves++;
         if (e.team === server) this.team[server]!.servesWon++;
         const why = e.a;
-        if (why === WHY_DOUBLE_BOUNCE || why === WHY_EXIT_AFTER_BOUNCE || why === WHY_HIT_BODY_OPP) {
+        if (why === WHY_DOUBLE_BOUNCE || why === WHY_EXIT_AFTER_BOUNCE || why === WHY_HIT_BODY_OPP || why === WHY_ROOF_AFTER_BOUNCE) {
           won.winners++;
           if (why === WHY_EXIT_AFTER_BOUNCE) won.outOfCourt++;
           // An ace: the serve itself was never returned.
           if (shots <= 1 && e.team === server) won.aces++;
         } else if (why === WHY_OWN_SIDE || why === WHY_WALL_BEFORE_BOUNCE || why === WHY_OWN_MESH || why === WHY_OUT
-          || why === WHY_HIT_BODY_OWN || why === WHY_WHIFF) {
+          || why === WHY_HIT_BODY_OWN || why === WHY_WHIFF || why === WHY_ROOF) {
           lost.errors++;
         }
       } else if (e.kind === E_FAULT && e.b === 2) {

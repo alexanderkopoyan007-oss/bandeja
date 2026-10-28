@@ -5,7 +5,7 @@
 // (path, face, speed, contact point, from timing, footwork, stretch and modifiers) and the impact physics turns
 // them into the ball that really leaves: a late swing pushes it, an open face lifts it and adds backspin, a ball
 // off the axis twists the face and loses pace, one off the face hits the frame.
-import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, HIT_POST, LEFT_COURT, type BallWorld } from '../ball/ball.ts';
+import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, HIT_POST, HIT_ROOF, LEFT_COURT, type BallWorld } from '../ball/ball.ts';
 import { SURF_GLASS, WALL_BACK_FAR, WALL_BACK_NEAR } from '../court/court.ts';
 import { V3 } from '../core/v3.ts';
 import { Rng } from '../core/rng.ts';
@@ -146,6 +146,21 @@ const ghost = new Ball();
 const dir = new V3();
 const tmpV = new V3();
 
+/**
+ * How far under an indoor roof a lob is aimed to peak (m). 0.5 m left 1.6% of the AI's lobs in the 9 m hall touching
+ * it (swing errors add up to a metre to a steep lob's top; 3.5% of points ended on the roof); 1 m keeps it rare.
+ */
+const ROOF_MARGIN = 1.5;
+
+/** Top of the vacuum parabola from height h0 through (dn, want) to (dist, r) (Infinity if it doesn't open down). */
+function apexOf(h0: number, dn: number, dist: number, want: number, r: number): number {
+  const det = dn * dist * (dn - dist);
+  const a = ((want - h0) * -dist * dist + dn * dn * (r - h0)) / det;
+  const k = (dn * (r - h0) - dist * (want - h0)) / det;
+  if (k <= 1e-6) return Infinity;
+  return a > 0 ? h0 + (a * a) / (4 * k) : h0;
+}
+
 export class ShotSolver {
   readonly world: BallWorld;
   readonly racket: Racket;
@@ -165,6 +180,9 @@ export class ShotSolver {
    * is `maxRange` metres along `dir` (then landX/landZ is where it was, which is enough for the solver to know
    * it went long).
    */
+  /** Highest the last fly() went (the ball's centre, m). */
+  flyTop = 0;
+
   fly(p: V3, v: V3, w: V3, maxRange = 1e9): void {
     const g = ghost;
     g.pos.copy(p);
@@ -177,8 +195,11 @@ export class ShotSolver {
     this.netY = NaN;
     let z0 = p.z;
     let y0 = p.y;
+    let top = p.y;
     for (let t = 0; t < 5; t += DT) {
       g.step(this.world, DT, null, true);
+      if (g.pos.y > top) top = g.pos.y;
+      this.flyTop = top;
       if (Number.isNaN(this.netY) && (z0 > 0) !== (g.pos.z > 0)) {
         const f = z0 / (z0 - g.pos.z);
         this.netY = y0 + (g.pos.y - y0) * f;
@@ -338,10 +359,23 @@ export class ShotSolver {
     const crosses = (p.z > 0) !== (tz > 0);
     const f0 = crosses ? p.z / (p.z - tz) : 0.5;
     const dn = dist * f0;
-    const want = crosses ? this.world.court.netHeightAt(p.x + dx * f0) + clear : 0;
+    const netAt = crosses ? this.world.court.netHeightAt(p.x + dx * f0) : 0;
+    let want = crosses ? netAt + clear : 0;
 
     // Vacuum parabola y(x) = h0 + a x - k x^2 through (dn, want) and (dist, r).
     const h0 = p.y;
+    // Under an indoor roof players keep the arc ROOF_MARGIN below it: lower the height over the net until the vacuum
+    // parabola's top is there, then the real flight's (below).
+    const top = this.world.roofY - ROOF_MARGIN;
+    if (crosses && top < Infinity && apexOf(h0, dn, dist, want, r) > top) {
+      let lo = netAt + 0.1;
+      let hi = want;
+      for (let i = 0; i < 24; i++) {
+        const m = (lo + hi) * 0.5;
+        if (apexOf(h0, dn, dist, m, r) > top) hi = m; else lo = m;
+      }
+      want = lo;
+    }
     let s = 15;
     let th = 0.2;
     let ok = false;
@@ -357,6 +391,15 @@ export class ShotSolver {
         ok = this.newton(p, s, th, outW, dist, want);
         s = this.ns;
         th = this.nth;
+        // Under a roof the real flight's top is brought down too: drag steepens the fall, so a flight through the
+        // same net point and landing peaks higher than the parabola.
+        const netMin = netAt + 0.1;
+        for (let pass = 0; ok && pass < 3 && this.flyTop > top && want > netMin; pass++) {
+          want = max(netMin, want - (this.flyTop - top) - 0.03);
+          ok = this.newton(p, s, th, outW, dist, want);
+          s = this.ns;
+          th = this.nth;
+        }
       }
     }
     if (!ok) {
@@ -445,8 +488,11 @@ export class ShotSolver {
     this.exited = false;
     let z0 = p.z;
     let y0 = p.y;
+    let top = p.y;
     for (let t = 0; t < 5; t += DT) {
       g.step(this.world, DT, null);
+      if (g.pos.y > top) top = g.pos.y;
+      this.flyTop = top;
       if (Number.isNaN(this.netY) && (z0 > 0) !== (g.pos.z > 0)) {
         const f = z0 / (z0 - g.pos.z);
         this.netY = y0 + (g.pos.y - y0) * f;
@@ -465,7 +511,7 @@ export class ShotSolver {
           if (this.wallHit < 0) { this.wallHit = e.wall; this.wallGlass = e.surface === SURF_GLASS; this.wallY = e.y; }
           else if (!Number.isNaN(this.netY)) this.lateWall = true;
         } else if (e.kind === HIT_NET || e.kind === HIT_NETCORD || e.kind === HIT_POST) this.netTouched = true;
-        else if (e.kind === LEFT_COURT) this.exited = true;
+        else if (e.kind === LEFT_COURT || e.kind === HIT_ROOF) this.exited = true;
       }
       if (this.exited) break;
     }
@@ -562,8 +608,10 @@ export class ShotSolver {
         // The miss sideways, as the angle it subtends from the contact over the unfolded distance.
         yaw += atan(this.cL / dl);
       }
+      // (under an indoor roof, peaking ROOF_MARGIN below it, as a lob does)
       const clean = this.wallHit === back && this.wallGlass && this.wallY < glassTop - 0.08 && !this.netTouched && !this.lateWall
-        && !this.exited && !Number.isNaN(this.netY) && this.netY > netH + 0.15 && this.landZ * side < 0;
+        && !this.exited && !Number.isNaN(this.netY) && this.netY > netH + 0.15 && this.landZ * side < 0
+        && this.flyTop < this.world.roofY - ROOF_MARGIN;
       const err = abs(this.cR) + abs(this.cL);
       if (clean && s <= cap && err < 0.4) { ok = true; bestS = s; bestTh = th; bestYaw = yaw; break; }
       if (clean && err < bestErr) { bestErr = err; bestS = min(s, cap); bestTh = th; bestYaw = yaw; }

@@ -27,12 +27,15 @@ export const WHY_SERVE_DOOR = 16; // 7.1.f
 export const WHY_SERVE_WALL_FIRST = 17; // serve must bounce in the box first
 export const WHY_WHIFF = 18; // swung and missed: ball goes on to bounce twice
 export const WHY_SERVE_AREA = 19; // 6.2 / 7.1.a: dropped, or struck, over the service line or the centre line
+export const WHY_ROOF = 20; // 13.1.g/l: an indoor roof (or its lights) before the bounce
+export const WHY_ROOF_AFTER_BOUNCE = 21; // 14.1.d: good bounce, then the roof
 
 export const REASON_TEXT: readonly string[] = [
   '', 'Double bounce', 'Into the net', 'Hit the wall before bouncing', 'Hit own fence', 'Out',
   'Winner', 'Ball hit the player', 'Hit own partner', 'Fault: out of the box', 'Fault: touched the fence',
   'Fault: into the net', 'Fault: missed', 'Fault: above the waist', 'Let', 'Receiver volleyed the serve',
-  'Fault: out through the door', 'Fault: hit the wall first', 'Missed', 'Fault: over the line',
+  'Fault: out through the door', 'Fault: hit the wall first', 'Missed', 'Fault: over the line', 'Hit the roof',
+  'Winner off the roof',
 ];
 
 export interface ServeBox {
@@ -254,6 +257,20 @@ export class Rally {
     }
     // Good bounce then out of court: receivers could not (or may not) play it (14.d).
     this.receiverLoses(WHY_EXIT_AFTER_BOUNCE);
+  }
+
+  /**
+   * The ball touched an indoor roof. FIP: before the good bounce it is an element not related to the court
+   * (13.1.g/h over the opponents' half, 13.1.l over the hitter's own), a point to the opponents; after it, a
+   * correct return (14.1.d: it "hits the ceiling, the lights or any other object").
+   */
+  onRoof(): void {
+    if (this.hitter < 0 || this.over) return;
+    if (!this.crossed || this.bounces === 0) {
+      this.hitterLoses(WHY_ROOF, WHY_ROOF);
+      return;
+    }
+    this.receiverLoses(WHY_ROOF_AFTER_BOUNCE);
   }
 
   /** The ball touched a player's body (not the racket). */

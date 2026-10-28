@@ -1298,3 +1298,58 @@ it over the net (FIP 13.l: the hitter's own glass is legal before the ball cross
   camera the ball is 12-15 px across and reads as a felt ball with a seam; the extra cost is one draw call per ball.
 - Trail (`render/views.ts`): drawn only while a struck ball is in play. It used to be drawn from the toss, so during a
   serve it hung under the dropped ball like a string, and it stayed behind a dead ball between points.
+
+**The physics audit** (owner, 2026-10-28: "make sure everything is right as well, physics wise, if it's not, fix
+it"). A workflow of auditors measured the sim against published figures and a second set re-measured and tried to
+refute each finding (scripts and traces in the session scratchpad, `physics-audit/`). Nine findings; one refuted (F3),
+three left open with what would settle them (F4, F7, and F6's pressure term: OPEN_QUESTIONS.md, Phase 9). Fixed, each
+measured against an unchanged copy of the previous commit on the same seeds (AI doubles, 24 matches x 600 s):
+- **F1, AI smash speed by level.** The in-play smash median was 144 km/h at every AI level (n 482), above every
+  measured figure (semi-professionals 133 unopposed and 121 against opponents, amateurs 125 and 105: Rivilla-Garcia et
+  al. 2019; trained men off fed lobs about 133: Saez de Villarreal et al. 2023). The auditor's cause (power counted
+  twice) was refuted: the 138 km/h calibration already had power held. The fix keeps a human's power smash and gives
+  the AI a smash effort by level (`data/ai-skill.json` smashEffort 0.70 / 0.80 / 0.88 of the full power swing, as
+  `ShotRequest.power`): median 132 km/h at level 1 (p10 113, p90 141) and 109 at level 0 (was 141). Rallies at level 1
+  are a little longer (12.1 strikes a point, was 10.4), since fewer smashes are winners.
+- **F2, the sprint's force-velocity profile.** Propulsion fell to zero at the run cap (6 m/s), so the push faded
+  early. It now falls to zero at its own intercept (`data/tuning.json` fvSpeed, scaled sideways and back by the
+  direction's top speed) and the run is capped as before; `Player.runTime()` follows the same law (exponential to
+  the cap, then on at it), so the planner agrees within 40 ms at 5 and 10 m (`tests/sim/splitstep.test.ts`). The
+  auditor proposed v0 8.5-9 m/s (field sports' 7.5-11) with accel 10.5-11; the verifier kept accel 8.5 (F0, under the
+  shoe's grip) and the start ramps as calibrated. I fitted v0 to the one padel sprint number that doesn't depend on
+  how the clock was started, the 5-10 m split (0.85-0.89 s): with the 6 m/s cap any v0 of 7 or more reaches the cap
+  by 4-5 m and gives 0.833 s, so v0 is 6.5 (0.858 s; 0.900 before). 5 m from a stance 1.53 s (was 1.56), after a
+  split-step 1.41 s (was 1.44).
+- **F5, the AI's run effort.** Every AI player hit its top speed every few minutes. Traced (wrapping `drift`): most
+  per-match peaks were formation moves with the deadline floored 0.4 s ahead and re-set every tick, so the time-left
+  speed asked for a flat-out sprint over any 2-3 m reposition. The AI now chases at 0.88 of the top speed that way
+  (`chaseEffort`) and moves into the formation at no more than 0.8 of it (`formationEffort`), flat out only when the
+  time left asks; what sets the peaks now is late chases (under 0.3 s left over about 2 m). Per-match peak at level 1:
+  raw 4.88 m/s, 0.5 s average 4.59, 1 s average 4.34, the same as before F2's stronger push (4.88 / 4.55 / 4.34);
+  WPT men's tracker-smoothed median is 4.2 m/s over 85-minute matches (Miralles et al. 2025). Reach is unchanged:
+  points ending on a double bounce 28.3% (30.7%).
+- **F6, the altitude ball.** `?ball=standard|altitude`, and above 1,000 m (`?alt=`) the altitude ball unless asked
+  otherwise (FIP allows it there; its drop test is 122-135 cm). The menus play at sea level. No pressure term: no
+  measured rebound-vs-altitude figure was found (OPEN_QUESTIONS.md).
+- **F8, the roof.** The hall's roof is drawn at 9 m and about 1 strike in 90 went through it. `Environment.ceiling`
+  (the arena's `hall.height`: club hall 9 m, stadium 19 m, outdoors none, `app/options.ts roofOf`) gives the ball a
+  roof (`BallWorld.roofY`, checked in `checkExit`): a touch is `HIT_ROOF`, scored by FIP (`Rally.onRoof`): before the
+  good bounce the hitter loses (13.1.g/h/l, `WHY_ROOF` "Hit the roof"), after it, a winner (14.1.d, "Winner off the
+  roof"). The ball comes back down off it (30% of its rise, 60% of its pace along: a guess) and the point is over.
+  Predictions and the solver's ghosts treat a touch as a dead ball. Players lob under it: the solver lowers the
+  height over the net until the flown top is `ROOF_MARGIN` 1.5 m under the roof (drag steepens the fall, so the real
+  flight peaks above the vacuum parabola: the first cut, on the parabola alone, peaked 0.2 m over its mark), and the
+  contrapared counts a ghost that peaks there as unclean. 0.5 m left 1.6% of lobs touching the 9 m roof (swing errors
+  add up to a metre to a steep lob from near the net) and 3.5% of points ending on it; at 1.5 m 3 lobs in 1,400 and
+  5 contrapareds in 24 matches (their rebound off the glass is very sensitive to the swing's errors). In the open the
+  sim's old "out above 12 m" became 30 m (a safety net; contrapared and lob heights are unchanged: p90 7.5 and 8.1 m).
+  The QA army's indoor configurations now have a roof (a third 9 m, the rest 19 m, no new random draw) and feed the
+  referee oracle's existing `object` fact (ORACLE-NOTES 23). QA army, 300 matches (`docs/qa/army-p9-physics.md`):
+  no disagreement between the game and the oracle; the only new flag was the 14 m height sanity bound, which a
+  monkey's wild serve outdoors now passes (the old 12 m "out" stopped it first; the bound is 25 m now).
+- **F9, rolling.** A rolling ball's slowdown (0.8 m/s per second, hard-coded) is now per floor in
+  `data/surfaces.json` (`rollDecel`, 0.8 on each until a ramp-roll test measures it).
+- Tests: `tests/sim/ceiling.test.ts` (the roof's physics, the calls, lobs under it, the arenas' roofs),
+  `tests/sim/splitstep.test.ts` (the 5-10 m split and the planner on long runs; both fail on the old profile),
+  `tests/app/settings.test.ts` (`?ball=`, altitude, roofs from the URL and the menus), `tests/sim/ball.test.ts`
+  (rolling). Allocation unchanged (`npm run alloc`, 3 runs: 3-4 GCs per 100k ticks for the sim, 7 with the bodies).

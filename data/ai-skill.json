@@ -1,5 +1,5 @@
 {
-  "//": "AI skill by level (0 = beginner, 1 = the top difficulty, tuned against professional match statistics: tools/match-stats.ts, docs/ai.md). Each list holds the value at evenly spaced levels from 0 to 1 ([level 0, level 0.5, level 1]), interpolated linearly between. timing: SD of the release error in seconds against the game's timing windows (the same windows humans are judged on). motor: the swing-to-swing spread that is not timing (data/shots.json swing.motor per unit). pressure: how much the motor spread grows per unit of pressure (src/sim/ai/pressure.ts): a hard, fast, stretched or low ball is played less steadily.",
+  "//": "AI skill by level (0 = beginner, 1 = the top difficulty, tuned against professional match statistics: tools/match-stats.ts, docs/ai.md). Each list holds the value at evenly spaced levels from 0 to 1 ([level 0, level 0.5, level 1]), interpolated linearly between. timing: SD of the release error in seconds against the game's timing windows (the same windows humans are judged on). motor: the swing-to-swing spread that is not timing (data/shots.json swing.motor per unit). pressure: how much the motor spread grows per unit of pressure (src/sim/ai/pressure.ts): a hard, fast, stretched or low ball is played less steadily. smashEffort: the fraction of the smash shape's full face speed (shots.json racketMax, with the power modifier) an AI swings at (ShotRequest.power). In play, semi-professionals smash at 120.7 +- 9.8 km/h against opponents (133.1 unopposed) and amateurs at 104.5 (124.6) (Rivilla-Garcia et al. 2019, radar); highly trained men smash fed lobs at about 133 km/h (Saez de Villarreal et al. 2023). Fitted so the in-play median is about 105-110 km/h at level 0 and 125-133 at level 1 (tools/match-stats.ts); a human's smash stays at full effort. chaseEffort: the fraction of the top speed (that way) an AI runs at for the ball when the time left doesn't ask for more (it still goes flat out when it must). Flat out every time, every AI player hit the cap (4.8-5.0 m/s sideways) within ten minutes, against a median per-match top speed of 4.2 m/s for WPT men (Miralles et al. 2025, WIMU GNSS + LPS, a smoothed signal over 85-minute matches); fitted so the 0.5 s-smoothed per-match peak is about 4.2-4.5 m/s.",
   "timing": [
     0.03,
     0.023,
@@ -10,5 +10,12 @@
     0.92,
     0.65
   ],
-  "pressure": 1.15
+  "pressure": 1.15,
+  "smashEffort": [
+    0.7,
+    0.8,
+    0.88
+  ],
+  "chaseEffort": 0.88,
+  "formationEffort": 0.8
 }
