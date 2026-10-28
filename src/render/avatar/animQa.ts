@@ -71,6 +71,12 @@ export interface QaReport {
     worst: QaEvent[];
     /** The largest one-frame turns of any joint (degrees), spike or not: a turn beside a large neighbour is no pop. */
     turnWorst: QaEvent[];
+    /**
+     * Knees that end up more than KNEE_SPIN degrees from where they were within KNEE_WINDOW frames (0.1 s): a flip
+     * spread over several frames, which neither the one-frame turn nor the pop rule sees. A knee can't (it bends
+     * about 150° in all and barely twists); arms in a fast swing can, so only the knees are watched.
+     */
+    kneeSpins: QaEvent[];
   };
   /** Frames drawn twice at the same moment (QaOptions.repeatEvery) and the most any bone turned on the second. */
   repeat: { frames: number; maxDeg: number };
@@ -196,6 +202,11 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   // Per-player, per-frame history.
   const prevSoleAll = av.map(() => soles.map((s) => s.map(() => new THREE.Vector3())));
   const prevQ = av.map(() => jointIdx.map(() => new THREE.Quaternion()));
+  const KNEE_WINDOW = 12, KNEE_SPIN = 150;
+  const kneeRing = av.map(() => jointIdx.map((J) => (J.name.endsWith('Leg') && !J.name.endsWith('UpLeg') ? Array.from({ length: KNEE_WINDOW }, () => new THREE.Quaternion()) : null)));
+  const kneeN = av.map(() => jointIdx.map(() => 0));
+  const kneeCool = av.map(() => jointIdx.map(() => 0));
+  const kneeSpins: QaEvent[] = [];
   const prevAng = av.map(() => jointIdx.map(() => 0));
   const prevAng2 = av.map(() => jointIdx.map(() => 0));
   const prevRoot = av.map(() => new THREE.Vector3());
@@ -316,6 +327,26 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         const d = Math.min(1, Math.abs(q0.x * lq.x + q0.y * lq.y + q0.z * lq.z + q0.w * lq.w));
         const ang = (2 * Math.acos(d) * 180) / Math.PI;
         q0.copy(lq);
+        const ring = kneeRing[i]![j];
+        if (ring) {
+          if (!motion) kneeN[i]![j] = 0;
+          else {
+            let net = 0;
+            const n = Math.min(kneeN[i]![j]!, KNEE_WINDOW);
+            for (let r = 0; r < n; r++) {
+              const q = ring[r]!;
+              const dd = Math.min(1, Math.abs(q.x * lq.x + q.y * lq.y + q.z * lq.z + q.w * lq.w));
+              const a = (2 * Math.acos(dd) * 180) / Math.PI;
+              if (a > net) net = a;
+            }
+            ring[kneeN[i]![j]! % KNEE_WINDOW]!.copy(lq);
+            kneeN[i]![j]!++;
+            if (net > KNEE_SPIN && frames >= kneeCool[i]![j]!) {
+              kneeSpins.push({ t: m.time, player: i, what: `spin ${J.name}`, value: net });
+              kneeCool[i]![j] = frames + 30;
+            }
+          }
+        }
         if (!motion) { prevAng2[i]![j] = 0; prevAng[i]![j] = 0; continue; }
         (peaks[J.g] ??= []).push(ang / DTF);
         if (ang > 45) note(turnWorst, { t: m.time, player: i, what: `turn ${J.name}`, value: ang });
@@ -478,7 +509,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       face: dist(hits.map((h) => h.face)),
       byShot,
     },
-    pops: { perMinute: pops / Math.max(1e-9, minutes * np), count: pops, byJoint: popsBy, peaks: peakOut, worst: popWorst, turnWorst },
+    pops: { perMinute: pops / Math.max(1e-9, minutes * np), count: pops, byJoint: popsBy, peaks: peakOut, worst: popWorst, turnWorst, kneeSpins },
     repeat: { frames: repeatFrames, maxDeg: repeatMax },
     clip: {
       racketBody: share(clip.racketBody), racketBodyMax: clip.racketBodyMax,
