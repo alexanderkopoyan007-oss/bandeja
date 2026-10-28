@@ -1,15 +1,30 @@
 // Performance run: builds nothing itself; serves dist/ with `vite preview`, plays AI-vs-AI autoplay in Chrome
 // and reports frame-time percentiles, the 1% and 0.1% lows, CPU work, sim time and GPU time (timestamp queries).
-// Usage: npm run build && node tools/perf.mjs [seconds] [standard|presets|trace|load|explore]
+// Usage: npm run build && node tools/perf.mjs [seconds] [standard|presets|igpu|igpu60|audio|autocap|trace|deopt|tris|load|explore]
 //   standard   medium-4x: 1080p, the Medium preset, CPU throttled 4x (stand-in for a mid-range laptop);
-//              high: 1080p at 2x pixel ratio, the High preset; both with the frame-rate limit off.
+//              high: 1080p at 2x pixel ratio, the High preset; both with the frame-rate limit off; and high paced
+//              at 120 Hz.
 //   presets    every preset (low, medium, high, ultra) at 1080p, CPU 4x, limit off.
-//   igpu       the presets with the CPU 4x throttled and 5x the pixels (integrated-graphics stand-in).
+//   igpu       the presets and Auto on an integrated-graphics stand-in: CPU 4x, five times the pixels; Low and
+//              Medium at pixel ratio 1, High, Ultra and Auto at 1.5 (a 14-15" laptop's usual 125-150%).
+//   igpu60     igpu's Medium, High, Ultra and Auto paced at 60 Hz (?fpscap=60), as a 60 Hz laptop screen paces them.
+//   audio      medium-4x with the sound on and off, alternating (on, off, on, off), for the audio's cost.
+//   autocap    Auto quality paced at a steady 30 and 50 Hz (?fpscap: a browser's cap or a 50 Hz screen): the render
+//              scale must stay at or come back to full, since no frame there is slow for that display.
 //   trace      standard's two runs with a Chrome trace (GCs, long tasks) and the page's top allocation sites.
-//   deopt      which functions V8 deoptimises during play, and why (build with --minify false for names).
+//   deopt      V8's deoptimisations through the app as a player meets it: the title's AI match plays first (the
+//              warm-up), then counted over later play there and over the player's match after Quick match; by
+//              function, reason and source line (the build's source map), no cap. DEOPT_WARM=s (default 30).
+//   tris       what the triangles are, by mesh, on each preset.
 //   load       cold-cache loads through the menus (title screen, then a match) on throttled networks and CPU.
+// Every run prints the machine's load average (other sessions share it).
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process';
+import { loadavg } from 'node:os';
+import { readFileSync, readdirSync } from 'node:fs';
+import { SourceMap } from 'node:module';
+
+const load3 = () => loadavg().map((x) => x.toFixed(2)).join(' ');
 
 const secs = Number(process.argv[2] ?? 30);
 // GPUTIME=1: GPU timestamp queries (?gputime=1). Off by default: the read-back costs frames of its own, and on
@@ -73,7 +88,8 @@ function heapTop(profile, secs, n = 14) {
   for (const [k, v] of [...self].sort((a, b) => b[1] - a[1]).slice(0, n)) console.log(`    ${(v / 1e3 / secs).toFixed(1).padStart(7)} KB/s  ${k}`);
 }
 
-async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = false, gpuLoad = 1, cap = 0 }) {
+async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = false, gpuLoad = 1, cap = 0, query = '' }) {
+  const loadBefore = load3();
   // Audio on (Phase 6): no gesture in a headless run, so let the page start it; its main-thread cost is measured.
   // Developer features give the GPU timestamps full precision (Chrome rounds them to 100 µs otherwise).
   const args = ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required',
@@ -89,11 +105,13 @@ async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = f
     const cdp = await page.createCDPSession();
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
   }
-  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}&gpuload=${gpuLoad}&fpscap=${cap}${GPUTIME ? '&gputime=1' : ''}`, { waitUntil: 'load' });
+  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}&gpuload=${gpuLoad}&fpscap=${cap}${GPUTIME ? '&gputime=1' : ''}${query}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 3000)); // settle after warm-up
   await page.evaluate(() => window.__bandeja.audio.unlock());
   await page.evaluate(() => { const p = window.__bandeja.probe; p.frames.length = 0; p.sims.length = 0; p.works.length = 0; if (p.gpus) p.gpus.length = 0; });
+  // Auto quality: the render scale every half second.
+  await page.evaluate(() => { window.__scales = []; setInterval(() => window.__scales.push(window.__bandeja.renderScale), 500); });
   if (trace) {
     // A trace and a heap sample over the first part of the measured stretch (they cost a little themselves).
     const cdp = await page.createCDPSession();
@@ -115,13 +133,13 @@ async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = f
   const d = await page.evaluate(() => {
     const p = window.__bandeja.probe;
     return { frames: p.frames.slice(1), sims: p.sims.slice(1), works: p.works.slice(1), gpus: p.gpus ? p.gpus.slice(1) : [], draws: p.drawCalls, tris: p.triangles, backend: p.backend,
-      audio: window.__bandeja.audio.live, ratio: window.__bandeja.renderer.getPixelRatio() };
+      audio: window.__bandeja.audio.live, ratio: window.__bandeja.renderer.getPixelRatio(), scales: window.__scales };
   });
   await browser.close();
   const f = d.frames;
   const avg = f.reduce((a, b) => a + b, 0) / f.length;
   const long = f.filter((x) => x > 20).length;
-  console.log(`\n[${name}] ${d.backend}, quality ${quality}, pixel ratio ${d.ratio}, ${f.length} frames in ${secs}s`);
+  console.log(`\n[${name}] ${d.backend}, quality ${quality}, pixel ratio ${d.ratio}, ${f.length} frames in ${secs}s   load average ${loadBefore} -> ${load3()}`);
   console.log(`  fps ${(1000 / avg).toFixed(1)}   1% low ${low(f, 0.01).toFixed(1)}   0.1% low ${low(f, 0.001).toFixed(1)}`);
   console.log(`  frame ms p50 ${pct(f, 0.5).toFixed(2)}  p95 ${pct(f, 0.95).toFixed(2)}  p99 ${pct(f, 0.99).toFixed(2)}  max ${Math.max(...f).toFixed(2)}`);
   const miss = f.filter((x) => x > 9.33).length;
@@ -131,49 +149,129 @@ async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = f
   if (d.gpus.length) console.log(`  GPU pass time ms p50 ${pct(d.gpus, 0.5).toFixed(2)}  p99 ${pct(d.gpus, 0.99).toFixed(2)}  max ${Math.max(...d.gpus).toFixed(2)}  (${d.gpus.length} samples; begin-to-end of each pass summed: Apple GPUs overlap passes, so not a per-frame cost there)`);
   else if (GPUTIME) console.log('  GPU ms/frame: no timestamp queries on this backend');
   console.log(`  draw calls ${d.draws}  triangles ${d.tris}  audio ${d.audio ? 'on' : 'off'}`);
+  if (quality === 'auto' && d.scales.length) {
+    const hist = new Map();
+    for (const v of d.scales) hist.set(v.toFixed(1), (hist.get(v.toFixed(1)) ?? 0) + 1);
+    console.log(`  render scale (share of the run): ${[...hist].sort((a, b) => b[0] - a[0]).map(([k, n]) => `${k} ${(100 * n / d.scales.length).toFixed(0)}%`).join(', ')}; at the end ${d.scales.at(-1).toFixed(1)}`);
+  }
   if (errors.length) console.log('  errors:', errors.slice(0, 5));
   return { avg, long, p99: pct(f, 0.99) };
 }
 
 /**
- * Which functions V8 deoptimises during play, and why (Chrome with --trace-deopt and --trace-opt; use an unminified
- * build for readable names). A hot function that keeps deoptimising runs in the interpreter, where every
- * floating-point result is a new heap number: per-frame garbage in code that allocates nothing when optimised.
+ * Which functions V8 deoptimises during play, and why (Chrome with --trace-deopt-verbose). A hot function that
+ * keeps deoptimising runs in the interpreter, where every floating-point result is a new heap number: per-frame
+ * garbage in code that allocates nothing when optimised. Through the app as a player meets it: the title's AI match
+ * plays for `warm` seconds first, then deopts are counted over `secs` more of it, and over `secs` of the player's
+ * match after Quick match (the human stands; the partner and the opponents play). Each is placed by the build's
+ * source map (dist/assets/*.js.map), so a minified build gives source files and lines.
  */
-async function deopt(name, { dpr, throttle, quality }) {
+async function deopt(name, { dpr, throttle, quality, warm }) {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, dumpio: false,
     args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--disable-frame-rate-limit', '--disable-gpu-vsync',
-      '--js-flags=--trace-deopt --trace-opt'] });
-  const lines = [];
+      '--autoplay-policy=no-user-gesture-required', '--js-flags=--trace-deopt-verbose'] });
+  // Each bailout line, and the "deoptimize at <url:line:col>, reason" line after it.
+  const events = [];
+  let pending = null;
   const proc = browser.process();
-  const grab = (d) => { for (const l of String(d).split('\n')) if (l.includes('bailout') || l.includes('completed optimizing') || l.includes('completed compiling')) lines.push({ t: Date.now(), l }); };
+  let buf = '';
+  const grab = (d) => {
+    buf += String(d);
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const l = buf.slice(0, i);
+      buf = buf.slice(i + 1);
+      if (l.includes('bailout (kind:')) {
+        pending = { t: Date.now(), fn: (l.match(/<JSFunction ([^ >]*)/) ?? [])[1] ?? '?', why: ((l.match(/reason: ([^)]*)\)/) ?? [])[1] ?? '').trim(), at: '' };
+        events.push(pending);
+      } else if (pending && l.includes(';;; deoptimize at')) {
+        pending.at = (l.match(/deoptimize at <([^>]*)>/) ?? [])[1] ?? '';
+        pending = null;
+      }
+    }
+  };
   proc.stdout.on('data', grab);
   proc.stderr.on('data', grab);
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: dpr });
   if (throttle > 1) { const cdp = await page.createCDPSession(); await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle }); }
-  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}`, { waitUntil: 'load' });
-  await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
-  await new Promise((r) => setTimeout(r, 8000));
-  const from = Date.now();
+  await page.goto(`http://localhost:${PORT}/?quality=${quality}&dpr=${dpr}`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.__app?.menu?.isOpen && window.__bandeja?.running, { timeout: 60000 });
+  const t0 = Date.now();
+  await new Promise((r) => setTimeout(r, warm * 1000));
+  const fromA = Date.now();
   await new Promise((r) => setTimeout(r, secs * 1000));
+  const toA = Date.now();
+  await page.evaluate(() => window.__app.startMatch());
+  const fromB = Date.now();
+  await new Promise((r) => setTimeout(r, secs * 1000));
+  const toB = Date.now();
   await browser.close();
-  const fn = (l) => (l.match(/<JSFunction ([^ >]*)/) ?? [])[1] ?? '?';
-  const deopts = new Map(), opts = new Map();
-  for (const { t, l } of lines) {
-    if (t < from) continue;
-    const f = fn(l);
-    if (l.includes('bailout')) {
-      const why = (l.match(/reason: ([^\]]*)/) ?? [])[1] ?? '';
-      const k = `${f} :: ${why.trim()}`;
-      deopts.set(k, (deopts.get(k) ?? 0) + 1);
-    } else opts.set(f, (opts.get(f) ?? 0) + 1);
-  }
-  console.log(`\n[deopt: ${name}] after an 8 s warm-up, ${secs} s of play`);
-  console.log('  deoptimisations (function :: reason, count):');
-  for (const [k, n] of [...deopts].sort((a, b) => b[1] - a[1]).slice(0, 30)) console.log(`    ${String(n).padStart(5)}  ${k.slice(0, 150)}`);
-  console.log('  (re)optimised in that time (function, count):');
-  for (const [k, n] of [...opts].sort((a, b) => b[1] - a[1]).slice(0, 20)) console.log(`    ${String(n).padStart(5)}  ${k}`);
+  // Source maps of the built scripts.
+  const dir = process.env.OUTDIR ?? 'dist';
+  const maps = new Map();
+  for (const f of readdirSync(`${dir}/assets`)) if (f.endsWith('.js.map')) maps.set(f.replace(/\.map$/, ''), new SourceMap(JSON.parse(readFileSync(`${dir}/assets/${f}`, 'utf8'))));
+  const place = (at) => {
+    const m = at.match(/([^/]+\.js):(\d+):(\d+)$/);
+    if (!m || !maps.has(m[1])) return at || '?';
+    const e = maps.get(m[1]).findEntry(Number(m[2]) - 1, Number(m[3]) - 1);
+    return e?.originalSource ? `${e.originalSource.replace(/^.*?(src|node_modules)\//, '$1/')}:${e.originalLine + 1}${e.name ? ` (${e.name})` : ''}` : at;
+  };
+  const report = (label, from, to) => {
+    const rows = new Map();
+    let n = 0;
+    for (const e of events) {
+      if (e.t < from || e.t >= to) continue;
+      n++;
+      const k = `${place(e.at)} :: ${e.why}`;
+      rows.set(k, (rows.get(k) ?? 0) + 1);
+    }
+    console.log(`  ${label}: ${n} deoptimisations`);
+    for (const [k, c] of [...rows].sort((a, b) => b[1] - a[1])) console.log(`    ${String(c).padStart(4)}  ${k.slice(0, 170)}`);
+  };
+  const before = events.filter((e) => e.t < fromA).length;
+  console.log(`\n[deopt: ${name}] through the app; load average ${load3()}`);
+  console.log(`  warm-up (load + ${warm} s of the title's match): ${before} deoptimisations`);
+  report(`title's match, ${warm}-${warm + secs} s`, fromA, toA);
+  report(`the player's match, first ${secs} s after Quick match (its build included)`, fromB, toB);
+  void t0;
+}
+
+/**
+ * Triangles by mesh on a preset (what the Low budget's 300k would have to cut): the scene's visible meshes, each
+ * mesh's triangles times its instances, grouped by name (or its parent's, or its geometry's type).
+ */
+async function tris(quality) {
+  const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--disable-frame-rate-limit', '--disable-gpu-vsync'] });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=1&quality=${quality}&sound=0`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
+  await new Promise((r) => setTimeout(r, 3000));
+  const r = await page.evaluate(() => {
+    const g = window.__bandeja;
+    const groups = new Map();
+    let total = 0;
+    const visible = (o) => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
+    g.scene.traverse((o) => {
+      if (!o.isMesh || !visible(o) || !o.geometry) return;
+      const geo = o.geometry;
+      const n = (geo.index ? geo.index.count : geo.attributes.position?.count ?? 0) / 3;
+      const inst = o.isInstancedMesh ? o.count : 1;
+      const t = n * inst;
+      total += t;
+      let key = o.name || '';
+      for (let p = o.parent; !key && p; p = p.parent) key = p.name || '';
+      key = `${key || '(unnamed)'} / ${geo.type}${o.isSkinnedMesh ? ' skinned' : ''}${o.isInstancedMesh ? ` x${inst}` : ''}`;
+      const e = groups.get(key) ?? [0, 0];
+      e[0] += t; e[1]++;
+      groups.set(key, e);
+    });
+    return { total, drawn: g.probe.triangles, rows: [...groups].sort((a, b) => b[1][0] - a[1][0]).slice(0, 25) };
+  });
+  await browser.close();
+  console.log(`\n[tris: ${quality}] visible meshes ${Math.round(r.total)} triangles (renderer counted ${r.drawn} drawn, shadow pass included)`);
+  for (const [k, [t, n]] of r.rows) console.log(`  ${String(Math.round(t)).padStart(8)}  ${n} mesh${n > 1 ? 'es' : ''}  ${k.slice(0, 110)}`);
 }
 
 /**
@@ -233,11 +331,31 @@ try {
   } else if (which === 'igpu') {
     // Integrated graphics, as well as this machine can stand in for it: the CPU throttled 4x and five times the
     // pixels (an M1 Max GPU has about five times the fill rate and bandwidth of a mid-range laptop's Iris Xe or
-    // Radeon 680M). Each preset at a 1080p screen with a pixel ratio of 1, the frame limit off.
+    // Radeon 680M), the frame limit off, a 1080p screen. Low and Medium cap the pixel ratio at 1, so they draw the
+    // same at any ratio; High, Ultra and Auto run at 1.5, a 14-15" laptop's usual 125-150% (at 1 High is Medium).
     const verdict = (r) => `  holds 60 Hz: ${r.p99 < 16.7 ? 'yes' : 'NO'}`;
-    for (const q of ['low', 'medium', 'high']) console.log(verdict(await run(`igpu-proxy ${q}`, { dpr: 1, throttle: 4, unlimited: true, quality: q, gpuLoad: 5 })));
+    for (const [q, dpr] of [['low', 1], ['medium', 1], ['high', 1.5], ['ultra', 1.5], ['auto', 1.5]]) {
+      console.log(verdict(await run(`igpu-proxy ${q} (dpr ${dpr})`, { dpr, throttle: 4, unlimited: true, quality: q, gpuLoad: 5 })));
+    }
+  } else if (which === 'igpu60') {
+    // The same stand-in paced as a 60 Hz laptop screen paces it (?fpscap=60): unpaced, High and Ultra fill the GPU
+    // queue and stall, as the High runs at 2x do (see standard's paced run); paced, a frame is late only when it
+    // really cost more than a refresh.
+    const verdict = (r) => `  holds 60 Hz: ${r.p99 < 18 && r.long === 0 ? 'yes' : 'NO'}`;
+    for (const [q, dpr] of [['medium', 1], ['high', 1.5], ['ultra', 1.5], ['auto', 1.5]]) {
+      console.log(verdict(await run(`igpu-proxy ${q} (dpr ${dpr}) at 60 Hz`, { dpr, throttle: 4, unlimited: true, quality: q, gpuLoad: 5, cap: 60 })));
+    }
+  } else if (which === 'audio') {
+    // The audio's cost: the same run with ?sound=0 and with sound, alternating so the machine's load falls on both.
+    for (const sound of [true, false, true, false]) {
+      await run(`medium-4x, sound ${sound ? 'on' : 'off'}`, { dpr: 1, throttle: 4, unlimited: true, quality: 'medium', query: sound ? '' : '&sound=0' });
+    }
+  } else if (which === 'autocap') {
+    for (const cap of [30, 50]) await run(`auto paced at ${cap} Hz`, { dpr: 1, throttle: 1, unlimited: true, quality: 'auto', cap });
+  } else if (which === 'tris') {
+    for (const q of ['low', 'medium', 'high']) await tris(q);
   } else if (which === 'deopt') {
-    await deopt('medium-4x', { dpr: 1, throttle: 4, quality: 'medium' });
+    await deopt('medium-4x', { dpr: 1, throttle: 4, quality: 'medium', warm: Number(process.env.DEOPT_WARM ?? 30) });
   } else if (which === 'load') {
     // Typical home broadband, then a slow connection (a phone's 4G hotspot), both on the laptop proxy's CPU.
     await load('broadband', { down: 25, up: 5, rtt: 40, throttle: 4 });
