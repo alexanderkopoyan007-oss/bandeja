@@ -6,6 +6,19 @@ import { App } from './app/app.ts';
 import { LoadingScreen } from './ui/loading.ts';
 import { directLaunch, optionsFromUrl } from './app/options.ts';
 
+// three's compileAsync (the warm-up behind every loading screen) yields between objects with scheduler.yield, or
+// failing that waits a whole animation frame per object: a second or more of loading where there is no
+// scheduler.yield (Safari). A message-channel task is the same yield without the frame.
+const sch = (globalThis as unknown as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+if (!sch?.yield) {
+  const ch = new MessageChannel();
+  const waiting: Array<() => void> = [];
+  ch.port1.onmessage = () => waiting.shift()?.();
+  const yieldNow = (): Promise<void> => new Promise((r) => { waiting.push(r); ch.port2.postMessage(0); });
+  if (sch) sch.yield = yieldNow;
+  else (globalThis as unknown as { scheduler: { yield: () => Promise<void> } }).scheduler = { yield: yieldNow };
+}
+
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number): number => {
   const v = params.get(k);

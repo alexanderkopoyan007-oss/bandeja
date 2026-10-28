@@ -181,7 +181,7 @@ async function deopt(name, { dpr, throttle, quality }) {
  * throttled. Times from navigation: first paint, the loading screen gone and the title's menu up (Play can be
  * pressed), then Quick match to the match's first frame.
  */
-async function load(name, { down, up, rtt, throttle }) {
+async function load(name, { down, up, rtt, throttle, noYield = false }) {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
     args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required'] });
   const page = await browser.newPage();
@@ -193,6 +193,8 @@ async function load(name, { down, up, rtt, throttle }) {
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
   await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: rtt, downloadThroughput: down * 125000, uploadThroughput: up * 125000 });
   if (throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
+  // A browser without scheduler.yield (Safari): three's warm-up then waits a frame per object unless the page fills it.
+  if (noYield) await page.evaluateOnNewDocument(() => { Object.defineProperty(window, 'scheduler', { value: undefined, writable: true, configurable: true }); });
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__app?.menu?.isOpen, { timeout: 120000, polling: 50 });
   const r = await page.evaluate(async () => {
@@ -240,6 +242,7 @@ try {
     // Typical home broadband, then a slow connection (a phone's 4G hotspot), both on the laptop proxy's CPU.
     await load('broadband', { down: 25, up: 5, rtt: 40, throttle: 4 });
     await load('slow 4G', { down: 9, up: 2, rtt: 150, throttle: 4 });
+    await load('broadband, no scheduler.yield (as Safari)', { down: 25, up: 5, rtt: 40, throttle: 4, noYield: true });
   } else {
     // Headless Chrome paces vsync'd frames at 30 Hz regardless of load, so measure frame cost with the limit off
     // and judge 60/120 Hz from the 99th percentile.
