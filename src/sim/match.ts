@@ -49,6 +49,11 @@ export const E_TOSS = 13;
 export const E_EXIT = 14;
 export const E_ENDS = 15;
 export const E_SWING = 16;
+/** E_WHIFF's y: the swing missed a ball in reach (timing) / there was no ball to hit (none in reach at the release,
+ * or not legal to play) / the ball was out of reach (too far or too high or low) at the contact. */
+export const WHIFF_TIMING = 0;
+export const WHIFF_NOTHING = 1;
+export const WHIFF_REACH = 2;
 
 export interface MatchEvent {
   seq: number;
@@ -953,7 +958,7 @@ export class MatchSim {
       if (!w || abs(t - c.ideal) < abs(t - w.ideal)) w = c;
     }
     if (!w || this.rally.hitter === team) {
-      this.whiff(i, t);
+      this.whiff(i, t, 0, WHIFF_NOTHING);
       return;
     }
     // Each shot has its own windows: a punch volley barely turns the face, a víbora brushes across the ball at speed.
@@ -1036,14 +1041,14 @@ export class MatchSim {
     return base * (SHAPES[this.shotFor(p, this.focusVolley)]!.timing ?? 1);
   }
 
-  /** `reach` > 0: the swing was on time but the ball was this far away (out of reach). */
-  private whiff(i: number, t: number, reach = 0): void {
+  /** `reach` > 0: the swing was on time but the ball was this far away (out of reach). `kind`: WHIFF_*. */
+  private whiff(i: number, t: number, reach = 0, kind = WHIFF_TIMING): void {
     const p = this.players[i]!;
     p.swing = SW_RECOVER;
     p.recoverUntil = t + p.tune.recoverTime;
     p.lastContactTime = t;
     if (p.grade < 0) p.grade = p.timingDelta < 0 ? G_TOO_EARLY : G_TOO_LATE;
-    this.emitP(E_WHIFF, i, p.shot, p.grade, p.timingDelta, reach);
+    this.emitP(E_WHIFF, i, p.shot, p.grade, p.timingDelta, reach, kind);
   }
 
   /** The committed swing reaches its contact time: connect if the ball is really there. */
@@ -1064,7 +1069,7 @@ export class MatchSim {
         && !(this.rally.isServe && i !== this.score.receiverPlayer());
     if (!legal || d > t.reachMax + 0.25 || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15 || this.rally.over) {
       if (serving && this.tossBounces !== 1) this.rally.onServeMissed();
-      this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0);
+      this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
       return;
     }
 
