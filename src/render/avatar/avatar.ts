@@ -11,6 +11,7 @@ import { DT } from '../../sim/core/constants.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { hingeIK, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
+import { fitCapsules, RACKET_PTS } from './capsules.ts';
 import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
@@ -184,6 +185,31 @@ const REACH_TURN_RATE = 40;
  * (knee height on the Y Bot).
  */
 const HIP_FLOOR = 0.58;
+/** The racket's points (its frame), flat. */
+const RACKET_P = Float64Array.from(RACKET_PTS.flatMap((p) => [p.x, p.y, p.z]));
+/**
+ * How long a push of the racket out of the body takes to die away (s): taken anew every frame it turned the forearm
+ * over in a frame whenever the deepest point moved to another capsule (pops), so the push builds at once and lets
+ * go smoothly.
+ */
+const CLEAR_EASE = 0.08;
+/** Most the racket is pushed out of the body (m): a backhand's backswing across the chest can't be cleared. */
+const CLEAR_MAX = 0.2;
+/** How far the racket is kept outside the torso's and head's capsules (m). */
+const RACKET_CLEAR = 0.015;
+/** Pelvis, chest and head capsules per asset (fitted once): bone pairs, and radii. */
+const GUARD = new WeakMap<PlayerAsset, { bones: Int32Array; r: Float64Array }>();
+function guardCaps(asset: PlayerAsset): { bones: Int32Array; r: Float64Array } {
+  let g = GUARD.get(asset);
+  if (!g) {
+    const caps = fitCapsules(asset).filter((c) => c.name === 'pelvis' || c.name === 'chest' || c.name === 'head');
+    g = { bones: Int32Array.from(caps.flatMap((c) => [c.ia, c.ib])), r: Float64Array.from(caps.map((c) => c.r)) };
+    GUARD.set(asset, g);
+  }
+  return g;
+}
+/** How long the follow-through's share of the trunk's movement takes to let go when a new stroke starts (s). */
+const FINISH_EASE = 0.15;
 /** Most the upper body bends from the spine's base towards a ball out of the arm's reach (rad). */
 const SPINE_REACH = 0.75;
 /** Fastest the hips come back up from a drop (m/s): standing up out of a lunge. */
@@ -458,6 +484,18 @@ export class Avatar {
   private readonly kneeR: THREE.Vector3;
   /** The free shoulder before the hips drop and push and the spine leans (world): its keys move with the trunk. */
   private readonly freeSh = new THREE.Vector3();
+  /** How far the key is along the forward swing this frame (0 at the backswing, 1 at the contact; see swingKey). */
+  private keyS = 0;
+  /** The racket's push out of the body last frame (world, m), let go over CLEAR_EASE. */
+  private readonly clearOff = new THREE.Vector3();
+  /** The capsules the racket is kept out of (pelvis, chest, head). */
+  private readonly guardBones: Int32Array;
+  private readonly guardR: Float64Array;
+  /** The racket shoulder, likewise: after the contact the follow-through goes with the trunk (`finishU`). */
+  private readonly racketSh = new THREE.Vector3();
+  /** How far into the follow-through (0 up to the contact, 1 at the finish), eased; and where it is heading. */
+  private finishU = 0;
+  private finishTo = 0;
   /** Shoulder to wrist, arm straight (m). */
   private readonly armLen: number;
   /**
@@ -531,6 +569,9 @@ export class Avatar {
     this.armL = [b('LeftArm'), b('LeftForeArm'), b('LeftHand')];
     this.elbowR = elbowHinge(asset, 'RightForeArm');
     this.elbowL = elbowHinge(asset, 'LeftForeArm');
+    const gc = guardCaps(asset);
+    this.guardBones = gc.bones;
+    this.guardR = gc.r;
     this.kneeL = elbowHinge(asset, 'LeftLeg').hinge;
     this.kneeR = elbowHinge(asset, 'RightLeg').hinge;
     this.legL = [b('LeftUpLeg'), b('LeftLeg'), b('LeftFoot')];
@@ -743,6 +784,7 @@ export class Avatar {
 
   /** Forward swing at progress s (0 = end of the backswing, 1 = the ball), into the blended key. */
   private swingKey(s: number): void {
+    this.keyS = s;
     const f = this.fam;
     const k = this.contactKey();
     // Accelerating into the ball along a curve below (groundstrokes) or behind the head (overheads).
@@ -913,11 +955,14 @@ export class Avatar {
         this.koff.copy(k.off).lerp(f.finish.off, e);
         this.kyaw = k.yaw + (f.finish.yaw - k.yaw) * e;
         this.w = 1;
+        this.finishTo = e;
       } else {
         this.setKey(f.finish, f.finish, 1);
         this.fadeOut(this.tCon + FOLLOW, 1);
+        this.finishTo = 1;
       }
     }
+    if (this.st === ST_PREP || (this.st === ST_SWING && t < this.tCon) || this.st === ST_NONE) this.finishTo = 0;
     if (this.st === ST_FADE) {
       this.setKey(this.from, this.from, 1);
       const u = smoothstep(this.fadeStart, this.fadeStart + FADE, t);
@@ -1063,6 +1108,11 @@ export class Avatar {
     this.stanceS = Math.sin(ys);
     this.stanceQ.setFromAxisAngle(UP, ys);
     this.updateStroke(sim, p, idx, t);
+    {
+      // Into the follow-through as the stroke goes (continuous at the contact), out of it over FINISH_EASE.
+      const d = this.finishTo - this.finishU, r = dt > 0 ? dt / FINISH_EASE : 1;
+      this.finishU = this.finishTo >= this.finishU && this.finishTo > 0 ? this.finishTo : d < -r ? this.finishU - r : this.finishTo;
+    }
     this.wall += (this.wallWant - this.wall) * (dt > 0 ? 1 - Math.exp(-dt / WALL_EASE) : 0);
     const turn = this.kyaw * this.w + this.readyKey.yaw * this.ready * (1 - this.w);
     const btTo = this.w > 0.01 ? this.fam.bodyTurn ?? BODY_TURN : this.addr ? SERVE_TURN_SHARE : BODY_TURN;
@@ -1129,6 +1179,7 @@ export class Avatar {
 
     this.plantW += (1 - smoothstep(0.25, 0.7, this.sp) - this.plantW) * (dt > 0 ? 1 - Math.exp(-dt / 0.08) : 0);
     this.freeSh.setFromMatrixPosition(this.armFree[0]!.matrixWorld);
+    this.racketSh.setFromMatrixPosition(this.armRacket[0]!.matrixWorld);
     this.solveLegs();
     if (this.w > 0 || this.ready >= 0.01) this.solveArms();
     else {
@@ -1178,6 +1229,7 @@ export class Avatar {
     this.elbowL.side.set(0, 0, 0);
     this.elbowR.dir.set(0, 0, 0);
     this.elbowL.dir.set(0, 0, 0);
+    this.clearOff.set(0, 0, 0);
     this.outReady.set(0, 0, 0, 0);
     this.outKey.set(0, 0, 0, 0);
     this.outAddr.set(0, 0, 0, 0);
@@ -1576,6 +1628,57 @@ export class Avatar {
     target.z = e[14]! + dir.z * r;
   }
 
+  /**
+   * Keep the racket out of the torso and the head: a key placed for a standing body, a backhand volley at the body
+   * or a follow-through with the trunk bent over a low ball put the frame through the chest and the face (2-3% of
+   * frames). The deepest racket point inside a capsule (plus RACKET_CLEAR) moves the hand straight out by that much
+   * from where it is, the racket keeping its rotation, and the arm is solved again. The hand's world rotation is q3.
+   */
+  private racketClear(ua: THREE.Bone, fa: THREE.Bone, hand: THREE.Bone): void {
+    const G = this.guardBones, Rr = this.guardR, B = this.bones;
+    const m = this.racket.matrixWorld.elements;
+    // The racket moves with the hand, so the push is found on the racket moved by it (vx, vy, vz), then the arm is
+    // solved once (each solve may turn the elbow's side by its frame's allowance).
+    let vx = 0, vy = 0, vz = 0;
+    for (let it = 0; it < 3; it++) {
+      // Every point inside, each pushing straight out by its depth: the deepest's depth along the sum's direction
+      // (the deepest alone jumped between points and capsules, the forearm with it).
+      let best = 0, sx2 = 0, sy2 = 0, sz2 = 0;
+      for (let r = 0; r < RACKET_P.length; r += 3) {
+        const lx = RACKET_P[r]!, ly = RACKET_P[r + 1]!, lz = RACKET_P[r + 2]!;
+        const px = m[0]! * lx + m[4]! * ly + m[8]! * lz + m[12]! + vx;
+        const py = m[1]! * lx + m[5]! * ly + m[9]! * lz + m[13]! + vy;
+        const pz = m[2]! * lx + m[6]! * ly + m[10]! * lz + m[14]! + vz;
+        for (let k = 0; k < Rr.length; k++) {
+          const ea = B[G[2 * k]!]!.matrixWorld.elements, eb = B[G[2 * k + 1]!]!.matrixWorld.elements;
+          const ax = ea[12]!, ay = ea[13]!, az = ea[14]!;
+          const sx = eb[12]! - ax, sy = eb[13]! - ay, sz = eb[14]! - az;
+          const l2 = sx * sx + sy * sy + sz * sz;
+          let u = l2 > 1e-12 ? ((px - ax) * sx + (py - ay) * sy + (pz - az) * sz) / l2 : 0;
+          u = u < 0 ? 0 : u > 1 ? 1 : u;
+          const dx = px - ax - sx * u, dy = py - ay - sy * u, dz = pz - az - sz * u;
+          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          const pen = Rr[k]! + RACKET_CLEAR - d;
+          if (pen <= 0 || d < 1e-6) continue;
+          if (pen > best) best = pen;
+          sx2 += (dx / d) * pen; sy2 += (dy / d) * pen; sz2 += (dz / d) * pen;
+        }
+      }
+      const sl = Math.sqrt(sx2 * sx2 + sy2 * sy2 + sz2 * sz2);
+      if (best <= 0 || sl < 1e-9) break;
+      vx += (sx2 / sl) * best; vy += (sy2 / sl) * best; vz += (sz2 / sl) * best;
+    }
+    if (vx === 0 && vy === 0 && vz === 0) return;
+    // From where the hand is, not where it was asked to be: a hand short of an out-of-reach target pushed further
+    // out stays where it is (the arm is straight), and moved from where it is it slides round the shoulder.
+    const mh = hand.matrixWorld.elements;
+    this.tgt.x = mh[12]! + vx; this.tgt.y = mh[13]! + vy; this.tgt.z = mh[14]! + vz;
+    this.keepOff(ua, this.tgt, this.elbowRacket.dir);
+    hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
+    setWorldQuat(hand, q3);
+    hand.updateMatrixWorld(true);
+  }
+
   /** Racket arm to the key (blended with the animation by the stroke weight), free hand to its key. */
   private solveArms(): void {
     const w = this.w;
@@ -1595,6 +1698,12 @@ export class Avatar {
       nlerpQ(q1, q2, this.outReady);
     }
     this.toWorld(this.kp, v2);
+    if (this.finishU > 0) {
+      // The follow-through's keys are placed for a standing body: when the hips are still low after a low ball (they
+      // rise no faster than HIP_RISE) the finish went into the chest and the head. It goes with the shoulder.
+      const mr = ua.matrixWorld.elements, u = this.finishU;
+      v2.x += (mr[12]! - this.racketSh.x) * u; v2.y += (mr[13]! - this.racketSh.y) * u; v2.z += (mr[14]! - this.racketSh.z) * u;
+    }
     this.quatToWorld(this.kq, q2);
     alignQ(q2, this.prevKeyQ);
     BL.u = w;
@@ -1640,9 +1749,21 @@ export class Avatar {
       lerpV(this.pole, v2);
     }
     this.keepOff(ua, this.tgt, this.elbowRacket.dir);
+    // Last frame's push out of the body, dying away (see racketClear).
+    // Gone by the contact (the racket has to be on the ball then), let go over the last fifth of the forward swing.
+    const before = (this.st === ST_PREP && this.hasCon) || (this.st === ST_SWING && this.lastT < this.tCon);
+    const sLeft = before ? Math.max(0, 1 - this.keyS) / 0.2 : 1;
+    const co = this.clearOff, k = this.dt > 0 ? Math.exp(-this.dt / CLEAR_EASE) * Math.min(1, sLeft) : 0;
+    co.x *= k; co.y *= k; co.z *= k;
+    const t0x = this.tgt.x, t0y = this.tgt.y, t0z = this.tgt.z;
+    this.tgt.x += co.x; this.tgt.y += co.y; this.tgt.z += co.z;
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
     setWorldQuat(hand, q3);
     hand.updateMatrixWorld(true);
+    this.racketClear(ua, fa, hand);
+    co.x = this.tgt.x - t0x; co.y = this.tgt.y - t0y; co.z = this.tgt.z - t0z;
+    const cl = Math.sqrt(co.x * co.x + co.y * co.y + co.z * co.z);
+    if (cl > CLEAR_MAX) { const r = CLEAR_MAX / cl; co.x *= r; co.y *= r; co.z *= r; }
 
     // Free hand.
     const ul = this.armFree[0]!, fl = this.armFree[1]!, hl = this.armFree[2]!;

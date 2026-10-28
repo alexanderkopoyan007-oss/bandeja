@@ -225,9 +225,11 @@ export const BH_CHIQUITA = variant(BACKHAND, 1, 'chiquita');
 
 /**
  * Ready position between shots: the racket up in front of the chest, head up, edge towards the net, the free
- * hand on the throat. Held during rallies (let go when sprinting).
+ * hand on the throat. Held during rallies (let go when sprinting). The hands about 0.35 m in front of the body,
+ * elbows bent (with the racket 0.42 m out the racket hand sat 18 cm in front of the hips, and a running body's
+ * pelvis tilted onto it: 8% of a left-handed pair's frames had a hand inside the pelvis).
  */
-export const READY: Key = key(v(-0.12, 1.22, 0.42), v(0.15, 0.75, 0.55), v(-1, 0, 0.15), v(-0.45, 0.85, -0.1), 0, v(0.02, 1.1, 0.4));
+export const READY: Key = key(v(-0.1, 1.3, 0.52), v(0.15, 0.75, 0.55), v(-1, 0, 0.15), v(-0.45, 0.85, -0.1), 0, v(0.0, 1.15, 0.42));
 
 // ---- left-handers: every key mirrored across the body's centre plane (model x -> -x) ----
 

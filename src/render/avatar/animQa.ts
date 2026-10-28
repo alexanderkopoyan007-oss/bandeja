@@ -17,6 +17,9 @@ import { SHOT_KEYS } from '../../sim/contact/shots.ts';
 import { Avatar } from './avatar.ts';
 import type { PlayerAsset } from './asset.ts';
 import { fitSoles } from './soles.ts';
+import { fitCapsules, pointSeg, RACKET_PTS, type CapsuleDef } from './capsules.ts';
+
+export { fitCapsules, pointSeg, RACKET_PTS };
 
 export interface QaOptions {
   seed: number;
@@ -72,6 +75,8 @@ export interface QaReport {
     /** A hand inside the torso. */
     handTorso: number;
     handTorsoMax: number;
+    /** Racket-in-body and hand-in-torso frames by what the player was doing (stroke family, or `ready`/`run`). */
+    by: Record<string, { racketBody: number; handTorso: number }>;
     /** The legs through each other. */
     legs: number;
     legsMax: number;
@@ -146,57 +151,6 @@ function segSeg(p1: THREE.Vector3, q1: THREE.Vector3, p2: THREE.Vector3, q2: THR
   return c1.distanceTo(c2);
 }
 
-export function pointSeg(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
-  const ab = new THREE.Vector3().subVectors(b, a);
-  const l = ab.lengthSq();
-  const t = l > 1e-12 ? Math.min(1, Math.max(0, new THREE.Vector3().subVectors(p, a).dot(ab) / l)) : 0;
-  return a.clone().addScaledVector(ab, t).distanceTo(p);
-}
-
-interface CapsuleDef { name: string; a: string; b: string; bones: string[]; r: number; ia: number; ib: number }
-
-/** Body capsules, fitted to the mesh: radius = the median distance of the segment's vertices from it. */
-export function fitCapsules(asset: PlayerAsset): CapsuleDef[] {
-  const defs: Array<[string, string, string, string[]]> = [
-    ['pelvis', 'Hips', 'Spine1', ['Hips', 'Spine']],
-    ['chest', 'Spine1', 'Neck', ['Spine1', 'Spine2']],
-    ['head', 'Head', 'HeadTop_End', ['Head', 'Neck']],
-    ['upperArmL', 'LeftArm', 'LeftForeArm', ['LeftArm']],
-    ['foreArmL', 'LeftForeArm', 'LeftHand', ['LeftForeArm']],
-    ['upperArmR', 'RightArm', 'RightForeArm', ['RightArm']],
-    ['foreArmR', 'RightForeArm', 'RightHand', ['RightForeArm']],
-    ['thighL', 'LeftUpLeg', 'LeftLeg', ['LeftUpLeg']],
-    ['shinL', 'LeftLeg', 'LeftFoot', ['LeftLeg']],
-    ['thighR', 'RightUpLeg', 'RightLeg', ['RightUpLeg']],
-    ['shinR', 'RightLeg', 'RightFoot', ['RightLeg']],
-  ];
-  const g = asset.geometry;
-  const pos = g.getAttribute('position');
-  const si = g.getAttribute('skinIndex');
-  const sw = g.getAttribute('skinWeight');
-  const at = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(asset.restWorld[asset.bone(n)]!);
-  const v = new THREE.Vector3();
-  const out: CapsuleDef[] = [];
-  for (const [name, a, b, bones] of defs) {
-    const ids = new Set(bones.map((n) => asset.bone(n)));
-    const A = at(a), B = at(b);
-    const d: number[] = [];
-    for (let k = 0; k < pos.count; k++) {
-      let best = -1, bw = -1;
-      for (let j = 0; j < 4; j++) {
-        const w = (sw as THREE.BufferAttribute).getComponent(k, j);
-        if (w > bw) { bw = w; best = (si as THREE.BufferAttribute).getComponent(k, j); }
-      }
-      if (!ids.has(best)) continue;
-      v.fromBufferAttribute(pos as THREE.BufferAttribute, k);
-      d.push(pointSeg(v, A, B));
-    }
-    d.sort((x, y) => x - y);
-    out.push({ name, a, b, bones, r: d.length ? d[d.length >> 1]! : 0.04, ia: asset.bone(a), ib: asset.bone(b) });
-  }
-  return out;
-}
-
 /** Joint groups for the angular-speed limits: [group, bone, parent bone or '' for world]. */
 const JOINTS: Array<[string, string, string]> = [
   ['pelvis', 'Hips', ''],
@@ -208,12 +162,6 @@ const JOINTS: Array<[string, string, string]> = [
   ['knee', 'LeftLeg', 'LeftUpLeg'], ['knee', 'RightLeg', 'RightUpLeg'],
   ['ankle', 'LeftFoot', 'LeftLeg'], ['ankle', 'RightFoot', 'RightLeg'],
   ['head', 'Head', 'Spine2'],
-];
-
-/** Racket points in its frame (face centre at the origin, face normal z, handle down -y). */
-export const RACKET_PTS = [
-  new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.146, 0), new THREE.Vector3(0, -0.146, 0),
-  new THREE.Vector3(0.13, 0, 0), new THREE.Vector3(-0.13, 0, 0), new THREE.Vector3(0, -0.24, 0),
 ];
 
 interface Hit { player: number; shot: string; t: number; ball: THREE.Vector3; out: THREE.Vector3; best: number; at: number; face: number }
@@ -257,6 +205,11 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const popWorst: QaEvent[] = [];
   const clip = { racketBody: 0, racketBodyMax: 0, handTorso: 0, handTorsoMax: 0, legs: 0, legsMax: 0, net: 0, wall: 0, players: 0, racketOther: 0 };
   const clipWorst: QaEvent[] = [];
+  const clipBy: Record<string, { racketBody: number; handTorso: number }> = {};
+  const doing = (i: number): string => {
+    const x = av[i] as unknown as { fam: { name: string }; w: number; ready: number; sp: number };
+    return x.w > 0.01 ? x.fam.name : x.ready > 0.5 ? 'ready' : x.sp > 0.9 ? 'run' : 'idle';
+  };
   const hips: number[] = [];
   let playerFrames = 0;
   let nan = 0;
@@ -369,6 +322,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.racketBody++;
+          (clipBy[doing(i)] ??= { racketBody: 0, handTorso: 0 }).racketBody++;
           if (serving && motion) sv.racketBody++;
           if (deep > clip.racketBodyMax) clip.racketBodyMax = deep;
           note(clipWorst, { t: m.time, player: i, what: `racket in ${where}`, value: deep });
@@ -385,6 +339,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.handTorso++;
+          (clipBy[doing(i)] ??= { racketBody: 0, handTorso: 0 }).handTorso++;
           if (serving && motion) sv.handTorso++;
           if (deep > clip.handTorsoMax) clip.handTorsoMax = deep;
           note(clipWorst, { t: m.time, player: i, what: where, value: deep });
@@ -500,6 +455,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
     clip: {
       racketBody: share(clip.racketBody), racketBodyMax: clip.racketBodyMax,
       handTorso: share(clip.handTorso), handTorsoMax: clip.handTorsoMax,
+      by: clipBy,
       legs: share(clip.legs), legsMax: clip.legsMax,
       net: share(clip.net), wall: share(clip.wall),
       players: clip.players / Math.max(1, frames), racketOther: share(clip.racketOther),

@@ -485,3 +485,55 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     max 21300 → 6000°/s, ankle max 19300 → 11500°/s, contact p50 4-9 mm and p90 7.7-8.4 cm (6-10 before),
     legs through 2.8-3.5% (unchanged). The QA test now fails on any one-frame spike of 120° or more, or more
     than 35 pops per player-minute.
+- **Motion matching: not built.** Motion matching (Clavet 2016, "Motion Matching and The Road to Next-Gen
+  Animation", GDC; Holden et al. 2020's learned version) picks, several times a second, the frame of a large
+  motion database whose pose and future path best match where the player is going, and blends to it with
+  inertialization. Its quality comes entirely from the database: hours of unstructured capture (starts, stops,
+  plants, turns, cuts, side steps, crossovers, recoveries). This game has six looping Mixamo locomotion clips (idle,
+  jog, run, run back, strafe left and right; `docs/mixamo.md`), no starts, stops or turns: every query would land
+  on one of those loops at the right phase, which is what the direction blend with a stride-matched phase already
+  does. What does the job of motion matching here instead: the four-direction blend at one phase advanced by
+  distance (no skating), orientation warping for diagonals, inertialization of every input, planted feet with
+  stepping, the lunge, and the split-step hop. What would make motion matching worth building is in
+  OPEN_QUESTIONS.md (the clips, or capture).
+- **Video-to-mocap: not done here.** Turning video of real play into clips needs a pose-estimation model's weights
+  (a download the owner hasn't approved), video to run it on (there is no `/reference/video` on this machine) and
+  a body-model licence; see OPEN_QUESTIONS.md. The serve was instead studied from the published measurements
+  (`docs/research/serve-and-strokes-motion.md`) and built as key poses.
+- **Where contact happens, from the pros** (sim; `data/tuning.json` `//reach`, `planStand`). Measured in AI doubles
+  (4 seeds x 300 s, contact point from the body's centre, towards the net): drives 0.00 m on average, lobs 0.02,
+  volleys 0.18, against highly trained players' 0.64, 0.65 and 0.38 (Sánchez-Alcaraz et al. 2021). The game
+  planned every ground stroke 0.12 m in front and 0.75 m out to the side, so the ball came level with the body,
+  the arm reaching sideways. Now ground strokes are planned 0.6 m in front and 0.67 m out (0.9 m away across the
+  floor: `reachComfort`, which the timing windows also use for the ideal moment), volleys 0.35 m in front
+  (`VOLLEY_FRONT`, as the volley key already did) and `volleyReach` 0.7 m away; the timing windows use the same
+  distances for their ideal moment and now cost a contact beside or behind the body (a ball off the back glass
+  passes the comfortable distance once behind the player, once in front). Measured after (4 seeds x 300 s):
+  drives, lobs, slices p50 0.60 m, means 0.52-0.59, p10 0.13-0.33 (the paper's SD 0.32); volleys p50 0.35.
+  What it did to the rally (12 seeds x 300 s, AI doubles): points ending unreached 47.9 → about 59%, errors into
+  their own side 45.6 → 33% (contacts in front are struck better; the comfortable distance also counts as no
+  stretch now). The published mix is winners 35-42%, forced 25-33%, unforced 29-38% (main-draw men), so the AI
+  now wins too many points outright: its error rates and shot choice are Phase 4's to calibrate, against those
+  numbers, not by putting the contact back beside the body.
+- **Ready position**: the racket 0.52 m out (was 0.42) and higher, the hands about 0.35 m in front of the body
+  with the elbows bent; the racket hand had sat 18 cm in front of the hips, and a running body's pelvis tilted onto
+  it (8% of a left-handed pair's frames had a hand inside the pelvis).
+- **The follow-through goes with the trunk**: after the contact the racket's key moves with the racket shoulder
+  as the hips and spine move (as the free hand's keys do), eased in from the contact and out over 0.15 s when the
+  next stroke starts. The hips rising no faster than a body stands up had left the finish key (placed for a
+  standing body) in the chest and face after low balls.
+- **The racket is kept out of the body** (`racketClear`): the racket's points against the pelvis, chest and head
+  capsules (the QA's, fitted to the mesh; `capsules.ts` is shared now); every point inside pushes straight out by
+  its depth, the racket is moved by the push found on its moved position (three rounds, no IK between), and the
+  arm is solved once from where the hand is (a hand short of an out-of-reach target can't be pushed further out,
+  only round the shoulder). The push carries over and dies away over 0.08 s (taken anew each frame, it moved
+  between points and capsules and turned the forearm over), is at most 0.2 m (a backhand's backswing across the
+  chest can't be cleared; it had grown to 0.5 m), and is gone over the last fifth of the forward swing so the
+  racket is on the ball at the contact.
+- **QA after** (3 seeds x 120 s; the matches differ from the table above, the sim's contact placement changed):
+  racket in body 1.7-2.3 → 0.18-0.30%, hand in torso 3.0-4.8 → 1.0-1.8%, contact p50 4-8 mm and p90 6.2-7.8 cm,
+  pops 22-30 per player-minute (the guard adds about 2), legs through 2.6-3.2%, avatars 4 GCs per 100k ticks.
+- **Frame rate, Phase 3 against Phase 2** (`npm run perf`, two runs each, other sessions' Chromes also running on
+  this machine): medium with the CPU throttled 4x p50 2.5 / 2.5 ms, p99 4.5 / 4.6 ms before; 2.5 ms, p99 4.3 ms
+  after (one run at 2.8 / 5.1 ms overlapped a point-mix run); high at 2x p99 9.2 → 8.8-9.1 ms, 0.66% of frames
+  over 20 ms both (the queue stalls seen since M1). Draw calls 42 → 43.
