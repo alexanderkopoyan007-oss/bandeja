@@ -47,3 +47,13 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   of the wall), the glass is met 0.5-5 ms later as a separate contact, and the floor can follow 1 ms after it,
   which the rules count as a second bounce. In real play such a ball is pinned in the rincón and unplayable, so
   the point goes to the hitter either way; left as it is.
+- **Junction calls in the last few millimetres** (review round 5, all Low): whether a ball squeezed at a wall foot
+  touched the second surface is decided by a rule ("reached": flown there, within half a contact time at its
+  closing speed, or the floor within 5 mm). Against the reviewer's independent contact model about 3.4% of balls
+  that have bounced and come down onto the back glass within 5 cm of the floor get a different call (mostly balls
+  within 3 mm of the floor); a friction-aware travel estimate (prototype in the review's `fixA/`) cuts that to
+  about 2%, but the reference model is no more certain than that. The junction also bounces a ball off a second
+  surface it never reaches, so a serve within 1 cm of the side mesh can miss a fence fault (63 in 20k on the
+  narrow singles court, about 1 in 20k on standard), and the nick is a distance, not a time (FIP: "good in the
+  nick"). A ball that leaves a wall-first junction dying is put on the floor 1-2 cm early. Settled by: high-speed
+  video of balls at a padel wall's foot (none published), or the owner's call on a time-based nick.

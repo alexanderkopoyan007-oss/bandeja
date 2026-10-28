@@ -171,6 +171,24 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   - Checked and fine: the wall recovery band fired only at the enclosure step's top corner (a ball over the 3 m
     section into the 4 m one sits up to 2.3 cm in the mesh for 3 ticks, then comes off its face; round 2 sent
     those through it); determinism across runs and interpreter-only; 0 tunnels, embeds, energy gains, stuck balls.
+- **Review round 5** (fresh-eyes, read-only): **nothing new and serious; Phase 1 is verified.** The reviewer
+  built an independent contact model (spring-damper ball, 2 µs steps against every plane; agrees with the sim's
+  single bounces within 0.1-0.5 m/s) and compared calls at junctions on 40k realistic shots per court/floor
+  (ShotSolver with swing errors), balls placed at wall feet, 20k door shots, the round-4 fuzzers on every court,
+  AI matches, alloc over 6 seeds (3-8 GCs per 100k ticks), determinism with the JIT off. Calls differ from the
+  reference on about 0.1% of shots near walls, about 60% of those the 5 mm nick allowance, and round 4 has as
+  many or fewer than round 3 everywhere. The one band that moved: a ball already bounced coming down onto the
+  back glass within 5 cm of the floor, wrong calls 5.3% → 3.4% (missed double bounces 5.0% → 1.05%, phantom ones
+  0.3% → 2.3%, nearly all balls the reference brings within 3 mm of the floor). AI play reaches that band in 2
+  of 425 wall contacts. Fixed: *a ball pushed out of the rigid net (predictions and solver ghosts only) hung in
+  the air*: spin curved it back onto the net's plane, where it was caught again at f = 0 every substep (once in
+  20k short shots); the body planes now only catch a ball at the start of a step if it is moving in (alloc singles 6-7 before, 7-8 after over 3-4 runs: noise, budget 10). Test in
+  `tests/sim/net.test.ts`. Left as Low (OPEN_QUESTIONS.md): the friction-aware "reached" refinement the
+  reviewer prototyped (wrong calls in that band 673 → 411 per 20k), within the reference model's own
+  uncertainty; the junction applying the second surface's squeeze to a ball that never reaches it (serves within
+  1 cm of the side mesh miss a fence fault, 63 in 20k on the narrow singles court, about 1 in 20k on standard);
+  the nick being a distance (5 mm) rather than a time; the dying-ball rule placing a ball on the floor 1-2 cm
+  early.
 - **Frame rate, before → after Phase 1** (`npm run build && npm run perf`, 30 s each, AI doubles, this M1 Max):
   medium with the CPU throttled 4x (laptop proxy) p50 2.4 → 2.4 ms, p99 4.5 → 4.3 ms, max 15.6 → 12.0 ms, 0 frames
   over 20 ms either way, sim p99 0.8 ms both; high (2x pixel ratio) 498 → 539 fps, p99 8.9 → 8.8 ms, 99 → 105
