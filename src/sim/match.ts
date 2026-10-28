@@ -18,7 +18,7 @@ import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows 
 import { findWindows, makeWindows, OH_ANY, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
-import { formationSpot, type Spot } from './player/formation.ts';
+import { formationSpot, SWITCH_X, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
 import { smashLanding } from './contact/smashAim.ts';
@@ -51,6 +51,12 @@ export const E_TOSS = 13;
 export const E_EXIT = 14;
 export const E_ENDS = 15;
 export const E_SWING = 16;
+/** Doubles: a player calls the ball (a: CALL_*). */
+export const E_CALL = 17;
+/** E_CALL's a: the taker's "mine", the partner's "yours", "switch" (the partner takes a lob over us: we cross). */
+export const CALL_MINE = 0;
+export const CALL_YOURS = 1;
+export const CALL_SWITCH = 2;
 /** E_WHIFF's y: the swing missed a ball in reach (timing) / there was no ball to hit (none in reach at the release,
  * or not legal to play) / the ball was out of reach (too far or too high or low) at the contact. */
 export const WHIFF_TIMING = 0;
@@ -131,6 +137,14 @@ const RELEASE_LOOKBACK = 0.3;
 const MIDDLE_MARGIN = 0.8;
 const SWITCH_MARGIN = 1.0;
 const CLAIM_OUT = 20;
+/**
+ * Calls: a ball is called once its taker has held CALL_AFTER (s) past the strike (about when a player has read it:
+ * the 0.14-0.20 s reaction, ai/simpleAi.ts), when the runs are within CALL_MARGIN (m) of each other (a ball either
+ * could play) or the taker crosses to the partner's side (a switch: player.formation.ts SWITCH_X). Clear balls
+ * aren't called, as in a real pair.
+ */
+const CALL_AFTER = 0.25;
+const CALL_MARGIN = 1.5;
 
 export class MatchSim {
   readonly cfg: MatchConfig;
@@ -171,6 +185,13 @@ export class MatchSim {
   /** Doubles: what an AI striker decided its pair does after its shot: 1 go up to the net, 0 stay back, -1 none. */
   readonly intentUp = [-1, -1];
   private readonly takerVersion = [-1, -1];
+  /** Doubles: each player's side of the pair when the point started (+1 right of the partner as they face the net,
+   * -1 left; 0 none): a pair that switched on a lob crosses back when there is time (formation.ts). */
+  readonly homeLane = [0, 0, 0, 0];
+  /** Doubles calls: whether this ball has been called (per team), and the last claim decision's run gap and switch. */
+  private readonly called = [0, 0];
+  private readonly claimGap = new Float64Array(2);
+  private readonly claimSwitch = [0, 0];
 
   // Previous-tick state for render interpolation.
   readonly prevBall = { x: 0, y: 0, z: 0 };
@@ -307,6 +328,8 @@ export class MatchSim {
     this.intentUp[1] = -1;
     this.takerVersion[0] = -1;
     this.takerVersion[1] = -1;
+    this.called[0] = 0;
+    this.called[1] = 0;
     // Diagonal service box on the receivers' half.
     this.box.x0 = sideSign > 0 ? -c.halfW : 0;
     this.box.x1 = sideSign > 0 ? 0 : c.halfW;
@@ -667,7 +690,30 @@ export class MatchSim {
       const tHit = kHit >= 0 ? this.pred.t[kHit]! : -1;
       if (tHit >= 0 && (!this.claim[pick]!.valid || this.claim[pick]!.t > tHit - 0.05)) pick = other;
       this.setTaker(team, pick);
+      this.claimGap[team] = ca < CLAIM_OUT && cb < CLAIM_OUT ? abs(ca - cb) : CLAIM_OUT;
+      // The taker's contact on the partner's side of the pair, by more than the formation's switch distance.
+      const pl = this.claim[pick]!;
+      const q = this.players[pick]!;
+      const lane = (q.pos.x - this.players[pick ^ 2]!.pos.x) * s > 0 ? 1 : -1;
+      this.claimSwitch[team] = pl.valid && pl.bx * s * lane < -SWITCH_X ? 1 : 0;
     }
+    for (let team = 0; team < 2; team++) this.callBall(team);
+  }
+
+  /** Doubles: a contested ball or a switch is called once, by an AI: the taker ("mine") or the partner ("yours",
+   * "switch"); a human's partner speaks for the pair. */
+  private callBall(team: number): void {
+    const k = this.taker[team]!;
+    if (k < 0 || this.called[team] !== 0 || this.rally.isServe || this.time - this.lastStrikeTime < CALL_AFTER) return;
+    const sw = this.claimSwitch[team] === 1;
+    if (!sw && this.claimGap[team]! >= CALL_MARGIN) return;
+    this.called[team] = 1;
+    const mate = k ^ 2;
+    // The switch is called by the player the ball went over (they cross); "mine" by the taker. A human doesn't
+    // speak: then the AI partner calls "yours" (or the switch).
+    if (sw) this.emitP(E_CALL, this.ai[mate] ? mate : k, CALL_SWITCH);
+    else if (this.ai[k]) this.emitP(E_CALL, k, CALL_MINE);
+    else if (this.ai[mate]) this.emitP(E_CALL, mate, CALL_YOURS);
   }
 
   private setTaker(team: number, i: number): void {
@@ -1149,6 +1195,15 @@ export class MatchSim {
     }
     this.taker[1 - team] = -1;
     this.takerVersion[1 - team] = -1;
+    this.called[1 - team] = 0;
+    this.claimGap[1 - team] = CLAIM_OUT;
+    this.claimSwitch[1 - team] = 0;
+    if (serving && this.doubles) {
+      for (let k = 0; k < 4; k++) {
+        const dx = this.players[k]!.pos.x - this.players[k ^ 2]!.pos.x;
+        this.homeLane[k] = dx * this.side(this.players[k]!.team) > 0 ? 1 : -1;
+      }
+    }
     for (let k = 0; k < this.ai.length; k++) this.ai[k]?.onStrike(this, team);
   }
 
@@ -1278,6 +1333,7 @@ export class MatchSim {
         .num(p.aimTouched ? 1 : 0).num(p.heldMod).num(p.splitAt).num(p.pushFrom);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
+    h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     const st: number[] = [];
     this.score.writeState(st);

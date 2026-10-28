@@ -1,6 +1,7 @@
 // Doubles positioning, shared by the AI players and the human's positioning assist.
 import type { MatchSim } from '../match.ts';
 import { abs, clamp } from '../core/smath.ts';
+import { PF_FLOOR } from '../ball/predict.ts';
 
 /** Depth of a pair at the net and at the back (m from the net). */
 export const UP_Z = 3.1;
@@ -12,6 +13,17 @@ const UP_HALF_GAP = 1.7;
 const BACK_HALF_GAP = 2.3;
 const UP_FOLLOW = 0.4;
 const BACK_FOLLOW = 0.3;
+
+/**
+ * Switching sides ("¡cambio!"): when the partner goes for a ball more than SWITCH_X (m) across the centre line on
+ * our side (a lob over us that they take on the diagonal, a poach at the net), we cross over and cover theirs, and
+ * the pair plays on from the switched sides. Players have their side (the right-side "drive" and the left-side
+ * "revés" player), so a switched pair of AIs crosses back once its own ball gives them SWITCH_BACK_T (s) before it
+ * bounces over there (a lob of theirs, usually). Without it the lobbed player dropped back on their own side,
+ * outside the partner, and the pair defended with 1.2 m between them and the other side open.
+ */
+export const SWITCH_X = 0.8;
+const SWITCH_BACK_T = 1.0;
 
 export interface Spot {
   x: number;
@@ -29,12 +41,19 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   const team = p.team;
   const s = m.side(team);
   const mate = m.players[i ^ 2]!;
-  const lane = (p.pos.x - mate.pos.x) * s > 0 ? 1 : (p.pos.x - mate.pos.x) * s < 0 ? -1 : i < 2 ? 1 : -1;
+  let lane = (p.pos.x - mate.pos.x) * s > 0 ? 1 : (p.pos.x - mate.pos.x) * s < 0 ? -1 : i < 2 ? 1 : -1;
   let up: boolean;
   if (coming) {
-    // Partner is on it: match their depth (where they will play it from).
+    // Partner is on it: match their depth (where they will play it from), and if they are taking it on our side,
+    // switch.
     up = abs(mate.pos.z) < 5.2;
+    const ai = m.ai[i ^ 2];
+    const plan = ai ? ai.standPlan : m.stand[i ^ 2]!;
+    if (m.taker[team] === (i ^ 2) && plan.valid && plan.bx * s * lane > SWITCH_X) lane = -lane;
   } else if (m.lastStrikeTeam === team && m.lastStrikePlayer >= 0) {
+    // A switched pair of AIs crosses back while its ball is a long way from bouncing over there.
+    const home = m.homeLane[i]!;
+    if (home !== 0 && home !== lane && m.ai[i] && m.ai[i ^ 2] && bounceIsFar(m)) lane = home;
     // Our ball is going over. The serving pair takes the net; otherwise the striker's decision (an AI decides
     // as it picks its shot), or for a human striker: up after a shot from the front part of the court or a
     // lob that gets past the opponents.
@@ -50,6 +69,14 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   const half = up ? UP_HALF_GAP : BACK_HALF_GAP;
   out.x = clamp(lane * s * half + (up ? UP_FOLLOW : BACK_FOLLOW) * m.ball.pos.x, p.minX + 0.3, p.maxX - 0.3);
   out.z = s * (up ? UP_Z : BACK_Z);
+}
+
+/** The ball's next bounce on the floor is more than SWITCH_BACK_T away. (A boolean: a double returned from a call
+ * V8 doesn't inline is boxed.) */
+function bounceIsFar(m: MatchSim): boolean {
+  const pr = m.pred;
+  for (let k = 0; k < pr.n; k++) if ((pr.flags[k]! & PF_FLOOR) !== 0) return pr.t[k]! - m.time > SWITCH_BACK_T;
+  return false;
 }
 
 /**

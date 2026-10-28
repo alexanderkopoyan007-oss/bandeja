@@ -3,13 +3,16 @@
 // changes, so the HUD costs next to nothing per frame.
 import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import {
-  E_HIT, E_SWING, E_WHIFF, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_ENDS, E_EXIT, PH_TOSS, PH_RALLY, PH_SETUP,
+  E_HIT, E_SWING, E_WHIFF, E_CALL, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_ENDS, E_EXIT, PH_TOSS, PH_RALLY, PH_SETUP,
 } from '../sim/match.ts';
 import { REASON_TEXT, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/contact/timing.ts';
 import { SW_CHARGE } from '../sim/player/player.ts';
 import { SHAPES, SHOT_BANDEJA, SHOT_VOLLEY } from '../sim/contact/shots.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
+
+/** E_CALL's words (CALL_MINE, CALL_YOURS, CALL_SWITCH), as a pair shouts them. */
+const CALL_TEXT = ['Mine!', 'Yours!', 'Switch!'];
 
 const TIMING = tuning.timing;
 
@@ -39,6 +42,9 @@ const CSS = `
 #hud .ms { position: absolute; left: 50%; bottom: 102px; transform: translateX(-50%); font: 600 12px/1 ui-sans-serif, system-ui;
   color: #e6ebef; opacity: 0; transition: opacity .25s; letter-spacing: .04em; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 #hud .shot { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
+  color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
+/* The AI partner's call: the shot line's type, above the hint. */
+#hud .mate { position: absolute; left: 50%; bottom: 206px; transform: translateX(-50%); font: 600 13px/1 ui-sans-serif, system-ui;
   color: #cfd6dc; opacity: 0; transition: opacity .25s; letter-spacing: .08em; text-transform: uppercase; }
 
 /* Hints: a glass pill with key caps. */
@@ -100,6 +106,8 @@ export class Hud {
   private readonly callSub: HTMLElement;
   private readonly grade: HTMLElement;
   private readonly shot: HTMLElement;
+  private readonly mate: HTMLElement;
+  private mateUntil = 0;
   private readonly meter: HTMLElement;
   private readonly mark: HTMLElement;
   private readonly zones: HTMLElement[] = [];
@@ -146,6 +154,7 @@ export class Hud {
 
     this.grade = root.appendChild(el('div', 'grade'));
     this.shot = root.appendChild(el('div', 'shot'));
+    this.mate = root.appendChild(el('div', 'mate'));
     this.meter = root.appendChild(el('div', 'meter'));
     // Meter zones: perfect window in the middle, good either side (sized by setTiming).
     const good = el('div', 'zone');
@@ -227,6 +236,7 @@ export class Hud {
     }
     if (now > this.gradeUntil) { this.grade.style.opacity = '0'; this.shot.style.opacity = '0'; this.ms.style.opacity = '0'; }
     if (now > this.callUntil) this.toggle(this.call, 'on', false);
+    if (now > this.mateUntil) this.mate.style.opacity = '0';
 
     // Timing meter: where "now" sits relative to the best upcoming contact moment.
     let show = false;
@@ -309,6 +319,14 @@ export class Hud {
           this.set(this.shot, `${SHAPES[e.a]!.name} · ${(e.c * 3.6).toFixed(0)} km/h`);
           this.shot.style.opacity = e.b === G_PERFECT || e.b === G_GOOD || !this.pro ? '1' : '0';
           this.gradeUntil = now + 0.9;
+        }
+        break;
+      case E_CALL:
+        // Your partner calls the ball (your own calls and the opponents' are not shown).
+        if (human >= 0 && e.player === (human ^ 2)) {
+          this.set(this.mate, `Partner · ${CALL_TEXT[e.a]}`);
+          this.mate.style.opacity = '1';
+          this.mateUntil = now + 1.1;
         }
         break;
       case E_EXIT:
