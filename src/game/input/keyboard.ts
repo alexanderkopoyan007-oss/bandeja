@@ -1,6 +1,6 @@
 // Keyboard + mouse input with exact timestamps. Key events carry event.timeStamp (performance.now() time base),
 // so a release is judged at the moment it happened, not when the next frame polls it.
-import { BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION } from '../../sim/input.ts';
+import { BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP, BTN_OVERHEAD, BTN_VOLLEY, BTN_POWER, BTN_PRECISION } from '../../sim/input.ts';
 
 export interface TimedButton { press: boolean; button: number; ts: number }
 
@@ -11,6 +11,7 @@ const BUTTON_KEYS: Record<string, number> = {
   KeyI: BTN_LOB,
   KeyU: BTN_DROP,
   KeyO: BTN_OVERHEAD,
+  KeyN: BTN_VOLLEY,
   Space: BTN_POWER,
   ShiftLeft: BTN_PRECISION,
   ShiftRight: BTN_PRECISION,
@@ -27,6 +28,8 @@ const QUEUE = 32;
 export class KeyboardInput {
   held = 0;
   private readonly moveHeld: Record<string, boolean> = {};
+  /** Button keys down by code: two keys can make one button (both Shifts), held while either is. */
+  private readonly codeDown: Record<string, boolean> = {};
   /** Ring of timestamped button events not yet consumed by the sim. */
   readonly queue: TimedButton[] = [];
   head = 0;
@@ -54,14 +57,40 @@ export class KeyboardInput {
     if (btn !== undefined || MOVE_KEYS[e.code]) e.preventDefault();
     if (e.repeat) return;
     if (btn !== undefined) {
+      this.codeDown[e.code] = down;
+      let any = false;
+      for (const c in BUTTON_KEYS) if (BUTTON_KEYS[c] === btn && this.codeDown[c]) any = true;
       const was = (this.held & btn) !== 0;
-      if (down === was) return;
-      this.held = down ? this.held | btn : this.held & ~btn;
-      this.push(down, btn, e.timeStamp);
+      if (any === was) return;
+      this.held = any ? this.held | btn : this.held & ~btn;
+      this.push(any, btn, e.timeStamp);
     } else if (MOVE_KEYS[e.code]) {
       this.moveHeld[e.code] = down;
     }
     if (down) this.onKey?.(e.code, e);
+  }
+
+  /**
+   * A button event from another device (the gamepad), into the same timestamped queue, in time order: a pad's
+   * stamp can be earlier than a key event already queued, and the sim takes events up to the first one past a tick.
+   */
+  inject(press: boolean, button: number, ts: number): void {
+    this.push(press, button, ts);
+    for (let k = this.tail - 1; k > this.head; k--) {
+      const a = this.queue[(k - 1) % QUEUE]!, b = this.queue[k % QUEUE]!;
+      if (a.ts <= b.ts) break;
+      const p = a.press, bt = a.button, t = a.ts;
+      a.press = b.press; a.button = b.button; a.ts = b.ts;
+      b.press = p; b.button = bt; b.ts = t;
+    }
+  }
+
+  /** Move every queued event stamped before `t` up to `t` (the game dropped a backlog: those moments are gone). */
+  clampQueue(t: number): void {
+    for (let k = this.head; k < this.tail; k++) {
+      const q = this.queue[k % QUEUE]!;
+      if (q.ts < t) q.ts = t;
+    }
   }
 
   private push(press: boolean, button: number, ts: number): void {
@@ -76,6 +105,7 @@ export class KeyboardInput {
   private releaseAll(ts: number): void {
     for (const code of Object.keys(BUTTON_KEYS)) {
       const b = BUTTON_KEYS[code]!;
+      this.codeDown[code] = false;
       if (this.held & b) {
         this.held &= ~b;
         this.push(false, b, ts);

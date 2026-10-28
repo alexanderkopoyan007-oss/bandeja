@@ -99,6 +99,9 @@ export class SimpleAi {
 
   /** One tick's input. Times are read here, not passed in: doubles passed to a call V8 doesn't inline are boxed. */
   think(m: MatchSim, f: InputFrame): void {
+    // Modifiers are held only on the tick they are released with (InputFrame.clear() leaves `held` alone: a
+    // keyboard sets it each frame). Before this, a smash's power stayed held for every later shot of the match.
+    f.held = 0;
     const t0 = m.time;
     const t1 = t0 + DT;
     this.nowT = t0;

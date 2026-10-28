@@ -57,3 +57,39 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   narrow singles court, about 1 in 20k on standard), and the nick is a distance, not a time (FIP: "good in the
   nick"). A ball that leaves a wall-first junction dying is put on the floor 1-2 cm early. Settled by: high-speed
   video of balls at a padel wall's foot (none published), or the owner's call on a time-based nick.
+
+## Phase 2 (game feel)
+- **Display latency on the owner's machine.** `tools/latency.mjs` measures key → sim → frame drawn → GPU done in
+  headless Chrome; the last step to light on the panel (compositor, display scan-out) isn't measurable from a
+  page. Settled by: a 240 fps phone video of a key press and the screen (or the owner's feel of `?runahead=0`
+  against the default).
+- **Racket sound.** Synthesised and tuned by ear; no recording of a padel ball on a padel racket was analysed
+  (sweet spot vs frame). Settled by: recordings (Phase 6), the owner's `/reference/audio` if it appears.
+- **Timing window sizes.** The base windows (Perfect ±25 ms) come from screen-tapping precision (about 12 ms SD)
+  and the per-shot multipliers from face angular speed (radii estimated). Whether they feel right is the owner's
+  call after playing: the `?timing=` setting scales them all.
+- **Split-step pre-load and build-up.** `startFrom` 0.2, `startRamp` 0.3 s and `splitPreload` 0.3 s are fitted
+  so the split-step's gain matches the tennis data (Uzu, Nieminen); padel-specific measurements of the split-step
+  don't exist.
+- **The camera kick.** Broadcast cameras don't shake on a smash; the brief asked for a camera response, so it is
+  a small push-in and jolt. Whether to keep it is the owner's call.
+- **Sprint times.** The game's player covers 5 m forward in 1.56 s from a standstill and 1.45 s once moving. No
+  padel sprint time has been read: Portuguese national-tier players and the Kinesiology 8-week training study
+  both tested 5 m sprints, but their abstracts give no numbers. Settled by: the full texts' tables (5 m sprint
+  mean and how the timing gates were set up).
+- **Gamepad audio unlock.** A pad press may not count as a user gesture for starting audio in every browser; a
+  pad-only player may need one key or click before sound starts. Settled by: a test on the owner's pad.
+- **Input edge cases left open** (Phase 2 review round 3, all low): a key event that reaches the page after its
+  timestamp can strike up to a few ms late (1 ms transit, Chrome's usual: 1% of releases, max 0.3 ms; 6 ms: up to
+  22%, max 4.9 ms); the pad and the keyboard holding the same button share one bit, so letting go of one releases
+  the swing while the other still holds it; with `?assist=0` the aim reads the movement keys at frame time rather
+  than at the release moment (moves reach the sim as axes, not as timestamped events). Settled by: the owner's
+  playtest on their own machine and pad, if any of them shows.
+- **Render and feedback timing left open** (Phase 2 review round 4, all Low): while the render lag eases in after a
+  press (about 33 ms) the hold keeps the sim at the last tick before now, so on 165-240 Hz screens a few frames
+  repeat or step past the ease (165 Hz: 23 repeats a match-minute's worth of presses; skipping the hold while the
+  lag eases in removes them but makes 10-20 ms taps strike late more often). A tap shorter than about 15 ms can
+  strike up to 7.6 ms late (the press frame may already have run the sim past now). The camera kick and rumble can
+  start up to a tick before the hit is drawn (sound already waits for it). `npm run alloc` drives AI players only;
+  a human-path mode would close that gap. Settled by: the owner's playtest on a fast screen; none is visible at 60
+  or 120 Hz in the emulation.

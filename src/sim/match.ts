@@ -11,12 +11,12 @@ import { Score, SIDE_RIGHT, SIDE_LEFT, DEFAULT_FORMAT, EV_GAME, EV_SET, EV_MATCH
 import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
 import { Player, SW_IDLE, SW_CHARGE, SW_COMMITTED, SW_RECOVER, DEFAULT_TUNING } from './player/player.ts';
 import {
-  ShotSolver, strike, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
+  ShotSolver, strike, SHAPES, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, makeWindows, type ContactWindow } from './contact/windows.ts';
-import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD } from './input.ts';
+import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { formationSpot, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
@@ -147,6 +147,8 @@ export class MatchSim {
   lastStrikeTime = -10;
   /** Doubles: which player of each team is going for the incoming ball (-1: none / not decided). */
   readonly taker = [-1, -1];
+  /** A human pushing the movement keys this tick (not aiming with them): they are going, so they don't hop. */
+  private readonly keysMove = new Uint8Array(4);
   /** Doubles: what an AI striker decided its pair does after its shot: 1 go up to the net, 0 stay back, -1 none. */
   readonly intentUp = [-1, -1];
   private readonly takerVersion = [-1, -1];
@@ -332,6 +334,8 @@ export class MatchSim {
   /** Advance one tick. `inputs[player]` is a human player's frame (ignored for AI players). */
   step(inputs: ReadonlyArray<InputFrame | null>): void {
     const t0 = this.time;
+    // Every player's clock is this tick's before anything plans with it (startLag reads it).
+    for (let k = 0; k < this.players.length; k++) this.players[k]!.clock = t0;
     const t1 = t0 + DT;
     const n = this.players.length;
     this.prevBall.x = this.ball.pos.x;
@@ -482,6 +486,7 @@ export class MatchSim {
     const s = this.side(team);
     const human = !this.ai[i];
     const isServerSetup = (this.phase === PH_SETUP || this.phase === PH_TOSS) && i === this.score.serverPlayer();
+    p.heldMod = (f.held & BTN_POWER) !== 0 ? MOD_POWER : (f.held & BTN_PRECISION) !== 0 ? MOD_PRECISION : MOD_NONE;
     // In doubles a human plans (spot, ring, assist) only for balls that are theirs: assigned, or claimed by
     // holding a shot key.
     const incoming = human && this.phase === PH_RALLY && this.rally.hitter !== team && this.rally.hitter >= 0
@@ -494,12 +499,19 @@ export class MatchSim {
       // so the ring and the spot never jump to another bounce at the last moment.
       // Holding the overhead key plans the ball high (in the air for a lob); switching modes plans afresh.
       const overhead = this.goingOverhead(p);
-      const live = st.valid && t0 < st.t + 0.1 && st.overhead === overhead;
+      // Holding the volley key plans the ball in the air; with no volley in reach it plans as usual (and the
+      // contact turns into a block off the bounce).
+      const volleyKey = this.goingVolley(p);
+      const live = st.valid && t0 < st.t + 0.1 && st.overhead === overhead && st.volleyKey === volleyKey;
       const close = live && st.t - t0 < 0.35;
       if (this.pred.version !== st.version || !live || (!close && (this.tick & 7) === 0)) {
         const keep = live ? st.t : -1;
-        if (!(close && planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, true, overhead))) {
-          planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, false, overhead);
+        if (!(close && planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, true, overhead, volleyKey))) {
+          planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, false, overhead, volleyKey);
+          if (volleyKey && !(st.valid && st.inTime && st.volley)) {
+            planStand(this.pred, p, s, t0, this.rally.isServe, st, -1, false, overhead, false);
+            st.volleyKey = true;
+          }
         }
       }
     } else {
@@ -512,6 +524,7 @@ export class MatchSim {
     const assistOn = (this.cfg.assist ?? p.tune.positioningAssist) > 0;
     p.aiming = human && assistOn && (isServerSetup || (p.swing === SW_CHARGE && st.valid));
     const keysAim = p.aiming && !f.aimAbs;
+    this.keysMove[i] = human && !keysAim && abs(f.moveX) + abs(f.moveY) > 0.1 ? 1 : 0;
     let dx = keysAim || isServerSetup ? 0 : f.moveX * s;
     let dz = keysAim || isServerSetup ? 0 : -f.moveY * s;
     if (p.aiming) this.steerAim(p, f, s, isServerSetup);
@@ -534,23 +547,40 @@ export class MatchSim {
     for (let k = 0; k < f.evCount; k++) {
       const e = f.ev[k]!;
       // The overhead key is held as a bandeja; it becomes a smash at contact if power is held.
-      const shot = e.button === BTN_OVERHEAD ? SHOT_BANDEJA : SHOT_BUTTONS.indexOf(e.button as never);
+      const shot = e.button === BTN_OVERHEAD ? SHOT_BANDEJA : e.button === BTN_VOLLEY ? SHOT_VOLLEY
+        : SHOT_BUTTONS.indexOf(e.button as never);
       if (shot < 0) continue;
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
       if (e.press) this.press(i, shot, max(e.t, t0));
-      else if (p.swing === SW_CHARGE && p.shot === shot) this.releaseSwing(i, e.t, f);
+      else if (p.swing === SW_CHARGE && p.shot === shot) {
+        // The modifiers as they were at this release: f.held is the tick's end; undo this tick's later changes.
+        let h = f.held;
+        for (let j = f.evCount - 1; j > k; j--) {
+          const l = f.ev[j]!;
+          if (l.button === BTN_POWER || l.button === BTN_PRECISION) h = l.press ? h & ~l.button : h | l.button;
+        }
+        this.relHeld = h;
+        this.releaseSwing(i, e.t, f);
+      }
     }
     // Assisted timing: still holding when the ideal moment arrives, the swing goes off by itself.
     if (this.cfg.autoTiming && human && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
-      const ideal = this.autoIdeal(i);
+      // Not while the planned contact is still out of reach (still running there): a swing then meets nothing.
+      const focus = this.autoIdeal(i);
+      const ideal = this.focusInReach ? focus : -1;
       // Released just before Perfect, so it grades Good whatever the timing scale. Early rather than late: an
       // early swing still meets the ball at the ideal moment (an overhead stays high, a ball at the body is
       // met in front), a late one meets it late.
-      const early = (TIMING.perfect + 0.35 * (TIMING.good - TIMING.perfect)) * (this.cfg.timingScale ?? 1);
+      const early = (TIMING.perfect + 0.35 * (TIMING.good - TIMING.perfect)) * this.windowScale(i);
       if (ideal >= 0 && ideal - early < t0 + DT) this.releaseSwing(i, max(t0, ideal - early), f);
     }
-    // Safety: a swing held far too long releases itself.
-    if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) this.releaseSwing(i, t0, f);
+    // Safety: a swing held far too long releases itself, unless the ball it waits for is still on its way (a
+    // lob pressed for at the opponent's strike can hang over 3 s before the overhead: those used to go off by
+    // themselves, graded against nothing). Past the contact by a margin, or held 8 s, it goes.
+    if (p.swing === SW_CHARGE && t0 - p.chargeStart > 3) {
+      const ideal = t0 - p.chargeStart > 8 ? -1 : this.focusIdeal(i);
+      if (ideal < 0 || t0 > ideal + 0.25) this.releaseSwing(i, t0, f);
+    }
 
     p.clock = t0;
     if (!isServerSetup && this.phase !== PH_DEAD) { p.driveX = dx; p.driveZ = dz; p.move(); }
@@ -691,6 +721,42 @@ export class MatchSim {
     return p.shot === SHOT_BANDEJA && (p.swing === SW_CHARGE || p.swing === SW_COMMITTED);
   }
 
+  /** Height and modifier of the contact shotFor() decides on (fields: doubles passed as arguments get boxed). */
+  private shotHeight = 0;
+  private shotMod = 0;
+
+  /**
+   * The shot a player's key and modifier make of a contact at shotHeight, in the air or not. One place for
+   * contact() and for judging the release (each shot has its own timing windows).
+   */
+  private shotFor(p: Player, inAir: boolean): number {
+    const t = p.tune;
+    const y = this.shotHeight;
+    const k = p.shot;
+    if (k === SHOT_BANDEJA) {
+      // Overhead key: a bandeja, a smash with power held, a víbora with precision held. A ball that has dropped
+      // too low is sliced instead.
+      if (y >= t.overheadHeight - 0.3) return this.shotMod === MOD_POWER ? SHOT_SMASH : this.shotMod === MOD_PRECISION ? SHOT_VIBORA : SHOT_BANDEJA;
+      return inAir ? SHOT_VOLLEY : SHOT_SLICE;
+    }
+    if (k === SHOT_VOLLEY) {
+      // Volley key: a punch volley in the air (Space: flat and hard, by the power modifier); a ball above the
+      // head is met as an overhead, and a ball that has bounced after all is blocked back as a short slice.
+      if (y >= t.overheadHeight) return this.shotMod === MOD_POWER ? SHOT_SMASH : SHOT_BANDEJA;
+      return inAir ? SHOT_VOLLEY : SHOT_SLICE;
+    }
+    if (y >= t.overheadHeight && k !== SHOT_LOB && k !== SHOT_DROP) return k === SHOT_SLICE ? SHOT_BANDEJA : SHOT_SMASH;
+    if (inAir && (k === SHOT_DRIVE || k === SHOT_SLICE)) return SHOT_VOLLEY;
+    // Topspin key with precision: a chiquita, soft and dipping to the feet of the players at the net.
+    if (k === SHOT_TOPSPIN && this.shotMod === MOD_PRECISION) return SHOT_CHIQUITA;
+    return k;
+  }
+
+  /** The player is holding (or has just released) the volley key. */
+  private goingVolley(p: Player): boolean {
+    return p.shot === SHOT_VOLLEY && (p.swing === SW_CHARGE || p.swing === SW_COMMITTED);
+  }
+
   /** Pull towards the planned hitting spot: light while the player steers, full while the keys are aiming. */
   private assist(p: Player, f: InputFrame, full: boolean): void {
     this.assistX = 0;
@@ -821,11 +887,17 @@ export class MatchSim {
     this.tossIdeal = apex >= 0 ? pr.t[apex]! + 0.04 : this.time + 0.5;
   }
 
+  /** The buttons held at the release being handled (-1: f.held). */
+  private relHeld = -1;
+
   private releaseSwing(i: number, t: number, f: InputFrame): void {
     const p = this.players[i]!;
     const team = p.team;
     p.release = t;
-    p.mod = (f.held & BTN_POWER) !== 0 ? MOD_POWER : (f.held & BTN_PRECISION) !== 0 ? MOD_PRECISION : MOD_NONE;
+    const held = this.relHeld >= 0 ? this.relHeld : f.held;
+    this.relHeld = -1;
+    p.mod = (held & BTN_POWER) !== 0 ? MOD_POWER : (held & BTN_PRECISION) !== 0 ? MOD_PRECISION : MOD_NONE;
+    p.heldMod = p.mod;
     const a = this.aim[i]!;
     if (!this.ai[i] && (this.cfg.assist ?? p.tune.positioningAssist) > 0) {
       // Human with the aim target: it was steered while charging (or put under the mouse).
@@ -840,9 +912,10 @@ export class MatchSim {
     a.x = f.moveX;
     a.y = f.moveY;
     // The timing-window setting is a human accessibility aid; AI players are always judged on the real windows.
-    const scale = this.ai[i] ? 1 : this.cfg.timingScale ?? 1;
+    let scale = this.ai[i] ? 1 : this.cfg.timingScale ?? 1;
 
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) {
+      if (!this.ai[i]) scale *= SHAPES[SHOT_SERVE]!.timing ?? 1;
       const delta = t - this.tossIdeal;
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
@@ -860,7 +933,7 @@ export class MatchSim {
     const s = this.side(team);
     const mustBounce = this.rally.isServe;
     const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
-      p.shot === SHOT_BANDEJA);
+      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY);
     let w: ContactWindow | null = null;
     for (let k = 0; k < n; k++) {
       const c = this.windows[k]!;
@@ -870,6 +943,13 @@ export class MatchSim {
     if (!w || this.rally.hitter === team) {
       this.whiff(i, t);
       return;
+    }
+    // Each shot has its own windows: a punch volley barely turns the face, a víbora brushes across the ball at speed.
+    // Humans only for now: the AI's timing spread was fitted with one window for every shot, and Phase 4 refits it.
+    if (!this.ai[i]) {
+      this.shotHeight = w.height;
+      this.shotMod = p.mod;
+      scale *= SHAPES[this.shotFor(p, w.volley)]!.timing ?? 1;
     }
     const delta = t - w.ideal;
     p.timingDelta = delta;
@@ -895,21 +975,27 @@ export class MatchSim {
    * The timing ring, the meter and assisted timing all read this. -1 if there is none.
    */
   focusIdeal(i: number): number {
+    // Every field this sets is set on every path: the HUD and the cue call this between steps, and the sim reads
+    // focusHeight / focusVolley (assisted timing), so nothing a render-side call leaves behind may differ.
+    const st = this.stand[i]!;
     this.focusInReach = true;
+    this.focusHeight = st.valid ? st.by : 1;
+    this.focusVolley = st.valid && st.volley;
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) return this.tossIdeal;
     // Doubles: no cue for a ball the partner is taking (holding a shot key claims it, and then it is ours).
     if (this.doubles && this.taker[this.players[i]!.team] !== i) return -1;
     const n = this.windowsFor(i, this.focusWins);
-    const st = this.stand[i]!;
     let best = -1;
     let bestGap = 1e9;
     for (let k = 0; k < n; k++) {
       const w = this.focusWins[k]!;
       if (st.valid) {
         const gap = st.t < w.start ? w.start - st.t : st.t > w.end ? st.t - w.end : 0;
-        if (gap < bestGap) { bestGap = gap; best = w.ideal; }
+        if (gap < bestGap) { bestGap = gap; best = w.ideal; this.focusHeight = w.height; this.focusVolley = w.volley; }
       } else if (w.ideal >= this.time - 0.05 && (best < 0 || w.ideal < best)) {
         best = w.ideal;
+        this.focusHeight = w.height;
+        this.focusVolley = w.volley;
       }
     }
     // Not in reach of the planned contact yet (still running there): cue the planned moment itself.
@@ -920,6 +1006,23 @@ export class MatchSim {
 
   /** Set by focusIdeal: false while the planned contact is still out of reach from where the player is. */
   focusInReach = true;
+  /** Set by focusIdeal: the height of the focused contact and whether it is in the air. */
+  private focusHeight = 1;
+  private focusVolley = false;
+
+  /**
+   * The timing-window scale for the swing player i is holding: the timing setting (humans) times the shot's own
+   * windows (`timing` in data/shots.json), for the contact the cue is showing. Call after focusIdeal(i).
+   */
+  windowScale(i: number): number {
+    const p = this.players[i]!;
+    const base = this.ai[i] ? 1 : this.cfg.timingScale ?? 1;
+    if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) return base * (SHAPES[SHOT_SERVE]!.timing ?? 1);
+    if (p.swing !== SW_CHARGE) return base;
+    this.shotHeight = this.focusHeight;
+    this.shotMod = p.heldMod;
+    return base * (SHAPES[this.shotFor(p, this.focusVolley)]!.timing ?? 1);
+  }
 
   /** `reach` > 0: the swing was on time but the ball was this far away (out of reach). */
   private whiff(i: number, t: number, reach = 0): void {
@@ -954,17 +1057,9 @@ export class MatchSim {
     }
 
     // Which shot actually comes out: overheads and volleys are picked from the situation.
-    let shot = p.shot;
-    if (serving) shot = SHOT_SERVE;
-    else if (p.shot === SHOT_BANDEJA) {
-      // Overhead key: a bandeja, a smash with power held, a víbora with precision held. A ball that has dropped
-      // too low is sliced instead.
-      if (b.pos.y >= t.overheadHeight - 0.3) shot = p.mod === MOD_POWER ? SHOT_SMASH : p.mod === MOD_PRECISION ? SHOT_VIBORA : SHOT_BANDEJA;
-      else shot = this.rally.bounces === 0 ? SHOT_VOLLEY : SHOT_SLICE;
-    } else if (b.pos.y >= t.overheadHeight && shot !== SHOT_LOB && shot !== SHOT_DROP) shot = shot === SHOT_SLICE ? SHOT_BANDEJA : SHOT_SMASH;
-    else if (this.rally.bounces === 0 && (shot === SHOT_DRIVE || shot === SHOT_SLICE)) shot = SHOT_VOLLEY;
-    // Topspin key with precision: a chiquita, soft and dipping to the feet of the players at the net.
-    else if (shot === SHOT_TOPSPIN && p.mod === MOD_PRECISION) shot = SHOT_CHIQUITA;
+    this.shotHeight = b.pos.y;
+    this.shotMod = p.mod;
+    const shot = serving ? SHOT_SERVE : this.shotFor(p, this.rally.bounces === 0);
 
     // Target.
     const c = this.world.court;
@@ -1021,9 +1116,10 @@ export class MatchSim {
     this.emitP(E_HIT, i, shot, p.grade, this.res.speed, b.pos.x, b.pos.y, b.pos.z);
     this.wallsSinceBounce = 0;
     this.pred.compute(this.world, b, this.time, 0);
-    // The opponents split-step as the ball is struck.
+    // The opponents split-step as the ball is struck (a human already pushing a direction goes instead: a forced hop
+    // would hold their keys for its airtime).
     for (let o = 1 - team; o < this.players.length; o += 2) {
-      if (this.players[o]!.trySplitStep(this.time)) this.emitP(E_SPLIT, o);
+      if (this.keysMove[o] === 0 && this.players[o]!.trySplitStep(this.time)) this.emitP(E_SPLIT, o);
     }
     this.taker[1 - team] = -1;
     this.takerVersion[1 - team] = -1;
@@ -1137,7 +1233,7 @@ export class MatchSim {
     // Same look-back as the release is judged with: windows must include the moments just gone, or the ideal
     // of a window you are already in slides forward with the clock and the cue never closes.
     return findWindows(this.pred, p.pos.x, p.pos.z, this.side(team), this.rally.isServe, 1, p.tune, out, this.time - RELEASE_LOOKBACK,
-      this.goingOverhead(p));
+      this.goingOverhead(p), this.goingVolley(p));
   }
 
   /** Fingerprint of the full sim state (determinism checks). */
@@ -1151,7 +1247,7 @@ export class MatchSim {
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
-        .num(p.aimTouched ? 1 : 0);
+        .num(p.aimTouched ? 1 : 0).num(p.heldMod).num(p.splitAt).num(p.pushFrom);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);

@@ -3,7 +3,7 @@
 // which contact you are going for. Pure sim code, allocation-free.
 import type { Prediction } from '../ball/predict.ts';
 import type { Player } from './player.ts';
-import { heightCost, nearImpact, overheadCost } from '../contact/windows.ts';
+import { heightCost, nearImpact, overheadCost, volleyCost } from '../contact/windows.ts';
 import { abs, clamp, sqrt } from '../core/smath.ts';
 
 export interface StandPlan {
@@ -24,6 +24,8 @@ export interface StandPlan {
   volley: boolean;
   /** Planned as an overhead (the player is holding the overhead key). */
   overhead: boolean;
+  /** Planned for the volley key (the plan is a volley if one can be reached in time; see `volley`). */
+  volleyKey: boolean;
   /** The player can get there in time (false: the best try, out of time). */
   inTime: boolean;
   /** Prediction version the plan was made from. */
@@ -31,13 +33,21 @@ export interface StandPlan {
 }
 
 export function makeStandPlan(): StandPlan {
-  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, inTime: false, version: -1 };
+  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, volleyKey: false, inTime: false, version: -1 };
 }
 
 /** Margin kept between the ball's path and the body (on top of the body radius). */
 const BODY_CLEAR = 0.2;
 /** Depth band in front of the back glass where hitting the ball before it reaches the glass is cramped. */
 const GLASS_BAND = 1.7;
+/**
+ * Volleys are met with a reach or a step, not from set feet: the ball anywhere from VOLLEY_REACH_MIN to
+ * VOLLEY_REACH_MAX to the side of the body is in reach (the arm and racket reach about 1.35 m; the comfortable punch
+ * is nearer), met VOLLEY_FRONT in front of the body.
+ */
+const VOLLEY_REACH_MIN = 0.35;
+const VOLLEY_REACH_MAX = 1.15;
+const VOLLEY_FRONT = 0.35;
 
 /**
  * Pick the contact the player can reach in time with the best height. Deep balls that will come off the back
@@ -47,10 +57,13 @@ const GLASS_BAND = 1.7;
  * the player running back and forth), and with `only` set nothing else is considered (close to contact).
  * `overhead`: the player is holding the overhead key: plan to take the ball high, in the air if need be,
  * standing under it with the ball just in front and to the racket side.
+ * `volleyKey`: the player is holding the volley key: only contacts before the bounce, at volley height, met as
+ * early as the run allows (cutting the ball off closes the angles). If none can be reached in time the caller
+ * plans again without it.
  */
 export function planStand(
   pr: Prediction, p: Player, side: number, now: number, mustBounce: boolean, out: StandPlan, keep: number, only: boolean,
-  overhead: boolean,
+  overhead: boolean, volleyKey = false,
 ): boolean {
   const t = p.tune;
   const backZ = side > 0 ? p.maxZ : -p.minZ; // depth of the back limit (just in front of the glass)
@@ -66,9 +79,10 @@ export function planStand(
   out.valid = false;
   out.version = pr.version;
   out.overhead = overhead;
+  out.volleyKey = volleyKey;
   const lateral = overhead ? t.overheadReach : t.reachComfort;
   const behind = overhead ? 0.3 : 0.12;
-  const yMax = overhead ? t.contactMaxHeight - 0.05 : 2.6;
+  const yMax = overhead ? t.contactMaxHeight - 0.05 : volleyKey ? t.overheadHeight + 0.15 : 2.6;
   for (let i = 0; i < pr.n; i++) {
     const ti = pr.t[i]!;
     const kept = keep >= 0 && abs(ti - keep) <= 0.15;
@@ -78,13 +92,26 @@ export function planStand(
     const z = pr.z[i]!;
     const b = pr.bounces[i]!;
     if (z * side < 0.3 || b > 1 || (mustBounce && b === 0) || y < 0.3 || y > yMax) continue;
+    if (volleyKey && b !== 0) continue;
     if (nearImpact(pr, i)) continue;
     const fhX = x - side * p.handed * lateral;
     const bhX = x + side * p.handed * lateral;
     // Overheads are hit on the racket side (a backhand overhead is a last resort).
-    const useFh = overhead || abs(fhX - p.pos.x) <= abs(bhX - p.pos.x) + 0.6;
-    const sx = clamp(useFh ? fhX : bhX, p.minX, p.maxX);
-    const sz = clamp(z + side * behind, p.minZ, p.maxZ);
+    let useFh = overhead || abs(fhX - p.pos.x) <= abs(bhX - p.pos.x) + 0.6;
+    let sx = clamp(useFh ? fhX : bhX, p.minX, p.maxX);
+    let sz = clamp(z + side * behind, p.minZ, p.maxZ);
+    if (volleyKey) {
+      // Stay put if the ball passes within reach; otherwise the smallest step that brings it there, on the side
+      // the player already is (forehand when it comes straight at them).
+      const off = p.pos.x - x;
+      const fhSign = -side * p.handed;
+      const sg = abs(off) < 0.1 ? fhSign : off > 0 ? 1 : -1;
+      const a = abs(off);
+      sx = clamp(a < VOLLEY_REACH_MIN ? x + sg * VOLLEY_REACH_MIN : a > VOLLEY_REACH_MAX ? x + sg * VOLLEY_REACH_MAX : p.pos.x, p.minX, p.maxX);
+      useFh = sg === fhSign;
+      const z0 = z + side * VOLLEY_FRONT;
+      sz = clamp(abs(p.pos.z - z0) < 0.4 ? p.pos.z : z0 + (p.pos.z > z0 ? 0.4 : -0.4), p.minZ, p.maxZ);
+    }
     const dx = sx - p.pos.x;
     const dz = sz - p.pos.z;
     const dist = sqrt(dx * dx + dz * dz);
@@ -98,14 +125,17 @@ export function planStand(
       p.runTime();
       // Stopping at the spot takes v / 2a beyond running through it (braking at 0.8 of the limit, as the AI and
       // the assist do).
-      need = p.runT + p.runV / (1.6 * t.brake) + (dist > 0.4 ? (kept ? 0.05 : 0.1) : 0.05);
+      // A volley is met on the move if need be (a stretch volley): no stop, no setting the feet.
+      need = volleyKey ? p.runT + 0.03 : p.runT + p.runV / (1.6 * t.brake) + (dist > 0.4 ? (kept ? 0.05 : 0.1) : 0.05);
     }
     const slack = ti - now - need;
     const afterWall = pr.walls[i]! > 0 && b === 1;
     if (slack >= 0) {
-      let cost = (overhead ? overheadCost(y, t) : heightCost(y, t.overheadHeight)) + 0.03 * (ti - now);
+      let cost = overhead ? overheadCost(y, t) + 0.03 * (ti - now)
+        : volleyKey ? volleyCost(y) + 0.25 * (ti - now)
+        : heightCost(y, t.overheadHeight) + 0.03 * (ti - now);
       if (kept) cost -= 0.35;
-      if (!overhead) {
+      if (!overhead && !volleyKey) {
         // Heading into the back glass and already deep: let it come off the glass instead.
         if (wallIdx >= 0 && i < wallIdx && b === 1 && abs(z) > backZ - GLASS_BAND) cost += 0.6;
         if (afterWall) cost -= 0.1;

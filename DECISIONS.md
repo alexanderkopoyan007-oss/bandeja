@@ -201,3 +201,177 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   directly (`FIO[0] = x; expF(); FIO[0]`), as do the net's and the cloth step's; no double crosses a call there.
   Singles 3-5, doubles 6-7, avatars 4-5 over 6 runs (budget 10); the junction search is skipped more than 20 cm
   from a second surface.
+
+## Phase 2: game feel
+- **Values live in FEEL.md.** Every feel number (timing windows, volley reach, movement, split-step, sound,
+  rumble, camera) is listed there with where it lives and why; this section is the decisions and what they did.
+- **Input latency: render the present, not one tick behind.** The sim already took key events at their exact
+  timestamps (a release is judged when it happened), but the render drew between the last two ticks *behind*
+  now, adding a tick (8.3 ms) before a key's effect could be seen. The loop now steps until the sim is at or just
+  past now and blends back to now (`?runahead=0` restores the old loop). `tools/latency.mjs` measures key → used
+  by the sim → frame drawn → GPU done in both modes (results: FEEL.md).
+- **The volley gets its own key (N), as the owner asked.** Holding it plans the incoming ball in the air
+  (`planStand(volleyKey)`) with a volley's comfortable height (waist to shoulder) and a reach band instead of set
+  feet: volleys are played on the move, met with a reach or a step. A volley planned too late is blocked off the
+  bounce. The first version planned volleys like groundstrokes (stop, set the feet) and most were late; the
+  reach band fixed it. Its test moved from singles to doubles: a net player in singles faces passing shots 2.4-3.2 m
+  wide, which no volley plan should chase. Result (12 seeds x 120 s): a doubles net player takes 80% of balls in
+  the air with N against 36% with the drive key, and under 5% of their shots lose the point either way (3 of 162
+  with N, 1 of 174 with the drive key; 5 seeds gave 0 and 1, which proved nothing). Misses were not counted: see
+  the fresh-eyes round.
+- **Each shot has its own timing windows.** The tolerance of a contact is how far the face turns per millisecond,
+  so the windows scale with the square root of the face's angular speed against the drive's (capped at 1.35):
+  a punch volley 1.35x (the cap), a lob 1.19x, a bandeja 0.84x, a víbora 0.76x, a smash 0.71x; every value is
+  that derivation except the drop, held at 1.2 (a touch shot: depth control is its difficulty) (FEEL.md has the
+  table; the first version tuned a few round the derivation, the víbora down to 0.65, for no measured reason). The
+  cue ring, the HUD's timing meter and auto-timing all use the shot the release is heading for (`windowScale`),
+  including the modifier being held (`Player.heldMod`, hashed). Humans only for now: the AI's timing spread was
+  fitted with one window for every shot, and the per-shot windows moved its error mix away from the pros (below);
+  Phase 4 refits the AI with them on.
+- **The split-step is real, and a standstill is heavy.** The old split-step was a 1.35x acceleration boost for
+  0.35 s. The data say otherwise: the hop is airborne about 142 ms (no grip), and its value is getting going, not
+  extra acceleration (a 1.35x boost would need 11.5 m/s², past what the shoe's grip allows). Now force builds from
+  20% to full over 0.3 s from a static stance, the airborne hop gives no push, and the landing pre-loads the legs
+  (no build-up for 0.3 s after it). Calibrated (scratch scripts, then `tests/sim/splitstep.test.ts`): a target
+  1-2.5 m away is reached 108-117 ms (11-16%) sooner with the split-step (measured: 104 ms, Uzu 2009; 13.1% over
+  2.70 m, Nieminen 2014, where the game gives about 10%); with a 170 ms decision the push starts 175 ms after the
+  opponent's contact, the feet have moved 1 cm by 225 ms and 5 cm by 283 ms (tennis, first foot movement:
+  266-311 ms). A human already pushing a direction when the opponent strikes doesn't hop (a forced hop would hold
+  their keys for 142 ms; the verifier measured them arriving 17-33 ms later than without it). The planner adds the build-up and
+  remaining airtime to its run times (within 40 ms of the simulated arrival, tested). The avatar's hop is the
+  ballistic 2.5 cm for 142 ms (was a 6 cm lift).
+- **Two V8 traps on the way.** A tuning field read only on a rare branch had no type feedback there, and reaching
+  it deoptimised `move()` mid-rally: every tuning value `move()` and `startLag()` use is read up front. And a
+  double returned from `startLag()` would be boxed: it writes a field (`lagT`). The singles allocation spikes
+  that remained were the Phase 1 exp() trap (fixed there).
+- **An AI bug, found by a test: modifiers stayed held all match.** The AI's input frame is reused and
+  `InputFrame.clear()` leaves `held` alone (a keyboard sets it each frame), so after an AI's first smash it held
+  power for every later shot, and after a víbora, precision. The styles test caught it when the split-step changed
+  where overheads are taken: every style's overheads had drifted to víboras (El Relojero 53%, La Serpiente 55%),
+  so the style made no difference. `SimpleAi.think` now clears its held bits each tick. La Serpiente plays víboras
+  on 33% of her overheads, El Relojero 8%; the test's bar goes back to 1.4x (Phase 1 had lowered it to 1.25 on this
+  bug's account).
+- **Test samples enlarged, not bars lowered** (overheads in `assist.test.ts`): 5 matches gave 20-25 lobs for an 85%
+  bar, 4 gave 13 víboras for an 80% one, 12 gave 36-45 smashes against a 40-lob floor; 8, 12 and 16 matches
+  (those sizes were already in Phase 1's last commit; Phase 2 kept them).
+  The víbora bar was first lowered to 72% on a wrong reading (that its narrow window made it miss); the verifier
+  found the misses were swings the 3 s "held too long" safety had let off by themselves, graded against nothing
+  (the bot, like the HUD's hint, holds O from the opponent's strike, and a lob can hang longer than 3 s). A held
+  swing now waits while its ball is still coming (released 0.25 s past the contact, or at 8 s); with assisted
+  timing all 131 víboras over 30 matches grade Good and land, and the bar is 90%.
+- **Hit feedback.** Racket sound by contact quality (WebAudio, synthesised: a centred hit short and bright, a
+  mistimed one duller with a frame knock; loudness by ball speed; played at the event's exact time), a camera kick
+  on smashes (up to 1.2° of push-in and a 2 cm jolt over a third of a second), and gamepad support with rumble
+  (a crisp tap for a clean hit, a buzz for a mishit, a thump for a smash). The timing readout (grade and ms
+  early/late) was already there and is unchanged; the owner asked not to restyle the cues without seeing them.
+  All tuning by ear and feel (FEEL.md); Phase 6 does the full soundscape.
+- **Verifier round** (independent, read-only; it re-ran every claim, the citations included). Fixed, beyond what
+  is written into the bullets above:
+  - *Run-ahead could strike the ball up to a tick late* (medium): a release arriving for a moment the sim had
+    already run past had its contact moved to the next tick (11-15% of releases at 60 Hz, 23-30% at 120 Hz, median
+    2.3 ms late, and anything in that tick, a body hit, already decided). While a swing is held, the tick holding
+    its contact now waits until now reaches it (`Game.tick`). Not enough: see the fresh-eyes round.
+  - *Gamepad timing* (medium): a pad's timestamp is its latest report of anything, so it is now kept between the
+    last poll and now (a stale value landed an event far in the past); triggers use their value with hysteresis
+    (held past 50%, let go below 40%) instead of `pressed`, which Chromium flips early in the travel.
+  - *Sprint text* (medium): "5 m from rest in about 1.3 s" was never true (1.45 s before Phase 2, 1.56 s with the
+    build-up). The acceleration stays (the match-data peaks are already below the game's); the text says what the
+    game does, and the padel sprint check is an open question.
+  - Low: the avatar picked smash or chiquita during the charge from the previous release's modifier (now the held
+    one); `splitAt`/`pushFrom` are hashed; the smash rumble is capped at its stated range and its comment matches
+    the code; the camera kick starts in the frame that shows the hit; citation labels (Brenner & Smeets' 5-7 ms
+    are untrained people; Miralles used WIMU Pro GNSS + LPS); split-step numbers restated (11-16% at 1-2.5 m, push
+    at 175 ms, 5 cm at 283 ms, 1.35 x 8.5 = 11.5 m/s²).
+  - Left: `focusHeight` can stay from an earlier window while the planned contact is still out of reach (the cue
+    shows the plan's moment then; harmless today); the HUD and cue call `focusIdeal`/`windowScale`, which write
+    sim scratch fields (no sim state); a pad press may not unlock audio (OPEN_QUESTIONS.md). The first two were
+    not harmless: see the fresh-eyes round.
+- **Fresh-eyes round** (independent, read-only, from scratch). Fixed:
+  - *Run-ahead still struck late* (high): holding back the tick with the ideal moment covers releases before the
+    ideal only; one after it meets the ball at its own moment, and that tick was still run ahead. An emulation of
+    `Game.tick` against the sim (releases at ideal ± 30 ms, delivered the next frame) still had 6-34% of releases
+    late, up to 7.7 ms. While the human holds a swing the sim is now not run ahead at all (checked in the loop):
+    0 late at 60, 120 and 144 Hz. The cost is at most a tick of display latency while a swing is held.
+  - *The HUD changed the sim* (medium, determinism): `focusIdeal` left `focusHeight`/`focusVolley` from an
+    earlier call on one path, assisted timing read them, and the HUD and cue call it between steps, so with
+    `?autotime=1` the same seed and inputs played out differently (seed 12 parted at 71.5 s). Every field it sets
+    is now set on every path, from the plan when no window is found; test: the volley matches, with and without
+    the cue's calls between steps, hashed through the match (a difference inside a rally can heal at the next
+    point, so the end hash alone missed it).
+  - *Assisted timing swung at nothing* (medium): it let a held swing go `early` before the planned moment even
+    while the player was still running there, out of reach (volley plans come only 30 ms before the contact), so
+    the volley key missed 32 times against 14 for the drive key, and the volley test did not count misses. It now
+    waits until the contact is in reach; the test counts misses and the points lost straight after them: 0 misses
+    either way, 1 of 216 swings losing the point with N and 2 of 189 with J.
+  - Low: every player's clock is the tick's at the top of `step()` (plans read it before `applyInput` set it, so
+    every plan used the previous tick's time and the first re-plan after a strike missed the hop's airtime); a
+    gamepad unplugged with a button held lets go of it and forgets its buttons (the swing waited for the 3-8 s
+    safety, and the next press after reconnecting was swallowed); pad events go into the queue in time order (one
+    stamped before a queued key event landed a tick late); the sample-size slip above.
+- **Gameplay effect** (AI doubles, 24 seeds x 300 s, `tools/point-mix.ts`; Phase 1 after review round 2 → Phase 2
+  after the verifier's fixes): 317 → 331 points, median rally 11 → 10 shots, untouched winners 47.0 → 50.2%,
+  own-side errors 46.1 → 42.6%, balls on an opponent 2.5 → 3.0%. A small move away from the pros (winners 34-42%,
+  errors about 60%), left for Phase 4. The first write-up said 328 → 297 and 43.9 → 56.2% winners: its Phase 1
+  baseline didn't reproduce (see Phase 1), and most of the shift it found was the per-shot windows applied to the
+  AI (volleys, a third of all shots, got 1.35x the window, so the AI missed fewer). The windows now apply to humans
+  only until Phase 4 refits the AI's timing with them on. After the fresh-eyes round (the players' clock): 340
+  points, median 9, winners 49.7%, own-side errors 44.7%, balls on an opponent 3.2%.
+- **Fresh-eyes round 2** (independent, read-only; 8 setups x 4 seeds x 120 s compared tick by tick for render-side
+  calls, an emulation of `Game.tick` at 60-165 Hz, 886k queue events). Fixed:
+  - *A held swing was drawn unblended* (high on 120 Hz and faster screens, new in round 1's fix): with the sim kept
+    at or behind now while a swing is held, the render drew the newest tick as it was, so frames with no new tick
+    repeated (17% at 144 Hz, 27% at 165 Hz, 5-25% at 120 Hz by frame phase) and the rest jumped by whole ticks,
+    for about 58% of rally time (the HUD tells you to hold from the opponent's strike). The picture is now drawn a
+    tick behind while a swing is held, blended, the lag eased in and out at 25% of frame time and kept until the
+    contact: 0 repeated frames at 60-165 Hz in the emulation, still 0 late strikes. A release is drawn a tick later
+    than a press (8.3 ms; it was 4-6 ms on average unblended).
+  - *A modifier let go just after the shot key was lost* (medium): `buildInput` sent the keys as they were at frame
+    time and the release read power and precision from that, so Space let go 0-6 ms after O made every smash a
+    bandeja (28 of 49 at 12 ms; víbora and chiquita with Shift, and the pad triggers, the same). The held state is
+    now built from the events handed to the sim (resynced from the keys when the queue is empty), and a release
+    reads the modifiers as they were at its moment (later events in the same tick undone): all smashes at 0-12 ms.
+    Test: `tests/sim/input.test.ts`.
+  - Low: with both Shift keys down, letting go of one let go of precision (a button is now held while any of its
+    keys is); the latency probe tells presses from releases.
+  - Left: the HUD meter reads `sim.time` and the ring the render time (up to a tick apart, cosmetic); unplugging
+    the pad mid-charge swings at that moment rather than cancelling (the sim has no cancel); for rollback later,
+    `Player.writeState` leaves out the half bounds and the human's stand plans are not hashed (both before Phase 2).
+- **Frame rate, Phase 1 → Phase 2** (`npm run build && npm run perf`, 30 s each, AI doubles, this M1 Max; build
+  a8f763d): medium with the CPU throttled 4x (laptop proxy) p50 2.4 → 2.4 ms, p99 4.3 → 4.1 ms, max 12.0 → 10.2
+  ms, 0 frames over 20 ms, sim p99 0.8 → 0.9 ms; high (2x pixel ratio) 539 → 498 fps, p99 8.8 → 8.8 ms, 105 → 99
+  frames over 20 ms (0.65% → 0.66%, the queue stalls M1 noted). No regression: the average at high moves ±8%
+  between runs of the same build (Phase 1's own before/after went 498 → 539 with no rendering change); p99 and
+  the stalls are the same. 42 draw calls, 473k triangles. Round 3's change is in when the loop steps, not what
+  it draws.
+- **Fresh-eyes round 3** (independent, read-only; 189 tests, typecheck, point mix 24 x 300 s, alloc over four
+  seeds, render-side determinism, the modifier fix end to end with the real `KeyboardInput`, an emulation of
+  `Game.tick` against the real sim at 60-240 Hz). Fixed:
+  - *The picture jumped at the human's release and repeated frames until the contact* (medium-high, new in round 2):
+    run-ahead resumed as soon as the swing left CHARGE while the render lag was still a tick, so the sim ran to now,
+    the clamp pulled the drawn moment forward by up to a tick in one frame (onto the hit itself when the release
+    tick is the contact tick), and an early release was drawn unblended (alpha 0) until the contact. Releases with
+    a step more than 2 ms beyond the frame: 33% at 60 Hz, 68% at 120 Hz, 63-77% at 144-165 Hz; a repeated frame in
+    21-26% at 144-165 Hz. The lag is now worked out before stepping and the sim is stepped to the drawn moment (now
+    less the lag), keeping the hold break; a dropped backlog draws from the new clock (it stepped back up to 3 ms
+    after a hitch over 100 ms). Emulation after: 0 repeated frames, 0 steps beyond the ease, 0 late strikes at 60,
+    144 and 165 Hz (the reviewer's prototype, also 0 at 75-240 Hz, with 3 ms jitter and with hitches).
+  - *The timing ring counted down on the drawn clock* (medium): while a swing is held the picture is a tick behind,
+    so a release as the ring closed was graded +20 ms at 60 Hz and +12 ms at 144 Hz (a bot with no reaction delay;
+    +10 / +4 counted on now). The ring now counts down on the clock releases are judged on (render time + lag =
+    now) and stays drawn on the ball. Its look is unchanged; only when it closes moved, by at most a tick.
+  - Left (low): a key event that reaches the page after its timestamp can strike late (1 ms transit: 1% of releases,
+    max 0.3 ms; Chrome's transit is about 1 ms); the pad and the keyboard holding the same button share one bit (one
+    letting go releases it); with `?assist=0` aim reads the movement keys at frame time, not at the release (moves
+    are axes, not queued events). In OPEN_QUESTIONS.md.
+- **Fresh-eyes round 4** (independent, read-only; an emulation of the new `Game.tick` against the real sim at 60-240
+  Hz with jitter, hitches, tab hide/show, `?runahead=0`, autotime, doubles, volley and overhead keys and 127 serves;
+  determinism without the render-side calls over ~20 runs; alloc over five seeds): **nothing Medium or above;
+  Phase 2 is verified.** No late strikes for holds of 20 ms or more at any refresh rate; a bot releasing as the
+  ring closes is graded 0.0 ms at the median. Fixed from its Low list: the ring now counts down on the sim's own
+  clock (`simNow`, or the sim's time after a dropped backlog), exact on every frame including the press frame
+  (render time + lag fell 5-8 ms behind there at 60 Hz); and a dropped backlog (a hitch over 100 ms) moves the
+  queued keys' stamps up to now (they were in the sim's past: releases graded up to 220 ms early and struck up to
+  67 ms late, 6 of 185 in the reviewer's hitch run; 0 with the clamp). Left (OPEN_QUESTIONS.md): a few repeated
+  frames while the lag eases in after a press at 165-240 Hz; taps under 15 ms can strike late; the camera kick
+  and rumble can lead the drawn hit by up to a tick; `npm run alloc` drives only AI players (a human-path bot
+  measured 7-15 GCs per 100k ticks, mean 10.2, against 8.6 on Phase 1's code: within match noise).

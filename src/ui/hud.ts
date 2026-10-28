@@ -8,7 +8,7 @@ import {
 import { REASON_TEXT, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/contact/timing.ts';
 import { SW_CHARGE } from '../sim/player/player.ts';
-import { SHAPES, SHOT_BANDEJA } from '../sim/contact/shots.ts';
+import { SHAPES, SHOT_BANDEJA, SHOT_VOLLEY } from '../sim/contact/shots.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 
 const TIMING = tuning.timing;
@@ -161,15 +161,19 @@ export class Hud {
     this.help.innerHTML = keys(
       '[W][A][S][D] move &nbsp; [J] drive &nbsp; [K] topspin (with [Shift] a chiquita) &nbsp; [L] slice &nbsp; [I] lob &nbsp; [U] drop<br>' +
       '[O] overhead for lobs: a bandeja; with [Space] a smash that can leave the court; with [Shift] a víbora<br>' +
+      '[N] volley: take it in the air and punch it; with [Space] flat and hard; [U] in the air is a drop volley<br>' +
       'Hold a shot key as the ball comes: WASD then aims the target and you run to the ball yourself<br>' +
       'Release when the closing ring meets the ring on the ball. Serve: [A]/[D] aims, press to drop, release to hit<br>' +
       'Doubles: you are the ringed player; your partner calls the balls on their side, holding a shot key takes it<br>' +
-      '[Space] power &nbsp; [Shift] precision &nbsp; [M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide',
+      '[Space] power &nbsp; [Shift] precision &nbsp; [M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide<br>' +
+      'Gamepad: stick moves &nbsp; A drive &nbsp; X topspin &nbsp; B slice &nbsp; Y lob &nbsp; d-pad drop &nbsp; LB volley &nbsp; RB overhead &nbsp; RT power &nbsp; LT precision',
     );
   }
 
   /** Size the meter's Good/Perfect zones to the timing windows (meter spans +-0.25 s). */
   setTiming(scale: number): void {
+    if (scale === this.timingShown) return;
+    this.timingShown = scale;
     const span = 0.5;
     const set = (e: HTMLElement, half: number): void => {
       const w = Math.min(100, ((2 * half * scale) / span) * 100);
@@ -179,6 +183,8 @@ export class Hud {
     set(this.zones[0]!, TIMING.good);
     set(this.zones[1]!, TIMING.perfect);
   }
+
+  private timingShown = -1;
 
   toggleHelp(): void {
     this.help.style.display = this.help.style.display === 'none' ? '' : 'none';
@@ -228,6 +234,8 @@ export class Hud {
       const p = sim.players[human]!;
       const ideal = sim.focusIdeal(human);
       if (ideal >= 0 && (p.swing === SW_CHARGE || sim.phase === PH_TOSS)) {
+        // The zones follow the shot being timed (each shot has its own windows).
+        this.setTiming(sim.windowScale(human));
         const d = sim.time - ideal; // negative = before ideal
         const frac = Math.min(1, Math.max(0, 0.5 + d / 0.5));
         this.mark.style.left = `${(frac * 100).toFixed(1)}%`;
@@ -249,6 +257,7 @@ export class Hud {
       const partners = sim.doubles && sim.taker[team] === (human ^ 2) && p.swing !== SW_CHARGE;
       if (partners) hint = sim.rally.isServe ? 'Partner receives' : 'Partner\'s ball · hold a shot key to take it';
       else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = 'Bandeja · hold [Space] to smash, [Shift] for a víbora';
+      else if (p.shot === SHOT_VOLLEY && p.swing === SW_CHARGE) hint = st.valid && st.volley ? 'Volley · hold [Space] to punch it flat' : 'Out of reach in the air · it will be blocked off the bounce';
       else if (this.lob) hint = 'Lob coming · hold [O] for an overhead';
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }

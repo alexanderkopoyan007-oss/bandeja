@@ -421,10 +421,12 @@ export class Avatar {
     if (sim.phase <= PH_TOSS && sim.score.serverPlayer() === idx) return SERVE;
     // An AI holds power or precision only as it lets go: its intent says which overhead or topspin it is.
     const ai = sim.ai[idx];
-    if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || p.mod === MOD_POWER || (ai !== null && ai !== undefined && ai.smash) ? SMASH : OVERHEAD;
+    // While the key is held the modifiers being held say it; from the release on, the ones it was released with.
+    const mod = p.swing === SW_CHARGE ? p.heldMod : p.mod;
+    if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || mod === MOD_POWER || (ai !== null && ai !== undefined && ai.smash) ? SMASH : OVERHEAD;
     if (volley) return hand > 0 ? VOLLEY_FH : VOLLEY_BH;
     const sh = p.shot;
-    if (sh === SHOT_TOPSPIN && (p.mod === MOD_PRECISION || (ai !== null && ai !== undefined && ai.chiquita))) return hand > 0 ? FH_CHIQUITA : BH_CHIQUITA;
+    if (sh === SHOT_TOPSPIN && (mod === MOD_PRECISION || (ai !== null && ai !== undefined && ai.chiquita))) return hand > 0 ? FH_CHIQUITA : BH_CHIQUITA;
     if (sh === SHOT_SLICE) return hand > 0 ? FH_SLICE : BH_SLICE;
     if (sh === SHOT_LOB) return hand > 0 ? FH_LOB : BH_LOB;
     if (sh === SHOT_DROP) return hand > 0 ? FH_DROP : BH_DROP;
@@ -842,16 +844,19 @@ export class Avatar {
     blendMasked(this.pose, tmp, this.upper);
   }
 
-  /** The split step: up 6 cm for the first 45% of it, then a 5 cm knee bend on landing. */
+  /**
+   * The split step: a ballistic hop for the sim's airborne time (g T^2 / 8 high: 2.5 cm for 142 ms), then a 5 cm
+   * knee bend as the landing loads the legs.
+   */
   private splitStep(p: Player, t: number): void {
-    const left = p.splitUntil - t;
+    const u = t - p.splitAt;
     const len = p.tune.splitStepTime;
+    const air = p.tune.splitStepAir;
     this.lift = 0;
     this.splitDrop = 0;
-    if (left <= 0 || left > len) return;
-    const u = 1 - left / len;
-    if (u < 0.45) this.lift = 0.06 * Math.sin((Math.PI * u) / 0.45);
-    else this.splitDrop = 0.05 * Math.sin((Math.PI * (u - 0.45)) / 0.55);
+    if (u < 0 || u >= len) return;
+    if (u < air) this.lift = 4.905 * u * (air - u);
+    else this.splitDrop = 0.05 * Math.sin((Math.PI * (u - air)) / (len - air));
   }
 
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */

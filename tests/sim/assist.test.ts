@@ -260,7 +260,9 @@ describe('overheads', () => {
     const b = lobs(0, 4);
     const med = (a: number[]) => a.slice().sort((x, y) => x - y)[a.length >> 1]!;
     expect(r.viboras / r.lobs).toBeGreaterThan(0.85);
-    expect(r.viboraIn / r.viboras).toBeGreaterThan(0.8);
+    // With assisted timing every one is graded Good, and at Good they land (131 of 131 over 30 matches). Before the
+    // held-swing fix a third of these went off by themselves after 3 s, graded against nothing, and 1 in 5 missed.
+    expect(r.viboraIn / r.viboras).toBeGreaterThan(0.9);
     expect(med(r.viboraSpeeds)).toBeGreaterThan(med(b.bandejaSpeeds));
     expect(med(r.viboraSpin)).toBeGreaterThan(100); // rad/s, about 1000 rpm or more
   });

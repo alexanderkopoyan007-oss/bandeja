@@ -214,6 +214,9 @@ export class PlayerView {
   }
 }
 
+const FOV = 42;
+const KICK_DECAY = 0.09;
+
 /** Broadcast camera high behind the back glass of the human's end; swings round smoothly at changes of ends. */
 export class BroadcastCamera {
   readonly camera: THREE.PerspectiveCamera;
@@ -222,10 +225,24 @@ export class BroadcastCamera {
   private to = 0;
   private turnStart = -1;
   private lookX = 0;
-  shake = 0;
+  /** The kick a smash gives the camera (FEEL.md): when, and how hard (0..1). */
+  private kickAt = -1;
+  private kickAmp = 0;
+  private fovNow = FOV;
 
   constructor(aspect: number) {
-    this.camera = new THREE.PerspectiveCamera(42, aspect, 0.1, 300);
+    this.camera = new THREE.PerspectiveCamera(FOV, aspect, 0.1, 300);
+  }
+
+  /**
+   * A smash: the shot camera's operator flinches with it. A quick push in (up to 1.2° of zoom) and a 2 cm jolt
+   * that rings down over a quarter of a second (11 Hz, 90 ms decay): felt, not seen as shake.
+   */
+  kick(strength: number, now: number): void {
+    const live = this.kickAt >= 0 ? this.kickAmp * Math.exp(-(now - this.kickAt) / KICK_DECAY) : 0;
+    if (strength <= live) return;
+    this.kickAt = now;
+    this.kickAmp = Math.min(1, strength);
   }
 
   update(sim: MatchSim, humanTeam: number, ballX: number, now: number): void {
@@ -247,8 +264,24 @@ export class BroadcastCamera {
     this.lookX += (ballX * 0.12 - this.lookX) * 0.05;
     const ca = Math.cos(this.angle);
     const sa = Math.sin(this.angle);
-    this.camera.position.set(sa * R + this.lookX * ca, 6.3, ca * R - this.lookX * sa);
-    this.camera.lookAt(this.lookX * ca * 0.8, 0.35, -ca * 1.4);
+    let jolt = 0;
+    let fov = FOV;
+    if (this.kickAt >= 0) {
+      const u = now - this.kickAt;
+      if (u > 0.35) this.kickAt = -1;
+      else {
+        const env = this.kickAmp * Math.exp(-u / KICK_DECAY);
+        jolt = 0.02 * env * Math.sin(2 * Math.PI * 11 * u);
+        fov = FOV - 1.2 * env * Math.min(1, u / 0.03);
+      }
+    }
+    this.camera.position.set(sa * R + this.lookX * ca, 6.3 + jolt, ca * R - this.lookX * sa);
+    this.camera.lookAt(this.lookX * ca * 0.8, 0.35 + jolt * 0.5, -ca * 1.4);
+    if (fov !== this.fovNow) {
+      this.fovNow = fov;
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
   }
 }
 
@@ -379,7 +412,7 @@ export class AssistView {
 
   update(
     sim: MatchSim, human: number, ball: THREE.Vector3, camera: THREE.Camera, renderTime: number, timingScale: number,
-    now: number, dt: number,
+    now: number, dt: number, cueTime = renderTime,
   ): void {
     this.approach.mesh.visible = false;
     this.target.mesh.visible = false;
@@ -429,9 +462,12 @@ export class AssistView {
     const charging = p.swing === SW_CHARGE;
     const ideal = sim.focusIdeal(human);
     if (ideal < 0 || (!charging && sim.phase !== PH_TOSS && sim.phase !== PH_RALLY)) return;
-    const left = ideal - renderTime;
+    // Counted down on the clock the release is judged on (now), not the drawn moment: while a swing is held the
+    // picture is a tick behind, and a ring closing at the drawn moment sends every release on it a tick late.
+    const left = ideal - cueTime;
     if (left > APPROACH_SHOW || left < -0.15) return;
-    const k = timingScale;
+    // The shot's own windows (a volley is easier to time than a víbora), times the timing setting.
+    const k = charging || sim.phase === PH_TOSS ? sim.windowScale(human) : timingScale;
     const a = Math.abs(left);
     const reach = sim.focusInReach;
     const col = !reach ? C_OFF : a <= TIMING.perfect * k ? C_PERFECT : a <= TIMING.good * k ? C_GOOD : C_WHITE;

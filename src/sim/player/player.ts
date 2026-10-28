@@ -30,6 +30,8 @@ export class Player {
   swing = SW_IDLE;
   shot = 0;
   mod = 0;
+  /** The modifier held right now (power, precision or none), for the shot a held swing is heading for. */
+  heldMod = 0;
   chargeStart = 0;
   release = 0;
   /** Planned contact time while committed. */
@@ -52,7 +54,14 @@ export class Player {
   /** The player has steered the aim since pressing (until then an overhead's target follows Space). */
   aimTouched = false;
 
+  /** Split-step: take-off time, and the end of it (hop and landing; the avatar draws it). */
+  splitAt = -10;
   splitUntil = 0;
+  /**
+   * When the current push from a standstill began (-1: not pushing; -1e9: no build-up, already moving or loaded by
+   * a split-step landing). Force takes time to build from a static stance; the split-step's landing pre-loads it.
+   */
+  pushFrom = -1;
   /** Right-handed = 1, left-handed = -1. */
   handed = 1;
 
@@ -111,8 +120,26 @@ export class Player {
     let ax = (wantX - this.vel.x) / dt;
     let az = (wantZ - this.vel.z) / dt;
     const sp = sqrt(this.vel.x * this.vel.x + this.vel.z * this.vel.z);
-    const boost = now < this.splitUntil ? t.splitStepBoost : 1;
-    if (sp > 0.05) {
+    // Read every tick: a tuning field first read on a rare branch has no type feedback there, and reaching it
+    // deoptimises move() mid-rally (a burst of garbage while it re-optimises).
+    const air = t.splitStepAir;
+    const preload = t.splitPreload;
+    const rampT = t.startRamp;
+    const from0 = t.startFrom;
+    // In the air during the split-step's hop: no grip, so no push, braking or turning; the feet land loaded.
+    const land = this.splitAt + air;
+    const flying = now >= this.splitAt && now < land;
+    // Force builds over startRamp from a standstill (startFrom of it at once); not when already on the move or
+    // within splitPreload of a split-step landing (the hop lands loaded).
+    if (flying) this.pushFrom = -1e9;
+    else if (len < 0.05) this.pushFrom = -1;
+    else if (this.pushFrom === -1) this.pushFrom = sp > 0.6 || now - land < preload ? -1e9 : now;
+    const ramp = now - this.pushFrom >= rampT ? 1 : from0 + ((1 - from0) * (now - this.pushFrom)) / rampT;
+    if (flying) {
+      // Ballistic: the velocity is kept.
+      ax = 0;
+      az = 0;
+    } else if (sp > 0.05) {
       const ux = this.vel.x / sp;
       const uz = this.vel.z / sp;
       // Propulsion falls with speed towards the top speed for the way the player is running (a sprint's
@@ -120,7 +147,7 @@ export class Player {
       this.qx = ux;
       this.qz = uz;
       this.topToward(lx, lz);
-      const push = t.accel * boost * (1 - sp / (this.qTop * slow));
+      const push = t.accel * ramp * (1 - sp / (this.qTop * slow));
       let along = ax * ux + az * uz;
       let cross = -ax * uz + az * ux;
       along = clamp(along, -t.brake, push > 0 ? push : 0);
@@ -131,7 +158,7 @@ export class Player {
       az = along * uz + cross * ux;
     } else {
       const a = sqrt(ax * ax + az * az);
-      const lim = t.accel * boost;
+      const lim = t.accel * ramp;
       if (a > lim) { ax *= lim / a; az *= lim / a; }
     }
     this.vel.x += ax * dt;
@@ -214,10 +241,38 @@ export class Player {
       s -= f / (fp > 0.05 ? fp : 0.05);
       if (s < 0) s = 0;
     }
-    this.runT = extra + s * tau;
+    this.startLag();
+    this.runT = extra + s * tau + this.lagT;
     FIO[0] = -s;
     expF();
     this.runV = vT - (vT - v0) * FIO[0]!;
+  }
+
+  /**
+   * Time lost to getting going, on top of the run: the rest of a split-step hop, and the build-up of force from a
+   * standstill (a linear ramp from startFrom loses (1 - startFrom) * startRamp / 2 of full push). Into lagT (a
+   * field: a double returned from a call V8 doesn't inline is boxed).
+   */
+  lagT = 0;
+  private startLag(): void {
+    const t = this.tune;
+    const now = this.clock;
+    // All tuning read up front (see move()).
+    const preload = t.splitPreload;
+    const rampT = t.startRamp;
+    const from0 = t.startFrom;
+    const land = this.splitAt + t.splitStepAir;
+    let lag = now >= this.splitAt && now < land ? land - now : 0;
+    const from = this.pushFrom;
+    if (from === -1) {
+      const moving = this.vel.x * this.vel.x + this.vel.z * this.vel.z > 0.36;
+      const loaded = lag > 0 || (now >= land && now - land < preload);
+      if (!moving && !loaded) lag += 0.5 * (1 - from0) * rampT;
+    } else if (from > -1e8 && now - from < rampT) {
+      const r = from0 + ((1 - from0) * (now - from)) / rampT;
+      lag += 0.5 * (1 - r) * (rampT - (now - from));
+    }
+    this.lagT = lag;
   }
 
   /** Turn the body to face a point (render reads `facing`). */
@@ -230,9 +285,13 @@ export class Player {
     this.facing += clamp(d, -FACE_RATE * DT, FACE_RATE * DT);
   }
 
-  /** Split-step: a small hop timed with the opponent's strike gives a quicker first step. */
+  /**
+   * Split-step: a small hop as the opponent strikes (take-off about at their contact, landing 140-150 ms later,
+   * Mecheri et al. 2019); landing loads the legs, so the first step after it needs no build-up.
+   */
   trySplitStep(now: number): boolean {
     if (this.speed() > this.tune.splitStepMaxSpeed) return false;
+    this.splitAt = now;
     this.splitUntil = now + this.tune.splitStepTime;
     return true;
   }
@@ -241,7 +300,7 @@ export class Player {
     out.push(this.pos.x, this.pos.z, this.vel.x, this.vel.z, this.facing, this.swing, this.shot, this.mod,
       this.chargeStart, this.release, this.contactTime, this.timingDelta, this.grade, this.recoverUntil,
       this.handSide, this.splitUntil, this.lastContactTime, this.lastContact.x, this.lastContact.y, this.lastContact.z,
-      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0);
+      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.heldMod, this.splitAt, this.pushFrom);
   }
 
   readState(s: number[], i: number): number {
@@ -251,6 +310,9 @@ export class Player {
     this.grade = s[i++]!; this.recoverUntil = s[i++]!; this.handSide = s[i++]!; this.splitUntil = s[i++]!;
     this.lastContactTime = s[i++]!; this.lastContact.x = s[i++]!; this.lastContact.y = s[i++]!; this.lastContact.z = s[i++]!;
     this.aimX = s[i++]!; this.aimZ = s[i++]!; this.aiming = s[i++]! === 1; this.aimTouched = s[i++]! === 1;
+    this.heldMod = s[i++]!;
+    this.splitAt = s[i++]!;
+    this.pushFrom = s[i++]!;
     return i;
   }
 }

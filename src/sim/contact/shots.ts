@@ -49,6 +49,8 @@ export interface ShotShape {
   sideRpm?: number;
   /** Short of face speed, spin is given up down to this fraction of spinRpm before pace (default 0.3). */
   spinFloor?: number;
+  /** The shot's timing windows against the drive's (smaller = harder to time). */
+  timing?: number;
 }
 
 interface ModSpec { netClear: number; speed: number; error: number }

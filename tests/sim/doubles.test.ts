@@ -199,8 +199,9 @@ describe('AI playing styles', () => {
     const share = (s: Record<string, number>, k: string) => (s[k] ?? 0) / s.all!;
     expect(share(muro, 'lob')).toBeGreaterThan(1.5 * share(martillo, 'lob'));
     const vib = (s: Record<string, number>) => (s.vibora ?? 0) / ((s.vibora ?? 0) + (s.bandeja ?? 0) + (s.smash ?? 0));
-    // Her víbora chance (x2.6) saturates near 1, so the share among all overheads can't scale with it; the ratio
-    // was 1.4-1.5 before the Phase 1 bounce tuning changed which overheads come up, 1.36 after.
-    expect(vib(serpiente)).toBeGreaterThan(1.25 * vib(reloj));
+    // (Phase 1 lowered this bar to 1.25 when the ratio came out 1.36. The cause was the AI never letting go of a
+    // modifier: after one víbora precision stayed held, so every style's overheads drifted to víboras. With that
+    // fixed in Phase 2 the ratio is about 4.)
+    expect(vib(serpiente)).toBeGreaterThan(1.4 * vib(reloj));
   }, 300_000);
 });
