@@ -18,9 +18,10 @@ const asset = parsePlayerAsset(raw.buffer.slice(raw.byteOffset, raw.byteOffset +
 
 const runs: Array<{ seed: number; lefty: boolean; r: QaReport }> = [];
 for (let s = 1; s <= seeds; s++) {
-  const lefty = s % 3 === 0;
+  // Left-handers on seeds 3, 5, 6, ... (seed 5's feet flipped 165° before the step fix; seed 3 never showed it).
+  const lefty = s % 3 === 0 || s % 5 === 0;
   const t0 = performance.now();
-  const r = runAnimQa(asset, { seed: s, seconds, lefty: lefty ? [false, true, true, false] : [], inertial });
+  const r = runAnimQa(asset, { seed: s, seconds, lefty: lefty ? [false, true, true, false] : [], inertial, repeatEvery: 7 });
   runs.push({ seed: s, lefty, r });
   process.stderr.write(`seed ${s}${lefty ? ' (left-handers 1, 2)' : ''}: ${(performance.now() - t0) / 1000 | 0} s\n`);
 }
@@ -42,6 +43,7 @@ for (const { seed, r } of runs) L.push(`| ${seed} | ` + groups.map((g) => { cons
 L.push('', '## Pops by joint, and the worst moments', '');
 for (const { seed, r } of runs) {
   L.push(`- Seed ${seed}: ${r.pops.count} pops ${JSON.stringify(r.pops.byJoint)}; worst: ` + r.pops.worst.slice(0, 6).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)} ${f(e.value)}°`).join(', '));
+  L.push(`  fastest one-frame turns: ` + r.pops.turnWorst.slice(0, 4).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)} ${f(e.value)}°`).join(', ') + `; the same moment drawn twice (${r.repeat.frames} frames): ${f(r.repeat.maxDeg, 3)}° at most`);
   L.push(`  clipping worst: ` + r.clip.worst.slice(0, 8).map((e) => `${e.what} p${e.player} t=${f(e.t, 2)}${e.value ? ' ' + f(e.value * 100) + ' cm' : ''}`).join(', '));
   L.push(`  serve (${(r.serve.frames / 120).toFixed(0)} s of serving): racket in body ${pct(r.serve.racketBody)}, hand in torso ${pct(r.serve.handTorso)}, legs through ${pct(r.serve.legs)}, pops ${f(r.serve.popsPerMinute, 1)} per minute`);
   L.push(`  contact by shot: ` + Object.entries(r.contact.byShot).map(([k, v]) => `${k} ${v.n} (p50 ${f(v.p50, 3)}, p90 ${f(v.p90, 3)})`).join(', '));

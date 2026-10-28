@@ -105,7 +105,7 @@ const TIMING: TimingWindows = tuning.timing;
  * The serve's ball (docs/research/serve-and-strokes-motion.md §1.3-1.4, 4.1): held at the free hand's release point,
  * ahead of the body and out to the racket side, where it will bounce (pushed straight down, the bounce spot is the
  * contact spot in plan: 0.50 m ahead of the body's centre, the measured 0.52 m for trained players, and 0.55 m out),
- * then pushed into the turf at SERVE_PUSH m/s, as most professionals do: it comes back up to about 0.8 m, just under
+ * then pushed into the turf at SERVE_PUSH m/s, as most professionals do: it comes back up to about 0.88 m, just under
  * the waist, about 0.64 s after the release. A plain drop from the hand peaks near the knee (the beginner's serve).
  */
 const SERVE_HAND_HEIGHT = 0.95;
