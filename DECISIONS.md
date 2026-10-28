@@ -1112,3 +1112,8 @@ What was found and fixed, with the commands that reproduce it: `docs/qa/REPORT.m
 - **The rally's state and the serve's drop point are in `MatchSim.hash()`** (new state goes in the hash).
 - **Not built**: out-of-court play (OPEN_QUESTIONS.md), touching the net (players are kept 0.3 m off it), a hall
   ceiling.
+- **Frame rate** (Phase 7 changed no rendering; `npm run perf` on the Phase 7 build, measured with nothing else
+  running: an earlier run beside the test suite read 12 ms p99 on medium-4x): medium-4x (laptop proxy) p50 6.6 ms,
+  p99 9.8 ms, no frame over 20 ms, 1% low 84 fps (Phase 6: p50 7.1, p99 9.8); high (2x pixel ratio, frame limit
+  off) p50 3.8 ms, p99 20.6 ms, 1.03% of frames over 20 ms, 1% low 36 fps (Phase 6: p99 29.0, 1.95%). The high
+  run's spikes are the GPU queue stalls seen since M1 with the frame limit off; they vary a lot between runs.
