@@ -12,7 +12,8 @@
 // bones: a point that close to the bone is inside the body by any reading).
 // Not in the shipped game: tools/anim-check.ts and tests/render/animQa.test.ts use it.
 import * as THREE from 'three/webgpu';
-import { MatchSim, E_HIT, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
+import { MatchSim, E_HIT, PH_RALLY, PH_SETUP, PH_TOSS, type MatchConfig } from '../../sim/match.ts';
+import type { InputFrame } from '../../sim/input.ts';
 import { SHOT_KEYS } from '../../sim/contact/shots.ts';
 import { Avatar } from './avatar.ts';
 import type { PlayerAsset } from './asset.ts';
@@ -30,6 +31,14 @@ export interface QaOptions {
   inertial?: boolean;
   /** Every this many frames draw the same moment again (game.ts does, on fast displays): nothing may move. 0: off. */
   repeatEvery?: number;
+  /** The match itself (QA army): court, format, styles, levels, humans... over the defaults above. */
+  match?: Partial<MatchConfig>;
+  /** Inputs for the human players each tick (QA army: bots and monkeys), null for the AI's. */
+  inputs?: (m: MatchSim) => Array<InputFrame | null>;
+  /** Called on every pop (diagnosis tools): the event as the report's worst list would have it. */
+  onPop?: (e: QaEvent) => void;
+  /** Called each frame once the avatars are drawn (diagnosis tools). */
+  onFrame?: (m: MatchSim, av: Avatar[]) => void;
 }
 
 /** A distribution: count, mean and quantiles. */
@@ -68,6 +77,8 @@ export interface QaReport {
     perMinute: number;
     count: number;
     byJoint: Record<string, number>;
+    /** Pops by what the avatar was doing (its swing family, or ready / run / idle). */
+    byDoing: Record<string, number>;
     /** Peak angular speed per joint group against what people manage (deg/s). */
     peaks: Record<string, { p99: number; max: number; limit: number; over: number }>;
     worst: QaEvent[];
@@ -90,7 +101,7 @@ export interface QaReport {
     handTorso: number;
     handTorsoMax: number;
     /** Racket-in-body and hand-in-torso frames by what the player was doing (stroke family, or `ready`/`run`). */
-    by: Record<string, { racketBody: number; handTorso: number }>;
+    by: Record<string, { racketBody: number; handTorso: number; legs: number }>;
     /** The legs through each other. */
     legs: number;
     legsMax: number;
@@ -183,7 +194,7 @@ interface Hit { player: number; shot: string; t: number; ball: THREE.Vector3; ou
 export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const doubles = opts.doubles ?? true;
   const np = doubles ? 4 : 2;
-  const m = new MatchSim({ seed: opts.seed, doubles, human: new Array(np).fill(false), lefty: opts.lefty });
+  const m = new MatchSim({ seed: opts.seed, doubles, human: new Array(np).fill(false), lefty: opts.lefty, ...opts.match });
   const av: Avatar[] = [];
   const scene = new THREE.Scene();
   for (let i = 0; i < np; i++) { const a = new Avatar(asset, 0xffffff); a.inertial = opts.inertial ?? true; av.push(a); scene.add(a.root); }
@@ -219,6 +230,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   let ground = 0, footFrames = 0, below = 0, belowMax = 0;
   const peaks: Record<string, number[]> = {};
   const popsBy: Record<string, number> = {};
+  const popsDoing: Record<string, number> = {};
   const sv = { frames: 0, racketBody: 0, handTorso: 0, legs: 0, pops: 0 };
   let pops = 0;
   const popWorst: QaEvent[] = [];
@@ -228,7 +240,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const turnWorst: QaEvent[] = [];
   const clip = { racketBody: 0, racketBodyMax: 0, handTorso: 0, handTorsoMax: 0, legs: 0, legsMax: 0, net: 0, wall: 0, players: 0, racketOther: 0 };
   const clipWorst: QaEvent[] = [];
-  const clipBy: Record<string, { racketBody: number; handTorso: number }> = {};
+  const clipBy: Record<string, { racketBody: number; handTorso: number; legs: number }> = {};
   const doing = (i: number): string => {
     const x = av[i] as unknown as { fam: { name: string }; w: number; ready: number; sp: number };
     return x.w > 0.01 ? x.fam.name : x.ready > 0.5 ? 'ready' : x.sp > 0.9 ? 'run' : 'idle';
@@ -253,7 +265,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
 
   const total = Math.round(opts.seconds * 120);
   for (let k = 0; k < total; k++) {
-    m.step(new Array(np).fill(null));
+    m.step(opts.inputs ? opts.inputs(m) : new Array(np).fill(null));
     frames++;
     while (seen < m.eventSeq) {
       const e = m.events[seen % m.events.length]!;
@@ -268,6 +280,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       }
     }
     for (let i = 0; i < np; i++) av[i]!.update(m, m.players[i]!, i, 1, m.time);
+    opts.onFrame?.(m, av);
     if (repeatEvery > 0 && k % repeatEvery === 3) {
       // The same moment drawn twice: every bone must stay exactly where it was.
       for (let i = 0; i < np; i++) {
@@ -358,7 +371,11 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
           pops++;
           if (serving) sv.pops++;
           popsBy[J.name] = (popsBy[J.name] ?? 0) + 1;
-          note(popWorst, { t: m.time - DTF, player: i, what: `pop ${J.name}`, value: a1 });
+          const dn = doing(i);
+          popsDoing[dn] = (popsDoing[dn] ?? 0) + 1;
+          const pe = { t: m.time - DTF, player: i, what: `pop ${J.name} (${dn})`, value: a1 };
+          note(popWorst, pe);
+          opts.onPop?.(pe);
         }
         prevAng2[i]![j] = a1;
         prevAng[i]![j] = ang;
@@ -382,7 +399,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.racketBody++;
-          (clipBy[doing(i)] ??= { racketBody: 0, handTorso: 0 }).racketBody++;
+          (clipBy[doing(i)] ??= { racketBody: 0, handTorso: 0, legs: 0 }).racketBody++;
           if (serving && motion) sv.racketBody++;
           if (deep > clip.racketBodyMax) clip.racketBodyMax = deep;
           note(clipWorst, { t: m.time, player: i, what: `racket in ${where}`, value: deep });
@@ -399,7 +416,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.handTorso++;
-          (clipBy[doing(i)] ??= { racketBody: 0, handTorso: 0 }).handTorso++;
+          (clipBy[doing(i)] ??= { racketBody: 0, handTorso: 0, legs: 0 }).handTorso++;
           if (serving && motion) sv.handTorso++;
           if (deep > clip.handTorsoMax) clip.handTorsoMax = deep;
           note(clipWorst, { t: m.time, player: i, what: where, value: deep });
@@ -413,6 +430,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.legs++;
+          (clipBy[doing(i)] ??= { racketBody: 0, handTorso: 0, legs: 0 }).legs++;
           if (serving && motion) sv.legs++;
           if (deep > clip.legsMax) clip.legsMax = deep;
           note(clipWorst, { t: m.time, player: i, what: `legs ${where}`, value: deep });
@@ -513,7 +531,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       worst: [...hits].sort((a, b) => b.best - a.best).slice(0, 8)
         .map((h) => ({ t: h.t, player: h.player, what: `${h.shot} at ${h.ball.y.toFixed(2)} m`, value: h.best })),
     },
-    pops: { perMinute: pops / Math.max(1e-9, minutes * np), count: pops, byJoint: popsBy, peaks: peakOut, worst: popWorst, turnWorst, kneeSpins },
+    pops: { perMinute: pops / Math.max(1e-9, minutes * np), count: pops, byJoint: popsBy, byDoing: popsDoing, peaks: peakOut, worst: popWorst, turnWorst, kneeSpins },
     repeat: { frames: repeatFrames, maxDeg: repeatMax },
     clip: {
       racketBody: share(clip.racketBody), racketBodyMax: clip.racketBodyMax,

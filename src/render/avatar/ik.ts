@@ -176,6 +176,8 @@ export interface HingeLimb {
   rest: THREE.Quaternion;
   /** Last frame's side for the middle joint off the shoulder-to-end line (world; zero = none yet). */
   side: THREE.Vector3;
+  /** Last frame's bend (rad) and whether there is one: [bend, 1]. */
+  bend: Float64Array;
 }
 
 /**
@@ -183,6 +185,15 @@ export interface HingeLimb {
  * caller: a double passed into a call that isn't inlined is boxed).
  */
 export const IK_TURN = new Float64Array([Math.PI]);
+/** Most the middle joint may bend or straighten from last frame's in one call (rad; set per frame by the caller). */
+export const IK_BEND = new Float64Array([Math.PI]);
+/**
+ * The soft zone at full reach (m; 0 = none; set by the caller): a target within it of the limb's full length is
+ * drawn in along an easing (the shortfall so / (1 + x), x its depth into the zone in zone widths), so the joint
+ * straightens smoothly instead of snapping (near straight its bend goes as the square root of the shortfall: a hand
+ * 6 cm further out straightened the elbow 31 degrees in a frame).
+ */
+export const IK_SOFT = new Float64Array([0]);
 
 export function hingeIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, target: THREE.Vector3, pole: THREE.Vector3,
   limb: HingeLimb): void {
@@ -197,6 +208,8 @@ export function hingeIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, tar
   if (c < 1e-6 || a < 1e-6 || b < 1e-6) return;
   const dx = tx / c, dy = ty / c, dz = tz / c;
   const lo = Math.abs(a - b) + 1e-4, hi = a + b - 1e-4;
+  const so = IK_SOFT[0]!;
+  if (so > 0 && c > a + b - so) c = a + b - so / (1 + (c - (a + b - so)) / so);
   c = c < lo ? lo : c > hi ? hi : c;
   // The bend: with l = rest^-1 L (the upper bone's offset seen from the middle bone), |L + rest H(beta) E| = c
   // reads l.(H E) = K; Rodrigues makes the left side A + B cos(beta) + C sin(beta).
@@ -213,7 +226,19 @@ export function hingeIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, tar
   const R = Math.sqrt(B * B + C * C);
   if (R < 1e-9) return;
   const k = (K - A) / R;
-  const beta = Math.atan2(C, B) + Math.acos(k < -1 ? -1 : k > 1 ? 1 : k);
+  let beta = Math.atan2(C, B) + Math.acos(k < -1 ? -1 : k > 1 ? 1 : k);
+  // No faster than IK_BEND from last frame's: a target that jumps (the racket turning fast near the shoulder, a push
+  // out of the body let go) straightened the elbow 99 degrees in a frame. The end falls short of the target along
+  // the line for that frame instead.
+  const bl = IK_BEND[0]!, bd = limb.bend;
+  if (bl < Math.PI && bd[1] === 1) {
+    let d = beta - bd[0]!;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    if (d > bl) beta = bd[0]! + bl;
+    else if (d < -bl) beta = bd[0]! - bl;
+  }
+  bd[0] = beta; bd[1] = 1;
   const sh = Math.sin(beta / 2);
   QV[0] = hx * sh; QV[1] = hy * sh; QV[2] = hz * sh; QV[3] = Math.cos(beta / 2);
   QB.fromArray(QV);

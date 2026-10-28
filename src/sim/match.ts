@@ -126,6 +126,8 @@ const SERVE_HAND_OUT = 0.55;
 const SERVE_PUSH = 3.2;
 /** Ideal contact this long before the bounce's apex (within 80 ms of it the height changes by 3 cm or less). */
 const SERVE_BEFORE_APEX = 0.02;
+/** After a drop nobody swung at, the server picks the ball up: this long before they can drop it again. */
+const RETOSS_PAUSE = 0.6;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
@@ -448,7 +450,10 @@ export class MatchSim {
         this.stepBall(DT, t0);
       }
       if (this.phase === PH_TOSS && this.ball.pos.y < 0.12 && this.tossBounces >= 2 && !this.rally.over) {
-        this.rally.onServeMissed();
+        // The dropped ball bounced twice and nobody swung at it: no serve yet (6.6: a serve is the contact or an
+        // intentional attempt to hit), so the server picks it up and drops it again. A swing that missed was a
+        // fault already (7.1.b).
+        this.retoss();
       }
       if (this.phase === PH_RALLY || this.phase === PH_TOSS) this.checkBodies();
     }
@@ -957,6 +962,16 @@ export class MatchSim {
     }
   }
 
+  /** Back to the server's set-up with the ball in hand, the same serve to come (no swing was made at the drop). */
+  private retoss(): void {
+    this.phase = PH_SETUP;
+    this.phaseUntil = this.time + RETOSS_PAUSE;
+    this.tossBounces = 0;
+    const p = this.players[this.score.serverPlayer()]!;
+    if (p.swing === SW_CHARGE) p.swing = SW_IDLE;
+    this.placeBallInHand();
+  }
+
   private computeTossIdeal(): void {
     const pr = this.pred;
     let first = -1;
@@ -1006,6 +1021,8 @@ export class MatchSim {
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
       if (abs(delta) > TIMING.miss * scale) {
+        // 6.6: the swing is the serve; missing the ball is a fault (7.1.b).
+        this.rally.onServeMissed();
         this.whiff(i, t);
         return;
       }
@@ -1146,7 +1163,8 @@ export class MatchSim {
     if (past && legal && d <= t.reachMax + 0.25) p.grade = G_TOO_LATE;
     if (!legal || d > t.reachMax + 0.25 || past || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15
       || this.rally.over) {
-      if (serving && this.tossBounces !== 1) this.rally.onServeMissed();
+      // The server swung and missed (out of reach, or before or after the one bounce): a fault (6.6, 7.1.b).
+      if (serving) this.rally.onServeMissed();
       this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
       return;
     }

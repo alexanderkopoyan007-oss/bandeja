@@ -221,6 +221,12 @@ export class Rally {
   /** The ball touched a player's body (not the racket). */
   onBody(team: number): void {
     if (this.hitter < 0 || this.over) return;
+    // 9.1: a serve that touched the net (or a post) is a "net" if it then lands in the box (9.1.a) or touches any
+    // player (9.1.b), whoever it is: the serve is played again.
+    if (this.isServe && this.netTouched && (this.pendingLet || this.bounces === 0)) {
+      this.letServe();
+      return;
+    }
     if (team === this.hitter) {
       if (this.isServe) this.fault(WHY_HIT_BODY_OWN);
       else this.point(1 - team, WHY_HIT_BODY_OWN);

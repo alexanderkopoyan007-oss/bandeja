@@ -232,6 +232,8 @@ export class Inertializer {
   private primed = false;
   halfLife = 0.07;
   jumps = 0;
+  /** Treat every joint as jumping on the next apply (a switch of clip whose small moves the limits would pass). */
+  force = false;
 
   constructor(limits: ArrayLike<number>, hipLimit = 3.5) {
     const n = limits.length;
@@ -262,12 +264,13 @@ export class Inertializer {
     } else {
       for (let i = 0; i < n; i++) {
         if (skip[i] === 1) continue;
-        PRM[0] = this.halfLife; PRM[1] = 1; PRM[2] = this.limit[i]!;
+        PRM[0] = this.halfLife; PRM[1] = 1; PRM[2] = this.force ? 0 : this.limit[i]!;
         stepRotation(bones[i]!.quaternion, this.prevTarget[i]!, this.shown[i]!, this.ox, this.ov, this.tv, i * 3);
         if (JUMPED[0] === 1) this.jumps++;
         bones[i]!.quaternion.copy(this.shown[i]!);
       }
     }
+    this.force = false;
     if (hips) {
       const h = this.hips;
       h.in[0] = hips.x; h.in[1] = hips.y; h.in[2] = hips.z;
