@@ -28,6 +28,8 @@ export interface QaOptions {
   lefty?: boolean[];
   /** Inertialization on (default) or off, for comparisons. */
   inertial?: boolean;
+  /** Every this many frames draw the same moment again (game.ts does, on fast displays): nothing may move. 0: off. */
+  repeatEvery?: number;
 }
 
 /** A distribution: count, mean and quantiles. */
@@ -67,7 +69,11 @@ export interface QaReport {
     /** Peak angular speed per joint group against what people manage (deg/s). */
     peaks: Record<string, { p99: number; max: number; limit: number; over: number }>;
     worst: QaEvent[];
+    /** The largest one-frame turns of any joint (degrees), spike or not: a turn beside a large neighbour is no pop. */
+    turnWorst: QaEvent[];
   };
+  /** Frames drawn twice at the same moment (QaOptions.repeatEvery) and the most any bone turned on the second. */
+  repeat: { frames: number; maxDeg: number };
   clip: {
     /** Frames (per player-frame share) with the racket inside the player's own body, by more than 1 cm. */
     racketBody: number;
@@ -203,6 +209,10 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const sv = { frames: 0, racketBody: 0, handTorso: 0, legs: 0, pops: 0 };
   let pops = 0;
   const popWorst: QaEvent[] = [];
+  const repeatEvery = opts.repeatEvery ?? 0;
+  const repQ = Array.from({ length: 80 }, () => new THREE.Quaternion());
+  let repeatMax = 0, repeatFrames = 0;
+  const turnWorst: QaEvent[] = [];
   const clip = { racketBody: 0, racketBodyMax: 0, handTorso: 0, handTorsoMax: 0, legs: 0, legsMax: 0, net: 0, wall: 0, players: 0, racketOther: 0 };
   const clipWorst: QaEvent[] = [];
   const clipBy: Record<string, { racketBody: number; handTorso: number }> = {};
@@ -245,6 +255,22 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       }
     }
     for (let i = 0; i < np; i++) av[i]!.update(m, m.players[i]!, i, 1, m.time);
+    if (repeatEvery > 0 && k % repeatEvery === 3) {
+      // The same moment drawn twice: every bone must stay exactly where it was.
+      for (let i = 0; i < np; i++) {
+        const bs = bones[i]!;
+        for (let b = 0; b < bs.length; b++) repQ[b]!.copy(bs[b]!.quaternion);
+        av[i]!.update(m, m.players[i]!, i, 1, m.time);
+        for (let b = 0; b < bs.length; b++) {
+          const q = bs[b]!.quaternion, r = repQ[b]!;
+          // Normalised: the solves leave quaternions a hair off unit length, which reads as 0.17° against itself.
+          const d = Math.min(1, Math.abs(q.x * r.x + q.y * r.y + q.z * r.z + q.w * r.w) / Math.sqrt(q.lengthSq() * r.lengthSq()));
+          const ang = (2 * Math.acos(d) * 180) / Math.PI;
+          if (ang > repeatMax) repeatMax = ang;
+        }
+        repeatFrames++;
+      }
+    }
     for (let i = 0; i < np; i++) av[i]!.racket.updateMatrixWorld(true);
     const live = m.phase === PH_RALLY || m.phase === PH_SETUP || m.phase === PH_TOSS;
 
@@ -292,6 +318,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         q0.copy(lq);
         if (!motion) { prevAng2[i]![j] = 0; prevAng[i]![j] = 0; continue; }
         (peaks[J.g] ??= []).push(ang / DTF);
+        if (ang > 45) note(turnWorst, { t: m.time, player: i, what: `turn ${J.name}`, value: ang });
         // A one-frame spike: the frame before stands out against both its neighbours.
         const a1 = prevAng[i]![j]!, a2 = prevAng2[i]![j]!;
         if (a1 > 6 && a1 > 3 * Math.max(a2, ang, 1)) {
@@ -451,7 +478,8 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       face: dist(hits.map((h) => h.face)),
       byShot,
     },
-    pops: { perMinute: pops / Math.max(1e-9, minutes * np), count: pops, byJoint: popsBy, peaks: peakOut, worst: popWorst },
+    pops: { perMinute: pops / Math.max(1e-9, minutes * np), count: pops, byJoint: popsBy, peaks: peakOut, worst: popWorst, turnWorst },
+    repeat: { frames: repeatFrames, maxDeg: repeatMax },
     clip: {
       racketBody: share(clip.racketBody), racketBodyMax: clip.racketBodyMax,
       handTorso: share(clip.handTorso), handTorsoMax: clip.handTorsoMax,
