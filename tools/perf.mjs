@@ -36,15 +36,16 @@ async function run(name, { dpr, throttle, unlimited }) {
     const cdp = await page.createCDPSession();
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
   }
-  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}`, { waitUntil: 'load' });
+  // QUERY=&sound=0 (etc.) adds URL options, to measure one feature's cost against the same build.
+  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}${process.env.QUERY ?? ''}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__bandeja?.running, { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 3000)); // settle after warm-up
-  await page.evaluate(() => window.__bandeja.audio.unlock());
+  await page.evaluate(() => window.__bandeja.audio?.unlock());
   await page.evaluate(() => { const p = window.__bandeja.probe; p.frames.length = 0; p.sims.length = 0; p.works.length = 0; });
   await new Promise((r) => setTimeout(r, secs * 1000));
   const d = await page.evaluate(() => {
     const p = window.__bandeja.probe;
-    return { frames: p.frames.slice(1), sims: p.sims.slice(1), works: p.works.slice(1), draws: p.drawCalls, tris: p.triangles, backend: p.backend, audio: window.__bandeja.audio.live };
+    return { frames: p.frames.slice(1), sims: p.sims.slice(1), works: p.works.slice(1), draws: p.drawCalls, tris: p.triangles, backend: p.backend, audio: window.__bandeja.audio?.live };
   });
   await browser.close();
   const f = d.frames;
