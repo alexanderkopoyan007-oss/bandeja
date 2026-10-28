@@ -2,6 +2,7 @@
 // Every value has a default, and anything stored that isn't a known value is ignored, so an old or hand-edited store
 // can't break the game. Browser storage can be missing or throw (private windows, blocked site data): the game then
 // runs on the defaults.
+import { STYLE_KEYS } from '../sim/ai/styles.ts';
 
 /** How a match is set up (the Play screen). */
 export interface MatchSetup {
@@ -54,7 +55,7 @@ export interface Settings {
   announce: boolean;
   /** Controller rumble. */
   rumble: boolean;
-  /** Keyboard bindings: sim button name -> key codes (see input/bindings.ts). */
+  /** Keyboard bindings: action id (input/bindings.ts ACTIONS: drive, lob, up...) -> key codes. */
   keys: Record<string, string[]>;
 }
 
@@ -81,6 +82,8 @@ const CHOICES: Record<string, readonly unknown[]> = {
   scoring: ['star', 'golden', 'advantage'], length: ['short', 'set', 'three'], hand: ['right', 'left'],
   timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'], swing: ['hold', 'tap'],
   quality: ['auto', 'low', 'medium', 'high', 'ultra'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
+  // A partner's or the opponents' style: 'random' or a style that exists (data/ai.json).
+  partner: ['random', ...STYLE_KEYS], opponents: ['random', ...STYLE_KEYS],
 };
 
 const KEY = 'bandeja.settings.v1';

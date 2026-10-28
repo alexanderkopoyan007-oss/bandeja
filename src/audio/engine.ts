@@ -81,6 +81,8 @@ export class AudioEngine implements AudioSink {
     const defs = families(this.env);
     let i = 0;
     const next = (): void => {
+      // The game was torn down: stop synthesising.
+      if (this.closed) return;
       if (i < defs.length) {
         const d = defs[i++]!;
         this.receive({ name: d.name, samples: renderFamily(d, this.env) });
@@ -171,6 +173,9 @@ export class AudioEngine implements AudioSink {
       ctx.onstatechange = (): void => {
         if (this.wantRunning && ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume().catch(() => undefined);
       };
+      // Made while the game is paused (the first key or click can be in the pause menu): it waits, silent, for
+      // the resume like a context that was already running.
+      if (!this.wantRunning) void ctx.suspend().catch(() => undefined);
     }
     if (this.wantRunning && this.ctx.state !== 'running') void this.ctx.resume().catch(() => undefined);
   }

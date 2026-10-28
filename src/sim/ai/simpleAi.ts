@@ -71,7 +71,9 @@ export class SimpleAi {
   planned = false;
   pressed = false;
   released = false;
-  servePressAt = -1;
+  // -0.5, not -1 (only ever tested < 0): a field that holds a small integer until its first fractional value (the
+  // AI's first serve, minutes in) changes the AI's map then, and every optimised function using it deoptimises.
+  servePressAt = -0.5;
   /** Timing error for the current plan (drawn once, like a human's misjudgement). */
   noise = 0;
   /** The current plan takes a lob in the air (overhead key), and hits it as a smash (power held). */
@@ -110,7 +112,7 @@ export class SimpleAi {
     this.planned = false;
     this.pressed = false;
     this.released = false;
-    this.servePressAt = -1;
+    this.servePressAt = -0.5;
   }
 
   /**

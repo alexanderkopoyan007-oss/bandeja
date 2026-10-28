@@ -2,6 +2,7 @@
 // so a release is judged at the moment it happened, not when the next frame polls it.
 // Which key is which button comes from the bindings (input/bindings.ts; remappable since Phase 8).
 import { DEFAULT_KEYS, keyTables } from './bindings.ts';
+import type { InputFrame } from '../../sim/input.ts';
 
 export interface TimedButton { press: boolean; button: number; ts: number }
 
@@ -54,6 +55,39 @@ export class KeyboardInput {
   flush(): void {
     this.releaseAll(performance.now());
     this.head = this.tail;
+  }
+
+  /**
+   * Back from a menu at `ts`: drop what was queued while it was up, then let go, at `ts`, of every button the sim
+   * still holds (`simHeld`) that nothing holds now (`heldNow`: the pad's buttons, which stay true through a pause;
+   * the keys were all let go at the pause and the menu took their key-ups). A swing charged when the game paused
+   * (Esc or a lost window while holding J, the pad unplugged) is then released at the resume moment and judged
+   * like any release, instead of waiting for a release the pause had dropped. Every change the sim sees is an
+   * input event, so a replay of the frames is the same match.
+   */
+  resume(simHeld: number, heldNow: number, ts: number): void {
+    this.flush();
+    const stale = simHeld & ~(this.held | heldNow);
+    for (let b = 1; b <= stale; b <<= 1) if (stale & b) this.push(false, b, ts);
+  }
+
+  /**
+   * Hand the sim's frame `f` every queued event stamped before `endMs`, at its exact sim time (`epoch`: the sim's
+   * zero, performance.now() ms), and return the buttons held as of the last event handed over (`simHeld` before).
+   * `onEvent` sees each one (the latency probe; allocation-free when null).
+   */
+  feed(f: InputFrame, epoch: number, endMs: number, simHeld: number, onEvent: ((ts: number, press: boolean) => void) | null): number {
+    let held = simHeld;
+    const q = this.queue;
+    while (this.head < this.tail) {
+      const e = q[this.head % QUEUE]!;
+      if (e.ts >= endMs) break;
+      f.push(e.press, e.button, Math.max(0, (e.ts - epoch) / 1000));
+      held = e.press ? held | e.button : held & ~e.button;
+      this.head++;
+      onEvent?.(e.ts, e.press);
+    }
+    return held;
   }
 
   private key(e: KeyboardEvent, down: boolean): void {

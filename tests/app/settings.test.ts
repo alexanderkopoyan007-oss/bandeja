@@ -24,6 +24,9 @@ describe('settings store', () => {
     expect(s.setup.partner).toBe('muro');
     expect(s.keys).toEqual({ drive: ['KeyZ'] });
   });
+  it('a partner or opponents style must be one that exists', () => {
+    expect(settingsFrom({ setup: { partner: 'nonsense', opponents: 'muro' } }).setup).toMatchObject({ partner: 'random', opponents: 'muro' });
+  });
   it('survives garbage', () => {
     for (const g of [null, 3, 'x', [], { setup: 5 }, { keys: 'KeyJ' }]) expect(() => settingsFrom(g)).not.toThrow();
   });
@@ -98,10 +101,25 @@ describe('a menu setup as game options', () => {
     s.setup = { ...s.setup, mode: 'doubles', court: 'singles-narrow' };
     expect(optionsFromSetup(s.setup, s, 1, null, false, params).match.world!.court).toBe('standard');
   });
-  it('page-only URL options keep the menus; any game option skips them', () => {
+  it('page-only URL options keep the menus; any game option skips them; anything else is ignored', () => {
     expect(directLaunch(new URLSearchParams('backend=webgl&dpr=1&quality=low'))).toBe(false);
     expect(directLaunch(new URLSearchParams('autoplay=1'))).toBe(true);
     expect(directLaunch(new URLSearchParams('mode=singles'))).toBe(true);
+    expect(directLaunch(new URLSearchParams('photo=arena-wide-2'))).toBe(true);
+    // Share links and campaigns: the app, not a raw match.
+    expect(directLaunch(new URLSearchParams('fbclid=abc&utm_source=x&gclid=1&ref=hn'))).toBe(false);
+  });
+  it('?quality=auto turns the dynamic resolution on (URL launches and the menus alike)', () => {
+    const u = optionsFromUrl(new URLSearchParams('autoplay=1&quality=auto'), null);
+    expect(u.prefs!.adapt).toBe(true);
+    expect(u.prefs!.quality!.name).toBe('High');
+    expect(optionsFromUrl(new URLSearchParams('autoplay=1&quality=medium'), null).prefs!.adapt).toBe(false);
+    // The app path takes ?quality= over the stored preset.
+    const s = defaultSettings();
+    s.quality = 'auto';
+    const o = optionsFromSetup(s.setup, s, 1, null, false, new URLSearchParams('quality=low'));
+    expect(o.prefs!.quality!.name).toBe('Low');
+    expect(o.prefs!.adapt).toBe(false);
   });
 });
 

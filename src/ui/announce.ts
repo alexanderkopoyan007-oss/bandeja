@@ -10,8 +10,13 @@ export class Announcer {
   private seen = 0;
   private wasDead = false;
   private pending = '';
+  /** Text waiting for the next task (the region is cleared first, so the same words twice are read twice). */
+  private next = '';
+  private timer = 0;
 
-  constructor(root: HTMLElement) {
+  /** `sim`: start from its current events (turned on mid-match, nothing already said is said again). */
+  constructor(root: HTMLElement, sim?: MatchSim) {
+    if (sim) this.seen = sim.eventSeq;
     this.el = document.createElement('div');
     this.el.setAttribute('aria-live', 'polite');
     this.el.setAttribute('role', 'status');
@@ -71,8 +76,17 @@ export class Announcer {
   }
 
   private say(text: string): void {
-    // A changed text is what a live region reads; the same words twice need clearing first.
+    // A live region reads a change of its text. Clearing it and setting the same words in one task is no change
+    // to a screen reader, so the words go in a later task (two calls in one frame are said together).
+    this.next = this.next ? `${this.next} ${text.trim()}` : text.trim();
     this.el.textContent = '';
-    this.el.textContent = text.trim();
+    clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => { this.el.textContent = this.next; this.next = ''; }, 60);
+  }
+
+  /** Turned off mid-match. */
+  dispose(): void {
+    clearTimeout(this.timer);
+    this.el.remove();
   }
 }

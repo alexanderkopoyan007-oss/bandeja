@@ -186,6 +186,10 @@ const va = new V3();
 const n0 = new V3();
 
 export class Ball {
+  // Number fields that hold fractions start at -0, not 0: a field first stored as a small integer becomes a double
+  // the first time it holds a fraction (the first junction, the first net catch, minutes into the title's match),
+  // which changes Ball's map then and deoptimises every optimised function that reads a ball (Phase 8 review,
+  // tools/sim-deopt.ts with --trace-generalization). Each is written before it is read, or only compared or added.
   readonly pos = new V3();
   readonly vel = new V3();
   readonly spin = new V3();
@@ -204,9 +208,9 @@ export class Ball {
    * z for the rules: the ball's z, except near the net, where it says which side of the netting the ball is
    * really on (netSide; a pocket in the cloth carries the ball past the line without it crossing).
    */
-  sideZ = 0;
-  netW = 0;
-  netZeta = 0;
+  sideZ = -0;
+  netW = -0;
+  netZeta = -0;
 
   /** Only the match ball wears; predictions and solver ghosts copy its state. */
   wears = false;
@@ -217,7 +221,7 @@ export class Ball {
   eScale = 1;
   muScale = 1;
   /** Normal speed of the impact being added by wearImpact() (a field: a double argument would be boxed). */
-  wearV = 0;
+  wearV = -0;
   /** A bounce has counted wear that applyWear() hasn't turned into drag/restitution/friction yet. */
   wearDirty = false;
 
@@ -236,23 +240,24 @@ export class Ball {
   /** Which side of the cable's line the centre was on last substep (stepCoupled; it starts on its netSide). */
   private relSide = 1;
   /** Step length and event-time offset for fly() / roll() (fields: doubles passed as arguments get boxed). */
-  private flyDt = 0;
-  private flyAt = 0;
-  private flyEnd = 0;
+  private flyDt = -0;
+  private flyAt = -0;
+  private flyEnd = -0;
   private stepDt = DT;
-  private exitAt = 0;
-  private intDt = 0;
-  private resolveAt = 0;
+  private exitAt = -0;
+  private intDt = -0;
+  private resolveAt = -0;
   /**
    * A junction flies the ball on to its second surface (see junction()); when that flight runs past the end of the
    * step, the ball is this far ahead of the clock and the next step starts this far in (s, at most a few ms).
    */
-  ahead = 0;
+  ahead = -0;
 
   constructor() {
     for (let i = 0; i < MAX_EVENTS; i++) {
       this.events.push({ kind: 0, surface: 0, wall: -1, t: 0, x: 0, y: 0, z: 0, speed: 0 });
     }
+    this.eJ = 1;
   }
 
   copyFrom(b: Ball): this {
@@ -701,8 +706,10 @@ export class Ball {
       if (al < E[i + 3]! || al > E[i + 4]!) continue;
       this.best = f;
       this.hitKind = HIT_EDGE;
-      this.hitSurface = E[i + 5]!;
-      this.hitWall = E[i + 6]!;
+      // `| 0`: Court.edges is a double array, and a double stored in these integer fields (the first edge a ball
+      // touches, mid-rally) changed the Ball's field representation and deoptimised the whole step tree at once.
+      this.hitSurface = E[i + 5]! | 0;
+      this.hitWall = E[i + 6]! | 0;
       const ss = s0 + ds * f;
       const tt = t0 + dt * f;
       const l = sqrt(ss * ss + tt * tt);
@@ -732,8 +739,8 @@ export class Ball {
       if (f < 0 || f >= this.best) continue;
       this.best = f;
       this.hitKind = HIT_EDGE;
-      this.hitSurface = K[i + 3]!;
-      this.hitWall = K[i + 4]!;
+      this.hitSurface = K[i + 3]! | 0;
+      this.hitWall = K[i + 4]! | 0;
       const sx = ox + dx * f, sy = oy + dy * f, sz = oz + dz * f;
       const l = sqrt(sx * sx + sy * sy + sz * sz);
       n.set(sx / l, sy / l, sz / l);
@@ -853,6 +860,10 @@ export class Ball {
   private resolve(world: BallWorld, rng: Rng | null): void {
     let surf: SurfaceSpec = world.floor;
     let flat = true;
+    // Every surface read here, on every contact: read only on its own rare branch (the first post or net-cord hit,
+    // mid-rally), a load has no type feedback yet and the function deoptimises there (CLAUDE.md's trap).
+    const S = world.surfaces;
+    const sGlass = S.glass, sSeam = S.seam, sNet = S.net, sPost = S.post;
     switch (this.hitKind) {
       case HIT_FLOOR:
         n.set(0, 1, 0);
@@ -864,16 +875,16 @@ export class Ball {
         break;
       case HIT_EDGE:
         // n was set by tryEdges. A frameless glass top is polished glass; anything else is a frame.
-        surf = this.hitSurface === SURF_GLASS ? world.surfaces.glass : world.surfaces.seam;
+        surf = this.hitSurface === SURF_GLASS ? sGlass : sSeam;
         this.hitKind = HIT_WALL;
         flat = false;
         break;
       case HIT_NETCORD:
-        surf = world.surfaces.net;
+        surf = sNet;
         flat = false;
         break;
       case HIT_POST:
-        surf = world.surfaces.post;
+        surf = sPost;
         flat = false;
         break;
       case HIT_NET: {
@@ -958,15 +969,15 @@ export class Ball {
   private jSurface = 0;
   private jSeam = 0.5;
   private jJoin = 0.5;
-  private jW = 0;
-  private jGap = 0;
+  private jW = -0;
+  private jGap = -0;
   /** Time to the second surface at the approach speed before the first bounce (s). */
-  private jT2 = 0;
+  private jT2 = -0;
   /** Candidate for considerJunction: gap to the surface's contact plane (m) and approach speed (m/s). */
-  private cg = 0;
-  private ca = 0;
+  private cg = -0;
+  private ca = -0;
   /** Extra restitution factor for bounce() (1 outside a junction). */
-  private eJ = 1;
+  private eJ = -0; // 1 from the constructor on: declared -0 so the field is a double (see the class's top)
 
   private findJunction(world: BallWorld): void {
     const c = world.court;
@@ -1152,7 +1163,7 @@ export class Ball {
   }
 
   /** Record the junction's second contact (normal speed before it: vnB, a field: see `best`). */
-  private vnB = 0;
+  private vnB = -0;
   private recordJ(): void {
     this.hitKind = this.jKind;
     this.hitWall = this.jWall;
@@ -1194,23 +1205,23 @@ export class Ball {
   // passed to non-inlined methods would be boxed, and this runs every tick a ball is in the net.
 
   /** Time left in the step (in), time used (out), time into the step at the start (for events). */
-  private span = 0;
-  private used = 0;
-  private at = 0;
-  private tau = 0;
+  private span = -0;
+  private used = -0;
+  private at = -0;
+  private tau = -0;
   // Catch state at the start of netStep, and the closed form at tau.
-  private d0 = 0;
-  private dv0 = 0;
-  private x0 = 0;
-  private y0 = 0;
-  private vx0 = 0;
-  private vy0 = 0;
-  private rd = 0;
-  private rdv = 0;
-  private rx = 0;
-  private ry = 0;
-  private rvx = 0;
-  private rvy = 0;
+  private d0 = -0;
+  private dv0 = -0;
+  private x0 = -0;
+  private y0 = -0;
+  private vx0 = -0;
+  private vy0 = -0;
+  private rd = -0;
+  private rdv = -0;
+  private rx = -0;
+  private ry = -0;
+  private rvx = -0;
+  private rvy = -0;
 
   private enterNet(world: BallWorld, rng: Rng | null): void {
     const c = world.court;

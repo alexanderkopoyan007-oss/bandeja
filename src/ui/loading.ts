@@ -1,7 +1,7 @@
 // The loading screen (Phase 8): the wordmark, a ball bouncing on a line, a progress bar that moves smoothly between
-// the real stages (renderer, player body download, arena, reflections, shaders), the stage's name and a tip. It is
-// plain HTML and CSS in the page itself, so it is up before any script has loaded beyond this one, and it fades out
-// over the first frame of the game.
+// the real stages (the renderer, the players' download, building the arena, compiling the shaders), the stage's name
+// and a tip. Its first paint is plain HTML and CSS in index.html, up before any script has loaded; this takes it
+// over, and it fades out over the first frame of the game.
 
 const CSS = `
 #loading { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -26,10 +26,10 @@ const CSS = `
 #loading .tip { position: absolute; bottom: 7vh; max-width: min(640px, 86vw); text-align: center; color: #b7c0c8; font-size: 14px; }
 #loading .tip b { color: #ffd84a; font-weight: 700; }
 #loading .err { margin-top: 18px; max-width: min(560px, 86vw); text-align: center; color: #ffb4a8; display: none; }
-#loading .retry { margin-top: 16px; padding: 10px 26px; border: 0; border-radius: 999px; background: #ffd84a; color: #10161f;
+#loading .retry { display: none; margin-top: 16px; padding: 10px 26px; border: 0; border-radius: 999px; background: #ffd84a; color: #10161f;
   font: 800 13px/1 var(--display); letter-spacing: .18em; text-transform: uppercase; cursor: pointer; }
 #loading .retry:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
-@media (prefers-reduced-motion: reduce) { #loading .ball { animation: none; left: calc(50% - 7px); } }
+@media (prefers-reduced-motion: reduce) { :root:not(.full-motion) #loading .ball { animation: none; left: calc(50% - 7px); } }
 :root.calm #loading .ball { animation: none; left: calc(50% - 7px); }
 `;
 
@@ -52,7 +52,10 @@ export class LoadingScreen {
   private readonly bar: HTMLElement;
   private readonly stageEl: HTMLElement;
   private readonly err: HTMLElement;
+  private readonly retry: HTMLButtonElement;
   private readonly tip: HTMLElement;
+  private readonly prog: HTMLElement;
+  private padWatch = false;
   private shown = 0;
   private tipTimer = 0;
   /** Each stage's start (ms since navigation), read by tools as window.__loadLog. */
@@ -69,13 +72,16 @@ export class LoadingScreen {
     this.root = existing ?? document.body.appendChild(document.createElement('div'));
     this.root.id = 'loading';
     (window as unknown as { __loadLog: unknown }).__loadLog = this.log;
-    this.root.setAttribute('role', 'progressbar');
-    this.root.setAttribute('aria-label', 'Loading BANDEJA');
-    this.root.setAttribute('aria-valuemin', '0');
-    this.root.setAttribute('aria-valuemax', '100');
-    this.root.innerHTML = '<div class="mark">BANDEJA<b>.</b></div><div class="tag">Padel</div><div class="court"><div class="ball"></div></div>'
-      + '<div class="bar"><i></i></div><div class="stage"></div><div class="err" role="alert"></div><div class="tip"></div>';
+    // The bar alone is the progress bar (a progressbar's children are presentational, so the error and the Try
+    // again button sit beside it, not in it); the wordmark and the bouncing ball are decoration.
+    this.root.innerHTML = '<div class="mark" aria-hidden="true">BANDEJA<b>.</b></div><div class="tag" aria-hidden="true">Padel</div>'
+      + '<div class="court" aria-hidden="true"><div class="ball"></div></div>'
+      + '<div class="bar" role="progressbar" aria-label="Loading BANDEJA" aria-valuemin="0" aria-valuemax="100"><i></i></div>'
+      + '<div class="stage"></div><div class="err" role="alert"></div><button class="retry" type="button">Try again</button><div class="tip"></div>';
+    this.prog = this.root.querySelector('.bar')!;
     this.bar = this.root.querySelector('.bar i')!;
+    this.retry = this.root.querySelector('.retry')!;
+    this.retry.onclick = () => location.reload();
     this.stageEl = this.root.querySelector('.stage')!;
     this.err = this.root.querySelector('.err')!;
     this.tip = this.root.querySelector('.tip')!;
@@ -91,8 +97,8 @@ export class LoadingScreen {
     this.shown = Math.max(this.shown, Math.min(1, frac));
     this.bar.style.width = `${(this.shown * 100).toFixed(1)}%`;
     this.stageEl.textContent = name;
-    this.root.setAttribute('aria-valuenow', String(Math.round(this.shown * 100)));
-    this.root.setAttribute('aria-valuetext', name);
+    this.prog.setAttribute('aria-valuenow', String(Math.round(this.shown * 100)));
+    this.prog.setAttribute('aria-valuetext', name);
   }
 
   /** Back on screen (between a menu and a match): a quick cover while the next one builds. */
@@ -105,6 +111,8 @@ export class LoadingScreen {
     this.bar.style.transition = '';
     this.root.style.display = '';
     this.root.classList.remove('out');
+    this.err.style.display = 'none';
+    this.retry.style.display = 'none';
     this.stage(name, 0.05);
   }
 
@@ -119,22 +127,28 @@ export class LoadingScreen {
   /** Something stopped the load: say what, and offer to try again (Enter or the pad's A press the focused button). */
   fail(message: string): void {
     this.stageEl.textContent = 'Could not start';
+    // The alert is the message alone; the one Try again button stays (a second failure only changes the words).
     this.err.textContent = message;
     this.err.style.display = 'block';
     clearInterval(this.tipTimer);
     this.tip.textContent = '';
     this.root.classList.remove('out');
     this.root.style.display = '';
-    const b = document.createElement('button');
-    b.className = 'retry';
-    b.textContent = 'Try again';
-    b.onclick = () => location.reload();
-    this.err.appendChild(document.createElement('br'));
-    this.err.appendChild(b);
-    b.focus();
+    this.retry.style.display = 'inline-block';
+    this.retry.focus();
+    if (this.padWatch) return;
+    this.padWatch = true;
+    // The pad's A: a new press (the press that started a failed build may still be down).
+    let was = true;
     const pad = (): void => {
-      if (!b.isConnected) return;
-      for (const g of navigator.getGamepads?.() ?? []) if (g?.buttons[0]?.pressed) { location.reload(); return; }
+      let down = false;
+      try {
+        for (const g of navigator.getGamepads?.() ?? []) if (g?.buttons[0]?.pressed) down = true;
+      } catch {
+        return;
+      }
+      if (down && !was) { location.reload(); return; }
+      was = down;
       requestAnimationFrame(pad);
     };
     requestAnimationFrame(pad);

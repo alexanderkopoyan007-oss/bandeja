@@ -169,11 +169,17 @@ export class Player {
     this.vel.z += az * dt;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
-    // Walls and the net stop the player.
-    if (this.pos.x < this.minX) { this.pos.x = this.minX; if (this.vel.x < 0) this.vel.x = 0; }
-    if (this.pos.x > this.maxX) { this.pos.x = this.maxX; if (this.vel.x > 0) this.vel.x = 0; }
-    if (this.pos.z < this.minZ) { this.pos.z = this.minZ; if (this.vel.z < 0) this.vel.z = 0; }
-    if (this.pos.z > this.maxZ) { this.pos.z = this.maxZ; if (this.vel.z > 0) this.vel.z = 0; }
+    // Walls and the net stop the player. Every read, compare and store runs on every step, choosing between locals: a
+    // store or bounds read reached only at a wall had no type feedback, and the first touch of each wall deoptimised
+    // Player.move mid-rally (Phase 8 review, tools/sim-deopt.ts). Same results bit for bit as the four ifs it replaces.
+    const pos = this.pos, vel = this.vel;
+    const minX = this.minX, maxX = this.maxX, minZ = this.minZ, maxZ = this.maxZ;
+    const px = pos.x, pz = pos.z, vx = vel.x, vz = vel.z;
+    const vxUp = vx < 0 ? 0 : vx, vxDown = vx > 0 ? 0 : vx, vzUp = vz < 0 ? 0 : vz, vzDown = vz > 0 ? 0 : vz;
+    pos.x = px < minX ? minX : px > maxX ? maxX : px;
+    vel.x = px < minX ? vxUp : px > maxX ? vxDown : vx;
+    pos.z = pz < minZ ? minZ : pz > maxZ ? maxZ : pz;
+    vel.z = pz < minZ ? vzUp : pz > maxZ ? vzDown : vz;
   }
 
   speed(): number {

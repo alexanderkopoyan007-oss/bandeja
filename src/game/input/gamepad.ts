@@ -45,6 +45,14 @@ export class GamepadInput {
   /** Rumble allowed (the Accessibility setting). */
   rumbleOn = true;
 
+  /**
+   * A menu used the Start press now down (Start on the pause screen resumes): the game must not take the same press
+   * as a new one and pause again. The menu and the game poll the pad in the same frame, in either order.
+   */
+  consumeStart(): void {
+    this.startDown = true;
+  }
+
   /** `signal` removes the listeners (a game being torn down). */
   constructor(target: Window, signal?: AbortSignal) {
     const o = { signal };

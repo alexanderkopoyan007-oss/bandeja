@@ -1,8 +1,9 @@
 // Cue and grade colours (Phase 8). The default is the look the owner approved (green Good, cyan Perfect, amber off
 // time, red bad). The colour-safe set (Accessibility) keeps cyan and amber and moves Good to blue and bad to a dark
 // vermilion, so a red-green colour-blind player can tell every grade apart by hue and brightness: under
-// deuteranopia the default's green Good and amber Early/Late look the same yellow. The words (Perfect, Early...)
-// are always shown with the colours.
+// protanopia the default's green Good and amber Early/Late are ΔE 10.4 apart (the same yellow at a glance), and
+// under deuteranopia its closest pair is Good and the red miss (ΔE 16.2; tests/app/palette.test.ts). The words
+// (Perfect, Early...) are always shown with the colours.
 
 export interface Palette {
   good: number;
