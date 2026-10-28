@@ -208,7 +208,8 @@ describe('pair teamwork', () => {
   }
 
   it('partners move as a unit, switch sides when the partner takes a lob over them, and call the ball', () => {
-    const r = teamwork(6, 300);
+    // 12 matches: partner-taken lobs to one side are rare (about one a match).
+    const r = teamwork(12, 300);
     // The pair that just struck is level (both up or both back) most of the time: split 11-12% when measured.
     expect(r.split).toBeLessThan(0.2);
     // Before the switch existed: 0 of 29.

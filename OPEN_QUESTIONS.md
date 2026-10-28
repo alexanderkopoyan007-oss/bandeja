@@ -117,3 +117,26 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **What the QA can't see.** `tools/anim-check.ts` measures skating, contact, pops, joint speeds and clipping; it
   can't judge whether a swing looks like a padel player's. Settled by: the owner watching a match (the serve
   especially) and saying which strokes look wrong.
+
+## Phase 4 (AI)
+- **Shots off the back glass.** 27% of the top AI's shots against 12.8% for professional men (Mellado-Arbelo et al.
+  2019 via `docs/research/shots-movement-feel.md`); per point that is about 2.9 wall shots against 1.7, with
+  groundstrokes per point matching. The excess is long exchanges of deep volleys retrieved off the glass. Not
+  settled: no study gives where volleys land or how often defenders take a deep ball before the glass, and the
+  planner's glass costs barely move the share. Settled by: a landing-depth distribution for volleys against a pair
+  at the back (tracking data such as SAGIT's), or the owner's judgement from watching AI matches.
+- **How errors finish.** Into the net 65-68% (pros 51%), off the side wall 4-5% (pros 17%). The side-wall share
+  needs targets near the side glass that go wrong sideways; the AI's sideways spread and margins come from the
+  line-margin rule, not from data. Settled by: per-stroke direction-error data (the tennis analogue in the
+  research notes is a 34-40 m² landing ellipse, not padel).
+- **Amateur serve faults.** No study found gives first-serve fault or double-fault rates below professional level.
+  The AI's come out of its skill alone: 14% / 7% (level 0), 11% / 4% (level 0.5), 7% / 1% (top; pros about 10% / 2%).
+- **Doubles teamwork rates.** The distance between partners, how often pairs switch sides on a lob, and how often
+  players call the ball are not published (research notes §5: not found). The AI's are coaching geometry: partners
+  about 4.0 m apart, a switch after 10 of 16 partner-taken lobs to one side, about two calls a point.
+- **Smash jump height.** No padel figure; the avatar hops up to 0.3 m, as high as the ball is above the toes' reach.
+- **Air shots.** About 9% of points end on a swing that misses the ball (late swings at fast balls off the glass,
+  balls that died below reach), at every level. No rate is published; professionals rarely miss outright, so the top
+  level may be high. Settled by: frame-by-frame coding of a professional match for complete misses.
+- **Personalities.** The four styles' traits are set by design (recognisable, not measured from real players); they
+  are tested to stay distinct (`tests/sim/ai.test.ts`) but no player's real profile is behind any of them, by rule.

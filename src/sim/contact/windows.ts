@@ -72,6 +72,14 @@ export function overheadCost(y: number, t: PlayerTuning, kind: number): number {
  * height (windows after the bounce stay legal: a volley planned too late is blocked off the bounce instead).
  * Returns the window count.
  */
+/**
+ * How far behind the body's centre (m, away from the net) a ball can still be struck: a player opens up to a ball
+ * beside or just behind the hips, but no stroke reaches one further back (contacts are met 0.4-0.6 m in front of
+ * the body: Sánchez-Alcaraz et al. 2021). Without it 1.4% of the AI's contacts were 0.6-1.4 m behind the hitter,
+ * slices and lobs off a ball that had bounced past a net player, which the avatar's racket missed by up to 59 cm.
+ */
+export const BEHIND_MAX = 0.4;
+
 export function findWindows(
   pred: Prediction, px: number, pz: number, side: number, mustBounce: boolean, bouncesAllowed: number,
   t: PlayerTuning, out: ContactWindow[], fromTime: number, overhead = false, volley = false, ohKind = OH_ANY,
@@ -93,8 +101,9 @@ export function findWindows(
     // The ball reaches the body here: it hits the player, so nothing after this can be played from here.
     if (legal && d < t.bodyRadius + 0.035 && y < t.height) break;
     // (off a wall, a ball still climbing past the shoulders can't be met until it comes down: riseMaxOffWall)
+    // (and a ball more than BEHIND_MAX behind the body, further from the net than the hips, is past the stroke)
     const ok = legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight
-      && !(y > riseOff && pred.walls[i]! > 0 && pred.vy[i]! > 0);
+      && !(y > riseOff && pred.walls[i]! > 0 && pred.vy[i]! > 0) && side * (z - pz) <= BEHIND_MAX;
     if (ok) {
       // A ball touching the floor or glass right now is not where anyone means to hit it.
       const cost = (overhead ? abs(d - t.overheadReach) + overheadCost(y, t, ohKind)

@@ -22,10 +22,10 @@ const SURPRISE = 0.15;
 /**
  * Extra timing spread (per unit of the SD) for a ball off the glass: a wall shot is read and met on a ball that
  * changed direction, and is the least accurate stroke (Delgado García et al. 2017's target test). At 0.3 the top
- * AI erred on 3.1-3.5% of its back-wall shots against the pros' 5.4-6.3% (and rallies ran 11.7 shots); 1.5 gives
- * 5.5% (and 11.2).
+ * AI erred on 3.1-3.5% of its back-wall shots against the pros' 5.4-6.3% (and rallies ran 11.7 shots); with the
+ * AI judged on each shot's own windows, 1.8 gives 6.4% (and 11.3).
  */
-const AFTER_WALL = 1.5;
+const AFTER_WALL = 1.8;
 /** Chance a pair follows its chiquita in to the net, per unit of the style's net. */
 const CHIQ_NET = 0.35;
 const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number };

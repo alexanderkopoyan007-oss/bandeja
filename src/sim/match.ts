@@ -15,7 +15,7 @@ import {
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
-import { findWindows, makeWindows, OH_ANY, type ContactWindow } from './contact/windows.ts';
+import { findWindows, BEHIND_MAX, makeWindows, OH_ANY, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { formationSpot, SWITCH_X, type Spot } from './player/formation.ts';
@@ -986,7 +986,7 @@ export class MatchSim {
     let scale = this.ai[i] ? 1 : this.cfg.timingScale ?? 1;
 
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) {
-      if (!this.ai[i]) scale *= SHAPES[SHOT_SERVE]!.timing ?? 1;
+      scale *= SHAPES[SHOT_SERVE]!.timing ?? 1;
       const delta = t - this.tossIdeal;
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
@@ -1016,12 +1016,10 @@ export class MatchSim {
       return;
     }
     // Each shot has its own windows: a punch volley barely turns the face, a víbora brushes across the ball at speed.
-    // Humans only for now: the AI's timing spread was fitted with one window for every shot, and Phase 4 refits it.
-    if (!this.ai[i]) {
-      this.shotHeight = w.height;
-      this.shotMod = p.mod;
-      scale *= SHAPES[this.shotFor(p, w.volley)]!.timing ?? 1;
-    }
+    // The AI is judged on them too (Phase 4; its timing spread was refit with them).
+    this.shotHeight = w.height;
+    this.shotMod = p.mod;
+    scale *= SHAPES[this.shotFor(p, w.volley)]!.timing ?? 1;
     const delta = t - w.ideal;
     p.timingDelta = delta;
     p.grade = gradeTiming(delta, TIMING, scale);
@@ -1121,9 +1119,12 @@ export class MatchSim {
       : b.sideZ * s > 0 && !b.inNet && this.rally.hitter !== team && this.rally.bounces <= 1 && !(this.rally.isServe && this.rally.bounces === 0)
         // The serve is returned by the receiver, not the partner (8.1).
         && !(this.rally.isServe && i !== this.score.receiverPlayer());
-    if (!legal || d > t.reachMax + 0.25 || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15 || this.rally.over) {
+    // (a ball gone more than BEHIND_MAX past the hips, away from the net, is past the stroke: the same margin as reach)
+    const past = !serving && s * (b.pos.z - p.pos.z) > BEHIND_MAX + 0.25;
+    if (!legal || d > t.reachMax + 0.25 || past || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15
+      || this.rally.over) {
       if (serving && this.tossBounces !== 1) this.rally.onServeMissed();
-      this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
+      this.whiff(i, this.time, legal && (d > t.reachMax + 0.25 || past) ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
       return;
     }
 
