@@ -55,6 +55,8 @@ interface Counts {
   playerTicks: number;
   netTicks: number;
   formation: { up: number; back: number; split: number };
+  /** Both pairs together: both up, one up one back, both back, any split (ticks). */
+  pairs: { allUp: number; upBack: number; allBack: number; mixed: number };
   /** Mean distance between partners (sum, n). */
   mateDist: [number, number];
   /** Winners whose last shot was each stroke class (Sánchez-Alcaraz et al. 2022 report this split). */
@@ -84,7 +86,7 @@ function emptyCounts(): Counts {
     strokes: {}, lobs: 0, chiquitas: 0, drops: 0, shots: 0, zone: { back: 0, transition: 0, net: 0 },
     firstServes: 0, firstFaults: 0, secondServes: 0, doubleFaults: 0,
     srvLen: [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]], srvWon: 0,
-    playerTicks: 0, netTicks: 0, formation: { up: 0, back: 0, split: 0 }, mateDist: [0, 0],
+    playerTicks: 0, netTicks: 0, formation: { up: 0, back: 0, split: 0 }, pairs: { allUp: 0, upBack: 0, allBack: 0, mixed: 0 }, mateDist: [0, 0],
     lastWin: {}, lastErr: {}, perStyle: {}, perLevel: {}, pressureBins: new Array(16).fill(0), pressureErrBins: new Array(16).fill(0),
     matches: 0, matchWins: [0, 0], simSeconds: 0,
   };
@@ -136,9 +138,16 @@ function runJob(job: Job): Counts {
           st.ticks++;
           if (near) st.netTicks++;
         }
+        let st0 = 0;
         for (let team = 0; team < 2; team++) {
           const a = m.players[team]!, b = m.players[team + 2]!;
           const ua = Math.abs(a.pos.z) < 5, ub = Math.abs(b.pos.z) < 5;
+          const stt = ua && ub ? 1 : !ua && !ub ? 2 : 3;
+          if (team === 0) st0 = stt;
+          else if (st0 === 3 || stt === 3) c.pairs.mixed++;
+          else if (st0 === 1 && stt === 1) c.pairs.allUp++;
+          else if (st0 === 2 && stt === 2) c.pairs.allBack++;
+          else c.pairs.upBack++;
           if (ua && ub) c.formation.up++; else if (!ua && !ub) c.formation.back++; else c.formation.split++;
           c.mateDist[0] += Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z);
           c.mateDist[1]++;
@@ -151,10 +160,7 @@ function runJob(job: Job): Counts {
           const kind = SHOT_KEYS[e.a] ?? '?';
           if (kind === 'serve') { hits = []; pointStart = e.time; }
           const p = m.players[e.player]!;
-          const avail = lastStrikeT >= 0 && kind !== 'serve' ? e.time - lastStrikeT : 9;
-          const reach = Math.hypot(e.x - p.pos.x, e.z - p.pos.z);
-          const run = Math.hypot(p.vel.x, p.vel.z);
-          const pressure = kind === 'serve' ? 0 : pressureOf(lastSpeed, avail, reach, run, e.y, bounced > 0 && backWall + sideWall > 0, backWall + sideWall > 1);
+          const pressure = kind === 'serve' ? 0 : m.lastPressure;
           const cls = kind === 'serve' ? 'serve'
             : kind === 'smash' || kind === 'bandeja' || kind === 'vibora' ? kind
               : bounced === 0 ? 'volley'
@@ -194,7 +200,22 @@ function runJob(job: Job): Counts {
           const b = m.ball.pos;
           whiffPressure = pressureOf(lastSpeed, lastStrikeT >= 0 ? e.time - lastStrikeT : 9, Math.hypot(b.x - p.pos.x, b.z - p.pos.z), Math.hypot(p.vel.x, p.vel.z), b.y, backWall + sideWall > 0, backWall + sideWall > 1);
         } else if (e.kind === E_FAULT) {
-          if (e.b === 1) { c.firstServes++; c.firstFaults++; } else { c.secondServes++; c.doubleFaults++; }
+          if (e.b === 1) { c.firstServes++; c.firstFaults++; } else {
+            // A double fault: the point goes to the receivers, an unforced error of the server's (one shot).
+            c.secondServes++; c.doubleFaults++;
+            pointsHere++;
+            c.points++;
+            c.shotsPer.push(1);
+            const why = whyName[e.a] ?? String(e.a);
+            c.endWhy[why] = (c.endWhy[why] ?? 0) + 1;
+            c.ends.UE++;
+            pl(e.team).UE++;
+            for (let team = 0; team < 2; team++) { pl(team).points++; if (team !== e.team) pl(team).won++; }
+            c.srvLen[0]![1]!++;
+            c.lastErr.serve = (c.lastErr.serve ?? 0) + 1;
+            if (e.a === R.WHY_SERVE_NET) c.errHow.net++; else if (e.a === R.WHY_SERVE_WALL_FIRST) c.errHow.back++; else c.errHow.other++;
+            (c.strokes.serve ??= { W: 0, FE: 0, UE: 0, cont: 0 }).UE++;
+          }
           hits = []; lastStrikeT = -1;
         } else if (e.kind === E_MATCH) {
           c.matches++;
@@ -286,6 +307,7 @@ function merge(a: Counts, b: Counts): Counts {
   out.srvWon += b.srvWon;
   out.playerTicks += b.playerTicks; out.netTicks += b.netTicks;
   add(out.formation, b.formation);
+  add(out.pairs, b.pairs);
   out.mateDist[0] += b.mateDist[0]; out.mateDist[1] += b.mateDist[1];
   add(out.lastWin, b.lastWin); add(out.lastErr, b.lastErr);
   for (const [k, v] of Object.entries(b.perStyle)) add((out.perStyle[k] ??= { shots: 0, lobs: 0, touch: 0, overheads: 0, smashes: 0, viboras: 0, volleys: 0, wall: 0, netTicks: 0, ticks: 0, W: 0, UE: 0, FE: 0 }) as unknown as Record<string, number>, v as unknown as Record<string, number>);
@@ -315,6 +337,7 @@ export interface Summary {
   zone: { back: number; transition: number; net: number };
   netTime: number;
   formation: { up: number; back: number; split: number };
+  pairs: { allUp: number; upBack: number; allBack: number; mixed: number };
   mateDist: number;
   strokes: Record<string, { n: number; W: number; FE: number; UE: number }>;
   perStyle: Record<string, Record<string, number>>;
@@ -365,6 +388,7 @@ export function summarise(c: Counts): Summary {
     zone: share(c.zone) as Summary['zone'],
     netTime: c.netTicks / Math.max(1, c.playerTicks),
     formation: share(c.formation) as Summary['formation'],
+    pairs: share(c.pairs) as Summary['pairs'],
     mateDist: c.mateDist[0] / Math.max(1, c.mateDist[1]),
     strokes, perStyle, perLevel,
     winHow: share(c.winHow), errHow: share(c.errHow), lastWin: share(c.lastWin), lastErr: share(c.lastErr),
@@ -384,12 +408,13 @@ export function report(s: Summary, c: Counts): string {
   L.push(`  errors: ${Object.entries(s.errHow).map(([k, v]) => `${k} ${pct(v)}`).join(', ')} (pros men: net 51, back wall on the full 28, side 17, other 3)`);
   L.push(`  last shot of winners: ${Object.entries(s.lastWin).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)}`).join(', ')} (pros: smash 43, volley 28, bandeja/víbora 13, groundstroke 6)`);
   L.push(`  last shot of errors: ${Object.entries(s.lastErr).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)}`).join(', ')} (pros: volley 30, groundstroke 30, lob 15, bandeja/víbora 10, smash 2)`);
-  L.push(`first-serve faults ${pct(s.firstServeFaults)} (pros ~10)   double faults ${pct(s.doubleFaults)} of second serves (pros ~2)`);
+  L.push(`first-serve faults ${pct(s.firstServeFaults)} of ${c.firstServes} (pros ~10)   double faults ${pct(s.doubleFaults)} of ${c.secondServes} second serves (pros ~2)`);
   L.push(`serving pair wins ${pct(s.serverWins)} (pros men ~62); by shots 1-2/3-4/5-6/7-8/9+: ${s.serverWinsByLen.map(pct).join(' / ')} (national 98 / 65 / 64 / 57 / 42)`);
   L.push(`shot mix: ${Object.entries(s.mix).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)}`).join(', ')}; lobs ${pct(s.lobShare)} of all shots`);
   L.push(`  (pros men 2014: volley 29.6, groundstroke 23.1, serve 12.3, back-wall 12.8, side-wall 2.7, double-wall 3.5, bandeja 6.0, smash 6.9; lobs ~20 elite 2013, 9 national)`);
   L.push(`hit from back / transition / net: ${pct(s.zone.back)} / ${pct(s.zone.transition)} / ${pct(s.zone.net)} (pros 49 / 19 / 26)`);
   L.push(`player-time within 4 m of the net ${pct(s.netTime)}; pairs both up ${pct(s.formation.up)}, both back ${pct(s.formation.back)}, split ${pct(s.formation.split)}; partners ${s.mateDist.toFixed(2)} m apart`);
+  L.push(`  both pairs: one up and one back ${pct(s.pairs.upBack)}, all four up ${pct(s.pairs.allUp)}, all four back ${pct(s.pairs.allBack)}, a pair split ${pct(s.pairs.mixed)}`);
   L.push(`per stroke (pros: smash W 45 UE 6; bandeja W 3.5 UE 3; volley W 3-6 UE 3-5; groundstroke/back-wall W <1 UE 5-6):`);
   for (const [k, r] of Object.entries(s.strokes).sort((a, b) => b[1].n - a[1].n)) L.push(`  ${k.padEnd(13)} n ${String(r.n).padStart(6)}  W ${pct(r.W).padStart(6)}  FE ${pct(r.FE).padStart(6)}  UE ${pct(r.UE).padStart(6)}`);
   if (Object.keys(s.perLevel).length > 1) {

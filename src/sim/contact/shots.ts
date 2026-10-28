@@ -72,6 +72,8 @@ interface SwingSpec {
   frameSpeedRand: number;
   frameYaw: number;
   framePitch: number[];
+  /** Extra spread per unit of `ShotRequest.motor` (AI players' swing-to-swing variability). */
+  motor: { pathYaw: number; pathPitch: number; faceOpen: number; speed: number };
 }
 
 const data = shotData as unknown as Record<string, ShotShape> & { modifiers: { power: ModSpec; precision: ModSpec }; swing: SwingSpec };
@@ -101,6 +103,11 @@ export interface ShotRequest {
   control: number;
   /** Multiplies the shot's spin (serves: flat / slice / kick by key). The launch is solved with it. */
   spinScale: number;
+  /**
+   * Swing-to-swing variability on top of the timing's (AI players; 0 for a human, whose own hands supply it):
+   * spreads the swing's path, face and speed by `swing.motor` per unit (data/shots.json).
+   */
+  motor: number;
   /** Where the hitter's body is (x, z): the racket reaches from it to the ball. */
   bodyX: number;
   bodyZ: number;
@@ -496,10 +503,12 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
 
   // Swing errors.
   const deg = (PI / 180) * err;
+  const mot = req.motor;
+  const MO = SW.motor;
   // Early pulls the swing across the hitter's body, late pushes it the other way.
   const tim = clamp(req.timingDelta / 0.11, -2, 2);
-  const yaw = tim * SW.timingYaw * (PI / 180) * req.handSide + rng.normal() * spread(SW.pathYaw) * deg;
-  const pitch = rng.normal() * spread(SW.pathPitch) * deg;
+  const yaw = tim * SW.timingYaw * (PI / 180) * req.handSide + rng.normal() * (spread(SW.pathYaw) + mot * MO.pathYaw) * deg;
+  const pitch = rng.normal() * (spread(SW.pathPitch) + mot * MO.pathPitch) * deg;
   // The whole swing turned: face and path together.
   rotateYaw(faceN, yaw);
   rotateYaw(faceV, yaw);
@@ -510,10 +519,10 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
     rotateAbout(faceN, hor, pitch);
     rotateAbout(faceV, hor, pitch);
     // The face alone against the path: more open or closed, turned a little.
-    rotateAbout(faceN, hor, rng.normal() * spread(SW.faceOpen) * deg);
+    rotateAbout(faceN, hor, rng.normal() * (spread(SW.faceOpen) + mot * MO.faceOpen) * deg);
   }
   rotateYaw(faceN, rng.normal() * spread(SW.faceYaw) * deg);
-  faceV.scale(max(0.3, 1 + rng.normal() * (SW.speed[0]! + SW.speed[1]! * bad) * err));
+  faceV.scale(max(0.3, 1 + rng.normal() * (SW.speed[0]! + SW.speed[1]! * bad + mot * MO.speed) * err));
 
   // Where on the face: early meets the ball nearer the tip; too early / too late at the edge or the frame.
   let fromTip = shape.impact + tim * SW.timingAlong + rng.normal() * sAlong;

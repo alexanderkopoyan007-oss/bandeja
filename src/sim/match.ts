@@ -20,6 +20,8 @@ import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_V
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { formationSpot, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
+import { pressureOf } from './ai/pressure.ts';
+import { smashLanding } from './contact/smashAim.ts';
 import { SimpleAi } from './ai/simpleAi.ts';
 import { makeWorld, makeNetCloth, type WorldOptions } from './setup.ts';
 import type { NetCloth } from './court/netCloth.ts';
@@ -119,7 +121,7 @@ const AIM_SPEED_Z = 9;
 const OVERHEAD_AIM_DEPTH = 0.8;
 /** Untouched víbora target: cross-court, this deep (fraction of the half), into the side glass. */
 const VIBORA_AIM_DEPTH = 0.68;
-/** Untouched smash target: clear the tape by this much on a straight line, but land no shorter than this. */
+/** Untouched smash target: clear the tape by this much at full pace (smashAim.ts), but land no shorter than this. */
 const SMASH_NET_MARGIN = 0.45;
 const SMASH_MIN_DEPTH = 3.2;
 /** Windows are searched from this far back, so a release just after the ideal is still judged against it. */
@@ -183,7 +185,7 @@ export class MatchSim {
   /** Scratch plans for deciding which partner takes the ball. */
   private readonly claim: StandPlan[];
   private readonly req: ShotRequest = {
-    shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, bodyX: 0, bodyZ: 0,
+    shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, motor: 0, bodyX: 0, bodyZ: 0,
   };
   private readonly res: ShotResult = { reachable: true, speed: 0, idealX: 0, idealZ: 0 };
   /** Aim captured at release, per player: relative (-1..1) or absolute. */
@@ -824,15 +826,13 @@ export class MatchSim {
     if (f.aimAbs || abs(f.moveX) + abs(f.moveY) > 0.1) p.aimTouched = true;
     else if (!p.aimTouched && !serve && p.shot === SHOT_BANDEJA) {
       // An overhead target nobody has steered follows the shot: deep for a bandeja; for a smash (Space) the
-      // shortest landing that a full-pace straight line from the planned contact clears the net with margin.
+      // shortest landing at which a full-pace smash from the planned contact clears the net with margin.
       // Near the net that is mid-court, and the steep bounce can leave the court; from deep it lands deeper.
       if ((f.held & BTN_POWER) !== 0) {
         const st = this.stand[p.index]!;
         const back = abs(st.valid ? st.bz : p.pos.z);
         const h = st.valid ? st.by : p.tune.overheadIdealHeight;
-        const over = c.netHeightAt(0) + SMASH_NET_MARGIN;
-        const far = c.halfL - 2.0;
-        p.aimZ = -s * (h > over + 0.2 ? clamp((over * back) / (h - over), SMASH_MIN_DEPTH, far) : far);
+        p.aimZ = -s * smashLanding(c.netHeightAt(0), back, h, SMASH_NET_MARGIN, SMASH_MIN_DEPTH, c.halfL - 2.0);
       } else if ((f.held & BTN_PRECISION) !== 0) {
         // Víbora: cross-court into the side glass.
         p.aimX = (p.pos.x > 0 ? -1 : 1) * (c.halfW - 0.9);
@@ -1112,6 +1112,12 @@ export class MatchSim {
     r.spinScale = serving ? (p.shot === SHOT_TOPSPIN ? -0.9 : p.shot === SHOT_DRIVE ? 0.15 : 1) : 1;
     r.bodyX = p.pos.x;
     r.bodyZ = p.pos.z;
+    // How hard this ball is to play (ai/pressure.ts): an AI's swing is less steady under pressure.
+    const v = b.vel;
+    const walls = !serving && this.rally.bounces > 0 ? this.wallsSinceBounce : 0;
+    this.lastPressure = serving ? 0 : pressureOf(sqrt(v.x * v.x + v.y * v.y + v.z * v.z), this.time - this.lastStrikeTime, d, p.speed(), b.pos.y, walls > 0, walls > 1);
+    const ai = this.ai[i];
+    r.motor = ai ? ai.motor(this.lastPressure) : 0;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
 
@@ -1183,6 +1189,8 @@ export class MatchSim {
   // ---- end of rally --------------------------------------------------------------------------
 
   private pendingPointWinner = -1;
+  /** Pressure of the last contact (ai/pressure.ts; read by tools/match-stats.ts). */
+  lastPressure = 0;
 
   /** While the ball is dead after a point: the team that won it, else -1 (read by the renderer). */
   get pointWinner(): number {

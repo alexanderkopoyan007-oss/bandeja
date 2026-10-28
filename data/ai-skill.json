@@ -1,0 +1,12 @@
+{
+  "//": "AI skill by level (0 = beginner, 1 = the top difficulty, tuned against professional match statistics: tools/match-stats.ts, docs/ai.md). Each pair is [level 0, level 1], interpolated linearly. timing: SD of the release error in seconds against the game's timing windows (the same windows humans are judged on). motor: the swing-to-swing spread that is not timing (data/shots.json swing.motor per unit). pressure: how much the motor spread grows per unit of pressure (src/sim/ai/pressure.ts): a hard, fast, stretched or low ball is played less steadily.",
+  "timing": [
+    0.07,
+    0.018
+  ],
+  "motor": [
+    3.0,
+    0.55
+  ],
+  "pressure": 1.5
+}

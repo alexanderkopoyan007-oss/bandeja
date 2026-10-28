@@ -19,10 +19,15 @@ export const PRESSURE_FORCED = 1;
  * - off the glass 0.25, off two walls 0.5.
  */
 export function pressureOf(speedIn: number, avail: number, reach: number, run: number, height: number, wall: boolean, twoWalls: boolean): number {
-  return clamp((speedIn - 14) / 12, 0, 3)
-    + clamp((0.9 - avail) / 0.45, 0, 2)
-    + clamp((reach - 1.0) / 0.4, 0, 2)
-    + clamp((run - 2) / 2.5, 0, 2)
-    + clamp((0.4 - height) / 0.25, 0, 1)
-    + (twoWalls ? 0.5 : wall ? 0.25 : 0);
+  const T = PRESSURE_TERMS;
+  T[0] = clamp((speedIn - 14) / 12, 0, 3);
+  T[1] = clamp((0.9 - avail) / 0.45, 0, 2);
+  T[2] = clamp((reach - 1.0) / 0.4, 0, 2);
+  T[3] = clamp((run - 2) / 2.5, 0, 2);
+  T[4] = clamp((0.4 - height) / 0.25, 0, 1);
+  T[5] = twoWalls ? 0.5 : wall ? 0.25 : 0;
+  return T[0]! + T[1]! + T[2]! + T[3]! + T[4]! + T[5]!;
 }
+
+/** The last pressureOf call's terms (pace, time, stretch, run, height, walls), for the statistics. */
+export const PRESSURE_TERMS = new Float64Array(6);

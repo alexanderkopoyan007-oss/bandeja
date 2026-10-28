@@ -15,7 +15,7 @@ function fly(shot: number, z: number, y: number, depth: number) {
   b.vel.set(0, -2, 10);
   const req: ShotRequest = {
     shot, mod: MOD_NONE, targetX: 0, targetZ: -depth, quality: 0.82, timingDelta: 0, handSide: 1,
-    moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, bodyX: 0, bodyZ: z + 0.6,
+    moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, motor: 0, bodyX: 0, bodyZ: z + 0.6,
   };
   const res: ShotResult = { reachable: false, speed: 0, idealX: 0, idealZ: 0 };
   strike(solver, b, req, new Rng(5), res);
