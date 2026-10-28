@@ -16,6 +16,13 @@ const q3 = new THREE.Quaternion();
 /** Rotation-vector scratch. */
 const RV = new Float64Array(3);
 const LN2 = 0.6931471805599453;
+/**
+ * The frame's dt (s), set by the caller before stepping, and the parameters of the step under way: doubles passed
+ * as arguments to a call V8 doesn't inline are boxed (garbage every frame), so they travel in these.
+ */
+export const INERT_DT = new Float64Array(1);
+/** [halfLife, keep, limit] for decay / stepRotation. */
+const PRM = new Float64Array(3);
 
 /** RV = log(q) as a rotation vector (angle * axis, radians), short way round. */
 function logQ(q: THREE.Quaternion): void {
@@ -42,9 +49,10 @@ function wrap(a: number): number {
   return a;
 }
 
-/** Critically damped decay of x[k..k+n) (velocities v) towards 0, exact for a step dt (Holden's damper). */
-function decay(x: Float64Array, v: Float64Array, k: number, n: number, halfLife: number, dt: number, keep: number): void {
-  const y = (2 * LN2) / Math.max(1e-5, halfLife);
+/** Critically damped decay of x[k..k+n) (velocities v) towards 0, exact for a step INERT_DT (Holden's damper); PRM[0..1]. */
+function decay(x: Float64Array, v: Float64Array, k: number, n: number): void {
+  const dt = INERT_DT[0]!, keep = PRM[1]!;
+  const y = (2 * LN2) / Math.max(1e-5, PRM[0]!);
   const e = Math.exp(-y * dt);
   for (let c = k; c < k + n; c++) {
     const j = v[c]! + x[c]! * y;
@@ -89,7 +97,9 @@ export class InertN {
     this.primed = false;
   }
 
-  step(dt: number): void {
+  /** One frame of INERT_DT. */
+  step(): void {
+    const dt = INERT_DT[0]!;
     const n = this.n;
     if (!this.primed || dt <= 0) {
       for (let c = 0; c < n; c++) { this.out[c] = this.in[c]!; this.prev[c] = this.in[c]!; this.x[c] = 0; this.v[c] = 0; this.tv[c] = 0; }
@@ -101,7 +111,8 @@ export class InertN {
       const d = this.wrapAngle ? wrap(this.in[c]! - this.prev[c]!) : this.in[c]! - this.prev[c]!;
       d2 += d * d;
     }
-    decay(this.x, this.v, 0, n, this.halfLife, dt, this.keep);
+    PRM[0] = this.halfLife; PRM[1] = this.keep;
+    decay(this.x, this.v, 0, n);
     const jump = d2 > this.limit * this.limit * dt * dt;
     if (jump) this.jumps++;
     for (let c = 0; c < n; c++) {
@@ -144,7 +155,9 @@ export class InertQ {
     this.primed = false;
   }
 
-  step(dt: number): void {
+  /** One frame of INERT_DT. */
+  step(): void {
+    const dt = INERT_DT[0]!;
     if (!this.primed || dt <= 0) {
       this.out.copy(this.in);
       this.prev.copy(this.in);
@@ -152,7 +165,8 @@ export class InertQ {
       if (dt > 0) this.primed = true;
       return;
     }
-    stepRotation(this.in, this.prev, this.out, this.x, this.v, this.tv, 0, this.limit, this.halfLife, this.keep, dt);
+    PRM[0] = this.halfLife; PRM[1] = this.keep; PRM[2] = this.limit;
+    stepRotation(this.in, this.prev, this.out, this.x, this.v, this.tv, 0);
     if (JUMPED[0] === 1) this.jumps++;
   }
 }
@@ -161,17 +175,18 @@ const JUMPED = new Uint8Array(1);
 
 /**
  * One rotation, in place of `target` -> `shown`: offsets x (rotation vector) with velocity v, target velocity tv, at
- * index k. JUMPED[0] says whether this frame was a jump.
+ * index k; PRM [halfLife, keep, limit], over INERT_DT. JUMPED[0] says whether this frame was a jump.
  */
 function stepRotation(target: THREE.Quaternion, prev: THREE.Quaternion, shown: THREE.Quaternion,
-  x: Float64Array, v: Float64Array, tv: Float64Array, k: number, limit: number, halfLife: number, keep: number, dt: number): void {
+  x: Float64Array, v: Float64Array, tv: Float64Array, k: number): void {
+  const dt = INERT_DT[0]!, limit = PRM[2]!;
   // The target's move this frame (in the parent's frame: target = delta * prev).
   q1.copy(prev).invert().premultiply(target);
   logQ(q1);
   const dx = RV[0]!, dy = RV[1]!, dz = RV[2]!;
   const step = Math.sqrt(dx * dx + dy * dy + dz * dz);
   prev.copy(target);
-  decay(x, v, k, 3, halfLife, dt, keep);
+  decay(x, v, k, 3);
   JUMPED[0] = 0;
   if (step > limit * dt) {
     JUMPED[0] = 1;
@@ -225,8 +240,9 @@ export class Inertializer {
     this.hips.reset();
   }
 
-  /** `bones[i].quaternion` are the targets; they become what is shown. skip[i] = 1 leaves a joint alone. */
-  apply(bones: THREE.Bone[], hips: THREE.Vector3 | null, skip: Uint8Array, dt: number): void {
+  /** `bones[i].quaternion` are the targets; they become what is shown. skip[i] = 1 leaves a joint alone. Over INERT_DT. */
+  apply(bones: THREE.Bone[], hips: THREE.Vector3 | null, skip: Uint8Array): void {
+    const dt = INERT_DT[0]!;
     const n = this.shown.length;
     if (!this.primed || dt <= 0) {
       for (let i = 0; i < n; i++) { this.shown[i]!.copy(bones[i]!.quaternion); this.prevTarget[i]!.copy(bones[i]!.quaternion); }
@@ -235,7 +251,8 @@ export class Inertializer {
     } else {
       for (let i = 0; i < n; i++) {
         if (skip[i] === 1) continue;
-        stepRotation(bones[i]!.quaternion, this.prevTarget[i]!, this.shown[i]!, this.ox, this.ov, this.tv, i * 3, this.limit[i]!, this.halfLife, 1, dt);
+        PRM[0] = this.halfLife; PRM[1] = 1; PRM[2] = this.limit[i]!;
+        stepRotation(bones[i]!.quaternion, this.prevTarget[i]!, this.shown[i]!, this.ox, this.ov, this.tv, i * 3);
         if (JUMPED[0] === 1) this.jumps++;
         bones[i]!.quaternion.copy(this.shown[i]!);
       }
@@ -243,7 +260,7 @@ export class Inertializer {
     if (hips) {
       const h = this.hips;
       h.in[0] = hips.x; h.in[1] = hips.y; h.in[2] = hips.z;
-      h.step(dt);
+      h.step();
       hips.set(h.out[0]!, h.out[1]!, h.out[2]!);
     }
   }

@@ -10,7 +10,7 @@ import type { StandPlan } from '../../sim/player/positioning.ts';
 import type { Clip, PlayerAsset } from './asset.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
-import { Inertializer, InertN, InertQ } from './inertia.ts';
+import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import {
   BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SMASH, VOLLEY_BH, VOLLEY_FH,
@@ -57,7 +57,8 @@ function bezier(a: THREE.Vector3, c: THREE.Vector3, b: THREE.Vector3, t: number,
  * unit vector into `out`, with a little of `fx, fz` (forward) so a straight limb still has a side to bend to.
  * A pole there keeps the IK's elbow or knee where the animation had it: switching the IK on or off doesn't snap it.
  */
-function bendDir(a: THREE.Bone, m: THREE.Bone, e: THREE.Bone, fx: number, fy: number, fz: number, out: THREE.Vector3): void {
+function bendDir(a: THREE.Bone, m: THREE.Bone, e: THREE.Bone, fwd: THREE.Vector3, out: THREE.Vector3): void {
+  const fx = fwd.x, fy = fwd.y, fz = fwd.z;
   const A = a.matrixWorld.elements, M = m.matrixWorld.elements, E = e.matrixWorld.elements;
   const lx = E[12]! - A[12]!, ly = E[13]! - A[13]!, lz = E[14]! - A[14]!;
   const mx = M[12]! - A[12]!, my = M[13]! - A[13]!, mz = M[14]! - A[14]!;
@@ -72,6 +73,9 @@ const bendL = new THREE.Vector3();
 const bendR = new THREE.Vector3();
 const bendA = new THREE.Vector3();
 const bendF = new THREE.Vector3();
+/** bendDir's forward hint (a vector: doubles passed to a call that isn't inlined are boxed). */
+const bendFwd = new THREE.Vector3();
+const DOWN = new THREE.Vector3(0, -1, 0);
 
 /**
  * Blend weight for lerpV / nlerpQ, in a field: V8 boxes a double passed to a call it doesn't inline. `hemi`: which
@@ -786,7 +790,7 @@ export class Avatar {
       this.w = 0;
     }
     this.keepCon = this.st === ST_SWING && t < this.tCon ? (this.tCon - t) / (this.tCon - t + this.dt) : 1;
-    if (this.inertial && (Avatar.inertMask & 24) !== 0) this.smoothKey(t);
+    if (this.inertial && (Avatar.inertMask & 24) !== 0) { this.keyT = t; this.smoothKey(); }
     // Low balls: bend the knees (contact or plan height), scaled by the stroke's weight.
     const cy = this.hasCon ? this.conW.y : 1;
     this.crouch = f.crouch * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) * this.w;
@@ -885,6 +889,7 @@ export class Avatar {
     if (p.handed !== this.handed) this.setHanded(p.handed);
     const dt = this.lastT < 0 ? 0 : Math.min(0.1, Math.max(0, t - this.lastT));
     this.lastT = t;
+    INERT_DT[0] = dt;
     const pp = sim.prevPlayers[idx]!;
     this.root.position.set(pp.x + (p.pos.x - pp.x) * alpha, 0, pp.z + (p.pos.z - pp.z) * alpha);
     // Stance: the sim faces the ball; a stroke squares up to the net and turns the shoulders instead
@@ -899,7 +904,7 @@ export class Avatar {
     // The body turns no faster than a person turns (the sim faces the ball at once, even one that has just passed).
     if (this.inertial && (Avatar.inertMask & 4) !== 0) {
       this.yawI.in[0] = this.yaw;
-      this.yawI.step(dt);
+      this.yawI.step();
       this.yaw = this.yawI.out[0]!;
     }
     this.dt = dt;
@@ -953,7 +958,7 @@ export class Avatar {
       for (let k = 0; k < 3; k++) this.spine[k]!.quaternion.multiply(q1).multiply(q2);
     }
     // The clip pose (locomotion, reactions, the shoulder turn) carried on smoothly through any jump, before IK.
-    if (this.inertial && (Avatar.inertMask & 1) !== 0) this.inertia.apply(this.bones, this.hips.position, this.inertiaSkip, dt);
+    if (this.inertial && (Avatar.inertMask & 1) !== 0) this.inertia.apply(this.bones, this.hips.position, this.inertiaSkip);
     this.root.updateMatrixWorld(true);
 
     // Ready position while a point is on (and for the receiver waiting for the serve), not at a sprint.
@@ -970,7 +975,7 @@ export class Avatar {
 
     // The head after looking (the ball can move faster than a head turns).
     if (this.inertial && (Avatar.inertMask & 2) !== 0) {
-      this.headInertia.apply(this.bones, null, this.headSkip, dt);
+      this.headInertia.apply(this.bones, null, this.headSkip);
       this.neck.updateMatrixWorld(true);
     }
   }
@@ -994,48 +999,52 @@ export class Avatar {
    * The stroke's key and weight, carried on smoothly through a jump (a stroke picked again at the release, the
    * contact moved by a new plan). Any offset is gone by the contact: the racket still meets the ball.
    */
-  private smoothKey(t: number): void {
+  /** smoothKey's time (a field: see BL). */
+  private keyT = 0;
+  private smoothKey(): void {
+    const t = this.keyT;
     const dt = this.dt;
     // The forward swing (it starts during the charge, timed to the plan) moves fast by design.
     const fast = (this.st === ST_SWING && t < this.tCon + 0.03) || (this.st === ST_PREP && this.swingS > 0);
-    if ((Avatar.inertMask & 8) === 0) { this.smoothW(dt, this.st === ST_SWING && t < this.tCon ? (this.tCon - t) / (this.tCon - t + dt) : 1); return; }
     const keep = this.st === ST_SWING && t < this.tCon ? (this.tCon - t) / (this.tCon - t + dt) : 1;
+    if ((Avatar.inertMask & 8) === 0) { this.wI.keep = keep; this.smoothW(); return; }
     const P = this.kpI;
     P.limit = fast ? 45 : 10;
     P.keep = keep;
     P.in[0] = this.kp.x; P.in[1] = this.kp.y; P.in[2] = this.kp.z;
-    P.step(dt);
+    P.step();
     this.kp.set(P.out[0]!, P.out[1]!, P.out[2]!);
     const Q = this.kqI;
     Q.limit = fast ? (5000 * Math.PI) / 180 : (1500 * Math.PI) / 180;
     Q.keep = keep;
     Q.in.copy(this.kq);
-    Q.step(dt);
+    Q.step();
     this.kq.copy(Q.out);
     const L = this.kpoleI;
     L.limit = fast ? 30 : 6;
     L.keep = keep;
     L.in[0] = this.kpole.x; L.in[1] = this.kpole.y; L.in[2] = this.kpole.z;
-    L.step(dt);
+    L.step();
     this.kpole.set(L.out[0]!, L.out[1]!, L.out[2]!);
     const O = this.koffI;
     O.in[0] = this.koff.x; O.in[1] = this.koff.y; O.in[2] = this.koff.z;
-    O.step(dt);
+    O.step();
     this.koff.set(O.out[0]!, O.out[1]!, O.out[2]!);
     const Y = this.kyawI;
     Y.keep = keep;
     Y.in[0] = this.kyaw;
-    Y.step(dt);
+    Y.step();
     this.kyaw = Y.out[0]!;
-    this.smoothW(dt, keep);
+    this.wI.keep = keep;
+    this.smoothW();
   }
 
-  private smoothW(dt: number, keep: number): void {
+  /** The stroke weight, carried on smoothly (its offset gone by the contact: wI.keep, set by the caller). */
+  private smoothW(): void {
     if ((Avatar.inertMask & 16) === 0) return;
     const W = this.wI;
-    W.keep = keep;
     W.in[0] = this.w;
-    W.step(dt);
+    W.step();
     this.w = Math.min(1, Math.max(0, W.out[0]!));
   }
 
@@ -1141,7 +1150,7 @@ export class Avatar {
       const D = this.dropI;
       D.keep = this.keepCon;
       D.in[0] = crouch;
-      D.step(this.dt);
+      D.step();
       crouch = D.out[0]!;
     }
     const drop = crouch + push * 0.35 + down + this.splitDrop - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
@@ -1161,7 +1170,8 @@ export class Avatar {
     if ((Avatar.feetMask & 2) !== 0) {
       for (let f = 0; f < 2; f++) {
         const A = f === 0 ? this.footL : this.footR;
-        const low = this.soleLow(f, A, f === 0 ? this.footQL : this.footQR);
+        this.soleLow(f, A, f === 0 ? this.footQL : this.footQR);
+        const low = this.low1;
         if (low < 0) { A.y -= low; lifted = true; }
       }
     }
@@ -1170,8 +1180,9 @@ export class Avatar {
     // Hips are a child of the (turned) model: move them in its frame.
     const c = Math.cos(this.root.rotation.y), s = Math.sin(this.root.rotation.y);
     // How the knees bend in the clip, before the hips move.
-    bendDir(this.legL[0]!, this.legL[1]!, this.legL[2]!, s, 0, c, bendL);
-    bendDir(this.legR[0]!, this.legR[1]!, this.legR[2]!, s, 0, c, bendR);
+    bendFwd.set(s, 0, c);
+    bendDir(this.legL[0]!, this.legL[1]!, this.legL[2]!, bendFwd, bendL);
+    bendDir(this.legR[0]!, this.legR[1]!, this.legR[2]!, bendFwd, bendR);
     this.hips.position.x += this.reachX * c - this.reachZ * s;
     this.hips.position.z += this.reachX * s + this.reachZ * c;
     this.hips.position.y -= drop;
@@ -1188,8 +1199,10 @@ export class Avatar {
     }
   }
 
-  /** The lowest point of foot f's sole with the ankle at A turned to Q (the toes as they are now). */
-  private soleLow(f: number, A: THREE.Vector3, Q: THREE.Quaternion): number {
+  /** soleLow's result (a field: a double returned from a call that isn't inlined is boxed). */
+  private low1 = 0;
+  /** The lowest point of foot f's sole with the ankle at A turned to Q (the toes as they are now), into low1. */
+  private soleLow(f: number, A: THREE.Vector3, Q: THREE.Quaternion): void {
     const foot = (f === 0 ? this.legL : this.legR)[2]!;
     vsc.setFromMatrixScale(foot.matrixWorld);
     mf.compose(A, Q, vsc);
@@ -1208,7 +1221,7 @@ export class Avatar {
       }
       if (vs.y < low) low = vs.y;
     }
-    return low;
+    this.low1 = low;
   }
 
   /** The clip's ankle heights and the lowest point of each sole (fkY, lowY), before any IK. */
@@ -1372,7 +1385,7 @@ export class Avatar {
     // As the stroke and the ready position let go, the elbow goes back to where the clip bends it.
     const ik = Math.max(this.ready, w);
     if (ik < 1) {
-      bendDir(ua, fa, hand, 0, -1, 0, bendA);
+      bendDir(ua, fa, hand, DOWN, bendA);
       v2.setFromMatrixPosition(fa.matrixWorld).addScaledVector(bendA, 0.5);
       BL.u = 1 - ik;
       lerpV(this.pole, v2);
@@ -1395,7 +1408,7 @@ export class Avatar {
     this.toWorld(this.offPole, this.pole);
     const ikF = Math.max(this.ready, w * 0.85);
     if (ikF < 1) {
-      bendDir(ul, fl, hl, 0, -1, 0, bendF);
+      bendDir(ul, fl, hl, DOWN, bendF);
       v2.setFromMatrixPosition(fl.matrixWorld).addScaledVector(bendF, 0.5);
       BL.u = 1 - ikF;
       lerpV(this.pole, v2);
