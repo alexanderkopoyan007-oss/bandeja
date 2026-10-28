@@ -10,7 +10,8 @@ const NONE = [null, null, null, null];
 
 /** AI doubles at one level until `points` points: shots per point, first-serve faults, whiffs per shot. */
 function ladder(level: number, points: number) {
-  let shots = 0, pts = 0, firsts = 0, faults1 = 0, whiffs = 0;
+  // First serves per toss: a struck fault sends both E_HIT and E_FAULT; count it once.
+  let shots = 0, pts = 0, firsts = 0, faults1 = 0, whiffs = 0, struck = false;
   for (let sd = 1; pts < points; sd++) {
     const m = new MatchSim({ seed: sd * 104729, doubles: true, human: [false, false, false, false], aiLevel: [level, level] });
     let seen = 0;
@@ -20,12 +21,13 @@ function ladder(level: number, points: number) {
         const e = m.events[seen++ % m.events.length]!;
         if (e.kind === E_HIT) {
           shots++;
-          if (SHOT_KEYS[e.a] === 'serve' && m.serveNo === 1) firsts++;
+          if (SHOT_KEYS[e.a] === 'serve' && m.serveNo === 1) { firsts++; struck = true; }
         } else if (e.kind === E_FAULT && e.b === 1) {
           faults1++;
-          firsts++;
+          if (!struck) firsts++;
+          struck = false;
         } else if (e.kind === E_WHIFF) whiffs++;
-        else if (e.kind === E_POINT) pts++;
+        else if (e.kind === E_POINT) { pts++; struck = false; }
       }
     }
   }

@@ -18,7 +18,7 @@ import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows 
 import { findWindows, BEHIND_MAX, makeWindows, OH_ANY, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
-import { formationSpot, SWITCH_X, type Spot } from './player/formation.ts';
+import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
 import { smashLanding } from './contact/smashAim.ts';
@@ -191,7 +191,12 @@ export class MatchSim {
   /** Doubles calls: whether this ball has been called (per team), and the last claim decision's run gap and switch. */
   private readonly called = [0, 0];
   private readonly claimGap = new Float64Array(2);
-  private readonly claimSwitch = [0, 0];
+  /**
+   * Doubles, per team: 1 once this ball has been judged far enough from bouncing (before its bounce) for a
+   * switched pair of AIs to cross back to their own sides; held until the team's next strike, so the crossing
+   * isn't re-judged (and abandoned half-way) once the ball has bounced or come off the glass.
+   */
+  readonly crossBack = [0, 0];
 
   // Previous-tick state for render interpolation.
   readonly prevBall = { x: 0, y: 0, z: 0 };
@@ -654,6 +659,8 @@ export class MatchSim {
     for (let team = 0; team < 2; team++) {
       if (hitter < 0 || hitter === team) {
         this.taker[team] = -1;
+        if (hitter === team && this.crossBack[team] === 0 && this.rally.bounces === 0 && this.ai[team] && this.ai[team + 2]
+          && bounceIsFar(this)) this.crossBack[team] = 1;
         continue;
       }
       if (this.rally.isServe) {
@@ -691,11 +698,6 @@ export class MatchSim {
       if (tHit >= 0 && (!this.claim[pick]!.valid || this.claim[pick]!.t > tHit - 0.05)) pick = other;
       this.setTaker(team, pick);
       this.claimGap[team] = ca < CLAIM_OUT && cb < CLAIM_OUT ? abs(ca - cb) : CLAIM_OUT;
-      // The taker's contact on the partner's side of the pair, by more than the formation's switch distance.
-      const pl = this.claim[pick]!;
-      const q = this.players[pick]!;
-      const lane = (q.pos.x - this.players[pick ^ 2]!.pos.x) * s > 0 ? 1 : -1;
-      this.claimSwitch[team] = pl.valid && pl.bx * s * lane < -SWITCH_X ? 1 : 0;
     }
     for (let team = 0; team < 2; team++) this.callBall(team);
   }
@@ -705,7 +707,13 @@ export class MatchSim {
   private callBall(team: number): void {
     const k = this.taker[team]!;
     if (k < 0 || this.called[team] !== 0 || this.rally.isServe || this.time - this.lastStrikeTime < CALL_AFTER) return;
-    const sw = this.claimSwitch[team] === 1;
+    // A switch is the formation's own rule (formation.ts) on the taker's real plan, so the call matches what the
+    // pair does; an AI taker still reading the ball hasn't planned it yet: wait.
+    const plan = this.ai[k] ? this.ai[k]!.standPlan : this.stand[k]!;
+    if (this.ai[k] && !plan.valid) return;
+    const s = this.side(team);
+    const lane = (this.players[k ^ 2]!.pos.x - this.players[k]!.pos.x) * s > 0 ? 1 : -1;
+    const sw = plan.valid && plan.bx * s * lane > SWITCH_X;
     if (!sw && this.claimGap[team]! >= CALL_MARGIN) return;
     this.called[team] = 1;
     const mate = k ^ 2;
@@ -1023,6 +1031,13 @@ export class MatchSim {
     const delta = t - w.ideal;
     p.timingDelta = delta;
     p.grade = gradeTiming(delta, TIMING, scale);
+    // A late release whose ball is already past the body (as contact() judges it) is too late whatever the timing
+    // setting: the accessibility scale widens the grades, not the court (a "Good" volley 70 ms late was then cut at
+    // contact as out of reach).
+    if (delta > 0) {
+      const k = this.pred.indexAt(t);
+      if (k >= 0 && s * (this.pred.z[k]! - p.pos.z) > BEHIND_MAX + 0.25) p.grade = G_TOO_LATE;
+    }
     if (abs(delta) > TIMING.miss * scale) {
       this.whiff(i, t);
       return;
@@ -1121,10 +1136,11 @@ export class MatchSim {
         && !(this.rally.isServe && i !== this.score.receiverPlayer());
     // (a ball gone more than BEHIND_MAX past the hips, away from the net, is past the stroke: the same margin as reach)
     const past = !serving && s * (b.pos.z - p.pos.z) > BEHIND_MAX + 0.25;
+    if (past && legal && d <= t.reachMax + 0.25) p.grade = G_TOO_LATE;
     if (!legal || d > t.reachMax + 0.25 || past || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15
       || this.rally.over) {
       if (serving && this.tossBounces !== 1) this.rally.onServeMissed();
-      this.whiff(i, this.time, legal && (d > t.reachMax + 0.25 || past) ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
+      this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
       return;
     }
 
@@ -1204,7 +1220,7 @@ export class MatchSim {
     this.takerVersion[1 - team] = -1;
     this.called[1 - team] = 0;
     this.claimGap[1 - team] = CLAIM_OUT;
-    this.claimSwitch[1 - team] = 0;
+    this.crossBack[team] = 0;
     if (serving && this.doubles) {
       for (let k = 0; k < 4; k++) {
         const dx = this.players[k]!.pos.x - this.players[k ^ 2]!.pos.x;
@@ -1341,6 +1357,7 @@ export class MatchSim {
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);
+    h.num(this.crossBack[0]!).num(this.crossBack[1]!).num(this.claimGap[0]!).num(this.claimGap[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     const st: number[] = [];
     this.score.writeState(st);

@@ -638,6 +638,8 @@ export class Avatar {
   private planZ = 0;
   /** The planned contact is an AI's own release (or a serve's ideal for an AI): its moment is known. */
   private known = false;
+  /** The AI is charged for a ball that no longer passes within its reach (SimpleAi.beaten). */
+  private beaten = false;
 
   constructor(asset: PlayerAsset, color: number) {
     this.nb = asset.bones.length;
@@ -919,11 +921,13 @@ export class Avatar {
       return at;
     }
     this.known = false;
+    this.beaten = false;
     const st = this.plan(sim, idx);
     if (!st.valid) return -1;
     // An AI lets go at its own release time (the window it tracks, its timing error included), and the release
     // is the contact: time the swing to that, at wherever the ball will be then.
     const ai = sim.ai[idx];
+    this.beaten = ai ? ai.beaten : false;
     if (ai && ai.pressed && !ai.released && ai.releaseAt > sim.time - 0.05) {
       this.known = true;
       this.predAt(sim, ai.releaseAt, this.conW);
@@ -986,7 +990,14 @@ export class Avatar {
       const lead = this.fam.lead ?? LEAD;
       // A human's release can come at any moment, so the swing waits short of the ball for it; an AI's moment is
       // known, and its swing runs straight into the ball.
-      if (this.hasCon && tp - t < lead) this.swingS = Math.max(this.swingS, Math.min(this.known ? 1 : HOVER, 1 - (tp - t) / lead));
+      // An AI that sees the ball won't pass within its reach holds the backswing (it stands down at the release
+      // rather than swing at the air; the swing went 90-100% of the way into nothing before this).
+      if (this.hasCon && tp - t < lead && !this.beaten) {
+        // Never faster than the quickest swing (a backswing held while beaten and let go late jumped to nearly
+        // done in one frame and snapped the elbow).
+        const cap = this.swingS + this.dt / (MIN_SWING * this.fam.punch);
+        this.swingS = Math.max(this.swingS, Math.min(this.known ? 1 : HOVER, 1 - (tp - t) / lead, cap));
+      }
     }
     // Release (a whiff at release goes straight to recover): finish the swing at the contact moment.
     if (sw !== SW_CHARGE) this.wallWant = 0;
