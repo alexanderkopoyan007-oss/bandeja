@@ -128,18 +128,27 @@ function smudges(): THREE.CanvasTexture {
   let s = 77;
   const r = (): number => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
   const pxm = W / 4; // pixels per metre
-  for (let i = 0; i < 70; i++) {
+  // Ball prints: felt leaves a faint ring-shaped print, smeared a little along the way the ball skidded (mostly
+  // sideways and down), at the heights balls meet the glass. Faint: they show against light, not everywhere.
+  for (let i = 0; i < 46; i++) {
     const x = r() * W;
-    const hgt = 0.25 + Math.pow(r(), 1.4) * 2.4;
+    const hgt = 0.35 + Math.pow(r(), 1.3) * 2.3;
     const y = H - hgt * pxm;
-    const rad = (0.03 + r() * 0.015) * pxm;
-    const a = 0.06 + r() * 0.14;
-    const grd = g.createRadialGradient(x, y, rad * 0.2, x, y, rad * 1.4);
-    grd.addColorStop(0, `rgba(255,255,255,${a})`);
-    grd.addColorStop(0.7, `rgba(255,255,255,${a * 0.6})`);
+    const rad = (0.03 + r() * 0.006) * pxm;
+    const a = 0.03 + r() * 0.07;
+    const smear = 1 + r() * 1.4;
+    g.save();
+    g.translate(x, y);
+    g.rotate((r() - 0.5) * 1.2);
+    g.scale(smear, 1);
+    const grd = g.createRadialGradient(0, 0, 0, 0, 0, rad * 1.3);
+    grd.addColorStop(0, `rgba(255,255,255,${a * 0.45})`);
+    grd.addColorStop(0.6, `rgba(255,255,255,${a})`);
+    grd.addColorStop(0.8, `rgba(255,255,255,${a * 0.5})`);
     grd.addColorStop(1, 'rgba(255,255,255,0)');
     g.fillStyle = grd;
-    g.beginPath(); g.ellipse(x, y, rad * 1.4, rad * (1.1 + r() * 0.5), r() * 3, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(0, 0, rad * 1.3, 0, Math.PI * 2); g.fill();
+    g.restore();
   }
   // Wipe streaks: long soft arcs.
   g.lineCap = 'round';

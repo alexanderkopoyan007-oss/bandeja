@@ -9,6 +9,9 @@ import { decal, makeSpotTexture } from './decals.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 import { Avatar, makeRacket } from './avatar/avatar.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
+import { kitFor } from './avatar/kit.ts';
+import { makeBall, spinBall } from './ballLook.ts';
+import { DT } from '../sim/core/constants.ts';
 
 const TIMING = tuning.timing;
 const BALL_COLOR = 0xdff23b;
@@ -26,7 +29,14 @@ function smooth(t: number): number {
 }
 
 export class BallView {
-  readonly mesh: THREE.Mesh;
+  /** Holds the ball at its position, stretched along its path for the shutter (ballLook.ts). */
+  readonly mesh = new THREE.Group();
+  private readonly felt: THREE.Mesh;
+  private readonly blur: { value: number };
+  private readonly radius: number;
+  private lastSpinT = -1;
+  /** Camera shutter for the ball's stretch (s; broadcast cameras run 1/100-1/1000 s; longer reads as an egg up close without a real blur). */
+  static shutter = 1 / 500;
   readonly shadow: THREE.Mesh;
   readonly trail: THREE.Line;
   readonly marker: THREE.Mesh;
@@ -37,11 +47,11 @@ export class BallView {
   showMarker = true;
 
   constructor(scene: THREE.Scene, radius: number) {
-    this.mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(radius, 20, 14),
-      new THREE.MeshStandardMaterial({ color: BALL_COLOR, roughness: 0.55, emissive: 0x2a3008 }),
-    );
-    this.mesh.castShadow = true;
+    const look = makeBall(radius);
+    this.felt = look.mesh;
+    this.blur = look.blur;
+    this.radius = radius;
+    this.mesh.add(this.felt);
     scene.add(this.mesh);
 
     // Crisp contact shadow straight below the ball: the main cue for judging height and depth.
@@ -77,6 +87,13 @@ export class BallView {
     const y = p.y + (b.y - p.y) * alpha;
     const z = p.z + (b.z - p.z) * alpha;
     this.mesh.position.set(x, y, z);
+    {
+      const t = sim.time + alpha * DT;
+      const dt = this.lastSpinT < 0 || t < this.lastSpinT || t - this.lastSpinT > 0.25 ? 0 : t - this.lastSpinT;
+      this.lastSpinT = t;
+      const w = sim.ball.spin, v = sim.ball.vel;
+      this.blur.value = spinBall(this.mesh, this.felt, w.x, w.y, w.z, dt, v.x, v.y, v.z, this.radius, BallView.shutter);
+    }
     const h = Math.max(0, y - sim.world.spec.radius);
     this.shadow.position.set(x, 0.003, z);
     const sc = 1 + h * 0.25;
@@ -128,7 +145,7 @@ export class PlayerView {
 
   constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null) {
     if (asset) {
-      this.avatar = new Avatar(asset, PLAYER_COLORS[idx]!);
+      this.avatar = new Avatar(asset, kitFor(idx));
       this.root = this.avatar.root;
       scene.add(this.root);
       return;

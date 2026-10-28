@@ -15,6 +15,7 @@ import { fitCapsules, RACKET_PTS } from './capsules.ts';
 import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
+import { kitMaterial, type KitLook, type KitState } from './kit.ts';
 import {
   BACKHAND, BH_CHIQUITA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
@@ -151,6 +152,16 @@ function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion
 type Elbow = HingeLimb & { dir: THREE.Vector3 };
 /** How fast an elbow's side may swing round the shoulder-to-hand line (rad/s): the shoulder's rotation speed limit. */
 const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
+/**
+ * Cloth lag (kit.ts): spring stiffness (1/s², about 2 Hz, a shirt hem's swing) and damping (1/s, ζ ≈ 0.6) of the
+ * point the hems follow, and the most they trail (m). Sweat: fully wet after SWEAT_T s of play or SWEAT_M m run (a
+ * set's worth of either; Miralles 2025 measure about 2 km an hour of match play).
+ */
+const CLOTH_K = 160;
+const CLOTH_C = 15;
+const CLOTH_MAX = 0.05;
+const SWEAT_T = 2400;
+const SWEAT_M = 5000;
 
 /**
  * An elbow's hinge, measured from the clips: the axis (forearm frame) of the forearm's turn from its rest rotation,
@@ -639,7 +650,26 @@ export class Avatar {
   /** The planned contact is an AI's own release (or a serve's ideal for an AI): its moment is known. */
   private known = false;
 
-  constructor(asset: PlayerAsset, color: number) {
+  /** The kit's per-frame inputs (kit.ts), null for a plain body (QA, tests). */
+  private readonly kit: KitState | null = null;
+  /** Cloth lag: a point on a spring chasing the body (world, m) and its velocity; the hems trail by its offset. */
+  private clothX = 0;
+  private clothY = 0;
+  private clothZ = 0;
+  private clothVX = 0;
+  private clothVY = 0;
+  private clothVZ = 0;
+  private bodyVX = 0;
+  private bodyVY = 0;
+  private bodyVZ = 0;
+  private lastLift = 0;
+  private clothOn = false;
+  /** Metres run this match (render-side): sweat builds with effort as well as time. */
+  private ran = 0;
+  /** QA: a fixed sweat level for screenshots (negative = from the match). */
+  static sweatAt = -1;
+
+  constructor(asset: PlayerAsset, look: number | KitLook) {
     this.nb = asset.bones.length;
     this.pose = new Pose(this.nb);
     this.tmp = new Pose(this.nb);
@@ -651,7 +681,13 @@ export class Avatar {
       return b;
     });
     asset.bones.forEach((d, i) => { if (d.parent >= 0) this.bones[d.parent]!.add(this.bones[i]!); });
-    const mat = new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness: 0.55, metalness: 0.05 });
+    let mat: THREE.Material;
+    if (typeof look === 'number') mat = new THREE.MeshStandardMaterial({ color: look, vertexColors: true, roughness: 0.55, metalness: 0.05 });
+    else {
+      const k = kitMaterial(asset, look);
+      mat = k.material;
+      this.kit = k.state;
+    }
     this.mesh = new THREE.SkinnedMesh(asset.geometry, mat);
     this.mesh.add(this.bones[0]!);
     this.mesh.bind(new THREE.Skeleton(this.bones, asset.boneInverses), new THREE.Matrix4());
@@ -766,6 +802,53 @@ export class Avatar {
       q.toArray(g.quats, k * 4);
     });
     return g;
+  }
+
+  /**
+   * The kit's inputs: sweat from the match's length and the metres run; the hems' lag from a spring (about 2 Hz,
+   * damped) chasing the body, so they trail when it speeds up, stops or lands, and hang straight on a steady run.
+   */
+  private dress(sim: MatchSim, cut: boolean, dt: number, rx: number, rz: number, yRoot: number): void {
+    const k = this.kit;
+    const X = this.root.position.x, Y = this.lift, Z = this.root.position.z;
+    if (cut || dt <= 0) {
+      if (cut || !this.clothOn) {
+        this.clothOn = true;
+        this.clothX = X; this.clothY = Y; this.clothZ = Z;
+        this.clothVX = this.clothVY = this.clothVZ = 0;
+        this.bodyVX = this.bodyVY = this.bodyVZ = 0;
+      }
+      this.lastLift = Y;
+      if (!cut || !k) return;
+    } else {
+      this.bodyVX = rx / dt;
+      this.bodyVY = (Y - this.lastLift) / dt;
+      this.bodyVZ = rz / dt;
+      this.lastLift = Y;
+      this.ran += Math.sqrt(rx * rx + rz * rz);
+      // Spring towards the body, damped against the body's own velocity: a steady run has no lag, a change of pace
+      // swings the hem by about a / CLOTH_K.
+      const h = Math.min(dt, 1 / 30);
+      this.clothVX += (CLOTH_K * (X - this.clothX) + CLOTH_C * (this.bodyVX - this.clothVX)) * h;
+      this.clothVY += (CLOTH_K * (Y - this.clothY) + CLOTH_C * (this.bodyVY - this.clothVY)) * h;
+      this.clothVZ += (CLOTH_K * (Z - this.clothZ) + CLOTH_C * (this.bodyVZ - this.clothVZ)) * h;
+      this.clothX += this.clothVX * h;
+      this.clothY += this.clothVY * h;
+      this.clothZ += this.clothVZ * h;
+    }
+    if (!k) return;
+    let ox = this.clothX - X, oy = this.clothY - Y, oz = this.clothZ - Z;
+    const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
+    if (d > CLOTH_MAX) {
+      ox *= CLOTH_MAX / d; oy *= CLOTH_MAX / d; oz *= CLOTH_MAX / d;
+    }
+    // World offset into the body's frame (the mesh turns with the root).
+    const c = Math.cos(yRoot), s = Math.sin(yRoot);
+    const lag = k.lag.value;
+    lag.x = ox * c - oz * s;
+    lag.y = oy;
+    lag.z = ox * s + oz * c;
+    k.sweat.value = Avatar.sweatAt >= 0 ? Avatar.sweatAt : Math.min(1, 0.06 + sim.time / SWEAT_T + this.ran / SWEAT_M);
   }
 
   /** Switch the racket hand (the sim's `handed`): racket, grip, arms and stroke keys all follow. */
@@ -1249,6 +1332,7 @@ export class Avatar {
     this.splitStep(p, t);
     this.smashJump(t);
     this.root.position.y = this.lift;
+    this.dress(sim, cut, dt, rx, rz, yRoot);
 
     // Pose -> bones, with the racket hand gripping.
     const q = this.pose.q;
