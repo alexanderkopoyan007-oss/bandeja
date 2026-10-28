@@ -557,17 +557,18 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     measured one left-handed seed, which had none). A stroke squaring a left-hander up from a ball behind turned the
     body about 190° on the spot while a planted foot waited for the other to finish its step; its step then started
     180° from its target, and a start-to-target slerp re-picked the short way mid-step. Steps now turn from last
-    frame's rotation by the share of the way left (no re-pick once under way), and a foot left more than 1.6 rad
-    behind the body steps even while the other is stepping (`WAIT_TURN_MAX`). A right-hander's foot turned 123° in
+    frame's rotation by the share of the way left (no re-pick once under way; replaced in the second review, below),
+    and a foot left more than 1.6 rad behind the body steps even while the other is stepping (`WAIT_TURN_MAX`). A right-hander's foot turned 123° in
     a frame as the hips' reach collapsed after a contact (0.38 m in five frames, the follow-through moving the key
     at racket speed): after the contact the reach changes no faster than 2.5 m/s (`REACH_RATE`; before the contact
-    it is what puts the racket on the ball, and limiting it there cost 2-4 cm of contact p90).
+    it is what puts the racket on the ball, and limiting it there cost 2-4 cm of contact p90; see the second review
+    for what drives it there now).
   - **The same moment drawn twice snapped every body** (game.ts draws sim time twice while the render lag eases in
     at a press, about once a held swing at 240 Hz): with dt 0 every filter and rate limit treated the frame as a
     cut (up to 137° in a frame). `Avatar.update` now keeps last frame's pose when time hasn't moved.
   - A reflex volley's hand turned 117° in a frame (released 46 ms before the contact with the stroke 18% faded in):
-    the racket turns no faster than 3600°/s (`RACKET_TURN_RATE`; the racket centre still goes to the key, so contact
-    is unchanged).
+    the racket turns no faster than 3600°/s (`RACKET_TURN_RATE`; the racket centre still goes to the key, so the
+    contact's position is unchanged, but not always its face: see the second review).
   - The racket clear's carried push was cancelled on almost every backswing frame by the last stroke's progress
     (`keyS` 0.99, never reset while the backswing held); a clear's second arm solve doubled the arm's rate limits
     that frame (it now limits from last frame's state); the clear's push is reset when the arms switch off; the
@@ -585,9 +586,58 @@ better-looking, more realistic court. Every decision and the reason for it goes 
     26.0 / 23.9), racket in body 0.13 / 0.20 / 0.17% (0.24 / 0.28 / 0.22), hand in torso 0.88 / 1.05 / 1.79%, legs
     through 2.6-3.2% (unchanged), contact p50 4-8 mm and p90 7.7-8.0 cm (unchanged), the same moment drawn twice
     0.000°. Fastest one-frame turn of any joint over 12 left-handed and 12 right-handed matches x 120 s: 96° and 91°
-    (were 165° and 117°). Joint maxima on seeds 1-3 (°/s): shoulder 8853, wrist 7893, knee 9386, hip 9497, ankle
+    (were 165° and 117°). Joint maxima on seeds 1-3 (°/s): shoulder 8853, wrist 7332, knee 9386, hip 9489, ankle
     10979; the worst pop 91.5° (seed 1, a foot snapping down as its lock lets go). Avatars 4 GCs per 100k ticks.
   - Left as they are: the serve's tuning numbers (`SERVE_*` in match.ts, sourced in comments) stay in code for now;
     the follow-through follows the hips' move, not the spine's lean; `setHanded` after the first frame doesn't reset
     the filters (handedness is fixed at match start); some per-frame three helpers that box doubles remain in the
     avatar (`setFromAxisAngle` for the stance) with allocation inside budget.
+- **Second fresh review** (a new read-only reviewer with its own probes; one serious finding, five smaller). Fixed:
+  - **Knees and feet still flipped, 153-173° in a frame** (the first review's 96° held over 120 s, but not over 300 s
+    or more seeds). Five causes, each traced frame by frame:
+    - A knee's pole came close to the hip-to-ankle line with the hips low and a foot lifted, and its side swung round
+      in a frame. `twoBoneIK` now keeps last frame's side per knee and turns it no faster than `IK_TURN` (as the
+      elbows' `hingeIK` does), and an ankle never comes nearer its hip than 55% of the leg (`LEG_FOLD`): lowered, but
+      only until the sole touches the floor (lowering it further put a foot on its toes 8 cm under).
+    - The knee's turn about its hinge flipped side as the target swung round behind the shin (a turn of -155° then
+      +178°: the shin spun 118°). A knee can't bend 180° either way, so that turn fades out from 120° to 180°
+      (`HINGE_FADE0`) and the plain solve takes the rest.
+    - Where that hand-over happens the shin twisted 50-60° about its own length in a frame: a shin now twists no
+      faster than 2400°/s (`SHIN_TWIST_RATE`, about the knee-to-ankle line, so the ankle stays put). It acts 0-24
+      times per 120 s match.
+    - The lunge (a foot stepping out to a wide or low ball) was dropped on the stroke's first fade frame, and a foot
+      mid-step jumped 0.55 m back (58° in the shin). It is held through the fade by the stroke's weight, each foot's
+      offset moves no faster than 3 m/s (`LUNGE_RATE`), and it goes no further from the hip than 95% of the leg
+      (`LUNGE_REACH`), measured from the hip as it will be after the drop and the reach. The locks' reach check was
+      measured from the clip's (standing) hip too, so a held lunge was always out of reach: the foot let go, stepped
+      back to the same place, and did it again every 0.15 s with the leg straight.
+    - A foot left more than `STEP_SNAP` (0.7 m) behind went there in a frame; it now steps at once instead (a cut
+      between points resets the locks anyway, so the snap only ever fired in play: 0.65 m, 122° in the foot).
+    - The racket's push out of the body was carried at full size while the arms faded out, and as they switched off
+      the hand went back to the clip 143° in a frame. The push now fades with the arm's weight (`clearW`).
+  - **The hips lurched up to 29 cm in a frame before the contact**, following the swinging key at racket speed (the
+    QA logged a 58° leg pop with it). Before the contact the reach is now worked out from the contact's key (the
+    same at the ball, steady before it), and changes no faster than 4 m/s (`REACH_RATE_BEFORE`) as a new plan comes
+    in. Hips relative to the root per frame over seeds 1-6 both ways: max 4.0-5.6 cm (were 15-29 cm), no frame over
+    8 cm (were 2.4-5.3 per player-minute); contact p90 unchanged (8.0 / 8.3 / 7.8 cm). The hips sit 1-3 cm further
+    from the sim's position at p90 (they lean towards the contact earlier).
+  - The step's carried turn (the first review's fix) lagged its target and left more of the turn for the
+    touch-down: feet skated more on all 24 matches of seeds 1-12. Steps turn from their start to the target again,
+    the target kept on the side of last frame's and the slerp never re-picking the short way (`slerpAs`); the foot's
+    turn on a step's last frame p90 4.0-4.3° (was 5.1-5.8°). `WAIT_TURN_MAX` stays: the reviewer found it changes
+    almost nothing on the seeds that needed it (149 vs 149 both-feet steps), so it is a guard, not the fix.
+  - `volleyFront` is read at the top of the plan, not in the rare volley-key branch (a value read only there
+    deoptimised the function when it came; the sim is bit-exact).
+  - Two stale joint maxima above (wrist 7332, hip 9489).
+  - **After** (3 seeds x 120 s, `docs/lab/anim-check-cur.md`): pops 19.3 / 16.8 / 15.9 per player-minute (were
+    29.1 / 25.3 / 22.4), skating 16.1 / 18.6 / 18.5 cm/s (16.7 / 19.2 / 18.7), contact p50 4-8 mm and p90 7.8-8.3 cm,
+    racket in body 0.15-0.20%, no sole below the floor, ankle maxima 4222 / 2494 °/s (were 10979 / 9113). Over 24
+    seeds both ways x 120 s: pops 15.7 per player-minute on average (21.5 before this round), skating 17.2 cm/s
+    (17.8), and the fastest one-frame turn of any joint 96° (a left-hander's racket hand in a fast swing; no leg
+    over 80°). The test now fails at pops 30 per minute (was 40) and any joint turning 105° in a frame (was 120).
+    Avatars 4 GCs per 100k ticks.
+  - Left as they are: within two frames of the contact the racket face can be up to 15-19° short of its key where
+    the turn limit holds it (11 frames in 16 matches; the face's p50 / p90 are unchanged). The limit also hides a
+    ready-to-stroke blend that asks for up to 141° in a frame as the stroke weight crosses about 0.5 with the ready
+    weight high (seed 7 L, t=107.13: the racket turns about 200° in 58 ms at the cap); a slerp there instead of the
+    nlerp is the fix, not done yet.

@@ -104,6 +104,28 @@ function alignQ(q: THREE.Quaternion, prev: THREE.Quaternion): void {
  * rule) turned the racket over in a frame, and the wrist with it (60 cm at a left-hander's overhead). Both inputs
  * should be continuous from frame to frame (alignQ).
  */
+/** q negated if that puts it nearer `ref` (the same rotation, kept on one side from frame to frame). */
+function sideOf(q: THREE.Quaternion, ref: THREE.Quaternion): void {
+  if (q.x * ref.x + q.y * ref.y + q.z * ref.z + q.w * ref.w < 0) { q.x = -q.x; q.y = -q.y; q.z = -q.z; q.w = -q.w; }
+}
+
+/** slerpAs's result on its way into the quaternion (a double passed to a call V8 doesn't inline is boxed). */
+const QSL = new Float64Array(4);
+/** out = a turned towards b by u, the way b's sign gives (Quaternion.slerp re-picks the short way). */
+function slerpAs(a: THREE.Quaternion, b: THREE.Quaternion, u: number, out: THREE.Quaternion): void {
+  const c = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+  let ka = 1 - u, kb = u;
+  if (c < 0.9995 && c > -0.9995) {
+    const th = Math.acos(c), sn = Math.sin(th);
+    ka = Math.sin((1 - u) * th) / sn; kb = Math.sin(u * th) / sn;
+  } else if (c <= -0.9995) kb = -u; // a full turn apart: the same rotation, so the short way is no jump
+  const x = a.x * ka + b.x * kb, y = a.y * ka + b.y * kb, z = a.z * ka + b.z * kb, w = a.w * ka + b.w * kb;
+  const l = Math.sqrt(x * x + y * y + z * z + w * w);
+  if (l < 1e-9) { out.copy(b); return; }
+  QSL[0] = x / l; QSL[1] = y / l; QSL[2] = z / l; QSL[3] = w / l;
+  out.fromArray(QSL);
+}
+
 /** nlerpQ's result on its way into the quaternion (a double passed to a call V8 doesn't inline is boxed). */
 const QN = new Float64Array(4);
 function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion): void {
@@ -222,9 +244,20 @@ const HIP_RISE = 1.5;
 /** Fastest the hips' reach towards the ball changes after the contact (m/s, over the feet): the follow-through moves
  * the key at racket speed, and a reach following it swung the hips 0.38 m in five frames, a foot turning 123° in one. */
 const REACH_RATE = 2.5;
+/** The same before the contact (m/s): a new plan's reach comes in over 0.1 s or so. */
+const REACH_RATE_BEFORE = 4;
+/** Nearest an ankle comes to its hip, as a share of the leg's length (a deep lunge's front leg is about 0.6). */
+const LEG_FOLD = 0.55;
+/** Lowest an ankle goes (m): the foot flat on the floor. */
+const ANKLE_MIN = 0.08;
 /** Fastest the racket turns (rad/s): 3600°/s, over a tennis forehand's racket at contact (about 1500°/s) and a
  * serve's; under it every stroke the QA has seen. */
 const RACKET_TURN_RATE = (3600 * Math.PI) / 180;
+/** Fastest a shin twists about its own length (rad/s): 2400°/s, four times a fast pivot's 180° in 0.3 s. */
+const SHIN_TWIST_RATE = (2400 * Math.PI) / 180;
+/** limitShins' turn back about the shin (a double passed to a call V8 doesn't inline is boxed). */
+const QS = new Float64Array(4);
+const qFoot = new THREE.Quaternion();
 /** Most the hips drop for a low or wide ball (crouch, lunge and reach together; m). */
 const DROP_MAX = 0.55;
 const FOLLOW = 0.3;
@@ -241,7 +274,7 @@ const NECK_SHARE = 0.4;
 /**
  * Standing or shuffling slowly the feet stay planted while the body turns and drifts over them, and a foot steps
  * (one at a time, lifted, over STEP_TIME) once it is this far (m) or this turned (rad) from where the animation
- * wants it. Further than STEP_SNAP (a teleport between points) the feet just go there.
+ * wants it. Further than STEP_SNAP it steps at once, whatever the other foot is doing.
  */
 const STEP_DIST = 0.13;
 const STEP_YAW = 0.55;
@@ -273,6 +306,10 @@ const ml = new THREE.Matrix4();
 /** Lunge: a planned contact further than LUNGE_FROM (m, flat) from the racket shoulder steps the foot on its side out. */
 const LUNGE_FROM = 0.9;
 const LUNGE_MAX = 0.55;
+/** Fastest a foot's lunge offset moves (m/s): a long step's pace. */
+const LUNGE_RATE = 3;
+/** Furthest a lunging foot goes from its hip, as a share of the leg's length (the lock lets go at 0.985). */
+const LUNGE_REACH = 0.95;
 /** How far a low ball (under 0.45 m, from 0.95 m) steps the foot on its side towards it (m). */
 const LUNGE_LOW = 0.45;
 /** Locomotion: how close to halfway between two directions (a quarter turn = 1) their clips cross-fade. */
@@ -374,8 +411,11 @@ export class Avatar {
   /** A release forced while the foot is still down steps it (lifted), rather than sliding it; and its length (s). */
   private readonly relLift = new Uint8Array(2);
   private readonly relDur = new Float64Array([LOCK_RELEASE, LOCK_RELEASE]);
-  /** The step's eased progress last frame (its rotation is carried in relQ / relToe). */
-  private readonly relE = new Float64Array(2);
+  /** The step's target rotations last frame, each kept on the side of the one before (see the step). */
+  private readonly relQT = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private readonly relToeT = [new THREE.Quaternion(), new THREE.Quaternion()];
+  /** 0 until the step's first frame has set relQT / relToeT. */
+  private readonly relTOk = new Uint8Array(2);
   /** Toes: their local rotation while locked (they don't bend over the floor either), and at the release. */
   private readonly toes: THREE.Bone[];
   private readonly lockToe = [new THREE.Quaternion(), new THREE.Quaternion()];
@@ -500,12 +540,22 @@ export class Avatar {
   /** Each knee's hinge (shin frame), measured from the clips as the elbows' are. */
   private readonly kneeL: THREE.Vector3;
   private readonly kneeR: THREE.Vector3;
+  /** Last frame's knee side off the hip-to-ankle line (twoBoneIK's rate limit; zero: none yet). */
+  private readonly kneeSideL = new THREE.Vector3();
+  private readonly kneeSideR = new THREE.Vector3();
+  /** Last frame's shins (world), for SHIN_TWIST_RATE; shinOk 0: none yet (a cut). */
+  private readonly shinQ = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private readonly shinOk = new Uint8Array(2);
+  /** Each foot's lunge offset (world x, z for the left foot, then the right), as shown. */
+  private readonly lungeOff = new Float64Array(4);
   /** The free shoulder before the hips drop and push and the spine leans (world): its keys move with the trunk. */
   private readonly freeSh = new THREE.Vector3();
   /** How far the key is along the forward swing this frame (0 at the backswing, 1 at the contact; see swingKey). */
   private keyS = 0;
   /** The racket's push out of the body last frame (world, m), let go over CLEAR_EASE. */
   private readonly clearOff = new THREE.Vector3();
+  /** How much of the racket's push out of the body the arm's weight allows this frame (0 as the arms switch off). */
+  private clearW = 1;
   /** Last frame's racket rotation (world), for RACKET_TURN_RATE; racketQOk false: none yet (a cut, arms off). */
   private readonly racketQ = new THREE.Quaternion();
   private racketQOk = false;
@@ -1216,6 +1266,7 @@ export class Avatar {
     this.freeSh.setFromMatrixPosition(this.armFree[0]!.matrixWorld);
     this.racketSh.setFromMatrixPosition(this.armRacket[0]!.matrixWorld);
     this.solveLegs();
+    this.limitShins();
     if (this.w > 0 || this.ready >= 0.01) this.solveArms();
     else {
       this.elbowR.side.set(0, 0, 0); this.elbowL.side.set(0, 0, 0); this.elbowR.dir.set(0, 0, 0); this.elbowL.dir.set(0, 0, 0);
@@ -1261,6 +1312,10 @@ export class Avatar {
     this.dropI.reset();
     this.dropShown = 0;
     this.racketQOk = false;
+    this.kneeSideL.set(0, 0, 0);
+    this.kneeSideR.set(0, 0, 0);
+    this.shinOk.fill(0);
+    this.lungeOff.fill(0);
     this.reachX = 0;
     this.reachZ = 0;
     this.lockOn.fill(0);
@@ -1409,9 +1464,17 @@ export class Avatar {
   private solveLegs(): void {
     // How far the arm would fall short of where the key puts the wrist: the hips go that way (up to 40 cm out,
     // down up to 30 cm for a ball below the shoulder, the knees taking the drop; up to 12 cm for one above
-    // the reach, onto the toes or off the ground).
-    this.toWorld(this.kp, v1);
-    this.quatToWorld(this.kq, q2);
+    // the reach, onto the toes or off the ground). Before the contact, the contact's key: the same at the ball, and
+    // steady before it (the swinging key moves at racket speed, and the hips followed it, up to 29 cm in a frame).
+    const before = (this.st === ST_PREP && this.hasCon) || (this.st === ST_SWING && this.lastT < this.tCon);
+    if (before) {
+      const k = this.contactKey();
+      this.toWorld(k.p, v1);
+      this.quatToWorld(k.q, q2);
+    } else {
+      this.toWorld(this.kp, v1);
+      this.quatToWorld(this.kq, q2);
+    }
     q3.multiplyQuaternions(q2, this.grip.qInv);
     v3.copy(this.grip.pos).applyQuaternion(q3);
     v2.setFromMatrixPosition(this.armRacket[0]!.matrixWorld);
@@ -1432,11 +1495,11 @@ export class Avatar {
     const push = dh > 1e-3 ? Math.min(0.4, (short * dh) / len) : 0;
     let rx = dh > 1e-3 ? (dx / dh) * push : 0;
     let rz = dh > 1e-3 ? (dz / dh) * push : 0;
-    // Only after the contact: before it the reach is what puts the racket on the ball.
-    const before = (this.st === ST_PREP && this.hasCon) || (this.st === ST_SWING && this.lastT < this.tCon);
-    if (this.dt > 0 && !before) {
+    // Before the contact the target is steady, and its limit only smooths a new plan in (the reach must be whole by
+    // the contact: it is what puts the racket on the ball).
+    if (this.dt > 0) {
       const ex = rx - this.reachX, ez = rz - this.reachZ;
-      const e = Math.sqrt(ex * ex + ez * ez), lim = REACH_RATE * this.dt;
+      const e = Math.sqrt(ex * ex + ez * ez), lim = (before ? REACH_RATE_BEFORE : REACH_RATE) * this.dt;
       if (e > lim) { rx = this.reachX + (ex * lim) / e; rz = this.reachZ + (ez * lim) / e; }
     }
     this.reachX = rx;
@@ -1484,7 +1547,12 @@ export class Avatar {
       }
     }
     const moved = Math.abs(this.footL.x - fx0) + Math.abs(this.footL.z - fz0) + Math.abs(this.footR.x - gx0) + Math.abs(this.footR.z - gz0);
-    if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant && !lifted && moved < 1e-4 && this.lockOn[0] === 0 && this.lockOn[1] === 0) return;
+    if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant && !lifted && moved < 1e-4 && this.lockOn[0] === 0 && this.lockOn[1] === 0) {
+      // The clip's knees as they are: no side to carry on from next time.
+      this.kneeSideL.set(0, 0, 0);
+      this.kneeSideR.set(0, 0, 0);
+      return;
+    }
     // Hips are a child of the (turned) model: move them in its frame.
     const c = Math.cos(this.root.rotation.y), s = Math.sin(this.root.rotation.y);
     // How the knees bend in the clip, before the hips move.
@@ -1501,9 +1569,64 @@ export class Avatar {
       const bd = side === 0 ? bendL : bendR;
       v3.setFromMatrixPosition(leg[1]!.matrixWorld);
       this.pole.set(v3.x + bd.x * 0.8, v3.y + bd.y * 0.8, v3.z + bd.z * 0.8);
-      twoBoneIK(leg[0]!, leg[1]!, leg[2]!, side === 0 ? this.footL : this.footR, this.pole, side === 0 ? this.kneeL : this.kneeR);
+      // An ankle no nearer its hip than LEG_FOLD of the leg: with the hips low, a lifted foot left at the clip's
+      // height folded the leg flat, the knee down at the ankle (where its side is undefined). Lowered, not moved.
+      const A = side === 0 ? this.footL : this.footR;
+      const mh = leg[0]!.matrixWorld.elements;
+      const fx = A.x - mh[12]!, fy = A.y - mh[13]!, fz = A.z - mh[14]!;
+      const minD = this.legLen * LEG_FOLD;
+      if (fx * fx + fy * fy + fz * fz < minD * minD) {
+        const y = mh[13]! - Math.sqrt(Math.max(0, minD * minD - fx * fx - fz * fz));
+        if (y < A.y) {
+          A.y = y > ANKLE_MIN ? y : ANKLE_MIN;
+          // Never through the floor (a foot on its toes went 8 cm under): lowered only until the sole touches it.
+          this.soleLow(side, A, side === 0 ? this.footQL : this.footQR);
+          const low = this.low1;
+          if (low < 0) A.y -= low;
+        }
+      }
+      twoBoneIK(leg[0]!, leg[1]!, leg[2]!, A, this.pole, side === 0 ? this.kneeL : this.kneeR, side === 0 ? this.kneeSideL : this.kneeSideR);
       setWorldQuat(leg[2]!, side === 0 ? this.footQL : this.footQR);
       leg[2]!.updateMatrixWorld(true);
+    }
+  }
+
+  /**
+   * Each shin twists about its own length no faster than SHIN_TWIST_RATE (the turn back is about the knee-to-ankle
+   * line, so the ankle stays put; the foot keeps its world rotation). Where the knee's hinge turn hands over to the
+   * plain solve (the target close to the hinge's line, or behind the shin) the shin twisted 50-60° in a frame.
+   */
+  private limitShins(): void {
+    for (let side = 0; side < 2; side++) {
+      const leg = side === 0 ? this.legL : this.legR;
+      const S = this.shinQ[side]!;
+      worldQuat(leg[1]!, q1);
+      if (this.dt > 0 && this.shinOk[side] === 1) {
+        // The turn since last frame (world), q1 S^-1, and its part about the shin's line.
+        q2.copy(S).invert().premultiply(q1);
+        const mk = leg[1]!.matrixWorld.elements, ma = leg[2]!.matrixWorld.elements;
+        let ax = ma[12]! - mk[12]!, ay = ma[13]! - mk[13]!, az = ma[14]! - mk[14]!;
+        const al = Math.sqrt(ax * ax + ay * ay + az * az);
+        if (al > 1e-6) {
+          ax /= al; ay /= al; az /= al;
+          let p = q2.x * ax + q2.y * ay + q2.z * az, w = q2.w;
+          if (w < 0) { w = -w; p = -p; }
+          const tw = 2 * Math.atan2(p, w), lim = SHIN_TWIST_RATE * this.dt;
+          if (tw > lim || tw < -lim) {
+            const ex = (tw > 0 ? lim : -lim) - tw, sh = Math.sin(ex / 2);
+            QS[0] = ax * sh; QS[1] = ay * sh; QS[2] = az * sh; QS[3] = Math.cos(ex / 2);
+            q3.fromArray(QS);
+            worldQuat(leg[2]!, qFoot);
+            rotateWorld(leg[1]!, q3);
+            leg[1]!.updateMatrixWorld(true);
+            setWorldQuat(leg[2]!, qFoot);
+            leg[2]!.updateMatrixWorld(true);
+            worldQuat(leg[1]!, q1);
+          }
+        }
+      }
+      S.copy(q1);
+      this.shinOk[side] = 1;
     }
   }
 
@@ -1563,21 +1686,53 @@ export class Avatar {
     // with the feet planted (running, the gait does the reaching: a swinging foot sent 0.55 m out at a sprint came
     // back in a frame), and shared between the feet as the ball goes round in front or behind (picking one foot by
     // the side the ball is on moved the whole lunge to the other foot in a frame, the knee turning 177 degrees).
-    if (this.hasCon && (this.st === ST_PREP || this.st === ST_SWING) && s > 0.01) {
+    // Held through the stroke's fade as its weight goes (dropped at the fade's first frame, a foot mid-step jumped
+    // 0.55 m back), and each foot's offset moves no faster than LUNGE_RATE.
+    const LO = this.lungeOff;
+    let wlx = 0, wlz = 0, wrx = 0, wrz = 0;
+    if (this.hasCon && (this.st === ST_PREP || this.st === ST_SWING || this.st === ST_FADE) && s > 0.01) {
       const sh = this.armRacket[0]!.matrixWorld.elements;
       const dx = this.conW.x - sh[12]!, dz = this.conW.z - sh[14]!;
       const d = Math.max(1e-6, Math.sqrt(dx * dx + dz * dz));
       // A low ball steps the foot towards it too, so the body goes down into a lunge (front knee bent, the back one
       // low) rather than a squat over feet at standing width (every ball under 0.6 m was met in a full squat).
       const wide = Math.max(0, d - LUNGE_FROM) * 1.3, low = LUNGE_LOW * smoothstep(0.95, 0.45, this.conW.y);
-      const out = Math.min(LUNGE_MAX, wide > low ? wide : low) * s;
+      const out = Math.min(LUNGE_MAX, wide > low ? wide : low) * s * (this.st === ST_FADE ? this.w : 1);
       if (out > 0.04) {
         // The model's left (+x) in world: which side of the body the ball is on, as a share.
         const lw = smoothstep(-0.35, 0.35, (dx * Math.cos(yaw) - dz * Math.sin(yaw)) / d);
         const ox = (dx / d) * out, oz = (dz / d) * out;
-        this.footL.x += ox * lw; this.footL.z += oz * lw;
-        this.footR.x += ox * (1 - lw); this.footR.z += oz * (1 - lw);
+        wlx = ox * lw; wlz = oz * lw;
+        wrx = ox * (1 - lw); wrz = oz * (1 - lw);
       }
+    }
+    const lim = LUNGE_RATE * this.dt;
+    for (let f = 0; f < 2; f++) {
+      const ex = (f === 0 ? wlx : wrx) - LO[f * 2]!, ez = (f === 0 ? wlz : wrz) - LO[f * 2 + 1]!;
+      const el = Math.sqrt(ex * ex + ez * ez), k = el > lim ? lim / el : 1;
+      LO[f * 2] = LO[f * 2]! + ex * k;
+      LO[f * 2 + 1] = LO[f * 2 + 1]! + ez * k;
+    }
+    // No further out than the leg reaches from its hip (a lunge past it let the foot's lock go for want of reach,
+    // and the step went back to the same place: the foot lifted and set down again and again, the leg straight).
+    const R = this.legLen * LUNGE_REACH;
+    for (let f = 0; f < 2; f++) {
+      const A = f === 0 ? this.footL : this.footR;
+      const lx = LO[f * 2]!, lz = LO[f * 2 + 1]!;
+      const a = lx * lx + lz * lz;
+      let k = 1;
+      if (a > 1e-8) {
+        // From the hip as it will be, after the drop and the reach.
+        const hip = (f === 0 ? this.legL : this.legR)[0]!.matrixWorld.elements;
+        const px = A.x - hip[12]! - this.reachX, py = A.y - hip[13]! + this.dropShown, pz = A.z - hip[14]! - this.reachZ;
+        // The largest share of the lunge that keeps the foot within R, or no further than the clip has it when
+        // that is further (k = 0 there instead jumped the foot back the whole lunge as the clip's foot crossed R).
+        const p2 = px * px + py * py + pz * pz;
+        const c = p2 < R * R ? p2 - R * R : 0;
+        const b = 2 * (px * lx + pz * lz);
+        if (a + b + c > 0) k = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
+      }
+      A.x += lx * k; A.z += lz * k;
     }
     for (let f = 0; f < 2; f++) {
       const A = f === 0 ? this.footL : this.footR;
@@ -1588,9 +1743,13 @@ export class Avatar {
       if (this.lockOn[f] === 1) {
         const ex = A.x - L.x, ez = A.z - L.z;
         const far = ex * ex + ez * ez;
-        if (far > STEP_SNAP * STEP_SNAP) { this.lockOn[f] = 0; this.relT[f] = -1; continue; }
+        // Left this far behind (a body spinning into a stroke while this foot waited for the other): it steps at
+        // once, as it would forced (it went there in a frame, 0.65 m; a cut between points resets the locks anyway).
+        const snap = far > STEP_SNAP * STEP_SNAP;
+        // From the hip as it will be, after the drop and the reach (measured from the clip's hip, standing taller,
+        // a held lunge was always out of reach: the foot let go and stepped back to the same place, over and over).
         const hip = (f === 0 ? this.legL : this.legR)[0]!.matrixWorld.elements;
-        const hx = L.x - hip[12]!, hy = A.y - hip[13]!, hz = L.z - hip[14]!;
+        const hx = L.x - hip[12]! - this.reachX, hy = A.y - hip[13]! + this.dropShown, hz = L.z - hip[14]! - this.reachZ;
         const reach = this.legLen * 0.985;
         const lifted = low > LOCK_OFF;
         const turned = Math.abs(wrapAngle(yaw - this.lockYaw[f]!));
@@ -1598,7 +1757,7 @@ export class Avatar {
         // Standing, one foot steps at a time (the other waits, still held), unless it is being left far behind.
         const o = 1 - f;
         const waits = !lifted && s > 0.5 && this.relLift[o] === 1 && this.relT[o]! >= 0 && turned < WAIT_TURN_MAX;
-        if (lifted || (forced && !waits)) {
+        if (lifted || snap || (forced && !waits)) {
           this.lockOn[f] = 0;
           this.relT[f] = 0;
           this.relFrom[f]!.copy(L);
@@ -1606,7 +1765,7 @@ export class Avatar {
           this.relToe[f]!.copy(this.lockToe[f]!);
           this.relLift[f] = lifted ? 0 : 1;
           this.relDur[f] = lifted ? LOCK_RELEASE : STEP_TIME;
-          this.relE[f] = 0;
+          this.relTOk[f] = 0;
         }
       } else if (low < LOCK_ON && this.relT[f]! < 0) {
         this.lockOn[f] = 1;
@@ -1630,15 +1789,18 @@ export class Avatar {
           A.x = F.x + (A.x - F.x) * e;
           A.z = F.z + (A.z - F.z) * e;
           if (this.relLift[f] === 1) A.y += STEP_LIFT * Math.sin(Math.PI * t);
-          // Turned from last frame's rotation by the share of the way left, not from the step's start: the target
-          // moves with the body, and a start-to-target slerp re-picks the short way once they are 180° apart (the
-          // foot spun 165° in a frame).
-          const k = (e - this.relE[f]!) / (1 - this.relE[f]!);
-          this.relE[f] = e;
-          this.relQ[f]!.slerp(Q, k);
-          Q.copy(this.relQ[f]!);
-          this.relToe[f]!.slerp(toe.quaternion, k);
-          toe.quaternion.copy(this.relToe[f]!);
+          // From the step's start to the target, the target kept on the side of last frame's (the short way only on
+          // the first frame) and never re-picked: the target moves with the body, and Quaternion.slerp re-picks the
+          // short way once start and target are 180° apart (the foot spun 165° in a frame). Chasing the target from
+          // last frame's rotation instead lagged it, leaving more of the turn for the touch-down (feet skated more).
+          const QT = this.relQT[f]!, TT = this.relToeT[f]!;
+          if (this.relTOk[f] === 0) { QT.copy(this.relQ[f]!); TT.copy(this.relToe[f]!); this.relTOk[f] = 1; }
+          sideOf(Q, QT);
+          QT.copy(Q);
+          sideOf(toe.quaternion, TT);
+          TT.copy(toe.quaternion);
+          slerpAs(this.relQ[f]!, QT, e, Q);
+          slerpAs(this.relToe[f]!, TT, e, toe.quaternion);
         }
       }
     }
@@ -1727,7 +1889,10 @@ export class Avatar {
       if (best <= 0 || sl < 1e-9) break;
       vx += (sx2 / sl) * best; vy += (sy2 / sl) * best; vz += (sz2 / sl) * best;
     }
-    if (vx === 0 && vy === 0 && vz === 0) return;
+    // No more than the arm's weight allows (see clearW).
+    const vl = Math.sqrt(vx * vx + vy * vy + vz * vz), cap = CLEAR_MAX * this.clearW;
+    if (vl > cap) { const r = cap / vl; vx *= r; vy *= r; vz *= r; }
+    if (vl < 1e-9 || cap <= 0) return;
     // From where the hand is, not where it was asked to be: a hand short of an out-of-reach target pushed further
     // out stays where it is (the arm is straight), and moved from where it is it slides round the shoulder.
     const mh = hand.matrixWorld.elements;
@@ -1831,6 +1996,11 @@ export class Avatar {
     const sLeft = before ? Math.max(0, 1 - this.keyS) / 0.2 : 1;
     const co = this.clearOff, k = this.dt > 0 ? Math.exp(-this.dt / CLEAR_EASE) * Math.min(1, sLeft) : 0;
     co.x *= k; co.y *= k; co.z *= k;
+    // The push fades with the arm's weight, gone as the arms switch off (at ready 0.01 a 19 cm push was still held,
+    // and the hand went back to the clip 143° in a frame).
+    this.clearW = smoothstep(0.01, 0.15, Math.max(this.ready, w));
+    const cl0 = Math.sqrt(co.x * co.x + co.y * co.y + co.z * co.z), cap0 = CLEAR_MAX * this.clearW;
+    if (cl0 > cap0) { const r = cl0 > 1e-9 ? cap0 / cl0 : 0; co.x *= r; co.y *= r; co.z *= r; }
     const t0x = this.tgt.x, t0y = this.tgt.y, t0z = this.tgt.z;
     this.tgt.x += co.x; this.tgt.y += co.y; this.tgt.z += co.z;
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);

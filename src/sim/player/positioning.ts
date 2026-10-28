@@ -84,8 +84,10 @@ export function planStand(
   // (max: a front distance in the data longer than the reach would make the plan NaN; the data keeps it shorter.)
   const lateral = overhead ? t.overheadReach : sqrt(max(0, t.reachComfort * t.reachComfort - t.contactFront * t.contactFront));
   const behind = overhead ? 0.3 : t.contactFront;
-  const latV = overhead ? lateral : sqrt(max(0, t.volleyReach * t.volleyReach - t.volleyFront * t.volleyFront));
-  const behindV = overhead ? behind : t.volleyFront;
+  // (read here, not in the rare volley-key branch: a value read only there deoptimised the function when it came)
+  const vFront = t.volleyFront;
+  const latV = overhead ? lateral : sqrt(max(0, t.volleyReach * t.volleyReach - vFront * vFront));
+  const behindV = overhead ? behind : vFront;
   const yMax = overhead ? t.contactMaxHeight - 0.05 : volleyKey ? t.overheadHeight + 0.15 : 2.6;
   for (let i = 0; i < pr.n; i++) {
     const ti = pr.t[i]!;
@@ -114,7 +116,7 @@ export function planStand(
       const a = abs(off);
       sx = clamp(a < VOLLEY_REACH_MIN ? x + sg * VOLLEY_REACH_MIN : a > VOLLEY_REACH_MAX ? x + sg * VOLLEY_REACH_MAX : p.pos.x, p.minX, p.maxX);
       useFh = sg === fhSign;
-      const z0 = z + side * t.volleyFront;
+      const z0 = z + side * vFront;
       sz = clamp(abs(p.pos.z - z0) < 0.4 ? p.pos.z : z0 + (p.pos.z > z0 ? 0.4 : -0.4), p.minZ, p.maxZ);
     }
     const dx = sx - p.pos.x;

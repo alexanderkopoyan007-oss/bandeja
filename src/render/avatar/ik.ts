@@ -29,6 +29,9 @@ export function rotateWorld(o: THREE.Object3D, delta: THREE.Quaternion): void {
   setWorldQuat(o, QW);
 }
 
+/** Hinge turns up to this are taken whole; from here to half a circle they fade to none (rad). */
+const HINGE_FADE0 = 2 * Math.PI / 3;
+
 /**
  * Turn `upper` and `mid` so the origin of `end` lands on `target`, bending the middle joint towards `pole`
  * (all world space). The chain's world matrices must be current, and are current again afterwards.
@@ -38,7 +41,7 @@ export function rotateWorld(o: THREE.Object3D, delta: THREE.Quaternion): void {
  * sprint, the swinging foot high behind) went over the top, twisting 177 degrees about itself in a frame.
  */
 export function twoBoneIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, target: THREE.Vector3, pole: THREE.Vector3,
-  hinge: THREE.Vector3 | null = null): void {
+  hinge: THREE.Vector3 | null = null, side: THREE.Vector3 | null = null): void {
   const mu = upper.matrixWorld.elements, mm = mid.matrixWorld.elements, me = end.matrixWorld.elements;
   const sx = mu[12]!, sy = mu[13]!, sz = mu[14]!;
   const ex = mm[12]!, ey = mm[13]!, ez = mm[14]!;
@@ -59,14 +62,40 @@ export function twoBoneIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, t
   let pd = px * dx + py * dy + pz * dz;
   px -= dx * pd; py -= dy * pd; pz -= dz * pd;
   let pl = Math.sqrt(px * px + py * py + pz * pz);
+  // Last frame's side (`side`, when given), square to this frame's line: the side turns no faster than IK_TURN, as
+  // hingeIK's elbows do. A knee folded down to its ankle's height (hips low, a lifted foot at the clip's height)
+  // has its pole nearly on the hip-to-ankle line, and its side swung round in a frame (knees and feet 150-173°).
+  let qx = 0, qy = 0, qz = 0, ql = 0;
+  if (side) {
+    qx = side.x; qy = side.y; qz = side.z;
+    const qd = qx * dx + qy * dy + qz * dz;
+    qx -= dx * qd; qy -= dy * qd; qz -= dz * qd;
+    ql = Math.sqrt(qx * qx + qy * qy + qz * qz);
+  }
   if (pl < 1e-4) {
-    px = ex - sx; py = ey - sy; pz = ez - sz;
-    pd = px * dx + py * dy + pz * dz;
-    px -= dx * pd; py -= dy * pd; pz -= dz * pd;
-    pl = Math.sqrt(px * px + py * py + pz * pz);
-    if (pl < 1e-4) return;
+    if (ql > 1e-6) { px = qx; py = qy; pz = qz; pl = ql; } else {
+      px = ex - sx; py = ey - sy; pz = ez - sz;
+      pd = px * dx + py * dy + pz * dz;
+      px -= dx * pd; py -= dy * pd; pz -= dz * pd;
+      pl = Math.sqrt(px * px + py * py + pz * pz);
+      if (pl < 1e-4) return;
+    }
   }
   px /= pl; py /= pl; pz /= pl;
+  if (side) {
+    if (ql > 1e-6) {
+      qx /= ql; qy /= ql; qz /= ql;
+      const sn = dx * (qy * pz - qz * py) + dy * (qz * px - qx * pz) + dz * (qx * py - qy * px);
+      const ang = Math.atan2(sn, qx * px + qy * py + qz * pz), lim = IK_TURN[0]!;
+      if (ang > lim || ang < -lim) {
+        const a2 = ang > 0 ? lim : -lim, ca = Math.cos(a2), sa = Math.sin(a2);
+        px = qx * ca + (dy * qz - dz * qy) * sa;
+        py = qy * ca + (dz * qx - dx * qz) * sa;
+        pz = qz * ca + (dx * qy - dy * qx) * sa;
+      }
+    }
+    side.x = px; side.y = py; side.z = pz;
+  }
   const e2x = sx + dx * x + px * h, e2y = sy + dy * x + py * h, e2z = sz + dz * x + pz * h;
 
   U1.x = (ex - sx) / a; U1.y = (ey - sy) / a; U1.z = (ez - sz) / a;
@@ -97,7 +126,13 @@ export function twoBoneIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, t
     const wk = lo2 <= 0.15 ? 0 : lo2 >= 0.45 ? 1 : (lo2 - 0.15) / 0.3;
     if (wk > 0) {
       const sn = hx * (ay * bz - az * by) + hy * (az * bx - ax * bz) + hz * (ax * by - ay * bx);
-      const th = Math.atan2(sn, ax * bx + ay * by + az * bz) * wk * wk * (3 - 2 * wk);
+      const raw = Math.atan2(sn, ax * bx + ay * by + az * bz);
+      // Faded out too as the turn nears half a circle: a knee can't bend 180 degrees either way, and there the
+      // shortest way flips side from one frame to the next (the target swinging round behind the shin: a turn of
+      // -155 then +178 degrees spun the shin 118 degrees in a frame). The plain solve below takes the rest.
+      const ar = raw < 0 ? -raw : raw;
+      const wa = ar <= HINGE_FADE0 ? 1 : (Math.PI - ar) / (Math.PI - HINGE_FADE0);
+      const th = raw * wk * wk * (3 - 2 * wk) * wa * wa * (3 - 2 * wa);
       const s2 = Math.sin(th / 2);
       KV[0] = hx * s2; KV[1] = hy * s2; KV[2] = hz * s2; KV[3] = Math.cos(th / 2);
       Q.fromArray(KV);
