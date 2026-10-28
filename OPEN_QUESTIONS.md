@@ -190,3 +190,12 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   vocal samples (the owner's own, or licensed), which the engine would play the same way.
 - **Speakers.** The glass's boom is mostly under 300 Hz, which laptop speakers barely reproduce; on them the glass
   is mostly its edge and the ball's pop. Not compensated (headphones and TV speakers carry it).
+- **The bounce's level against the hit.** The game puts the ball's bounce over 4 dB under a clean drive and the shoes
+  15-32 dB under it. No padel measurement of these ratios was found (broadcast mixes put the bounce well under the
+  hit, but they are mixed, not measured). Settled by: a recording at a court, read at the camera's distance.
+- **A gamepad-only player may hear nothing.** Browsers start audio only from a user gesture, and a pad press doesn't
+  count in every browser; a pad-only player needs one key or click. A small "press any key for sound" hint would fix
+  it, but it is new UI: needs the owner's OK.
+- **Output latency.** Sounds are scheduled at the event's time; the device's output latency (10-40 ms wired,
+  150 ms+ on Bluetooth) is not taken off, and Safari doesn't report it. Whether it is noticeable is for a player to say.
+

@@ -79,6 +79,10 @@ export interface MatchEvent {
   x: number;
   y: number;
   z: number;
+  /** E_HIT: relative normal speed of ball and racket face at the impact (m/s). */
+  d: number;
+  /** E_HIT: where on the face, from its centre (0) to its edge (1); 2 on the frame. */
+  q: number;
 }
 
 const EVENT_RING = 64;
@@ -249,7 +253,7 @@ export class MatchSim {
     }
     this.rally.outOfCourtPlay = false;
     for (let i = 0; i < EVENT_RING; i++) {
-      this.events.push({ seq: -1, kind: 0, time: 0, team: -1, player: -1, a: 0, b: 0, c: 0, x: 0, y: 0, z: 0 });
+      this.events.push({ seq: -1, kind: 0, time: 0, team: -1, player: -1, a: 0, b: 0, c: 0, x: 0, y: 0, z: 0, d: 0, q: 0 });
     }
     this.startPoint();
   }
@@ -280,6 +284,7 @@ export class MatchSim {
     e.player = player;
     e.a = a; e.b = b; e.c = c;
     e.x = x; e.y = y; e.z = z;
+    e.d = 0; e.q = 0;
   }
 
   // ---- point setup ---------------------------------------------------------------------------
@@ -1208,6 +1213,15 @@ export class MatchSim {
       this.rally.onStrike(team, s, false);
     }
     this.emitP(E_HIT, i, shot, p.grade, this.res.speed, b.pos.x, b.pos.y, b.pos.z);
+    {
+      // How the ball met the face (the sound reads it): impact speed, and where from the face's centre.
+      const e = this.events[(this.eventSeq - 1) % EVENT_RING]!;
+      const rs = this.solver.racket.spec;
+      const hl = rs.headLength / 2;
+      e.d = this.res.impactSpeed ?? 0;
+      const al = ((this.res.fromTip ?? hl) - hl) / hl, ac = (this.res.across ?? 0) / (rs.headWidth / 2);
+      e.q = this.res.frame ? 2 : min(1, sqrt(al * al + ac * ac));
+    }
     this.wallsSinceBounce = 0;
     this.pred.strikeT = this.lastStrikeTime;
     this.pred.compute(this.world, b, this.time, 0);

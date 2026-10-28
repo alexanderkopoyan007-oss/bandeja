@@ -4,22 +4,11 @@
 // camera each frame. Browsers start audio only from a user gesture (`unlock`); until then, and until the bank's
 // family has arrived from the worker, plays are dropped.
 import * as THREE from 'three/webgpu';
-import { AUDIO, arenaAudio, buildBank, renderRoom, type BankEnv, type Sample } from './bank.ts';
+import { AUDIO, arenaAudio, families, renderFamily, renderRoom, type BankEnv, type Sample } from './bank.ts';
 import { resample } from './dsp.ts';
+import { BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
 
-export const BUS_BALL = 0, BUS_PLAYERS = 1, BUS_CROWD = 2, BUS_AMB = 3;
-
-/** What the soundscape asks of the engine (tests record these instead of playing them). */
-export interface AudioSink {
-  /** Audio is running and can be heard. */
-  readonly live: boolean;
-  /** A sound placed in the world (x, y, z), `delay` s from now, at `gain` (linear) and `rate` (pitch). */
-  play(family: string, bin: number, x: number, y: number, z: number, gain: number, rate: number, delay: number, bus: number): void;
-  /** A sound all round (the crowd), stereo as rendered. */
-  playFlat(family: string, bin: number, gain: number, delay: number, bus: number): void;
-  /** A looping bed's level (linear; 0 silences it), approached with time constant `tc` s. */
-  loop(name: string, gain: number, tc: number): void;
-}
+export { BUS_BALL, BUS_PLAYERS, BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
 
 interface Voice {
   gain: GainNode;
@@ -38,6 +27,7 @@ export class AudioEngine implements AudioSink {
   enabled = true;
   private ctx: AudioContext | null = null;
   private readonly env: BankEnv;
+  /** Rendered floats until the context exists to make AudioBuffers of them (then dropped). */
   private readonly raw = new Map<string, Sample[][]>();
   private readonly buffers = new Map<string, AudioBuffer[][]>();
   private room: Sample | null = null;
@@ -46,7 +36,8 @@ export class AudioEngine implements AudioSink {
   private convolver: ConvolverNode | null = null;
   private voices: Voice[] = [];
   private nextVoice = 0;
-  private readonly lastVariant = new Map<string, number>();
+  /** Per family, the variant last played per bin (numbers, no string keys per play). */
+  private readonly lastVariant = new Map<string, Int32Array>();
   private readonly loops = new Map<string, { src: AudioBufferSourceNode | null; gain: GainNode; want: number; tc: number }>();
   private seed = 12345;
   private worker: Worker | null = null;
@@ -54,6 +45,13 @@ export class AudioEngine implements AudioSink {
   pending = true;
   private readonly fwd = new THREE.Vector3();
   private readonly up = new THREE.Vector3();
+  /** The listener's position, kept here: Firefox's AudioListener has no positionX (only setPosition). */
+  private lx = 0;
+  private ly = 0;
+  private lz = 0;
+  private readonly lastCam = new Float64Array(7).fill(NaN);
+  /** The page wants sound (not hidden): resume whenever the context stops for any other reason. */
+  private wantRunning = true;
 
   constructor(env: BankEnv) {
     this.env = env;
@@ -73,19 +71,27 @@ export class AudioEngine implements AudioSink {
   }
 
   private renderHere(): void {
-    // No worker: render on the main thread after the first frames.
-    setTimeout(() => {
-      for (const [k, v] of buildBank(this.env)) this.raw.set(k, v);
-      this.room = renderRoom(this.env.arena);
-      this.pending = false;
-      this.attachRoom();
-      this.startLoops();
-    }, 1500);
+    // No worker: render on the main thread, one family per task after the first frames, so no single frame
+    // carries the whole bank (171-532 ms in node).
+    const defs = families(this.env);
+    let i = 0;
+    const next = (): void => {
+      if (i < defs.length) {
+        const d = defs[i++]!;
+        this.receive({ name: d.name, samples: renderFamily(d, this.env) });
+        setTimeout(next, 30);
+      } else {
+        this.receive({ room: renderRoom(this.env.arena) });
+        this.receive({ done: true });
+      }
+    };
+    setTimeout(next, 1500);
   }
 
   private receive(m: { name?: string; samples?: Sample[][]; room?: Sample; done?: boolean }): void {
     if (m.name && m.samples) {
       this.raw.set(m.name, m.samples);
+      this.makeBuffers(m.name);
       if (this.loops.has(m.name)) this.startLoop(m.name);
     } else if (m.room) {
       this.room = m.room;
@@ -105,24 +111,25 @@ export class AudioEngine implements AudioSink {
       if (!AC) return;
       const ctx = new AC({ latencyHint: 'interactive' });
       this.ctx = ctx;
-      // Master: gain, then a limiter, then a soft clip (the limiter's attack lets the first ms through).
+      // Master: gain, a safety limiter, a clip that only rounds off what gets past the limiter's attack. Both are
+      // transparent below their thresholds: a DynamicsCompressor adds its own make-up gain, (1 / gain at full
+      // scale)^0.6 (WebAudio spec), which the gain after it takes back out.
       const master = ctx.createGain();
       master.gain.value = db(AUDIO.master);
       const lim = ctx.createDynamicsCompressor();
-      lim.threshold.value = -8;
-      lim.knee.value = 4;
-      lim.ratio.value = 12;
-      lim.attack.value = 0.002;
-      lim.release.value = 0.15;
+      const T = AUDIO.limiter.threshold, R = AUDIO.limiter.ratio;
+      lim.threshold.value = T;
+      lim.knee.value = 0;
+      lim.ratio.value = R;
+      lim.attack.value = 0.003;
+      lim.release.value = 0.12;
+      const fullScale = db(T + (0 - T) / R);
+      const unmakeup = ctx.createGain();
+      unmakeup.gain.value = 1 / Math.pow(1 / fullScale, 0.6);
       const clip = ctx.createWaveShaper();
-      const curve = new Float32Array(1025);
-      for (let i = 0; i < curve.length; i++) {
-        const x = (i / (curve.length - 1)) * 2 - 1;
-        curve[i] = Math.tanh(x * 1.2) / Math.tanh(1.2);
-      }
-      clip.curve = curve;
+      clip.curve = softClipCurve();
       clip.oversample = '2x';
-      master.connect(lim).connect(clip).connect(ctx.destination);
+      master.connect(lim).connect(unmakeup).connect(clip).connect(ctx.destination);
       for (let b = 0; b < 4; b++) {
         const g = ctx.createGain();
         g.connect(master);
@@ -138,7 +145,7 @@ export class AudioEngine implements AudioSink {
         const gain = ctx.createGain();
         const air = ctx.createBiquadFilter();
         air.type = 'lowpass';
-        air.Q.value = 0.5;
+        air.Q.value = -3.01; // dB for a WebAudio lowpass: Butterworth, no resonant bump
         const pan = ctx.createPanner();
         pan.panningModel = 'equalpower';
         pan.distanceModel = 'inverse';
@@ -151,9 +158,14 @@ export class AudioEngine implements AudioSink {
         this.voices.push({ gain, air, pan, send, src: null, until: 0, bus: -1 });
       }
       this.attachRoom();
+      for (const k of [...this.raw.keys()]) this.makeBuffers(k);
       this.startLoops();
+      // Any stop the page didn't ask for (another tab took the device, Safari's 'interrupted'): start again.
+      ctx.onstatechange = (): void => {
+        if (this.wantRunning && ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume().catch(() => undefined);
+      };
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.wantRunning && this.ctx.state !== 'running') void this.ctx.resume().catch(() => undefined);
   }
 
   get live(): boolean {
@@ -170,28 +182,25 @@ export class AudioEngine implements AudioSink {
     this.convolver.buffer = b;
   }
 
-  /** The family's AudioBuffers for a bin, made from the rendered floats on first use. */
-  private get(family: string, bin: number): AudioBuffer[] | null {
-    if (!this.ctx) return null;
-    let fam = this.buffers.get(family);
+  /**
+   * A family's AudioBuffers, all made at once (at unlock, or on arrival after it), then the floats are dropped:
+   * the bank is held once, and no buffer is made mid-rally.
+   */
+  private makeBuffers(family: string): void {
+    const ctx = this.ctx;
     const raw = this.raw.get(family);
-    if (!raw) return null;
-    if (!fam) {
-      fam = [];
-      this.buffers.set(family, fam);
-    }
-    let row = fam[bin];
-    if (!row) {
-      const rr = raw[bin];
-      if (!rr) return null;
-      row = rr.map((s) => {
-        const b = this.ctx!.createBuffer(s.ch.length, s.ch[0]!.length, s.sr);
-        s.ch.forEach((c, i) => b.copyToChannel(c as Float32Array<ArrayBuffer>, i));
-        return b;
-      });
-      fam[bin] = row;
-    }
-    return row;
+    if (!ctx || !raw) return;
+    this.buffers.set(family, raw.map((row) => row.map((s) => {
+      const b = ctx.createBuffer(s.ch.length, s.ch[0]!.length, s.sr);
+      s.ch.forEach((c, i) => b.copyToChannel(c as Float32Array<ArrayBuffer>, i));
+      return b;
+    })));
+    this.lastVariant.set(family, new Int32Array(raw.length).fill(-1));
+    this.raw.delete(family);
+  }
+
+  private get(family: string, bin: number): AudioBuffer[] | null {
+    return this.buffers.get(family)?.[bin] ?? null;
   }
 
   private rand(): number {
@@ -201,15 +210,15 @@ export class AudioEngine implements AudioSink {
 
   /** A variant, never the one just played for this family and bin (no machine-gun repeats). */
   private pick(family: string, bin: number, n: number): number {
-    const key = family + bin;
-    const last = this.lastVariant.get(key) ?? -1;
+    const lv = this.lastVariant.get(family);
+    const last = lv ? lv[bin]! : -1;
     let v = Math.floor(this.rand() * n);
     if (n > 1 && v === last) v = (v + 1 + Math.floor(this.rand() * (n - 1))) % n;
-    this.lastVariant.set(key, v);
+    if (lv) lv[bin] = v;
     return v;
   }
 
-  /** A free voice, else the one that ends soonest (it is cut). */
+  /** A free voice (its sound has ended now, not merely by the new one's start), else the one that ends soonest. */
   private voice(now: number): Voice {
     for (let i = 0; i < POOL; i++) {
       const v = this.voices[(this.nextVoice + i) % POOL]!;
@@ -220,14 +229,15 @@ export class AudioEngine implements AudioSink {
     return best;
   }
 
-  play(family: string, bin: number, x: number, y: number, z: number, gain: number, rate: number, delay: number, bus: number): void {
+  play(family: string, bin: number, x: number, y: number, z: number, gain: number, rate: number, delay: number, bus: number, offset = 0): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
     const row = this.get(family, bin);
     if (!row || row.length === 0) return;
     const buf = row[this.pick(family, bin, row.length)]!;
+    if (offset >= buf.duration) return;
     const t = ctx.currentTime + Math.max(0, delay);
-    const v = this.voice(t);
+    const v = this.voice(ctx.currentTime);
     if (v.src) { try { v.src.stop(); } catch { /* already ended */ } v.src.disconnect(); }
     if (v.bus !== bus) {
       v.pan.disconnect();
@@ -245,14 +255,13 @@ export class AudioEngine implements AudioSink {
     v.pan.positionY.setValueAtTime(y, t);
     v.pan.positionZ.setValueAtTime(z, t);
     // Air and distance take the highs; farther sounds are wetter (less direct sound against the same room).
-    const l = ctx.listener;
-    const dx = x - l.positionX.value, dy = y - l.positionY.value, dz = z - l.positionZ.value;
+    const dx = x - this.lx, dy = y - this.ly, dz = z - this.lz;
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     v.air.frequency.setValueAtTime(Math.min(20000, AUDIO.distance.airHz / (1 + d / AUDIO.distance.airM)), t);
     v.send.gain.setValueAtTime(0.5 + d / 40, t);
-    src.start(t);
+    src.start(t, Math.max(0, offset));
     v.src = src;
-    v.until = t + buf.duration / src.playbackRate.value;
+    v.until = t + (buf.duration - Math.max(0, offset)) / src.playbackRate.value;
   }
 
   playFlat(family: string, bin: number, gain: number, delay: number, bus: number): void {
@@ -294,7 +303,7 @@ export class AudioEngine implements AudioSink {
       l = { src: null, gain: g, want: gain, tc };
       this.loops.set(name, l);
       this.startLoop(name);
-    }
+    } else if (l.want === gain && l.tc === tc) return;
     l.want = gain;
     l.tc = tc;
     if (this.ctx && l.gain) l.gain.gain.setTargetAtTime(gain, this.ctx.currentTime, Math.max(0.01, tc));
@@ -323,12 +332,17 @@ export class AudioEngine implements AudioSink {
     l.src = src;
   }
 
-  /** The listener at the camera (call each frame). */
+  /** The listener at the camera (call each frame; only a moved camera touches the AudioParams). */
   setListener(camera: THREE.Camera): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const l = ctx.listener;
     const p = camera.position;
+    const q = camera.quaternion;
+    const c = this.lastCam;
+    if (c[0] === p.x && c[1] === p.y && c[2] === p.z && c[3] === q.x && c[4] === q.y && c[5] === q.z && c[6] === q.w) return;
+    c[0] = p.x; c[1] = p.y; c[2] = p.z; c[3] = q.x; c[4] = q.y; c[5] = q.z; c[6] = q.w;
+    this.lx = p.x; this.ly = p.y; this.lz = p.z;
     this.fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
     this.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
     if (l.positionX) {
@@ -344,14 +358,28 @@ export class AudioEngine implements AudioSink {
 
   /** The tab is hidden (the game freezes the sim): stop the audio clock too, and pick up again on return. */
   pause(hidden: boolean): void {
+    this.wantRunning = !hidden;
     const ctx = this.ctx;
     if (!ctx) return;
-    if (hidden && ctx.state === 'running') void ctx.suspend();
-    else if (!hidden && ctx.state === 'suspended') void ctx.resume();
+    // (always ask: a quick hide and show can find the state still 'running' while the suspend is pending)
+    if (hidden) void ctx.suspend().catch(() => undefined);
+    else void ctx.resume().catch(() => undefined);
   }
 
   /** Families the engine has (for tests and the debug overlay). */
   has(family: string): boolean {
-    return this.raw.has(family);
+    return this.raw.has(family) || this.buffers.has(family);
   }
+}
+
+/** Unity below 0.8, then a smooth knee to the rails: what gets past the limiter's attack is rounded, nothing else. */
+export function softClipCurve(n = 2049): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(n);
+  const k = 0.8, w = 1 - k;
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const a = Math.abs(x);
+    curve[i] = Math.sign(x) * (a <= k ? a : k + w * Math.tanh((a - k) / w));
+  }
+  return curve;
 }

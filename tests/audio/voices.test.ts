@@ -57,9 +57,13 @@ describe('racket', () => {
     const frame = many(8, (r) => V.racket(r, V.RK_DRIVE, 0.7, 0.5, true));
     expect(mean(off.map((b) => centroid(b)))).toBeLessThan(0.6 * mean(clean.map((b) => centroid(b))));
     expect(mean(off.map((b) => energyBy(b, 0.9)))).toBeGreaterThan(mean(clean.map((b) => energyBy(b, 0.9))));
-    // The rim's clack: more energy above 2 kHz in the first 10 ms than a clean hit has.
+    // The rim's clack: brighter than a clean hit (not the face's 205 Hz bending: review, Phase 6), more energy
+    // above 2 kHz in the first 10 ms, and no louder than a clean hit over its first 30 ms.
     const hi = (b: Float32Array): number => band(b, 2000, 8000, 0, 480) * rms(b, 0, 480) ** 2;
-    expect(mean(frame.map(hi))).toBeGreaterThan(mean(clean.map(hi)));
+    expect(mean(frame.map(hi))).toBeGreaterThan(1.5 * mean(clean.map(hi)));
+    expect(mean(frame.map((b) => centroid(b, 0, 960)))).toBeGreaterThan(mean(clean.map((b) => centroid(b, 0, 960))));
+    const r30 = (b: Float32Array): number => rms(b, 0, 1440);
+    expect(20 * Math.log10(mean(frame.map(r30)) / mean(clean.map(r30)))).toBeLessThan(1);
   });
 
   it('is louder the harder it is hit', () => {
@@ -163,9 +167,15 @@ describe('crowd', () => {
   });
 
   it('the murmur loops without a seam', () => {
-    const [L] = V.murmur(new Rng(2), 10, 4);
-    const r = rms(L!);
-    expect(Math.abs(L![L!.length - 1]! - L![0]!)).toBeLessThan(3 * r);
+    // The step from the last sample to the first is no bigger than the steps inside (a cut would be a jump of the
+    // order of the rms: many times the typical step of a low-passed bed).
+    for (const seed of [2, 3, 4]) {
+      const [L] = V.murmur(new Rng(seed), 10, 4);
+      let d = 0;
+      for (let i = 1; i < L!.length; i++) d += Math.abs(L![i]! - L![i - 1]!);
+      d /= L!.length - 1;
+      expect(Math.abs(L![L!.length - 1]! - L![0]!)).toBeLessThan(4 * d);
+    }
   });
 });
 

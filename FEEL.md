@@ -126,9 +126,10 @@ and the racket face's modes struck by the contact, quality and pace picking the 
 | Value | Why |
 |---|---|
 | Racket: clean hits centre at 0.5-1.5 kHz and are over in 30 ms; off-centre ones half as bright and ringing longer (the face's first bending mode); frame hits clack above 2 kHz | You hear the sweet spot: dry and sharp in it, a dull "thock" off it, a clack on the rim. |
-| Three power bins and three contact bins, picked by the hit's pace and grade, the level following the pace | Louder and sharper the harder the hit. |
+| Three power bins by the ball's speed against the face ((speed - 4) / 36 m/s), three contact bins by where it met the face (past 0.55 of the way to the edge: off-centre; past the edge: frame), the level following the speed | Louder and sharper the harder the hit; you hear where it met the face, not the timing grade (a well-timed frame shot still clacks). |
 | Played at the event's exact time (up to 50 ms ahead), from where it happens, heard from the broadcast camera | With run-ahead the sim is up to a tick ahead of the screen; the sound lands with the picture. |
-| A swish on every swing, its band and level rising with the racket's speed (smash loud, block volley near silent) | A swing is heard before the hit; a whiff is heard as one. |
+| A swish on every swing, its band and level rising with the racket's speed (smash loud, block volley near silent), peaking 25 ms before the contact | A swing is heard into the hit; a whiff is heard as one. |
+| Steps from the soles landing, louder with speed and braking; scuffs on hard braking or a cut, judged over 0.1 s | The same footwork sounds the same at 60 and 144 fps. |
 | Grunts on hard shots, some players more than others | Effort is heard. |
 
 **Rumble** (gamepad `vibrationActuator`, Chrome/Edge):
