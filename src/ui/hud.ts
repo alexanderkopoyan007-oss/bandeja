@@ -196,7 +196,10 @@ export class Hud {
   private timingShown = -1;
 
   toggleHelp(): void {
-    this.help.style.display = this.help.style.display === 'none' ? '' : 'none';
+    // The TV package (ui/tv.ts) starts with the help hidden by class; H shows it there too.
+    const hidden = this.help.style.display === 'none' || (this.root.classList.contains('tvmode') && !this.help.classList.contains('shown'));
+    this.help.style.display = hidden ? '' : 'none';
+    this.help.classList.toggle('shown', hidden);
   }
 
   private set(e: HTMLElement, text: string, html = false): void {

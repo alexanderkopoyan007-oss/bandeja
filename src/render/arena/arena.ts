@@ -37,6 +37,7 @@ export interface ArenaDef {
   /** Other courts beside ours (their centres along x, m): empty, static, lit like ours. */
   neighbours?: number[];
   light: LightDef;
+  post?: { bloom?: { strength: number; radius: number; threshold: number } };
 }
 
 export const ARENA_KEYS = Object.keys(arenas).filter((k) => !k.startsWith('/'));

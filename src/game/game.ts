@@ -14,6 +14,9 @@ import { Sound } from '../audio/sound.ts';
 import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
 import { Hud } from '../ui/hud.ts';
+import { TvGraphics } from '../ui/tv.ts';
+import { Post } from '../render/post.ts';
+import { kitFor } from '../render/avatar/kit.ts';
 import { DebugOverlay } from '../ui/debug.ts';
 import { applyPhotoCam, type PhotoOverlay } from './photoMatch.ts';
 
@@ -39,6 +42,10 @@ export interface GameOptions {
   sound?: boolean;
   /** Arena (data/arenas.json): stadium, hall, club-day, club-night. */
   arena?: string;
+  /** `tv`: the broadcast graphics package (ui/tv.ts) instead of the plain score bug. */
+  gfx?: string;
+  /** Lens bloom (render/post.ts); `?bloom=0` renders straight to the screen. */
+  bloom?: boolean;
 }
 
 /** One button event's trip to the screen, performance.now() ms (tools/latency.mjs reads these). */
@@ -74,6 +81,8 @@ export class Game {
   readonly scene = new THREE.Scene();
   readonly cam: BroadcastCamera;
   readonly ball: BallView;
+  private tv: TvGraphics | null = null;
+  private post: Post | null = null;
   readonly net: NetView;
   readonly arena: Arena;
   readonly court: CourtView;
@@ -126,6 +135,8 @@ export class Game {
     this.scene.add(this.net.group);
 
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9);
+    const bl = this.arena.def.post?.bloom;
+    if (bl && opts.bloom !== false) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar));
@@ -163,6 +174,10 @@ export class Game {
     const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
     const names: [string, string] = [row(0), row(1)];
     this.hud = new Hud(hudRoot, names, sets);
+    if (opts.gfx === 'tv') {
+      const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
+      this.tv = new TvGraphics(hudRoot, names, [hex(kitFor(0).shirt), hex(kitFor(1).shirt)], sets, this.sim);
+    }
     this.hud.pro = opts.pro;
     this.hud.setTiming(opts.match.timingScale ?? 1);
     this.ball.showTrail = !opts.pro;
@@ -212,6 +227,8 @@ export class Game {
     this.cam.update(this.sim, this.team, 0, 0);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     await this.renderer.compileAsync(this.scene, this.cam.camera);
+    // The post passes' own shaders compile on their first frame: draw one now.
+    if (this.post) this.post.render();
   }
 
   start(): void {
@@ -293,7 +310,12 @@ export class Game {
   renderOnce(): void {
     for (const p of this.players) p.avatar?.refreshSkin();
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
-    this.renderer.render(this.scene, this.cam.camera);
+    this.draw();
+  }
+
+  private draw(): void {
+    if (this.post) this.post.render();
+    else this.renderer.render(this.scene, this.cam.camera);
   }
 
   /** The human's team (the camera's end); team 0 with autoplay. */
@@ -389,11 +411,12 @@ export class Game {
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt, cueNow);
     this.hud.update(this.sim, who, now / 1000);
+    this.tv?.update(this.sim);
     // The crowd follows the rally: calm between points, rising with a long one.
     this.arena.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : this.arena.excite * 0.98;
     this.arena.update(now / 1000);
 
-    this.renderer.render(this.scene, this.cam.camera);
+    this.draw();
     if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);
     const info = this.renderer.info.render;
     this.probe.drawCalls = info.drawCalls;

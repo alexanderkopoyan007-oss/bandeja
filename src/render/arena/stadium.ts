@@ -206,9 +206,12 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   root.add(roof);
   // Light rows (emissive panels: they light the env map, so the glass and the turf pick them up) and windows.
   const glow = new BoxBatch();
+  const panels = new BoxBatch();
   for (let x = -h.x + 3; x < h.x; x += 6) {
-    for (let z = -h.z + 4; z < h.z; z += 8) glow.box(x, h.height - 0.05, z, 1.6, 0.06, 2.4, '#ffffff');
+    for (let z = -h.z + 4; z < h.z; z += 8) panels.box(x, h.height - 0.05, z, 1.6, 0.06, 2.4, '#ffffff');
   }
+  // The light panels are far brighter than white (HDR): they bloom (render/post.ts) and light the env map.
+  root.add(panels.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1, 1, 1).multiplyScalar(4) })));
   for (const s of [1, -1]) {
     glow.box(s * (h.x - 0.25), h.height - 3.2, 0, 0.05, 2.2, h.z * 1.8, '#dfe8f2');
     glow.box(0, h.height - 3.2, s * (h.z - 0.25), h.x * 1.8, 2.2, 0.05, '#dfe8f2');

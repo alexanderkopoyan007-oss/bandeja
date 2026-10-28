@@ -49,7 +49,8 @@ export function buildHall(root: THREE.Group, def: ArenaDef, court: Court): Arena
   // Rows of LED high-bays under the roof.
   const glow = new BoxBatch();
   for (let z = -h.z + 2.5; z < h.z; z += 5) for (const x of [-4, 4]) glow.box(x, h.height + 0.3, z, 1.2, 0.06, 0.35, '#ffffff');
-  root.add(glow.mesh(new THREE.MeshBasicMaterial({ vertexColors: true })));
+  // LEDs far brighter than white (HDR): they bloom (render/post.ts).
+  root.add(glow.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1, 1, 1).multiplyScalar(5) })));
   // Daylight past the open sides: the club's grass, trees and sky.
   return { sky: buildScenery(root, def) };
 }

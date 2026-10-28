@@ -23,6 +23,7 @@
       "key": { "color": "#fff6ec", "intensity": 1.6, "dir": [0.25, 1, 0.35], "shadow": true, "radius": 6 },
       "hemi": { "sky": "#eef1f6", "ground": "#5a3a34", "intensity": 0.55 }
     },
+    "post": { "bloom": { "strength": 0.3, "radius": 0.5, "threshold": 3 } },
     "//light": "The roof's skylights and the event floodlights: bright, nearly shadowless from above (soft, faint shadows under the players in arena-wide-2). The key light gives the soft shadow; the reflections and most of the fill come from the arena itself (environment map rendered from the court)."
   },
   "hall": {
@@ -46,7 +47,8 @@
       "env": 1.0,
       "key": { "color": "#ffffff", "intensity": 1.1, "dir": [0.6, 1, 0.2], "shadow": true, "radius": 8 },
       "hemi": { "sky": "#e4ebf2", "ground": "#55595e", "intensity": 0.8 }
-    }
+    },
+    "post": { "bloom": { "strength": 0.3, "radius": 0.5, "threshold": 3.5 } }
   },
   "club-day": {
     "name": "Club (outdoor, day)",
@@ -69,7 +71,8 @@
       "env": 1.0,
       "key": { "color": "#fff1dc", "intensity": 2.6, "dir": [0.45, 0.7, 0.55], "shadow": true, "radius": 2 },
       "hemi": { "sky": "#b9d3ec", "ground": "#4d5a3c", "intensity": 0.7 }
-    }
+    },
+    "post": { "bloom": { "strength": 0.25, "radius": 0.4, "threshold": 4 } }
   },
   "club-night": {
     "name": "Club (outdoor, night)",
@@ -77,11 +80,12 @@
     "//kind": "The same club at night under its floodlights: LED heads on 6-7 m poles at the ends of the side mesh, a dark sky, pools of light on the court and darkness beyond (night).",
     "exposure": 1.0,
     "background": "#05070c",
-    "floor": { "kind": "turf", "color": "#3f7d3d", "sand": "#b5a27e", "sandAmount": 0.35, "line": "#f1f2ee", "roll": 4, "roughness": 0.93 },
-    "surround": { "kind": "hard", "color": "#59605a", "sand": "#7e7a70", "sandAmount": 0.2, "line": null, "roll": 0, "roughness": 0.95, "x": 21, "z": 12.5 },
+    "floor": { "kind": "turf", "color": "#4a7c36", "sand": "#b5a27e", "sandAmount": 0.4, "line": "#f1f2ee", "roll": 4, "roughness": 0.93 },
+    "surround": { "kind": "turf", "color": "#2c5232", "sand": "#7e7a70", "sandAmount": 0.15, "line": null, "roll": 0, "roughness": 0.95, "x": 21, "z": 12.5 },
+    "//surround": "Dark green turf round the courts and between them (night).",
     "neighbours": [-12.5, 12.5],
     "//neighbours": "Clubs build courts in rows, side by side about 2.5 m apart (night, day-panoramic, Club Kingswood).",
-    "rim": "#3f7d3d",
+    "rim": "#4a7c36",
     "hallFloor": "#5f7a45",
     "frame": "#17191c",
     "base": "#17191c",
@@ -92,8 +96,9 @@
       "env": 0.35,
       "key": { "color": "#f3f0ea", "intensity": 0.0, "dir": [0, 1, 0], "shadow": false, "radius": 4 },
       "hemi": { "sky": "#1a2233", "ground": "#0c0d0f", "intensity": 0.12 },
-      "floods": { "intensity": 140, "angle": 1.15, "penumbra": 0.9, "decay": 1.2, "shadow": 1 }
+      "floods": { "intensity": 95, "angle": 1.15, "penumbra": 0.9, "decay": 1.2, "shadow": 1 }
     },
+    "post": { "bloom": { "strength": 0.5, "radius": 0.5, "threshold": 5 } },
     "//floods": "Eight heads (two per pole, four poles); spot lights aimed at the court. Only one casts a shadow (cost); the others light without."
   }
 }

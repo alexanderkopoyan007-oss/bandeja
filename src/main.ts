@@ -84,6 +84,8 @@ async function start(): Promise<void> {
     autoplay,
     forceWebGL: params.get('backend') === 'webgl',
     pro: params.get('pro') === '1',
+    gfx: params.get('gfx') ?? undefined,
+    bloom: params.get('bloom') !== '0',
     mouseAim: params.get('aim') === 'mouse',
     runAhead: params.get('runahead') !== '0',
     sound: params.get('sound') !== '0',

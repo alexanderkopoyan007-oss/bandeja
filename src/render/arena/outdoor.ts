@@ -152,7 +152,8 @@ export function buildOutdoor(root: THREE.Group, def: ArenaDef, court: Court, sce
   root.add(poleMesh);
   const headGeo = new THREE.BoxGeometry(0.5, 0.06, 0.38);
   const headMat = new THREE.MeshStandardMaterial({ color: 0x23262a, roughness: 0.5, metalness: 0.4 });
-  const lensMat = new THREE.MeshBasicMaterial({ color: night ? 0xffffff : 0x6c7278 });
+  // Lit, a lens is far brighter than white (HDR, linear): it blooms as a camera sees it (render/post.ts).
+  const lensMat = new THREE.MeshBasicMaterial({ color: night ? new THREE.Color(0xfff8ee).multiplyScalar(14) : 0x6c7278 });
   const lensGeo = new THREE.PlaneGeometry(0.44, 0.32);
   const fl = def.light.floods;
   let shadows = fl?.shadow ?? 0;
