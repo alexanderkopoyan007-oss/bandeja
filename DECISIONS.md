@@ -279,3 +279,23 @@ better-looking, more realistic court. Every decision and the reason for it goes 
   AI (volleys, a third of all shots, got 1.35x the window, so the AI missed fewer). The windows now apply to humans
   only until Phase 4 refits the AI's timing with them on. After the fresh-eyes round (the players' clock): 340
   points, median 9, winners 49.7%, own-side errors 44.7%, balls on an opponent 3.2%.
+- **Fresh-eyes round 2** (independent, read-only; 8 setups x 4 seeds x 120 s compared tick by tick for render-side
+  calls, an emulation of `Game.tick` at 60-165 Hz, 886k queue events). Fixed:
+  - *A held swing was drawn unblended* (high on 120 Hz and faster screens, new in round 1's fix): with the sim kept
+    at or behind now while a swing is held, the render drew the newest tick as it was, so frames with no new tick
+    repeated (17% at 144 Hz, 27% at 165 Hz, 5-25% at 120 Hz by frame phase) and the rest jumped by whole ticks,
+    for about 58% of rally time (the HUD tells you to hold from the opponent's strike). The picture is now drawn a
+    tick behind while a swing is held, blended, the lag eased in and out at 25% of frame time and kept until the
+    contact: 0 repeated frames at 60-165 Hz in the emulation, still 0 late strikes. A release is drawn a tick later
+    than a press (8.3 ms; it was 4-6 ms on average unblended).
+  - *A modifier let go just after the shot key was lost* (medium): `buildInput` sent the keys as they were at frame
+    time and the release read power and precision from that, so Space let go 0-6 ms after O made every smash a
+    bandeja (28 of 49 at 12 ms; víbora and chiquita with Shift, and the pad triggers, the same). The held state is
+    now built from the events handed to the sim (resynced from the keys when the queue is empty), and a release
+    reads the modifiers as they were at its moment (later events in the same tick undone): all smashes at 0-12 ms.
+    Test: `tests/sim/input.test.ts`.
+  - Low: with both Shift keys down, letting go of one let go of precision (a button is now held while any of its
+    keys is); the latency probe tells presses from releases.
+  - Left: the HUD meter reads `sim.time` and the ring the render time (up to a tick apart, cosmetic); unplugging
+    the pad mid-charge swings at that moment rather than cancelling (the sim has no cancel); for rollback later,
+    `Player.writeState` leaves out the half bounds and the human's stand plans are not hashed (both before Phase 2).

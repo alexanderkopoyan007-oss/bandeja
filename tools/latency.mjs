@@ -61,6 +61,11 @@ async function run(label, query) {
     console.log('  ' + line('key -> frame that uses it', used));
     console.log('  ' + line('key -> drawn (render submit)', shown));
     if (gpu.length) console.log('  ' + line('key -> GPU done', gpu));
+    // Presses and releases apart: a release ends a held swing, which is drawn a tick behind (see Game.tick).
+    for (const [name, sel] of [['presses', true], ['releases', false]]) {
+      const s = ok.filter((l) => l.press === sel).map((l) => l.shown - l.ts);
+      if (s.length) console.log('  ' + line(`  ${name}: key -> drawn`, s));
+    }
     if (errors.length) console.log('  errors:', errors.slice(0, 3));
     return { shown: pct(shown, 0.5), gpu: pct(gpu, 0.5) };
   } finally {
@@ -69,8 +74,11 @@ async function run(label, query) {
 }
 
 try {
+  // LAT_REVERSE=1 measures the tick-behind loop first (to tell a pass's order from its loop mode).
+  const rev = process.env.LAT_REVERSE === '1';
+  const b0 = rev ? await run('one tick behind (?runahead=0)', '&runahead=0') : null;
   const a = await run('run-ahead (default)', '');
-  const b = await run('one tick behind (?runahead=0)', '&runahead=0');
+  const b = b0 ?? await run('one tick behind (?runahead=0)', '&runahead=0');
   console.log(`\nrun-ahead saves ${(b.shown - a.shown).toFixed(2)} ms at the median (key -> drawn).`);
   console.log('Add the display: on average half a refresh before the next frame starts, plus one compositor frame '
     + '(60 Hz: ~8 + 17 ms; 120 Hz: ~4 + 8 ms).');

@@ -28,6 +28,8 @@ const QUEUE = 32;
 export class KeyboardInput {
   held = 0;
   private readonly moveHeld: Record<string, boolean> = {};
+  /** Button keys down by code: two keys can make one button (both Shifts), held while either is. */
+  private readonly codeDown: Record<string, boolean> = {};
   /** Ring of timestamped button events not yet consumed by the sim. */
   readonly queue: TimedButton[] = [];
   head = 0;
@@ -55,10 +57,13 @@ export class KeyboardInput {
     if (btn !== undefined || MOVE_KEYS[e.code]) e.preventDefault();
     if (e.repeat) return;
     if (btn !== undefined) {
+      this.codeDown[e.code] = down;
+      let any = false;
+      for (const c in BUTTON_KEYS) if (BUTTON_KEYS[c] === btn && this.codeDown[c]) any = true;
       const was = (this.held & btn) !== 0;
-      if (down === was) return;
-      this.held = down ? this.held | btn : this.held & ~btn;
-      this.push(down, btn, e.timeStamp);
+      if (any === was) return;
+      this.held = any ? this.held | btn : this.held & ~btn;
+      this.push(any, btn, e.timeStamp);
     } else if (MOVE_KEYS[e.code]) {
       this.moveHeld[e.code] = down;
     }
@@ -92,6 +97,7 @@ export class KeyboardInput {
   private releaseAll(ts: number): void {
     for (const code of Object.keys(BUTTON_KEYS)) {
       const b = BUTTON_KEYS[code]!;
+      this.codeDown[code] = false;
       if (this.held & b) {
         this.held &= ~b;
         this.push(false, b, ts);

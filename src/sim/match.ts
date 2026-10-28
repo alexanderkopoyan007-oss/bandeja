@@ -552,7 +552,16 @@ export class MatchSim {
       if (shot < 0) continue;
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
       if (e.press) this.press(i, shot, max(e.t, t0));
-      else if (p.swing === SW_CHARGE && p.shot === shot) this.releaseSwing(i, e.t, f);
+      else if (p.swing === SW_CHARGE && p.shot === shot) {
+        // The modifiers as they were at this release: f.held is the tick's end; undo this tick's later changes.
+        let h = f.held;
+        for (let j = f.evCount - 1; j > k; j--) {
+          const l = f.ev[j]!;
+          if (l.button === BTN_POWER || l.button === BTN_PRECISION) h = l.press ? h & ~l.button : h | l.button;
+        }
+        this.relHeld = h;
+        this.releaseSwing(i, e.t, f);
+      }
     }
     // Assisted timing: still holding when the ideal moment arrives, the swing goes off by itself.
     if (this.cfg.autoTiming && human && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
@@ -878,11 +887,16 @@ export class MatchSim {
     this.tossIdeal = apex >= 0 ? pr.t[apex]! + 0.04 : this.time + 0.5;
   }
 
+  /** The buttons held at the release being handled (-1: f.held). */
+  private relHeld = -1;
+
   private releaseSwing(i: number, t: number, f: InputFrame): void {
     const p = this.players[i]!;
     const team = p.team;
     p.release = t;
-    p.mod = (f.held & BTN_POWER) !== 0 ? MOD_POWER : (f.held & BTN_PRECISION) !== 0 ? MOD_PRECISION : MOD_NONE;
+    const held = this.relHeld >= 0 ? this.relHeld : f.held;
+    this.relHeld = -1;
+    p.mod = (held & BTN_POWER) !== 0 ? MOD_POWER : (held & BTN_PRECISION) !== 0 ? MOD_PRECISION : MOD_NONE;
     p.heldMod = p.mod;
     const a = this.aim[i]!;
     if (!this.ai[i] && (this.cfg.assist ?? p.tune.positioningAssist) > 0) {

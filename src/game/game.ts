@@ -3,7 +3,7 @@ import * as THREE from 'three/webgpu';
 import { MatchSim, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import { InputFrame } from '../sim/input.ts';
-import { SW_CHARGE } from '../sim/player/player.ts';
+import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
 import { buildCourtView } from '../render/courtView.ts';
 import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
@@ -47,6 +47,8 @@ export interface LatencySample {
   shown: number;
   /** The GPU finished that frame (WebGPU only; 0 otherwise). */
   gpu: number;
+  /** A press (true) or a release. */
+  press: boolean;
 }
 
 /** Numbers the perf tool reads from the page. */
@@ -85,6 +87,8 @@ export class Game {
   readonly latency: LatencySample[] = [];
   private latFirst = 0;
   private frameNow = 0;
+  /** How far the drawn moment is behind now (s): 0 with run-ahead, one tick while a swing is held. */
+  private renderLag = 0;
 
   private epoch = 0;
   private hiddenAt = -1;
@@ -221,18 +225,22 @@ export class Game {
     const pad = this.pad.x !== 0 || this.pad.y !== 0;
     f.moveX = pad ? this.pad.x : this.axes.x;
     f.moveY = pad ? this.pad.y : this.axes.y;
-    f.held = this.kb.held | this.pad.held;
-    // Button events that happened before the end of this tick, with their exact sim times.
+    // Button events that happened before the end of this tick, with their exact sim times; the buttons held are
+    // those events' result at the tick's end (the keys as they are now can be a frame later than the tick).
     const endMs = this.epoch + t1 * 1000;
     const q = this.kb.queue;
     while (this.kb.head < this.kb.tail) {
       const e = q[this.kb.head % q.length]!;
       if (e.ts >= endMs) break;
       f.push(e.press, e.button, Math.max(0, (e.ts - this.epoch) / 1000));
+      this.simHeld = e.press ? this.simHeld | e.button : this.simHeld & ~e.button;
       this.kb.head++;
-      if (this.latency.length < 4000) this.latency.push({ ts: e.ts, used: this.frameNow, shown: 0, gpu: 0 });
+      if (this.latency.length < 4000) this.latency.push({ ts: e.ts, used: this.frameNow, shown: 0, gpu: 0, press: e.press });
     }
     void t0;
+    // Every event handed over: the keys as they are now are the same state (unless the ring dropped one: resync).
+    if (this.kb.head === this.kb.tail) this.simHeld = this.kb.held | this.pad.held;
+    f.held = this.simHeld;
     if (this.mouseAim && this.mouseOnCourt) {
       f.aimAbs = true;
       f.aimTX = this.aimMarker.position.x;
@@ -242,6 +250,8 @@ export class Game {
   }
 
   private readonly inputs: Array<InputFrame | null>;
+  /** Buttons held as of the last event handed to the sim. */
+  private simHeld = 0;
 
   /** Latency probe: events whose moment this frame's render time has reached are on screen from this frame. */
   private markShown(renderMs: number): void {
@@ -298,10 +308,17 @@ export class Game {
     }
     if (n === MAX_TICKS_PER_FRAME) this.epoch = now - this.sim.time * 1000; // drop a backlog rather than spiral
     const simMs = performance.now() - s0;
-    const alpha = ahead
-      ? Math.min(1, Math.max(0, 1 - (this.sim.time - simNow) / DT))
-      : Math.min(1, Math.max(0, (simNow - this.sim.time) / DT));
-    const renderTime = this.sim.time - DT + alpha * DT;
+    // The render clock: now, less a lag. While a swing is held the sim stays at or behind now, so drawing now would
+    // mean drawing the newest tick as it is (no blend: a repeated frame whenever a frame has no new tick, every
+    // sixth frame at 144 Hz). Instead the lag eases to one tick while a swing is held (blended, as ?runahead=0
+    // draws) and back to none after, the render clock running 25% slow or fast meanwhile. It stays until the
+    // contact, so the catch-up isn't drawn over the hit.
+    const swinging = hp.swing === SW_CHARGE || hp.swing === SW_COMMITTED;
+    const lagTo = !ahead || (holding && swinging) ? DT : 0;
+    const ease = this.lastFrame ? 0.25 * Math.min(0.1, (now - this.lastFrame) / 1000) : DT;
+    this.renderLag = lagTo > this.renderLag ? Math.min(lagTo, this.renderLag + ease) : Math.max(lagTo, this.renderLag - ease);
+    const renderTime = Math.min(this.sim.time, Math.max(this.sim.time - DT, simNow - this.renderLag));
+    const alpha = (renderTime - (this.sim.time - DT)) / DT;
 
     // Mouse aim: project the pointer onto the opponent's half. The faint marker is the pointer; while a shot can
     // be aimed the sim's target (drawn by the assist view) sits under it instead.
