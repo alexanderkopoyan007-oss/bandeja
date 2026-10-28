@@ -173,6 +173,10 @@ const va = new V3();
 const n0 = new V3();
 
 export class Ball {
+  // Number fields that hold fractions start at -0, not 0: a field first stored as a small integer becomes a double
+  // the first time it holds a fraction (the first junction, the first net catch, minutes into the title's match),
+  // which changes Ball's map then and deoptimises every optimised function that reads a ball (Phase 8 review,
+  // tools/sim-deopt.ts with --trace-generalization). Each is written before it is read, or only compared or added.
   readonly pos = new V3();
   readonly vel = new V3();
   readonly spin = new V3();
@@ -191,9 +195,9 @@ export class Ball {
    * z for the rules: the ball's z, except near the net, where it says which side of the netting the ball is
    * really on (netSide; a pocket in the cloth carries the ball past the line without it crossing).
    */
-  sideZ = 0;
-  netW = 0;
-  netZeta = 0;
+  sideZ = -0;
+  netW = -0;
+  netZeta = -0;
 
   /** Only the match ball wears; predictions and solver ghosts copy its state. */
   wears = false;
@@ -204,7 +208,7 @@ export class Ball {
   eScale = 1;
   muScale = 1;
   /** Normal speed of the impact being added by wearImpact() (a field: a double argument would be boxed). */
-  wearV = 0;
+  wearV = -0;
   /** A bounce has counted wear that applyWear() hasn't turned into drag/restitution/friction yet. */
   wearDirty = false;
 
@@ -223,23 +227,24 @@ export class Ball {
   /** Which side of the cable's line the centre was on last substep (stepCoupled; it starts on its netSide). */
   private relSide = 1;
   /** Step length and event-time offset for fly() / roll() (fields: doubles passed as arguments get boxed). */
-  private flyDt = 0;
-  private flyAt = 0;
-  private flyEnd = 0;
+  private flyDt = -0;
+  private flyAt = -0;
+  private flyEnd = -0;
   private stepDt = DT;
-  private exitAt = 0;
-  private intDt = 0;
-  private resolveAt = 0;
+  private exitAt = -0;
+  private intDt = -0;
+  private resolveAt = -0;
   /**
    * A junction flies the ball on to its second surface (see junction()); when that flight runs past the end of the
    * step, the ball is this far ahead of the clock and the next step starts this far in (s, at most a few ms).
    */
-  ahead = 0;
+  ahead = -0;
 
   constructor() {
     for (let i = 0; i < MAX_EVENTS; i++) {
       this.events.push({ kind: 0, surface: 0, wall: -1, t: 0, x: 0, y: 0, z: 0, speed: 0 });
     }
+    this.eJ = 1;
   }
 
   copyFrom(b: Ball): this {
@@ -951,15 +956,15 @@ export class Ball {
   private jSurface = 0;
   private jSeam = 0.5;
   private jJoin = 0.5;
-  private jW = 0;
-  private jGap = 0;
+  private jW = -0;
+  private jGap = -0;
   /** Time to the second surface at the approach speed before the first bounce (s). */
-  private jT2 = 0;
+  private jT2 = -0;
   /** Candidate for considerJunction: gap to the surface's contact plane (m) and approach speed (m/s). */
-  private cg = 0;
-  private ca = 0;
+  private cg = -0;
+  private ca = -0;
   /** Extra restitution factor for bounce() (1 outside a junction). */
-  private eJ = 1;
+  private eJ = -0; // 1 from the constructor on: declared -0 so the field is a double (see the class's top)
 
   private findJunction(world: BallWorld): void {
     const c = world.court;
@@ -1145,7 +1150,7 @@ export class Ball {
   }
 
   /** Record the junction's second contact (normal speed before it: vnB, a field: see `best`). */
-  private vnB = 0;
+  private vnB = -0;
   private recordJ(): void {
     this.hitKind = this.jKind;
     this.hitWall = this.jWall;
@@ -1187,23 +1192,23 @@ export class Ball {
   // passed to non-inlined methods would be boxed, and this runs every tick a ball is in the net.
 
   /** Time left in the step (in), time used (out), time into the step at the start (for events). */
-  private span = 0;
-  private used = 0;
-  private at = 0;
-  private tau = 0;
+  private span = -0;
+  private used = -0;
+  private at = -0;
+  private tau = -0;
   // Catch state at the start of netStep, and the closed form at tau.
-  private d0 = 0;
-  private dv0 = 0;
-  private x0 = 0;
-  private y0 = 0;
-  private vx0 = 0;
-  private vy0 = 0;
-  private rd = 0;
-  private rdv = 0;
-  private rx = 0;
-  private ry = 0;
-  private rvx = 0;
-  private rvy = 0;
+  private d0 = -0;
+  private dv0 = -0;
+  private x0 = -0;
+  private y0 = -0;
+  private vx0 = -0;
+  private vy0 = -0;
+  private rd = -0;
+  private rdv = -0;
+  private rx = -0;
+  private ry = -0;
+  private rvx = -0;
+  private rvy = -0;
 
   private enterNet(world: BallWorld, rng: Rng | null): void {
     const c = world.court;

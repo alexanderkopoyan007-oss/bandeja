@@ -221,8 +221,10 @@ export class MatchSim {
   readonly stand: StandPlan[];
   /** Scratch plans for deciding which partner takes the ball. */
   private readonly claim: StandPlan[];
+  // Every field is written at each contact before the solve; the -0s make the fractions doubles from the start (a
+  // first Perfect's quality 1 then a Good's 0.85 changed the request's map mid-match; see Ball's fields).
   private readonly req: ShotRequest = {
-    shot: 0, mod: 0, targetX: 0, targetZ: 0, quality: 1, timingDelta: 0, handSide: 1, moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, motor: 0, bodyX: 0, bodyZ: 0,
+    shot: 0, mod: 0, targetX: -0, targetZ: -0, quality: -0, timingDelta: -0, handSide: 1, moving: -0, stretch: -0, power: -0, control: -0, spinScale: -0, motor: -0, bodyX: -0, bodyZ: -0,
   };
   private readonly res: ShotResult = { reachable: true, speed: 0, idealX: 0, idealZ: 0 };
   /** Aim captured at release, per player: relative (-1..1) or absolute. */

@@ -4,6 +4,7 @@
 // counted by source line over `secs` more, across several matches so rare branches come up.
 //   node --trace-deopt-verbose tools/sim-deopt.ts [warm 120] [secs 900] [matches 4] 2>&1 | node tools/sim-deopt.ts --report
 // The first form prints markers and V8's trace; --report reads it from stdin and counts what came after the warm-up.
+// AI=1 plays the title screen's match instead (four AI players at its level).
 import { MatchSim, PH_OVER } from '../src/sim/match.ts';
 import { InputFrame } from '../src/sim/input.ts';
 import { DT } from '../src/sim/core/constants.ts';
@@ -44,12 +45,16 @@ if (process.argv[2] === '--report') {
   const warm = Number(process.argv[2] ?? 120);
   const secs = Number(process.argv[3] ?? 900);
   const matches = Number(process.argv[4] ?? 4);
+  const AI = process.env.AI === '1';
   for (let m = 0; m < matches; m++) {
     console.log(`@@ warm match ${m}`);
-    const sim = new MatchSim({ seed: 100 + m, doubles: true, human: [true, false, false, false], assist: 0.45, timingScale: 1.5, aiLevel: [0.55, 0.85] });
+    // AI=1: four AI players at the title's attract level (the match the title screen plays), no human.
+    const sim = AI
+      ? new MatchSim({ seed: 100 + m, doubles: true, human: [false, false, false, false], aiLevel: [0.85, 0.85] })
+      : new MatchSim({ seed: 100 + m, doubles: true, human: [true, false, false, false], assist: 0.45, timingScale: 1.5, aiLevel: [0.55, 0.85] });
     const bot = new BotHuman(0, 7 + m);
     const f = new InputFrame();
-    const inputs: (InputFrame | null)[] = [f, null, null, null];
+    const inputs: (InputFrame | null)[] = [AI ? null : f, null, null, null];
     let t = 0;
     const end = warm + secs;
     for (; t < end && sim.phase !== PH_OVER; t += DT) {
@@ -58,7 +63,7 @@ if (process.argv[2] === '--report') {
       if (m > 0 && t === 0) console.log('@@ counting');
       const tick = Math.round(t / DT);
       if (tick % 600 === 0) console.log(`@@ t ${m} ${Math.round(t)}`);
-      bot.act(sim, f);
+      if (!AI) bot.act(sim, f);
       sim.step(inputs);
     }
     console.log(`@@ match ${m} played ${t.toFixed(0)} s`);
