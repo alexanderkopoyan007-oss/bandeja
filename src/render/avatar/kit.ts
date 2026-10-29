@@ -7,7 +7,7 @@
 import * as THREE from 'three/webgpu';
 import {
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
-  mx_noise_float, texture, uv, max, normalView, diffuseColor,
+  mx_noise_float, texture, uv, max, min, dot, normalView, normalLocal, diffuseColor,
 } from 'three/tsl';
 import { heightBump, footprintKeep } from '../bump.ts';
 import type { PlayerAsset } from './asset.ts';
@@ -28,6 +28,18 @@ export interface KitLook {
 const REGIONS = new WeakMap<PlayerAsset, Float32Array>();
 
 /** Bind-pose landmarks the shader's masks are placed by (metres, model space; the model faces +z). */
+/**
+ * The hems' lag as a displacement, less any part of it into the body (REVIEW.md round 3: a lag pointing into the
+ * back, as the player pulled up or turned, put the shirt's hem behind the shorts in face-sized steps, and where the
+ * skin under it is removed the court showed through). `normalLocal` is the skinned normal here (three skins
+ * positionLocal and normalLocal before positionNode runs).
+ */
+function hemLag(lag: THREE.Node<'vec3'>, sway: THREE.Node<'float'>): THREE.Node<'vec3'> {
+  const d = lag.mul(sway);
+  const n = normalLocal.normalize();
+  return positionLocal.add(d.sub(n.mul(min(dot(d, n), 0))));
+}
+
 export interface KitFrame { chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; floorY: number }
 const FRAMES = new WeakMap<PlayerAsset, KitFrame>();
 
@@ -176,7 +188,7 @@ export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THRE
   // Hems lag the body: the shirt from the chest down to its hem, the shorts' legs, by `lag`.
   const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
   const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);
-  m.positionNode = positionLocal.add(lag.mul(shirtSway.add(shortsSway)));
+  m.positionNode = hemLag(lag, shirtSway.add(shortsSway));
   return { material: m, state: { sweat: sweatU, lag } };
 }
 
@@ -312,7 +324,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   m.normalNode = heightBump(folds.mul(fabric).mul(0.0025).add(pores), 0.023);
   const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
   const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);
-  m.positionNode = positionLocal.add(lag.mul(shirtSway.add(shortsSway)));
+  m.positionNode = hemLag(lag, shirtSway.add(shortsSway));
 
   const hair = new THREE.MeshPhysicalNodeMaterial();
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);

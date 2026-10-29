@@ -1942,3 +1942,21 @@ Human matches dipped to black over the jump; autoplay and the attract match show
   - 11.2 shots a point (11.3)
   - whiffs 0.2% of errors (0.5)
 - `tests/sim/reach.test.ts`.
+
+## Review round 2 #12, again: the shirt's hem (2026-10-29)
+- **Still there.** After the people pass, the merged build's back views (`cam=body`) still showed round 2's
+  ragged dark notch at the shirt's lower back. It had steps the size of the suit's faces, and in one frame the court
+  showed through.
+- **Cause: the hems' cloth lag** (`kit.ts`). The spring moves the shirt's hem by a lag vector whatever way the
+  surface faces. A lag pointing into the body, as the player pulls up or turns, put the back hem behind the shorts.
+  Where the skin under the shirt is removed, the hollow body showed through. Now the part of the lag into the body
+  is dropped (`hemLag`, against the skinned `normalLocal`). The hem still swings out and sideways, never in.
+- **And the shorts under the shirt** (`person_face.cut_shorts_under_shirt`, build time). The waistband sat a few mm
+  under the shirt.
+  - Shorts with the shirt within 3 cm straight out are removed, except a 2 cm band by the shorts that show (115
+    faces a player).
+  - What stays under the shirt goes 1 cm in towards the body. So does the showing shorts within 5 cm of the shirt,
+    graded to nothing. The skin under it is removed anyway.
+  - Moving only the band did nothing: the suit's faces are 3-4 cm across, longer than the band.
+- **Checked.** 12 back views (4 players x 3 moments, seed 7): no notch, no steps, no see-through. Before the lag
+  fix, 3 of the 12 showed one.

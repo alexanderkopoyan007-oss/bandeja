@@ -486,3 +486,76 @@ def fit_suit(body, suit, hips_z, n_body=13380):
     d = np.linalg.norm(move, axis=1)
     print('FIT suit moved median', round(float(np.median(d)) * 1000, 1), 'mm, max', round(float(d.max()) * 1000, 1), 'mm;',
           int(shirt.sum()), 'shirt vertices')
+
+def cut_shorts_under_shirt(suit, reach=0.03, band=0.02, sink=0.01, tuck=0.05):
+    """
+    The shorts' waistband out from under the shirt (REVIEW.md round 2 #12, round 3): the two layers sit a few mm
+    apart, so a bend or a twist pushed the shorts through the shirt's back as a ragged black notch. As for the skin
+    under the clothes (finish-player.py): shorts that see the shirt within `reach` straight out along their normal are
+    removed, except a `band` next to the shorts that show, so the shirt's hem always has shorts under it. What stays
+    under the shirt is pulled in towards the body, from nothing where the shorts show to `sink` a band's width up (the
+    skin under it is removed later): kept where it was, a 2.5 cm band still came through the hem's back as the shirt
+    pulled in over the seat.
+    """
+    from mathutils.bvhtree import BVHTree
+    from mathutils.kdtree import KDTree
+    sm = suit.data
+    uvl = sm.uv_layers.active.data
+    is_shirt = []
+    for p in sm.polygons:
+        v = sum(uvl[li].uv.y for li in p.loop_indices) / p.loop_total
+        is_shirt.append(v > 0.57)
+    verts = [v.co.copy() for v in sm.vertices]
+    tree = BVHTree.FromPolygons(verts, [tuple(p.vertices) for p, s in zip(sm.polygons, is_shirt) if s])
+    bm = bmesh.new()
+    bm.from_mesh(sm)
+    bm.normal_update()
+    bm.faces.ensure_lookup_table()
+    bm.verts.ensure_lookup_table()
+    shirt_v = set()
+    for f, s in zip(bm.faces, is_shirt):
+        if s:
+            for v in f.verts:
+                shirt_v.add(v.index)
+    covered = set()
+    shorts = [v for v in bm.verts if v.index not in shirt_v]
+    for v in shorts:
+        if tree.ray_cast(v.co + v.normal * 0.0005, v.normal, reach)[0] is not None:
+            covered.add(v.index)
+    open_v = [v for v in shorts if v.index not in covered]
+    kd = KDTree(max(1, len(open_v)))
+    for i, v in enumerate(open_v):
+        kd.insert(v.co, i)
+    kd.balance()
+    dist = {v.index: kd.find(v.co)[2] for v in shorts if v.index in covered}
+    gone = {i for i, d in dist.items() if d > band}
+    dead = [f for f, s in zip(bm.faces, is_shirt) if not s and all(v.index in gone for v in f.verts)]
+    # Every covered vertex that stays (in the band, or on a face that reaches out from under the hem: the suit's
+    # faces are 3-4 cm across, longer than the band) goes in.
+    # The shorts that show but sit just under the hem go in too, less the further they are from the shirt (gone at
+    # `tuck`): a ray from them along their normal passes under the hem's edge, so they count as showing, and they
+    # came through the shirt's lowest few cm as the hips bent (the stepped dark notches in round 3's back views).
+    ks = KDTree(max(1, len(shirt_v)))
+    for i, vi in enumerate(shirt_v):
+        ks.insert(bm.verts[vi].co, i)
+    ks.balance()
+    dead_set = set(dead)
+    moves = []
+    for v in shorts:
+        if v.index in dist:
+            if any(f not in dead_set for f in v.link_faces):
+                moves.append((v, sink * min(1.0, dist[v.index] / band)))
+        else:
+            ds = ks.find(v.co)[2]
+            if ds < tuck:
+                u = 1.0 - ds / tuck
+                moves.append((v, sink * u * u * (3 - 2 * u)))
+    for v, d in moves:
+        v.co -= v.normal * d
+    sunk = len(moves)
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(sm)
+    bm.free()
+    sm.update()
+    print('SHORTS under the shirt out:', len(dead), 'faces;', len(covered), 'shorts vertices covered,', len(open_v), 'showing,', sunk, 'pulled in')

@@ -162,6 +162,7 @@ def finish(yb, spec, out, preview=False):
     # ---------- the kit fitted (person_face.fit_suit), before the skin under it is masked away ----------
     if suit is not None:
         face.fit_suit(body, suit, rig.data.bones[P + 'Hips'].head_local.z)
+        face.cut_shorts_under_shirt(suit)
 
     # ---------- helpers and hidden skin out ----------
     # As the MASK modifiers would (a vertex survives every mask), by bmesh: applying a modifier fails on a mesh with
