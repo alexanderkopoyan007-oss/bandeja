@@ -347,8 +347,15 @@ const PREP_SHARE = 0.6;
 const PREP_MIN = 0.06;
 /** Share of the shoulder turn taken by the whole body (the rest is the spine). */
 const BODY_TURN = 0.35;
-/** Extra turn to the racket side while the ball goes past to the glass (rad), and how fast it comes and goes (s). */
+/**
+ * Extra turn to the racket side for a ball taken off the back glass (rad): side-on as it goes past to the glass and
+ * still side-on at the contact, beside the front foot (review round 3, the pro's #4: it used to ease off as the ball
+ * came off the glass, so the shot was struck square to the net). Less on the backhand, whose stroke is side-on
+ * already. It turns the hips and everything above them, not the stance the racket's keys are in, so the face still
+ * goes where the shot goes. WALL_EASE: how fast it comes and goes (s).
+ */
 const WALL_TURN = 1.0;
+const WALL_TURN_BH = 0.35;
 /** Racket tap (racketTap): partners this close (m), for this long (s), turned this share of the way to each other. */
 const TAP_NEAR = 1.3;
 const TAP_HOLD = 0.75;
@@ -1197,8 +1204,7 @@ export class Avatar {
       // Off the back glass: side-on to the racket side while the ball, on this side, still goes towards it.
       const side = sim.side(p.team);
       if (st.valid) this.hand = st.hand;
-      this.wallWant = st.valid && st.afterWall && !st.contra && this.swingS === 0 && sim.phase === PH_RALLY
-        && sim.ball.pos.z * side > 0 && sim.ball.vel.z * side > 0.3 ? 1 : 0;
+      this.wallWant = st.valid && st.afterWall && !st.contra && sim.phase === PH_RALLY && sim.ball.pos.z * side > 0 ? 1 : 0;
       if (this.swingS === 0) {
         // Re-aimed while the plan changes (the ball may cross to the other side); a change of stroke blends
         // over from wherever the racket is rather than jumping.
@@ -1224,8 +1230,9 @@ export class Avatar {
         this.swingS = Math.max(this.swingS, Math.min(this.known ? 1 : HOVER, 1 - (tp - t) / lead, cap));
       }
     }
-    // Release (a whiff at release goes straight to recover): finish the swing at the contact moment.
-    if (sw !== SW_CHARGE) this.wallWant = 0;
+    // Release (a whiff at release goes straight to recover): finish the swing at the contact moment. The wall turn
+    // holds through the forward swing to the contact.
+    if ((sw !== SW_CHARGE && sw !== SW_COMMITTED) || hit) this.wallWant = 0;
     const released = (sw === SW_COMMITTED && this.lastSwing !== SW_COMMITTED)
       || (sw === SW_RECOVER && this.lastSwing === SW_CHARGE);
     if (released) {
@@ -1491,7 +1498,7 @@ export class Avatar {
     const sq = Math.max(this.w, this.ready * this.addrW);
     // (a contrapared is played facing the player's own back glass)
     const face = this.fam.glass ? net + Math.PI : net;
-    this.yaw = p.facing + wrapAngle(face - this.hand * this.handed * WALL_TURN * this.wall - p.facing) * sq;
+    this.yaw = p.facing + wrapAngle(face - p.facing) * sq;
     // Turned towards the partner for the racket tap.
     if (this.tapW > 0.001) this.yaw += wrapAngle(this.tapYaw - this.yaw) * this.tapW * TAP_TURN;
     // The body turns no faster than a person turns (the sim faces the ball at once, even one that has just passed).
@@ -1518,8 +1525,9 @@ export class Avatar {
     const turn = this.kyaw * this.w + this.readyKey.yaw * this.ready * (1 - this.w);
     const btTo = this.w > 0.01 ? this.fam.bodyTurn ?? BODY_TURN : this.addr ? SERVE_TURN_SHARE : BODY_TURN;
     this.bt += (btTo - this.bt) * (dt > 0 && !cut ? 1 - Math.exp(-dt / 0.12) : 1);
-    this.chestTurn = turn;
-    const yRoot = ys + turn * this.bt;
+    const wallYaw = -this.hand * this.handed * (this.hand > 0 ? WALL_TURN : WALL_TURN_BH) * this.wall * sq;
+    this.chestTurn = turn + wallYaw;
+    const yRoot = ys + turn * this.bt + wallYaw;
     this.root.rotation.y = yRoot;
 
     this.yRoot = yRoot;

@@ -35,6 +35,11 @@ describe('animation QA thresholds', () => {
       expect(r.contact.dist.p50).toBeLessThan(0.02);
       expect(r.contact.dist.p90).toBeLessThan(0.12);
       expect(r.contact.lag.p50).toBeLessThan(0.009);
+      // Backhands side-on at the hit, the racket-side shoulder to the net (review round 3, the pro's #4: the chest
+      // was 13 degrees off square, a push; 59-81 over six seeds after the side-on keys). Forehands stay open.
+      const bh = r.contact.chest['backhand'], fh = r.contact.chest['forehand'];
+      if (bh && bh.n >= 3) expect(bh.p50).toBeGreaterThan(45);
+      if (fh && fh.n >= 3) expect(fh.p50).toBeLessThan(55);
       // Pops (one-frame spikes) and clipping.
       expect(r.pops.perMinute).toBeLessThan(30);
       expect(r.clip.racketBody).toBeLessThan(0.01);

@@ -2024,3 +2024,26 @@ Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`,
   1.55 m out at 21 cm. animQa's median bound went from 1.5 to 2 cm, under the ball's radius. One test minute holds
   21-29 contacts, so the median follows the shot mix. Drives sit at 1.9-3.3 cm, and seed 3's minute moved to more
   drives (1.56 cm).
+
+## Review round 3, the pro's High #4: backhands and back-glass shots side-on (2026-10-29)
+- **Before** (the pro's `tools/out/r3p-anim-hand.ts`, 4 seeds × 240 s, the chest against the net at the hit, 0 =
+  square). Backhand groundstrokes were at 13°, backhands off the back glass 19°, forehands off it 6° and backhand
+  volleys 14°: pushes.
+  - The backhand's contact key turned the shoulders only 20°.
+  - The wall turn (side-on while the ball goes to the glass) eased off as the ball came off it, before the shot.
+  - The wall turn rotated the stance frame the racket's keys are in. Held to the contact, it would have pointed
+    the face at the side glass.
+- **Fix** (`strokes.ts`, `avatar.ts`):
+  - The backhand turns the shoulders about 89° at the backswing, 72° at contact and 29° at the finish. The free
+    arm stays back.
+  - The hips take 0.6 of that turn (`bodyTurn`; 0.35 elsewhere), so the feet stand across.
+  - The contrapared keeps the old open shoulders (`CONTRA_BH_YAW`): it is a lift into the glass, played facing it.
+  - The wall turn now turns the hips and everything above them (`yRoot`), not the stance, and holds through the
+    forward swing until the hit. It is 1.0 rad on the forehand and 0.35 on the backhand, which is side-on already.
+- **After** (same probe and seeds): backhand groundstrokes 63° (p90 85), backhands off the back glass 78°,
+  forehands off it 48°, backhand volleys 61°. Forehand groundstrokes stay open at 3° (tennis's 0-30°,
+  `docs/research/serve-and-strokes-motion.md` §4.2). Racket to ball is unchanged (p50 2.2 cm on backhands).
+  - animQa, 8 seeds × 120 s: pops 11.1-16.1 per player-minute (12.3-16.5 before), racket in body 0.17-0.32%
+    (0.27-0.41%). Hand in torso and legs are unchanged.
+  - animQa now reports the chest at the hit by stroke (`contact.chest`). The test wants backhands over 45° and
+    forehands under 55° at the median (six seeds' minutes: backhands 59-81°, forehands 8-44°).

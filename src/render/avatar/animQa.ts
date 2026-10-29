@@ -69,6 +69,9 @@ export interface QaReport {
     /** Angle between the face normal and the ball's way out at the closest moment (degrees). */
     face: Dist;
     byShot: Record<string, { n: number; p50: number; p90: number }>;
+    /** The chest against the net at the hit, by stroke (degrees; 0 = square to the net): `forehand`, `backhand`,
+     * `volley-fh`, `volley-bh`, and the other families by name (strokeGroup). */
+    chest: Record<string, { n: number; p50: number; p90: number }>;
     /** The furthest contacts (value: face centre to ball, m; what: the shot and the ball's height). */
     worst: QaEvent[];
   };
@@ -189,7 +192,17 @@ const JOINTS: Array<[string, string, string]> = [
   ['head', 'Head', 'Spine2'],
 ];
 
-interface Hit { player: number; shot: string; t: number; ball: THREE.Vector3; out: THREE.Vector3; best: number; at: number; face: number }
+/** A stroke family's group for the chest check: a left-hander's as the right-hander's, ground strokes' variants
+ * (slice, lob, drop, chiquita) with their side; the contrapared (facing the glass) and the rest by name. */
+export function strokeGroup(name: string): string {
+  const n = name.replace(/-left$/, '');
+  if (n.endsWith('-contra')) return n;
+  if (n.startsWith('forehand')) return 'forehand';
+  if (n.startsWith('backhand')) return 'backhand';
+  return n;
+}
+
+interface Hit { player: number; shot: string; t: number; ball: THREE.Vector3; out: THREE.Vector3; best: number; at: number; face: number; stroke: string; chest: number }
 
 export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const doubles = opts.doubles ?? true;
@@ -257,6 +270,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const racketW = av.map(() => RACKET_PTS.map(() => new THREE.Vector3()));
   const prevFace = av.map(() => new THREE.Vector3());
   const bpos = (i: number, b: number, out: THREE.Vector3): THREE.Vector3 => out.setFromMatrixPosition(bones[i]![b]!.matrixWorld);
+  const shR = asset.bone('RightArm'), shL = asset.bone('LeftArm');
   const note = (list: QaEvent[], e: QaEvent): void => {
     list.push(e);
     list.sort((x, y) => y.value - x.value);
@@ -276,10 +290,23 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
           player: e.player, shot: SHOT_KEYS[e.a]!, t: m.time,
           ball: new THREE.Vector3(p.lastContact.x, p.lastContact.y, p.lastContact.z),
           out: new THREE.Vector3(m.ball.vel.x, m.ball.vel.y, m.ball.vel.z).normalize(), best: Infinity, at: 0, face: 0,
+          stroke: '', chest: -1,
         });
       }
     }
     for (let i = 0; i < np; i++) av[i]!.update(m, m.players[i]!, i, 1, m.time);
+    // The chest at the hit: the angle between where the shoulders face and the net (0 = square to it).
+    for (const h of hits) {
+      if (h.chest >= 0) continue;
+      const a = av[h.player]!;
+      a.root.updateMatrixWorld(true);
+      bpos(h.player, shR, A); bpos(h.player, shL, B);
+      // (forward is up x right-to-left shoulder, flat)
+      const fx = A.z - B.z, fz = B.x - A.x, fl = Math.hypot(fx, fz) || 1;
+      const toNet = -m.side(m.players[h.player]!.team);
+      h.chest = (Math.acos(Math.max(-1, Math.min(1, (fz / fl) * toNet))) * 180) / Math.PI;
+      h.stroke = strokeGroup((a as unknown as { fam: { name: string } }).fam.name);
+    }
     opts.onFrame?.(m, av);
     if (repeatEvery > 0 && k % repeatEvery === 3) {
       // The same moment drawn twice: every bone must stay exactly where it was.
@@ -498,6 +525,13 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
     if (k % 60 === 0) for (const a of av) a.root.traverse((o) => { if (!Number.isFinite(o.quaternion.w) || !Number.isFinite(o.position.x)) nan++; });
   }
 
+  const chestBy: Record<string, { n: number; p50: number; p90: number }> = {};
+  for (const h of hits) if (h.chest >= 0) (chestBy[h.stroke] ??= { n: 0, p50: 0, p90: 0 }).n++;
+  for (const k of Object.keys(chestBy)) {
+    const d = dist(hits.filter((h) => h.chest >= 0 && h.stroke === k).map((h) => h.chest));
+    chestBy[k]!.p50 = d.p50;
+    chestBy[k]!.p90 = d.p90;
+  }
   const byShot: Record<string, { n: number; p50: number; p90: number }> = {};
   for (const h of hits) (byShot[h.shot] ??= { n: 0, p50: 0, p90: 0 }).n++;
   for (const k of Object.keys(byShot)) {
@@ -528,6 +562,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       dist: dist(hits.map((h) => h.best)),
       lag: dist(hits.map((h) => Math.abs(h.at))),
       face: dist(hits.map((h) => h.face)),
+      chest: chestBy,
       byShot,
       worst: [...hits].sort((a, b) => b.best - a.best).slice(0, 8)
         .map((h) => ({ t: h.t, player: h.player, what: `${h.shot} at ${h.ball.y.toFixed(2)} m`, value: h.best })),

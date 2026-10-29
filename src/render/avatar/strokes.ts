@@ -70,11 +70,19 @@ export const FOREHAND: Family = {
   punch: 1,
 };
 
+/**
+ * The padel backhand is played side-on (review round 3, the pro's #4): the racket-side shoulder to the net and the
+ * shoulders turned about 90 degrees at the backswing, still about 70 at contact, and opening only to about 30 by the
+ * finish. The free arm stays back. The hips take more of that turn than on the forehand (`bodyTurn`), so the feet
+ * stand across. The old contact key had the shoulders 20 degrees turned, and the chest measured 13 degrees off
+ * square at the hit: a push.
+ */
 export const BACKHAND: Family = {
   name: 'backhand',
-  back: key(v(0.55, 1.12, -0.38), v(0.3, 0.6, -0.72), v(1, 0.05, -0.15), v(0.25, 1.05, 0.45), 1.2, v(0.42, 1.12, -0.12)),
-  contact: key(v(0.72, 0.98, 0.42), v(0.85, 0.12, 0.5), v(-0.05, 0.08, 1), v(0.35, 0.95, 0.35), 0.35, v(0.55, 1.05, -0.35)),
-  finish: key(v(-0.45, 1.5, 0.22), v(-0.5, 0.62, -0.58), v(-0.85, 0.15, 0.4), v(-0.2, 1.5, 0.45), -0.45, v(0.6, 1.1, -0.42)),
+  back: key(v(0.55, 1.12, -0.38), v(0.3, 0.6, -0.72), v(1, 0.05, -0.15), v(0.25, 1.05, 0.45), 1.55, v(0.42, 1.12, -0.12)),
+  contact: key(v(0.72, 0.98, 0.42), v(0.85, 0.12, 0.5), v(-0.05, 0.08, 1), v(0.35, 0.95, 0.35), 1.25, v(0.55, 1.05, -0.35)),
+  finish: key(v(-0.45, 1.5, 0.22), v(-0.5, 0.62, -0.58), v(-0.85, 0.15, 0.4), v(-0.2, 1.5, 0.45), 0.5, v(0.6, 1.1, -0.42)),
+  bodyTurn: 0.6,
   low: racketQuat(v(0.6, -0.74, 0.32), v(-0.05, 0.3, 1)),
   dip: 0.22,
   loop: 0.05,
@@ -201,6 +209,10 @@ export const VOLLEY_BH = volley(BACKHAND, 'volley-bh');
  *   kept low, then a steep low-to-high lift with the face well open that sends the ball up into the glass, finishing
  *   high in front of the face (the ball rebounds over the player's head towards the net).
  */
+/** The backhand contrapared's shoulder turn at contact and backswing (rad): the backhand's before it went side-on. */
+const CONTRA_BH_YAW = 0.35;
+const CONTRA_BH_BACK_YAW = 1.2;
+
 function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiquita' | 'contra'): Family {
   const open = (k: Key, up: number): Key => {
     // Open the face (strings looking up): roll the racket about its handle. Forehand and backhand roll
@@ -235,12 +247,15 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
     // (the glass is a metre or two away: no room for a full backswing)
     const back = shrink(f.back, 0.3);
     back.p.y -= 0.25;
+    // Facing the glass, a lift into it: the backhand's shoulders stay as open as they were before the side-on keys.
+    const cy = side > 0 ? CONTRA_BH_YAW : f.contact.yaw;
     return {
       ...f, name: `${f.name}-contra`, glass: true,
-      back,
-      contact: open(f.contact, 0.75),
+      bodyTurn: undefined,
+      back: { ...back, yaw: side > 0 ? CONTRA_BH_BACK_YAW : back.yaw },
+      contact: { ...open(f.contact, 0.75), yaw: cy },
       low: f.low && open({ ...f.contact, q: f.low }, 0.75).q,
-      finish: key(v(side * 0.1, 2.0, 0.42), v(side * -0.05, 0.95, 0.3), v(0, 0.35, 1), v(side * 0.5, 1.55, 0.3), f.contact.yaw - side * 0.15, f.finish.off),
+      finish: key(v(side * 0.1, 2.0, 0.42), v(side * -0.05, 0.95, 0.3), v(0, 0.35, 1), v(side * 0.5, 1.55, 0.3), cy - side * 0.15, f.finish.off),
       dip: 0.42,
       loop: 0.06,
     };
