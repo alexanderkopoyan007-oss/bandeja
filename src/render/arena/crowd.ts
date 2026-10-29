@@ -23,6 +23,8 @@ export interface Spectator {
 const HIPS_ON_SEAT = 0.52;
 /** Beyond this angle from their front (radians) a spectator is seen from behind, which the renders don't cover. */
 const BEHIND = 1.85;
+/** The share of the crowd that stands for the biggest moments (the rest clap seated). */
+const STANDERS = 0.55;
 /** A spectator on their feet stands this far in front of the seat. */
 const STAND_FORWARD = 0.25;
 
@@ -39,10 +41,11 @@ export interface CrowdLook {
 }
 
 /**
- * Build the crowd for each stand (one instanced mesh each, so a stand behind the camera can be hidden). `excite`
- * (0 calm .. 1 on its feet) drives clapping and standing; `rnd` the seat-by-seat variety.
+ * Build the crowd for each stand (one instanced mesh each, so a stand behind the camera can be hidden). `mood`:
+ * (the rally's tension 0..1, the share clapping 0..1, the share of would-be standers on their feet 0..1; arena.ts
+ * CrowdState); `rnd` the seat-by-seat variety.
  */
-export function buildCrowd(stands: Spectator[][], excite: THREE.UniformNode<'float', number>, rnd: () => number, look: CrowdLook): THREE.InstancedMesh[] {
+export function buildCrowd(stands: Spectator[][], mood: THREE.UniformNode<'vec3', THREE.Vector3>, rnd: () => number, look: CrowdLook): THREE.InstancedMesh[] {
   const base = loadAtlas('assets/crowd/base.webp', THREE.SRGBColorSpace);
   const shirt = loadAtlas('assets/crowd/shirt.webp', THREE.NoColorSpace);
   const L = layout as unknown as { cell: number[]; cols: number; rows: number; size: number[]; views: number[]; poses: string[]; people: { seat: number }[] };
@@ -99,10 +102,12 @@ export function buildCrowd(stands: Spectator[][], excite: THREE.UniformNode<'flo
   // Seen from behind (the stand under a camera that looks over it): there is no back view; not drawn.
   const shown = select(abs(relW).greaterThan(BEHIND), float(0), float(1));
   const view = clamp(round(rel.div(viewStep)).add((nViews - 1) / 2), 0, nViews - 1);
-  // Pose by excitement, seat by seat: some clap from a small lift, most clap and some stand at the big moments.
+  // Pose by the crowd's mood, seat by seat: quiet through the point, clapping after it, up to STANDERS of them on
+  // their feet at the big moments.
   const h1 = hash(instanceIndex.add(11)), h2 = hash(instanceIndex.add(29)), h3 = hash(instanceIndex.add(47));
-  const standing = h1.lessThan(excite.sub(0.72).mul(2.2));
-  const clapping = h2.lessThan(excite.sub(0.12).mul(1.3));
+  const excite = mood.x;
+  const standing = h1.lessThan(mood.z.mul(STANDERS));
+  const clapping = h2.lessThan(mood.y);
   const beat = fract(time.mul(float(2.6).add(h3.mul(1.4))).add(h3)).lessThan(0.5);
   const pose = select(standing, float(3), select(clapping, select(beat, float(1), float(2)), float(0)));
   const cell = person.mul(nPoses).add(pose).mul(nViews).add(view);
@@ -120,8 +125,9 @@ export function buildCrowd(stands: Spectator[][], excite: THREE.UniformNode<'flo
   mat.positionNode = where.xyz.add(right.mul(q.x.mul(W).mul(size)))
     .add(vec3(0, q.y.mul(H).mul(size).add(lift.mul(shown)), 0))
     .add(fwd.mul(ahead))
-    // A little sway and, excited, a bounce.
-    .add(vec3(sin(time.mul(float(1.3).add(h3.mul(0.9))).add(h1.mul(6.28))).mul(0.012), sin(time.mul(5.2).add(h2.mul(6.28))).mul(excite).mul(0.03), 0));
+    // A little sway, more in a long rally (leaning to follow it), and a bounce on their feet.
+    .add(vec3(sin(time.mul(float(1.3).add(h3.mul(0.9))).add(h1.mul(6.28))).mul(float(0.012).add(excite.mul(0.02))),
+      sin(time.mul(5.2).add(h2.mul(6.28))).mul(select(standing, float(0.04), float(0))), 0));
   // Atlas coordinates (the image's top row is v = 1): the quad's u mirrored for mirrored seats.
   const u = select(mirror.lessThan(0), float(1).sub(uv().x), uv().x);
   const auv = varying(vec2(col.add(u).div(L.cols), float(1).sub(row.add(float(1).sub(uv().y)).div(L.rows))));

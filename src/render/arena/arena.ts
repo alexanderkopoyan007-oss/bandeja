@@ -50,9 +50,19 @@ export function arenaDef(key: string): ArenaDef {
   return d ?? (arenas as unknown as Record<string, ArenaDef>)['stadium']!;
 }
 
+/** The crowd's state (game/crowdMood.ts): the rally's tension, and after a point the applause and the standing. */
+export interface CrowdState {
+  /** 0 calm .. 1 a long rally. */
+  excite: number;
+  /** Share clapping, 0..1. */
+  applause: number;
+  /** Share of those who would stand who are on their feet, 0..1. */
+  ovation: number;
+}
+
 /** What a kind-specific builder hands back: things to animate, and lights it added. */
 export interface ArenaPart {
-  update?(time: number, excite: number, cam?: THREE.Vector3): void;
+  update?(time: number, mood: CrowdState, cam?: THREE.Vector3): void;
   /** The sky texture the scenery's materials use as their own envMap (filtered before the bake: see there). */
   sky?: THREE.Texture;
 }
@@ -62,8 +72,8 @@ export class Arena {
   readonly def: ArenaDef;
   readonly key: THREE.DirectionalLight;
   private readonly parts: ArenaPart[] = [];
-  /** 0 calm .. 1 on its feet: the crowd (and later the sound) follow the rally. */
-  excite = 0;
+  /** The crowd follows the rally (game.ts sets it each frame). */
+  readonly mood: CrowdState = { excite: 0, applause: 0, ovation: 0 };
   /** The baked environment and filtered skies (not in the scene graph): freed by dispose(). */
   private readonly baked: Array<{ dispose(): void }> = [];
 
@@ -173,6 +183,6 @@ export class Arena {
 
   /** Each frame: `cam` is the camera's position (parts may skip what is behind it). */
   update(time: number, cam?: THREE.Vector3): void {
-    for (const p of this.parts) p.update?.(time, this.excite, cam);
+    for (const p of this.parts) p.update?.(time, this.mood, cam);
   }
 }

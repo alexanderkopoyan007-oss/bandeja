@@ -23,6 +23,7 @@ import { kitFor } from '../render/avatar/kit.ts';
 import { DebugOverlay } from '../ui/debug.ts';
 import { applyPhotoCam, type PhotoOverlay } from './photoMatch.ts';
 import { MatchStats } from './stats.ts';
+import { CrowdMood } from './crowdMood.ts';
 import { disposeTree } from '../render/dispose.ts';
 import { Transitions } from '../ui/transitions.ts';
 import { Announcer } from '../ui/announce.ts';
@@ -176,6 +177,7 @@ export class Game {
   private readonly hudLayer: HTMLElement;
   /** Results-screen numbers. */
   readonly stats = new MatchStats();
+  private readonly crowdMood = new CrowdMood();
   private readonly transitions: Transitions | null;
   private announcer: Announcer | null;
   /** Esc or the pad's Start: the app opens the pause menu. */
@@ -673,8 +675,12 @@ export class Game {
         if (this.disposed) return;
       }
     }
-    // The crowd follows the rally: calm between points, rising with a long one.
-    this.arena.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : this.arena.excite * Math.exp(-frameDt / 0.8);
+    // The crowd follows the rally: tense with a long one, applauding after a point, on its feet at the big moments.
+    const mood = this.arena.mood;
+    mood.excite = this.sim.phase === PH_RALLY ? Math.min(1, this.sim.rally.shots / 14) : mood.excite * Math.exp(-frameDt / 0.8);
+    this.crowdMood.update(this.sim, frameDt);
+    mood.applause = this.crowdMood.applause;
+    mood.ovation = this.crowdMood.ovation;
     // Stands behind the camera are skipped, but not while it swings round (a very wide screen sees them) or in
     // photo-match mode (the photo's camera can stand anywhere).
     this.arena.update(now / 1000, this.cam.swinging || this.photo ? undefined : this.cam.camera.position);

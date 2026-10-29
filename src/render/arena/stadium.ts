@@ -4,7 +4,7 @@
 import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
 import type { Court } from '../../sim/court/court.ts';
-import type { ArenaDef, ArenaPart } from './arena.ts';
+import type { ArenaDef, ArenaPart, CrowdState } from './arena.ts';
 import { buildCrowd, type Spectator } from './crowd.ts';
 
 /** A merged mesh of axis-aligned boxes (one draw call), with per-box colours. */
@@ -149,9 +149,9 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   root.add(seatMesh);
 
   // The crowd: MakeHuman spectators as sprites (crowd.ts), one instanced mesh a stand. They sway a little, clap and
-  // stand up as `excite` rises (a long rally, a big point).
-  const excite = uniform(0);
-  const groups = buildCrowd(people, excite, rnd, { light: CROWD_LIGHT });
+  // stand up after a point by the crowd's mood (game/crowdMood.ts).
+  const mood = uniform(new THREE.Vector3());
+  const groups = buildCrowd(people, mood, rnd, { light: CROWD_LIGHT });
   for (const g of groups) root.add(g);
 
   // The hall: walls with a band of windows, a white roof with rows of lights and trusses.
@@ -204,8 +204,9 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   root.add(sideMesh);
 
   return {
-    update(_t: number, ex: number, cam?: THREE.Vector3): void {
-      excite.value = ex;
+    update(_t: number, m: CrowdState, cam?: THREE.Vector3): void {
+      // (a vector uniform's fields: writing a scalar uniform's value boxes a double every frame)
+      mood.value.set(m.excite, m.applause, m.ovation);
       // A stand whose front row the camera is behind (along its normal) is behind the camera: out of shot, except
       // in passing during the change-of-ends swing.
       if (cam) for (let bi = 0; bi < blocks.length; bi++) {
