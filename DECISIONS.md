@@ -1777,3 +1777,14 @@ Human matches dipped to black over the jump; autoplay and the attract match show
     0.06-0.11 s after the sim's contact. Both are reset now.
 - **QA.** animQa's serve measures no longer count the server's walk back (it counts with the rest of play). The
   left-hander mirror test plays 120 s (12 of their hits in 90 s now).
+
+## Review round 2 #15: the floor option shows (2026-10-29)
+- `?floor=hard|carpet|clay` had changed the bounce and the sound but not the picture: the court was always drawn
+  as the arena's turf. `arenaDef(arena, floor)` now lays that floor's look over the arena's
+  (`data/floor-looks.json`, sources in its `//`). What an entry leaves out stays the arena's, so a blue hall is a
+  blue hard court; clay is always terracotta. Neighbour courts take the same floor.
+  - Hard: painted acrylic, no sand, no rolls, satin.
+  - Carpet: no infill, 2 m rolls.
+  - Clay: brick dust, paler dust showing.
+- `tests/render/floorLook.test.ts`. Captures: r3-floor-clay (club-day), r3-floor-hard (hall), r3-floor-carpet
+  (stadium).

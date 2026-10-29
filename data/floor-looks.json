@@ -1,0 +1,7 @@
+{
+  "//": "How the court looks when the match is played on another floor than the arena's turf (?floor=, review round 2 #15). Each entry overrides the arena's floor look (data/arenas.json floor); what it leaves out stays the arena's, so a blue hall keeps a blue hard court. hard: painted acrylic on concrete, no sand, no rolls, a satin finish (acrylic court coatings are sold as matte to satin). carpet: textile carpet without infill, laid in 2 m rolls (needle-punch sports carpet is made 2 m and 4 m wide). clay: brick dust over a crushed-stone base, terracotta with a paler dust, no rolls; padel isn't played on clay (the floor is the sim's fantasy option), so the look is a tennis clay court's.",
+  "turf": {},
+  "hard": { "kind": "hard", "sand": "#9aa0a8", "sandAmount": 0.04, "roll": 0, "roughness": 0.72 },
+  "carpet": { "kind": "carpet", "sandAmount": 0, "roll": 2, "roughness": 0.96 },
+  "clay": { "kind": "clay", "color": "#b4562e", "sand": "#d39264", "sandAmount": 0.45, "line": "#f3f0e9", "roll": 0, "roughness": 0.97 }
+}

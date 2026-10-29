@@ -3,6 +3,7 @@
 // Everything here is built once and only reads the sim (the crowd's excitement follows the rally).
 import * as THREE from 'three/webgpu';
 import arenas from '../../../data/arenas.json' with { type: 'json' };
+import floorLooks from '../../../data/floor-looks.json' with { type: 'json' };
 import type { Court } from '../../sim/court/court.ts';
 import { floorMaterial, type FloorLook } from '../turf.ts';
 import type { EnvProbe } from '../courtView.ts';
@@ -45,9 +46,11 @@ export interface ArenaDef {
 
 export const ARENA_KEYS = Object.keys(arenas).filter((k) => !k.startsWith('/'));
 
-export function arenaDef(key: string): ArenaDef {
-  const d = (arenas as unknown as Record<string, ArenaDef>)[key];
-  return d ?? (arenas as unknown as Record<string, ArenaDef>)['stadium']!;
+export function arenaDef(key: string, floor?: string): ArenaDef {
+  const d = (arenas as unknown as Record<string, ArenaDef>)[key] ?? (arenas as unknown as Record<string, ArenaDef>)['stadium']!;
+  // Played on another floor than the arena's (?floor=): that floor's look over the arena's (data/floor-looks.json).
+  const o = floor ? (floorLooks as unknown as Record<string, Partial<FloorLook>>)[floor] : undefined;
+  return o && Object.keys(o).length > 0 ? { ...d, floor: { ...d.floor, ...o } } : d;
 }
 
 /** The crowd's state (game/crowdMood.ts): the rally's tension, and after a point the applause and the standing. */

@@ -215,7 +215,7 @@ export class Game {
     const court = this.sim.world.court;
 
     // The arena: floor, lights, surroundings; the court's glass, mesh and frame in its colours.
-    this.arena = new Arena(arenaDef(opts.arena ?? 'stadium'), court, this.scene, renderer);
+    this.arena = new Arena(arenaDef(opts.arena ?? 'stadium', opts.match.world?.floor), court, this.scene, renderer);
     // The preset's shadow map (before anything is drawn: the map is made at the first shadow pass).
     if (this.preset.shadow > 0) this.arena.key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
     else this.arena.key.castShadow = false;
