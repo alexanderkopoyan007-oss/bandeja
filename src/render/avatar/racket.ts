@@ -7,23 +7,26 @@
 // has their own racket (data/racket-looks/p*.json): shape (round, teardrop, diamond), throat, holes and graphics.
 //
 // One racket is one mesh (one draw call) plus the wrist cord, with a level of detail for the broadcast camera:
-// - the frame's tube: a rounded profile swept round the outline and round the throat's opening, glossy and
-//   clear-coated, its sides printed from a strip of the racket's texture;
+// - the frame's tube: a rounded profile swept round the outline (cut open where the neck goes into the finishing
+//   tape) and round the throat's opening, lacquered by the look's frame finish (gloss, satin or matte), its sides
+//   printed from their own texture (racketArt.ts: the type along each side and the protector's print);
 // - the faces: flat, a hair below the frame's band (a crisp edge), matte with a gritty finish (racketMaterial.ts),
 //   printed with the racket's graphic (racketArt.ts; mirrored on the back so it reads the same from either side);
-// - the holes: a designed layout (rows following the outline, a grid inside, blank zones for graphics), each with a
-//   chamfer and a wall that shows the core: light foam between two thin dark skins;
-// - the protector over the top of the frame, a little raised, solid or translucent, with tapered ends;
-// - the handle: overgrip wound in an overlapping spiral (a real step at each turn), a finishing tape at the top, the
-//   butt cap with a logo plate on its end, and the wrist cord through it.
-// The near level is about 13k triangles; the far one (about 1.4k, no through-holes: sub-pixel holes shimmer) is used
-// when the racket is small on screen (`RacketLod`).
+// - the holes: a designed layout (rows following the outline, a grid inside, blank zones under the type), each with a
+//   chamfer showing the print and a wall that shows the core: light foam between two thin skins;
+// - the protector over the top of the frame, a little raised, solid or translucent, printed, its ends bevelled;
+// - the handle: overgrip wound in an overlapping spiral (a real step at each turn), a finishing tape that flares from
+//   the grip into the neck's own section and closes round it, the butt cap with a logo plate on its end, and the
+//   wrist cord (a flat braided strap with its slider) through it.
+// The near level is 13-14.4k triangles (with the cord under 15k); the far one (about 1.7k, no through-holes: sub-pixel
+// holes shimmer; the mask paints them in a hole's tone instead) is used when the racket is small on screen
+// (`RacketLod`).
 import * as THREE from 'three/webgpu';
 import p1 from '../../../data/racket-looks/p1.json' with { type: 'json' };
 import p2 from '../../../data/racket-looks/p2.json' with { type: 'json' };
 import p3 from '../../../data/racket-looks/p3.json' with { type: 'json' };
 import p4 from '../../../data/racket-looks/p4.json' with { type: 'json' };
-import { racketArt, ART, type ArtShape } from './racketArt.ts';
+import { racketArt, sideLayout, ART, type ArtShape } from './racketArt.ts';
 import { racketMaterial, cordMaterial } from './racketMaterial.ts';
 
 /** Distances along the racket (m, from the face centre). */
@@ -35,8 +38,11 @@ export const CAP_TOP = -0.295;
 /** Handle radius over the overgrip at the top and at the butt (an 11 cm grip, slightly thicker towards the cap). */
 export const HANDLE_R = 0.0172;
 const HANDLE_R_BUTT = 0.0178;
-/** Half the frame's thickness: faces at +-T2 (36 mm; FIP allows 38 and the protector adds under 1 mm a side). */
-export const FACE_T2 = 0.018;
+/**
+ * Half the frame's thickness: faces at +-T2. 37 mm, and the protector lies 0.45 mm thick on each face's band, so the
+ * racket is 37.9 mm at its thickest: the 38 mm every racket is sold as (FIP allows 38).
+ */
+export const FACE_T2 = 0.0185;
 const T2 = FACE_T2;
 /** The faces sit this far below the frame's band (the crisp edge where the face meets the frame). */
 export const FACE_STEP = 0.0004;
@@ -57,21 +63,36 @@ const PROFILE_E = 2.4;
 /** The neck where the arms meet the handle (half width, the bottom of the neck inside the finishing tape). */
 const NECK_W = 0.015;
 const NECK_Y = HANDLE_TOP - 0.004;
-/** Finishing tape over the top of the grip and the neck. */
-const TAPE_Y0 = -0.19;
-const TAPE_Y1 = -0.1635;
+/**
+ * Finishing tape over the top of the grip and the neck: round on the overgrip, flaring into the neck's own section
+ * (a rounded rectangle, narrower across than the grip and thicker through it) and ending on the neck at TAPE_Y1. The
+ * frame stops NECK_CUT inside it, so the neck never comes through the tape.
+ */
+export const TAPE_Y0 = -0.19;
+export const TAPE_Y1 = -0.1635;
+const NECK_CUT = TAPE_Y1 - 0.002;
+/** How thick the tape lies on the neck (m). */
+const TAPE_T = 0.0004;
 /** Overgrip: axial advance per turn, the step at each turn (m). */
 export const GRIP_PITCH = 0.0165;
 const GRIP_STEP = 0.0007;
 export const GRIP_Y0 = CAP_TOP - 0.003;
-/** Protector: how far it stands off the frame, and how far it reaches onto the band past the rounded edge (m). */
+/**
+ * Protector: how far it stands off the frame round the outside and on the faces' band, how far it reaches onto the
+ * band past the rounded edge, its lip's height over the band and the ramp at each end (m).
+ */
 const BUMPER_T = 0.0009;
+const BUMPER_TF = 0.00045;
 const BUMPER_LIP = 0.0025;
+const BUMPER_EDGE = 0.0002;
+const BUMPER_RAMP = 0.016;
 /** The frame's outline tops out under the protector, so the racket with it is RACKET_TIP long above the centre. */
 const OUTLINE_TIP = RACKET_TIP - BUMPER_T;
 
 /** Region codes the material reads (rkInfo.x). Every triangle is one region. */
-export const RK_FACE = 0, RK_FRAME = 1, RK_WALL = 2, RK_BUMPER = 3, RK_GRIP = 4, RK_TAPE = 5, RK_CAP = 6, RK_LOGO = 7, RK_FACE_FAR = 8;
+export const RK_FACE = 0, RK_FRAME = 1, RK_WALL = 2, RK_BUMPER = 3, RK_GRIP = 4, RK_TAPE = 5, RK_CAP = 6, RK_LOGO = 7, RK_FACE_FAR = 8, RK_CHAMFER = 9;
+/** Sides of each hole (its chamfers and wall). */
+export const HOLE_SIDES = 14;
 
 export interface RacketLook {
   name: string;
@@ -84,6 +105,8 @@ export interface RacketLook {
   art: string;
   colours: { base: string; a: string; b: string; c: string; text: string; frame: string; accent: string };
   finish: string;
+  /** The frame's lacquer: gloss, satin or matte. */
+  frameFinish: string;
   foam: string;
   skin: string;
   bumper: { colour: string; clear: number; span: number };
@@ -131,9 +154,10 @@ function catmull(pts: V2[], per: number, first: V2, last: V2): V2[] {
 
 /**
  * The head's right half from the tip down to where the arm leaves it, by shape. Round: the ellipse of a classic
- * round racket (26 x 28 cm, widest at the face centre). Teardrop: widest 3 cm above the face centre, the top a little
- * flatter, tapering longer into the throat. Diamond: widest 5.5 cm up, broad flat shoulders, near-straight sides
- * down to the throat (the head-heavy attacking shape).
+ * round racket (26 x 28 cm, widest at the face centre). Teardrop: widest 4 cm above the face centre, a broad flat
+ * crown, then a long straight taper into the throat (narrower low down than a round head by 2-3 cm a side).
+ * Diamond: widest 5.5 cm up, broad flat shoulders, near-straight sides down to the throat (the head-heavy attacking
+ * shape).
  */
 /** Scale a half outline across so its widest point is 12.99 cm out (26 cm wide at most: FIP). */
 function widest(half: V2[]): V2[] {
@@ -146,9 +170,9 @@ function widest(half: V2[]): V2[] {
 function headHalf(shape: string): V2[] {
   const T = OUTLINE_TIP;
   if (shape === 'teardrop') {
-    const c: V2[] = [[0, T], [0.052, T - 0.0045], [0.093, 0.122], [0.119, 0.088], [0.1295, 0.044], [0.129, 0.008],
-      [0.121, -0.03], [0.106, -0.062], [0.09, -0.086]];
-    return widest(catmull(c, 14, [-0.052, T - 0.0045], [0.074, -0.105]));
+    const c: V2[] = [[0, T], [0.058, T - 0.0042], [0.099, 0.12], [0.1215, 0.088], [0.1298, 0.048], [0.1265, 0.014],
+      [0.1155, -0.022], [0.099, -0.056], [0.081, -0.085]];
+    return widest(catmull(c, 14, [-0.058, T - 0.0042], [0.064, -0.106]));
   }
   if (shape === 'diamond') {
     const c: V2[] = [[0, T], [0.05, T - 0.003], [0.09, 0.131], [0.116, 0.111], [0.1285, 0.084], [0.13, 0.055],
@@ -381,9 +405,14 @@ export function racketShape(look: RacketLook): RacketShape {
   const face = joinRounded([arc, bridge], [0.011, 0.011]);
 
   // The throat's opening: the arms' inner edges (the outline in by the arm's width) below the bridge, closed at the
-  // top under the bridge; a teardrop has a rounder top and a sharper point, a triangle the other way round.
+  // top under the bridge. A teardrop: the top arched (it follows the bridge's curve, a little more) and its corners
+  // rounded wide, so it reads as a drop hanging from the bridge, sharp at the bottom. A triangle: a straight top
+  // with tight corners and a rounded point.
   const arms = offsetBy(outer, nIn, ARM_W);
-  const topY = (x: number): number => bridgeY(shape, x) - BRIDGE_W;
+  const tri = look.throat === 'triangle';
+  const topY = tri
+    ? (_x: number): number => bridgeY(shape, 0) - BRIDGE_W
+    : (x: number): number => bridgeY(shape, 0) - BRIDGE_W + (bridgeY(shape, x) - bridgeY(shape, 0)) * 1.6;
   let it = -1;
   for (let i = 0; i < arms.length / 2; i++) if (arms[i]![0] > 0 && arms[i]![1] > topY(arms[i]![0])) { it = i; break; }
   let ib = it - 1;
@@ -407,8 +436,7 @@ export function racketShape(look: RacketLook): RacketShape {
     top.push([x, topY(x)]);
   }
   const leftSide = side.map((p) => [-p[0], p[1]] as V2).reverse();
-  const tri = look.throat === 'triangle';
-  const heart = joinRounded([side, top, leftSide], tri ? [0.007, 0.007, 0.009] : [0.013, 0.013, 0.005]);
+  const heart = joinRounded([side, top, leftSide], tri ? [0.0045, 0.0045, 0.012] : [0.02, 0.02, 0.0035]);
 
   const s: RacketShape = {
     outer, face, heart, holes: [], holeR: look.holes.d / 2,
@@ -581,8 +609,10 @@ class Builder {
  * The frame's profile from the face's edge round to the back: n (in from the outline, 0..rc), z, and the outward
  * normal in (out-of-the-material, z) terms. A superellipse quarter each side, so it meets the faces tangentially.
  */
-function profile(steps: number, rc: number): Array<{ n: number; z: number; gn: number; gz: number; back: boolean }> {
-  const out: Array<{ n: number; z: number; gn: number; gz: number; back: boolean }> = [];
+interface ProfilePt { n: number; z: number; gn: number; gz: number; back: boolean; v: number }
+
+function profile(steps: number, rc: number): ProfilePt[] {
+  const out: ProfilePt[] = [];
   const e = PROFILE_E;
   for (let k = 0; k <= steps; k++) {
     // From +pi/2 (front face edge) to -pi/2 (back), denser near the faces where it turns fastest.
@@ -593,30 +623,43 @@ function profile(steps: number, rc: number): Array<{ n: number; z: number; gn: n
     const n = rc * (1 - pc), z = T2 * ps;
     // Gradient of |x/a|^e + |z/b|^e (x = rc - n): out of the material is -n.
     const gx = Math.pow(pc, e - 1) / rc, gz = Math.sign(ps) * Math.pow(Math.abs(ps), e - 1) / T2;
-    out.push({ n, z, gn: -gx, gz, back: z < 0 || (z === 0 && k > steps / 2) });
+    out.push({ n, z, gn: -gx, gz, back: z < 0 || (z === 0 && k > steps / 2), v: 0 });
   }
+  arcV(out);
   return out;
 }
 
-/** Strip UV for a point `s` (m) along a perimeter of length `L`, across the profile at `v` (0 back .. 1 front). */
-function stripUv(s: number, L: number, v: number, half: number): [number, number] {
-  return ART.sideUv(half, (s - half * L * 0.5) / (L * 0.5), v);
+/** v across a profile by arc length: 1 at its first point (the front), 0 at its last. */
+function arcV(pts: Array<{ n: number; z: number; v: number }>): void {
+  let L = 0;
+  const cum = [0];
+  for (let k = 1; k < pts.length; k++) cum.push((L += Math.hypot(pts[k]!.n - pts[k - 1]!.n, pts[k]!.z - pts[k - 1]!.z)));
+  for (let k = 0; k < pts.length; k++) pts[k]!.v = 1 - cum[k]! / L;
 }
 
+/** Arc length across the frame's profile from face to face (m): the side print's height (racketArt.ts). */
+export const PROFILE_LEN = ((): number => {
+  const p = profile(64, RC);
+  let L = 0;
+  for (let k = 1; k < p.length; k++) L += Math.hypot(p[k]!.n - p[k - 1]!.n, p[k]!.z - p[k - 1]!.z);
+  return L;
+})();
+
 /**
- * The frame's tube along a closed loop `pl`, `into` the unit normals into the material: the profile from the
- * band's edge (rc in) round the outside to the back's. `strip`: side printing along the loop (the outline), else the
- * band's colour. The loop is split at its start and halfway (each half its own strip of the texture).
+ * The frame's tube along the outline cut open at the neck (`pl` from the right side's cut up round the tip and down
+ * to the left side's; `s` each station's arc length round the whole outline, which the side print is laid out by),
+ * or round a closed loop (the throat's opening, `s` null: the band's colour, no side print). `into`: unit normals into
+ * the material. The profile runs from the band's edge (rc in) round the outside to the back's. The outline is split
+ * at the tip (each half its own strip of the side texture).
  */
-function sweep(b: Builder, pl: V2[], into: V2[], rc: number, steps: number, strip: boolean): void {
+function sweep(b: Builder, pl: V2[], into: V2[], rc: number, steps: number, s: number[] | null, side: SideMap | null): void {
   const prof = profile(steps, rc);
-  const L = polyLength(pl, true);
   const m = pl.length;
-  const cum = [0];
-  for (let i = 1; i <= m; i++) cum.push(cum[i - 1]! + Math.hypot(pl[i % m]![0] - pl[i - 1]![0], pl[i % m]![1] - pl[i - 1]![1]));
-  const mid = Math.round(m / 2);
-  // Stations: 0..mid on the first half, mid..m on the second (mid and m duplicated with their own strip UVs).
-  for (const [i0, i1, half] of [[0, mid, 0], [mid, m, 1]] as const) {
+  const strip = s !== null && side !== null;
+  // Open: the halves meet at the tip (the middle station, duplicated with each half's own strip UV). Closed: one run
+  // all the way round back to the start.
+  const runs: Array<[number, number, number]> = strip ? [[0, (m - 1) / 2, 0], [(m - 1) / 2, m - 1, 1]] : [[0, m, 0]];
+  for (const [i0, i1, half] of runs) {
     let prev: number[] | null = null;
     for (let i = i0; i <= i1; i++) {
       const p = pl[i % m]!, N = into[i % m]!;
@@ -625,8 +668,7 @@ function sweep(b: Builder, pl: V2[], into: V2[], rc: number, steps: number, stri
         const q = prof[k]!;
         const x = p[0] + N[0] * q.n, y = p[1] + N[1] * q.n;
         const nx = N[0] * q.gn, ny = N[1] * q.gn;
-        const vv = 1 - k / (prof.length - 1);
-        const [us, vs] = strip ? stripUv(cum[i]!, L, vv, half) : [0, 0];
+        const [us, vs] = strip ? side(s[i]!, q.v, half) : [0, 0];
         // Side blend: the band's print near the faces, the strip's on the outside.
         const sd = strip ? Math.min(1, Math.max(0, (1 - Math.abs(q.z) / T2) * 2.2 - 0.15)) : 0;
         row.push(b.v(x, y, q.z, nx, ny, q.gz, RK_FRAME, q.back, us, vs, sd));
@@ -666,14 +708,17 @@ function circle(cx: number, cy: number, r: number, n: number): V2[] {
   return out;
 }
 
-/** A hole through the core: the chamfer on each face and the wall between (region RK_WALL; the shader bands it). */
+/**
+ * A hole through the core: the chamfer on each face (RK_CHAMFER: the face's print, darker, where the drill eased the
+ * edge) and the wall between (RK_WALL: the shader bands it skin | foam | skin).
+ */
 function hole(b: Builder, cx: number, cy: number, r: number, n: number): void {
   const zf = T2 - FACE_STEP;
-  const rings: Array<{ r: number; z: number; nr: number; nz: number }[]> = [
+  const rings: Array<{ r: number; z: number; nr: number; nz: number; code: number }[]> = [
     // Front chamfer, the wall, back chamfer: each its own normals (crisp edges between).
-    [{ r: r + CHAMFER, z: zf, nr: -1, nz: 1 }, { r, z: zf - CHAMFER, nr: -1, nz: 1 }],
-    [{ r, z: zf - CHAMFER, nr: -1, nz: 0 }, { r, z: -zf + CHAMFER, nr: -1, nz: 0 }],
-    [{ r, z: -zf + CHAMFER, nr: -1, nz: -1 }, { r: r + CHAMFER, z: -zf, nr: -1, nz: -1 }],
+    [{ r: r + CHAMFER, z: zf, nr: -1, nz: 1, code: RK_CHAMFER }, { r, z: zf - CHAMFER, nr: -1, nz: 1, code: RK_CHAMFER }],
+    [{ r, z: zf - CHAMFER, nr: -1, nz: 0, code: RK_WALL }, { r, z: -zf + CHAMFER, nr: -1, nz: 0, code: RK_WALL }],
+    [{ r, z: -zf + CHAMFER, nr: -1, nz: -1, code: RK_CHAMFER }, { r: r + CHAMFER, z: -zf, nr: -1, nz: -1, code: RK_CHAMFER }],
   ];
   for (const pair of rings) {
     const ids: number[][] = [[], []];
@@ -681,7 +726,7 @@ function hole(b: Builder, cx: number, cy: number, r: number, n: number): void {
       const q = pair[j]!;
       for (let k = 0; k < n; k++) {
         const a = (2 * Math.PI * k) / n, ca = Math.cos(a), sa = Math.sin(a);
-        ids[j]!.push(b.v(cx + q.r * ca, cy + q.r * sa, q.z, q.nr * ca, q.nr * sa, q.nz, RK_WALL, q.z < 0));
+        ids[j]!.push(b.v(cx + q.r * ca, cy + q.r * sa, q.z, q.nr * ca, q.nr * sa, q.nz, q.code, q.z < 0));
       }
     }
     for (let k = 0; k < n; k++) b.quad(ids[0]![k]!, ids[0]![(k + 1) % n]!, ids[1]![(k + 1) % n]!, ids[1]![k]!);
@@ -689,7 +734,7 @@ function hole(b: Builder, cx: number, cy: number, r: number, n: number): void {
 }
 
 /** The bridge's logo plate: a rounded rectangle standing PLATE_T proud of the band on each face (its print is the art's). */
-const PLATE_W = 0.026, PLATE_H = 0.0072, PLATE_T = 0.0005;
+const PLATE_W = 0.026, PLATE_H = 0.0072, PLATE_T = 0.0004;
 export function plateCentre(s: { bridgeTop: number; bridgeBottom: number }): number {
   return (s.bridgeTop + s.bridgeBottom + RC_H) / 2;
 }
@@ -734,71 +779,96 @@ function step(b: Builder, face: V2[]): void {
 }
 
 /**
- * The protector over the top of the frame: the frame's profile stood off by BUMPER_T, reaching BUMPER_LIP onto the
- * band each side, `span` metres long centred on the tip, thinning over its last 12 mm to a squared-off end.
+ * The protector over the top of the frame, `span` metres long centred on the tip: the frame's profile stood off by
+ * BUMPER_T round the outside and BUMPER_TF on the faces, reaching BUMPER_LIP onto the band each side, where it ends
+ * in a small square edge BUMPER_EDGE high. Over its last BUMPER_RAMP at each end it thins to a bevelled end, as a
+ * moulded protector does. Its print is the side texture's (racketArt.ts lays the protector out over the tip).
  */
-function bumper(b: Builder, outer: V2[], into: V2[], span: number, stations: number, steps: number): void {
-  const L = polyLength(outer, true);
+function bumper(b: Builder, outer: V2[], into: V2[], sOf: number[], span: number, stations: number, steps: number, side: SideMap): void {
   const m = outer.length;
   const cum = [0];
   for (let i = 1; i <= m; i++) cum.push(cum[i - 1]! + Math.hypot(outer[i % m]![0] - outer[i - 1]![0], outer[i % m]![1] - outer[i - 1]![1]));
-  const at = (s: number): { p: V2; N: V2; s: number } => {
+  const L = cum[m]!;
+  // Arc length on this loop to the outline's own (the side print's) arc length.
+  const sScale = sOf[m]! / L;
+  const at = (s: number): { p: V2; N: V2 } => {
     let j = 0;
     while (j < m - 1 && cum[j + 1]! < s) j++;
     const u = (s - cum[j]!) / Math.max(1e-9, cum[j + 1]! - cum[j]!);
     const N = lerp2(into[j]!, into[(j + 1) % m]!, u);
     const l = Math.hypot(N[0], N[1]);
-    return { p: lerp2(outer[j]!, outer[(j + 1) % m]!, u), N: [N[0] / l, N[1] / l], s };
+    return { p: lerp2(outer[j]!, outer[(j + 1) % m]!, u), N: [N[0] / l, N[1] / l] };
   };
   const prof = profile(steps, RC);
   const s0 = L / 2 - span / 2, s1 = L / 2 + span / 2;
-  const half = (s: number): number => (s < L / 2 ? 0 : 1);
   let prev: number[] | null = null;
   for (let i = 0; i <= stations; i++) {
     const s = s0 + ((s1 - s0) * i) / stations;
     const { p, N } = at(s);
     const fromEnd = Math.min(s - s0, s1 - s);
-    const taper = 0.45 + 0.55 * Math.min(1, fromEnd / 0.012) ** 0.6;
-    const t = BUMPER_T * taper, lip = BUMPER_LIP * taper;
-    const pts: Array<{ n: number; z: number; gn: number; gz: number }> = [];
-    // Front lip on the band, up onto the bumper's face, round the profile, down onto the back's band.
-    pts.push({ n: RC + lip, z: T2 + 0.00005, gn: 0.3, gz: 1 });
-    pts.push({ n: RC + lip - t * 0.9, z: T2 + t, gn: 0, gz: 1 });
-    for (const q of prof) {
-      const gl = Math.hypot(q.gn, q.gz);
-      pts.push({ n: q.n + (q.gn / gl) * t, z: q.z + (q.gz / gl) * t, gn: q.gn, gz: q.gz });
+    const r = Math.min(1, fromEnd / BUMPER_RAMP);
+    const taper = 0.25 + 0.75 * r * r * (3 - 2 * r);
+    const tf = BUMPER_TF * taper, lip = BUMPER_LIP * (0.4 + 0.6 * taper), edge = Math.min(BUMPER_EDGE, tf);
+    const pts: Array<{ n: number; z: number; gn: number; gz: number; v: number }> = [];
+    // Front: the square edge on the band, up onto the protector's face, round the profile (thicker round the
+    // outside), then the same down onto the back's band.
+    for (const sg of [1, -1]) {
+      const face = [
+        { n: RC + lip, z: sg * (T2 + 0.00002), gn: 1, gz: 0, v: 0 },
+        { n: RC + lip - 0.00015, z: sg * (T2 + edge), gn: 0.5, gz: sg, v: 0 },
+        { n: RC + lip - 0.0006 - tf, z: sg * (T2 + tf), gn: 0, gz: sg, v: 0 },
+      ];
+      if (sg > 0) pts.push(...face);
+      else {
+        for (const q of prof) {
+          const gl = Math.hypot(q.gn, q.gz);
+          // Full thickness round the outside, BUMPER_TF where the profile meets the faces.
+          const w = 1 - Math.pow(Math.abs(q.z) / T2, 3);
+          const t = tf + (BUMPER_T - BUMPER_TF) * taper * w;
+          pts.push({ n: q.n + (q.gn / gl) * t, z: q.z + (q.gz / gl) * t, gn: q.gn, gz: q.gz, v: 0 });
+        }
+        pts.push(...face.reverse());
+      }
     }
-    pts.push({ n: RC + lip - t * 0.9, z: -T2 - t, gn: 0, gz: -1 });
-    pts.push({ n: RC + lip, z: -T2 - 0.00005, gn: 0.3, gz: -1 });
-    const row: number[] = [];
-    for (let k = 0; k < pts.length; k++) {
-      const q = pts[k]!;
-      const x = p[0] + N[0] * q.n, y = p[1] + N[1] * q.n;
-      const vv = 1 - k / (pts.length - 1);
-      const [us, vs] = stripUv(s, L, Math.min(1, Math.max(0, vv)), half(s));
-      row.push(b.v(x, y, q.z, N[0] * q.gn, N[1] * q.gn, q.gz, RK_BUMPER, q.z < 0, us, vs, 1));
-    }
+    arcV(pts);
+    // The tip (the middle station) belongs to both halves of the side print: its row is made once for each.
+    const tip = 2 * i === stations;
+    const half = s < L / 2 || tip ? 0 : 1;
+    const so = s * sScale;
+    const rowFor = (h: number): number[] => {
+      const row: number[] = [];
+      for (let k = 0; k < pts.length; k++) {
+        const q = pts[k]!;
+        const [us, vs] = side(so, q.v, h);
+        row.push(b.v(p[0] + N[0] * q.n, p[1] + N[1] * q.n, q.z, N[0] * q.gn, N[1] * q.gn, q.gz, RK_BUMPER, q.z < 0, us, vs, 1));
+      }
+      return row;
+    };
+    const row = rowFor(half);
     if (prev) for (let k = 0; k < row.length - 1; k++) b.quad(prev[k]!, prev[k + 1]!, row[k + 1]!, row[k]!);
-    prev = row;
+    prev = tip ? rowFor(1) : row;
     if (i === 0 || i === stations) {
-      // The end: the bumper's profile closed down onto the frame's, facing along the frame away from the bumper.
+      // The bevel's end: the protector's section closed down onto the frame's, facing along the frame.
       const sg = i === 0 ? -1 : 1;
       const tx = N[1] * sg, ty = -N[0] * sg;
+      const [us, vs] = side(so, 0.5, half);
       const endIds: number[] = [];
       for (let k = 0; k < pts.length; k++) {
         const q = pts[k]!;
-        endIds.push(b.v(p[0] + N[0] * q.n, p[1] + N[1] * q.n, q.z, tx, ty, 0, RK_BUMPER, q.z < 0, 0, 0, 1));
+        endIds.push(b.v(p[0] + N[0] * q.n, p[1] + N[1] * q.n, q.z, tx, ty, 0, RK_BUMPER, q.z < 0, us, vs, 1));
       }
       const inner: number[] = [];
       for (let k = 0; k < prof.length; k++) {
         const q = prof[k]!;
-        inner.push(b.v(p[0] + N[0] * q.n, p[1] + N[1] * q.n, q.z, tx, ty, 0, RK_BUMPER, q.z < 0, 0, 0, 1));
+        inner.push(b.v(p[0] + N[0] * q.n, p[1] + N[1] * q.n, q.z, tx, ty, 0, RK_BUMPER, q.z < 0, us, vs, 1));
       }
-      // Bumper points 2..2+prof stand over the frame's profile points.
-      for (let k = 0; k < prof.length - 1; k++) b.quad(endIds[k + 2]!, endIds[k + 3]!, inner[k + 1]!, inner[k]!);
+      // Protector points 3..3+prof stand over the frame's profile points; the edges close onto the band.
+      for (let k = 0; k < prof.length - 1; k++) b.quad(endIds[k + 3]!, endIds[k + 4]!, inner[k + 1]!, inner[k]!);
       const e = pts.length - 1;
-      b.quad(endIds[0]!, endIds[1]!, endIds[2]!, inner[0]!);
-      b.quad(endIds[e]!, endIds[e - 1]!, endIds[e - 2]!, inner[prof.length - 1]!);
+      b.quad(endIds[0]!, endIds[1]!, endIds[2]!, endIds[3]!);
+      b.tri(endIds[0]!, endIds[3]!, inner[0]!);
+      b.quad(endIds[e]!, endIds[e - 1]!, endIds[e - 2]!, endIds[e - 3]!);
+      b.tri(endIds[e]!, endIds[e - 3]!, inner[prof.length - 1]!);
     }
   }
 }
@@ -880,19 +950,128 @@ function grip(b: Builder, cols: number): void {
   }
 }
 
-function handle(b: Builder, cols: number, far: boolean): void {
+/** The neck's half width at y, on its straight run from inside the tape up to where it turns out into the arms. */
+function neckHalfW(y: number): number {
+  return NECK_W + (0.0005 * (y - NECK_Y)) / 0.021;
+}
+
+/**
+ * The neck's section as the frame's sweep builds it (half width `w`, the sweep's profile `prof`): how far from the axis
+ * a ray at angle `th` (x = r sin th, z = r cos th, as `lathe`) leaves it. The section is convex round the axis: the
+ * profile each side, the faces' band across.
+ */
+function neckRay(th: number, w: number, prof: ProfilePt[]): number {
+  const dx = Math.sin(th), dz = Math.cos(th);
+  const K = prof.length;
+  // Right side down the profile, then the left side back up it; the last edge closes across the front band.
+  const at = (k: number): [number, number] => (k < K ? [w - prof[k]!.n, prof[k]!.z] : [-(w - prof[2 * K - 1 - k]!.n), prof[2 * K - 1 - k]!.z]);
+  let best = Infinity;
+  for (let k = 0; k < 2 * K; k++) {
+    const [ax, az] = at(k), [bx, bz] = at((k + 1) % (2 * K));
+    // origin + t d = a + u (b - a)
+    const ex = bx - ax, ez = bz - az;
+    const den = dz * ex - dx * ez;
+    if (Math.abs(den) < 1e-14) continue;
+    const t = (az * ex - ax * ez) / den;
+    const u = (dx * az - dz * ax) / den;
+    if (t > 0 && u >= -1e-9 && u <= 1 + 1e-9) best = Math.min(best, t);
+  }
+  return best;
+}
+
+/**
+ * A closed surface round the y axis through rows of (y, radius at angle th), at the angles `ths` round (ascending,
+ * x = r sin th, z = r cos th, as `lathe`): normals from the grid, the strip UV from `uvAt(u, k)` with u by arc length
+ * round each row.
+ */
+function loft(b: Builder, rows: Array<{ y: number; r: (th: number) => number }>, ths: number[], code: number, uvAt: (u: number, k: number) => [number, number]): void {
+  const cols = ths.length;
+  const P = rows.map((row) => {
+    const out: Array<[number, number, number]> = [];
+    for (let j = 0; j < cols; j++) {
+      const th = ths[j]!, r = row.r(th);
+      out.push([r * Math.sin(th), row.y, r * Math.cos(th)]);
+    }
+    return out;
+  });
+  const ids: number[][] = [];
+  for (let k = 0; k < rows.length; k++) {
+    const R = P[k]!;
+    const cum = [0];
+    for (let j = 1; j <= cols; j++) cum.push(cum[j - 1]! + Math.hypot(R[j % cols]![0] - R[j - 1]![0], R[j % cols]![2] - R[j - 1]![2]));
+    const row: number[] = [];
+    for (let j = 0; j <= cols; j++) {
+      const p = R[j % cols]!, pa = R[(j - 1 + cols) % cols]!, pb = R[(j + 1) % cols]!;
+      const qa = P[Math.max(0, k - 1)]![j % cols]!, qb = P[Math.min(rows.length - 1, k + 1)]![j % cols]!;
+      // Round (t) cross up (w): away from the axis.
+      const tx = pb[0] - pa[0], ty = pb[1] - pa[1], tz = pb[2] - pa[2];
+      const wx = qb[0] - qa[0], wy = qb[1] - qa[1], wz = qb[2] - qa[2];
+      let nx = ty * wz - tz * wy, ny = tz * wx - tx * wz, nz = tx * wy - ty * wx;
+      if (nx * p[0] + nz * p[2] < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      const [us, vs] = uvAt(cum[j]! / cum[cols]!, k);
+      row.push(b.v(p[0], p[1], p[2], nx, ny, nz, code, false, us, vs, 0));
+    }
+    ids.push(row);
+  }
+  for (let k = 0; k < rows.length - 1; k++) {
+    for (let j = 0; j < cols; j++) b.quad(ids[k]![j]!, ids[k]![j + 1]!, ids[k + 1]![j + 1]!, ids[k + 1]![j]!);
+  }
+}
+
+/**
+ * The handle: the overgrip (or a plain tube far away), the finishing tape, the butt cap and its logo plate. The tape
+ * starts round on the overgrip's end and flares into the neck's own section (`prof`: the frame's profile as swept),
+ * lying TAPE_T over it from below where the frame stops (NECK_CUT) to its edge at TAPE_Y1, so it closes round the
+ * neck as real tape does instead of standing proud of it as a cuff.
+ */
+function handle(b: Builder, cols: number, tapeGap: number, far: boolean, prof: ProfilePt[]): void {
   if (far) {
     lathe(b, [[HANDLE_R_BUTT, CAP_TOP], [HANDLE_R, TAPE_Y0]], cols, RK_GRIP);
   } else grip(b, cols);
-  // Finishing tape: over the overgrip's end, flaring over the neck.
   const tr = HANDLE_R + GRIP_STEP * 0.5 + 0.0004;
-  const tape: V2[] = far
-    ? [[tr, TAPE_Y0], [tr, -0.181], [0.0204, -0.1715], [0.0204, TAPE_Y1], [0.0197, TAPE_Y1 + 0.0004], [0.0148, TAPE_Y1 + 0.0008]]
-    : [[tr - 0.0006, TAPE_Y0 - 0.0002], [tr, TAPE_Y0 + 0.0006], [tr, -0.182], [tr + 0.0005, -0.1785], [0.0198, -0.1745], [0.0203, -0.1715],
-      [0.0204, TAPE_Y1 - 0.0006], [0.0202, TAPE_Y1 + 0.0001], [0.0196, TAPE_Y1 + 0.0004],
-      // Wrapped over onto the neck (narrower than the tape across the face): closes the collar's top.
-      [0.0175, TAPE_Y1 + 0.0007], [0.0148, TAPE_Y1 + 0.0008]];
-  lathe(b, tape, cols, RK_TAPE, (u, k) => ART.tapeUv(u, (tape[k]![1] - TAPE_Y0) / (TAPE_Y1 - TAPE_Y0)));
+  // The far level's tape has fewer sides: stood further off the neck so its flat sides still cover the neck's corners.
+  const off = far ? 0.0011 : TAPE_T;
+  const onNeck = (y: number, d: number) => (th: number): number => neckRay(th, neckHalfW(y), prof) + d;
+  const flare = (y: number, s: number) => {
+    const f = onNeck(y, off);
+    return (th: number): number => tr + (f(th) - tr) * s;
+  };
+  const round = (r: number) => (): number => r;
+  const yA = -0.1825, yB = NECK_CUT - 0.0012;
+  const rows: Array<{ y: number; r: (th: number) => number }> = far
+    ? [{ y: TAPE_Y0, r: round(tr) }, { y: yA, r: round(tr) }, { y: (yA + yB) / 2, r: flare((yA + yB) / 2, 0.5) },
+      { y: yB, r: flare(yB, 1) }, { y: TAPE_Y1 - 0.0003, r: onNeck(TAPE_Y1, off) }, { y: TAPE_Y1 + 0.0002, r: onNeck(TAPE_Y1, 0.0001) }]
+    : [{ y: TAPE_Y0 - 0.0002, r: round(tr - 0.0006) }, { y: TAPE_Y0 + 0.0006, r: round(tr) }, { y: yA, r: round(tr) }];
+  if (!far) {
+    for (let i = 1; i <= 3; i++) {
+      const t = i / 3, y = yA + (yB - yA) * t;
+      rows.push({ y, r: flare(y, t * t * (3 - 2 * t)) });
+    }
+    rows.push({ y: TAPE_Y1 - 0.0003, r: onNeck(TAPE_Y1, off) }, { y: TAPE_Y1, r: onNeck(TAPE_Y1, off * 0.55) },
+      { y: TAPE_Y1 + 0.00018, r: onNeck(TAPE_Y1, 0.00003) });
+  }
+  // The tape's sides stand at the neck section's own corners (so the tape's flats lie over the neck's, never across
+  // a corner of it), with more between where they are far apart (the band across each face; round on the grip).
+  const w1 = neckHalfW(TAPE_Y1);
+  const corners: number[] = [];
+  for (const q of prof) {
+    const a = Math.atan2(w1 - q.n, q.z);
+    corners.push(a, 2 * Math.PI - a);
+  }
+  corners.sort((x, y) => x - y);
+  const ths: number[] = [];
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i]!, c = i + 1 < corners.length ? corners[i + 1]! : corners[0]! + 2 * Math.PI;
+    // Corners closer than 2.5 degrees (the profile's first steps off the band) are one.
+    if (c - a < 0.044) continue;
+    const n = Math.max(1, Math.ceil((c - a) / tapeGap - 0.05));
+    for (let k = 0; k < n; k++) ths.push(a + ((c - a) * k) / n);
+  }
+  // The print's seam at the back of the handle (the side away from the face a player shows).
+  let back = 0;
+  for (let j = 1; j < ths.length; j++) if (Math.abs(ths[j]! - Math.PI) < Math.abs(ths[back]! - Math.PI)) back = j;
+  ths.push(...ths.splice(0, back));
+  loft(b, rows, ths, RK_TAPE, (u, k) => ART.tapeUv(u, Math.min(1, Math.max(0, (rows[k]!.y - TAPE_Y0) / (TAPE_Y1 - TAPE_Y0)))));
   // Butt cap: from under the grip's end, flaring out round the heel of the hand, rounding to the end plate.
   const cap: V2[] = far
     ? [[HANDLE_R_BUTT, CAP_TOP + 0.001], [0.0214, -0.303], [0.0185, -0.3098]]
@@ -912,23 +1091,53 @@ function handle(b: Builder, cols: number, far: boolean): void {
   for (let j = 0; j < cols; j++) b.tri(c, ring[j + 1]!, ring[j]!);
 }
 
+/**
+ * The outline (closed, from the bottom of the neck) opened where the neck goes into the tape: from the right side's
+ * crossing of NECK_CUT up round the tip and down to the left side's, the tip its middle point. `s`: arc length round
+ * the closed loop at each of its points (and its total last); returns the open path and its points' arc lengths.
+ */
+function openAtNeck(loop: V2[], s: number[]): { path: V2[]; sPath: number[] } {
+  const m = loop.length;
+  let iR = 1;
+  while (iR < m / 2 && loop[iR]![1] <= NECK_CUT) iR++;
+  const iL = m - iR;
+  const cut = (i0: number, i1: number): { p: V2; s: number } => {
+    const a = loop[i0 % m]!, c = loop[i1 % m]!;
+    const t = (NECK_CUT - a[1]) / (c[1] - a[1]);
+    return { p: [a[0] + (c[0] - a[0]) * t, NECK_CUT], s: s[i0]! + (s[i1]! - s[i0]!) * t };
+  };
+  const r = cut(iR - 1, iR), l = cut(iL + 1, iL);
+  return { path: [r.p, ...loop.slice(iR, iL + 1), l.p], sPath: [r.s, ...s.slice(iR, iL + 1), l.s] };
+}
+
+type SideMap = (s: number, v: number, half: number) => [number, number];
+
 /** One level of a racket: the head (frame, faces, holes, throat, protector) and the handle, as one geometry. */
-function buildLevel(look: RacketLook, far: boolean): THREE.BufferGeometry {
+function buildLevel(look: RacketLook, far: boolean, side: SideMap, sideL: number): THREE.BufferGeometry {
   const s = racketShape(look);
   const b = new Builder();
-  const nOut = far ? 56 : 116;
-  const outer = resample(s.outer, nOut, true, 4);
-  const into = leftNormals(outer, true);
-  const bandEdge = offsetBy(outer, into, RC);
+  const steps = far ? 6 : 10;
+  const loop = resample(s.outer, far ? 56 : 108, true, 4);
+  const loopIn = leftNormals(loop, true);
+  // Arc length round the loop, scaled to the outline's own (the side print is laid out on that).
+  const sLoop = [0];
+  for (let i = 1; i <= loop.length; i++) sLoop.push(sLoop[i - 1]! + Math.hypot(loop[i % loop.length]![0] - loop[i - 1]![0], loop[i % loop.length]![1] - loop[i - 1]![1]));
+  const k = sideL / sLoop[loop.length]!;
+  for (let i = 0; i < sLoop.length; i++) sLoop[i]! *= k;
+  const { path, sPath } = openAtNeck(loop, sLoop);
+  const into = leftNormals(path, false);
+  // The band's inner edge; the open ends join straight across the neck (inside the tape).
+  const bandEdge = offsetBy(path, into, RC);
   const face = resample(s.face, far ? 44 : 120, true, 3);
-  const heart = resample(s.heart, far ? 18 : 44, true, 4);
+  const heart = resample(s.heart, far ? 18 : 36, true, 4);
   // The heart's loop is counter-clockwise round the opening: into the material is to its right.
   const hIn = leftNormals(heart, true).map((p) => [-p[0], -p[1]] as V2);
   const heartEdge = offsetBy(heart, hIn, RC_H);
 
-  sweep(b, outer, into, RC, far ? 6 : 10, true);
-  sweep(b, heart, hIn, RC_H, far ? 4 : 8, false);
-  bumper(b, outer, into, look.bumper.span, far ? 16 : 40, far ? 6 : 10);
+  sweep(b, path, into, RC, steps, sPath, side);
+  sweep(b, heart, hIn, RC_H, far ? 4 : 12, null, null);
+  // An even count of stations: the middle one is the tip.
+  bumper(b, loop, loopIn, sLoop, look.bumper.span, far ? 14 : 22, steps, side);
   // The band (frame, flush with the profile) round the face and the throat; the face a hair below it.
   for (const z of [T2, -T2]) flat(b, bandEdge, [face, heartEdge], z, RK_FRAME);
   if (!far) plate(b, plateCentre(s), 4);
@@ -936,12 +1145,11 @@ function buildLevel(look: RacketLook, far: boolean): THREE.BufferGeometry {
     for (const z of [T2 - FACE_STEP, -(T2 - FACE_STEP)]) flat(b, face, [], z, RK_FACE_FAR);
   } else {
     step(b, face);
-    const hn = 12;
-    const rings = s.holes.map(([x, y]) => circle(x, y, s.holeR + CHAMFER, hn));
+    const rings = s.holes.map(([x, y]) => circle(x, y, s.holeR + CHAMFER, HOLE_SIDES));
     for (const z of [T2 - FACE_STEP, -(T2 - FACE_STEP)]) flat(b, face, rings, z, RK_FACE);
-    for (const [x, y] of s.holes) hole(b, x, y, s.holeR, hn);
+    for (const [x, y] of s.holes) hole(b, x, y, s.holeR, HOLE_SIDES);
   }
-  handle(b, far ? 12 : 22, far);
+  handle(b, far ? 12 : 20, far ? 0.5 : 0.27, far, profile(steps, RC));
   return b.geometry();
 }
 
@@ -988,11 +1196,13 @@ function parts(look: RacketLook): Parts {
   const s = racketShape(look);
   const shape: ArtShape = {
     outer: s.outer, face: s.face, heart: s.heart, bridgeTop: s.bridgeTop, bridgeBottom: s.bridgeBottom, perimeter: polyLength(s.outer, true),
-    holes: s.holes, holeEdge: s.holeR + CHAMFER, plateY: plateCentre(s),
+    holes: s.holes, holeEdge: s.holeR + CHAMFER, plateY: plateCentre(s), profile: PROFILE_LEN,
   };
-  const art = racketArt(look, shape);
+  const lay = sideLayout(shape, look.bumper.span);
+  const side: SideMap = (sv, v, half) => ART.sideUv(lay, sv, v, half);
+  const art = racketArt(look, shape, lay);
   const dims = { t2: T2, step: FACE_STEP, skin: SKIN_T, pitch: GRIP_PITCH, gripY0: GRIP_Y0 };
-  p = { near: buildLevel(look, false), far: buildLevel(look, true), material: racketMaterial(art, look, dims) };
+  p = { near: buildLevel(look, false, side, shape.perimeter), far: buildLevel(look, true, side, shape.perimeter), material: racketMaterial(art, look, dims) };
   PARTS.set(look.name, p);
   return p;
 }
@@ -1063,10 +1273,15 @@ export function racketCost(g: THREE.Object3D): { triangles: number; drawCalls: n
 
 let cordMat: THREE.Material | null = null;
 
+/** The wrist cord's strap: half its width and half its thickness (m), and the slider that closes the loop. */
+const STRAP_A = 0.0042, STRAP_C = 0.0011;
+const STRAP_SEG = 48, STRAP_SIDES = 6;
+
 /**
- * The wrist cord (FIP: rackets carry one, and players wear it): a loop round the wrist, `wristR` out from its axis,
- * and the cord from it to the butt cap, which it leaves through the end plate. `wrist` and `forearm` (towards the
- * elbow) are in the racket's frame.
+ * The wrist cord (FIP: rackets carry one, and players wear it): a flat braided strap, about 8 mm wide, from the butt
+ * cap (it leaves through the end plate) down and round once about the wrist, `wristR` out from its axis, with a
+ * slider where the loop closes. The strap lies flat on the wrist (its width along the forearm). `wrist` and `forearm`
+ * (towards the elbow) are in the racket's frame. One mesh: the slider is marked by v = 2 for the cord's material.
  */
 export function makeWristCord(wrist: THREE.Vector3, forearm: THREE.Vector3, wristR: number): THREE.Mesh {
   cordMat ??= cordMaterial();
@@ -1076,7 +1291,7 @@ export function makeWristCord(wrist: THREE.Vector3, forearm: THREE.Vector3, wris
   const a = new THREE.Vector3(0, -1, 0).addScaledVector(up, up.y).normalize();
   if (a.lengthSq() < 1e-6) a.set(1, 0, 0);
   const b = new THREE.Vector3().crossVectors(up, a).normalize();
-  const r = wristR + 0.004;
+  const r = wristR + 0.0025 + STRAP_C;
   const pts: THREE.Vector3[] = [];
   const butt = new THREE.Vector3(0, RACKET_BUTT + 0.004, 0);
   // From the butt cap down and round to the loop's nearest side, then once round the wrist.
@@ -1087,9 +1302,81 @@ export function makeWristCord(wrist: THREE.Vector3, forearm: THREE.Vector3, wris
     pts.push(c.clone().addScaledVector(a, r * Math.cos(t)).addScaledVector(b, r * Math.sin(t)));
   }
   const curve = new THREE.CatmullRomCurve3(pts);
-  const geo = new THREE.TubeGeometry(curve, 48, 0.0026, 5, false);
+  const pos: number[] = [], nrm: number[] = [], uvs: number[] = [], idx: number[] = [];
+  const P = new THREE.Vector3(), T = new THREE.Vector3(), W = new THREE.Vector3(), N = new THREE.Vector3(), Wp = new THREE.Vector3();
+  let slider = 0, sliderD = Infinity;
+  const frames: Array<{ P: THREE.Vector3; T: THREE.Vector3; W: THREE.Vector3; N: THREE.Vector3 }> = [];
+  for (let i = 0; i <= STRAP_SEG; i++) {
+    curve.getPointAt(i / STRAP_SEG, P);
+    curve.getTangentAt(i / STRAP_SEG, T);
+    // Width along the forearm (flat on the wrist), carried on from the last section where the strap runs along it.
+    W.copy(up).addScaledVector(T, -up.dot(T));
+    if (W.lengthSq() < 0.09 && i > 0) W.copy(Wp).addScaledVector(T, -Wp.dot(T));
+    W.normalize();
+    if (i > 0 && W.dot(Wp) < 0) W.negate();
+    Wp.copy(W);
+    N.crossVectors(T, W).normalize();
+    frames.push({ P: P.clone(), T: T.clone(), W: W.clone(), N: N.clone() });
+    const d = P.distanceTo(start);
+    if (d < sliderD) { sliderD = d; slider = i; }
+    for (let k = 0; k <= STRAP_SIDES; k++) {
+      const ph = (2 * Math.PI * k) / STRAP_SIDES, cp = Math.cos(ph), sp = Math.sin(ph);
+      pos.push(P.x + W.x * STRAP_A * cp + N.x * STRAP_C * sp, P.y + W.y * STRAP_A * cp + N.y * STRAP_C * sp, P.z + W.z * STRAP_A * cp + N.z * STRAP_C * sp);
+      const nx = W.x * (cp / STRAP_A) + N.x * (sp / STRAP_C), ny = W.y * (cp / STRAP_A) + N.y * (sp / STRAP_C), nz = W.z * (cp / STRAP_A) + N.z * (sp / STRAP_C);
+      const l = Math.hypot(nx, ny, nz);
+      nrm.push(nx / l, ny / l, nz / l);
+      uvs.push(i / STRAP_SEG, k / STRAP_SIDES);
+    }
+  }
+  const row = STRAP_SIDES + 1;
+  for (let i = 0; i < STRAP_SEG; i++) {
+    for (let k = 0; k < STRAP_SIDES; k++) {
+      const a0 = i * row + k, a1 = a0 + 1, b0 = a0 + row, b1 = b0 + 1;
+      idx.push(a0, b0, a1, a1, b0, b1);
+    }
+  }
+  // The slider: an eight-sided sleeve round the strap where the loop closes, with flat ends.
+  const f = frames[slider]!;
+  const base = pos.length / 3;
+  const SA = STRAP_A + 0.0014, SC = STRAP_C + 0.0022, SL = 0.0055;
+  for (const e of [-1, 1]) {
+    for (let k = 0; k < 8; k++) {
+      const ph = (2 * Math.PI * (k + 0.5)) / 8, cp = Math.cos(ph), sp = Math.sin(ph);
+      const x = f.P.x + f.W.x * SA * cp + f.N.x * SC * sp + f.T.x * SL * e;
+      const y = f.P.y + f.W.y * SA * cp + f.N.y * SC * sp + f.T.y * SL * e;
+      const z = f.P.z + f.W.z * SA * cp + f.N.z * SC * sp + f.T.z * SL * e;
+      // Side vertices and end vertices (each with its own normal).
+      pos.push(x, y, z, x, y, z);
+      const nx = f.W.x * cp + f.N.x * sp, ny = f.W.y * cp + f.N.y * sp, nz = f.W.z * cp + f.N.z * sp;
+      nrm.push(nx, ny, nz, f.T.x * e, f.T.y * e, f.T.z * e);
+      uvs.push(0, 2, 0, 2);
+    }
+  }
+  const sv = (e: number, k: number, end: number): number => base + ((e * 8 + (k % 8)) * 2) + end;
+  for (let k = 0; k < 8; k++) idx.push(sv(0, k, 0), sv(1, k, 0), sv(0, k + 1, 0), sv(0, k + 1, 0), sv(1, k, 0), sv(1, k + 1, 0));
+  for (const e of [0, 1]) for (let k = 1; k < 7; k++) idx.push(sv(e, 0, 1), sv(e, k, 1), sv(e, k + 1, 1));
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(idx);
+  fixWinding(geo);
+  geo.computeBoundingSphere();
   const m = new THREE.Mesh(geo, cordMat);
   m.name = 'cord';
   m.castShadow = true;
   return m;
+}
+
+/** Wind every triangle so its face normal agrees with its vertices' normals (front faces out). */
+function fixWinding(g: THREE.BufferGeometry): void {
+  const P = g.getAttribute('position'), N = g.getAttribute('normal'), I = g.index!;
+  for (let t = 0; t < I.count; t += 3) {
+    const a = I.getX(t), b = I.getX(t + 1), c = I.getX(t + 2);
+    const ux = P.getX(b) - P.getX(a), uy = P.getY(b) - P.getY(a), uz = P.getZ(b) - P.getZ(a);
+    const vx = P.getX(c) - P.getX(a), vy = P.getY(c) - P.getY(a), vz = P.getZ(c) - P.getZ(a);
+    const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+    const nx = N.getX(a) + N.getX(b) + N.getX(c), ny = N.getY(a) + N.getY(b) + N.getY(c), nz = N.getZ(a) + N.getZ(b) + N.getZ(c);
+    if (cx * nx + cy * ny + cz * nz < 0) { I.setX(t + 1, c); I.setX(t + 2, b); }
+  }
 }

@@ -5,13 +5,45 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three/webgpu';
 import {
-  CAP_TOP, FACE_T2, GRIP_PITCH, HANDLE_R, HANDLE_TOP, RACKET_BUTT, RACKET_LOOKS, RACKET_TIP, RacketLod,
-  dressRacket, makeRacketModel, makeWristCord, racketCost, racketLookFor, racketShape,
+  CAP_TOP, FACE_T2, GRIP_PITCH, HANDLE_R, HANDLE_TOP, HOLE_SIDES, PROFILE_LEN, RACKET_BUTT, RACKET_LOOKS, RACKET_TIP, RacketLod,
+  TAPE_Y0, TAPE_Y1, dressRacket, makeRacketModel, makeWristCord, racketCost, racketLookFor, racketShape,
 } from '../../src/render/avatar/racket.ts';
+import { sideLayout } from '../../src/render/avatar/racketArt.ts';
+import { FRAME_FINISH } from '../../src/render/avatar/racketMaterial.ts';
 import { disposeTree } from '../../src/render/dispose.ts';
 
 function near(g: THREE.Object3D): THREE.BufferGeometry {
   return (g.getObjectByName('racketNear') as THREE.Mesh).geometry;
+}
+
+/** The section (segments in x-z) of a geometry's triangles of region `code` cut at height y. */
+function section(geo: THREE.BufferGeometry, code: number, y: number): Array<[number, number, number, number]> {
+  const P = geo.getAttribute('position'), info = geo.getAttribute('rkInfo'), idx = geo.index!;
+  const out: Array<[number, number, number, number]> = [];
+  for (let t = 0; t < idx.count; t += 3) {
+    const v = [idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)];
+    if (Math.round(info.getX(v[0]!)) !== code) continue;
+    const hits: number[] = [];
+    for (let e = 0; e < 3; e++) {
+      const a = v[e]!, b = v[(e + 1) % 3]!;
+      const ya = P.getY(a) - y, yb = P.getY(b) - y;
+      if ((ya > 0) === (yb > 0)) continue;
+      const u = ya / (ya - yb);
+      hits.push(P.getX(a) + (P.getX(b) - P.getX(a)) * u, P.getZ(a) + (P.getZ(b) - P.getZ(a)) * u);
+    }
+    if (hits.length === 4) out.push([hits[0]!, hits[1]!, hits[2]!, hits[3]!]);
+  }
+  return out;
+}
+
+/** Whether (x, z) is inside a closed section (a ray along +x crosses it an odd number of times). */
+function insideSection(segs: Array<[number, number, number, number]>, x: number, z: number): boolean {
+  let n = 0;
+  for (const [x1, z1, x2, z2] of segs) {
+    if ((z1 > z) === (z2 > z)) continue;
+    if (x1 + ((z - z1) * (x2 - x1)) / (z2 - z1) > x) n++;
+  }
+  return (n & 1) === 1;
 }
 
 function inside(pl: Array<[number, number]>, x: number, y: number): boolean {
@@ -68,6 +100,9 @@ describe('rackets as drawn', () => {
         }
         expect(z1 - z0).toBeLessThanOrEqual(0.038 + 1e-6);
         expect(z1 - z0).toBeGreaterThan(2 * FACE_T2);
+        // The print says 38 MM: the frame with its protector is within half a millimetre of it.
+        expect(look.line).toContain('38 MM');
+        expect(z1 - z0).toBeGreaterThan(0.0375);
         expect(2 * r).toBeLessThanOrEqual(0.05);
         expect(look.holes.d).toBeGreaterThanOrEqual(0.009);
         expect(look.holes.d).toBeLessThanOrEqual(0.013);
@@ -100,12 +135,19 @@ describe('rackets as drawn', () => {
         let minWall = Infinity;
         for (let i = 0; i < H.length; i++) for (let j = i + 1; j < H.length; j++) minWall = Math.min(minWall, Math.hypot(H[i]![0] - H[j]![0], H[i]![1] - H[j]![1]) - 2 * r);
         expect(minWall).toBeGreaterThan(0.0075);
-        // Every through-hole's wall is in the mesh: front and back chamfers and the wall (3 strips of 12 quads).
+        // Every through-hole's wall is in the mesh: the wall and the front and back chamfers (a strip of HOLE_SIDES
+        // quads each).
         const info = near(g).getAttribute('rkInfo');
         const idx = near(g).index!;
-        let wall = 0;
-        for (let i = 0; i < idx.count; i += 3) if (Math.round(info.getX(idx.getX(i))) === 2) wall++;
-        expect(wall).toBe(H.length * 72);
+        let wall = 0, chamfer = 0;
+        for (let i = 0; i < idx.count; i += 3) {
+          const c = Math.round(info.getX(idx.getX(i)));
+          if (c === 2) wall++;
+          if (c === 9) chamfer++;
+        }
+        expect(wall).toBe(H.length * 2 * HOLE_SIDES);
+        expect(chamfer).toBe(H.length * 4 * HOLE_SIDES);
+        expect(HOLE_SIDES).toBeGreaterThanOrEqual(14);
       });
 
       it('costs at most 3 draw calls and about 15k triangles, cord included', () => {
@@ -115,6 +157,51 @@ describe('rackets as drawn', () => {
         expect(c.drawCalls + 1).toBeLessThanOrEqual(3);
         expect(c.triangles + ct).toBeLessThanOrEqual(15000);
         expect(c.farTriangles).toBeLessThan(2500);
+      });
+
+      it('closes the finishing tape round the neck: no part of the frame comes through it', () => {
+        for (const name of ['racketNear', 'racketFar']) {
+          const geo = (g.getObjectByName(name) as THREE.Mesh).geometry;
+          const P = geo.getAttribute('position'), info = geo.getAttribute('rkInfo');
+          let checked = 0, outside = 0, low = Infinity;
+          for (let i = 0; i < P.count; i++) {
+            if (Math.round(info.getX(i)) !== 1) continue;
+            const y = P.getY(i);
+            low = Math.min(low, y);
+            if (y > TAPE_Y1) continue;
+            checked++;
+            if (!insideSection(section(geo, 5, y + 1e-7), P.getX(i), P.getZ(i))) outside++;
+          }
+          expect(checked).toBeGreaterThan(12);
+          expect(outside).toBe(0);
+          // The frame stops inside the tape (it never reaches the overgrip).
+          expect(low).toBeGreaterThan(TAPE_Y0 + 0.02);
+          // The tape's edge ends on the neck: at its top it is no wider than the neck plus the tape.
+          let top = -Infinity;
+          for (let i = 0; i < P.count; i++) if (Math.round(info.getX(i)) === 5) top = Math.max(top, P.getY(i));
+          expect(top).toBeGreaterThan(TAPE_Y1);
+        }
+      });
+
+      it('lays the side print out with the type clear of the protector', () => {
+        const art = {
+          outer: s.outer, face: s.face, heart: s.heart, bridgeTop: s.bridgeTop, bridgeBottom: s.bridgeBottom,
+          perimeter: 0, holes: s.holes, holeEdge: 0, plateY: 0, profile: PROFILE_LEN,
+        };
+        for (let i = 1; i < s.outer.length; i++) art.perimeter += Math.hypot(s.outer[i]![0] - s.outer[i - 1]![0], s.outer[i]![1] - s.outer[i - 1]![1]);
+        art.perimeter += Math.hypot(s.outer[0]![0] - s.outer[s.outer.length - 1]![0], s.outer[0]![1] - s.outer[s.outer.length - 1]![1]);
+        const lay = sideLayout(art, look.bumper.span);
+        const Lh = lay.L / 2;
+        expect(lay.text[0] + lay.win / 2).toBeLessThan(Lh - look.bumper.span / 2);
+        expect(lay.text[0] - lay.win / 2).toBeGreaterThan(0.11);
+        expect(lay.win).toBeGreaterThanOrEqual(0.08);
+        for (const k of lay.knots) {
+          expect(k[0]).toEqual([0, 0]);
+          expect(k[k.length - 1]![1]).toBe(1);
+          for (let i = 1; i < k.length; i++) { expect(k[i]![0]).toBeGreaterThan(k[i - 1]![0]); expect(k[i]![1]).toBeGreaterThan(k[i - 1]![1]); }
+        }
+        expect(Object.keys(FRAME_FINISH)).toContain(look.frameFinish);
+        expect(PROFILE_LEN).toBeGreaterThan(0.04);
       });
 
       it('winds the overgrip round the handle at its radius', () => {
@@ -198,15 +285,16 @@ describe('rackets as drawn', () => {
 
   it('frees its geometry, material and printed textures with the match', () => {
     const g = makeRacketModel(RACKET_LOOKS[2]);
-    const m = (g.getObjectByName('racketNear') as THREE.Mesh).material as THREE.Material & { rkHeadMap: THREE.Texture; rkMaskMap: THREE.Texture };
+    const m = (g.getObjectByName('racketNear') as THREE.Mesh).material as THREE.Material & { rkHeadMap: THREE.Texture; rkMaskMap: THREE.Texture; rkSideMap: THREE.Texture };
     let tex = 0, mat = 0, geo = 0;
     m.rkHeadMap.addEventListener('dispose', () => tex++);
     m.rkMaskMap.addEventListener('dispose', () => tex++);
+    m.rkSideMap.addEventListener('dispose', () => tex++);
     m.addEventListener('dispose', () => mat++);
     near(g).addEventListener('dispose', () => geo++);
     (g.getObjectByName('racketFar') as THREE.Mesh).geometry.addEventListener('dispose', () => geo++);
     disposeTree(g);
-    expect(tex).toBe(2);
+    expect(tex).toBe(3);
     expect(mat).toBe(1);
     expect(geo).toBe(2);
   });
