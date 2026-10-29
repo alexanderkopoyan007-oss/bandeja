@@ -7,9 +7,9 @@
 import * as THREE from 'three/webgpu';
 import {
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
-  mx_noise_float, texture, uv, max,
+  mx_noise_float, texture, uv, max, normalView, diffuseColor,
 } from 'three/tsl';
-import { heightBump } from '../bump.ts';
+import { heightBump, footprintKeep } from '../bump.ts';
 import type { PlayerAsset } from './asset.ts';
 
 export const R_SHIRT = 0, R_SHORTS = 1, R_SKIN = 2, R_HAIR = 3, R_SOCK = 4, R_SHOE = 5;
@@ -198,69 +198,150 @@ export function kitFor(idx: number): KitLook {
 }
 
 /**
- * A person's material (asset.look: an MPFB body, tools/assets/mpfb/): skin and eyes from the atlas; the shirt and
- * shorts in the kit's colours shaded by the clothes' own ambient occlusion (their printed textures are not used);
- * socks and shoes coloured as the mannequin's kit. Sweat, fabric folds and the hems' lag work as on the mannequin.
- * The second material is the alpha-tested hair, brows and lashes.
+ * Skin lit as skin: light reaching round the terminator through it, reddened (Penner and Borshukov's pre-integrated
+ * skin, approximated by wrap lighting: the extra over Lambert, wrapped by `SKIN_WRAP`, tinted by the blood under
+ * the skin and the skin's own colour). `scatter` is the fragment's share of it (skin, more in the ears).
  */
-export function personMaterial(asset: PlayerAsset, look: KitLook): { material: THREE.MeshStandardNodeMaterial; hair: THREE.MeshStandardNodeMaterial; state: KitState } {
+class SkinLighting extends THREE.PhysicalLightingModel {
+  scatter: THREE.Node<'float'>;
+  constructor(scatter: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
+    super(clearcoat, sheen, false, false, false, false);
+    this.scatter = scatter;
+  }
+
+  override direct(input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder): void {
+    const ndl = normalView.dot(input.lightDirection as THREE.Node<'vec3'>);
+    const wrapped = ndl.add(SKIN_WRAP).div(1 + SKIN_WRAP).clamp().sub(ndl.clamp());
+    const bleed = diffuseColor.rgb.mul(vec3(1.0, 0.36, 0.22)).mul(wrapped).mul(this.scatter);
+    (input.reflectedLight.directDiffuse as THREE.Node<'vec3'>).addAssign(bleed.mul(input.lightColor as THREE.Node<'vec3'>).mul(1 / Math.PI));
+    super.direct(input, builder);
+  }
+}
+const SKIN_WRAP = 0.55;
+
+/** A person's body: MeshPhysicalNodeMaterial with the skin's lighting model (clearcoat for oil, sweat and the wet
+ * eyes, mouth; sheen for the fabric). */
+export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
+  static override get type(): string { return 'PersonNodeMaterial'; }
+  scatterNode: THREE.Node<'float'> = float(0);
+  override setupLightingModel(): THREE.PhysicalLightingModel {
+    return new SkinLighting(this.scatterNode, this.useClearcoat, this.useSheen);
+  }
+}
+
+/**
+ * A person's material (asset.look: an MPFB body, tools/assets/mpfb/):
+ * - Skin, eyes, teeth and tongue from the atlas at its source's resolution; the skin's baked occlusion (atlas alpha)
+ *   shades the ambient light fully and the colour a little (creases the shadow map can't resolve); per-region
+ *   roughness and an oily second lobe (lips and eyelids wetter, the T-zone oilier, all of it shinier with sweat);
+ *   pores as a fine bump that fades out with distance; light bleeding round the terminator, more through the ears.
+ * - Eyes: a wet cornea (clearcoat, nearly mirror) over the iris; the lids' occlusion baked per vertex.
+ * - Teeth and tongue: wet, in the mouth's own occlusion (baked open).
+ * - The shirt and shorts in the kit's colours shaded by the clothes' own ambient occlusion (their printed textures are
+ *   not used), with a fabric sheen; socks and shoes coloured as the mannequin's kit. Sweat, fabric folds and the hems'
+ *   lag work as on the mannequin.
+ * The second material is the hair, brows and lashes: alpha to coverage over the MSAA samples (soft strands instead
+ * of a hard alpha-tested edge), darker where cards lie near the scalp (baked per vertex), a soft sheen.
+ */
+export function personMaterial(asset: PlayerAsset, look: KitLook): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
   const body = asset.look!;
   const frame = personFrame(asset);
-  const A = attribute<'vec3'>('bodyA', 'vec3'), B = attribute<'vec3'>('bodyB', 'vec3');
-  const shirtW = A.x, shortsW = A.y, skinW = A.z, sockW = B.x, shoeW = B.y, eyeW = B.z;
+  // Parts (asset.ts): A = shirt, shorts, skin, socks; B = shoes, eyes, teeth, tongue. bodyX by part: skin (lips,
+  // T-zone, lids, ears); eyes, shoes, socks: x = their baked occlusion; the shirt: x = where it gets wet first.
+  const A = attribute<'vec4'>('bodyA', 'vec4'), B = attribute<'vec4'>('bodyB', 'vec4'), X = attribute<'vec4'>('bodyX', 'vec4');
+  const shirtW = A.x, shortsW = A.y, skinW = A.z, sockW = A.w, shoeW = B.x, eyeW = B.y, teethW = B.z, tongueW = B.w;
+  const mouthW = teethW.add(tongueW);
   const fabric = shirtW.add(shortsW).add(sockW);
+  const vAO = mix(float(1), X.x, eyeW.add(shoeW).add(sockW));
+  const lips = X.x.mul(skinW), tzone = X.y.mul(skinW), lids = X.z.mul(skinW), ears = X.w.mul(skinW);
   const p = positionGeometry; // the modelled pose: patterns stay on the body as it moves
   const sweatU = uniform(new THREE.Vector2());
   const sweat = sweatU.x;
   const lag = uniform(new THREE.Vector3());
   const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
+  // The clothes' ambient occlusion is the grey in their rectangle; the skin's, teeth's and tongue's is the alpha.
   const ao = float(0.32).add(tex.x.mul(0.68));
+  const bakedAO = mix(float(1), tex.w, skinW.add(mouthW)).mul(vAO);
   // The waistband under the shirt was in the shirt's shadow when the occlusion was baked (MakeHuman's outfit); a shirt
   // riding up as the player bends showed it as a grey band. Above the shirt's hem the shorts are lit as they show.
   const aoShorts = mix(ao, max(ao, float(0.82)), smoothstep(frame.hemY - 0.05, frame.hemY, p.y));
 
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
-  const wetAux = attribute<'float'>('bodyWet', 'float');
-  const wet = smoothstep(0.02, 0.12, wetAux.add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
+  const wet = smoothstep(0.02, 0.12, X.x.mul(shirtW).add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
 
   const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
   const stripe = smoothstep(0.012, 0.004, p.y.sub(frame.floorY + 0.055).abs());
   const shoeC = mix(mix(color(look.shoes), color(look.shirt), stripe.mul(0.9)), color(0x8a8378), sole);
+  // Albedo: the skin a little darker in its deepest creases, the eyeball under the lids, the mouth's inside.
+  const skinCol = tex.xyz.mul(mix(float(1), tex.w, 0.3));
+  const eyeCol = tex.xyz.mul(float(0.5).add(vAO.mul(0.5)));
+  const mouthCol = tex.xyz.mul(float(0.2).add(tex.w.mul(0.8)));
   let col: THREE.Node<'vec3'> = color(look.shirt).mul(ao).mul(shirtW)
     .add(color(look.shorts).mul(aoShorts).mul(shortsW))
-    .add(tex.xyz.mul(skinW.add(eyeW)))
+    .add(skinCol.mul(skinW))
+    .add(eyeCol.mul(eyeW))
+    .add(mouthCol.mul(mouthW))
     .add(color(look.socks).mul(sockW))
-    .add(shoeC.mul(shoeW));
+    .add(shoeC.mul(shoeW).mul(vAO));
   col = col.mul(float(1).sub(wet.mul(0.3)));
-  const m = new THREE.MeshStandardNodeMaterial();
+  const m = new PersonNodeMaterial();
   m.colorNode = col;
+  m.aoNode = bakedAO;
+  const skinRough = mix(float(0.5), float(0.33), sweat).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07));
   m.roughnessNode = fabric.mul(float(0.88).sub(wet.mul(0.25)))
-    .add(skinW.mul(mix(float(0.55), float(0.34), sweat)))
-    .add(eyeW.mul(0.12)).add(shoeW.mul(0.45));
+    .add(skinW.mul(skinRough))
+    .add(eyeW.mul(0.2)).add(teethW.mul(0.3)).add(tongueW.mul(0.38)).add(shoeW.mul(0.45));
   m.metalnessNode = float(0);
+  // Specular occlusion for the direct light as well: deep creases (nostrils, the ears' hollows, the corners of the
+  // mouth) and the scalp under the hair don't shine (the baked occlusion is low there).
+  m.specularIntensityNode = mix(float(1), smoothstep(0.05, 0.55, tex.w), skinW.add(mouthW));
+  // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
+  m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)))
+    .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
+  m.clearcoatRoughnessNode = skinW.mul(float(0.32).sub(sweat.mul(0.1))).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
+  // Cotton and polyester's soft rim.
+  m.sheenNode = mix(col, vec3(1, 1, 1), 0.35).mul(fabric.mul(0.6));
+  m.sheenRoughnessNode = float(0.55);
+  m.scatterNode = skinW.mul(float(0.55).add(ears.mul(0.9)));
   const folds = mx_noise_float(vec3(p.x.mul(16), p.y.mul(44), p.z.mul(16))).mul(0.6)
     .add(mx_noise_float(p.mul(60)).mul(0.15));
-  m.normalNode = heightBump(folds.mul(fabric).mul(0.0025), 0.023);
+  // Pores: about 0.5 mm features, 12 µm deep, faded out wherever a pixel covers more than a few of them (bump.ts),
+  // less on the lips and lids.
+  const pores = mx_noise_float(p.mul(1900)).mul(0.6).add(mx_noise_float(p.mul(620)).mul(0.4))
+    .mul(0.000012).mul(skinW).mul(float(1).sub(lips.mul(0.7)).sub(lids.mul(0.5))).mul(footprintKeep(0.0012));
+  m.normalNode = heightBump(folds.mul(fabric).mul(0.0025).add(pores), 0.023);
   const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
   const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);
   m.positionNode = positionLocal.add(lag.mul(shirtSway.add(shortsSway)));
 
-  const hair = new THREE.MeshStandardNodeMaterial();
+  const hair = new THREE.MeshPhysicalNodeMaterial();
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
-  hair.colorNode = ht.xyz;
-  hair.opacityNode = ht.w;
-  hair.alphaTest = 0.5;
+  const hAO = body.alphaGeometry.hasAttribute('bodyAO') ? attribute<'float'>('bodyAO', 'float') : float(1);
+  hair.colorNode = ht.xyz.mul(hAO);
+  hair.aoNode = hAO;
+  // Coverage from the cards' alpha over the MSAA samples: strands fade out instead of being cut at a threshold. The
+  // nearly clear texels are dropped outright, and the shadow keeps a hard cut (the shadow map has no samples).
+  hair.opacityNode = smoothstep(0.06, 0.7, ht.w);
+  hair.alphaToCoverage = true;
+  hair.maskNode = ht.w.greaterThan(0.05);
+  hair.maskShadowNode = ht.w.greaterThan(0.5);
   hair.side = THREE.DoubleSide;
-  hair.roughnessNode = float(0.62);
+  // Hair's highlight is dimmer and tinted by the hair (the light that enters a strand comes out coloured), and
+  // weaker deep in the hair.
+  hair.roughnessNode = float(0.55);
   hair.metalnessNode = float(0);
+  hair.specularIntensityNode = hAO.mul(0.6);
+  hair.specularColorNode = mix(vec3(1, 1, 1), ht.xyz.mul(2.2), 0.6);
+  hair.sheenNode = ht.xyz.mul(0.5).mul(hAO);
+  hair.sheenRoughnessNode = float(0.45);
   return { material: m, hair, state: { sweat: sweatU, lag } };
 }
 
 const PERSON_FRAMES = new WeakMap<PlayerAsset, KitFrame>();
 
 /**
- * A person's landmarks (rest pose) and per-vertex sweat weights (`bodyWet`: where a shirt gets wet first, as the
- * mannequin's kit), computed once per asset.
+ * A person's landmarks (rest pose) and per-vertex sweat weights (bodyX.x on the shirt: where a shirt gets wet first,
+ * as the mannequin's kit), computed once per asset.
  */
 function personFrame(asset: PlayerAsset): KitFrame {
   let frame = PERSON_FRAMES.get(asset);
@@ -273,23 +354,23 @@ function personFrame(asset: PlayerAsset): KitFrame {
   const halfSpan = Math.abs(at(asset, 'LeftArm').x - at(asset, 'RightArm').x) / 2;
   const g3 = (dx: number, dy: number, dz: number, rx: number, ry: number, rz: number): number =>
     Math.exp(-((dx / rx) ** 2 + (dy / ry) ** 2 + (dz / rz) ** 2));
-  const wet = new Float32Array(n);
+  const X = g.getAttribute('bodyX').array as Float32Array;
   let floorY = Infinity, shortsHemY = Infinity, hemY = Infinity;
   for (let i = 0; i < n; i++) {
     const x = rest[i * 3]!, y = rest[i * 3 + 1]!, z = rest[i * 3 + 2]!;
     floorY = Math.min(floorY, y);
-    if (A[i * 3 + 1]! > 0.5) shortsHemY = Math.min(shortsHemY, y);
-    if (A[i * 3]! < 0.5) continue;
+    if (A[i * 4 + 1]! > 0.5) shortsHemY = Math.min(shortsHemY, y);
+    if (A[i * 4]! < 0.5) continue;
     hemY = Math.min(hemY, y);
     const dx = x - chest.x;
-    wet[i] = Math.max(
+    X[i * 4] = Math.max(
       g3(dx, y - (chest.y + 0.02), z - (chest.z + 0.1), 0.06, 0.13, 0.09),
       g3(dx, y - (chest.y - 0.12), z - (chest.z - 0.1), 0.055, 0.26, 0.09),
       g3(Math.abs(dx) - halfSpan * 0.68, y - (chest.y + 0.02), z - chest.z, 0.05, 0.08, 0.09),
       0.7 * g3(dx, y - (hips.y + 0.12), z - (chest.z - 0.1), 0.1, 0.08, 0.1),
     );
   }
-  g.setAttribute('bodyWet', new THREE.BufferAttribute(wet, 1));
+  (g.getAttribute('bodyX') as THREE.BufferAttribute).needsUpdate = true;
   frame = {
     chest: chest.clone(), hips: hips.clone(), hemY: Number.isFinite(hemY) ? hemY : hips.y - 0.02,
     shortsHemY: Number.isFinite(shortsHemY) ? shortsHemY : hips.y - 0.3,

@@ -5,10 +5,11 @@ import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../../sim/match.ts';
 import { PH_DEAD, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
-import { MOD_POWER, MOD_PRECISION, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH, SHOT_TOPSPIN } from '../../sim/contact/shots.ts';
+import { MOD_POWER, MOD_PRECISION, SHOT_BANDEJA, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH, SHOT_TOPSPIN, SHOT_VIBORA } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
 import { DT } from '../../sim/core/constants.ts';
-import type { Clip, PlayerAsset } from './asset.ts';
+import { personMeshes, type Clip, type PlayerAsset } from './asset.ts';
+import { FaceDriver, type FaceInput } from './face.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { hingeIK, IK_BEND, IK_SOFT, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import { fitCapsules, RACKET_PTS } from './capsules.ts';
@@ -19,7 +20,7 @@ import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import {
-  BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   type Family, type Key,
 } from './strokes.ts';
@@ -739,6 +740,12 @@ export class Avatar {
 
   /** QA: a fixed sweat level for screenshots (negative = from the match). */
   static sweatAt = -1;
+  /** A person's face (expression and gaze keys), null for the mannequin and plain bodies. */
+  readonly face: FaceDriver | null = null;
+  private readonly faceIn: FaceInput = { toContact: Infinity, sinceContact: -1, strain: 0, grunt: false, puff: 0, mood: 0, moodT: 0, gazeYaw: 0, gazePitch: 0 };
+  /** The eyes' midpoint in the head bone's frame. */
+  private readonly eyeInHead = new THREE.Vector3();
+  private puff = 0;
 
   constructor(asset: PlayerAsset, look: number | KitLook) {
     this.nb = asset.bones.length;
@@ -768,12 +775,24 @@ export class Avatar {
       this.kit = k.state;
     }
     const skeleton = new THREE.Skeleton(this.bones, asset.boneInverses);
-    this.mesh = new THREE.SkinnedMesh(asset.geometry, mat);
+    // A dressed person is drawn as body + face (the face alone carries the morph targets); after the material, which
+    // adds attributes the face copies.
+    const pm = asset.look && typeof look !== 'number' ? personMeshes(asset) : null;
+    this.mesh = new THREE.SkinnedMesh(pm ? pm.body : asset.geometry, mat);
     this.mesh.add(this.bones[0]!);
     this.mesh.bind(skeleton, new THREE.Matrix4());
     this.mesh.castShadow = true;
     this.mesh.frustumCulled = false;
     this.root.add(this.mesh);
+    const morphed: THREE.SkinnedMesh[] = [];
+    if (pm?.face) {
+      const fm = new THREE.SkinnedMesh(pm.face, mat);
+      fm.bind(skeleton, new THREE.Matrix4());
+      fm.castShadow = true;
+      fm.frustumCulled = false;
+      this.root.add(fm);
+      morphed.push(fm);
+    }
     if (asset.look && hairMat) {
       // A person's hair, brows and lashes: alpha-tested, on the same skeleton.
       const hair = new THREE.SkinnedMesh(asset.look.alphaGeometry, hairMat);
@@ -781,6 +800,22 @@ export class Avatar {
       hair.castShadow = true;
       hair.frustumCulled = false;
       this.root.add(hair);
+      if (asset.look.alphaGeometry.morphAttributes.position) morphed.push(hair);
+    }
+    if (pm?.face && asset.look) {
+      let seed = 7;
+      for (let i = 0; i < asset.look.name.length; i++) seed = seed * 31 + asset.look.name.charCodeAt(i);
+      this.face = new FaceDriver(asset.look.morphs, seed);
+      for (const m of morphed) m.morphTargetInfluences = this.face.influences as unknown as number[];
+      // The eyes' midpoint at rest, into the head bone's frame.
+      const B = asset.geometry.getAttribute('bodyB') as THREE.BufferAttribute;
+      let n = 0;
+      for (let v = 0; v < B.count; v++) {
+        if (B.getY(v) < 0.5) continue;
+        this.eyeInHead.x += asset.restPos[v * 3]!; this.eyeInHead.y += asset.restPos[v * 3 + 1]!; this.eyeInHead.z += asset.restPos[v * 3 + 2]!;
+        n++;
+      }
+      if (n) this.eyeInHead.multiplyScalar(1 / n).applyMatrix4(asset.restWorld[asset.bone('Head')]!.clone().invert());
     }
 
     const b = (n: string): THREE.Bone => this.bones[asset.bone(n)]!;
@@ -970,7 +1005,12 @@ export class Avatar {
     const ai = sim.ai[idx];
     // While the key is held the modifiers being held say it; from the release on, the ones it was released with.
     const mod = p.swing === SW_CHARGE ? p.heldMod : p.mod;
-    if (overhead || c.y > 1.8) return p.shot === SHOT_SMASH || mod === MOD_POWER || (ai !== null && ai !== undefined && ai.smash) ? SMASH : OVERHEAD;
+    if (overhead || c.y > 1.8) {
+      if (p.shot === SHOT_SMASH || mod === MOD_POWER || (ai !== null && ai !== undefined && ai.smash)) return SMASH;
+      // The víbora: the overhead key with precision (the sim's SHOT_BANDEJA + MOD_PRECISION), or an AI's intent.
+      if (p.shot === SHOT_VIBORA || (p.shot === SHOT_BANDEJA && mod === MOD_PRECISION) || (ai !== null && ai !== undefined && ai.vibora)) return VIBORA;
+      return OVERHEAD;
+    }
     if (volley) return hand > 0 ? VOLLEY_FH : VOLLEY_BH;
     const sh = p.shot;
     if (sh === SHOT_TOPSPIN && (mod === MOD_PRECISION || (ai !== null && ai !== undefined && ai.chiquita))) return hand > 0 ? FH_CHIQUITA : BH_CHIQUITA;
@@ -1533,6 +1573,35 @@ export class Avatar {
       this.neck.updateMatrixWorld(true);
     }
     this.measureFeet();
+    if (this.face) this.updateFace(sim, p, t, dt);
+  }
+
+  /** The face's inputs from the stroke, the run, the point and the ball, then its keys (face.ts). */
+  private updateFace(sim: MatchSim, p: Player, t: number, dt: number): void {
+    const f = this.faceIn;
+    f.toContact = this.st === ST_SWING ? this.tCon - t : this.st === ST_PREP && this.hasCon ? p.contactTime - t : Infinity;
+    if (f.toContact < 0) f.toContact = Infinity;
+    f.sinceContact = p.lastContactTime > 0 && p.lastContactTime <= t ? t - p.lastContactTime : -1;
+    const fam = this.fam;
+    f.strain = fam === SMASH ? 1 : fam === OVERHEAD || fam === VIBORA ? 0.8 : fam === SERVE ? 0.7 : fam.punch < 1 ? 0.45 : 0.65;
+    f.grunt = fam === SMASH || fam === SERVE;
+    // Out of breath: the run's pace averaged over about 6 s, from a brisk 3 m/s up.
+    const sp = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
+    this.puff += (Math.min(1, Math.max(0, (sp - 1.2) / 3)) - this.puff) * (dt > 0 ? 1 - Math.exp(-dt / 6) : 0);
+    f.puff = sim.phase === PH_RALLY ? this.puff * 0.4 : this.puff;
+    f.mood = this.react === this.clips.celebrate ? 1 : this.react === this.clips.dejected ? -1 : 0;
+    f.moodT = t - this.reactStart;
+    // The ball from between the eyes, in the head's own frame (+z ahead, +x its left, +y up).
+    const hm = this.head.matrixWorld;
+    v1.copy(this.eyeInHead).applyMatrix4(hm);
+    const b = sim.ball.pos;
+    v2.x = b.x - v1.x; v2.y = b.y - v1.y; v2.z = b.z - v1.z;
+    worldQuat(this.head, q1).multiply(this.headRestInv).invert();
+    v2.applyQuaternion(q1);
+    const w = this.look;
+    f.gazeYaw = Math.atan2(v2.x, v2.z) * w;
+    f.gazePitch = Math.atan2(v2.y, Math.sqrt(v2.x * v2.x + v2.z * v2.z)) * w;
+    this.face!.update(dt, f);
   }
 
   /** `feet`: where each sole's lowest point is now. */

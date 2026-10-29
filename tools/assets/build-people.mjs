@@ -8,8 +8,11 @@
 // matrix is (its T-pose world matrix)^-1 x (its move from the modelled pose to the T-pose): at the rest pose the
 // skinned mesh is the body in the T-pose, posed straight from its modelled shape.
 //
-// Format (read by src/render/avatar/asset.ts): gzip of 'BNDJ', version 2, header length, JSON header, then
+// Format (read by src/render/avatar/asset.ts): gzip of 'BNDJ', version 3, header length, JSON header, then
 // 4-byte-aligned binary chunks, as player.bnz; no clips (the game skeleton's are used, the hips' travel scaled).
+// Version 3 adds per-vertex ambient occlusion and skin regions, and the face: the opaque mesh's triangles that any
+// expression or gaze key moves, listed apart (`face`) with their keys as int16 deltas, so only the face carries
+// morph targets; the alpha mesh (hair, brows, lashes) carries them whole.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, existsSync } from 'node:fs';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import * as THREE from 'three';
@@ -96,6 +99,9 @@ for (const name of names) {
     const n = m.vertices;
     const P = arr(Float32Array, m.pos), N = arr(Float32Array, m.nrm), UV = arr(Float32Array, m.uv);
     const SI = arr(Uint8Array, m.si), SW = arr(Float32Array, m.sw), PART = arr(Uint8Array, m.part), I = arr(Uint32Array, m.index);
+    const AO = m.ao ? arr(Float32Array, m.ao) : null, MASK = m.mask ? arr(Float32Array, m.mask) : null;
+    const MORPH = m.morph ? arr(Float32Array, m.morph) : null;
+    const NM = h.morphs ? h.morphs.length : 0;
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (let v = 0; v < n; v++) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], P[v * 3 + k]); max[k] = Math.max(max[k], P[v * 3 + k]); }
     const qp = new Uint16Array(n * 3), qn = new Int8Array(n * 4), qu = new Uint16Array(n * 2), qw = new Uint8Array(n * 4);
@@ -114,6 +120,47 @@ for (const name of names) {
       vertices: n, indices: I.length, min, max, index32: !(index instanceof Uint16Array),
       pos: chunk(qp), nrm: chunk(qn), uv: chunk(qu), skinIndex: chunk(SI), skinWeight: chunk(qw), part: chunk(PART), index: chunk(index),
     };
+    const me = meshes[kind];
+    if (AO) me.ao = chunk(Uint8Array.from(AO, (a) => Math.round(Math.min(1, Math.max(0, a)) * 255)));
+    if (MASK) me.mask = chunk(Uint8Array.from(MASK, (a) => Math.round(Math.min(1, Math.max(0, a)) * 255)));
+    if (MORPH && NM) {
+      // Which vertices any key moves (> 0.01 mm), and for the opaque mesh the triangles touching them: the face.
+      const moving = new Uint8Array(n);
+      for (let v = 0; v < n; v++) for (let k = 0; k < NM; k++) {
+        const o = (v * NM + k) * 6;
+        if (Math.hypot(MORPH[o], MORPH[o + 1], MORPH[o + 2]) > 1e-5) { moving[v] = 1; break; }
+      }
+      let verts = null, faceIdx = null;
+      if (kind === 'opaque') {
+        const faceTri = [], bodyTri = [];
+        for (let t = 0; t < I.length; t += 3) (moving[I[t]] || moving[I[t + 1]] || moving[I[t + 2]] ? faceTri : bodyTri).push(t);
+        const local = new Int32Array(n).fill(-1);
+        const list = [];
+        for (const t of faceTri) for (let c = 0; c < 3; c++) if (local[I[t + c]] < 0) { local[I[t + c]] = list.length; list.push(I[t + c]); }
+        verts = Uint32Array.from(list);
+        faceIdx = Uint16Array.from(faceTri.flatMap((t) => [local[I[t]], local[I[t + 1]], local[I[t + 2]]]));
+        const bodyIdx = Uint32Array.from(bodyTri.flatMap((t) => [I[t], I[t + 1], I[t + 2]]));
+        me.face = { vertices: verts.length, indices: faceIdx.length, verts: chunk(verts), index: chunk(faceIdx),
+          bodyIndices: bodyIdx.length, bodyIndex: chunk(n < 65536 ? Uint16Array.from(bodyIdx) : bodyIdx) };
+        console.log(name, 'face', verts.length, 'vertices', faceIdx.length / 3, 'triangles; body', bodyIdx.length / 3);
+      }
+      // The keys over the morphing vertices (the face's for the opaque mesh, every vertex for the alpha mesh), int16
+      // against each key's largest move.
+      const ids = verts ?? Uint32Array.from({ length: n }, (_, i) => i);
+      me.morphs = h.morphs.map((mname, k) => {
+        let sp = 1e-9, sn = 1e-9;
+        for (const v of ids) {
+          const o = (v * NM + k) * 6;
+          for (let c = 0; c < 3; c++) { sp = Math.max(sp, Math.abs(MORPH[o + c])); sn = Math.max(sn, Math.abs(MORPH[o + 3 + c])); }
+        }
+        const q = new Int16Array(ids.length * 6);
+        ids.forEach((v, j) => {
+          const o = (v * NM + k) * 6;
+          for (let c = 0; c < 3; c++) { q[j * 6 + c] = Math.round((MORPH[o + c] / sp) * 32767); q[j * 6 + 3 + c] = Math.round((MORPH[o + 3 + c] / sn) * 32767); }
+        });
+        return { name: mname, pos: +sp.toExponential(6), nrm: +sn.toExponential(6), data: chunk(q) };
+      });
+    }
   }
 
   const header = {
@@ -123,7 +170,7 @@ for (const name of names) {
   };
   const json = new TextEncoder().encode(JSON.stringify(header));
   const jsonPad = (4 - (json.byteLength % 4)) % 4;
-  const head = new Uint32Array([0x4a444e42, 2, json.byteLength + jsonPad]);
+  const head = new Uint32Array([0x4a444e42, 3, json.byteLength + jsonPad]);
   const parts = [new Uint8Array(head.buffer), json, new Uint8Array(jsonPad).fill(0x20), ...chunks];
   const size = parts.reduce((s, p) => s + p.byteLength, 0);
   const buf = new Uint8Array(size);

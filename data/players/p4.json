@@ -6,7 +6,8 @@
     "race": { "asian": 1.0, "caucasian": 0.0, "african": 0.0 }
   },
   "skin": "young_asian_male",
-  "eyes": "low-poly",
+  "eyes": "high-poly",
+  "eye_colour": "brownlight",
   "eyebrows": "eyebrow004",
   "eyelashes": "eyelashes01",
   "hair": "short04",

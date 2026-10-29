@@ -27,7 +27,10 @@ describe('people', () => {
       p.bones.forEach((b, i) => expect(b.quat).toEqual(base.bones[i]!.quat));
       for (const f of Object.values(p.look!.textures)) expect(existsSync(new URL('../../public/assets/people/' + f, import.meta.url))).toBe(true);
       expect(p.look!.alphaGeometry.getAttribute('uv').count).toBeGreaterThan(500);
-      expect(p.geometry.getAttribute('position').count).toBeLessThan(20000);
+      expect(p.geometry.getAttribute('position').count).toBeLessThan(22000);
+      // WebGPU binds at most 8 vertex buffers: skinning's 5 and the person's 3 (bodyA, bodyB, bodyX).
+      const custom = Object.keys(p.geometry.attributes).filter((k) => !['position', 'normal', 'uv', 'skinIndex', 'skinWeight', 'color'].includes(k));
+      expect(custom.sort()).toEqual(['bodyA', 'bodyB', 'bodyX']);
     }
   });
 
@@ -37,7 +40,7 @@ describe('people', () => {
       let lo = Infinity, hi = -Infinity;
       for (let v = 0; v < r.length / 3; v++) {
         lo = Math.min(lo, r[v * 3 + 1]!);
-        if (A[v * 3 + 2]! > 0.5) hi = Math.max(hi, r[v * 3 + 1]!);
+        if (A[v * 4 + 2]! > 0.5) hi = Math.max(hi, r[v * 3 + 1]!);
       }
       expect(Math.abs(lo)).toBeLessThan(0.005);
       expect(Math.abs(hi - p.look!.height)).toBeLessThan(0.02);
@@ -58,14 +61,81 @@ describe('people', () => {
   it('dresses skin, shirt, shorts and shoes', () => {
     for (const p of base.people) {
       const A = p.geometry.getAttribute('bodyA').array as Float32Array, B = p.geometry.getAttribute('bodyB').array as Float32Array;
-      const n = A.length / 3;
-      const count = (arr: Float32Array, k: number): number => { let c = 0; for (let v = 0; v < n; v++) if (arr[v * 3 + k]! > 0.5) c++; return c; };
+      const n = A.length / 4;
+      const count = (arr: Float32Array, k: number): number => { let c = 0; for (let v = 0; v < n; v++) if (arr[v * 4 + k]! > 0.5) c++; return c; };
       expect(count(A, 2)).toBeGreaterThan(5000); // skin
       expect(count(A, 0)).toBeGreaterThan(1500); // shirt
       expect(count(A, 1)).toBeGreaterThan(300); // shorts
-      expect(count(B, 1)).toBeGreaterThan(500); // shoes
-      expect(count(B, 0)).toBeGreaterThan(50); // socks
+      expect(count(B, 0)).toBeGreaterThan(500); // shoes
+      expect(count(A, 3)).toBeGreaterThan(50); // socks
+      expect(count(B, 1)).toBeGreaterThan(400); // eyes
+      expect(count(B, 2)).toBeGreaterThan(1000); // teeth
+      expect(count(B, 3)).toBeGreaterThan(100); // tongue
       expect([P_SKIN, P_SHIRT, P_SHOE]).toEqual([0, 1, 3]);
+    }
+  });
+
+  it('has a face: expression and gaze keys on a small face mesh, lids that close, eyes that turn about their centres', () => {
+    for (const p of base.people) {
+      const look = p.look!;
+      expect(look.morphs).toEqual(expect.arrayContaining(['blinkL', 'blinkR', 'jawOpen', 'smile', 'browDown', 'lookLeft', 'lookUp', 'lookDown']));
+      const f = look.face!;
+      expect(f.verts.length).toBeLessThan(p.geometry.getAttribute('position').count * 0.5);
+      expect(f.pos.length).toBe(look.morphs.length);
+      // A blink moves the upper lid about 1-2 cm and nothing below the nose.
+      const k = look.morphs.indexOf('blinkL');
+      let most = 0, lowest = Infinity;
+      for (let j = 0; j < f.verts.length; j++) {
+        const d = Math.hypot(f.pos[k]![j * 3]!, f.pos[k]![j * 3 + 1]!, f.pos[k]![j * 3 + 2]!);
+        if (d > 1e-4) lowest = Math.min(lowest, p.restPos[f.verts[j]! * 3 + 1]!);
+        most = Math.max(most, d);
+      }
+      expect(most).toBeGreaterThan(0.006);
+      expect(most).toBeLessThan(0.03);
+      expect(lowest).toBeGreaterThan(look.height - 0.2);
+      // Looking left turns each eyeball rigidly about its own centre: distances within it are kept, and its centre
+      // stays put (a turn about a point off the centre swings the eyeball into the lids).
+      const B = p.geometry.getAttribute('bodyB').array as Float32Array;
+      const L = look.morphs.indexOf('lookLeft');
+      const eye = [] as number[];
+      for (let j = 0; j < f.verts.length; j++) if (B[f.verts[j]! * 4 + 1]! > 0.5) eye.push(j);
+      expect(eye.length).toBeGreaterThan(200);
+      const at0 = (j: number, a: number): number => p.restPos[f.verts[j]! * 3 + a]!;
+      const at1 = (j: number, a: number): number => at0(j, a) + f.pos[L]![j * 3 + a]!;
+      for (const side of [1, -1]) {
+        const ids = eye.filter((j) => at0(j, 0) * side > 0);
+        let worst = 0, moved = 0;
+        for (let k = 0; k < ids.length; k++) {
+          const a = ids[k]!, b = ids[(k * 7 + 3) % ids.length]!;
+          const d0 = Math.hypot(at0(a, 0) - at0(b, 0), at0(a, 1) - at0(b, 1), at0(a, 2) - at0(b, 2));
+          const d1 = Math.hypot(at1(a, 0) - at1(b, 0), at1(a, 1) - at1(b, 1), at1(a, 2) - at1(b, 2));
+          worst = Math.max(worst, Math.abs(d1 - d0));
+          moved = Math.max(moved, Math.hypot(f.pos[L]![a * 3]!, f.pos[L]![a * 3 + 1]!, f.pos[L]![a * 3 + 2]!));
+        }
+        expect(worst).toBeLessThan(0.0003);
+        expect(moved).toBeGreaterThan(0.005);
+        // The eyeball's sphere (least squares: |p|^2 = 2 p.c + d), and every vertex's distance from its centre kept.
+        const N = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], rhs = [0, 0, 0, 0];
+        for (const j of ids) {
+          const row = [2 * at0(j, 0), 2 * at0(j, 1), 2 * at0(j, 2), 1];
+          const y = at0(j, 0) ** 2 + at0(j, 1) ** 2 + at0(j, 2) ** 2;
+          for (let r = 0; r < 4; r++) { rhs[r]! += row[r]! * y; for (let c = 0; c < 4; c++) N[r]![c]! += row[r]! * row[c]!; }
+        }
+        for (let i = 0; i < 4; i++) for (let r = i + 1; r < 4; r++) {
+          const f = N[r]![i]! / N[i]![i]!;
+          for (let c = i; c < 4; c++) N[r]![c]! -= f * N[i]![c]!;
+          rhs[r]! -= f * rhs[i]!;
+        }
+        const sol = [0, 0, 0, 0];
+        for (let i = 3; i >= 0; i--) { let t = rhs[i]!; for (let c = i + 1; c < 4; c++) t -= N[i]![c]! * sol[c]!; sol[i] = t / N[i]![i]!; }
+        let drift = 0;
+        for (const j of ids) {
+          const r0 = Math.hypot(at0(j, 0) - sol[0]!, at0(j, 1) - sol[1]!, at0(j, 2) - sol[2]!);
+          const r1 = Math.hypot(at1(j, 0) - sol[0]!, at1(j, 1) - sol[1]!, at1(j, 2) - sol[2]!);
+          drift = Math.max(drift, Math.abs(r1 - r0));
+        }
+        expect(drift).toBeLessThan(0.0004);
+      }
     }
   });
 

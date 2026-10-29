@@ -2,11 +2,12 @@
 // the mannequin mesh, and the clips. Format: gzip of 'BNDJ', version, header length, JSON header, then 4-byte-
 // aligned binary chunks the header points into ([offset, byteLength] after the header).
 //
-// And the people the players are dressed as (public/assets/people/<name>.bnz, version 2, built by
+// And the people the players are dressed as (public/assets/people/<name>.bnz, version 3, built by
 // tools/assets/build-people.mjs from MPFB characters): the same skeleton with the body's own bone offsets, a
 // textured mesh bound in the pose it was modelled in (explicit inverse bind matrices), a second mesh for
 // alpha-tested hair, brows and lashes, and two texture atlases. They play the mannequin's clips, the hips' travel
-// scaled to their height.
+// scaled to their height. Version 3 adds per-vertex occlusion and skin regions, and the face's expression and gaze
+// keys: the opaque mesh's moving part is drawn as its own mesh with morph targets (`personMeshes`).
 import * as THREE from 'three/webgpu';
 
 export interface BoneDef {
@@ -57,6 +58,20 @@ export interface PlayerAsset {
 
 /** Part codes of a person's vertices (tools/assets/mpfb/finish-player.py). */
 export const P_SKIN = 0, P_SHIRT = 1, P_SHORTS = 2, P_SHOE = 3, P_EYE = 4, P_SOCK = 5, P_HAIR = 6, P_BROW = 7, P_LASH = 8;
+export const P_TEETH = 9, P_TONGUE = 10;
+
+/** The opaque mesh's part that the face keys move, drawn apart with morph targets. */
+export interface FaceData {
+  /** Its vertices, as ids into the person's `geometry`. */
+  verts: Uint32Array;
+  /** Its triangles over those (face-local ids). */
+  index: Uint16Array;
+  /** The rest of the opaque mesh's triangles (ids into `geometry`). */
+  bodyIndex: Uint16Array | Uint32Array;
+  /** One per morph (BodyLook.morphs): position and normal deltas over `verts`, xyz. */
+  pos: Float32Array[];
+  nrm: Float32Array[];
+}
 
 export interface BodyLook {
   name: string;
@@ -68,6 +83,9 @@ export interface BodyLook {
   opaqueMap: THREE.Texture | null;
   alphaMap: THREE.Texture | null;
   textures: { opaque: string; alpha: string };
+  /** The face's keys by name, in the order of every morphed mesh's influences (empty for a version-2 person). */
+  morphs: string[];
+  face: FaceData | null;
 }
 
 /** The people the players are dressed as, by player number (public/assets/people/). */
@@ -82,6 +100,9 @@ interface MeshHeader {
   vertices: number; indices: number; min: number[]; max: number[]; index32: boolean;
   pos: number[]; nrm: number[]; skinIndex: number[]; skinWeight: number[]; index: number[];
   shade?: number[]; uv?: number[]; part?: number[];
+  ao?: number[]; mask?: number[];
+  face?: { vertices: number; indices: number; verts: number[]; index: number[]; bodyIndices: number; bodyIndex: number[] };
+  morphs?: { name: string; pos: number; nrm: number; data: number[] }[];
 }
 
 interface Header {
@@ -272,6 +293,16 @@ function decodeMesh(buf: ArrayBuffer, base: number, m: MeshHeader): THREE.Buffer
   geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
   geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
   geometry.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+  // Version 3: baked occlusion (eyes, shoes, hair; 1 where the atlas holds it) and skin regions (lips, T-zone,
+  // eyelids, ears).
+  if (m.ao) {
+    const q = view(Uint8Array, m.ao);
+    geometry.setAttribute('bodyAO', new THREE.BufferAttribute(Float32Array.from(q, (x) => x / 255), 1));
+  }
+  if (m.mask) {
+    const q = view(Uint8Array, m.mask);
+    geometry.setAttribute('skinMask', new THREE.BufferAttribute(Float32Array.from(q, (x) => x / 255), 4));
+  }
   if (m.uv) {
     const qu = view(Uint16Array, m.uv);
     const uv = new Float32Array(n * 2);
@@ -299,7 +330,7 @@ interface BodyHeader {
 /** A person (version 2) on the mannequin's skeleton and clips. Its atlases are loaded separately (loadPlayerAsset). */
 export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): PlayerAsset {
   const head = new Uint32Array(buf, 0, 3);
-  if (head[0] !== 0x4a444e42 || head[1] !== 2) throw new Error('person asset: bad header');
+  if (head[0] !== 0x4a444e42 || (head[1] !== 2 && head[1] !== 3)) throw new Error('person asset: bad header');
   const jsonLen = head[2]!;
   const h = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 12, jsonLen))) as BodyHeader;
   const base = 12 + jsonLen;
@@ -307,18 +338,65 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     throw new Error(`person asset ${h.name}: not the game skeleton`);
   const geometry = decodeMesh(buf, base, h.meshes.opaque);
   const alphaGeometry = decodeMesh(buf, base, h.meshes.alpha);
-  // One weight per part (as the kit's regions: interpolated weights blend only between the parts a triangle's
-  // corners have): A = shirt, shorts, skin; B = socks, shoes, eyes.
-  const part = new Uint8Array(buf, base + h.meshes.opaque.part![0]!, h.meshes.opaque.vertices);
-  const pa = new Float32Array(part.length * 3), pb = new Float32Array(part.length * 3);
-  const slotA = [2, 0, 1, -1, -1, -1], slotB = [-1, -1, -1, 1, 2, 0];
-  for (let v = 0; v < part.length; v++) {
-    const c = part[v]!;
-    if (slotA[c]! >= 0) pa[v * 3 + slotA[c]!] = 1;
-    else pb[v * 3 + slotB[c]!] = 1;
+  const keys = (m: MeshHeader, n: number): { pos: Float32Array[]; nrm: Float32Array[] } => {
+    const pos: Float32Array[] = [], nrm: Float32Array[] = [];
+    for (const k of m.morphs ?? []) {
+      const q = new Int16Array(buf, base + k.data[0]!, k.data[1]! / 2);
+      const p = new Float32Array(n * 3), d = new Float32Array(n * 3);
+      for (let j = 0; j < n; j++) for (let c = 0; c < 3; c++) {
+        p[j * 3 + c] = (q[j * 6 + c]! / 32767) * k.pos;
+        d[j * 3 + c] = (q[j * 6 + 3 + c]! / 32767) * k.nrm;
+      }
+      pos.push(p);
+      nrm.push(d);
+    }
+    return { pos, nrm };
+  };
+  const morphs = (h.meshes.opaque.morphs ?? []).map((k) => k.name);
+  let face: FaceData | null = null;
+  const fh = h.meshes.opaque.face;
+  if (fh) {
+    const op = h.meshes.opaque;
+    const k = keys(op, fh.vertices);
+    face = {
+      verts: new Uint32Array(buf, base + fh.verts[0]!, fh.vertices).slice(),
+      index: new Uint16Array(buf, base + fh.index[0]!, fh.indices).slice(),
+      bodyIndex: op.vertices < 65536 ? new Uint16Array(buf, base + fh.bodyIndex[0]!, fh.bodyIndices).slice()
+        : new Uint32Array(buf, base + fh.bodyIndex[0]!, fh.bodyIndices).slice(),
+      pos: k.pos, nrm: k.nrm,
+    };
   }
-  geometry.setAttribute('bodyA', new THREE.BufferAttribute(pa, 3));
-  geometry.setAttribute('bodyB', new THREE.BufferAttribute(pb, 3));
+  if (h.meshes.alpha.morphs?.length) {
+    const k = keys(h.meshes.alpha, h.meshes.alpha.vertices);
+    setMorphs(alphaGeometry, morphs, k.pos, k.nrm);
+  }
+  // One weight per part (as the kit's regions: interpolated weights blend only between the parts a triangle's
+  // corners have): A = shirt, shorts, skin, socks; B = shoes, eyes, teeth, tongue.
+  const part = new Uint8Array(buf, base + h.meshes.opaque.part![0]!, h.meshes.opaque.vertices);
+  const n = part.length;
+  const pa = new Float32Array(n * 4), pb = new Float32Array(n * 4);
+  // By part code: skin, shirt, shorts, shoe, eye, sock, (hair, brow, lash: the alpha mesh), teeth, tongue.
+  const slot: Array<[Float32Array, number] | null> = [[pa, 2], [pa, 0], [pa, 1], [pb, 0], [pb, 1], [pa, 3], null, null, null, [pb, 2], [pb, 3]];
+  for (let v = 0; v < n; v++) {
+    const s = slot[part[v]!];
+    if (s) s[0][v * 4 + s[1]] = 1;
+  }
+  geometry.setAttribute('bodyA', new THREE.BufferAttribute(pa, 4));
+  geometry.setAttribute('bodyB', new THREE.BufferAttribute(pb, 4));
+  // Per part, packed into one attribute (WebGPU allows 8 vertex buffers, skinning takes 5 of them): skin (lips,
+  // T-zone, eyelids, ears); eyes, shoes and socks: x = their baked occlusion; the shirt: x = where it gets wet first
+  // (kit.ts fills it in).
+  const X = new Float32Array(n * 4);
+  const ao = geometry.getAttribute('bodyAO') as THREE.BufferAttribute | undefined;
+  const mk = geometry.getAttribute('skinMask') as THREE.BufferAttribute | undefined;
+  for (let v = 0; v < n; v++) {
+    const c = part[v]!;
+    if (c === P_SKIN && mk) for (let k = 0; k < 4; k++) X[v * 4 + k] = mk.array[v * 4 + k]!;
+    else if (c === P_EYE || c === P_SHOE || c === P_SOCK) X[v * 4] = ao ? ao.array[v]! : 1;
+  }
+  geometry.deleteAttribute('bodyAO');
+  geometry.deleteAttribute('skinMask');
+  geometry.setAttribute('bodyX', new THREE.BufferAttribute(X, 4));
   const boneInverses: THREE.Matrix4[] = [];
   for (let i = 0; i < h.bones.length; i++) boneInverses.push(new THREE.Matrix4().fromArray(h.bind, i * 16));
   const clips = new Map<string, Clip>();
@@ -328,6 +406,49 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     clips.set(name, { ...c, hips, speed: c.speed * h.hips });
   }
   return assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
-    name: h.name, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, textures: h.textures,
+    name: h.name, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, textures: h.textures, morphs, face,
   });
+}
+
+function setMorphs(g: THREE.BufferGeometry, names: string[], pos: Float32Array[], nrm: Float32Array[]): void {
+  g.morphAttributes.position = pos.map((p, i) => { const a = new THREE.BufferAttribute(p, 3); a.name = names[i]!; return a; });
+  g.morphAttributes.normal = nrm.map((p, i) => { const a = new THREE.BufferAttribute(p, 3); a.name = names[i]!; return a; });
+  g.morphTargetsRelative = true;
+}
+
+const MESHES = new WeakMap<PlayerAsset, { body: THREE.BufferGeometry; face: THREE.BufferGeometry | null }>();
+
+/**
+ * What a person is drawn with: the opaque mesh without its face (sharing `geometry`'s attributes) and the face as its
+ * own small mesh with the expression and gaze morph targets (only it pays for them). Built once per asset, after the
+ * material has added its attributes to `geometry` (personMaterial), since both take every attribute it has then.
+ * A version-2 person (no face) is drawn whole.
+ */
+export function personMeshes(asset: PlayerAsset): { body: THREE.BufferGeometry; face: THREE.BufferGeometry | null } {
+  let m = MESHES.get(asset);
+  if (m) return m;
+  const f = asset.look?.face;
+  if (!f) {
+    m = { body: asset.geometry, face: null };
+  } else {
+    const g = asset.geometry;
+    const body = new THREE.BufferGeometry();
+    const face = new THREE.BufferGeometry();
+    for (const name of Object.keys(g.attributes)) {
+      const a = g.getAttribute(name) as THREE.BufferAttribute;
+      body.setAttribute(name, a);
+      const s = a.itemSize, src = a.array as Float32Array;
+      const out = new (src.constructor as Float32ArrayConstructor)(f.verts.length * s);
+      for (let j = 0; j < f.verts.length; j++) for (let c = 0; c < s; c++) out[j * s + c] = src[f.verts[j]! * s + c]!;
+      face.setAttribute(name, new THREE.BufferAttribute(out, s, a.normalized));
+    }
+    body.setIndex(new THREE.BufferAttribute(f.bodyIndex, 1));
+    face.setIndex(new THREE.BufferAttribute(f.index, 1));
+    setMorphs(face, asset.look!.morphs, f.pos, f.nrm);
+    body.computeBoundingSphere();
+    face.computeBoundingSphere();
+    m = { body, face };
+  }
+  MESHES.set(asset, m);
+  return m;
 }

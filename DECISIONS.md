@@ -1606,3 +1606,62 @@ hitter's own back glass after the bounce as its own class, the bajada.
 - **The waistband** (Medium #7). The suit's occlusion map was baked with the shorts' top under the shirt, so a shirt
   riding up as a player bends showed a grey band: above the shirt's hem the shorts' occlusion is lifted to at least
   0.82 (`kit.ts` aoShorts).
+
+### The people made real (owner, 29 Oct: "make them look like actual humans, extremely high def")
+Close up the players were MakeHuman bodies with a 1024 skin, flat lighting, a bald band between the hair cards and
+the forehead, glassless low-poly eyes, no mouth and a face that never moved. What changed, all from MakeHuman's CC0
+assets (no new downloads) and our own code:
+- **Resolution.** The skin at its source's full 2048 (was scaled to 1024), hair 2048, eyes, teeth and tongue 512
+  (`finish-player.py` RECT; atlases 3072 x 2048 and 2560 x 2048). About 1.15 MB of textures a person.
+- **Baked occlusion.** Cycles bakes ambient occlusion in the T-pose (10 s a person on the GPU): the skin's goes in
+  the atlas's alpha, the eyes' and shoes' per vertex, the hair's from each card's height over the scalp (cards under
+  others are darker). The hair cards are left out of the bake (Cycles' AO sees a card's whole quad), and teeth and
+  tongue are baked with the mouth open (closed, the lips hide them and they bake black). The game uses it for the
+  ambient light, for the specular in creases and under the hair, and a little in the colour.
+- **The scalp under the hair.** Rays from each skin texel near the hair, out along the normal, add up the cards'
+  coverage (1 - product of (1 - alpha) over every card crossed); the skin there takes the roots' colour and loses
+  its occlusion, so the hairline grows out of the skin. The brows get the same at half strength.
+- **Eyes.** MakeHuman's high-poly eyes, without their cornea shell: it is mapped to a transparent patch of the eye
+  texture and, drawn opaque, it was a lavender cap over the iris (black once lit). The wet cornea is a near-mirror
+  clearcoat on the eyeball. Eye colours per person in `data/players/*.json` (`eye_colour`).
+- **Teeth and tongue** (teeth_base, tongue01) for the open mouths below.
+- **Skin shading** (`kit.ts` PersonNodeMaterial): light bleeding round the terminator (wrap lighting, reddened, as
+  pre-integrated skin approximates subsurface scattering), more through the ears; roughness and an oily clearcoat by
+  region (lips and lids wetter, the T-zone oilier, all of it shinier with sweat); pores as a 12 um bump that fades
+  out where a pixel covers more than a few of them. The regions come from what the expression units move (pursing
+  moves the lips, closing the lids, the nose and brow units the T-zone), since MakeHuman's region masks don't match
+  its skin UVs; the ears are the head's most lateral skin.
+- **Hair**: alpha to coverage over the 4 MSAA samples (soft strands, not a hard alpha-test edge), a dimmer highlight
+  tinted by the hair, a soft sheen; the shadow keeps a hard cut (`maskShadowNode`).
+- **A face that moves** (`face.ts`, `person_face.py`). Sixteen morph targets from MakeHuman's expression units,
+  weighted by each body's own race mix: blinks, squint, brows down / inner up / up, jaw open, lips pressed, smile,
+  grimace, sneer, neck tense, and four gaze keys (each eyeball turned 30 degrees sideways, 25 up or down, about the
+  sphere fitted to it; the lids follow up and down). The proxies (lashes, brows, hair, teeth, tongue) follow by
+  their .mhclo fitting (each vertex = three body vertices' weighted sum, so their keys are the same sum of the body's
+  moves; MPFB's own transfer only knows ARKit and viseme names). Only the moving part of the mesh carries them: the
+  face (5.3k vertices of 21k) is drawn as its own mesh with the body's material. Driven each frame: blinks every
+  2-6 s and at most of their own contacts, the eyes on the ball (what the head leaves them, quick as a saccade),
+  effort over a contact (brows down, eyes narrowed, lips pressed; an open-mouthed grunt on smashes and serves),
+  breathing through the mouth after running, a smile or a frown after the point they ended.
+- **Kit fit** (`person_face.fit_suit`). The casual suit sat 13 mm off the skin (27 at the sides): every vertex
+  keeps only 35% of its gap past 6 mm on the torso (folds stay, smaller), the shirt stays 14 mm clear over the
+  waistband and hangs freer in its last few cm, the shorts' legs keep 60%, and the waistband goes in under the shirt
+  (round 2's #12: it poked through at the small of the back). Moves smoothed over the mesh.
+- **WebGPU allows 8 vertex buffers** (skinning takes 5): the person's per-vertex data is packed into three
+  (`bodyA`, `bodyB`: one weight per part; `bodyX`: per part, the skin's regions, the eyes' and shoes' occlusion, the
+  shirt's sweat). The first build used 11 and drew nothing on WebGPU while WebGL was fine; `people.test.ts` checks.
+- Traps: `Image.scale()` on a copy of an image whose buffer isn't loaded leaves the old size (the teeth came out as
+  streaks: read the pixels and resize in numpy); a MASK modifier can't be applied with shape keys (masked vertices
+  are deleted by bmesh, which keeps keys and attributes); the basemesh's eye joints sit about 1 cm off the eyeballs'
+  centres; three's morph texture is vertices x morphs, so keys on the whole 21k-vertex mesh would cost 4 x 7 MB.
+- Cost: a person is 37-40k triangles (was 31k), the .bnz 745-790 KB (was 380). Tests: `people.test.ts` (morphs, lids,
+  eyeballs turning rigidly, the 8-buffer limit, the parts) and the animation QA per person all pass.
+
+### Review round 2, High #4: one action per overhead
+The bandeja, víbora, bajada and smash shared one trophy and one square-on contact; only the finish differed. Now
+(`strokes.ts`, from docs/research/serve-and-strokes-motion.md §4.2): the bandeja side-on at contact with the face 25
+degrees open and a controlled finish; the víbora lower and out to the racket side, the face less open and turned to
+cut the ball's outside, finishing low by the free hip; the smash with a deeper trophy, turning square at contact,
+the face flat. The avatar picks the víbora from the overhead key with precision or the AI's intent. Measured
+(`tools/out/r2-bajada-anim.ts`, 10 seeds x 300 s): chest to the net at contact bandeja 53 degrees (research 50-60),
+víbora 38, smash 5 (all 0 before, i.e. square); racket to ball at contact p50 2.0 / 2.2 / 4.3 cm as before.

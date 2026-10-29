@@ -40,7 +40,10 @@ def asset(kind, name, ext='.mhclo'):
 
 
 HumanService.set_character_skin(asset('skins', spec['skin'], '.mhmat'), body, skin_type='GAMEENGINE')
-for part in ('eyes', 'eyebrows', 'eyelashes', 'hair'):
+# Teeth and tongue: an open mouth (the expression morphs) shows them.
+spec.setdefault('teeth', 'teeth_base')
+spec.setdefault('tongue', 'tongue01')
+for part in ('eyes', 'eyebrows', 'eyelashes', 'hair', 'teeth', 'tongue'):
     if spec.get(part):
         HumanService.add_mhclo_asset(asset(part, spec[part]), body, asset_type=part, subdiv_levels=0,
                                      material_type='MAKESKIN')

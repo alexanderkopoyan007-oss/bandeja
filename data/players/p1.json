@@ -16,7 +16,8 @@
     }
   },
   "skin": "young_caucasian_male",
-  "eyes": "low-poly",
+  "eyes": "high-poly",
+  "eye_colour": "brown",
   "eyebrows": "eyebrow001",
   "eyelashes": "eyelashes01",
   "hair": "short02",

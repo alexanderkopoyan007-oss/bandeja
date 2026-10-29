@@ -10,6 +10,15 @@ import { dFdx, dFdy, positionView, normalView, faceDirection, max, float, smooth
  * metres across. Where a pixel covers more than a quarter of a feature the bump fades out (gone at half): sampled
  * coarser than that, screen-space differences are noise that shimmers as the surface moves.
  */
+/**
+ * 1 where a pixel covers well under a `cell`-sized feature, 0 from half of one: for a fine height added to a coarser
+ * one in heightBump (whose own fade is set by the coarse cell).
+ */
+export function footprintKeep(cell: number): THREE.Node<'float'> {
+  const foot = max(dFdx(positionView).length(), dFdy(positionView).length());
+  return float(1).sub(smoothstep(0.25 * cell, 0.5 * cell, foot));
+}
+
 export function heightBump(height: THREE.Node<'float'>, cell: number): THREE.Node<'vec3'> {
   const dpx = dFdx(positionView), dpy = dFdy(positionView);
   const n = normalView;
