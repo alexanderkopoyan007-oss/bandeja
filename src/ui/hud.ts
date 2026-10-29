@@ -56,6 +56,13 @@ export const HUD_CSS = `
   border: 1px solid var(--edge); backdrop-filter: blur(8px); font: 700 14px/1 var(--display); letter-spacing: .1em;
   text-transform: uppercase; color: #e9f6ff; white-space: nowrap; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
 #hud .hint.on { opacity: 1; transform: translate(-50%, 0); }
+/* Replays: a glass tag top right with a red dot, as a broadcast marks them; how to skip, small under it. */
+#hud .replay { position: absolute; right: 16px; top: 16px; padding: 8px 14px 7px; border-radius: 6px; background: var(--glass);
+  border: 1px solid var(--edge); backdrop-filter: blur(8px); font: 800 15px/1 var(--display); letter-spacing: .24em; color: #fff;
+  opacity: 0; transition: opacity .15s; pointer-events: none; text-align: right; }
+#hud .replay::before { content: ""; display: inline-block; width: 8px; height: 8px; margin: 0 9px 1px 0; border-radius: 50%; background: var(--bad); }
+#hud .replay.on { opacity: 1; }
+#hud .replay small { display: block; margin-top: 5px; font: 600 10px/1 ui-sans-serif, system-ui; letter-spacing: .06em; color: #aeb7bf; }
 #hud .key, #hud .help .key { display: inline-block; min-width: 20px; padding: 3px 5px 2px; margin: 0 2px; border-radius: 5px;
   text-align: center; font: 800 12px/1 var(--display); letter-spacing: .04em; color: #0b0d10;
   background: linear-gradient(180deg, #fff, #cfd6dc); box-shadow: 0 2px 0 #8a939b, 0 3px 6px rgba(0,0,0,.4); }
@@ -190,8 +197,17 @@ export class Hud {
     this.ms = root.appendChild(el('div', 'ms'));
     this.hint = root.appendChild(el('div', 'hint'));
     this.help = root.appendChild(el('div', 'help'));
+    this.replay = root.appendChild(el('div', 'replay'));
+    this.replay.innerHTML = 'REPLAY<small>Enter skips</small>';
     this.setKeys(DEFAULT_KEYS, false);
   }
+
+  /** The replay tag (game/replay.ts) on or off. */
+  setReplay(on: boolean): void {
+    if (on !== this.replayOn) { this.replayOn = on; this.replay.classList.toggle('on', on); }
+  }
+  private readonly replay: HTMLElement;
+  private replayOn = false;
 
   /**
    * The keys in use (input/bindings.ts, remapped ones included) and the swing mode: the help panel, the hints and

@@ -2118,3 +2118,43 @@ Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`,
     and strides: no hole and no flaps. The between-points cut-away is clean too.
 - **Test:** people.test.ts "has skin under the shorts all round each leg". At least seven of eight sectors must have
   skin, each above the hem, and six of them at least 3.5 cm above it. Every sector failed before.
+
+## Review round 3, critic High #4: one locked camera and no replays (2026-10-29)
+- **Instant replays** (`src/game/replay.ts`). After a big point the point is shown again from another angle, with the
+  winning shot slowed, as padel on TV does.
+  - **Recording:** nothing is filmed. As each point is set up, the match is copied (`MatchSim.copyFrom`,
+    `src/sim/core/copyState.ts`: a deep copy into a match built with the same config, keeping every object and its
+    shape). The human's input frames are kept from then on. A copy takes 0.15 ms.
+  - **Playback:** the replay is that copy stepped on with those inputs: the same point, tick for tick.
+    - `tests/sim/replay.test.ts` checks that a copy plays 6000 ticks hash for hash like the original, with a human
+      and without, including a copy into a match that had already played.
+    - `tests/app/replay.test.ts` drives the director as game.ts does. The replayed point must have the same winner at
+      the same moment, and the whole match state at the replay's last tick must hash the same as the live match's.
+  - **Which points:** a winner by the hitter's pair that left the court (por tres / por cuatro), an overhead winner
+    at 21 m/s or more, or a winner after a rally of 10 shots or more; and at least two points since the last replay.
+    - Over four AI matches that came to 13, 14, 10 and 26 replays in 156, 155, 124 and 188 points (7-14%), each
+      5-8 s long.
+    - TV's rate isn't measured; this is our choice, and the Replays setting can turn them off.
+  - **The shot:** the live reaction plays for 0.8 s, then the live match waits, as it does for a menu. The point
+    re-runs to 1.9 s before the winning shot, over a few frames at 300 ticks a frame (about 4.5 ms). It then plays
+    at 0.35× from 0.3 s before the winning shot to 0.9 s after, and ends 0.7 s after the point.
+  - **Cameras** (`ReplayCamera`), fixed and panning, alternating:
+    - Low behind the winner's back glass, lens on the glass, in the middle of a panel. At 1.2 m back the panel posts
+      swung into the picture as black bars.
+    - A jib 6.5 m up over the side stands by the net, a third of its look kept on the hitter. At 0.5 m out and 3.9 m
+      up it looked flat across at the far glass.
+  - **Controls and HUD:** Enter, Space or a pad button skips. A small glass "REPLAY" tag sits top right. It is a new
+    HUD element, so the owner should see it.
+  - **Known gap:** the replay is silent apart from the crowd, which carries on from the live match. The ball's sounds
+    are not re-played.
+- **Camera presets** (Settings > Picture > Camera, `?camera=`): TV (the broadcast camera, unchanged), TV close (8 m
+  back, 7.8 m up, 36°) and Player (6 m back, 5.8 m up, 44°, sliding with your x).
+  - Every camera behind the glass sees the end wall's 3-4 m mesh band across the picture. Each preset keeps it where
+    the broadcast camera does, between the near pair's heads and the far pair's feet: height under 0.8 × back + 3
+    and over 0.216 × back + 4. The first Player camera (6.5 m back, 4.6 m up) had the far pair playing behind the
+    mesh.
+  - Each preset is above the stadium's end stand. That stand now hides only when the camera is past its back row, not
+    its front row: with the front-row rule, the rows in front of the Player camera went missing.
+  - Screenshots in real Chrome (stadium, hall, club-day) show the whole court in every preset.
+- **Critic Low #14 (pan by frame rate):** the pan now eases on the match clock (`PAN_LAG` 0.325 s: 5% of a 60 Hz frame,
+  as before), not 5% a frame, so it no longer runs 2.4× faster at 144 Hz.

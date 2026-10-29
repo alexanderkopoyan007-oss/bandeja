@@ -107,6 +107,7 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     { n: new THREE.Vector3(0, 0, 1), at: b.z + st.from, half: b.x - 0.5, yaw: Math.PI },
     { n: new THREE.Vector3(0, 0, -1), at: b.z + st.from, half: b.x - 0.5, yaw: 0 },
   ];
+  const standDepth = st.rows * st.depth;
   for (let bi = 0; bi < blocks.length; bi++) {
     const bl = blocks[bi]!;
     const along = new THREE.Vector3(bl.n.z, 0, -bl.n.x); // perpendicular in the floor plane
@@ -207,11 +208,12 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     update(_t: number, m: CrowdState, cam?: THREE.Vector3): void {
       // (a vector uniform's fields: writing a scalar uniform's value boxes a double every frame)
       mood.value.set(m.excite, m.applause, m.ovation);
-      // A stand whose front row the camera is behind (along its normal) is behind the camera: out of shot, except
-      // in passing during the change-of-ends swing.
+      // A stand whose back row the camera is behind (along its normal) is behind the camera: out of shot, except
+      // in passing during the change-of-ends swing. (Its front row was the test: the player camera stands above
+      // the end stand, 6.5 m back, and the rows in front of it went missing from the foot of the picture.)
       if (cam) for (let bi = 0; bi < blocks.length; bi++) {
         const bl = blocks[bi]!;
-        groups[bi]!.visible = cam.x * bl.n.x + cam.z * bl.n.z < bl.at;
+        groups[bi]!.visible = cam.x * bl.n.x + cam.z * bl.n.z < bl.at + standDepth;
       }
     },
   };

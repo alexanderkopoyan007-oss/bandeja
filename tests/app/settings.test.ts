@@ -27,6 +27,15 @@ describe('settings store', () => {
   it('a partner or opponents style must be one that exists', () => {
     expect(settingsFrom({ setup: { partner: 'nonsense', opponents: 'muro' } }).setup).toMatchObject({ partner: 'random', opponents: 'muro' });
   });
+  it('the camera and replays (review round 3): known cameras only, replays on unless turned off', () => {
+    expect(defaultSettings()).toMatchObject({ camera: 'tv', replays: true });
+    expect(settingsFrom({ camera: 'player', replays: false })).toMatchObject({ camera: 'player', replays: false });
+    expect(settingsFrom({ camera: 'drone', replays: 'no' })).toMatchObject({ camera: 'tv', replays: true });
+    const o = optionsFromSetup(defaultSettings().setup, settingsFrom({ camera: 'near', replays: false }), 0, null, false, new URLSearchParams());
+    expect(o).toMatchObject({ camera: 'near', replays: false, prefs: { camera: 'near', replays: false } });
+    expect(optionsFromUrl(new URLSearchParams('camera=player&replays=0'), null)).toMatchObject({ camera: 'player', replays: false });
+    expect(optionsFromUrl(new URLSearchParams('camera=zz'), null)).toMatchObject({ camera: 'tv', replays: true });
+  });
   it('survives garbage', () => {
     for (const g of [null, 3, 'x', [], { setup: 5 }, { keys: 'KeyJ' }]) expect(() => settingsFrom(g)).not.toThrow();
   });

@@ -7,7 +7,8 @@ import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
 import { buildCourtView, type CourtView } from '../render/courtView.ts';
 import { Arena, arenaDef } from '../render/arena/arena.ts';
 import { NetView } from '../render/netView.ts';
-import { BallView, PlayerView, BroadcastCamera, AssistView } from '../render/views.ts';
+import { BallView, PlayerView, BroadcastCamera, AssistView, ReplayCamera, type CameraPreset } from '../render/views.ts';
+import { Replays, RP_IDLE, RP_PREP, RP_SHOW } from './replay.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
 import { DEFAULT_KEYS } from './input/bindings.ts';
@@ -72,6 +73,10 @@ export interface GameOptions {
   /** The close camera while the players walk back between points (render/views.ts); `?cutaway=0` keeps the
    * broadcast angle. */
   cutaway?: boolean;
+  /** Instant replays of big points (game/replay.ts); `?replays=0` turns them off. */
+  replays?: boolean;
+  /** Settings > Camera (render/views.ts CAMERA_PRESETS); `?camera=`. */
+  camera?: CameraPreset;
   /** `?dpr=`: the most pixels per CSS pixel to draw, whatever the preset (tools). */
   dprCap?: number;
   /** The AI match behind the title screen: no HUD, no banners. */
@@ -99,6 +104,9 @@ export interface GamePrefs {
   /** Pro mode (no timing cues) and mouse aim, as the Gameplay settings set them (P and M still toggle in play). */
   pro?: boolean;
   mouseAim?: boolean;
+  /** Settings > Camera and Replays. */
+  camera?: CameraPreset;
+  replays?: boolean;
 }
 
 /** One button event's trip to the screen, performance.now() ms (tools/latency.mjs reads these). */
@@ -192,6 +200,11 @@ export class Game {
   onMenu: (() => void) | null = null;
   /** The match is over and its last call has been shown. */
   onMatchOver: ((stats: MatchStats) => void) | null = null;
+  /** Instant replays (game/replay.ts) and their cameras; whether the last frame drew one. */
+  readonly replays: Replays;
+  private readonly replayCam = new ReplayCamera();
+  private replayShown = false;
+  private replayPad = 0;
   private overAt = -1;
   private overDoneAt = -1;
   private overSkip = false;
@@ -236,6 +249,11 @@ export class Game {
     const bl = this.arena.def.post?.bloom;
     if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
     BroadcastCamera.cutaways = opts.cutaway !== false;
+    this.cam.setPreset(opts.camera ?? 'tv');
+    this.cam.followPlayer = opts.autoplay ? 0 : opts.human;
+    // Replays re-run a point from a copy of the match (two more matches: about 2 MB, nothing per frame).
+    this.replays = new Replays(opts.match, opts.autoplay ? -1 : opts.human);
+    this.replays.enabled = opts.replays !== false && !opts.closeCam;
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar));
@@ -328,6 +346,7 @@ export class Game {
     else if (code === 'KeyP') this.setPro(!this.hud.pro);
     else if (code === 'KeyM') this.mouseAim = !this.mouseAim;
     // (not at once: a key pressed for the last shot is not a skip)
+    else if ((code === 'Enter' || code === 'Space') && this.replays.state !== RP_IDLE) this.replays.stop();
     else if ((code === 'Enter' || code === 'Space') && this.overAt >= 0 && performance.now() - this.overAt > OVER_SKIP_AFTER_MS) this.overSkip = true;
   }
 
@@ -404,6 +423,8 @@ export class Game {
     }
     if (p.pro !== undefined && p.pro !== this.prefPro) { this.prefPro = p.pro; this.setPro(p.pro); }
     if (p.mouseAim !== undefined && p.mouseAim !== this.prefMouse) { this.prefMouse = p.mouseAim; this.mouseAim = p.mouseAim; }
+    if (p.camera !== undefined) this.cam.setPreset(p.camera);
+    if (p.replays !== undefined) { this.replays.enabled = p.replays && !this.opts.closeCam; if (!p.replays) this.replays.stop(); }
     if (p.announce !== undefined && !this.opts.autoplay && p.announce !== !!this.announcer) {
       if (p.announce) this.announcer = new Announcer(this.hudLayer, this.sim);
       else { this.announcer?.dispose(); this.announcer = null; }
@@ -611,14 +632,22 @@ export class Game {
     const ease = this.lastFrame ? 0.25 * Math.min(0.1, (now - this.lastFrame) / 1000) : DT;
     this.renderLag = lagTo > this.renderLag ? Math.min(lagTo, this.renderLag + ease) : Math.max(lagTo, this.renderLag - ease);
     let drawn = simNow - this.renderLag;
-    if (this.paused || this.menuPaused) {
+    // A replay due: the live match waits (as for a menu) while the point is shown again.
+    const rp = this.replays;
+    if (rp.state === RP_IDLE && rp.due >= 0 && this.sim.time >= rp.due && !this.menuPaused) {
+      if (this.photo || !rp.enabled) rp.stop();
+      else { rp.begin(); this.kb.flush(); this.replayPad = this.pad.held; }
+    }
+    if (this.paused || this.menuPaused || rp.state !== RP_IDLE) {
       this.epoch = now - this.sim.time * 1000;
       drawn = this.sim.time;
     }
     while (this.sim.time < drawn && n < MAX_TICKS_PER_FRAME) {
       if (holding && hp.swing === SW_CHARGE && this.sim.time + DT > simNow) break;
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
+      rp.beforeStep(this.sim, this.inputs[human] ?? null);
       this.sim.step(this.inputs);
+      rp.afterStep(this.sim);
       n++;
     }
     let cueNow = simNow;
@@ -654,14 +683,41 @@ export class Game {
     }
 
     const frameDt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
-    this.ball.update(this.sim, alpha, team);
-    this.net.update(this.sim, alpha);
-    for (let i = 0; i < this.players.length; i++) this.players[i]!.update(this.sim, this.sim.players[i]!, i, alpha, renderTime);
-    const who = this.opts.autoplay ? -1 : human;
+    // The replay: re-run up to its start over a few frames, then drawn in place of the live match, on its own
+    // clock (slowed round the winning shot) and cameras. A pad button pressed since it began skips it.
+    if (rp.state === RP_PREP && !this.menuPaused) rp.prepare();
+    if (rp.state === RP_SHOW && !this.menuPaused) {
+      if ((this.pad.held & ~this.replayPad) !== 0) rp.stop();
+      else rp.advance(frameDt);
+    }
+    const showing = rp.state === RP_SHOW;
+    if (showing !== this.replayShown) {
+      this.replayShown = showing;
+      for (const pv of this.players) pv.cutNext();
+      this.ball.cutNext();
+      this.hud.setReplay(showing);
+      if (showing) this.replayCam.reset();
+      else {
+        this.cam.retake();
+        this.kb.resume(this.simHeld, this.pad.held, now);
+        this.epoch = now - this.sim.time * 1000;
+      }
+    }
+    const view = showing ? rp.sim : this.sim;
+    const vAlpha = showing ? rp.alpha : alpha;
+    const vTime = showing ? rp.clock : renderTime;
+    const marker = this.ball.showMarker;
+    if (showing) this.ball.showMarker = false;
+    this.ball.update(view, vAlpha, team);
+    this.ball.showMarker = marker;
+    this.net.update(view, vAlpha);
+    for (let i = 0; i < this.players.length; i++) this.players[i]!.update(view, view.players[i]!, i, vAlpha, vTime);
+    const who = this.opts.autoplay || showing ? -1 : human;
     // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last
     // frame's camera, which is close enough).
     this.feedback.update(this.sim, who, now);
-    this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
+    if (showing) this.replayCam.aim(this.cam.camera, view, rp.hitter, rp.angle, this.ball.mesh.position, frameDt * rp.speed);
+    else this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     if (this.opts.closeCam) this.aimCloseCam(this.opts.closeCam);
     // Sound never takes a frame down: a browser's WebAudio quirk (Firefox has no listener.positionX) once threw on

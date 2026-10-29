@@ -39,6 +39,10 @@ export interface Settings {
   /** auto: High with the render scale adapted to hold 60 Hz (Game.adapt); the others are fixed presets. */
   quality: 'auto' | 'low' | 'medium' | 'high' | 'ultra';
   showFps: boolean;
+  /** The match camera (render/views.ts CAMERA_PRESETS): TV, TV close, or the player camera. */
+  camera: 'tv' | 'near' | 'player';
+  /** Instant replays of big points (game/replay.ts). */
+  replays: boolean;
   // Sound (0..1)
   volume: number;
   crowd: number;
@@ -68,7 +72,7 @@ export function defaultSettings(): Settings {
   return {
     setup: { ...DEFAULT_SETUP },
     timing: 'forgiving', assist: 'normal', autoTiming: false, swing: 'hold', pro: false, mouseAim: false,
-    quality: 'auto', showFps: false,
+    quality: 'auto', showFps: false, camera: 'tv', replays: true,
     volume: 0.8, crowd: 1,
     motion: 'system', safeColours: false, contrast: false, textSize: 1, announce: true, rumble: true,
     keys: {},
@@ -81,7 +85,7 @@ const CHOICES: Record<string, readonly unknown[]> = {
   arena: ['stadium', 'hall', 'club-day', 'club-night'], court: ['standard', 'panoramic', 'singles-narrow'],
   scoring: ['star', 'golden', 'advantage'], length: ['short', 'set', 'three'], hand: ['right', 'left'],
   timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'], swing: ['hold', 'tap'],
-  quality: ['auto', 'low', 'medium', 'high', 'ultra'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
+  quality: ['auto', 'low', 'medium', 'high', 'ultra'], camera: ['tv', 'near', 'player'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
   // A partner's or the opponents' style: 'random' or a style that exists (data/ai.json).
   partner: ['random', ...STYLE_KEYS], opponents: ['random', ...STYLE_KEYS],
 };

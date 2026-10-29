@@ -7,6 +7,7 @@ import { DT, TEAM_NEAR } from './core/constants.ts';
 import { Hasher } from './core/hash.ts';
 import { abs, clamp, max, min, sqrt } from './core/smath.ts';
 import { V3 } from './core/v3.ts';
+import { copyState } from './core/copyState.ts';
 import { SURF_GLASS, WALL_SIDE_LEFT, WALL_SIDE_RIGHT } from './court/court.ts';
 import { Score, SIDE_RIGHT, SIDE_LEFT, DEFAULT_FORMAT, EV_GAME, EV_SET, EV_MATCH, EV_CHANGE_ENDS, type MatchFormat } from './rules/score.ts';
 import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
@@ -159,6 +160,8 @@ const OVER_NET = 0.4;
 const OVER_WALK_MAX = 7;
 const OVER_TAP = 1.3;
 const OVER_BACK = 0.9;
+/** copyFrom's source-to-copy map (module-level: a field would be part of the state it copies). */
+const COPY_SEEN = new Map<object, object>();
 /** The ball dead after a point before the walk back starts (1.7 s with walkBack off). */
 const POINT_DEAD_WALK = 1.2;
 /** After a change of ends, the extra dead time for the picture to dip before the cut (s). */
@@ -1717,6 +1720,16 @@ export class MatchSim {
   }
 
   /** Fingerprint of the full sim state (determinism checks). */
+  /**
+   * Become a copy of `src`, a match built with the same config: every field, the players, AIs, ball, net and random
+   * streams. Stepped on with the same human inputs it plays the same ticks (replays re-run a point from its start).
+   */
+  copyFrom(src: MatchSim): void {
+    COPY_SEEN.clear();
+    copyState(this, src, COPY_SEEN);
+    COPY_SEEN.clear();
+  }
+
   hash(): number {
     const h = new Hasher();
     const b = this.ball;

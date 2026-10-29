@@ -544,6 +544,13 @@ export class Avatar {
   private readonly standPose: Pose;
   private readonly allBones: Uint8Array;
   private standW = 0;
+  private cutPending = false;
+
+  /** The next frame draws another match, or another moment (a replay starts or ends): every filter starts afresh. */
+  cutNext(): void {
+    this.cutPending = true;
+    this.lastT = -1;
+  }
   private phase = 0;
   private idleClock = 0;
   private lastT = -1;
@@ -1492,7 +1499,8 @@ export class Avatar {
     const rx = this.root.position.x - this.lastRootX, rz = this.root.position.z - this.lastRootZ;
     this.lastRootX = this.root.position.x;
     this.lastRootZ = this.root.position.z;
-    const cut = rx * rx + rz * rz > 0.25;
+    const cut = rx * rx + rz * rz > 0.25 || this.cutPending;
+    this.cutPending = false;
     if (cut) this.resetInertia();
     // Serving: from the point's setup to the contact the address is the ready pose (side-on, the ball in hand).
     // (not while walking back to the places: sim.walking)

@@ -19,7 +19,7 @@ const TAPE_THICK = 0.006; // half thickness of the tape
 
 export class NetView {
   readonly group = new THREE.Group();
-  private readonly cloth: NetCloth;
+  private cloth: NetCloth;
   private readonly data: Float32Array;
   private readonly tex: THREE.DataTexture;
   private synced = false;
@@ -204,7 +204,9 @@ export class NetView {
   }
 
   /** Once a frame: the knots as they are at the render time (alpha between the last two ticks). */
-  update(_sim: MatchSim, alpha: number): void {
+  update(sim: MatchSim, alpha: number): void {
+    // (a replay draws its own match's net: the same court, so the same knots)
+    if (sim.net !== this.cloth) { this.cloth = sim.net; this.synced = false; }
     const c = this.cloth;
     if (c.awake) {
       this.fill(alpha);

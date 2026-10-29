@@ -9,6 +9,7 @@ import type { PlayerAsset } from '../render/avatar/asset.ts';
 import type { GameOptions } from '../game/game.ts';
 import { resolveKeys } from '../game/input/bindings.ts';
 import { qualityPreset } from '../render/quality.ts';
+import type { CameraPreset } from '../render/views.ts';
 import { type MatchSetup, type Settings, LEVEL_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
 
 /**
@@ -109,10 +110,17 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     fpsCap: num('fpscap', 0),
     closeCam: params.get('cam') ?? undefined,
     closeCamPlayer: num('camp', 0),
+    camera: cameraOf(params.get('camera')),
+    replays: params.get('replays') !== '0',
     avatar,
     // ?quality=auto: High with the dynamic resolution on, as the menus' Auto (perf runs measure it this way).
     prefs: { quality: qualityPreset(params.get('quality') === 'auto' ? 'high' : params.get('quality')), adapt: params.get('quality') === 'auto' },
   };
+}
+
+/** `?camera=` (render/views.ts CAMERA_PRESETS), else the broadcast camera. */
+function cameraOf(v: string | null): CameraPreset {
+  return v === 'near' || v === 'player' ? v : 'tv';
 }
 
 /** Sets and games for the menu's match lengths. */
@@ -169,6 +177,8 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
     pro: s.pro,
     bloom: params.get('bloom') !== '0',
     cutaway: params.get('cutaway') !== '0',
+    camera: s.camera,
+    replays: s.replays,
     mouseAim: s.mouseAim,
     runAhead: true,
     sound: true,
@@ -179,7 +189,7 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
     prefs: {
       volume: s.volume, crowd: s.crowd, shake: !calm, rumble: s.rumble, announce: s.announce,
       keys: resolveKeys(s.keys), quality: qualityPreset(auto ? 'high' : quality), adapt: auto, transitions: true,
-      pro: s.pro, mouseAim: s.mouseAim,
+      pro: s.pro, mouseAim: s.mouseAim, camera: s.camera, replays: s.replays,
     },
   };
 }

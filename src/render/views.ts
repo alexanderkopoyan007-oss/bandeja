@@ -82,6 +82,14 @@ export class BallView {
     scene.add(this.marker);
   }
 
+  /** The next frame draws another match or moment (replays): no trail carried over, no spin blur from the jump. */
+  cutNext(): void {
+    this.trailCount = 0;
+    this.lastTrailTime = -1;
+    this.lastSpinT = -1;
+    this.placedAt = -1;
+  }
+
   /** The server's routine bounce touched the floor this frame (serveBounce): the game plays its sound. */
   routineBounce = false;
   /** When everyone was last in place for the serve (sim time), for the server's routine bounces. */
@@ -223,6 +231,11 @@ export class PlayerView {
     this.root.add(ring);
   }
 
+  /** The next frame draws another match or moment (replays). */
+  cutNext(): void {
+    this.avatar?.cutNext();
+  }
+
   update(sim: MatchSim, p: Player, idx: number, alpha: number, renderTime: number): void {
     if (this.avatar) {
       this.avatar.update(sim, p, idx, alpha, renderTime);
@@ -279,6 +292,26 @@ export class PlayerView {
 const CAM_BACK = 15.5;
 const CAM_HEIGHT = 7.6;
 const FOV = 26;
+/**
+ * The camera choices (Settings > Camera; review round 3, critic High #4: there was one locked camera).
+ * - tv: the broadcast main camera above.
+ * - near: TV close, the same end camera nearer (8 m back, 7.8 m up, 36°): the players bigger, the far court flatter.
+ * - player: lower behind your end (6 m back, 5.8 m up, 44°), sliding with you (`follow` of your x) rather than with
+ *   the ball, as a game's player camera does.
+ * Every camera behind the glass sees the end wall's top, the mesh band from 3 to 4 m up, across the picture. Each
+ * keeps it where the broadcast camera does, between the near pair's heads (1.8 m, 1.5 m in from the glass) and the
+ * far pair's feet (1.5 m in from theirs): height under 0.8 x back + 3 and over 0.216 x back + 4. At 6.5 m back and
+ * 4.6 m up the far pair played behind the mesh. Each is also above the stadium's end stand where it stands (rows from
+ * 1.6 m behind the glass, 0.42 m up every 0.82 m: 2.7 m and heads at 3.9 m at 6 m back).
+ */
+export const CAMERA_PRESETS = {
+  tv: { back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0 },
+  near: { back: 8.0, height: 7.8, fov: 36, follow: 0 },
+  player: { back: 6.0, height: 5.8, fov: 44, follow: 0.55 },
+} as const;
+export type CameraPreset = keyof typeof CAMERA_PRESETS;
+/** The pan's response (s): 5% a 60 Hz frame, as it was a frame at any rate (critic Low #14: 2.4x faster at 144 Hz). */
+const PAN_LAG = 0.325;
 const KICK_DECAY = 0.09;
 /** Lob tilt: the ball kept this far (rad) below the top edge; the most the camera tilts up (rad); its lag (s). */
 const TILT_MARGIN = (2.5 * Math.PI) / 180;
@@ -327,6 +360,22 @@ export class BroadcastCamera {
   private kickAt = -1;
   private kickAmp = 0;
   private fovNow = FOV;
+  private back = CAM_BACK;
+  private height = CAM_HEIGHT;
+  private fov0 = FOV;
+  private follow = 0;
+  private lastPan = -1;
+  /** The player the 'player' camera slides with. */
+  followPlayer = 0;
+
+  /** Settings > Camera. */
+  setPreset(name: CameraPreset): void {
+    const p = CAMERA_PRESETS[name] ?? CAMERA_PRESETS.tv;
+    this.back = p.back;
+    this.height = p.height;
+    this.fov0 = p.fov;
+    this.follow = p.follow;
+  }
   private tilt = 0;
   private lastNow = -1;
 
@@ -337,6 +386,14 @@ export class BroadcastCamera {
   constructor(aspect: number, swingRise = 0) {
     this.camera = new THREE.PerspectiveCamera(FOV, aspect, 0.1, 300);
     this.swingRise = swingRise;
+  }
+
+  /** Something else pointed the camera (a replay): the next update sets its lens again and starts any cut-away afresh. */
+  retake(): void {
+    this.fovNow = -1;
+    this.cutOn = false;
+    this.lastNow = -1;
+    this.lastPan = -1;
   }
 
   /** The camera is swinging round at a change of ends. */
@@ -410,24 +467,29 @@ export class BroadcastCamera {
       this.angle = this.to;
     }
     const court = sim.world.court;
-    const Rz = court.halfL + CAM_BACK;
-    const Rx = court.halfW + CAM_BACK;
+    const Rz = court.halfL + this.back;
+    const Rx = court.halfW + this.back;
     const ballX = ball ? ball.x : 0;
-    this.lookX += (ballX * 0.12 - this.lookX) * 0.05;
+    const fx = this.follow > 0 ? sim.players[this.followPlayer]!.pos.x : 0;
+    // (on the match clock, as the tilt: stepped captures and pauses included)
+    const pdt = this.lastPan < 0 ? 0 : Math.min(0.1, Math.max(0, sim.time - this.lastPan));
+    const panWant = ballX * 0.12 * (1 - this.follow) + fx * this.follow;
+    this.lookX += (panWant - this.lookX) * (this.lastPan < 0 ? 1 : 1 - Math.exp(-pdt / PAN_LAG));
+    this.lastPan = sim.time;
     const ca = Math.cos(this.angle);
     const sa = Math.sin(this.angle);
     let jolt = 0;
-    let fov = FOV;
+    let fov = this.fov0;
     if (this.kickAt >= 0) {
       const u = now - this.kickAt;
       if (u > 0.35) this.kickAt = -1;
       else {
         const env = this.kickAmp * Math.exp(-u / KICK_DECAY);
         jolt = 0.02 * env * Math.sin(2 * Math.PI * 11 * u);
-        fov = FOV * (1 - 0.029 * env * Math.min(1, u / 0.03));
+        fov = this.fov0 * (1 - 0.029 * env * Math.min(1, u / 0.03));
       }
     }
-    const camY = CAM_HEIGHT + this.swingRise * swing + jolt;
+    const camY = this.height + this.swingRise * swing + jolt;
     const tx = this.lookX * ca * 0.8, ty = 0.35 + jolt * 0.5, tz = -ca * 1.1;
     this.camera.position.set(sa * Rx + this.lookX * ca, camY, ca * Rz - this.lookX * sa);
     this.camera.lookAt(tx, ty, tz);
@@ -444,7 +506,7 @@ export class BroadcastCamera {
       const ballPitch = Math.atan2(ball.y + lead - p.y, Math.sqrt(hx * hx + hz * hz));
       const vx = tx - p.x, vz = tz - p.z;
       const viewPitch = Math.atan2(ty - p.y, Math.sqrt(vx * vx + vz * vz));
-      const top = viewPitch + ((FOV / 2) * Math.PI) / 180 - TILT_MARGIN;
+      const top = viewPitch + ((this.fov0 / 2) * Math.PI) / 180 - TILT_MARGIN;
       tiltWant = Math.min(TILT_MAX, Math.max(0, ballPitch - top));
     }
     this.tilt += (tiltWant - this.tilt) * (dt > 0 ? 1 - Math.exp(-dt / (tiltWant > this.tilt ? TILT_LAG : TILT_LAG * 2)) : 0);
@@ -459,6 +521,74 @@ export class BroadcastCamera {
       this.fovNow = fov;
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
+    }
+  }
+}
+
+/**
+ * The replays' cameras (game/replay.ts), where a padel broadcast has its others, fixed where they stand and panning:
+ * 0 low behind the winning hitter's back glass, its lens against the glass (RP_BACK out, RP_LOW up) in the middle
+ * of a panel across from them (1.2 m back, the panel's posts swung into the picture as black bars); 1 a jib high
+ * over the side stands by the net (RP_SIDE out, RP_HIGH up: at 0.5 m out and 3.9 m up it looked flat across at the
+ * far glass). Both follow the ball with RP_LAG, a little ahead of it; the jib keeps RP_JIB_HITTER of its look on
+ * the hitter, so the shot and where it goes share the frame. Never looking above RP_LOOK_MAX (from the low camera
+ * a lob took the frame up into the roof). A cut, not a move, when a replay starts; each the other replay's angle.
+ */
+const RP_BACK = 0.35;
+const RP_LOW = 1.8;
+const RP_ACROSS = 0.5;
+const RP_SIDE = 3;
+const RP_HIGH = 6.5;
+const RP_FOV = [40, 44] as const;
+const RP_LAG = 0.12;
+const RP_LOOK_MAX = [1.5, 2.5] as const;
+const RP_JIB_HITTER = 0.35;
+
+export class ReplayCamera {
+  private on = false;
+  private lx = 0;
+  private ly = 0;
+  private lz = 0;
+  private camX = 0;
+  private sideX = 1;
+
+  /** The next replay starts with a cut. */
+  reset(): void {
+    this.on = false;
+  }
+
+  /** Point `camera` for the replay of `hitter`'s winner from `angle`, the ball drawn at `ball`; `dt` replay time. */
+  aim(camera: THREE.PerspectiveCamera, sim: MatchSim, hitter: number, angle: number, ball: THREE.Vector3, dt: number): void {
+    const court = sim.world.court;
+    const h = sim.players[hitter]!;
+    const s = h.pos.z >= 0 ? 1 : -1;
+    const v = sim.ball.vel;
+    // Where to look: the ball, a little ahead of it (the jib partly the hitter).
+    const hw = angle === 1 ? RP_JIB_HITTER : 0;
+    const ax = (ball.x + v.x * 0.08) * (1 - hw) + h.pos.x * hw;
+    const ay = (ball.y + v.y * 0.08) * (1 - hw) + 1.1 * hw;
+    const az = (ball.z + v.z * 0.08) * (1 - hw) + h.pos.z * hw;
+    if (!this.on) {
+      this.on = true;
+      this.lx = ax; this.ly = ay; this.lz = az;
+      // The panel's middle nearest across from the hitter (panels from the side wall, glassPanelWidth each).
+      const pw = court.def.backWall.glassPanelWidth;
+      const k = Math.round((-h.pos.x * RP_ACROSS + court.halfW - pw / 2) / pw);
+      this.camX = Math.max(-court.halfW + pw / 2, Math.min(court.halfW - pw / 2, -court.halfW + pw / 2 + k * pw));
+      this.sideX = h.pos.x >= 0 ? -1 : 1;
+    } else if (dt > 0) {
+      const a = 1 - Math.exp(-dt / RP_LAG);
+      this.lx += (ax - this.lx) * a;
+      this.ly += (ay - this.ly) * a;
+      this.lz += (az - this.lz) * a;
+    }
+    if (angle === 0) camera.position.set(this.camX, RP_LOW, s * (court.halfL + RP_BACK));
+    else camera.position.set(this.sideX * (court.halfW + RP_SIDE), RP_HIGH, s * 0.5);
+    camera.lookAt(this.lx, Math.min(RP_LOOK_MAX[angle]!, Math.max(0.6, this.ly)), this.lz);
+    const fov = RP_FOV[angle]!;
+    if (camera.fov !== fov) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
     }
   }
 }
