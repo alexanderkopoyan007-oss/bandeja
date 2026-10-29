@@ -82,24 +82,52 @@ export const BACKHAND: Family = {
   punch: 1,
 };
 
+/**
+ * The overheads, one action each (docs/research/serve-and-strokes-motion.md §2.5-2.6, §4.2; review round 2 found
+ * all of them sharing one square-on contact with only the finish apart).
+ * Bandeja: side-on at the trophy (shoulders about 90 degrees), still 50-60 degrees turned at contact, the contact at
+ * head height or a little above, level with the body; the face open about 25 degrees (a tray), a controlled finish
+ * in front at chest height, the body still half side-on.
+ */
 export const OVERHEAD: Family = {
   name: 'overhead',
   // Trophy position: side-on, racket up behind the head, the free hand pointing at the ball.
-  back: key(v(-0.32, 2.0, -0.32), v(0.05, 0.85, -0.5), v(-1, 0, 0.1), v(-0.65, 1.55, -0.2), -1.2, v(0.25, 2.1, 0.4)),
-  contact: key(v(-0.3, 2.45, 0.4), v(-0.2, 0.92, 0.32), v(0.02, 0.2, 1), v(-0.7, 1.65, 0.2), -0.15, v(0.3, 1.3, 0.2)),
-  // Bandeja finish: controlled, the racket ends in front at chest height.
-  finish: key(v(0.12, 1.15, 0.48), v(0.35, -0.2, 0.9), v(0.1, -0.6, 0.8), v(-0.4, 1.2, 0.3), 0.3, v(0.35, 1.1, 0)),
+  back: key(v(-0.32, 2.0, -0.32), v(0.05, 0.85, -0.5), v(-1, 0, 0.1), v(-0.65, 1.55, -0.2), -1.25, v(0.25, 2.1, 0.4)),
+  contact: key(v(-0.35, 2.0, 0.1), v(-0.18, 0.95, 0.22), v(0, 0.42, 0.91), v(-0.75, 1.55, -0.05), -0.95, v(0.35, 1.6, 0.3)),
+  finish: key(v(0.05, 1.2, 0.5), v(0.35, -0.15, 0.9), v(0.05, -0.55, 0.85), v(-0.45, 1.2, 0.25), -0.15, v(0.4, 1.15, 0.05)),
   dip: -0.05,
-  loop: 0.38,
+  loop: 0.32,
   crouch: 0,
   punch: 1,
 };
 
-/** Smash: same trophy and contact, but the racket comes right down past the left hip. */
+/**
+ * Víbora: the same footwork, the contact lower (shoulder to head height) and further out to the racket side, the
+ * face less open (10-15 degrees) and turned to cut the ball's outside, the path down 20-30 degrees and across the
+ * body to the free side with more trunk turn and the forearm pronating: a finish low by the free hip.
+ */
+export const VIBORA: Family = {
+  name: 'vibora',
+  back: key(v(-0.45, 1.85, -0.38), v(-0.1, 0.8, -0.58), v(-1, 0.05, 0.15), v(-0.7, 1.45, -0.25), -1.3, v(0.25, 1.95, 0.4)),
+  contact: key(v(-0.5, 1.7, 0.2), v(-0.55, 0.78, 0.28), v(0.3, 0.2, 0.93), v(-0.8, 1.35, 0), -0.7, v(0.35, 1.4, 0.25)),
+  finish: key(v(0.32, 0.92, 0.32), v(0.55, -0.55, 0.45), v(0.3, -0.45, 0.85), v(-0.15, 1.05, 0.4), 0.6, v(0.38, 1.05, -0.08)),
+  dip: 0.08,
+  loop: 0.28,
+  crouch: 0,
+  punch: 1,
+};
+
+/**
+ * Smash: a tennis serve's chain. A deeper trophy (racket dropped behind the back), then the whole body turns through:
+ * square to the net at contact at full reach, the face flat, and the racket comes right down past the free hip.
+ */
 export const SMASH: Family = {
   ...OVERHEAD,
   name: 'smash',
+  back: key(v(-0.34, 1.92, -0.42), v(0.08, 0.7, -0.7), v(-1, 0, 0.12), v(-0.7, 1.5, -0.25), -1.4, v(0.25, 2.15, 0.45)),
+  contact: key(v(-0.28, 2.45, 0.42), v(-0.15, 0.95, 0.27), v(0.02, 0.08, 1), v(-0.7, 1.7, 0.25), 0.05, v(0.3, 1.25, 0.15)),
   finish: key(v(0.38, 0.78, 0.12), v(0.6, -0.65, -0.3), v(0.2, -0.3, 0.9), v(-0.1, 1.0, 0.4), 0.75, v(0.35, 1.05, -0.1)),
+  loop: 0.38,
 };
 
 /**
@@ -278,7 +306,7 @@ function mirrorFamily(f: Family): Family {
 }
 
 const LEFT = new Map<Family, Family>();
-for (const f of [FOREHAND, BACKHAND, OVERHEAD, SMASH, SERVE, VOLLEY_FH, VOLLEY_BH, FH_SLICE, FH_LOB, FH_DROP, BH_SLICE, BH_LOB, BH_DROP,
+for (const f of [FOREHAND, BACKHAND, OVERHEAD, VIBORA, SMASH, SERVE, VOLLEY_FH, VOLLEY_BH, FH_SLICE, FH_LOB, FH_DROP, BH_SLICE, BH_LOB, BH_DROP,
   FH_CHIQUITA, BH_CHIQUITA, FH_CONTRA, BH_CONTRA]) {
   LEFT.set(f, mirrorFamily(f));
 }
