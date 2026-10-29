@@ -202,8 +202,9 @@ function line(a: V2, b: V2, n: number): V2[] {
 function outerDense(shape: string): V2[] {
   const head = headHalf(shape);
   const J = head[head.length - 1]!;
-  const Bn: V2 = [NECK_W + 0.001, NECK_Y + 0.014];
-  const half = chainRounded([head, line(J, Bn, 40), line(Bn, [NECK_W, NECK_Y], 6)], [0.022, 0.016]);
+  // The neck runs straight up from inside the finishing tape and only turns out into the arms above the tape.
+  const Bn: V2 = [NECK_W + 0.0005, NECK_Y + 0.021];
+  const half = chainRounded([head, line(J, Bn, 40), line(Bn, [NECK_W, NECK_Y], 8)], [0.022, 0.0095]);
   const right: V2[] = [];
   for (let x = 0; x < NECK_W - 1e-4; x += 0.003) right.push([x, NECK_Y]);
   for (let k = half.length - 1; k >= 1; k--) right.push(half[k]!);
@@ -687,6 +688,35 @@ function hole(b: Builder, cx: number, cy: number, r: number, n: number): void {
   }
 }
 
+/** The bridge's logo plate: a rounded rectangle standing PLATE_T proud of the band on each face (its print is the art's). */
+const PLATE_W = 0.026, PLATE_H = 0.0072, PLATE_T = 0.0005;
+export function plateCentre(s: { bridgeTop: number; bridgeBottom: number }): number {
+  return (s.bridgeTop + s.bridgeBottom + RC_H) / 2;
+}
+function plate(b: Builder, yc: number, n: number): void {
+  const out: V2[] = [];
+  const r = PLATE_H * 0.45, hw = PLATE_W / 2 - r, hh = PLATE_H / 2 - r;
+  for (const [cx, cy, a0] of [[hw, hh, 0], [-hw, hh, Math.PI / 2], [-hw, -hh, Math.PI], [hw, -hh, Math.PI * 1.5]] as const) {
+    for (let k = 0; k <= n; k++) {
+      const a = a0 + (Math.PI / 2) * (k / n);
+      out.push([cx + r * Math.cos(a), yc + cy + r * Math.sin(a)]);
+    }
+  }
+  for (const sgn of [1, -1]) {
+    flat(b, out, [], sgn * (T2 + PLATE_T), RK_FRAME);
+    const ids: number[] = [];
+    const nrm = leftNormals(out, true);
+    for (let i = 0; i < out.length; i++) {
+      const p = out[i]!, N = nrm[i]!;
+      ids.push(b.v(p[0], p[1], sgn * (T2 + PLATE_T), -N[0], -N[1], sgn * 0.6, RK_FRAME, sgn < 0), b.v(p[0], p[1], sgn * T2, -N[0], -N[1], 0, RK_FRAME, sgn < 0));
+    }
+    for (let i = 0; i < out.length; i++) {
+      const j = (i + 1) % out.length;
+      b.quad(ids[i * 2]!, ids[j * 2]!, ids[j * 2 + 1]!, ids[i * 2 + 1]!);
+    }
+  }
+}
+
 /** The step between the frame's band and the recessed face, along the face's edge (front and back). */
 function step(b: Builder, face: V2[]): void {
   const n = leftNormals(face, true);
@@ -857,9 +887,11 @@ function handle(b: Builder, cols: number, far: boolean): void {
   // Finishing tape: over the overgrip's end, flaring over the neck.
   const tr = HANDLE_R + GRIP_STEP * 0.5 + 0.0004;
   const tape: V2[] = far
-    ? [[tr, TAPE_Y0], [tr, -0.181], [0.0204, -0.1715], [0.0204, TAPE_Y1], [0.0197, TAPE_Y1 + 0.0004]]
+    ? [[tr, TAPE_Y0], [tr, -0.181], [0.0204, -0.1715], [0.0204, TAPE_Y1], [0.0197, TAPE_Y1 + 0.0004], [0.0148, TAPE_Y1 + 0.0008]]
     : [[tr - 0.0006, TAPE_Y0 - 0.0002], [tr, TAPE_Y0 + 0.0006], [tr, -0.182], [tr + 0.0005, -0.1785], [0.0198, -0.1745], [0.0203, -0.1715],
-      [0.0204, TAPE_Y1 - 0.0006], [0.0202, TAPE_Y1 + 0.0001], [0.0197, TAPE_Y1 + 0.0004]];
+      [0.0204, TAPE_Y1 - 0.0006], [0.0202, TAPE_Y1 + 0.0001], [0.0196, TAPE_Y1 + 0.0004],
+      // Wrapped over onto the neck (narrower than the tape across the face): closes the collar's top.
+      [0.0175, TAPE_Y1 + 0.0007], [0.0148, TAPE_Y1 + 0.0008]];
   lathe(b, tape, cols, RK_TAPE, (u, k) => ART.tapeUv(u, (tape[k]![1] - TAPE_Y0) / (TAPE_Y1 - TAPE_Y0)));
   // Butt cap: from under the grip's end, flaring out round the heel of the hand, rounding to the end plate.
   const cap: V2[] = far
@@ -899,6 +931,7 @@ function buildLevel(look: RacketLook, far: boolean): THREE.BufferGeometry {
   bumper(b, outer, into, look.bumper.span, far ? 16 : 40, far ? 6 : 10);
   // The band (frame, flush with the profile) round the face and the throat; the face a hair below it.
   for (const z of [T2, -T2]) flat(b, bandEdge, [face, heartEdge], z, RK_FRAME);
+  if (!far) plate(b, plateCentre(s), 4);
   if (far) {
     for (const z of [T2 - FACE_STEP, -(T2 - FACE_STEP)]) flat(b, face, [], z, RK_FACE_FAR);
   } else {
@@ -923,19 +956,22 @@ const VB = new THREE.Vector3();
 
 /**
  * Near and far levels by how large the racket is on screen: three's LOD measures plain distance; this scales it by
- * the lens (the broadcast camera's long lens sees a racket at 20 m as a 45-degree lens would at 11 m).
+ * the lens (the broadcast camera's long lens sees a racket at 20 m as a 45-degree lens would at 11 m). Each camera
+ * keeps its own choice (and hysteresis), so a spotlight's shadow pass can't flip the view's; orthographic (shadow)
+ * cameras leave the levels as the view set them.
  */
 export class RacketLod extends THREE.LOD {
+  private readonly farFor = new WeakMap<THREE.Camera, boolean>();
   override update(camera: THREE.Camera): void {
     const levels = this.levels;
-    if (levels.length < 2) return;
+    const pc = camera as THREE.PerspectiveCamera;
+    if (levels.length < 2 || !pc.isPerspectiveCamera) return;
     VA.setFromMatrixPosition(camera.matrixWorld);
     VB.setFromMatrixPosition(this.matrixWorld);
-    let d = VA.distanceTo(VB);
-    const pc = camera as THREE.PerspectiveCamera;
-    if (pc.isPerspectiveCamera) d *= Math.tan((pc.fov * Math.PI) / 360) / (TAN_REF * pc.zoom);
-    else return; // shadow cameras keep the view's choice
-    const far = levels[1]!.object.visible ? d > LOD_NEAR * 0.9 : d > LOD_NEAR;
+    const d = (VA.distanceTo(VB) * Math.tan((pc.fov * Math.PI) / 360)) / (TAN_REF * pc.zoom);
+    const was = this.farFor.get(camera) === true;
+    const far = was ? d > LOD_NEAR * 0.9 : d > LOD_NEAR;
+    if (far !== was) this.farFor.set(camera, far);
     levels[0]!.object.visible = !far;
     levels[1]!.object.visible = far;
     (this as unknown as { _currentLevel: number })._currentLevel = far ? 1 : 0;
@@ -952,7 +988,7 @@ function parts(look: RacketLook): Parts {
   const s = racketShape(look);
   const shape: ArtShape = {
     outer: s.outer, face: s.face, heart: s.heart, bridgeTop: s.bridgeTop, bridgeBottom: s.bridgeBottom, perimeter: polyLength(s.outer, true),
-    holes: s.holes, holeEdge: s.holeR + CHAMFER,
+    holes: s.holes, holeEdge: s.holeR + CHAMFER, plateY: plateCentre(s),
   };
   const art = racketArt(look, shape);
   const dims = { t2: T2, step: FACE_STEP, skin: SKIN_T, pitch: GRIP_PITCH, gripY0: GRIP_Y0 };
@@ -985,10 +1021,30 @@ export function makeRacketModel(look: RacketLook = RACKET_LOOKS[0]!): THREE.Grou
   return g;
 }
 
-/** Give an existing racket group (an avatar's) another look; anything else on it (the wrist cord) stays. */
+const CORDS = new Map<string, THREE.Material>();
+
+function cordFor(look: RacketLook): THREE.Material {
+  let m = CORDS.get(look.cord);
+  if (!m) { m = cordMaterial(look.cord); CORDS.set(look.cord, m); }
+  return m;
+}
+
+/**
+ * Give an existing racket group (an avatar's) another look. Anything else on it stays; the wrist cord takes the
+ * racket's colour, now and whenever the avatar swaps it for the other hand's.
+ */
 export function dressRacket(g: THREE.Group, look: RacketLook): void {
   for (const c of [...g.children]) if (c.userData.racketBody) g.remove(c);
   g.add(racketBody(look));
+  g.userData.racketLook = look;
+  const paint = (o: THREE.Object3D): void => {
+    if (o.name === 'cord') (o as THREE.Mesh).material = cordFor(g.userData.racketLook as RacketLook);
+  };
+  for (const c of g.children) paint(c);
+  if (!g.userData.cordHook) {
+    g.userData.cordHook = true;
+    g.addEventListener('childadded' as never, (e: { child: THREE.Object3D }) => paint(e.child));
+  }
 }
 
 /** Triangles and draw calls of one racket as drawn up close (tests, budgets). */

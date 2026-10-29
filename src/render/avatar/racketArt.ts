@@ -21,6 +21,8 @@ export interface ArtShape {
   /** Hole centres and the radius of each hole's edge on the face (with its chamfer). */
   holes: V2[];
   holeEdge: number;
+  /** The middle of the bridge's raised plate (y). */
+  plateY: number;
 }
 
 /** Pixels per metre on the face, the canvas's half width (m) and the face's top row (y, m). */
@@ -385,12 +387,11 @@ const split: Style = {
       ctx.lineWidth = mm(0.0012);
       ctx.lineJoin = 'round';
       ctx.font = `italic 900 ${Math.round(mm(0.027))}px ${SANS}`;
-      spaced(ctx, look.model, px(0), py(-0.048), mm(0.0016), 0, !m);
-      wordmark(ctx, 0.047, 0.0915, 0.0062, m ? maskCol(1, 0) : c.a);
-      ctx.fillStyle = m ? maskCol(1, 1) : '#8a93a3';
+      spaced(ctx, look.model, px(0), py(-0.0445), mm(0.0016), 0, !m);
+      wordmark(ctx, 0, -0.0605, 0.0058, m ? maskCol(1, 0) : '#ffffff');
+      ctx.fillStyle = m ? maskCol(1, 1) : c.c;
       ctx.font = `600 ${Math.round(mm(0.0026))}px ${SANS}`;
-      spaced(ctx, look.line, px(0.047), py(0.0835), mm(0.0004));
-      emblem(ctx, px(-0.047), py(0.092), mm(0.018), m ? maskCol(1, 1) : '#ffffff');
+      spaced(ctx, look.line, px(0), py(-0.0685), mm(0.0004));
     });
   },
 };
@@ -562,8 +563,16 @@ export function racketArt(look: RacketLook, s: ArtShape): RacketArt {
     ctx.lineWidth = mm(0.0007);
     path(ctx, offsetLoop(s.heart, -0.0045));
     ctx.stroke();
-    // The bridge's plate: the mark in foil.
-    emblem(ctx, px(0), py((s.bridgeTop + s.bridgeBottom) / 2 + 0.0015), mm(0.013), mk ? maskCol(1, 1) : '#d8d8dc');
+    // The bridge's plate (raised in the mesh): an edge in the accent, the mark in foil.
+    const yc = s.plateY;
+    ctx.lineWidth = mm(0.0006);
+    ctx.beginPath();
+    ctx.roundRect(px(-0.0128), py(yc + 0.0035), mm(0.0256), mm(0.007), mm(0.0032));
+    ctx.stroke();
+    emblem(ctx, px(-0.0062), py(yc - 0.0002), mm(0.0085), mk ? maskCol(1, 1) : '#d8d8dc');
+    ctx.fillStyle = mk ? maskCol(1, 1) : '#d8d8dc';
+    ctx.font = `800 ${Math.round(mm(0.0028))}px ${SANS}`;
+    spaced(ctx, 'PRO', px(0.0055), py(yc), mm(0.0005));
   });
   trims(p, look, s);
   const head = new THREE.CanvasTexture(cc as unknown as HTMLCanvasElement);

@@ -15,6 +15,8 @@ const T = +(process.env.AT ?? 8); // (not T: one-chrome.sh uses T for its queue 
 const SHOTS = [
   { name: 'hand-p0', q: 'cam=hand&camp=0' },
   { name: 'hand-p1', q: 'cam=hand&camp=1' },
+  { name: 'hand-p2', q: 'cam=hand&camp=2' },
+  { name: 'hand-p3', q: 'cam=hand&camp=3' },
   { name: 'body', q: 'cam=body&camp=0' },
   { name: 'tv', q: '' },
   { name: 'face', q: 'cam=hand&camp=0', studio: 'face' },

@@ -171,6 +171,17 @@ describe('rackets as drawn', () => {
     sh.updateMatrixWorld();
     lod.update(sh);
     expect(n.visible).toBe(true);
+    // A spotlight's shadow camera far away picks the far level for its pass, but the view's hysteresis is its own:
+    // just inside the switch the view still gets the near level after it.
+    at(5.8, 45);
+    expect(n.visible).toBe(true);
+    const spot = new THREE.PerspectiveCamera(60, 1, 0.5, 60);
+    spot.position.set(0, 20, 0);
+    spot.updateMatrixWorld();
+    lod.update(spot);
+    expect(f.visible).toBe(true);
+    lod.update(cam);
+    expect(n.visible).toBe(true);
   });
 
   it('dresses an avatar racket in another look and keeps its cord', () => {
