@@ -9,6 +9,7 @@ import { Arena, arenaDef } from '../render/arena/arena.ts';
 import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView, ReplayCamera, type CameraPreset } from '../render/views.ts';
 import { Replays, RP_IDLE, RP_PREP, RP_SHOW } from './replay.ts';
+import { dealNames, nameOf, type PlayerName } from './names.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
 import { DEFAULT_KEYS } from './input/bindings.ts';
@@ -205,6 +206,8 @@ export class Game {
   private readonly replayCam = new ReplayCamera();
   private replayShown = false;
   private replayPad = 0;
+  /** The players' names, dealt from the match's seed (game/names.ts). */
+  names: PlayerName[] = [];
   private overAt = -1;
   private overDoneAt = -1;
   private overSkip = false;
@@ -295,11 +298,9 @@ export class Game {
     this.feedback = new Feedback(this.pad, this.cam);
     this.feedback.shake = prefs.shake !== false;
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
-    // Score rows name the players: YOU, and each AI by its playing style.
-    const who = (i: number, short: boolean): string => {
-      const st = this.sim.ai[i]?.style;
-      return !opts.autoplay && i === opts.human ? 'YOU' : st ? (short ? st.short : st.name) : `P${i + 1}`;
-    };
+    // Score rows name the players: YOU, and each AI by the name dealt from the seed (game/names.ts).
+    this.names = dealNames(opts.match.seed ?? 0, this.sim.players.length);
+    const who = (i: number, short: boolean): string => (!opts.autoplay && i === opts.human ? 'YOU' : nameOf(this.names[i]!, short));
     const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
     const names: [string, string] = [row(0), row(1)];
     this.hud = new Hud(hudRoot, names, sets);
@@ -466,11 +467,15 @@ export class Game {
 
   start(): void {
     if (!this.opts.autoplay) {
-      // Who you are playing (and with).
-      const name = (i: number): string => this.sim.ai[i]?.style.name ?? `Player ${i + 1}`;
-      const sub = this.sim.doubles ? `Your partner: ${name(this.opts.human ^ 2)}` : '';
+      // Who you are playing (and with): the names dealt, their nations, and their playing styles as nicknames.
+      const name = (i: number): string => `${nameOf(this.names[i]!, false)} (${this.names[i]!.nation})`;
+      const style = (i: number): string => this.sim.ai[i]?.style.name ?? '';
       const them = 1 - this.team;
+      const mate = this.opts.human ^ 2;
       const title = this.sim.doubles ? `vs ${name(them)} & ${name(them + 2)}` : `vs ${name(them)}`;
+      const sub = this.sim.doubles
+        ? `${style(them)} & ${style(them + 2)} · Your partner: ${name(mate)}, ${style(mate)}`
+        : style(them);
       this.hud.announce(title, sub, performance.now() / 1000, 3);
     }
     this.epoch = performance.now() - this.sim.time * 1000;

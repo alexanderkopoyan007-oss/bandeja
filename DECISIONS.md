@@ -2158,3 +2158,21 @@ Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`,
   - Screenshots in real Chrome (stadium, hall, club-day) show the whole court in every preset.
 - **Critic Low #14 (pan by frame rate):** the pan now eases on the match clock (`PAN_LAG` 0.325 s: 5% of a 60 Hz frame,
   as before), not 5% a frame, so it no longer runs 2.4× faster at 144 Hz.
+
+## Review round 3, critic Highs #6 and #7: the key help over the court, and the exhibition feel (2026-10-29)
+- **#6, the key help panel** (500 × 390 px over the near right quarter, all match):
+  - It now folds away when the first point ends, as the TV package's starts hidden (tv.ts hides it by class).
+  - A hint pill (the existing hint style, nothing new to look at) then says "H shows the controls" for 4 s.
+  - Folded once, it starts folded in later matches (`localStorage` `bandeja.help.v1`). Pressing H chooses for good.
+  - This changes when the panel shows, not how it looks; the owner can still say otherwise.
+  - Checked in the dev page: shown before the first point, folded at 6.26 s when it ended, hint up, choice stored.
+- **#7, the exhibition** (AIs named only by their style):
+  - **Fixed now:** every AI is dealt a made-up first name, surname and nation from the match's seed
+    (`src/game/names.ts`). The pools are common names of ten padel countries, weighted towards Spain and Argentina.
+  - No surname of a well-known professional is ever dealt (`PRO_SURNAMES`, 107 names), and names are paired at
+    random. tests/app/names.test.ts checks 2000 seeds for that, for distinct surnames, and that 8+ nations appear.
+  - The style stays as the nickname: "vs Nicolás Medina (ARG) & João Correia (POR)", then "La Serpiente &
+    Martillo · Your partner: Rubén Cano (ESP), La Serpiente". The score rows read "YOU · R. Cano", and the results
+    card names the opponents by surname.
+  - **Left for the roadmap** (OPEN_QUESTIONS): careers, tournaments, unlocks and online play are whole milestones,
+    not a fix.

@@ -18,6 +18,25 @@ import { DEFAULT_KEYS, keyName } from '../game/input/bindings.ts';
 const CALL_TEXT = ['Mine!', 'Yours!', 'Switch!'];
 
 const TIMING = tuning.timing;
+/** How long the hint that H brings the folded key help back stays up (s). */
+const HELP_HINT_SECS = 4;
+const HELP_KEY = 'bandeja.help.v1';
+
+/** The key help's last state ('open' | 'folded'), kept between visits; storage can be missing or throw. */
+function readHelp(): string | null {
+  try {
+    return localStorage.getItem(HELP_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeHelp(v: string): void {
+  try {
+    localStorage.setItem(HELP_KEY, v);
+  } catch {
+    // (not kept: the next match shows it again until its first point)
+  }
+}
 
 export const HUD_CSS = `
 #hud { --display: "Avenir Next Condensed", "DIN Condensed", "Arial Narrow", system-ui, sans-serif;
@@ -197,6 +216,8 @@ export class Hud {
     this.ms = root.appendChild(el('div', 'ms'));
     this.hint = root.appendChild(el('div', 'hint'));
     this.help = root.appendChild(el('div', 'help'));
+    // Folded by an earlier match (foldHelp): it starts hidden.
+    if (readHelp() === 'folded') this.help.style.display = 'none';
     this.replay = root.appendChild(el('div', 'replay'));
     this.replay.innerHTML = 'REPLAY<small>Enter skips</small>';
     this.setKeys(DEFAULT_KEYS, false);
@@ -237,6 +258,7 @@ export class Hud {
     this.hintLob = `Lob coming · ${tap ? 'press' : 'hold'} ${c('overhead')} for an overhead`;
     this.hintBajada = `High off the glass · ${tap ? 'press' : 'hold'} ${c('overhead')} for a bajada, with ${pw} smash it down`;
     this.hintPartner = `Partner's ball · ${tap ? 'press' : 'hold'} a shot key to take it`;
+    this.hintHelp = `${keys('[H]')} shows the controls`;
     this.serveSub = tap ? `${lr} aims · tap a shot key: the serve is timed for you` : `${lr} aims · press a shot key to drop · release to hit`;
     // Shown again with the new words.
     this.cache.delete(this.hint);
@@ -278,7 +300,29 @@ export class Hud {
     const hidden = this.help.style.display === 'none' || (this.root.classList.contains('tvmode') && !this.help.classList.contains('shown'));
     this.help.style.display = hidden ? '' : 'none';
     this.help.classList.toggle('shown', hidden);
+    // The player's choice, kept for the next match (and no fold this match).
+    this.helpChosen = true;
+    writeHelp(hidden ? 'open' : 'folded');
   }
+
+  /**
+   * Review round 3, critic High #6: the key help covered the near right quarter of the court, where the human or their
+   * partner plays, for the whole match. It folds away once the first point is over (as the TV package's starts
+   * hidden), with a hint for a few seconds that H brings it back; folded, it stays so for later matches. Pressing H
+   * chooses for good.
+   */
+  private foldHelp(now: number): void {
+    this.helpFolded = true;
+    if (this.helpChosen || this.help.style.display === 'none') return;
+    this.help.style.display = 'none';
+    this.help.classList.remove('shown');
+    this.helpHintUntil = now + HELP_HINT_SECS;
+    writeHelp('folded');
+  }
+  private helpChosen = false;
+  private helpFolded = false;
+  private helpHintUntil = -1;
+  private hintHelp = '';
 
   private set(e: HTMLElement, text: string, html = false): void {
     if (this.cache.get(e) === text) return;
@@ -356,6 +400,7 @@ export class Hud {
       else if (st.valid && st.contra) hint = 'Contrapared · turn and play it up into your own glass';
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }
+    if (!hint && now < this.helpHintUntil && sim.phase !== PH_RALLY) hint = this.hintHelp;
     // (HTML of our own strings and key names escaped by cap())
     if (hint) this.set(this.hint, hint, true);
     if (!!hint !== this.hintOn) { this.hintOn = !!hint; this.toggle(this.hint, 'on', this.hintOn); }
@@ -421,6 +466,7 @@ export class Hud {
         this.exitDoor = e.a === 1;
         break;
       case E_POINT: {
+        if (!this.helpFolded) this.foldHelp(now);
         const who = team < 0 ? (e.team === 0 ? 'Near side' : 'Far side') : e.team === team ? 'Your point' : 'Their point';
         const accent = team < 0 ? '#ffffff' : hex(e.team === team ? PAL.good : PAL.textBad);
         if (e.a === WHY_EXIT_AFTER_BOUNCE) {

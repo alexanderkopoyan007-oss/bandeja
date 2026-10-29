@@ -422,8 +422,10 @@ export class App {
       ['Serve points won', pct(T[0].servesWon, T[0].serves), pct(T[1].servesWon, T[1].serves)],
       ['Fastest ball', `${Math.round(T[0].fastest)} km/h`, `${Math.round(T[1].fastest)} km/h`],
     ];
+    // The opponents by the surnames dealt them (game/names.ts).
+    const them = sim.doubles ? `${g.names[1]?.last ?? ''} · ${g.names[3]?.last ?? ''}` : (g.names[1]?.last ?? 'Opponent');
     const side = `<div class="card"><h2>${mins} min · longest rally ${st.longestRally} shots</h2><table>`
-      + `<tr><td class="l"></td><td class="w">${sim.doubles ? 'Your pair' : 'You'}</td><td class="w">${sim.doubles ? 'Opponents' : 'Opponent'}</td></tr>`
+      + `<tr><td class="l"></td><td class="w">${sim.doubles ? 'Your pair' : 'You'}</td><td class="w">${them}</td></tr>`
       + rows.map((r) => `<tr><td class="l">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('') + '</table></div>';
     return {
       id: 'results', title: won ? 'You win' : sim.doubles ? 'They win' : 'You lose', sub: `Game, set and match · ${sets}`, back: null, side: () => side,
