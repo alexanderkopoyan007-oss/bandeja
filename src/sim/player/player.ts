@@ -72,6 +72,11 @@ export class Player {
    * for an AI (data/ai-skill.json glassWait). Fixed for the match.
    */
   glassWait = 1;
+  /**
+   * The speed (m/s) an overhead may still be moving at when it is met (planStand, the AI's run): 0 for a human (the
+   * assist stops at the spot), data/ai-skill.json ohArrive for an AI. Fixed for the match.
+   */
+  ohArrive = 0;
 
   /** Bounds of the half this player may move in (set each point from the current ends). */
   minX = -4.7;

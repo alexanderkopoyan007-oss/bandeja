@@ -35,7 +35,7 @@ const BAJADA_HARD = 0.45;
 const BAJADA_NET = 0.4;
 /** Chance a pair follows its chiquita in to the net, per unit of the style's net. */
 const CHIQ_NET = 0.35;
-const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; bajada: number[] };
+const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; ohArrive: number; bajada: number[] };
 /** A value by level: v holds it at evenly spaced levels from 0 to 1 (two or more), interpolated linearly between. */
 function byLevel(v: number[], level: number): number {
   const n = v.length - 1;
@@ -59,6 +59,8 @@ export class SimpleAi {
   readonly level: number;
   /** Player.glassWait for this AI (data/ai-skill.json glassWait). */
   readonly glassWait = SKILL.glassWait;
+  /** Player.ohArrive for this AI (data/ai-skill.json ohArrive). */
+  readonly ohArrive = SKILL.ohArrive;
   planVersion = -1;
   reactAt = 0;
   /**
@@ -447,7 +449,12 @@ export class SimpleAi {
     if (!chase && v > easy) v = easy;
     if (v > top) v = top;
     const stop = sqrt(2 * t.brake * 0.8 * d);
-    if (v > stop) v = stop;
+    if (v > stop) {
+      // Short of time for an overhead: arrive still moving (Player.ohArrive; planStand counted on it).
+      const va = p.ohArrive;
+      const late = chase && this.overhead && need > stop ? sqrt(va * va + 2 * t.brake * 0.8 * d) : stop;
+      v = v > late ? late : v;
+    }
     const want = v / top;
     f.moveX = (dx / d) * want * s;
     f.moveY = -(dz / d) * want * s;
@@ -846,9 +853,14 @@ export class SimpleAi {
       // Flat and hard, mostly down the line (men 77.7%: Sánchez-Alcaraz et al. 2020), landing as short as a straight
       // line from the contact clears the tape with margin, so the bounce kicks up into the glass and can leave the
       // court (por tres) or come back over the net: the shortest landing the untouched human smash aims at.
+      // Close in and high, a put-away for the side glass by the opponents' service line: steep enough that the
+      // kick off the back glass carries it out over the side (por tres; the probe's out-of-court winners all came
+      // from contacts inside 3.5 m landing 3.3-3.7 m out from the middle).
       const me = m.players[this.index]!;
-      x = rng.next() < 0.75 ? (me.pos.x >= 0 ? 1 : -1) * spread * (0.55 + 0.35 * rng.next()) : (a.pos.x + b.pos.x) * 0.5;
-      depth = smashDepth(m, this.conDepth, this.conHeight) + 0.6 * rng.next();
+      const putAway = this.conDepth < SMASH_X3_DEPTH && this.conHeight >= SMASH_X3_HEIGHT;
+      x = putAway ? (me.pos.x >= 0 ? 1 : -1) * spread * (0.82 + 0.13 * rng.next())
+        : rng.next() < 0.75 ? (me.pos.x >= 0 ? 1 : -1) * spread * (0.55 + 0.35 * rng.next()) : (a.pos.x + b.pos.x) * 0.5;
+      depth = smashDepth(m, this.conDepth, this.conHeight) + (putAway ? 0.3 : 0.6) * rng.next();
     } else if (this.shot === SHOT_BANDEJA) {
       // Deep into a corner, so the ball sits down off the back glass.
       x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.5 + 0.4 * rng.next());
@@ -895,6 +907,9 @@ function smashDepth(m: MatchSim, back: number, h: number): number {
   return smashLanding(c.netHeightAt(0), back, h, SMASH_MARGIN, SMASH_MIN, c.halfL - 2.0);
 }
 const SMASH_MARGIN = 0.45;
+/** A smash met this close (m from the net) and this high (m) is a put-away aimed for the side glass (por tres). */
+const SMASH_X3_DEPTH = 4.5;
+const SMASH_X3_HEIGHT = 2.2;
 const SMASH_MIN = 3.2;
 /** A smash landing this short (m from the net) kicks off the glass hard enough to be a winner. */
 const KILL_DEPTH = 6.0;

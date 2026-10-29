@@ -1665,3 +1665,40 @@ cut the ball's outside, finishing low by the free hip; the smash with a deeper t
 the face flat. The avatar picks the víbora from the overhead key with precision or the AI's intent. Measured
 (`tools/out/r2-bajada-anim.ts`, 10 seeds x 300 s): chest to the net at contact bandeja 53 degrees (research 50-60),
 víbora 38, smash 5 (all 0 before, i.e. square); racket to ball at contact p50 2.0 / 2.2 / 4.3 cm as before.
+
+### Review round 2, High #2: the overhead game
+A net pair let a deep lob go to the glass rather than take it in the air: against a pair at the net 59% of lobs were
+answered overhead in the air and 22% off the back glass, and of the lobs landing 7-8 m from the net 9% were taken in
+the air (`tools/out/r3-lob-reply.ts`). The planner found the in-air contact 0-0.1 s out of time for the better-placed
+player (`r3-lob-cand.ts`) for two reasons:
+- Every overhead was planned 0.3 m in front of the body, so the stand spot sat 0.3 m deeper than a bandeja needs.
+  Sánchez-Alcaraz et al. 2021 measured the bandeja's contact level with the centre of gravity (-0.01 m) and the
+  smash's 0.45 m in front. Each overhead now stands where it is met (`data/tuning.json` overheadFront*: bandeja 0,
+  víbora 0.2, smash 0.45, the first read 0.15).
+- Every overhead had to come to a stop first. Players take a deep lob's bandeja or smash still drifting back (the
+  smash's scissor kick is struck going backwards). An AI's overhead may now arrive at up to 1.5 m/s
+  (`Player.ohArrive`, data/ai-skill.json). The planner counts only the braking down to that speed, and the run
+  allows it only when the time left asks. The shot's moving error (shots.json swing) pays for it. 1.5 is an
+  estimate: no speed at contact is published.
+After: 75% of lobs against a net pair are taken overhead in the air and 7% go off the glass.
+
+Smashes came back: 80-89% of those met 4-6 m from the net were returned off the glass, because they were hit flat
+from 2.36 m (median) and landed short and low. The smash was planned at 2.42 m, which is under a player's reach:
+standing reach is about 1.33 x stature (2.36 m at 1.80 m) and the racket's centre adds about 0.25 m at full
+stretch. It is now planned at 2.55 m (no padel study gives the contact height). Out-of-court winners doubled in the
+probe (`r3-smash.ts`): 5% to about 8-11% of smashes. A put-away from inside 4.5 m and above 2.2 m is aimed at the
+side glass near the opponents' service line (every out-of-court winner in the probe came from there).
+- Fewer lobs reach the glass, so the bajada had fewer chances. Before, it came mostly from lobs that passed a net
+  pair; only 21% of bajada plans were played as one. Its chance at level 1 goes from 0.25 to 0.9, so the top
+  level takes nearly every one it can.
+- The contrapared test now counts a contrapared as deep from 6.0 m (was 6.5). Planned with the glass 0.75-2.8 m
+  behind, an early release met one at 6.4 m after the RNG stream moved.
+
+Measured (`node tools/match-stats.ts --points 2000 --level 1 --seed0 501`, docs/review/match-stats-l1-r2fix2.txt),
+before → after, pros in brackets:
+- In points (WPT 2020): bandeja 33.3% → 42.1% (44-48), smash 27.6% → 30.7% (flat 30-33, x3 7-8), bajada 14.5% →
+  13.3% (14-17).
+- Back-wall shots 21.2% → 17.1% of all shots (12.8).
+- Last shot of winners: smash 25.3% → 32.7% (43), volley 50.0% → 45.7% (28).
+- Smash winners 28.8% → 34.8% (45). Out-of-court winners 5.1% → 7.8% of winners (17). Shots per second 0.76 → 0.79
+  (0.80), seconds per point 14.8 → 13.9.

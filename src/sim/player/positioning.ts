@@ -3,7 +3,7 @@
 // which contact you are going for. Pure sim code, allocation-free.
 import type { Prediction } from '../ball/predict.ts';
 import type { Player } from './player.ts';
-import { heightCost, nearImpact, overheadCost, volleyCost, OH_ANY } from '../contact/windows.ts';
+import { heightCost, nearImpact, overheadCost, volleyCost, OH_ANY, OH_BANDEJA, OH_SMASH, OH_VIBORA } from '../contact/windows.ts';
 import { abs, clamp, max, sqrt } from '../core/smath.ts';
 
 export interface StandPlan {
@@ -124,7 +124,11 @@ export function planStand(
   // and volleyReach from it (see data/tuning.json; the timing windows use the same distances).
   // (max: a front distance in the data longer than the reach would make the plan NaN; the data keeps it shorter.)
   const lateral = overhead ? t.overheadReach : sqrt(max(0, t.reachComfort * t.reachComfort - t.contactFront * t.contactFront));
-  const behind = overhead ? 0.3 : t.contactFront;
+  // (an overhead stands where its kind is met: data/tuning.json overheadFront*)
+  const behind = !overhead ? t.contactFront : ohKind === OH_BANDEJA ? t.overheadFrontBandeja
+    : ohKind === OH_SMASH ? t.overheadFrontSmash : ohKind === OH_VIBORA ? t.overheadFrontVibora : t.overheadFrontAny;
+  // An overhead may be met still moving (Player.ohArrive, an AI's): only the braking down to that speed counts.
+  const va = overhead ? p.ohArrive : 0;
   // (read here, not in the rare volley-key branch: a value read only there deoptimised the function when it came)
   const vFront = t.volleyFront;
   const latV = overhead ? lateral : sqrt(max(0, t.volleyReach * t.volleyReach - vFront * vFront));
@@ -179,7 +183,10 @@ export function planStand(
       // Stopping at the spot takes v / 2a beyond running through it (braking at 0.8 of the limit, as the AI and
       // the assist do).
       // A volley is met on the move if need be (a stretch volley): no stop, no setting the feet.
-      need = volleyKey ? p.runT + 0.03 : p.runT + p.runV / (1.6 * t.brake) + (dist > 0.4 ? (kept ? 0.05 : 0.1) : 0.05);
+      // Arriving at va instead: (v - va)^2 / 2av.
+      const rv = p.runV;
+      const brk = rv > va ? (rv - va) * (rv - va) / (1.6 * t.brake * rv) : 0;
+      need = volleyKey ? p.runT + 0.03 : p.runT + brk + (dist > 0.4 ? (kept ? 0.05 : 0.1) : 0.05);
     }
     const slack = ti - now - need;
     const afterWall = pr.walls[i]! > 0 && b === 1;
