@@ -6,6 +6,7 @@ import { Rng } from './core/rng.ts';
 import { DT, TEAM_NEAR } from './core/constants.ts';
 import { Hasher } from './core/hash.ts';
 import { abs, clamp, max, min, sqrt } from './core/smath.ts';
+import { V3 } from './core/v3.ts';
 import { SURF_GLASS, WALL_SIDE_LEFT, WALL_SIDE_RIGHT } from './court/court.ts';
 import { Score, SIDE_RIGHT, SIDE_LEFT, DEFAULT_FORMAT, EV_GAME, EV_SET, EV_MATCH, EV_CHANGE_ENDS, type MatchFormat } from './rules/score.ts';
 import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
@@ -145,6 +146,19 @@ const MEET_MAX = 1.2;
 const WALK_SPEED = 2.2;
 const WALK_MAX = 5;
 const WALK_DONE = 0.06;
+/**
+ * After match point (PH_OVER, MatchSim.overStage): the ball is left to fall and everyone reacts where they stand for
+ * OVER_REACT s (1); then both pairs walk to the net (2) at WALK_SPEED, each to their lane (OVER_LANE m off the middle
+ * in doubles, the middle in singles) OVER_NET m back from it, within OVER_WALK_MAX s; across it each touches rackets
+ * with the opponent in their lane for OVER_TAP s (3), the padel custom at the end of a match; then they step back
+ * from the net to OVER_BACK m and stand (4; rackets hanging at their sides would otherwise touch the net).
+ */
+const OVER_REACT = 1.6;
+const OVER_LANE = 1.25;
+const OVER_NET = 0.4;
+const OVER_WALK_MAX = 7;
+const OVER_TAP = 1.3;
+const OVER_BACK = 0.9;
 /** The ball dead after a point before the walk back starts (1.7 s with walkBack off). */
 const POINT_DEAD_WALK = 1.2;
 /** After a change of ends, the extra dead time for the picture to dip before the cut (s). */
@@ -222,6 +236,19 @@ export class MatchSim {
   }
   /** Distance left from walkDrive (a field: a returned double would be boxed). */
   private walkD = -0;
+  /** walkDrive's target (fields, as walkD). */
+  private walkTX = -0;
+  private walkTZ = -0;
+  /**
+   * After match point (see OVER_*): 0 not over yet, 1 reacting, 2 walking to the net, 3 touching rackets across it,
+   * 4 done. Each player's spot at the net (overX/Z) and the opponent across from them (overMate).
+   */
+  overStage = 0;
+  private overUntil = -0.5;
+  readonly overX: Float64Array;
+  readonly overZ: Float64Array;
+  readonly overMate: Int32Array;
+  private readonly overAt = new V3();
   serveNo = 1;
   tossIdeal = 0;
   tossEnd = 0;
@@ -279,6 +306,9 @@ export class MatchSim {
     this.walkHomeX = new Float64Array(n);
     this.walkHomeZ = new Float64Array(n);
     this.walkHomeF = new Float64Array(n);
+    this.overX = new Float64Array(n);
+    this.overZ = new Float64Array(n);
+    this.overMate = new Int32Array(n);
     this.world = makeWorld(cfg.world);
     this.net = makeNetCloth(this.world);
     this.ball.cloth = this.net;
@@ -485,8 +515,15 @@ export class MatchSim {
       tx = (p.pos.x + q.pos.x) * 0.5 + ex * MEET_GAP * 0.5;
       tz = (p.pos.z + q.pos.z) * 0.5 + ez * MEET_GAP * 0.5;
     }
-    const dx = tx - p.pos.x;
-    const dz = tz - p.pos.z;
+    this.walkTX = tx;
+    this.walkTZ = tz;
+    this.steerWalk(p);
+  }
+
+  /** Walk player p towards (walkTX, walkTZ), braking to a stop on it; the distance left in walkD. */
+  private steerWalk(p: Player): void {
+    const dx = this.walkTX - p.pos.x;
+    const dz = this.walkTZ - p.pos.z;
     const d = sqrt(dx * dx + dz * dz);
     this.walkD = d;
     if (d < 0.04) { p.driveX = 0; p.driveZ = 0; return; }
@@ -501,6 +538,64 @@ export class MatchSim {
     const want = v / p.qTop;
     p.driveX = (dx / d) * want;
     p.driveZ = (dz / d) * want;
+  }
+
+  /** One tick after match point (see OVER_*), for every player (instead of their inputs). */
+  private overStep(): void {
+    const n = this.players.length;
+    if (this.overStage === 1 && this.time >= this.overUntil) this.overTargets();
+    const stage = this.overStage;
+    let far = 0;
+    for (let i = 0; i < n; i++) {
+      const p = this.players[i]!;
+      p.clock = this.time;
+      let d = 0;
+      if (stage === 2 || stage === 4) {
+        this.walkTX = this.overX[i]!;
+        this.walkTZ = stage === 2 ? this.overZ[i]! : this.overZ[i]! * (OVER_BACK / OVER_NET);
+        this.steerWalk(p);
+        d = this.walkD;
+        if (d > WALK_DONE) far++;
+      } else {
+        p.driveX = 0;
+        p.driveZ = 0;
+      }
+      p.move();
+      // Watching the ball fall, then looking where they walk, then at the opponent across the net.
+      const at = this.overAt;
+      if (stage === 1) at.copy(this.ball.pos);
+      else if (stage === 2 && d > 0.6) at.set(this.overX[i]!, 0, this.overZ[i]!);
+      else at.copy(this.players[this.overMate[i]!]!.pos);
+      p.faceTowards(at);
+    }
+    if (stage === 2 && (far === 0 || this.time >= this.overUntil)) {
+      this.overStage = 3;
+      this.overUntil = this.time + OVER_TAP;
+    } else if (stage === 3 && this.time >= this.overUntil) this.overStage = 4;
+  }
+
+  /** Each player's spot at the net and the opponent across from them (stage 2 starts). */
+  private overTargets(): void {
+    const n = this.players.length;
+    for (let i = 0; i < n; i++) {
+      const p = this.players[i]!;
+      // Where they are, not side(): nobody changes ends after the last game.
+      const s = p.pos.z >= 0 ? 1 : -1;
+      let x = 0;
+      if (this.doubles) {
+        const q = this.players[i ^ 2]!;
+        x = p.pos.x > q.pos.x || (p.pos.x === q.pos.x && i < 2) ? OVER_LANE : -OVER_LANE;
+      }
+      this.overX[i] = x;
+      this.overZ[i] = s * OVER_NET;
+    }
+    for (let i = 0; i < n; i++) {
+      let m = i ^ 1;
+      for (let j = 1 - (i & 1); j < n; j += 2) if (this.overX[j] === this.overX[i]) m = j;
+      this.overMate[i] = m;
+    }
+    this.overStage = 2;
+    this.overUntil = this.time + OVER_WALK_MAX;
   }
 
   /** Some player of the team is human. */
@@ -546,8 +641,17 @@ export class MatchSim {
     }
 
     if (this.phase === PH_OVER) {
+      // After match point: nobody plays on. The ball falls and the net settles; the players play the end of the
+      // match out (overStep).
+      this.overStep();
+      this.stepBall(DT, t0);
+      if (!this.ballCoupled && this.net.awake) this.net.freeTick();
       this.time = t1;
       this.tick++;
+      for (let i = 0; i < n; i++) {
+        const p = this.players[i]!;
+        if (p.swing === SW_RECOVER && this.time >= p.recoverUntil) p.swing = SW_IDLE;
+      }
       return;
     }
 
@@ -1570,6 +1674,8 @@ export class MatchSim {
       if (ev & EV_MATCH) {
         this.emit(E_MATCH, this.pendingPointWinner);
         this.phase = PH_OVER;
+        this.overStage = 1;
+        this.overUntil = this.time + OVER_REACT;
         return;
       }
       if ((ev & EV_CHANGE_ENDS) !== 0 && this.cfg.walkBack !== false) {
@@ -1630,6 +1736,8 @@ export class MatchSim {
     h.num(this.tossBounces).num(this.tossBX).num(this.tossBZ);
     h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut);
     for (let i = 0; i < this.players.length; i++) h.num(this.walkHomeX[i]!).num(this.walkHomeZ[i]!).num(this.walkHomeF[i]!);
+    h.num(this.overStage).num(this.overUntil);
+    for (let i = 0; i < this.players.length; i++) h.num(this.overX[i]!).num(this.overZ[i]!).num(this.overMate[i]!);
     const st: number[] = [];
     this.score.writeState(st);
     this.rally.writeState(st);

@@ -2067,3 +2067,34 @@ Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`,
   - Recolouring the rim turned the whole court red. Swapping a material in and out drew it.
   - Real Chrome draws the lines from the start. Judge lines and lighting from `tools/shot.mjs`, not a freshly
     loaded pane.
+
+## Review round 3, critic High #1: the match ended on a freeze-frame (2026-10-29)
+- **Reproduced in code:** `MatchSim.step` only advanced the clock in PH_OVER, so the ball hung where it was and the
+  players stood still. `Score` also changed ends after the last set when its games were odd, so the camera swung round
+  for a change of ends nobody would play. game.ts showed the results 3.2 s later.
+- **Fix: the match is played out** (`MatchSim.overStage`, the `OVER_*` constants in match.ts):
+  1. The ball falls and the net settles: PH_OVER steps the ball and the net's free motion, as the dead ball does.
+     Everyone reacts where they stand for 1.6 s. The winners play the celebrate clip, the losers the dejected one;
+     the last striker's reaction carries on.
+  2. Both pairs walk to the net at the walk-back's 2.2 m/s, each player to their lane (1.25 m off the middle, the
+     middle in singles), 0.4 m back from it. They carry the racket and face where they walk.
+  3. Each touches rackets across the net with the opponent in their lane for 1.3 s. This is the walk-back's partner
+     tap (`racketTap`), aimed at `overMate`. Touching rackets or shaking hands at the net is the custom at the end of
+     a padel match.
+  4. They step back to 0.9 m and stand. At 0.4 m, rackets hanging at their sides touched the net in the captures.
+  - The players stand upright from match point on (`standW`). The idle's ready crouch gives way to the celebrate
+    clip's first frame (arms down, the racket hanging from the hand). In the first captures all four bowed at each
+    other over the net in a ready crouch.
+  - It takes 4.8-7.6 s over 16 seeds (`tools`-style probe: the walk is 1.8-4.7 s from where the point ended).
+- **The ends** stay put after the last set (`Score.pointWon`: no flip and no EV_CHANGE_ENDS when the match is won),
+  so nobody announces a change of ends and the camera doesn't swing.
+- **Camera:** the cut-away frames the winners through their reaction and walk (`sim.score.winner` in PH_OVER). Then it
+  cuts to a shot along the net as the rackets touch (`NET_SHOT_*`). That shot is by the side glass on the losers'
+  half, so the winners face it. The cut-away now finds a pair's half from where the pair stands, not from `side()`.
+- **Results:** they come 1.5 s after stage 4, at most 14 s after match point. Enter or Space skips to them from 0.8 s,
+  so a key pressed for the last shot is not a skip.
+- **Tests:** `tests/sim/matchEnd.test.ts` checks doubles and singles. The sequence must reach stage 4 and the ends
+  must stay the same. The ball must not be left in the air. Every player must end on their own side, 0.9 m from the
+  net and in their lane, facing the opponent across from them. The sequence must be deterministic.
+- **Captures:** seed 11, `sets=1&games=2&scoring=golden`, stepped at 0.3-8.4 s after match point. They show the
+  racket raised, the walk, both pairs at the net, the tap and the step back.

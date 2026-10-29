@@ -31,6 +31,11 @@ import { QUALITY, type QualityPreset } from '../render/quality.ts';
 import { displayPeriod, stopDisplaySample } from '../render/display.ts';
 
 const MAX_TICKS_PER_FRAME = 12;
+/** After match point: the results come OVER_HOLD_MS after the players have played the end out (MatchSim.overStage 4),
+ * at the latest OVER_MAX_MS after it; Enter or Space skips to them from OVER_SKIP_AFTER_MS. */
+const OVER_HOLD_MS = 1500;
+const OVER_MAX_MS = 14000;
+const OVER_SKIP_AFTER_MS = 800;
 
 export interface GameOptions {
   match: MatchConfig;
@@ -188,6 +193,8 @@ export class Game {
   /** The match is over and its last call has been shown. */
   onMatchOver: ((stats: MatchStats) => void) | null = null;
   private overAt = -1;
+  private overDoneAt = -1;
+  private overSkip = false;
   private overSent = false;
   /** Render scale under the preset's pixel ratio (1 = full); adapted when frames run long (prefs.adapt). */
   renderScale = 1;
@@ -320,6 +327,8 @@ export class Game {
     else if (code === 'KeyH') this.hud.toggleHelp();
     else if (code === 'KeyP') this.setPro(!this.hud.pro);
     else if (code === 'KeyM') this.mouseAim = !this.mouseAim;
+    // (not at once: a key pressed for the last shot is not a skip)
+    else if ((code === 'Enter' || code === 'Space') && this.overAt >= 0 && performance.now() - this.overAt > OVER_SKIP_AFTER_MS) this.overSkip = true;
   }
 
   /** Pro mode: no closing ring, meter, trail or bounce marker. */
@@ -671,10 +680,13 @@ export class Game {
     this.stats.update(this.sim);
     this.transitions?.update(this.sim, team, now / 1000);
     this.announcer?.update(this.sim, team);
-    // The match is over: once its last call has been up a while, the app shows the results.
+    // The match is over: the players play it out (MatchSim.overStage: reactions, the walk to the net, rackets
+    // touched across it), then the app shows the results. Enter or Space skips to them (overSkip).
     if (this.sim.phase === PH_OVER && !this.overSent) {
       if (this.overAt < 0) this.overAt = now;
-      else if (now - this.overAt > 3200 && this.onMatchOver) {
+      if (this.sim.overStage >= 4 && this.overDoneAt < 0) this.overDoneAt = now;
+      const done = this.overDoneAt >= 0 && now - this.overDoneAt > OVER_HOLD_MS;
+      if ((done || this.overSkip || now - this.overAt > OVER_MAX_MS) && this.onMatchOver) {
         this.overSent = true;
         this.onMatchOver(this.stats);
         if (this.disposed) return;

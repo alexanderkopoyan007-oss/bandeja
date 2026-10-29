@@ -2,7 +2,7 @@
 import * as THREE from 'three/webgpu';
 import { PAL, gradeColour } from '../ui/palette.ts';
 import type { MatchSim } from '../sim/match.ts';
-import { PH_RALLY, PH_SETUP, PH_TOSS } from '../sim/match.ts';
+import { PH_OVER, PH_RALLY, PH_SETUP, PH_TOSS } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
 import { PF_FLOOR } from '../sim/ball/predict.ts';
 import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
@@ -296,6 +296,15 @@ const CUT_POST = 0.7;
 const CUT_NET = 0.8;
 const CUT_FOV = 34;
 const CUT_LAG = 0.35;
+/**
+ * After match point the cut-away frames the winners as they react and walk to the net (MatchSim.overStage 1-2), then
+ * cuts to a shot along the net (NET_SHOT_*: from by the side glass, NET_SHOT_Z onto the losers' half so the winners
+ * face it) as both pairs touch rackets across it.
+ */
+const NET_SHOT_IN = 0.35;
+const NET_SHOT_HEIGHT = 1.6;
+const NET_SHOT_Z = 1.9;
+const NET_SHOT_FOV = 40;
 
 /** Broadcast camera high behind the back glass of the human's end; swings round smoothly at changes of ends. */
 export class BroadcastCamera {
@@ -308,6 +317,7 @@ export class BroadcastCamera {
   private cutX = 0;
   private cutZ = 0;
   private cutSide = 1;
+  private netShot = false;
   private angle = 0;
   private from = 0;
   private to = 0;
@@ -348,11 +358,17 @@ export class BroadcastCamera {
   /** The cut-away's pose for this frame (see CUT_*); returns its field of view. A cut, not a move, when it starts. */
   private cutaway(sim: MatchSim, dt: number): number {
     const court = sim.world.court;
-    const ti = sim.doubles ? 2 : 1;
+    const net = sim.phase === PH_OVER && sim.overStage >= 3;
+    const ti = net ? 1 : sim.doubles ? 2 : 1;
     let mx = 0, mz = 0;
-    for (let i = this.cutTeam; i < sim.players.length; i += ti) { mx += sim.players[i]!.pos.x; mz += sim.players[i]!.pos.z; }
-    const n = sim.doubles ? 2 : 1;
+    for (let i = net ? 0 : this.cutTeam; i < sim.players.length; i += ti) { mx += sim.players[i]!.pos.x; mz += sim.players[i]!.pos.z; }
+    const n = net ? sim.players.length : sim.doubles ? 2 : 1;
     mx /= n; mz /= n;
+    // The pair's half from where they are (nobody changes ends after match point).
+    let wz = 0;
+    for (let i = this.cutTeam; i < sim.players.length; i += sim.doubles ? 2 : 1) wz += sim.players[i]!.pos.z;
+    const side = wz >= 0 ? 1 : -1;
+    if (net !== this.netShot) { this.netShot = net; this.cutOn = false; }
     if (!this.cutOn) {
       this.cutOn = true;
       this.cutX = mx;
@@ -364,7 +380,11 @@ export class BroadcastCamera {
       this.cutX += (mx - this.cutX) * a;
       this.cutZ += (mz - this.cutZ) * a;
     }
-    const side = sim.side(this.cutTeam);
+    if (net) {
+      this.camera.position.set(this.cutSide * (court.halfW - NET_SHOT_IN), NET_SHOT_HEIGHT, -side * NET_SHOT_Z);
+      this.camera.lookAt(this.cutX, 1.2, this.cutZ);
+      return NET_SHOT_FOV;
+    }
     this.camera.position.set(this.cutSide * (court.halfW - CUT_POST), CUT_HEIGHT, side * CUT_NET);
     this.camera.lookAt(this.cutX, 1.15, this.cutZ);
     return CUT_FOV;
@@ -429,9 +449,10 @@ export class BroadcastCamera {
     }
     this.tilt += (tiltWant - this.tilt) * (dt > 0 ? 1 - Math.exp(-dt / (tiltWant > this.tilt ? TILT_LAG : TILT_LAG * 2)) : 0);
     if (this.tilt > 1e-5) this.camera.rotateX(this.tilt);
-    const pw = sim.pointWinner;
+    const over = sim.phase === PH_OVER;
+    const pw = over ? sim.score.winner : sim.pointWinner;
     if (pw >= 0) this.cutTeam = pw;
-    if (BroadcastCamera.cutaways && sim.walking > 0 && this.turnStart < 0) {
+    if (BroadcastCamera.cutaways && (sim.walking > 0 || over) && this.turnStart < 0) {
       fov = this.cutaway(sim, dt);
     } else this.cutOn = false;
     if (fov !== this.fovNow) {

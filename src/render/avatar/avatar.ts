@@ -3,7 +3,7 @@
 // moment) and the racket in the right hand. Reads the sim only. Allocation-free per frame.
 import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../../sim/match.ts';
-import { PH_DEAD, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
+import { PH_DEAD, PH_OVER, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
 import { MOD_POWER, MOD_PRECISION, SHOT_BANDEJA, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH, SHOT_TOPSPIN, SHOT_VIBORA } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
@@ -362,6 +362,7 @@ const TAP_HOLD = 0.75;
 const TAP_TURN = 0.8;
 /** How far towards the carry key (CARRY) the racket goes while walking back. */
 const CARRY_W = 0.9;
+const STAND_EASE = 0.4;
 const WALL_EASE = 0.2;
 /** How far the head turns from the chest to watch the ball (rad), and the neck's share of it. */
 const LOOK_YAW = 1.25;
@@ -536,6 +537,13 @@ export class Avatar {
   private warpOff = 0;
   private readonly pose: Pose;
   private readonly tmp: Pose;
+  /**
+   * After match point nobody stands ready: the idle's ready crouch gives way (standW, eased over STAND_EASE s) to an
+   * upright stand (standPose: the celebrate clip's first frame, arms down, the racket hanging from the hand).
+   */
+  private readonly standPose: Pose;
+  private readonly allBones: Uint8Array;
+  private standW = 0;
   private phase = 0;
   private idleClock = 0;
   private lastT = -1;
@@ -779,6 +787,8 @@ export class Avatar {
     this.nb = asset.bones.length;
     this.pose = new Pose(this.nb);
     this.tmp = new Pose(this.nb);
+    this.standPose = new Pose(this.nb);
+    this.allBones = new Uint8Array(this.nb).fill(1);
     this.bones = asset.bones.map((d) => {
       const b = new THREE.Bone();
       b.name = d.name;
@@ -880,6 +890,8 @@ export class Avatar {
       celebrate: asset.clip('celebrate'),
       dejected: asset.clip('dejected'),
     };
+    this.standPose.t = 0;
+    sampleClip(this.clips.celebrate, this.standPose);
     this.upper = new Uint8Array(this.nb);
     const spineIdx = asset.bone('Spine');
     for (let i = 0; i < this.nb; i++) {
@@ -1426,6 +1438,13 @@ export class Avatar {
     if (move < 1) {
       tmp.t = this.idleClock;
       sampleClip(this.clips.idle, tmp);
+      const sw = this.standW;
+      if (sw > 0) {
+        const st = this.standPose;
+        st.w = sw;
+        blendMasked(tmp, st, this.allBones);
+        for (let k = 0; k < 3; k++) tmp.hips[k] = tmp.hips[k]! + (st.hips[k]! - tmp.hips[k]!) * sw;
+      }
       tmp.w = 1 - move;
       accumulate(acc, tmp);
     }
@@ -1486,8 +1505,10 @@ export class Avatar {
     this.racketTap(sim, idx, p, dt);
     let want = this.addr ? 1 : this.on ? 0.85 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
     if (want < this.tapW) want = this.tapW;
-    // Walking back: the racket carried (CARRY), not swung with the arms; eased in and out (carryW).
-    this.carryW += ((placed ? 0 : 1) - this.carryW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.2) : 0);
+    // Walking back (and to the net after match point): the racket carried (CARRY), not swung with the arms; eased in
+    // and out (carryW).
+    const carry = !placed || (sim.phase === PH_OVER && sim.overStage === 2);
+    this.carryW += ((carry ? 1 : 0) - this.carryW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.2) : 0);
     if (this.carryW < 0.001) this.carryW = 0;
     if (want < CARRY_W * this.carryW) want = CARRY_W * this.carryW;
     this.ready += (want - this.ready) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
@@ -1531,6 +1552,8 @@ export class Avatar {
     this.root.rotation.y = yRoot;
 
     this.yRoot = yRoot;
+    this.standW += ((sim.phase === PH_OVER ? 1 : 0) - this.standW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / STAND_EASE) : 0);
+    if (this.standW < 0.001) this.standW = 0;
     this.locomote(p);
     this.reaction(sim, idx, t);
     this.splitStep(p, t);
@@ -1681,12 +1704,14 @@ export class Avatar {
 
   /**
    * After a point the partners meet as they walk back (MatchSim.walking 1) and touch rackets: within TAP_NEAR m of
-   * each other, for TAP_HOLD s, each turns towards the other with the racket up in front (TAP).
+   * each other, for TAP_HOLD s, each turns towards the other with the racket up in front (TAP). After match point
+   * each does the same with the opponent across the net (MatchSim.overStage 3).
    */
   private racketTap(sim: MatchSim, idx: number, p: Player, dt: number): void {
     let want = 0;
-    if (sim.doubles && sim.walking === 1) {
-      const q = sim.players[idx ^ 2]!;
+    const net = sim.phase === PH_OVER && sim.overStage === 3;
+    if ((sim.doubles && sim.walking === 1) || net) {
+      const q = sim.players[net ? sim.overMate[idx]! : idx ^ 2]!;
       const mx = q.pos.x - p.pos.x, mz = q.pos.z - p.pos.z;
       if (mx * mx + mz * mz < TAP_NEAR * TAP_NEAR) {
         this.tapT += dt;
@@ -1841,7 +1866,10 @@ export class Avatar {
     this.head.updateMatrixWorld(true);
   }
 
-  /** Reaction clips on the upper body while the ball is dead after a point. */
+  /**
+   * Reaction clips on the upper body while the ball is dead after a point (its last striker), and after match point
+   * (everyone: the winners celebrate, the losers hang their heads; the last striker's carries on).
+   */
   private reaction(sim: MatchSim, idx: number, t: number): void {
     const phase = sim.phase;
     if (phase === PH_DEAD && this.lastPhase !== PH_DEAD) {
@@ -1853,12 +1881,20 @@ export class Avatar {
         this.reactFrom = mine ? 0.4 : 0.9;
         this.reactStart = t;
       }
+    } else if (phase === PH_OVER && this.lastPhase !== PH_OVER) {
+      const mine = (idx & 1) === sim.score.winner;
+      const clip = mine ? this.clips.celebrate : this.clips.dejected;
+      if (this.react !== clip) {
+        this.react = clip;
+        this.reactFrom = mine ? 0.4 : 0.9;
+        this.reactStart = t;
+      }
     }
     this.lastPhase = phase;
     if (!this.react) return;
     const rt = t - this.reactStart;
     // (it carries on into the walk back, which starts 1.2 s after the point)
-    const live = phase === PH_DEAD || sim.walking > 0;
+    const live = phase === PH_DEAD || sim.walking > 0 || (phase === PH_OVER && sim.overStage === 1);
     const w = smoothstep(0, 0.2, rt) * (1 - smoothstep(1.25, 1.55, rt)) * (live ? 1 : 0);
     if (rt > 1.6 || !live) { this.react = null; return; }
     const tmp = this.tmp;

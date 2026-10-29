@@ -191,8 +191,10 @@ export class Score {
       ev |= EV_SET;
       this.history.push([this.games[0]!, this.games[1]!]);
       this.sets[setWinner]!++;
-      // Ends change after an odd total of games in the set (a tie-break counts as one game).
-      if (gamesInSet % 2 === 1) {
+      const over = this.sets[setWinner] === this.format.setsToWin;
+      // Ends change after an odd total of games in the set (a tie-break counts as one game); not after the last
+      // set, when nobody plays on (the players stay where they are: presentation reads the ends).
+      if (gamesInSet % 2 === 1 && !over) {
         this.ends ^= 1;
         ev |= EV_CHANGE_ENDS;
       }
@@ -200,7 +202,7 @@ export class Score {
       this.games[1] = 0;
       this.serviceGames[0] = 0;
       this.serviceGames[1] = 0;
-      if (this.sets[setWinner] === this.format.setsToWin) {
+      if (over) {
         this.winner = setWinner;
         return ev | EV_MATCH;
       }
