@@ -51,6 +51,43 @@ export function buildHall(root: THREE.Group, def: ArenaDef, court: Court): Arena
   for (let z = -h.z + 2.5; z < h.z; z += 5) for (const x of [-4, 4]) glow.box(x, h.height + 0.3, z, 1.2, 0.06, 0.35, '#ffffff');
   // LEDs far brighter than white (HDR): they bloom (render/post.ts).
   root.add(glow.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1, 1, 1).multiplyScalar(5) })));
+  // The shed's ends clad from GABLE_FROM up to the roof (review round 3, critic Medium #12: from the game camera the
+  // far end showed only grass, trees and sky, and the hall read as an outdoor club). The end the camera looks in
+  // from is left out: it would cut across the top of the picture (the camera stands outside the shed, and on the
+  // change of ends it swings round to the other end, so the far one shows and the near one hides).
+  const gableMat = new THREE.MeshStandardMaterial({ color: h.wall, roughness: 0.85, side: THREE.DoubleSide });
+  const shape = new THREE.Shape();
+  shape.moveTo(-h.x, GABLE_FROM);
+  shape.lineTo(h.x, GABLE_FROM);
+  shape.lineTo(h.x, h.height);
+  shape.lineTo(0, h.height + rise);
+  shape.lineTo(-h.x, h.height);
+  shape.closePath();
+  const gableGeo = new THREE.ShapeGeometry(shape);
+  // Each with steel cladding rails every 1.2 m and a strip of dark clerestory glazing along its foot, so it reads
+  // as a wall and not as a flat grey sky.
+  const railMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.3 });
+  const gables = [1, -1].map((s) => {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(gableGeo, gableMat));
+    const b = new BoxBatch();
+    b.box(0, GABLE_FROM + 0.4, -s * 0.05, h.x * 2, 0.8, 0.06, '#3a4450');
+    for (let y = GABLE_FROM + 1.4; y < h.height; y += 1.2) b.box(0, y, -s * 0.05, h.x * 2, 0.07, 0.08, '#9aa1a8');
+    for (let x = -h.x + 5; x < h.x; x += 5) b.box(x, (GABLE_FROM + h.height) / 2, -s * 0.08, 0.22, h.height - GABLE_FROM, 0.12, steel);
+    g.add(b.mesh(railMat));
+    g.position.z = s * h.z;
+    root.add(g);
+    return g;
+  });
   // Daylight past the open sides: the club's grass, trees and sky.
-  return { sky: buildScenery(root, def) };
+  return {
+    sky: buildScenery(root, def),
+    update(_t: number, _m: unknown, cam?: THREE.Vector3): void {
+      // (no camera: the change-of-ends swing, where both show)
+      for (let k = 0; k < 2; k++) gables[k]!.visible = !cam || cam.z * (k === 0 ? 1 : -1) < h.z;
+    },
+  };
 }
+
+/** How high the shed's end cladding comes down to (m): under the camera's eye line at the far end (6 m there). */
+const GABLE_FROM = 4.2;
