@@ -1592,9 +1592,13 @@ hitter's own back glass after the bounce as its own class, the bajada.
   light and the difference is the light on the shirt, so the game tints each seat's shirt exactly (B + tint x light,
   in linear light) from the old palette of mostly dark and neutral tops. The clothes are plain materials (their
   textures carry logos). In the game (`render/arena/crowd.ts`) each seat is one quad that turns to face the camera,
-  shows the nearest angle (half the seats mirrored, so 24 looks), sits so the hips are on the seat, claps as the
-  rally's excitement rises and stands a step forward at the big moments (seat by seat, by hash), and is not drawn
-  when seen from behind (no back view; the stand under the TV camera). Traps: three applies the instance matrix
+  shows the nearest angle (half the seats mirrored, so 24 looks), sits so the hips are on the seat, and is not drawn
+  when seen from behind (no back view; the stand under the TV camera). What the crowd does follows the point
+  (`game/crowdMood.ts`, the same judgement as the crowd's sound in `audio/soundscape.ts`). Through a point it sits
+  and leans with the rally. After the point it applauds, more for a long rally, and about half stand for a winning
+  smash or víbora, a ball played out of the court, a long rally won, a set or the match. The applause decays over
+  2.6 s and the standing over 1.8 s, seat by seat by hash. The first cut clapped as the rally grew, which no crowd
+  does mid-point. Traps: three applies the instance matrix
   before `positionNode`, so `positionLocal` there already holds the seat's translation (the first build drew every
   sprite scaled by its seat's coordinates: giants across the court); Blender's `image.pixels` of a 16-bit PNG are
   only the stored values with the colour space set to Non-Color; the system Python has no numpy (packing runs in

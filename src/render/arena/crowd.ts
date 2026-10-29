@@ -77,9 +77,11 @@ export function buildCrowd(stands: Spectator[][], mood: THREE.UniformNode<'vec3'
       tint.set([c.r, c.g, c.b], i * 3);
     }
     const g = geo.clone();
-    g.setAttribute('where', new THREE.InstancedBufferAttribute(where, 4));
-    g.setAttribute('who', new THREE.InstancedBufferAttribute(who, 4));
-    g.setAttribute('tint', new THREE.InstancedBufferAttribute(tint, 3));
+    // Attribute names become WGSL identifiers: a reserved word ('where' was the first name here) fails the
+    // pipeline on WebGPU alone, and the game never starts (tests/render/attributeNames.test.ts).
+    g.setAttribute('seatAt', new THREE.InstancedBufferAttribute(where, 4));
+    g.setAttribute('seatWho', new THREE.InstancedBufferAttribute(who, 4));
+    g.setAttribute('shirtTint', new THREE.InstancedBufferAttribute(tint, 3));
     const im = new THREE.InstancedMesh(g, mat, n);
     const m4 = new THREE.Matrix4();
     for (let i = 0; i < n; i++) im.setMatrixAt(i, m4.makeTranslation(list[i]!.x, list[i]!.y, list[i]!.z));
@@ -90,8 +92,8 @@ export function buildCrowd(stands: Spectator[][], mood: THREE.UniformNode<'vec3'
   }
 
   // ---- vertex: turn to the camera, pick the pose and the angle --------------------------------------------------
-  const where = attribute<'vec4'>('where');
-  const who = attribute<'vec4'>('who');
+  const where = attribute<'vec4'>('seatAt');
+  const who = attribute<'vec4'>('seatWho');
   const person = who.x, scale = who.y, drop = who.z, mirror = who.w;
   const toCam = cameraPosition.xz.sub(where.xz);
   const b = atan(toCam.x, toCam.y); // the camera's bearing from the seat, as a yaw
@@ -131,7 +133,7 @@ export function buildCrowd(stands: Spectator[][], mood: THREE.UniformNode<'vec3'
   // Atlas coordinates (the image's top row is v = 1): the quad's u mirrored for mirrored seats.
   const u = select(mirror.lessThan(0), float(1).sub(uv().x), uv().x);
   const auv = varying(vec2(col.add(u).div(L.cols), float(1).sub(row.add(float(1).sub(uv().y)).div(L.rows))));
-  const tintV = varying(attribute<'vec3'>('tint'));
+  const tintV = varying(attribute<'vec3'>('shirtTint'));
 
   // ---- fragment: the person, their shirt tinted -------------------------------------------------------------------
   const px = texture(base, auv);
