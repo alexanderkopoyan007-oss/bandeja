@@ -93,3 +93,59 @@ Evidence used:
 A critic would mark these down in a commercial release; the roadmap has them after this brief. Instant replays of
 the last point from other angles (M7: the sim is deterministic, so a point is its seed and inputs), commentary (M7
 audio), a character creator and rackets to choose (M5), career, tournaments and an academy (M6), online play (stretch).
+
+## Round 3
+
+Two reviews written blind on phase9 at 875fa99, then marked against rounds 1-2. The full reports, with every
+probe, capture list and REPEAT/NEW note, are `docs/review/round3-pro.md` and `docs/review/round3-critic.md`.
+- **Pro:** 2000 points at level 1 (`--seed0 901`), and 1000 at level 0.5. Probes of returns, lobs, overheads and back-court
+  volleys (`tools/out/r3p-*`). 19 captures.
+- **Critic:**
+  - 46 captures and 12 frame sequences, in every arena, court, floor and camera.
+  - A contact probe on two 150 s matches.
+  - The app from title to results, and human play.
+  - The audio reel. The critic could not listen to it.
+- Nothing was Critical. Below, P = the pro's numbers, C = the critic's. The fixes and their measurements are in
+  DECISIONS.md under "Review round 3".
+
+| # | Rank | Reviewer | Finding | Evidence | Mark | Status |
+|---|---|---|---|---|---|---|
+| 1 | High | Pro P1 | **Back-court defenders volley deep bandejas off their shins** instead of letting them come off the glass. | 58.3% of bandeja replies taken on the full from 7.0 m at 0.62 m. Volleys from more than 6 m out were 6.5% of shots. Cause: round 1's `glassWait` 0 for the AI. | NEW, caused by round 1 #3's fix | Fixed: the cost is judged at the contact spot. Volleyed bandeja replies 58.9% → 36.5%, now mostly by net players. Volleys from over 6 m 6.5% → 2.5% |
+| 2 | High | Pro P2 | **Returns go at the net player**, not the incoming server. | The server's partner played 60% of flat returns. Pros: 71.9% go at the server. | NEW | Fixed: flat returns played by the server 36% → 75% |
+| 3 | High | Pro P3 | **The lob doesn't swap roles.** | The lob made 19.2% of net-takes from both-back. Pros: 60.6%. After a lob got past, the lobbers were both up 27% of the time. | NEW | Fixed (`lobFollow`): 51% of net-takes. Lobbers both up after a lob that gets past: 99% |
+| 4 | High | Pro P4 | **Backhands and back-glass shots are played square to the net.** | Chest to the net at contact: backhand 13°, backhand off the glass 19°, forehand off it 6°. | NEW | Fixed: 63°, 78°, 48°. Backhand volleys 61°. animQa checks it |
+| 5 | High | Critic C1 | **A match ends on a freeze-frame.** The ball hangs in the air, the players stand still, the camera swings round for a change of ends, then the menu comes up. | k-end-00..03; match.ts PH_OVER only advanced the clock. | NEW | Fixed: the match is played out. The ball falls, everyone reacts, both pairs walk to the net and touch rackets, then step back. A net camera shot. No end swap. Skippable |
+| 6 | High | Critic C2 | **The racket misses the ball** on about one contact in twelve (11 of 132 over 15 cm). The worst are low balls. | The critic's contact probe; sheet-misses. | NEW | Better: 24 → 17 of 640 contacts over 10 cm. Over 15 cm: 1.25% of contacts (left-handed smashes hop now; bandejas and víboras hop too). The low-ball half-volley case is left as Medium #20 |
+| 7 | High | Critic C3 | **Legs come apart at the shorts' hem.** A hole at the back of the knee, saw-tooth skin flaps. | crop-knees from the game's own cut-away; sheet-serve-knees. | REPEAT R2 #12 | Fixed: skin 6 cm up inside the hem and the hem flared 4 mm. 63 of 64 sectors have skin above the hem. people.test.ts checks it all round the leg |
+| 8 | High | Critic C4 | **One locked camera and no replays.** | views.ts; nothing in src made a replay. | REPEAT (rounds 1-2 "later milestones") | Fixed: instant replays of big points. Each is an exact re-sim from a copy of the match, with two alternating angles and slow motion round the winning shot, about 7-14% of points. Camera presets TV / TV close / Player in Settings |
+| 9 | High | Critic C5 | **The night court is blown out** to a lime slab, and its lines nearly vanish. | Line-to-turf contrast 1.07 at night against 1.87 by day. | NEW | Fixed: floods 95 → 16, contrast 1.86. nightLight.test.ts checks it |
+| 10 | High | Critic C6 | **The key help panel covers the near-right quarter all match.** | d-match-start, d-game-05. | REPEAT R2 #10 | Fixed: it folds when the first point ends, a hint says H brings it back, and the choice is remembered. The owner to see (OPEN_QUESTIONS) |
+| 11 | High | Critic C7 | **It is an exhibition game:** AIs are named by their style, and there is no career, tournament or online play. | d-title, d-setup, d-match-start. | REPEAT R2 #18 | Names fixed: made-up names and nations dealt from the seed, never a pro's surname; the style stays as a nickname. Career, tournaments and online play are roadmap items (M6, stretch) |
+| 12 | Medium | Pro P5 | **Too few short points.** | 1-4 s points 13.1% (pros 26). Over 11 s 48.6% (pros 26). | REPEAT R1 #5, R2 #6 | Open |
+| 13 | Medium | Pro P6 | **The serve is a soft placement to the middle.** | Side glass 31.9% (pros 64.6). 65 km/h. No double faults in 101 second serves. | NEW; faults REPEAT R1 #8 / R2 #13 | Open |
+| 14 | Medium | Pro P7 | **The víbora is a slower, lower bandeja.** | 64.7 km/h against the bandeja's 70.7. | NEW | Open |
+| 15 | Medium | Pro P8 | **The styles' net trait doesn't show.** | Muro 40.8% at the net against Martillo's 33.1% head to head. | NEW | Open |
+| 16 | Medium | Pro P9 | **Points still end the wrong way.** | Net errors 58% (pros 51). Volley winners 39.6% (28.4). Bandeja and víbora winners 5.7% (12.7). Forced errors 25.5% (29-33). | REPEAT R1 #6, R2 #3 | Open |
+| 17 | Medium | Pro P10 | **Singles is a glass-hitting contest.** | 35.6% of points end with a ball into the glass on the full; 49.5% on the narrow court. | NEW | Open |
+| 18 | Medium | Critic C8 | **Every point is followed by the same single cut-away shot.** | sheet-between. | NEW | Open. The match end adds a net shot, and replays add two angles |
+| 19 | Medium | Critic C9 | **No voice anywhere:** no umpire, no line calls, no menu music. | src/audio; the reel. | REPEAT R2 #11, R1 #12 | Open |
+| 20 | Medium | Critic C2 (rest) | **Low balls switched to a half-volley about 60 ms before contact.** The racket can't get down a metre in time. | 10 of 123 volleys at 10-20 cm, `tools/out/r3c2-miss.ts`. | from #6 | Open: the AI needs to plan the half-volley earlier |
+| 21 | Medium | Critic C10 | **Close up, the people look like stock MakeHuman.** | sheet-faces, crop-face2-hair. | REPEAT R1 #10, R2 #16 | Better after the people pass. The skin, hair and faces are limited by the CC0 source (OPEN_QUESTIONS) |
+| 22 | Medium | Critic C11 | **Stiff overhead and serve poses:** both arms up in a "Y" before a bandeja, the serve from a deep squat. | sheet-bandeja-body, sheet-serve-body. | NEW | Open |
+| 23 | Medium | Critic C12 | **The hall still looks like an outdoor club** from the game camera. | a-hall; the shed ends 10.5 m short of the camera. | REPEAT R2 #8 | Fixed: the far gable is clad up to the roof ridge (rails, clerestory, columns) and hidden at the camera's end |
+| 24 | Medium | Critic C13 | **The TV graphics and the floor choice are URL-only.** | options.ts:150. | NEW | Open: the TV package needs the owner's look first |
+| 25 | Low | Pro P11 | **No play outside the court.** | 3.9% of points end `exit_after_bounce`. | REPEAT R1 #9 | Stretch goal |
+| 26 | Low | Pro P12 | **Serve-time positions never vary.** | The server's partner is at 2.60 m every time. | NEW | Open |
+| 27 | Low | Pro P13 | **Lobs a little scarce.** | 15.9% of shots (about 20). | REPEAT R1 #13 | Open |
+| 28 | Low | Pro P14 | **The thighs pass through each other in stance, and the neck turns too fast.** | Legs clip in 2.7-3.0% of frames. | NEW | Open |
+| 29 | Low | Critic C14 | **The camera's pan depends on frame rate.** | views.ts:396. | NEW | Fixed: the pan eases on the match clock |
+| 30 | Low | Critic C15 | **The ball trail reads as a string.** | sheet-smash-tv. | REPEAT R2 #14 | Open (a cue: the owner first) |
+| 31 | Low | Critic C16 | **The crowd are cut-outs at 2×:** one pose, nobody follows the ball. | crop-4k-crowd. | REPEAT R1 #1 (polish) | Open |
+| 32 | Low | Critic C17 | **The game score card lands on the near pair at the serve.** | d-game-05. | NEW | Open (HUD: the owner first) |
+
+Round 3's eleven Highs are all fixed except the rest of #6, which is now the Medium #20 (and C7's roadmap half).
+Round 2 statuses the reviewers didn't support:
+- R2 #6 (rallies drag) is not fixed: short points regressed. It is open as #12.
+- R2 #12 (clothes) was Better and is now fixed as #7.
+- R2 #16 (hair) is Better.
+- R1 #8 (serve faults) doesn't hold. It is open as #13.
