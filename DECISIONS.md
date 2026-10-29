@@ -1702,3 +1702,44 @@ before → after, pros in brackets:
 - Last shot of winners: smash 25.3% → 32.7% (43), volley 50.0% → 45.7% (28).
 - Smash winners 28.8% → 34.8% (45). Out-of-court winners 5.1% → 7.8% of winners (17). Shots per second 0.76 → 0.79
   (0.80), seconds per point 14.8 → 13.9.
+
+### Review round 2, High #3: how points end
+Round 2 measured these problems at level 1:
+- Net volleys ended 50% of winners (pros 28).
+- 18-21% of winners hit a body, which the pros' 48/35/17 split has no room for.
+- Errors: into the net 65% (51), long into the back glass on the full 18% (28), off the side 9% (17).
+- Unforced errors were 37% of endings and forced errors 26% (29-33 each).
+
+- **Body hits.** `tools/out/r3-body.ts` / `r3-body2.ts` classify every winner that hit a body. Over 40 matches, 24
+  of 46 hit the partner who wasn't taking the ball. That player had no plan for it and was usually crossing its
+  line to the formation spot, too late to stop by the time the ball was on them. A first fix (step out once the
+  ball would hit where we stand) made it worse, 44 of 71 hit while dodging, because their momentum carried them
+  in. Now the player not taking the ball keeps to their own side of its line where it passes them: the formation
+  spot is held at least 0.55 m from it, from the moment the prediction exists (`SimpleAi.formation`). Those hits
+  went to 0; the rest hit takers.
+  - "At the feet" had aimed at the net player's own x, landing behind them. It now lands 0.6 m inside them,
+    towards the partner, just behind their feet line.
+  - A volley against a pair at the net is sometimes played short and angled off the side glass.
+- **Error mix.** The AI's swing-to-swing spread (`data/shots.json` swing.motor) was mostly height: path pitch 1.0°,
+  face 0.6°, pace 3%, direction 1.8°. A pitch error drops a ball into the net long before it puts one past the
+  glass: targets clear the tape by tens of centimetres and leave metres before the back wall. More of it is now
+  pace and direction: pitch 0.75°, face 0.45°, pace 6%, direction 2.4°.
+  - 10% pace (tried) gave pros' split, 53/22/13, but lost 38% of AI contrapareds (11% before). A ball off our own
+    glass magnifies a pace error. At 6% they are lost 12-21%.
+- **Forced and unforced.** Less base spread at the top level (motor 0.6 → 0.38) and more growth with pressure
+  (1.6 → 3.0) put more of the errors under pressure. Level 0.5 goes 0.92 → 0.7 and level 0 1.1 → 0.95, which keeps
+  the ladder: the beginners' first-serve faults had risen to 38% with the new pace spread.
+  - The forced share hardly moves whatever pressure's weight (24-27% over seven settings). It needs more hard
+    balls to begin with, not a different error model. Left as a Medium for round 3.
+- **Tests.** Two "never" tests now allow what the new spread makes rare but real, each with the case that showed it:
+  - A late bajada met at 5.59 m (the test counts from 5.5).
+  - A contrapared into the player's own mesh, at most a tenth of them; the old settings put 2 of 63 there over 20
+    seeds.
+
+Measured (2,040 points, level 1, seed0 501; docs/review/match-stats-l1-r2fix3.txt), round 2 → now, pros in brackets:
+- Winners that hit a body: 20.5% → 9.2%.
+- Last shot of winners: volley 50.0% → 37.5% (28), smash 25.3% → 41.1% (43).
+- Errors: net 65.3% → 59.6% (51), long 18.4% → 17.7% (28), side 9.1% → 11.5% (17).
+- Endings W / FE / UE: 37.1 / 26.1 / 36.8 → 38.5 / 26.4 / 35.0 (34-42 / 29-33 / 29-33).
+- Shots per point 11.3 → 11.3, seconds 14.8 → 14.5. Out-of-court winners 5.1% → 11.2% of winners (17).
+- In points: bandeja 40.5% (44-48), smash 35.3%, bajada 15.6% (14-17).

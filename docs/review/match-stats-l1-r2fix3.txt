@@ -1,0 +1,29 @@
+2040 points, 10.2 h of play
+shots per point 11.3 (pros 10-11; national 8-9.4)   seconds per point 14.5 (pros 9.4-14.8)   shots per second 0.78 (pros 0.80)
+rally 1-4 s / 5-7 / 8-11 / >11: 14.5% / 19.2% / 19.1% / 47.3% (pros 26 / 26 / 22 / 26)
+endings W / FE / UE: 38.5% / 26.4% / 35.0% (pros men main draw 34-42 / 29-33 / 29-33)
+  winners: bounce 48.1%, back 31.6%, out 11.2%, body 9.2% (pros men: double bounce 48, came back over 35, out 17)
+  errors: net 59.6%, back 17.7%, side 11.5%, other 11.2% (pros men: net 51, back wall on the full 28, side 17, other 3)
+  last shot of winners: smash 41.1%, volley 37.5%, back-wall 6.1%, groundstroke 3.7%, bajada 3.4%, bandeja 3.3%, vibora 2.2%, side-wall 1.9%, serve 0.5%, double-wall 0.3% (pros: smash 43, volley 28, bandeja/víbora 13, groundstroke 6)
+  last shot of errors: volley 35.8%, back-wall 27.4%, groundstroke 18.5%, double-wall 6.5%, side-wall 4.5%, bajada 3.0%, smash 2.2%, bandeja 1.2%, vibora 0.6%, whiff 0.5% (pros: volley 30, groundstroke 30, lob 15, bandeja/víbora 10, smash 2)
+first-serve faults 5.9% of 2040 (pros ~10)   double faults 0.0% of 121 second serves (pros ~2)
+serving pair wins 67.4% (pros men ~62); by shots 1-2/3-4/5-6/7-8/9+: 74.1% / 80.3% / 79.9% / 68.4% / 57.8% (national 98 / 65 / 64 / 57 / 42)
+shot mix: volley 33.5%, groundstroke 20.9%, back-wall 16.9%, serve 8.8%, bandeja 5.7%, smash 3.8%, side-wall 3.2%, vibora 2.7%, double-wall 2.3%, bajada 1.6%; lobs 15.7% of all shots
+  (pros men 2014: volley 29.6, groundstroke 23.1, serve 12.3, back-wall 12.8, side-wall 2.7, double-wall 3.5, bandeja 6.0, smash 6.9; lobs ~20 elite 2013, 9 national)
+in points (share of points with one or more): bandeja 40.5%, víbora 24.9%, smash 35.3%, bajada 15.6%, back-wall 68.0%, contrapared 12.7%, lob 78.9%
+  (WPT men 2020: bandeja 44-48, topspin bandeja 20-23, flat smash 30-33 + x3 7-8, bajada 14-17, back wall fh 42-45 / bh 34-36, contrapared 11-13, lobs 76-81)
+hit from back / transition / net: 50.5% / 19.0% / 30.5% (pros 49 / 19 / 26)
+player-time within 4 m of the net 38.5%; pairs both up 37.7%, both back 49.3%, split 13.1%; partners 3.94 m apart
+  both pairs: one up and one back 56.9%, all four up 6.0%, all four back 11.4%, a pair split 25.7%
+per stroke (pros: smash W 45 UE 6; bandeja W 3.5 UE 3; volley W 3-6 UE 3-5; groundstroke/back-wall W <1 UE 5-6):
+  volley        n   7760  W   3.8%  FE   2.4%  UE   5.8%
+  groundstroke  n   4843  W   0.6%  FE   0.8%  UE   4.8%
+  back-wall     n   3900  W   1.2%  FE   1.0%  UE   8.8%
+  serve         n   2040  W   0.2%  FE   0.2%  UE   0.0%
+  bandeja       n   1320  W   2.0%  FE   2.5%  UE   1.1%
+  smash         n    882  W  36.6%  FE  19.2%  UE   3.1%
+  side-wall     n    736  W   2.0%  FE   1.2%  UE   7.7%
+  vibora        n    620  W   2.7%  FE   2.4%  UE   1.1%
+  double-wall   n    541  W   0.4%  FE   0.9%  UE  15.0%
+  bajada        n    378  W   7.1%  FE  10.3%  UE   9.8%
+(11.7 s)

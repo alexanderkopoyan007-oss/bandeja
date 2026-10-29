@@ -59,6 +59,8 @@ export class SimpleAi {
   readonly level: number;
   /** Player.glassWait for this AI (data/ai-skill.json glassWait). */
   readonly glassWait = SKILL.glassWait;
+  /** The shot being chosen is a volley (chooseShot; read by the targets). */
+  private volleying = false;
   /** Player.ohArrive for this AI (data/ai-skill.json ohArrive). */
   readonly ohArrive = SKILL.ohArrive;
   planVersion = -1;
@@ -329,6 +331,31 @@ export class SimpleAi {
     formationSpot(m, this.index, coming, this.spot);
     this.goX = this.spot.x;
     this.goZ = this.spot.z;
+    // The partner's ball: keep to our own side of its line where it passes us, never across it (half the body
+    // winners hit the player who wasn't taking the ball, mostly on their way across it to the formation spot, too
+    // late to stop once they saw it: REVIEW.md round 2 #3).
+    if (coming) {
+      const now = m.time;
+      const pr = m.pred;
+      const h = p.tune.height;
+      const pz = p.pos.z;
+      for (let k = 0; k < pr.n; k++) {
+        if (pr.t[k]! < now || pr.z[k]! * s <= 0 || pr.y[k]! > h) continue;
+        if (pr.bounces[k]! > 1) break;
+        const dz = pr.z[k]! - pz;
+        if (dz > 0.15 || dz < -0.15) continue;
+        const bx = pr.x[k]!;
+        const sd = p.pos.x > bx ? 1 : p.pos.x < bx ? -1 : (m.players[this.index ^ 2]!.pos.x > bx ? -1 : 1);
+        if ((this.goX - bx) * sd < DODGE) {
+          this.goX = clamp(bx + sd * DODGE, p.minX, p.maxX);
+          this.goBy = pr.t[k]!;
+          this.chasing = true;
+          this.drift(f, p, s);
+          return;
+        }
+        break;
+      }
+    }
     // In place by the next strike (about when the ball has bounced on its way to whoever plays it).
     const pr = m.pred;
     let by = m.time + 1;
@@ -588,6 +615,7 @@ export class SimpleAi {
    * a smash; better players take the smash more often.
    */
   private chooseOverhead(m: MatchSim, height: number, depth: number): void {
+    this.volleying = false;
     this.conHeight = height;
     this.conDepth = depth;
     this.shot = SHOT_BANDEJA;
@@ -662,6 +690,7 @@ export class SimpleAi {
   }
 
   private chooseShot(m: MatchSim, height: number, volley: boolean, depth: number): void {
+    this.volleying = volley;
     const opp = this.nearestOpponent(m);
     const r = m.aiRng.next();
     this.smash = false;
@@ -879,15 +908,20 @@ export class SimpleAi {
       x = rng.next() < 0.5 ? (a.pos.x + b.pos.x) * 0.5 : net.pos.x;
       depth = 2.8 + 0.8 * rng.next();
     } else if (up === 2) {
-      // Both at the net: low through the middle or at a player's feet.
+      // Both at the net: low through the middle, at a player's feet, or (a volley) short and angled off the side
+      // glass. "At the feet" lands beside the feet, inside the player towards the middle, so it is met low (a ball
+      // aimed at the player's own x landing behind them went through them: 18% of winners hit a body, which the
+      // pros' figures have no room for).
+      const r = rng.next();
       const at = rng.next() < 0.5 ? a : b;
-      x = rng.next() < 0.5 ? (a.pos.x + b.pos.x) * 0.5 : at.pos.x;
-      depth = 4.2 + 1.0 * rng.next();
+      if (r < 0.45) { x = (a.pos.x + b.pos.x) * 0.5; depth = 4.2 + 1.0 * rng.next(); }
+      else if (r < 0.8 || !this.volleying) { x = feetX(at.pos.x, a.pos.x + b.pos.x - at.pos.x); depth = abs(at.pos.z) + 0.3 + 0.5 * rng.next(); }
+      else { x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.9 + 0.1 * rng.next()); depth = 4.4 + 1.2 * rng.next(); }
     } else if (up === 1) {
       const net = abs(a.pos.z) < 5 ? a : b;
       const back = net === a ? b : a;
-      // At the net player's feet, or behind them into the back player's corner.
-      if (rng.next() < 0.5) { x = net.pos.x; depth = 4.3 + 0.8 * rng.next(); }
+      // At the net player's feet (beside them, as above), or behind them into the back player's corner.
+      if (rng.next() < 0.5) { x = feetX(net.pos.x, back.pos.x); depth = abs(net.pos.z) + 0.3 + 0.5 * rng.next(); }
       else { x = back.pos.x > 0 ? -spread * 0.7 : spread * 0.7; depth = 7.2 + 1.0 * rng.next(); }
     } else {
       x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 0.7;
@@ -897,6 +931,15 @@ export class SimpleAi {
     this.targetZ = -s * depth;
   }
 }
+
+/** "At the feet" of a player at x: FEET_SIDE m inside them, towards their partner at `mate` (a ball at the body is
+ * a ball through it). */
+function feetX(x: number, mate: number): number {
+  return x + (mate > x ? FEET_SIDE : -FEET_SIDE);
+}
+const FEET_SIDE = 0.6;
+/** How far (m) from the ball's line a player not taking it keeps (body 0.22 + ball 0.033 + a margin). */
+const DODGE = 0.55;
 
 /**
  * A smash's landing depth (m from the net): the shortest at which a full-pace smash from the contact (`back` m from

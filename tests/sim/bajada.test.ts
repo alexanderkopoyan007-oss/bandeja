@@ -68,7 +68,8 @@ describe('bajada', () => {
                 // From deep, off the glass (a net player run back by a lob may meet one that came well out of it).
                 if (Math.abs(e.z) > BAJADA_DEPTH) deep++;
                 // (the rest: a high ball off the glass met above the head on a groundstroke plan becomes an overhead)
-                if (m.ai[e.player]!.bajada) { planned++; if (Math.abs(e.z) > BAJADA_DEPTH - 0.5) plannedDeep++; }
+                // (planned from BAJADA_DEPTH - 0.5; a late release meets it nearer the net: 0.08 s late, 5.59 m, seed 11)
+                if (m.ai[e.player]!.bajada) { planned++; if (Math.abs(e.z) > BAJADA_DEPTH - 1.0) plannedDeep++; }
               }
               bounced = 0; back = 0;
             } else if (e.kind === E_FLOOR) bounced++;
