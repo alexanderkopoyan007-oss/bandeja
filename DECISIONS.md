@@ -1788,3 +1788,23 @@ Human matches dipped to black over the jump; autoplay and the attract match show
   - Clay: brick dust, paler dust showing.
 - `tests/render/floorLook.test.ts`. Captures: r3-floor-clay (club-day), r3-floor-hard (hall), r3-floor-carpet
   (stadium).
+
+## Review round 2 #7: bajadas the racket missed (2026-10-29)
+- **What the misses were.** `tools/out/r3-baj-anim.ts` prints every bajada's contact: stroke, height, where it was
+  against the body, speed. The misses were nearly all AI smashes off the back glass, met 1.0-1.1 m in front of the
+  body at 2.5-2.7 m with the player still running (2.3-2.7 m/s). No arm reaches that far out that high. The
+  animation was right to miss: the sim accepted the contact.
+- **Cause.** The sim's reach was a cylinder: `reachMax` 1.35 m across the floor at any height up to
+  `contactMaxHeight` 2.75 m (1.6 m at the moment of the hit).
+- **Fix.** `reachAt(y)` (`contact/windows.ts`, `data/tuning.json` //reachHigh) is used by the windows (plans, the
+  AI's release tracking) and by the hit itself. It is the full 1.35 m up to the shoulder plus a small jump. Above
+  that it is a sphere about the shoulder (1.05 m to the face's centre), plus 0.3 m for the shoulder's offset and
+  lean. That gives 1.10 m at 2.35, 0.87 m at 2.55 and 0.3 m at 2.75, all derived from stature (Drillis & Contini).
+- **Measured** (16 seeds x 200 s): bajadas over 25 cm from the racket fell from 3 in 8 to 1 in 5. The worst miss
+  went from 0.97 m to 0.31 m (a víbora 1.29 m out at 2.06 m, inside the reach; the avatar's 40 cm hip reach falls
+  short). Every overhead class is at 0-2% over 25 cm. Match stats at level 1 (2040 points) are within noise:
+  - smash 3.6% of shots (3.8)
+  - smash 39% of winners (41)
+  - 11.2 shots a point (11.3)
+  - whiffs 0.2% of errors (0.5)
+- `tests/sim/reach.test.ts`.

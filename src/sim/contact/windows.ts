@@ -3,7 +3,7 @@
 // When the swing is released, the window whose ideal moment is nearest is the one being judged.
 import { PF_NET, type Prediction } from '../ball/predict.ts';
 import type { PlayerTuning } from '../player/player.ts';
-import { abs, sqrt } from '../core/smath.ts';
+import { abs, max, min, sqrt } from '../core/smath.ts';
 
 export interface ContactWindow {
   start: number;
@@ -83,6 +83,17 @@ export function overheadCost(y: number, t: PlayerTuning, kind: number): number {
 export const BEHIND_MAX = 0.4;
 
 /**
+ * How far from the body's centre, across the floor, a ball at height y can be reached (m): reachMax up to the
+ * shoulder (with a small jump), then a sphere about the shoulder (data/tuning.json //reachHigh). Inlined by hand in
+ * findWindows (a double returned from a call that isn't inlined is boxed).
+ */
+export function reachAt(y: number, t: PlayerTuning): number {
+  const over = y - t.reachShoulder - t.reachJump;
+  if (!(over > 0)) return t.reachMax;
+  return min(t.reachMax, t.reachLean + sqrt(max(0, t.reachArm * t.reachArm - over * over)));
+}
+
+/**
  * `contraGlass` > 0: the player is going for a contrapared (positioning.ts CONTRA_*): windows are where the ball,
  * after its bounce, is behind the player (further from the net) and in reach facing the glass, which is at
  * |z| = contraGlass; the ball at least CONTRA_ROOM from it.
@@ -100,6 +111,8 @@ export function findWindows(
   let open = false;
   let bestCost = 1e9;
   const riseOff = t.riseMaxOffWall;
+  // reachAt, by hand: above `top` the reach shrinks to a sphere about the shoulder.
+  const top = t.reachShoulder + t.reachJump, arm2 = t.reachArm * t.reachArm, lean = t.reachLean, rMax = t.reachMax;
   for (let i = 0; i < pred.n; i++) {
     if (pred.t[i]! < fromTime) continue;
     const x = pred.x[i]!;
@@ -109,15 +122,17 @@ export function findWindows(
     const dx = x - px;
     const dz = z - pz;
     const d = sqrt(dx * dx + dz * dz);
+    const over = y - top;
+    const r = over > 0 ? min(rMax, lean + sqrt(max(0, arm2 - over * over))) : rMax;
     const legal = z * side > 0.05 && b <= bouncesAllowed && !(mustBounce && b === 0) && (pred.flags[i]! & PF_NET) === 0;
     // The ball reaches the body here: it hits the player, so nothing after this can be played from here.
     if (legal && d < t.bodyRadius + 0.035 && y < t.height) break;
     // (off a wall, a ball still climbing past the shoulders can't be met until it comes down: riseMaxOffWall)
     // (and a ball more than BEHIND_MAX behind the body, further from the net than the hips, is past the stroke)
     const ok = contra
-      ? legal && b === 1 && d <= t.reachMax && y >= t.contactMinHeight && y <= CONTRA_TOP && side * (z - pz) >= 0.1
+      ? legal && b === 1 && d <= r && y >= t.contactMinHeight && y <= CONTRA_TOP && side * (z - pz) >= 0.1
         && contraGlass - abs(z) >= CONTRA_ROOM
-      : legal && d <= t.reachMax && y >= t.contactMinHeight && y <= t.contactMaxHeight
+      : legal && d <= r && y >= t.contactMinHeight && y <= t.contactMaxHeight
         && !(y > riseOff && pred.walls[i]! > 0 && pred.vy[i]! > 0) && side * (z - pz) <= BEHIND_MAX;
     if (ok) {
       // A ball touching the floor or glass right now is not where anyone means to hit it.

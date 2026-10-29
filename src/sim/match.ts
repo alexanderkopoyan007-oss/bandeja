@@ -15,7 +15,7 @@ import {
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, SHOT_CONTRAPARED, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
-import { findWindows, BEHIND_MAX, makeWindows, OH_ANY, type ContactWindow } from './contact/windows.ts';
+import { findWindows, BEHIND_MAX, makeWindows, OH_ANY, reachAt, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
 import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/formation.ts';
@@ -1364,12 +1364,14 @@ export class MatchSim {
     // (a ball gone more than BEHIND_MAX past the hips, away from the net, is past the stroke: the same margin as reach)
     // (a contrapared is met behind the hips by design, facing the glass)
     const past = !serving && !p.contra && s * (b.pos.z - p.pos.z) > BEHIND_MAX + 0.25;
-    if (past && legal && d <= t.reachMax + 0.25) p.grade = G_TOO_LATE;
-    if (!legal || d > t.reachMax + 0.25 || past || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15
+    // (a high ball reaches less far out: reachAt, the same envelope the windows use)
+    const reach = reachAt(b.pos.y, t) + 0.25;
+    if (past && legal && d <= reach) p.grade = G_TOO_LATE;
+    if (!legal || d > reach || past || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15
       || this.rally.over) {
       // The server swung and missed (out of reach, or before or after the one bounce): a fault (6.6, 7.1.b).
       if (serving) this.rally.onServeMissed();
-      this.whiff(i, this.time, legal && d > t.reachMax + 0.25 ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
+      this.whiff(i, this.time, legal && d > reach ? d : 0, legal ? WHIFF_REACH : WHIFF_NOTHING);
       return;
     }
 
