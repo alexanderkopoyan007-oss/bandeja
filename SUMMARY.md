@@ -447,6 +447,57 @@ after, AI doubles at level 1 over 2,040 points (`docs/review/match-stats-l1-r1.t
   - #14, the ball trail.
 - Still open, at Medium: the hall's look (#8), the stadium's dressing (#9), umpire calls (#11).
 
+### Review round 3 (`REVIEW.md`)
+Two fresh reviews found 32 findings: eleven High, thirteen Medium, eight Low, none Critical (`docs/review/round3-*.md`).
+Ten Highs are fixed. The eleventh (the racket missing the ball) is better, and its last case is now a Medium.
+Before | after:
+
+| | Before | After | Real life |
+|---|---|---|---|
+| Bandeja replies volleyed on the full (pro #1) | 58.9% | 36.5%, mostly by net players | let through to the glass |
+| Volleys from over 6 m out, share of shots | 6.5% | 2.5% | rare |
+| Flat returns played by the incoming server (pro #2) | 36% | 75% | 71.9% go at the server |
+| Net-takes made by the lob (pro #3) | 19.2% | 51% | 60.6% |
+| Chest to the net at contact: backhand / backhand off the glass / forehand off the glass (pro #4) | 13 / 19 / 6° | 63 / 78 / 48° | side-on |
+| Contacts with the racket over 10 cm from the ball (critic #2) | 24 of 640 | 17 of 640 | |
+| Night court, line-to-turf contrast (critic #5) | 1.07 | 1.86 | 1.87 by day |
+| Leg sectors with skin above the shorts' hem (critic #3) | 0 of 64 | 63 of 64 | |
+
+- **The match end (critic #1).** It used to freeze, with the ball in the air. Now:
+  - the ball falls and everyone reacts;
+  - both pairs walk to the net, touch rackets across it and step back;
+  - a camera shot along the net frames it;
+  - there is no false change of ends.
+- **Replays and cameras (critic #4).**
+  - Instant replays of big points: an exact re-run of the point from a copy of the match, from two angles in turn,
+    slowed round the winning shot, on 7-14% of points.
+  - Three camera presets in Settings: TV, TV close and Player.
+  - The pan no longer runs faster at a higher frame rate.
+- **The key help (critic #6)** folds away after the first point. **Opponents (critic #7)** have made-up names and
+  nations.
+- **The hall (critic Medium #12)** has its far gable clad up to the roof.
+- Open at Medium:
+  - short points;
+  - the serve's direction;
+  - the víbora's pace;
+  - the styles' net trait;
+  - how points end;
+  - singles;
+  - cut-away variety;
+  - an umpire's voice;
+  - stiff overhead and serve poses;
+  - low half-volleys planned late.
+- **Frame rate:** the build from before round 3 (875fa99) against this one, two runs each back to back, load
+  average 3.9-12.9 (`tools/out/r3-perf.log`).
+  - Medium at CPU 4×: 122.3 / 133.3 fps, p99 10.8 / 10.0 ms before; 130.8 / 148.5 fps, p99 10.9 / 10.9 ms after. No
+    frame over 20 ms, except 2 in one run after.
+  - High at 2×, unpaced: p99 19.2 / 19.8 ms before; 19.0 / 16.0 ms after.
+  - High paced at 120 Hz: every run holds 120 Hz.
+  - Draw calls 89 → 90; triangles 437k → 441k.
+  - With replays off (`&replays=0`): 141.1 fps, p99 9.7 ms.
+  - The sim's p99 a frame rose 1.0 → 1.7-1.8 ms at CPU 4×, and 0.2 → 0.4 ms unthrottled. This is round 3's AI
+    planning: replays off read the same.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.
@@ -476,3 +527,12 @@ after, AI doubles at level 1 over 2,040 points (`docs/review/match-stats-l1-r1.t
   - The sim's reach ignored height (bajadas a metre out at 2.7 m).
   - The hems' cloth lag pushed the shirt into the body, so the shorts, and through the hollow body the court,
     showed through.
+- **Review round 3's fixes turned up:**
+  - The planner thought players could stop at once. A run counted only the speed along the way, so a spot closer
+    than the player could stop at was planned as a stand, and assisted timing fired after the ball had passed the body.
+  - Left-handers' smashes never left the ground. The hop checked the smash family, and a left-hander's is its
+    mirrored copy. Bandejas and víboras never hopped at all.
+  - The score changed ends after the last set of a match, so the camera swung round for a change of ends that
+    would never be played.
+  - The stadium's end stand hid when the camera passed its front row, not its back row, so the rows in front of a
+    closer camera went missing.
