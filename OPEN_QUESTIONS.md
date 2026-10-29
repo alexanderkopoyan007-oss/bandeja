@@ -327,3 +327,23 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **The racket's type.** The frame and face print use the system's bold italic sans (our own slant), so the letters
   differ between macOS, Windows and Linux. Settled by: a screenshot on Windows and Linux, or a bundled OFL font if
   the owner wants it identical everywhere.
+- **The REPLAY tag and the folded key help need the owner's look.** Both are HUD changes the owner hasn't seen
+  (review round 3, critic #4 and #6).
+  - The tag is a small glass "REPLAY" chip, top right, with a red dot and "Enter skips".
+  - The key help folds once the first point ends. A hint pill then says "H shows the controls" for 4 s, and the
+    choice is remembered.
+  - Settled by: the owner watching a replay (a smash winner, or `?seed=21` in autoplay) and saying yes or no to both.
+- **Replays are silent apart from the crowd.** A replay re-runs the point's sim but doesn't feed the soundscape, so
+  the racket, bounces, glass and grunts aren't heard again. Broadcasts often replay with the original sound, slowed.
+  Settled by: the owner saying whether they want the point's sounds in the replay (slowed, or at full speed under
+  the slow picture).
+- **How often a replay comes.** About 7-14% of points get one: winners that left the court, overhead winners at
+  21 m/s or more, and winners after a rally of 10 shots or more, at least two points apart. No figure for how often
+  padel broadcasts replay was found. Settled by: counting replays over two sets of a Premier Padel broadcast.
+- **Careers, tournaments, unlocks and online play** (review round 3, critic #7, "an exhibition game") are whole
+  milestones on the roadmap (M5 character creator, M6 career and tournaments, stretch online rollback). The brief's
+  realism work only gave the AI made-up names and nations. Settled by: the owner choosing which milestone comes
+  next.
+- **Camera presets.** TV close and Player are tuned so the end wall's mesh band never hides the far pair. They have
+  been checked only in captures, not in play. Settled by: the owner playing a game on each (Settings > Picture >
+  Camera).
