@@ -8,6 +8,7 @@ import {
 import { REASON_TEXT, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/contact/timing.ts';
 import { SW_CHARGE } from '../sim/player/player.ts';
+import { offGlassHigh, BAJADA_ABOVE, BAJADA_DEPTH } from '../sim/player/positioning.ts';
 import { SHAPES, SHOT_BANDEJA, SHOT_VOLLEY } from '../sim/contact/shots.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 import { PAL, gradeColour, hex } from './palette.ts';
@@ -90,6 +91,12 @@ export const HUD_CSS = `
 `;
 
 /** The predicted path climbs well above head height over our half before it bounces: a lob. */
+/** The ball will come off our own back glass high enough for a bajada (the AI's test: positioning.offGlassHigh). */
+function bajadaOn(sim: MatchSim, human: number): boolean {
+  const p = sim.players[human]!;
+  return offGlassHigh(sim.pred, sim.side(p.team), sim.time, p.tune.overheadHeight + BAJADA_ABOVE, BAJADA_DEPTH, sim.world.court.halfL) >= 0;
+}
+
 function isLob(sim: MatchSim, team: number): boolean {
   const pr = sim.pred;
   const s = sim.side(team);
@@ -129,6 +136,7 @@ export class Hud {
   private readonly hint: HTMLElement;
   private lobVersion = -1;
   private lob = false;
+  private bajada = false;
   private readonly cache = new Map<HTMLElement, string>();
   private seen = 0;
   private gradeUntil = 0;
@@ -211,6 +219,7 @@ export class Hud {
     this.hintBandeja = `Bandeja · hold ${pw} to smash, ${pr} for a víbora`;
     this.hintVolley = `Volley · hold ${pw} to punch it flat`;
     this.hintLob = `Lob coming · ${tap ? 'press' : 'hold'} ${c('overhead')} for an overhead`;
+    this.hintBajada = `High off the glass · ${tap ? 'press' : 'hold'} ${c('overhead')} for a bajada, with ${pw} smash it down`;
     this.hintPartner = `Partner's ball · ${tap ? 'press' : 'hold'} a shot key to take it`;
     this.serveSub = tap ? `${lr} aims · tap a shot key: the serve is timed for you` : `${lr} aims · press a shot key to drop · release to hit`;
     // Shown again with the new words.
@@ -219,6 +228,7 @@ export class Hud {
   }
 
   private hintBandeja = '';
+  private hintBajada = '';
   private hintVolley = '';
   private hintLob = '';
   private hintPartner = '';
@@ -318,6 +328,7 @@ export class Hud {
       if (sim.pred.version !== this.lobVersion) {
         this.lobVersion = sim.pred.version;
         this.lob = isLob(sim, team);
+        this.bajada = !this.lob && bajadaOn(sim, human);
       }
       // Doubles: the partner has called it. Holding a shot key takes it anyway.
       const partners = sim.doubles && sim.taker[team] === (human ^ 2) && p.swing !== SW_CHARGE;
@@ -325,6 +336,7 @@ export class Hud {
       else if (p.shot === SHOT_BANDEJA && p.swing === SW_CHARGE) hint = this.hintBandeja;
       else if (p.shot === SHOT_VOLLEY && p.swing === SW_CHARGE) hint = st.valid && st.volley ? this.hintVolley : 'Out of reach in the air · it will be blocked off the bounce';
       else if (this.lob) hint = this.hintLob;
+      else if (this.bajada) hint = this.hintBajada;
       else if (st.valid && st.contra) hint = 'Contrapared · turn and play it up into your own glass';
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }

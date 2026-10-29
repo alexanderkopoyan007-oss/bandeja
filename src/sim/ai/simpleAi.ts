@@ -9,7 +9,7 @@ import { abs, clamp, floor, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import { PF_FLOOR } from '../ball/predict.ts';
 import { findWindows, makeWindows, OH_ANY, OH_BANDEJA, OH_SMASH, OH_VIBORA } from '../contact/windows.ts';
-import { makeStandPlan, planStand, type StandPlan } from '../player/positioning.ts';
+import { makeStandPlan, offGlassHigh, planStand, BAJADA_ABOVE, BAJADA_DEPTH, type StandPlan } from '../player/positioning.ts';
 import { smashLanding } from '../contact/smashAim.ts';
 import { formationSpot, type Spot } from '../player/formation.ts';
 import { styleOf, type AiStyle } from './styles.ts';
@@ -26,9 +26,16 @@ const SURPRISE = 0.15;
  * AI judged on each shot's own windows, 1.8 gives 6.4% (and 11.3).
  */
 const AFTER_WALL = 1.8;
+/**
+ * The bajada (an overhead off our own back glass, positioning.ts BAJADA_*): BAJADA_HARD of them are struck flat and
+ * hard (the smash shape), the rest placed like a bandeja; after BAJADA_NET of them (per unit of the style's net) the
+ * pair moves up.
+ */
+const BAJADA_HARD = 0.45;
+const BAJADA_NET = 0.4;
 /** Chance a pair follows its chiquita in to the net, per unit of the style's net. */
 const CHIQ_NET = 0.35;
-const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number };
+const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; bajada: number[] };
 /** A value by level: v holds it at evenly spaced levels from 0 to 1 (two or more), interpolated linearly between. */
 function byLevel(v: number[], level: number): number {
   const n = v.length - 1;
@@ -50,6 +57,8 @@ export class SimpleAi {
   readonly index: number;
   readonly team: number;
   readonly level: number;
+  /** Player.glassWait for this AI (data/ai-skill.json glassWait). */
+  readonly glassWait = SKILL.glassWait;
   planVersion = -1;
   reactAt = 0;
   /**
@@ -108,6 +117,8 @@ export class SimpleAi {
   reset(): void {
     this.planVersion = -1;
     this.ohKind = OH_ANY;
+    this.bajada = false;
+    this.bajadaOk = false;
     this.contra = false;
     this.planned = false;
     this.pressed = false;
@@ -155,6 +166,9 @@ export class SimpleAi {
     this.st.valid = false;
     this.reach = true;
     this.ohKind = OH_ANY;
+    this.bajada = false;
+    // Will this ball, if it comes off our glass high, be taken as a bajada? (decided once a ball, by level)
+    this.bajadaOk = m.aiRng.next() < byLevel(SKILL.bajada, this.level);
     this.planned = false;
     this.pressed = false;
     this.released = false;
@@ -357,6 +371,12 @@ export class SimpleAi {
    * contact height (MatchSim reads it for the windows).
    */
   ohKind = OH_ANY;
+  /**
+   * The overhead planned is a bajada: off our own back glass, met as it drops through head height (bajadaOk: this
+   * ball may be taken that way; data/ai-skill.json bajada by level).
+   */
+  bajada = false;
+  private bajadaOk = false;
   /** From where we stand, the ball still passes within reach (trackRelease): else the swing is not made. */
   private reach = true;
 
@@ -469,13 +489,20 @@ export class SimpleAi {
     const st = this.st;
     // A lob while we are up: take it in the air (bandeja or smash) and keep the net, unless it is too deep.
     // Already holding the overhead key, stay with it.
-    let overhead = p.swing === SW_CHARGE ? p.shot === SHOT_BANDEJA : abs(p.pos.z) < 6.5 && this.lobComing(m, s);
+    // A high ball coming off our own back glass: smash it back down off the glass (a bajada), if this ball is one
+    // to take that way.
+    const offGlass = this.bajadaOk && offGlassHigh(pr, s, now, p.tune.overheadHeight + BAJADA_ABOVE, BAJADA_DEPTH, m.world.court.halfL) >= 0;
+    let overhead = p.swing === SW_CHARGE ? p.shot === SHOT_BANDEJA : (abs(p.pos.z) < 6.5 && this.lobComing(m, s)) || offGlass;
     if (overhead) {
       const oh = this.ohKind;
       const ok = (close && this.overhead && planStand(pr, p, s, now, m.rally.isServe, st, keep, true, true, false, oh))
         || planStand(pr, p, s, now, m.rally.isServe, st, this.overhead ? keep : -1, false, true, false, oh);
-      overhead = ok && (st.inTime || p.swing === SW_CHARGE) && abs(st.z) < 8.2;
+      // Deep overheads only off the glass (a bajada); in the air from back there it is a lob to let bounce. Off the
+      // glass, only where a bajada is met (a ball still high well out of the glass is let drop and played).
+      overhead = ok && (st.inTime || p.swing === SW_CHARGE)
+        && (st.afterWall ? abs(st.bz) >= BAJADA_DEPTH - 0.5 : abs(st.z) < 8.2);
     }
+    this.bajada = overhead && st.afterWall;
     if (!overhead) {
       this.ohKind = OH_ANY;
       const k = this.overhead ? -1 : keep;
@@ -557,6 +584,10 @@ export class SimpleAi {
     this.conHeight = height;
     this.conDepth = depth;
     this.shot = SHOT_BANDEJA;
+    if (this.bajada) {
+      this.chooseBajada(m);
+      return;
+    }
     if (this.ohKind !== OH_ANY) {
       // Picked when the lob was first read (and planned at that overhead's height since): keep it.
       this.smash = this.ohKind === OH_SMASH;
@@ -574,8 +605,13 @@ export class SimpleAi {
     // anyway (amateurs' power smashes are their error: Fernández-de-Osso et al. 2025).
     // A smash-loving style counts a little more of the court as smash range and smashes more of the rest anyway;
     // a defensive one less (the neutral style's smash 1 leaves both as measured).
-    const kill = smashDepth(m, depth, height) <= KILL_DEPTH * (0.92 + 0.08 * st.smash);
-    this.smash = kill ? r < min(0.95, (0.6 + 0.35 * this.level) * st.smash)
+    const kd = KILL_DEPTH * (0.92 + 0.08 * st.smash);
+    const sd = smashDepth(m, depth, height);
+    const kill = sd <= kd;
+    // Inside the kill depth the shorter the landing the surer the kill: a lob that sits up close in is smashed, one
+    // only just short enough is mostly played as a bandeja to keep the net (pros smash 26-36% of their overheads;
+    // smashing 95% of everything inside the kill depth made it 49%).
+    this.smash = kill ? r < min(0.95, (0.6 + 0.35 * this.level) * st.smash) * clamp((kd - sd) / KILL_SURE, 0, 1)
       : depth < 6.5 && height > 2.2 && r < max(0, 0.35 - 0.3 * this.level + 0.1 * (st.smash - 1));
     // Not a smash: the better players turn some into víboras (into the side glass, more pace than a bandeja).
     this.vibora = !this.smash && depth < 7 && m.aiRng.next() < (0.15 + 0.35 * this.level) * st.vibora;
@@ -584,6 +620,22 @@ export class SimpleAi {
     this.ohKind = this.smash ? OH_SMASH : this.vibora ? OH_VIBORA : OH_BANDEJA;
     if (this.overhead) this.planVersion = -1;
     if (m.doubles) m.intentUp[this.team] = 1; // keep the net
+    this.chooseTarget(m);
+  }
+
+  /**
+   * A bajada: struck down hard and flat off the glass (the smash shape, deep down the line or through the middle),
+   * or placed deep into a corner like a bandeja; met at a bandeja's height as it drops (BAJADA_HARD). After a good
+   * one the pair can take the net.
+   */
+  private chooseBajada(m: MatchSim): void {
+    if (this.ohKind === OH_ANY) {
+      this.smash = m.aiRng.next() < clamp(BAJADA_HARD * this.style.smash, 0, 0.95);
+      this.vibora = false;
+      this.ohKind = OH_BANDEJA;
+      if (this.overhead) this.planVersion = -1;
+      if (m.doubles) m.intentUp[this.team] = m.aiRng.next() < BAJADA_NET * this.style.net ? 1 : 0;
+    }
     this.chooseTarget(m);
   }
 
@@ -781,7 +833,12 @@ export class SimpleAi {
     const up = this.opponentsUp(m);
     let x: number;
     let depth: number;
-    if (this.shot === SHOT_BANDEJA && this.vibora) {
+    if (this.shot === SHOT_BANDEJA && this.bajada) {
+      // A bajada from the back: deep with a margin from the glass (a full-pace ball from 9 m back runs long on a
+      // small error), down the line or through the middle; placed ones deeper, into a corner.
+      x = rng.next() < 0.6 ? (m.players[this.index]!.pos.x >= 0 ? 1 : -1) * spread * (0.4 + 0.4 * rng.next()) : (a.pos.x + b.pos.x) * 0.5;
+      depth = this.smash ? 6.2 + 1.2 * rng.next() : 7.0 + 1.0 * rng.next();
+    } else if (this.shot === SHOT_BANDEJA && this.vibora) {
       // Into the side glass, deep enough that it comes off low towards the back.
       x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.8 + 0.2 * rng.next());
       depth = 6.4 + 1.2 * rng.next();
@@ -841,6 +898,8 @@ const SMASH_MARGIN = 0.45;
 const SMASH_MIN = 3.2;
 /** A smash landing this short (m from the net) kicks off the glass hard enough to be a winner. */
 const KILL_DEPTH = 6.0;
+/** How far (m) inside KILL_DEPTH the landing must be for the AI's full smash rate (less: a share of it). */
+const KILL_SURE = 0.8;
 
 /** The key that holds a shot: the overhead key for a bandeja/smash, else the shot's own key. */
 function button(shot: number): number {

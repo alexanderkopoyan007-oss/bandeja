@@ -1,0 +1,26 @@
+2040 points, 10.8 h of play
+shots per point 11.2 (pros 10-11; national 8-9.4)   seconds per point 15.4 (pros 9.4-14.8)   shots per second 0.73 (pros 0.80)
+rally 1-4 s / 5-7 / 8-11 / >11: 15.8% / 15.9% / 18.0% / 50.2% (pros 26 / 26 / 22 / 26)
+endings W / FE / UE: 40.8% / 24.2% / 35.0% (pros men main draw 34-42 / 29-33 / 29-33)
+  winners: bounce 49.8%, back 25.6%, out 8.8%, body 15.9% (pros men: double bounce 48, came back over 35, out 17)
+  errors: net 70.0%, back 19.6%, side 4.6%, other 5.9% (pros men: net 51, back wall on the full 28, side 17, other 3)
+  last shot of winners: volley 42.1%, smash 34.6%, back-wall 10.5%, groundstroke 5.8%, bandeja 2.3%, vibora 1.4%, double-wall 1.2%, side-wall 1.2%, serve 1.0% (pros: smash 43, volley 28, bandeja/víbora 13, groundstroke 6)
+  last shot of errors: back-wall 30.4%, volley 29.6%, groundstroke 23.6%, smash 5.5%, side-wall 5.2%, double-wall 2.6%, bandeja 1.8%, whiff 0.7%, vibora 0.5%, serve 0.1% (pros: volley 30, groundstroke 30, lob 15, bandeja/víbora 10, smash 2)
+first-serve faults 6.2% of 2040 (pros ~10)   double faults 0.8% of 127 second serves (pros ~2)
+serving pair wins 61.1% (pros men ~62); by shots 1-2/3-4/5-6/7-8/9+: 81.9% / 72.5% / 70.1% / 58.6% / 52.4% (national 98 / 65 / 64 / 57 / 42)
+shot mix: volley 29.4%, back-wall 27.4%, groundstroke 17.8%, serve 8.9%, smash 5.4%, bandeja 3.8%, side-wall 3.0%, double-wall 2.0%, vibora 1.8%; lobs 16.9% of all shots
+  (pros men 2014: volley 29.6, groundstroke 23.1, serve 12.3, back-wall 12.8, side-wall 2.7, double-wall 3.5, bandeja 6.0, smash 6.9; lobs ~20 elite 2013, 9 national)
+hit from back / transition / net: 50.9% / 21.4% / 27.8% (pros 49 / 19 / 26)
+player-time within 4 m of the net 34.3%; pairs both up 33.6%, both back 53.9%, split 12.5%; partners 3.99 m apart
+  both pairs: one up and one back 51.2%, all four up 4.8%, all four back 19.6%, a pair split 24.4%
+per stroke (pros: smash W 45 UE 6; bandeja W 3.5 UE 3; volley W 3-6 UE 3-5; groundstroke/back-wall W <1 UE 5-6):
+  volley        n   6773  W   5.2%  FE   1.5%  UE   5.3%
+  back-wall     n   6309  W   1.4%  FE   1.1%  UE   5.8%
+  groundstroke  n   4103  W   1.2%  FE   0.7%  UE   6.9%
+  serve         n   2040  W   0.4%  FE   0.5%  UE   0.0%
+  smash         n   1244  W  23.2%  FE  18.5%  UE   5.3%
+  bandeja       n    863  W   2.2%  FE   3.6%  UE   2.5%
+  side-wall     n    685  W   1.5%  FE   1.0%  UE   9.2%
+  double-wall   n    452  W   2.2%  FE   1.5%  UE   7.1%
+  vibora        n    411  W   2.9%  FE   1.7%  UE   1.5%
+(15.9 s)

@@ -25,7 +25,7 @@ import { pressureOf, PRESSURE_FORCED } from '../src/sim/ai/pressure.ts';
 // ---- what is counted -----------------------------------------------------------------------------------------
 
 /** Stroke classes as the observation studies code them (Mellado-Arbelo et al. 2019; lobs counted inside). */
-export const CLASSES = ['serve', 'volley', 'bandeja', 'vibora', 'smash', 'groundstroke', 'back-wall', 'side-wall', 'double-wall'] as const;
+export const CLASSES = ['serve', 'volley', 'bandeja', 'vibora', 'smash', 'bajada', 'groundstroke', 'back-wall', 'side-wall', 'double-wall'] as const;
 type Outcome = 'W' | 'FE' | 'UE' | 'cont';
 
 interface Counts {
@@ -62,6 +62,11 @@ interface Counts {
   /** Winners whose last shot was each stroke class (Sánchez-Alcaraz et al. 2022 report this split). */
   lastWin: Record<string, number>;
   lastErr: Record<string, number>;
+  /**
+   * Points in which each stroke appears at least once (WPT 2020 reports strokes this way: Courel-Ibáñez et al. 2024):
+   * by class, plus 'lob' and 'contrapared' by kind.
+   */
+  inPoints: Record<string, number>;
   /** Per player style: shots by class, lobs, chiquitas+drops, smashes/overheads, net ticks, W/E. */
   perStyle: Record<string, StyleCounts>;
   /** Per team level: W, FE, UE endings caused by that team (winner hit by it / error made by it). */
@@ -89,7 +94,7 @@ function emptyCounts(): Counts {
     firstServes: 0, firstFaults: 0, secondServes: 0, doubleFaults: 0,
     srvLen: [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]], srvWon: 0,
     playerTicks: 0, netTicks: 0, formation: { up: 0, back: 0, split: 0 }, pairs: { allUp: 0, upBack: 0, allBack: 0, mixed: 0 }, mateDist: [0, 0],
-    lastWin: {}, lastErr: {}, perStyle: {}, perLevel: {}, pressureBins: new Array(16).fill(0), pressureErrBins: new Array(16).fill(0), clsPress: {},
+    lastWin: {}, lastErr: {}, inPoints: {}, perStyle: {}, perLevel: {}, pressureBins: new Array(16).fill(0), pressureErrBins: new Array(16).fill(0), clsPress: {},
     matches: 0, matchWins: [0, 0], simSeconds: 0,
   };
 }
@@ -164,7 +169,8 @@ function runJob(job: Job): Counts {
           const p = m.players[e.player]!;
           const pressure = kind === 'serve' ? 0 : m.lastPressure;
           const cls = kind === 'serve' ? 'serve'
-            : kind === 'smash' || kind === 'bandeja' || kind === 'vibora' ? kind
+            // An overhead off the hitter's own back glass after the bounce is a bajada.
+            : kind === 'smash' || kind === 'bandeja' || kind === 'vibora' ? (bounced > 0 && backWall > 0 ? 'bajada' : kind)
               : bounced === 0 ? 'volley'
                 : backWall + sideWall > 1 ? 'double-wall' : backWall > 0 ? 'back-wall' : sideWall > 0 ? 'side-wall' : 'groundstroke';
           hits.push({ player: e.player, team: e.team, kind, cls, t: e.time, pressure });
@@ -232,6 +238,9 @@ function runJob(job: Job): Counts {
           if (n === 0) { hits = []; continue; }
           c.points++;
           c.endWhy[why] = (c.endWhy[why] ?? 0) + 1;
+          const inPt = new Set<string>();
+          for (const h of hits) { inPt.add(h.cls); if (h.kind === 'lob' || h.kind === 'contrapared') inPt.add(h.kind); }
+          for (const k of inPt) c.inPoints[k] = (c.inPoints[k] ?? 0) + 1;
           c.shotsPer.push(n);
           if (pointStart >= 0) c.secsPer.push(e.time - pointStart);
           const server = hits[0]!.team;
@@ -313,7 +322,7 @@ function merge(a: Counts, b: Counts): Counts {
   add(out.formation, b.formation);
   add(out.pairs, b.pairs);
   out.mateDist[0] += b.mateDist[0]; out.mateDist[1] += b.mateDist[1];
-  add(out.lastWin, b.lastWin); add(out.lastErr, b.lastErr);
+  add(out.lastWin, b.lastWin); add(out.lastErr, b.lastErr); add(out.inPoints, b.inPoints);
   for (const [k, v] of Object.entries(b.perStyle)) add((out.perStyle[k] ??= { shots: 0, lobs: 0, touch: 0, overheads: 0, smashes: 0, viboras: 0, volleys: 0, wall: 0, netTicks: 0, ticks: 0, W: 0, UE: 0, FE: 0 }) as unknown as Record<string, number>, v as unknown as Record<string, number>);
   for (const [k, v] of Object.entries(b.perLevel)) add((out.perLevel[k] ??= { W: 0, FE: 0, UE: 0, points: 0, won: 0 }), v);
   for (let i = 0; i < 16; i++) { out.pressureBins[i]! += b.pressureBins[i]!; out.pressureErrBins[i]! += b.pressureErrBins[i]!; }
@@ -351,6 +360,7 @@ export interface Summary {
   errHow: Record<string, number>;
   lastWin: Record<string, number>;
   lastErr: Record<string, number>;
+  inPoints: Record<string, number>;
   matches: number;
 }
 
@@ -397,6 +407,7 @@ export function summarise(c: Counts): Summary {
     mateDist: c.mateDist[0] / Math.max(1, c.mateDist[1]),
     strokes, perStyle, perLevel,
     winHow: share(c.winHow), errHow: share(c.errHow), lastWin: share(c.lastWin), lastErr: share(c.lastErr),
+    inPoints: Object.fromEntries(Object.entries(c.inPoints).map(([k, v]) => [k, v / Math.max(1, c.points)])),
     matches: c.matches,
   };
 }
@@ -417,6 +428,9 @@ export function report(s: Summary, c: Counts): string {
   L.push(`serving pair wins ${pct(s.serverWins)} (pros men ~62); by shots 1-2/3-4/5-6/7-8/9+: ${s.serverWinsByLen.map(pct).join(' / ')} (national 98 / 65 / 64 / 57 / 42)`);
   L.push(`shot mix: ${Object.entries(s.mix).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)}`).join(', ')}; lobs ${pct(s.lobShare)} of all shots`);
   L.push(`  (pros men 2014: volley 29.6, groundstroke 23.1, serve 12.3, back-wall 12.8, side-wall 2.7, double-wall 3.5, bandeja 6.0, smash 6.9; lobs ~20 elite 2013, 9 national)`);
+  const ip = (k: string) => pct(s.inPoints[k] ?? 0);
+  L.push(`in points (share of points with one or more): bandeja ${ip('bandeja')}, víbora ${ip('vibora')}, smash ${ip('smash')}, bajada ${ip('bajada')}, back-wall ${ip('back-wall')}, contrapared ${ip('contrapared')}, lob ${ip('lob')}`);
+  L.push(`  (WPT men 2020: bandeja 44-48, topspin bandeja 20-23, flat smash 30-33 + x3 7-8, bajada 14-17, back wall fh 42-45 / bh 34-36, contrapared 11-13, lobs 76-81)`);
   L.push(`hit from back / transition / net: ${pct(s.zone.back)} / ${pct(s.zone.transition)} / ${pct(s.zone.net)} (pros 49 / 19 / 26)`);
   L.push(`player-time within 4 m of the net ${pct(s.netTime)}; pairs both up ${pct(s.formation.up)}, both back ${pct(s.formation.back)}, split ${pct(s.formation.split)}; partners ${s.mateDist.toFixed(2)} m apart`);
   L.push(`  both pairs: one up and one back ${pct(s.pairs.upBack)}, all four up ${pct(s.pairs.allUp)}, all four back ${pct(s.pairs.allBack)}, a pair split ${pct(s.pairs.mixed)}`);

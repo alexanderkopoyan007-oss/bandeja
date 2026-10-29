@@ -256,6 +256,7 @@ export class MatchSim {
       this.players.push(new Player(i, DEFAULT_TUNING));
       if (cfg.lefty?.[i]) this.players[i]!.handed = -1;
       this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, styleOf(cfg.aiStyle?.[i])));
+      if (!cfg.human[i]) this.players[i]!.glassWait = this.ai[i]!.glassWait;
       this.aiFrames.push(new InputFrame());
       this.stand.push(makeStandPlan());
       this.claim.push(makeStandPlan());

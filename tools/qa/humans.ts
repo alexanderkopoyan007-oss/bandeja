@@ -10,6 +10,7 @@ import {
   InputFrame, BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY,
 } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
+import { offGlassHigh, BAJADA_ABOVE, BAJADA_DEPTH } from '../../src/sim/player/positioning.ts';
 import { mulberry } from './config.ts';
 
 export interface Driver {
@@ -35,9 +36,12 @@ export class BotHuman implements Driver {
   private steerX = 0;
   private steerY = 0;
   readonly i: number;
-  constructor(i: number, seed: number) {
+  /** Follow the HUD's hints that change the key (the bajada); off for the QA army, whose bots predate them. */
+  readonly hints: boolean;
+  constructor(i: number, seed: number, hints = false) {
     this.i = i;
     this.r = mulberry(seed);
+    this.hints = hints;
   }
 
   act(sim: MatchSim, f: InputFrame): void {
@@ -58,7 +62,8 @@ export class BotHuman implements Driver {
         if (ideal >= 0 && ideal - t < lead && ideal - t > 0.05) {
           const st = sim.stand[i]!;
           let key: number;
-          if (st.valid && st.by > 1.9) key = BTN_OVERHEAD;
+          // (hints: a player reading the HUD takes a ball coming off the glass high as a bajada)
+          if (st.valid && (st.by > 1.9 || (this.hints && offGlassHigh(sim.pred, sim.side(p.team), t, p.tune.overheadHeight + BAJADA_ABOVE, BAJADA_DEPTH, sim.world.court.halfL) >= 0))) key = BTN_OVERHEAD;
           else if (st.valid && st.volley && r() < 0.5) key = BTN_VOLLEY;
           else key = [BTN_DRIVE, BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_SLICE, BTN_LOB, BTN_DROP][Math.floor(7 * r())]!;
           this.press(f, key, t + r() * DT);

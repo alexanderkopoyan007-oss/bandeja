@@ -8,14 +8,20 @@
   "motor": [
     1.1,
     0.92,
-    0.65
+    0.6
   ],
-  "pressure": 1.15,
+  "pressure": 1.6,
   "smashEffort": [
     0.7,
     0.8,
     0.88
   ],
   "chaseEffort": 0.88,
-  "formationEffort": 0.8
+  "formationEffort": 0.8,
+  "glassWait": 0,
+  "bajada": [
+    0.03,
+    0.12,
+    0.25
+  ]
 }

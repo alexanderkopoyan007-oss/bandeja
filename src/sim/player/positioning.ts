@@ -48,6 +48,12 @@ const BODY_CLEAR = 0.2;
 /** Depth band in front of the back glass where hitting the ball before it reaches the glass is cramped. */
 const GLASS_BAND = 1.7;
 /**
+ * The cost of a contact inside GLASS_BAND before a ball that goes on into the glass, and the bonus for any contact
+ * after it, both times the player's glassWait: deep balls are planned off the glass.
+ */
+const GLASS_WAIT = 0.6;
+const GLASS_BONUS = 0.1;
+/**
  * A ground stroke's plan cost per unit of the ball's pace and time pressure there (ai/pressure.ts's first two terms,
  * worked out for each candidate contact): players take the easier ball, so a hard ball is let through to the glass
  * when its rebound can be played. Without it the AI half-volleyed 150 km/h smashes 0.06-0.2 s after their bounce from
@@ -126,6 +132,7 @@ export function planStand(
   const yMax = overhead ? t.contactMaxHeight - 0.05 : volleyKey ? t.overheadHeight + 0.15 : 2.6;
   const riseOff = t.riseMaxOffWall;
   const strikeT = pr.strikeT;
+  const wait = p.glassWait;
   for (let i = 0; i < pr.n; i++) {
     const ti = pr.t[i]!;
     const kept = keep >= 0 && abs(ti - keep) <= 0.15;
@@ -191,8 +198,8 @@ export function planStand(
       if (kept) cost -= 0.35;
       if (!overhead && !volleyKey) {
         // Heading into the back glass and already deep: let it come off the glass instead.
-        if (wallIdx >= 0 && i < wallIdx && b === 1 && abs(z) > backZ - GLASS_BAND) cost += 0.6;
-        if (afterWall) cost -= 0.1;
+        if (wallIdx >= 0 && i < wallIdx && b === 1 && abs(z) > backZ - GLASS_BAND) cost += GLASS_WAIT * wait;
+        if (afterWall) cost -= GLASS_BONUS * wait;
         // Volleying from the back of the court is rarely the right read.
         if (b === 0 && abs(p.pos.z) > 6.5) cost += 0.4;
         cost += press;
@@ -257,6 +264,34 @@ export function planStand(
   }
   if (out.valid) out.turned = out.contra;
   return out.valid;
+}
+
+/** A bajada (ai/simpleAi.ts) is a ball off our own back glass falling through overheadHeight + BAJADA_ABOVE m or
+ * higher, BAJADA_DEPTH m or more from the net. */
+export const BAJADA_ABOVE = 0.1;
+export const BAJADA_DEPTH = 6.5;
+
+/**
+ * A bajada is on: after its bounce on our half (`side`) the ball comes off our own back glass (the first wall it
+ * touches after the bounce, `halfL` - 1.2 m or deeper) and drops through `minY` or higher, falling, at least
+ * `minDepth` from the net, at or after `from`. Returns that sample's index, or -1. The AI and the HUD read it; the
+ * plan itself is planStand's with the overhead key.
+ */
+export function offGlassHigh(pr: Prediction, side: number, from: number, minY: number, minDepth: number, halfL: number): number {
+  let back = false;
+  for (let i = 0; i < pr.n; i++) {
+    const b = pr.bounces[i]!;
+    if (b > 1) break;
+    if (b === 0) continue;
+    const z = pr.z[i]! * side;
+    if (z < 0) return -1;
+    if (!back && pr.walls[i]! > 0) {
+      if (z < halfL - 1.2) return -1;
+      back = true;
+    }
+    if (back && pr.t[i]! >= from && pr.vy[i]! < 0 && pr.y[i]! >= minY && z >= minDepth) return i;
+  }
+  return -1;
 }
 
 /** True if the ball, before sample `upto`, never passes through a body standing at (sx, sz). */

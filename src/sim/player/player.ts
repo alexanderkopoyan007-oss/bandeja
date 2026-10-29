@@ -66,6 +66,12 @@ export class Player {
   pushFrom = -1;
   /** Right-handed = 1, left-handed = -1. */
   handed = 1;
+  /**
+   * How strongly the planner (positioning.planStand) waits for a deep ball to come off the back glass rather than
+   * take it before: 1 for a human (the assist plays deep balls off the glass, the owner's wall play), the AI's own
+   * for an AI (data/ai-skill.json glassWait). Fixed for the match.
+   */
+  glassWait = 1;
 
   /** Bounds of the half this player may move in (set each point from the current ends). */
   minX = -4.7;
