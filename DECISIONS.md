@@ -2085,7 +2085,7 @@ Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`,
   - The players stand upright from match point on (`standW`). The idle's ready crouch gives way to the celebrate
     clip's first frame (arms down, the racket hanging from the hand). In the first captures all four bowed at each
     other over the net in a ready crouch.
-  - It takes 4.8-7.6 s over 16 seeds (`tools`-style probe: the walk is 1.8-4.7 s from where the point ended).
+  - It takes 4.8-7.6 s over 16 seeds (a probe of 8 seeds each in doubles and singles; the walk is 1.8-4.7 s, from where the point ended).
 - **The ends** stay put after the last set (`Score.pointWon`: no flip and no EV_CHANGE_ENDS when the match is won),
   so nobody announces a change of ends and the camera doesn't swing.
 - **Camera:** the cut-away frames the winners through their reaction and walk (`sim.score.winner` in PH_OVER). Then it
@@ -2098,3 +2098,23 @@ Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`,
   net and in their lane, facing the opponent across from them. The sequence must be deterministic.
 - **Captures:** seed 11, `sets=1&games=2&scoring=golden`, stepped at 0.3-8.4 s after match point. They show the
   racket raised, the walk, both pairs at the net, the tap and the step back.
+
+## Review round 3, critic High #3: legs coming apart at the shorts' hem (2026-10-29)
+- **Measured on the built people** (rest pose, the skin's highest point in eight sectors round each leg, against the
+  shorts' lowest point): the thigh's skin ended 0.4-4 cm *below* the hem in every sector, and some sectors had no
+  skin within 5 cm of it.
+  - finish-player.py cut the skin back 2 cm under the hem, and the mask works by whole vertices 3-4 cm apart. That
+    left a ring of nothing between the leg and the shorts.
+  - Looking up into the hem, or with the hem lifted by the cloth lag (kit.ts), the court showed through the back of
+    the knee: the critic's crop-knees. The skin's ragged top edge sat at the hem: the "saw-tooth flaps".
+- **Fix (build time, tools/assets/mpfb/finish-player.py):**
+  - The thigh's skin now goes `SKIN_UP` (6 cm) up inside the shorts' legs. The mask is undone to there, and the
+    covered-skin pass leaves that band alone.
+  - The leg openings stand `HEM_FLARE` (4 mm) off the thigh at the hem, easing to nothing 4 cm up, as a hem does, so
+    the skin inside stays inside.
+- **After:** skin runs 1.3-8.2 cm up inside the hem, mostly 4-7 cm, in 63 of 64 sectors. The one empty sector is
+  where the inner thigh nears the middle.
+  - Close captures of p2 (`cam=body&camp=1`, seed 7, a frame every 1.3 s) show the back of the knee clean in crouches
+    and strides: no hole and no flaps. The between-points cut-away is clean too.
+- **Test:** people.test.ts "has skin under the shorts all round each leg". At least seven of eight sectors must have
+  skin, each above the hem, and six of them at least 3.5 cm above it. Every sector failed before.

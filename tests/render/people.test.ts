@@ -75,6 +75,36 @@ describe('people', () => {
     }
   });
 
+  // Review round 3, critic #3: the thigh's skin ended 0.4-4 cm below the shorts' hem, so there was a ring of nothing
+  // between the leg and the shorts, and the court showed through the back of the knee. It now goes on up inside
+  // the shorts' legs, all round (the leg in eight sectors about the hem's middle, the back of the knee included).
+  it('has skin under the shorts all round each leg, a few cm up inside the hem', () => {
+    for (const p of base.people) {
+      const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array;
+      const n = r.length / 3;
+      for (const side of [-1, 1]) {
+        const leg = (v: number): boolean => Math.sign(r[v * 3]!) === side && r[v * 3 + 1]! < 0.75;
+        let hem = Infinity;
+        for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v)) hem = Math.min(hem, r[v * 3 + 1]!);
+        let cx = 0, cz = 0, c = 0;
+        for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v) && r[v * 3 + 1]! < hem + 0.01) { cx += r[v * 3]!; cz += r[v * 3 + 2]!; c++; }
+        cx /= c; cz /= c;
+        const top = new Array(8).fill(-1);
+        for (let v = 0; v < n; v++) {
+          const x = r[v * 3]!, y = r[v * 3 + 1]!, z = r[v * 3 + 2]!;
+          if (A[v * 4 + 2]! < 0.5 || !leg(v) || Math.abs(x) < 0.03 || y < hem - 0.05 || y > hem + 0.2) continue;
+          const b = Math.floor(((Math.atan2(z - cz, x - cx) + Math.PI) / (2 * Math.PI)) * 8) % 8;
+          top[b] = Math.max(top[b], y - hem);
+        }
+        const had = top.filter((t) => t > -1);
+        // (measured 29 Oct: 1.3-8.2 cm, most 4-7; a sector can be empty where the inner thigh nears the middle)
+        expect(had.length).toBeGreaterThanOrEqual(7);
+        for (const t of had) expect(t).toBeGreaterThan(0.01);
+        expect(had.filter((t) => t > 0.035).length).toBeGreaterThanOrEqual(6);
+      }
+    }
+  });
+
   it('has a face: expression and gaze keys on a small face mesh, lids that close, eyes that turn about their centres', () => {
     for (const p of base.people) {
       const look = p.look!;

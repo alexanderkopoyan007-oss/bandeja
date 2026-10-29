@@ -41,6 +41,11 @@ RECT = {'skin': (0, 0, 2048, 2048), 'clothes': (2048, 1024, 1024, 1024), 'eye': 
         'hair': (0, 0, 2048, 2048), 'brow': (2048, 1024, 512, 512), 'lash': (2048, 512, 512, 512)}
 # The game skeleton's bone order (ybot-rest.json keys) is the output order.
 SIDES = ('Left', 'Right')
+# The thigh's skin goes SKIN_UP up inside the shorts' legs; their openings stand HEM_FLARE off it at the hem, easing to
+# nothing HEM_UP above (REVIEW.md round 3 critic #3).
+SKIN_UP = 0.06
+HEM_FLARE = 0.004
+HEM_UP = 0.04
 FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky')
 
 
@@ -153,16 +158,29 @@ def finish(yb, spec, out, preview=False):
         dead = [None] * max(0, n0 - len(bm.faces))
         bm.to_mesh(suit.data)
         bm.free()
-        # The body under the suit is masked by a vertex group; the legs below the hem show again (2 cm under it).
+        # The body under the suit is masked by a vertex group; the legs show again from SKIN_UP inside the hem down
+        # (REVIEW.md round 3 critic #3). Cut 2 cm under the hem, the skin's top ring ended 0.4-4 cm below it: looking
+        # up into the hem, or with the hem lifted by a stride, there was a ring of nothing between the thigh and the
+        # shorts, and the court showed through the back of the knee.
         g = body.vertex_groups.get('Delete.' + spec['clothes'][0])
         if g:
-            g.remove([v.index for v in body.data.vertices if v.co.z < hem - 0.02])
+            g.remove([v.index for v in body.data.vertices if v.co.z < hem + SKIN_UP])
         print('SHORTS cut', len(dead), 'faces at', hem)
 
     # ---------- the kit fitted (person_face.fit_suit), before the skin under it is masked away ----------
     if suit is not None:
         face.fit_suit(body, suit, rig.data.bones[P + 'Hips'].head_local.z)
         face.cut_shorts_under_shirt(suit)
+        if hem is not None:
+            sm = suit.data
+            n_flare = 0
+            for v in sm.vertices:
+                u = (v.co.z - hem) / HEM_UP
+                if u < 1:
+                    v.co += v.normal * HEM_FLARE * (1 - max(0.0, u))
+                    n_flare += 1
+            sm.update()
+            print('HEM flared', n_flare, 'vertices')
 
     # ---------- helpers and hidden skin out ----------
     # As the MASK modifiers would (a vertex survives every mask), by bmesh: applying a modifier fails on a mesh with
@@ -218,7 +236,9 @@ def finish(yb, spec, out, preview=False):
     for i, v in enumerate(open_skin):
         kd.insert(v.co, i)
     kd.balance()
-    gone = {v.index for v in bm.verts if v.index in covered and kd.find(v.co)[2] > 0.025}
+    # (the thigh inside the shorts' legs stays, to SKIN_UP up: see the shorts above)
+    inside_hem = (lambda z: hem - 0.05 < z < hem + SKIN_UP) if hem is not None else (lambda z: False)
+    gone = {v.index for v in bm.verts if v.index in covered and kd.find(v.co)[2] > 0.025 and not inside_hem(v.co.z)}
     dead = [f for f in bm.faces if all(v.index in gone for v in f.verts)]
     bmesh.ops.delete(bm, geom=dead, context='FACES')
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
