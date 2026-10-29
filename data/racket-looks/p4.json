@@ -1,0 +1,22 @@
+{
+  "//": "Player 4's racket as drawn. Fields as data/racket-looks/p1.json.",
+  "name": "p4",
+  "model": "ÓRBITA",
+  "line": "CARBON 3K  ·  EVA SOFT  ·  38 MM",
+  "shape": "round",
+  "throat": "triangle",
+  "balance": 0.258,
+  "weight": 0.358,
+  "art": "orbit",
+  "colours": { "base": "#121216", "a": "#8a3cf0", "b": "#ff2e93", "c": "#c9c9d6", "text": "#ffffff", "frame": "#2a2b31", "accent": "#ff2e93" },
+  "finish": "gloss",
+  "frameFinish": "gloss",
+  "foam": "#e9e8e3",
+  "skin": "#121216",
+  "bumper": { "colour": "#ff2e93", "clear": 0, "span": 0.28 },
+  "grip": "#151518",
+  "tape": "#ff2e93",
+  "cap": "#2a2b31",
+  "cord": "#151518",
+  "holes": { "d": 0.012, "pitch": 0.0245, "rings": 3, "margin": 0.0115, "blank": [{ "x": 0, "y": -0.027, "a": 0.075, "b": 0.0155, "rot": 0 }, { "x": 0, "y": -0.066, "a": 0.05, "b": 0.011, "rot": 0 }, { "x": 0.075, "y": 0.06, "a": 0.013, "b": 0.011, "rot": 0 }] }
+}

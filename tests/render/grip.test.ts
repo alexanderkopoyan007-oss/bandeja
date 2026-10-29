@@ -8,7 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import * as THREE from 'three/webgpu';
 import { parsePlayerAsset } from '../../src/render/avatar/asset.ts';
 import { solveGrip } from '../../src/render/avatar/grip.ts';
-import { HANDLE_R, makeRacketModel, racketHoles } from '../../src/render/avatar/racket.ts';
+import { HANDLE_R, HANDLE_TOP, makeRacketModel, racketHoles } from '../../src/render/avatar/racket.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
 
 function asset() {
@@ -27,10 +27,11 @@ describe('racket and grip', () => {
     expect(s.y).toBeLessThanOrEqual(0.455 + 1e-4);
     expect(s.y).toBeGreaterThan(0.45);
     expect(s.x).toBeLessThanOrEqual(0.26 + 1e-4);
-    // The head (the cap is rounder than the face is thick).
-    const head = (g.children[0] as THREE.Mesh).geometry;
-    head.computeBoundingBox();
-    expect(head.boundingBox!.max.z - head.boundingBox!.min.z).toBeLessThanOrEqual(0.038 + 1e-4);
+    // The head (the handle's tape and cap are rounder than the face is thick).
+    const P = (g.getObjectByName('racketNear') as THREE.Mesh).geometry.getAttribute('position');
+    let z0 = 0, z1 = 0;
+    for (let i = 0; i < P.count; i++) if (P.getY(i) > HANDLE_TOP + 0.006) { z0 = Math.min(z0, P.getZ(i)); z1 = Math.max(z1, P.getZ(i)); }
+    expect(z1 - z0).toBeLessThanOrEqual(0.038 + 1e-4);
     expect(racketHoles().length).toBeGreaterThan(40);
   });
 

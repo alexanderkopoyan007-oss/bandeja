@@ -1,0 +1,22 @@
+{
+  "//": "Player 3's racket as drawn. Fields as data/racket-looks/p1.json.",
+  "name": "p3",
+  "model": "CIERZO",
+  "line": "CARBON 12K  ·  EVA MEDIUM  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "teardrop",
+  "balance": 0.262,
+  "weight": 0.36,
+  "art": "split",
+  "colours": { "base": "#e6e8ec", "a": "#1d3fbf", "b": "#0f1d5e", "c": "#c6f03a", "text": "#ffffff", "frame": "#eceef2", "accent": "#1d3fbf" },
+  "finish": "sand",
+  "frameFinish": "satin",
+  "foam": "#efeee9",
+  "skin": "#1a1c22",
+  "bumper": { "colour": "#1d3fbf", "clear": 0, "span": 0.3 },
+  "grip": "#c6f03a",
+  "tape": "#1d3fbf",
+  "cap": "#eceef2",
+  "cord": "#1d3fbf",
+  "holes": { "d": 0.0125, "pitch": 0.0235, "rings": 3, "margin": 0.012, "blank": [{ "x": 0, "y": -0.0445, "a": 0.07, "b": 0.0135, "rot": 0 }, { "x": 0, "y": -0.0645, "a": 0.05, "b": 0.0085, "rot": 0 }] }
+}
