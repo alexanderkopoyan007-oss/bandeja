@@ -2,9 +2,10 @@
 // surround, tiered stands on four sides with a seated crowd, and the hall: walls with a band of high windows, a
 // white roof with rows of lights and the trusses that hold it. Generic graphics only: no real event's branding.
 import * as THREE from 'three/webgpu';
-import { positionLocal, vec3, sin, time, hash, instanceIndex, uniform, float } from 'three/tsl';
+import { uniform } from 'three/tsl';
 import type { Court } from '../../sim/court/court.ts';
 import type { ArenaDef, ArenaPart } from './arena.ts';
+import { buildCrowd, type Spectator } from './crowd.ts';
 
 /** A merged mesh of axis-aligned boxes (one draw call), with per-box colours. */
 export class BoxBatch {
@@ -62,14 +63,8 @@ function boardTexture(base: string): THREE.CanvasTexture {
  * albedo is scaled down to stand in for that rather than lighting them separately. */
 const STAND_LIGHT = 0.55;
 
-const SKIN = [0xf1c8a6, 0xe0ac87, 0xc68e66, 0x9c6b4a, 0x6e4a33, 0xf6d5bf];
-const HAIR = [0x1d1612, 0x3a2a1e, 0x5a4330, 0x8a6a45, 0xc9b48a, 0x2b2b2b, 0x8c8c8c];
-// What a crowd wears, by share (arena-wide-2: mostly dark and neutral, a few bright tops; a uniform rainbow read as
-// toys): black and charcoal, navy, white, greys, denim, then the colours.
-const SHIRT = [
-  0x141414, 0x1e1f22, 0x26282c, 0x141414, 0x2a2d33, 0x1a2340, 0x1d2a55, 0x22304f, 0xe9e9e6, 0xd9dad6, 0xf2f2ef,
-  0x6d7077, 0x8b8e94, 0x55585e, 0x3f5878, 0x4a6488, 0xb33a32, 0x2f6fd1, 0x3c6b4a, 0xd8c9a8, 0x7a3346, 0xe0b23a,
-];
+/** The crowd sprites' brightness (their light is baked in the renders; see STAND_LIGHT). */
+const CROWD_LIGHT = 0.48;
 
 export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): ArenaPart {
   void court;
@@ -99,7 +94,7 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   const tiers = new BoxBatch();
   const seats: THREE.Matrix4[] = [];
   // People by stand (blocks below), so the stand behind the camera need not be drawn.
-  const people: THREE.Matrix4[][] = [[], [], [], []];
+  const people: Spectator[][] = [[], [], [], []];
   const rnd = mulberry(7);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1), pos = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
@@ -137,10 +132,8 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
         m4.compose(pos, q, sc);
         seats.push(m4.clone());
         if (rnd() < st.fill) {
-          const s = 0.92 + rnd() * 0.18;
           const p = pos.clone().addScaledVector(bl.n, -0.05 + rnd() * 0.08).addScaledVector(along, (rnd() - 0.5) * 0.08);
-          q.setFromAxisAngle(up, bl.yaw + (rnd() - 0.5) * 0.5);
-          people[bi]!.push(new THREE.Matrix4().compose(p, q.clone(), new THREE.Vector3(s, s, s)));
+          people[bi]!.push({ x: p.x, y: p.y, z: p.z, yaw: bl.yaw + (rnd() - 0.5) * 0.5 });
         }
       }
     }
@@ -155,47 +148,11 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   seats.forEach((m, i) => seatMesh.setMatrixAt(i, m));
   root.add(seatMesh);
 
-  // The crowd: torso, head and hair, each one instanced mesh; colours per person. They sway a little, and more
-  // as `excite` rises (a long rally, a big point).
+  // The crowd: MakeHuman spectators as sprites (crowd.ts), one instanced mesh a stand. They sway a little, clap and
+  // stand up as `excite` rises (a long rally, a big point).
   const excite = uniform(0);
-  const sway = (amp: number): THREE.Node<'vec3'> => {
-    const ph = hash(instanceIndex).mul(6.2831);
-    const f = float(1.3).add(hash(instanceIndex.add(7)).mul(0.9));
-    return positionLocal.add(vec3(sin(time.mul(f).add(ph)).mul(0.012 * amp), sin(time.mul(f.mul(2)).add(ph)).mul(excite).mul(0.05 * amp), 0));
-  };
-  // One instanced mesh per stand and part. Seen from 20-40 m a head is 5-10 pixels, so the shapes are low-poly
-  // (74 triangles a person, 343k for the stadium's 4,640; 192 before the review: 891k).
-  const groups: THREE.InstancedMesh[][] = [[], [], [], []];
-  const crowd = (geo: THREE.BufferGeometry, colors: number[], rough: number): void => {
-    const mat = new THREE.MeshStandardNodeMaterial({ roughness: rough });
-    mat.positionNode = sway(1);
-    const c = new THREE.Color();
-    for (let bi = 0; bi < people.length; bi++) {
-      const list = people[bi]!;
-      const im = new THREE.InstancedMesh(geo, mat, list.length);
-      list.forEach((m, i) => {
-        im.setMatrixAt(i, m);
-        // Each a little different, and a little in the shade of the people round them.
-        im.setColorAt(i, c.setHex(colors[Math.floor(rnd() * colors.length)]!).offsetHSL(0, -0.05, (rnd() - 0.6) * 0.06).multiplyScalar(STAND_LIGHT));
-      });
-      im.computeBoundingSphere();
-      root.add(im);
-      groups[bi]!.push(im);
-    }
-  };
-  const torso = new THREE.CylinderGeometry(0.16, 0.2, 0.62, 6, 1, true);
-  torso.translate(0, 0.72, 0.12);
-  const thighs = new THREE.BoxGeometry(0.34, 0.14, 0.42);
-  thighs.translate(0, 0.47, -0.08);
-  const body = mergeGeometries([torso, thighs]);
-  crowd(body, SHIRT, 0.85);
-  const head = new THREE.IcosahedronGeometry(0.105, 0);
-  head.scale(0.9, 1.1, 1);
-  head.translate(0, 1.15, 0.12);
-  crowd(head, SKIN, 0.6);
-  const hair = new THREE.SphereGeometry(0.112, 6, 3, 0, Math.PI * 2, 0, Math.PI * 0.55);
-  hair.translate(0, 1.17, 0.13);
-  crowd(hair, HAIR, 0.8);
+  const groups = buildCrowd(people, excite, rnd, { light: CROWD_LIGHT });
+  for (const g of groups) root.add(g);
 
   // The hall: walls with a band of windows, a white roof with rows of lights and trusses.
   const hall = new BoxBatch();
@@ -253,9 +210,7 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
       // in passing during the change-of-ends swing.
       if (cam) for (let bi = 0; bi < blocks.length; bi++) {
         const bl = blocks[bi]!;
-        const show = cam.x * bl.n.x + cam.z * bl.n.z < bl.at;
-        const g = groups[bi]!;
-        for (let k = 0; k < g.length; k++) g[k]!.visible = show;
+        groups[bi]!.visible = cam.x * bl.n.x + cam.z * bl.n.z < bl.at;
       }
     },
   };

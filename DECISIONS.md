@@ -1541,3 +1541,64 @@ clothes, on the game's own skeleton, so every clip, stroke, IK target and the gr
   120 Hz in all four runs, CPU work 1.4-1.5 | 1.9 ms a frame (the four extra skinned meshes). Draw calls 103 | 111,
   triangles in view 896k | 695k (the mannequin's mesh is 55k triangles, a person 29-31k). The second Medium pair was
   dropped: another project's browser check held the machine's one-Chrome lock.
+
+### Review round 1 (REVIEW.md)
+The expert review (a professional player's eye and a games critic's) ranked 13 findings; the four High ones are
+fixed here. AI doubles at level 1 over 2,040 points, before | after (`node tools/match-stats.ts --points 2000
+--level 1`; `docs/review/match-stats-l1.txt` before, `docs/review/match-stats-l1-r1.txt` after). Pro figures: WPT
+2020 men (Courel-Ibáñez/Sánchez-Alcaraz et al., *Sports* 2024, PMC11359520), which reports each stroke as the share
+of points it appears in; `match-stats` now counts strokes that way too (`inPoints`), and an overhead off the
+hitter's own back glass after the bounce as its own class, the bajada.
+- **The bajada** (High #2). Pros smash a lob that bounced deep and comes off their back glass high back down
+  (14-17% of men's points); the AI never did, since overheads were planned only from inside 6.5 m before the bounce.
+  `positioning.offGlassHigh` says when one is on: after the bounce on our half the first wall is the back glass and
+  the ball then falls through head height + 0.1 m (`BAJADA_ABOVE`) or higher, 6.5 m or more from the net
+  (`BAJADA_DEPTH`). The AI takes such a ball that way with a chance by level (`data/ai-skill.json` bajada 0.03 / 0.12
+  / 0.25, drawn once a ball at `onStrike`), planned with the overhead key's planner at the bandeja's height, met no
+  nearer the net than 6 m (a ball still high well out of the glass is let drop); 45% are struck flat and hard (the
+  smash shape, 6.2-7.4 m deep with margin: from 9 m back a full-pace ball runs long on a small error), the rest placed
+  deep like a bandeja; after 40% (per unit of the style's net) the pair moves up. A human gets a hint, "High off the
+  glass · hold O for a bajada, with Space smash it down" (the existing hint pill), and holding O already planned the
+  ball off the glass. Measured: bajada in 15.2% of points (pros 14-17), W 7.2% FE 7.2% UE 9.2% of them. Tests
+  (`tests/sim/bajada.test.ts`): when it is on (a deep lob yes; a drive, a ball into the side glass first, the other
+  half no), the AI's share by level and depth, and a human (the QA bot following the hint, `BotHuman(..., hints)`)
+  holding O and playing it off the glass. The overhead stroke animates it as it is.
+- **Play off the glass** (High #3). The planner added 0.6 to a contact before the glass within 1.7 m of the back
+  and took 0.1 off any contact after it, so the AI let nearly every deep ball through: back-wall shots 27.4% of all
+  shots against WPT men's 12.8% (2014), all wall shots 32.4% against 19.0-24.5%. That bias was written for the
+  owner's wall play, so it stays for humans and the AI has none (`Player.glassWait`: 1 human, `ai-skill.json`
+  glassWait 0). After: back-wall 21.2%, all walls 26.5%, groundstrokes before the glass 20.7% (pros 23.1); back-wall
+  shots in 71.5% of points (pros forehand 42-45%, backhand 34-36%, so about 60-65% for either). What is left comes
+  from where balls land: the probe (16 matches) put the median bounce of a net volley 2.9 m from the back glass.
+- **The overhead choice** (High #4). The smash was 49% of the AI's overheads against 26-36% for pros (bandeja in
+  44-48% of men's points, flat smash 30-33%), since inside the kill depth the top AI smashed 95% of the time. The
+  smash share now falls with how short the landing is (`KILL_SURE` 0.8 m: full rate only 0.8 m inside the kill
+  depth). After: smash 31% of overheads, in 28.9% of points; bandeja 33.9%, víbora 24.7% (pros 20-23); smash W 28.4%
+  FE 21.5% (was 23.2 / 18.5).
+- **Errors and pace** (Medium #5, #6), retuned because the overhead fix lengthened rallies (to 12.7 shots, the
+  ladder test's limit is 13.5): the AI's sideways swing spread is wider (`shots.json` swing.motor pathYaw 0.8 ->
+  1.8: errors off the side 4.6% -> 9.0%, pros 17; into the net 70.0% -> 67.1%, pros 51) and its spread grows more
+  with pressure and less on easy balls (`ai-skill.json` pressure 1.15 -> 1.6, motor at level 1 0.65 -> 0.6: forced
+  errors 24.2% -> 25.3%, pros 29-33). Rallies 11.2 -> 11.7 shots (pros 10-11), 15.4 -> 15.5 s a point (13.5-14.8),
+  0.73 -> 0.76 shots/s (0.80); endings W / FE / UE 35.4 / 25.3 / 39.3 (pros 34-42 / 29-33 / 29-33). First-serve
+  faults 6.2% -> 7.2% (pros about 10). Not closed: the error split and the unforced share stay off the pros' (#5,
+  #6 stay Medium, re-measured in round 2).
+- **The crowd** (High #1). The stadium's 4,640 spectators were a six-sided cylinder, a box for the thighs, a 20-face
+  ball for a head and a cap. They are now twelve MakeHuman people (`data/crowd.json`: men and women, 20s to 70s,
+  white, black and East Asian; casual, sport, smart and work clothes; one hat) made in MPFB and rendered in Blender
+  (`tools/assets/crowd/`) seated, clapping (two frames) and standing with the arms up, from 7 angles round the front
+  (-90 to 90 degrees, 10 degrees down) into a 2048 x 1408 atlas of 64 x 128 cells (base 419 KB, shirt light 109 KB).
+  Each frame is rendered with a white shirt and a black one: the black render is the person without the shirt's own
+  light and the difference is the light on the shirt, so the game tints each seat's shirt exactly (B + tint x light,
+  in linear light) from the old palette of mostly dark and neutral tops. The clothes are plain materials (their
+  textures carry logos). In the game (`render/arena/crowd.ts`) each seat is one quad that turns to face the camera,
+  shows the nearest angle (half the seats mirrored, so 24 looks), sits so the hips are on the seat, claps as the
+  rally's excitement rises and stands a step forward at the big moments (seat by seat, by hash), and is not drawn
+  when seen from behind (no back view; the stand under the TV camera). Traps: three applies the instance matrix
+  before `positionNode`, so `positionLocal` there already holds the seat's translation (the first build drew every
+  sprite scaled by its seat's coordinates: giants across the court); Blender's `image.pixels` of a 16-bit PNG are
+  only the stored values with the colour space set to Non-Color; the system Python has no numpy (packing runs in
+  Blender's). Triangles for the crowd 343k -> 9k, draw calls 12 -> 4.
+- **The waistband** (Medium #7). The suit's occlusion map was baked with the shorts' top under the shirt, so a shirt
+  riding up as a player bends showed a grey band: above the shirt's hem the shorts' occlusion is lifted to at least
+  0.82 (`kit.ts` aoShorts).

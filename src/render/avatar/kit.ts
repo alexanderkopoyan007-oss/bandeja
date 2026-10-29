@@ -7,7 +7,7 @@
 import * as THREE from 'three/webgpu';
 import {
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
-  mx_noise_float, texture, uv,
+  mx_noise_float, texture, uv, max,
 } from 'three/tsl';
 import { heightBump } from '../bump.ts';
 import type { PlayerAsset } from './asset.ts';
@@ -215,6 +215,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: T
   const lag = uniform(new THREE.Vector3());
   const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
   const ao = float(0.32).add(tex.x.mul(0.68));
+  // The waistband under the shirt was in the shirt's shadow when the occlusion was baked (MakeHuman's outfit); a shirt
+  // riding up as the player bends showed it as a grey band. Above the shirt's hem the shorts are lit as they show.
+  const aoShorts = mix(ao, max(ao, float(0.82)), smoothstep(frame.hemY - 0.05, frame.hemY, p.y));
 
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
   const wetAux = attribute<'float'>('bodyWet', 'float');
@@ -224,7 +227,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: T
   const stripe = smoothstep(0.012, 0.004, p.y.sub(frame.floorY + 0.055).abs());
   const shoeC = mix(mix(color(look.shoes), color(look.shirt), stripe.mul(0.9)), color(0x8a8378), sole);
   let col: THREE.Node<'vec3'> = color(look.shirt).mul(ao).mul(shirtW)
-    .add(color(look.shorts).mul(ao).mul(shortsW))
+    .add(color(look.shorts).mul(aoShorts).mul(shortsW))
     .add(tex.xyz.mul(skinW.add(eyeW)))
     .add(color(look.socks).mul(sockW))
     .add(shoeC.mul(shoeW));

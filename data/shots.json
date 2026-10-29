@@ -25,7 +25,7 @@
     "contactAlong": [0.008,  0.025,  0.015,  0.02], "contactAcross": [0.0025,  0.01,  0.007,  0.01],
     "timingYaw": 2.2, "timingAlong": 0.02, "edgeMin": 0.09, "edgeRand": 0.05,
     "frameSpeed": 0.55, "frameSpeedRand": 0.2, "frameYaw": 9, "framePitch": [2, 8],
-    "motor//": "AI players only (Phase 4): the swing-to-swing spread that is not timing, per unit of the AI's motor value (data/ai-skill.json; 0 for humans, whose own hands supply it). Path and face in degrees, speed a fraction, added to the spreads above. Mostly height and length (net and long errors: pros' errors are 51% net, 28% back wall on the full, 17% side wall, Ramírez Ortega et al. 2025), some direction.",
+    "motor//": "AI players only (Phase 4): the swing-to-swing spread that is not timing, per unit of the AI's motor value (data/ai-skill.json; 0 for humans, whose own hands supply it). Path and face in degrees, speed a fraction, added to the spreads above. Mostly height and length (net and long errors: pros' errors are 51% net, 28% back wall on the full, 17% side wall, Ramírez Ortega et al. 2025), and direction: pathYaw 0.8 put only 4.6% of the AI's errors off the side, 1.8 puts 9% (REVIEW.md round 1).",
     "motor": { "pathYaw": 1.8, "pathPitch": 1.0, "faceOpen": 0.6, "speed": 0.03 }
   }
 }
