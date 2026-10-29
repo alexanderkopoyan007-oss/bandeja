@@ -1,6 +1,6 @@
 // Doubles positioning, shared by the AI players and the human's positioning assist.
 import type { MatchSim } from '../match.ts';
-import { abs, clamp } from '../core/smath.ts';
+import { abs, clamp, max } from '../core/smath.ts';
 import { PF_FLOOR } from '../ball/predict.ts';
 
 /** Depth of a pair at the net and at the back (m from the net). */
@@ -52,6 +52,8 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   const mate = m.players[i ^ 2]!;
   let lane = (p.pos.x - mate.pos.x) * s > 0 ? 1 : (p.pos.x - mate.pos.x) * s < 0 ? -1 : i < 2 ? 1 : -1;
   let up: boolean;
+  // Following our lob in: half way while the opponents read it (lobFollow).
+  let mid = false;
   if (coming) {
     // Partner is on it: match their depth (where they will play it from), and if they are taking it on our side,
     // switch.
@@ -69,19 +71,25 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
     // lob that gets past the opponents.
     const striker = m.players[m.lastStrikePlayer]!;
     const intent = m.intentUp[team]!;
-    up = m.rally.shots === 1 || deepLob(m, s, team) || (intent >= 0 ? intent === 1 : abs(striker.lastContact.z) < 6.6);
+    const lob = lobFollow(m, s, team);
+    // A lob read as beaten stays followed until the pair's next strike (its intent is reset there), past the lob's
+    // bounce, when the read can't be made any more: followed only while the lob was in the air, the lobbers came in
+    // and went back as it landed.
+    if (lob === LOB_BEATEN) m.intentUp[team] = 1;
+    up = m.rally.shots === 1 || lob === LOB_BEATEN || (intent >= 0 ? intent === 1 : abs(striker.lastContact.z) < 6.6);
+    mid = !up && lob === LOB_WATCH;
   } else {
     up = abs(p.pos.z) < 5.2;
   }
   // Partners close up at the net and cover the middle (a ball through the middle there passed 1.8 m from each of
   // them at 4.5 m apart: most volley winners went that way); back by the glass they cover the width. Both slide
   // towards the ball (Ramón-Llin et al. 2021: the pair shifts to the side the ball is on), more at the net.
-  const half = up ? UP_HALF_GAP : BACK_HALF_GAP;
+  const half = up ? UP_HALF_GAP : mid ? (UP_HALF_GAP + BACK_HALF_GAP) * 0.5 : BACK_HALF_GAP;
   const ai = m.ai[i];
   const weak = ai ? 1 - ai.level : 0;
   const close = ai ? NET_CLOSE * (ai.style.net - 1) : 0;
   out.x = clamp(lane * s * half + (up ? UP_FOLLOW : BACK_FOLLOW) * (1 - 0.6 * weak) * m.ball.pos.x, p.minX + 0.3, p.maxX - 0.3);
-  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close : BACK_Z);
+  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close : mid ? LOB_MID_Z : BACK_Z);
 }
 
 /** The ball's next bounce on the floor is more than SWITCH_BACK_T away. (A boolean: a double returned from a call
@@ -93,29 +101,41 @@ export function bounceIsFar(m: MatchSim): boolean {
 }
 
 /**
- * The pair's ball is a lob that will beat the opponents and land deep: follow it in. A lob the net player can still
- * take overhead is not followed (the lobbing pair ran in and had the overhead smashed at them from 5 m): only one
- * landing within LOB_BEATS of the back glass, and only while the opponent taking it is not setting up to take it in
- * the air, as a lobbing player watches whether the net player turns and runs or sets for the overhead (followed on
- * the landing alone, the pair came in to 3 m and volleyed the bandeja at their feet: bandejas forced 24% of the
- * returns, the pros' 3.5% winners and few errors forced).
+ * Our ball is a lob: do we follow it in? The lob is how a pair takes the net (60.6% of net takes: Muñoz et al. 2017):
+ * once it gets past the net players, the lobbers run in while the others turn for the glass. A lobbing player reads
+ * it off the opponent taking it: set to take it in the air (a bandeja or smash, a volley) means stay back; running
+ * back to play it after the bounce or off the glass means the lob has beaten them (LOB_BEATEN: all the way in);
+ * not read yet (no plan, the reaction still coming), a step in to the transition zone (LOB_WATCH, LOB_MID_Z).
+ * Followed only on a lob landing within LOB_BEATS of the back glass, the lob made 19% of the AI's net takes and the
+ * lobbers were both up at the reply to a lob that got past 28% of the time (REVIEW.md round 3 #3). Followed on the
+ * landing alone, without the read, the pair came in to 3 m and had the overhead smashed or volleyed at their feet.
+ * A defensive style (data/ai.json net under 1) follows only a lob landing deep: LOB_LAND (m from the net) plus
+ * LOB_LAND_SHY per unit of its net trait under 1.
  */
-function deepLob(m: MatchSim, s: number, team: number): boolean {
+function lobFollow(m: MatchSim, s: number, team: number): number {
   const pr = m.pred;
-  // An AI lobber's style sets how good the lob must be to follow it in (a net-rusher follows a shorter one).
   const lobber = m.ai[m.lastStrikePlayer];
-  const beats = lobber ? LOB_BEATS * lobber.style.net : LOB_BEATS;
+  const shy = lobber ? max(0, 1 - lobber.style.net) : 0;
   let top = 0;
-  let deep = false;
+  let land = 0;
   for (let i = 0; i < pr.n; i++) {
-    if (pr.bounces[i]! > 0) { deep = top > 4.5 && abs(pr.z[i]!) > m.world.court.halfL - beats && pr.z[i]! * s < 0; break; }
+    if (pr.bounces[i]! > 0) { land = pr.z[i]! * s < 0 ? abs(pr.z[i]!) : 0; break; }
     if (pr.y[i]! > top) top = pr.y[i]!;
   }
-  if (!deep) return false;
+  if (top < LOB_TOP || land < LOB_LAND + LOB_LAND_SHY * shy) return LOB_NO;
   const k = m.taker[1 - team]!;
-  if (k < 0) return true;
+  if (k < 0) return LOB_WATCH;
   const ai = m.ai[k];
   const plan = ai ? ai.standPlan : m.stand[k]!;
-  return !(plan.valid && plan.inTime && plan.volley);
+  if (!plan.valid || plan.version !== pr.version) return LOB_WATCH;
+  return plan.volley && plan.inTime ? LOB_NO : LOB_BEATEN;
 }
-const LOB_BEATS = 2.0;
+const LOB_NO = 0;
+const LOB_WATCH = 1;
+const LOB_BEATEN = 2;
+/** A lob: over LOB_TOP (m) at its top, landing at least LOB_LAND (m) from the net on their side. */
+const LOB_TOP = 4.5;
+const LOB_LAND = 5.0;
+const LOB_LAND_SHY = 8.0;
+/** The transition zone the lobbers step to while the lob is read (m from the net). */
+const LOB_MID_Z = 6.0;

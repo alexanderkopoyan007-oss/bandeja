@@ -239,6 +239,13 @@ export class Player {
     const vT = this.qTop;
     let d = this.runD;
     let v0 = this.vel.x * this.runX + this.vel.z * this.runZ;
+    // Speed across the way to the spot carries the player on while it is braked (v^2 / 2 brake): they arrive that
+    // far to the side unless they run round it. Planned as the straight run to the spot from where the drift ends.
+    // (Without it a player running in at 4.6 m/s planned a volley 0.4 m behind them and ran past it.)
+    const px = this.vel.x - v0 * this.runX;
+    const pz = this.vel.z - v0 * this.runZ;
+    const drift = (px * px + pz * pz) / (2 * t.brake);
+    d = sqrt(d * d + drift * drift);
     let extra = 0;
     if (v0 < 0) {
       // Going the other way: stop first.

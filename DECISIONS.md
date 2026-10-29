@@ -1960,3 +1960,67 @@ Human matches dipped to black over the jump; autoplay and the attract match show
   - Moving only the band did nothing: the suit's faces are 3-4 cm across, longer than the band.
 - **Checked.** 12 back views (4 players x 3 moments, seed 7): no notch, no steps, no see-through. Before the lag
   fix, 3 of the 12 showed one.
+
+## Review round 3: the pro's Highs (2026-10-29)
+Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`, merged in REVIEW.md. Probes:
+`tools/out/r3f-*.ts`, 2000 points at level 1 (`tools/match-stats.ts --seed0 901`).
+- **P1, back-court low volleys** (`positioning.ts`). Defenders were volleying 58.9% of bandejas from 7 m at 0.6 m
+  high. The plan judged "volleying from the back" by where the player stood, not where the volley would be played,
+  so a player still on their way back planned one. Now the cost is judged at the contact spot: over 5.8 m from the
+  net it adds 0.4, plus 2.0 per metre below the waist (1.1 m). A ball below the waist back there is let bounce, or
+  comes off the glass, and is played up from below.
+  - Measured: bandeja replies volleyed 58.9% → 36.5%, now mostly by the net players. Volleys from over 6 m went
+    from 6.5% to 2.5% of shots.
+  - The planner's blocks (`SimpleAi.plan`, a ball that would hit the body first) undid the first try. Now a block
+    happens only when the run to the planned spot can't get out of the ball's way (`hitOnTheWay`).
+- **P2, returns to the net player** (`simpleAi.ts`). The AI returned the serve to whoever stood nearest.
+  - Flat returns go at the server 71.9% of the time (national players, Ramón-Llin et al. 2019,
+    `docs/research/shots-movement-feel.md` §3). Now the AI's doubles return goes 72% at the incoming server's feet,
+    5.4-6.4 m from the net. The rest split 16% down the middle and 12% past the net player; that split is our
+    choice, not data.
+  - Measured: flat returns played by the server went from 36% to 75%.
+- **P3, the lob doesn't swap roles** (`formation.ts`). A lob over the net pair left both at the net. Now `lobFollow`
+  sorts lobs by apex (4.5 m or more) and landing depth (5 m, more for net-shy styles):
+  - a lob the net player can't take sends the pair back (`intentUp` 1 for the opponents);
+  - one they might take holds them at 6 m (`LOB_MID_Z`).
+  - Measured: lobs went from 19.2% to 51% of net players' takes (pros 60.6%). Pairs who lob are now both up after it
+    99% of the time (was 28%).
+- **Found by the tests: the planner thought players could stop at once** (`Player.runTime`, `planStand`). The volley
+  key's test bot serves and sprints in. Against the new returns at its feet it missed 6 volleys, each followed by a
+  lost point; there had been none before.
+  - First cause: the run time counted only speed along the way to the spot. A player running in at 4.7 m/s who
+    plans a volley to the side carries on 0.4 m before that speed is braked. Now `runTime` plans the run from where
+    that drift ends (v² / 2 brake).
+  - Second cause: a spot closer than the player can stop. That spot is reached only by passing through it, as a
+    volley on the move, or by stopping beyond it and coming back. `planStand` now charges that.
+  - Third cause: assisted timing fired once the player got in reach, even after the ball had passed the body. That
+    swing meets nothing. Now it waits, and the ball can still be played after its bounce.
+  - Measured: volley-key misses went 6 → 0 over 12 matches (147-157 swings). AI play is within noise: 11.1 shots a
+    point (11.0), back-wall shots 20.8% (20.1), winners 37.9% (39.8). `npm run alloc`: doubles 5-6 GCs per 100k
+    ticks (3-4 before; budget 10).
+- **Tests re-pooled.** In the contrapared tests, one save more or less moved the rates past their bounds. They now
+  run 14 AI matches and 16 bot matches. Over 20 matches the AI saves 1.0% of hits off its own glass and loses 8% of
+  those points.
+  - The soundscape test runs 300 s: points at level 1 are long, and 240 s held 7 of the 8 it needs.
+  - It also counts only bounces within 10 m: a ball out over the side wall bounced at 11.7 m.
+
+## Review round 3, critic High #2: the racket missing the ball (2026-10-29)
+- **Measured** (`tools/out/r3c2-miss.ts`, 12 seeds × 120 s, the face's swept path, every tick). 24 of 640 contacts
+  had the face centre more than 10 cm from the ball. The critic's frame-sampled probe had seen 1 in 12 over 15 cm.
+  Two classes:
+  - Smashes at 2.4-2.6 m: 7 of 20, with the face 17-35 cm under the ball. All seven were by left-handers. The
+    hop checked `fam === SMASH`, and a left-hander's smash is the mirrored copy of that family, so they never left
+    the ground. `rightFamily()` (strokes.ts) now gives the family it was mirrored from (the face's strain used the
+    same check). Smashes over 10 cm: 7 → 1.
+  - Bandejas and víboras never hopped. The sim's reach assumes the shoulder rises 0.2 m by a small jump for every
+    overhead. They now hop up to `JUMP_MAX_OH` 0.2 m (the smash keeps 0.3 m). A bandeja 0.94 m out at 2.41 m
+    missed by 34 cm, now 20 cm. The víbora's miss went from 18 cm to under 10.
+- **Left: balls under 0.4 m** (10 of 123 volleys at 10-20 cm). The AI plans the ball after its bounce. Then, about
+  60 ms before contact, it sees the ball will hit its shins and switches to a half-volley at its feet (the
+  body-hit cap in `trackRelease`). The racket, waiting at the chest for the later ball, can't get down a metre in
+  60 ms. Fixing this means planning the half-volley earlier: a Medium, in REVIEW.md. AI reflex blocks with no
+  stand plan now time their swing to the AI's known release (`Avatar.planned`). It changed none of these contacts.
+- After: 17 of 640 over 10 cm, 8 over 15 cm (1.25%). The worst are a bandeja at 20 cm, a serve at 24 cm and a drive
+  1.55 m out at 21 cm. animQa's median bound went from 1.5 to 2 cm, under the ball's radius. One test minute holds
+  21-29 contacts, so the median follows the shot mix. Drives sit at 1.9-3.3 cm, and seed 3's minute moved to more
+  drives (1.56 cm).

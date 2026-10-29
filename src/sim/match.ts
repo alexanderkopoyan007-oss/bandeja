@@ -784,7 +784,12 @@ export class MatchSim {
       // early swing still meets the ball at the ideal moment (an overhead stays high, a ball at the body is
       // met in front), a late one meets it late.
       const early = (TIMING.perfect + 0.35 * (TIMING.good - TIMING.perfect)) * this.windowScale(i);
-      if (ideal >= 0 && ideal - early < t0 + DT) this.releaseSwing(i, max(t0, ideal - early), f);
+      // Not at a ball already gone past the body (the player got there too late): that swing meets nothing, and
+      // the ball may still be played after its bounce. (Servers running in were passed by the return at their feet
+      // and swung at it 60 ms late.)
+      const k = this.pred.indexAt(t0);
+      const gone = !this.focusContra && k >= 0 && s * (this.pred.z[k]! - p.pos.z) > BEHIND_MAX;
+      if (ideal >= 0 && ideal - early < t0 + DT && !gone) this.releaseSwing(i, max(t0, ideal - early), f);
     }
     // Safety: a swing held far too long releases itself, unless the ball it waits for is still on its way (a
     // lob pressed for at the opponent's strike can hang over 3 s before the overhead: those used to go off by

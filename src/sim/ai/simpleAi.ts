@@ -557,7 +557,12 @@ export class SimpleAi {
     let height = st.by;
     let volley = st.volley;
     const kHit = overhead ? -1 : m.bodyHitIdx(this.index, s);
-    const hit = kHit >= 0 ? pr.t[kHit]! : -1;
+    let hit = kHit >= 0 ? pr.t[kHit]! : -1;
+    // The ball comes at us before the planned contact, but the plan's spot is clear of it: when running there takes
+    // us out of its line before it arrives, go (a deep bandeja dropping at a defender is let past to the glass).
+    // Blocked from where they stood, defenders volleyed 58% of bandejas at their shins from 7 m (REVIEW.md round 3
+    // #1), having planned to play them off the glass.
+    if (hit >= 0 && st.inTime && hit < st.t + 0.09 && !overhead && this.hitOnTheWay(m, s, st.x, st.z) < 0) hit = -1;
     if ((!st.inTime || (hit >= 0 && hit < st.t + 0.09)) && !overhead) {
       // No comfortable contact in time, or the ball comes at us before the planned one (a fast ball at the
       // body, typically at the net): block it from where we stand, at the first moment it is in reach, rather
@@ -593,6 +598,42 @@ export class SimpleAi {
     if (this.pressed) this.retarget(m);
     else if (overhead) this.chooseOverhead(m, height, abs(sz));
     else this.chooseShot(m, height, volley, abs(sz));
+  }
+
+  /**
+   * Running from where we stand to (tx, tz), does the ball reach the body on the way? The prediction sample where
+   * it does, or -1 (an index, as MatchSim.bodyHitIdx: a double returned from a call that isn't inlined is boxed).
+   * The run is a cautious one: from rest, ESCAPE_LAG late, at ESCAPE_ACCEL of the push, no faster than ESCAPE_TOP.
+   */
+  private hitOnTheWay(m: MatchSim, s: number, tx: number, tz: number): number {
+    const p = m.players[this.index]!;
+    const pr = m.pred;
+    const t = p.tune;
+    const dx = tx - p.pos.x;
+    const dz = tz - p.pos.z;
+    const d = sqrt(dx * dx + dz * dz);
+    const ux = d > 1e-6 ? dx / d : 0;
+    const uz = d > 1e-6 ? dz / d : 0;
+    const a = t.accel * ESCAPE_ACCEL;
+    // Already on the way there: from that speed, and no start-up lag (re-planned every few ticks from rest, a
+    // player half way out of the line was judged to be hit, blocked from where they were and stopped).
+    const v0 = clamp(p.vel.x * ux + p.vel.z * uz, 0, ESCAPE_TOP);
+    const lag = v0 > 0.5 ? 0 : ESCAPE_LAG;
+    const tv = (ESCAPE_TOP - v0) / a;
+    const r = t.bodyRadius + m.world.spec.radius + 0.05;
+    const t0 = m.time;
+    for (let k = 0; k < pr.n; k++) {
+      if (pr.t[k]! < t0 || pr.z[k]! * s <= 0) continue;
+      if (pr.bounces[k]! > 1) break;
+      if (pr.y[k]! > t.height) continue;
+      const tau = max(0, pr.t[k]! - t0 - lag);
+      let go = tau < tv ? v0 * tau + 0.5 * a * tau * tau : v0 * tv + 0.5 * a * tv * tv + ESCAPE_TOP * (tau - tv);
+      if (go > d) go = d;
+      const ex = pr.x[k]! - (p.pos.x + ux * go);
+      const ez = pr.z[k]! - (p.pos.z + uz * go);
+      if (ex * ex + ez * ez < r * r) return k;
+    }
+    return -1;
   }
 
   /**
@@ -911,6 +952,17 @@ export class SimpleAi {
       const net = abs(a.pos.z) < abs(b.pos.z) ? a : b;
       x = rng.next() < 0.5 ? (a.pos.x + b.pos.x) * 0.5 : net.pos.x;
       depth = 2.8 + 0.8 * rng.next();
+    } else if (m.rally.isServe && m.doubles) {
+      // The return: at the incoming server's feet, low and cross-court, as they run in to join the net player;
+      // through the middle sometimes; down the line at the net player's feet rarely. Pros' flat returns go at the
+      // server 71.9% of the time (Ramón-Llin et al. 2019); the old split put 60% of them on the net player's racket
+      // (REVIEW.md round 3 #2).
+      const srv = m.players[m.score.serverPlayer()]!;
+      const mate = srv === a ? b : a;
+      const r = rng.next();
+      if (r < 0.72) { x = feetX(srv.pos.x, mate.pos.x); depth = 5.4 + 1.0 * rng.next(); }
+      else if (r < 0.88) { x = (a.pos.x + b.pos.x) * 0.5; depth = 6.0 + 1.0 * rng.next(); }
+      else { x = feetX(mate.pos.x, srv.pos.x); depth = abs(mate.pos.z) + 0.3 + 0.5 * rng.next(); }
     } else if (up === 2) {
       // Both at the net: low through the middle, at a player's feet, or (a volley) short and angled off the side
       // glass. "At the feet" lands beside the feet, inside the player towards the middle, so it is met low (a ball
@@ -942,6 +994,11 @@ function feetX(x: number, mate: number): number {
   return x + (mate > x ? FEET_SIDE : -FEET_SIDE);
 }
 const FEET_SIDE = 0.6;
+/** hitOnTheWay's cautious run: the start late by ESCAPE_LAG (s), ESCAPE_ACCEL of the push, at most ESCAPE_TOP (m/s,
+ * the backwards top speed). */
+const ESCAPE_LAG = 0.1;
+const ESCAPE_ACCEL = 0.8;
+const ESCAPE_TOP = 4.3;
 /** How far (m) from the ball's line a player not taking it keeps (body 0.22 + ball 0.033 + a margin). */
 const DODGE = 0.55;
 

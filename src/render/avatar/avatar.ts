@@ -22,6 +22,7 @@ import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.
 import {
   BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
+  rightFamily,
   type Family, type Key,
 } from './strokes.ts';
 
@@ -327,6 +328,10 @@ const DROP_MAX = 0.55;
  * Standing on the toes only, smashes met at 2.4 m missed the ball by about 10 cm.
  */
 const JUMP_MAX = 0.3;
+/** The bandeja's and víbora's hop at most (m): the sim's reach for every overhead assumes the shoulder raised by
+ * tuning.json reachJump (0.2 m), and on the toes alone a bandeja met 0.94 m out at 2.41 m missed by 34 cm. They are
+ * played off a small push or a scissor kick, lower than the smash's. */
+const JUMP_MAX_OH = 0.2;
 const JUMP_TOES = 0.12;
 const LAND_DROP = 0.06;
 const LAND_TIME = 0.2;
@@ -1138,13 +1143,15 @@ export class Avatar {
     this.known = false;
     this.beaten = false;
     const st = this.plan(sim, idx);
-    if (!st.valid) return -1;
     // An AI lets go at its own release time (the window it tracks, its timing error included); a late release is
     // the contact, an early one meets the ball at the window's ideal moment: time the swing to that, at wherever
     // the ball will be then (timed to an early release, the overhead's target jumped 27 cm at the release and the
-    // forearm turned 82 degrees in a frame; QA army).
+    // forearm turned 82 degrees in a frame; QA army). Also with no stand plan: a reflex block at a ball coming at
+    // the body has none, and the racket waited at the chest and had 40 ms to get down to a ball at the shins
+    // (19 cm above it; review round 3, critic #2).
     const ai = sim.ai[idx];
     this.beaten = ai ? ai.beaten : false;
+    if (!st.valid && !(ai && ai.pressed && !ai.released && ai.releaseAt > sim.time - 0.05)) return -1;
     if (ai && ai.pressed && !ai.released && ai.releaseAt > sim.time - 0.05) {
       this.known = true;
       const at = ai.releaseAt > ai.releaseIdeal ? ai.releaseAt : ai.releaseIdeal;
@@ -1612,7 +1619,7 @@ export class Avatar {
     f.toContact = this.st === ST_SWING ? this.tCon - t : this.st === ST_PREP && this.hasCon ? p.contactTime - t : Infinity;
     if (f.toContact < 0) f.toContact = Infinity;
     f.sinceContact = p.lastContactTime > 0 && p.lastContactTime <= t ? t - p.lastContactTime : -1;
-    const fam = this.fam;
+    const fam = rightFamily(this.fam);
     f.strain = fam === SMASH ? 1 : fam === OVERHEAD || fam === VIBORA ? 0.8 : fam === SERVE ? 0.7 : fam.punch < 1 ? 0.45 : 0.65;
     f.grunt = fam === SMASH || fam === SERVE;
     // Out of breath: the run's pace averaged over about 6 s, from a brisk 3 m/s up.
@@ -1869,7 +1876,7 @@ export class Avatar {
   }
 
   /**
-   * The smash's hop (JUMP_MAX): taken off so that it peaks at the contact, as high as the ball is above the toes'
+   * The overhead's hop (JUMP_MAX for a smash, JUMP_MAX_OH for a bandeja or víbora): taken off so that it peaks at the contact, as high as the ball is above the toes'
    * reach then (a late take-off flies lower to peak on time), held whatever the plan does next, and landed on bent
    * knees. Adds to lift and splitDrop (after splitStep). The feet leave their locks as the clip's soles leave the floor.
    */
@@ -1885,10 +1892,11 @@ export class Avatar {
       if (v >= 0 && v < 1) this.splitDrop += LAND_DROP * Math.sin(Math.PI * v);
       else this.landAt = -1;
     }
-    if (this.fam !== SMASH) return;
+    const fam = rightFamily(this.fam);
+    if (fam !== SMASH && fam !== OVERHEAD && fam !== VIBORA) return;
     const tc = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
     if (tc < 0 || t >= tc) return;
-    const h = Math.min(JUMP_MAX, this.upNeed - JUMP_TOES);
+    const h = Math.min(fam === SMASH ? JUMP_MAX : JUMP_MAX_OH, this.upNeed - JUMP_TOES);
     if (h < 0.03) return;
     const T = 2 * Math.sqrt((2 * h) / 9.81);
     if (t < tc - T / 2) return;

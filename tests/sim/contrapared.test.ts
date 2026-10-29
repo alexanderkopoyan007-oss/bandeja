@@ -67,7 +67,10 @@ describe('contrapared', () => {
 
   it('AI: a rare save off a ball behind the player, legal and mostly returned', () => {
     let hits = 0, contra = 0, lost = 0, mesh = 0, behind = 0, deep = 0;
-    for (let seed = 1; seed <= 6; seed++) {
+    // 14 matches: over 6 a save or two either way moved the rates past the bounds (review round 3's AI changes: a
+    // third of the saves lost in one build, 0.25% of hits in the next; over 14, 21 saves in 1807 hits, 2 lost; over
+    // 20, 26 in 2597, 2 lost).
+    for (let seed = 1; seed <= 14; seed++) {
       const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false] });
       const frames = [null, null, null, null];
       let seq = 0, open = -1;
@@ -106,7 +109,9 @@ describe('contrapared', () => {
 
   it('human (QA bot with the assist): plays it when the plan says so, and it comes back', () => {
     let plans = 0, contra = 0, back = 0;
-    for (let seed = 1; seed <= 10; seed++) {
+    // 16 matches (review round 3's AI: 12 played over 10 matches, one short of the bound; 20 of 32 plans over 16,
+    // 19 came back; before round 3, 42 of 68 plans over 24).
+    for (let seed = 1; seed <= 16; seed++) {
       const m = new MatchSim({ seed, doubles: true, human: [true, false, false, false] });
       const bot = new BotHuman(0, seed * 7);
       const f = new InputFrame();

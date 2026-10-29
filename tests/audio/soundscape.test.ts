@@ -59,7 +59,8 @@ function run(secs: number, arena: string, fps = 60, soles = false): Run {
     while (seen < m.eventSeq) {
       const e = m.events[seen++ % m.events.length]!;
       if (e.kind === E_HIT) { hits++; hitAt.push({ t: e.time, p: e.player }); if (e.a === SHOT_SERVE) serveAt.push(e.time); }
-      if (e.kind === E_FLOOR && e.c > 0.3) floors++;
+      // (within the same 10 m as count(): a ball out over the side wall bounces at 11.7 m in this match)
+      if (e.kind === E_FLOOR && e.c > 0.3 && Math.abs(e.x) < 10) floors++;
       if (e.kind === E_WALL && e.a === SURF_GLASS) glass++;
       if (e.kind === E_POINT) { points++; pointAt.push(e.time); }
       if (e.kind === E_WHIFF) whiffs++;
@@ -87,7 +88,8 @@ function run(secs: number, arena: string, fps = 60, soles = false): Run {
 }
 
 describe('soundscape', () => {
-  const r = run(240, 'stadium');
+  // 300 s: at level 1 points run long (review round 3's AI: 7 points in 240 s, one short of the clapping check).
+  const r = run(300, 'stadium');
   const count = (fam: string, rr: Run = r): number => rr.rec.plays.filter((p) => p.fam === fam && Math.abs(p.x) < 10).length;
 
   it('every hit, bounce and glass impact is heard', () => {

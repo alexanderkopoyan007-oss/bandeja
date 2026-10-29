@@ -60,6 +60,14 @@ const GLASS_BONUS = 0.1;
  * 8 m (the plan cost only height and lateness), where players get back and let them come off the glass.
  */
 const PRESSURE_COST = 0.3;
+/** A volley planned more than BACK_VOLLEY_Z (m) from the net costs BACK_VOLLEY, plus BACK_VOLLEY_LOW per metre the
+ * contact is below BACK_VOLLEY_WAIST (m). */
+const BACK_VOLLEY_Z = 5.8;
+const BACK_VOLLEY = 0.4;
+const BACK_VOLLEY_LOW = 2.0;
+const BACK_VOLLEY_WAIST = 1.1;
+/** A spot up to OVERSHOOT_OK (m) short of where the player can stop is still reached (the reach band covers it). */
+const OVERSHOOT_OK = 0.15;
 /**
  * Volleys are met with a reach or a step, not from set feet: the ball anywhere from VOLLEY_REACH_MIN to
  * VOLLEY_REACH_MAX to the side of the body is in reach (the arm and racket reach about 1.35 m; the comfortable punch
@@ -187,6 +195,17 @@ export function planStand(
       const rv = p.runV;
       const brk = rv > va ? (rv - va) * (rv - va) / (1.6 * t.brake * rv) : 0;
       need = volleyKey ? p.runT + 0.03 : p.runT + brk + (dist > 0.4 ? (kept ? 0.05 : 0.1) : 0.05);
+      // Running in faster than they can stop short of the spot (braking at 0.8 of the limit), a player is there at
+      // ti only by passing through it then (a volley on the move) or by stopping beyond it and coming back. (A
+      // server running in at 4.7 m/s planned a volley 1 m ahead, needed 1.4 m to stop and was passed by the ball.)
+      const v0 = p.vel.x * p.runX + p.vel.z * p.runZ;
+      const sd = v0 > 0 ? v0 * v0 / (1.6 * t.brake) : 0;
+      if (sd > dist + OVERSHOOT_OK) {
+        const through = (v0 - sqrt(max(0, v0 * v0 - 1.6 * t.brake * dist))) / (0.8 * t.brake);
+        if (!(volleyKey && ti - now <= through + 0.05)) {
+          need = max(need, v0 / (0.8 * t.brake) + sqrt(2 * (sd - dist) / t.accel) + 0.1);
+        }
+      }
     }
     const slack = ti - now - need;
     const afterWall = pr.walls[i]! > 0 && b === 1;
@@ -207,8 +226,11 @@ export function planStand(
         // Heading into the back glass and already deep: let it come off the glass instead.
         if (wallIdx >= 0 && i < wallIdx && b === 1 && abs(z) > backZ - GLASS_BAND) cost += GLASS_WAIT * wait;
         if (afterWall) cost -= GLASS_BONUS * wait;
-        // Volleying from the back of the court is rarely the right read.
-        if (b === 0 && abs(p.pos.z) > 6.5) cost += 0.4;
+        // Volleying from the back of the court is rarely the right read, and a low one never is: a ball below the
+        // waist back there is let bounce (or come off the glass) and played up from below. Judged at the spot the
+        // volley would be played from: judged where the player was, defenders still on their way back volleyed 58%
+        // of bandejas from 7 m at 0.6 m high (REVIEW.md round 3 #1).
+        if (b === 0 && abs(sz) > BACK_VOLLEY_Z) cost += BACK_VOLLEY + BACK_VOLLEY_LOW * max(0, BACK_VOLLEY_WAIST - y);
         cost += press;
       }
       if (cost < bestCost && clearOfBall(pr, now, i, sx, sz, t.height, t.bodyRadius)) {

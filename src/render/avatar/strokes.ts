@@ -318,14 +318,24 @@ function mirrorFamily(f: Family): Family {
 }
 
 const LEFT = new Map<Family, Family>();
+const RIGHT = new Map<Family, Family>();
 for (const f of [FOREHAND, BACKHAND, OVERHEAD, VIBORA, SMASH, SERVE, VOLLEY_FH, VOLLEY_BH, FH_SLICE, FH_LOB, FH_DROP, BH_SLICE, BH_LOB, BH_DROP,
   FH_CHIQUITA, BH_CHIQUITA, FH_CONTRA, BH_CONTRA]) {
-  LEFT.set(f, mirrorFamily(f));
+  const l = mirrorFamily(f);
+  LEFT.set(f, l);
+  RIGHT.set(l, f);
 }
 
 /** The left-hander's version of a family. */
 export function leftFamily(f: Family): Family {
   return LEFT.get(f)!;
+}
+
+/** The right-hander's family a family is (itself, or the one a left-hander's was mirrored from): compare this with
+ * SMASH etc. (a left-hander's smash is another object, and `fam === SMASH` left them standing under smashes they
+ * then missed by 25-37 cm: review round 3, critic #2). */
+export function rightFamily(f: Family): Family {
+  return RIGHT.get(f) ?? f;
 }
 
 export const READY_LEFT: Key = mirrorKey(READY);
