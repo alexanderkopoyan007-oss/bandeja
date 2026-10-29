@@ -1420,6 +1420,81 @@ it over the net (FIP 13.l: the hitter's own glass is legal before the ball cross
 - Captures: a hidden tab runs no animation frames, so three's node frame never advanced and the post-processing's
   scene pass kept its first render; `Game.renderOnce` advances it (captures with bloom on work again).
 
+**The racket, second pass** (owner, 2026-10-29: "the racket looks unrealistic").
+- **What was wrong**: the first racket was an ExtrudeGeometry with one bevel segment (hard flat edges), about 60
+  identical holes in a plain hex grid with walls the black of the face, a 256x448 twill texture with one stripe, a
+  plain cylinder handle and MeshStandardMaterials: up close a flat black disc with dots, at the TV camera a black blob.
+- **One racket per player** (`data/racket-looks/p1-p4.json`, by player number as the people are): shape (BRASA
+  diamond, MAREA round, CIERZO teardrop, ORBITA round), throat (teardrop or rounded triangle), finish (sand, matte,
+  gloss), hole size, pitch, rows and blank zones, protector (solid or translucent), grip, tape, cap and cord
+  colours, and the art. `balance` and `weight` describe the racket only: the sim's racket (`data/rackets.json`) is
+  physics and unchanged. `views.ts` dresses each avatar's racket (`dressRacket`); avatar.ts is untouched.
+- **Shapes**: every outline keeps the tip at RACKET_TIP (the frame's outline tops out 0.9 mm under it, the protector
+  makes up the rest, so the racket is 45.5 cm with it), the butt at RACKET_BUTT and the face centre at the origin.
+  Round: the 26 x 28 cm ellipse, widest at the face centre. Teardrop: widest about 3 cm up. Diamond: widest 5.5 cm up,
+  flat shoulders, near-straight sides. Widths are scaled to 25.98 cm at most. The arms are straight tubes from a tight
+  concave turn off the head to a straight neck that runs up out of the finishing tape (the first try let the corner
+  rounding eat the neck, so it flared inside the tape and poked through it); the heart is the outline offset in by
+  the arms' 17.5 mm, closed under a 15 mm bridge.
+- **One mesh, one material** (`racket.ts`, `racketMaterial.ts`): frame, faces, holes, protector, grip, tape and cap
+  are one geometry; each triangle carries its region (`rkInfo`), the material (MeshPhysicalNodeMaterial) picks colour,
+  roughness, metalness, clear coat and bump by region. 1 draw call plus the cord (was 4 plus the cord).
+  - Frame: a superellipse profile (exponent 2.4, 9 mm round from the band, the full 36 mm) swept round the outline and
+    round the heart, meeting the faces tangentially; lacquered (roughness 0.3 under a clear coat 0.05), printed from
+    the art's side strips (model name and maker along the sides).
+  - Faces: flat, 0.4 mm below the frame's band (the crisp line where face meets frame), matte (0.86 sand, 0.66
+    matte) with a sand grit: two grain sizes (0.4 and 1.1 mm) as a screen-space bump, each fading out as a pixel
+    outgrows it (bump.ts's rule), the grain also catching a little light; gloss prints and foil from the art's mask.
+  - Holes: rows following the face's edge (each row's count and phase chosen from a few that fit the most holes; phase
+    0 or a half spacing keeps it symmetric, as it must be: the same holes go through both faces and the back's print
+    is mirrored), then a hex grid shifted to fit the most, blank zones kept clear for type (ellipses in data). 57-63
+    holes of 12-13 mm, at least 8 mm of wall between, the margin from the face's edge held. Each hole is a front
+    chamfer (0.7 mm), the wall and a back chamfer, 12 sides; the wall is banded by depth in the shader: 1.6 mm dark
+    skin, the EVA foam (off-white, pores), dark skin, and darker towards mid depth (a 13 mm hole 36 mm deep sees
+    little sky). The print draws each hole's rim as a ring of the skin's colour 0.45 mm wider than the hole, which
+    is how drilled rackets look and hides the 12-gon's chords.
+  - Protector: the frame's profile stood 0.9 mm off over 28-32 cm round the tip, reaching 2.5 mm onto the band each
+    side, thinning over its last 12 mm to a squared end; solid rubber or, translucent, the frame's print through it.
+  - Bridge: a raised logo plate (0.5 mm) with the mark in foil.
+  - Handle: the overgrip is a helical mesh whose rows follow the tape's edge (16.5 mm a turn, a real 0.7 mm step per
+    turn, a groove at its foot), mean radius HANDLE_R all along, so grip.ts's solve and its tests are unchanged; the
+    shader darkens the foot of each step and lights its lifted edge. A finishing tape (printed) wraps over the
+    grip's end and onto the neck, closing the collar's top. The butt cap flares round the heel of the hand to a flat
+    end plate with the logo, the cord leaving through its centre; the cord is braided (two crossing helices of
+    strands in the shader) in the racket's colour (dressRacket repaints it when the avatar swaps hands, through
+    `childadded`).
+- **Graphics** (`racketArt.ts`): one canvas per racket at 5 px/mm over the face (1352 x 2008: the face, two side
+  strips for the halves of the outline, the tape's print, the cap's logo) and a quarter-size mask (gloss print,
+  metallic foil). Four original designs: ember chevrons on carbon twill with gold pinlines (BRASA), a tide wave on
+  white (MAREA), a split cobalt panel with lime cuts (CIERZO), orbit rings and a halftone on gloss black (ORBITA).
+  The maker is the game's own mark (BANDEJA, a ball over a tilted tray), the names are made up, the type is the
+  system sans-serif (nothing downloaded). The back is the same print mirrored, so it reads the same from either
+  side. Texture memory: about 15 MB a racket with mips, 62 MB for four (was under 1 MB); halving the canvas on the
+  Low preset is the lever if that budget gets tight.
+- **Level of detail** (`RacketLod`): a far level (no through-holes, the face darkened 10% for what they'd show, the
+  plain handle; about 1.7k triangles) when the racket is small on screen. three's LOD measures plain distance; this
+  scales it by the lens (switch at 6 m through a 45-degree lens: the broadcast camera's 26 degrees from 17-30 m
+  always gets the far level, a long lens the near one). Each camera keeps its own choice and hysteresis (a
+  spotlight's shadow pass picked the far level and then moved the view's threshold); orthographic shadow cameras
+  leave the view's choice, so the key light's shadow shows the holes. At the TV camera the rackets read in their
+  colours (white MAREA, magenta-edged ORBITA) instead of black blobs, with no sub-pixel holes to shimmer.
+- **Cost**: near level 13.7-14.3k triangles plus the cord's 480 (at most 14.8k a racket), far 1.7k; 2 draw calls a
+  racket. Geometry, material and textures are shared per look and cached; disposeTree frees them with the match (the
+  textures are also material properties for that) and three uploads them again for the next. Nothing is allocated
+  per frame (RacketLod uses module vectors; the levels are toggled, not rebuilt).
+- Measured on both backends (WebGPU and `?backend=webgl`): the same pictures, no console errors, the game running.
+  Captures: `bash tools/one-chrome.sh node tools/racket-shots.mjs <outdir> <prefix> <builddir> <port>` (review
+  cameras, studio close-ups from the racket's own frame, the four side by side, the TV view with each racket's screen
+  position; `AT=` the moment, `RP=` whose racket, `ONLY=` shots). `node tools/racket-stats.ts`: triangles, size and
+  holes per racket. Trap: `tools/one-chrome.sh` sets `T` for its queue ticket, so an environment variable named `T`
+  passed through it arrives as a path.
+- Tests: `tests/render/racket.test.ts` (every racket inside FIP's length, width, thickness, handle and hole limits;
+  RACKET_TIP/BUTT/HANDLE_R and the tip and butt where the sim has them; the face centre inside the face; each shape's
+  widest point; holes inside the face, clear of the margin, the blank zones and each other, mirrored, every wall in
+  the mesh; draw calls and triangles; the overgrip's mean radius at HANDLE_R with a real step; the level of detail
+  through the lens, its hysteresis and shadow cameras; dressing and cord; disposal); `tests/render/grip.test.ts`
+  still green.
+
 **The ball's look** (owner, 2026-10-28: "the ball doesn't look real").
 - Felt (`render/ballLook.ts`): the old ball was one flat yellow with a thin seam line, so up close it read as a
   plastic sphere. Now the felt is mottled at three scales (patches, fibre, fine nap) between a duller and a brighter
