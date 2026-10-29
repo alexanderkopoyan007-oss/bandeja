@@ -19,6 +19,8 @@ import {
 import { BUS_BALL, BUS_PLAYERS, BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
 
 /** A contact this far from the face's centre (0 centre, 1 edge) sounds off-centre. */
+/** A routine bounce before the serve hits the floor at about this speed (m/s: pushed down from 0.95 m). */
+const ROUTINE_SPEED = 5;
 const OFF_CENTRE = 0.55;
 /** The whoosh peaks this long before the contact (the racket's fastest just before it meets the ball). */
 const WHOOSH_LEAD = 0.02;
@@ -121,6 +123,12 @@ export class Soundscape {
    * After the frame's sim steps. `renderTime`: the moment being drawn (events can be up to a tick ahead of it).
    * `feet`: each player's view (avatar soles or null). `dt`: the frame's length (s).
    */
+  /** The server's routine bounce before the serve (drawn by render/views.ts BallView, not a sim event). */
+  routineBounce(x: number, z: number): void {
+    const s = binFor(BOUNCE_V, ROUTINE_SPEED, this.rand());
+    this.out.play('bounce', s.bin, x, 0.03, z, s.gain, 1, 0, BUS_BALL);
+  }
+
   update(sim: MatchSim, renderTime: number, feet: readonly FeetSource[], dt: number): void {
     if (sim !== this.sim) {
       this.sim = sim;

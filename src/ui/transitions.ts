@@ -1,6 +1,7 @@
-// Between points and games (Phase 8). The sim puts the players back in their places the instant a point's dead time
-// ends; a broadcast cuts away there, so the picture dips (a quarter-second fade to near black and back) over that
-// instant instead of showing four players jump. After a game or a set a score card shows the match so far while
+// Between points and games (Phase 8). Players walk back to their places between points (MatchSim.walking); where the
+// sim puts them there at once instead (a change of ends, or walkBack off: MatchSim.cutComing) a broadcast cuts away,
+// so the picture dips (a quarter-second fade to near black and back) over that instant instead of showing four
+// players jump. After a game or a set a score card shows the match so far while
 // the next server sets up. It sits under the HUD's own calls and never covers the score bug.
 import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import { PH_DEAD, E_GAME, E_SET } from '../sim/match.ts';
@@ -66,7 +67,7 @@ export class Transitions {
       this.seen++;
       if (e.seq >= 0) this.onEvent(e);
     }
-    const dead = sim.phase === PH_DEAD;
+    const dead = sim.cutComing;
     let a = 0;
     if (dead) {
       const rem = sim.phaseUntil - sim.time;
@@ -79,7 +80,7 @@ export class Transitions {
         if (t >= DIP_OUT) this.liftAt = -1;
         // The players are in their new places: the card for the game just won.
         if (this.cardDue && t >= DIP_OUT * 0.5) this.showCard(sim, team, now);
-      }
+      } else if (this.cardDue && sim.phase !== PH_DEAD && sim.walking === 0) this.showCard(sim, team, now);
     }
     this.wasDead = dead;
     const q = Math.round(a * 100);

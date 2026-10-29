@@ -64,6 +64,9 @@ export interface GameOptions {
   gfx?: string;
   /** Lens bloom (render/post.ts); `?bloom=0` renders straight to the screen. */
   bloom?: boolean;
+  /** The close camera while the players walk back between points (render/views.ts); `?cutaway=0` keeps the
+   * broadcast angle. */
+  cutaway?: boolean;
   /** `?dpr=`: the most pixels per CSS pixel to draw, whatever the preset (tools). */
   dprCap?: number;
   /** The AI match behind the title screen: no HUD, no banners. */
@@ -225,6 +228,7 @@ export class Game {
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0);
     const bl = this.arena.def.post?.bloom;
     if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
+    BroadcastCamera.cutaways = opts.cutaway !== false;
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar));
@@ -656,6 +660,7 @@ export class Game {
     try {
       this.audio.setListener(this.cam.camera);
       this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
+      if (this.ball.routineBounce) this.soundscape.routineBounce(this.ball.mesh.position.x, this.ball.mesh.position.z);
     } catch (e) {
       if (!this.audioFailed) { this.audioFailed = true; console.warn('audio', e); }
     }

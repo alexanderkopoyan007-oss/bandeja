@@ -280,6 +280,18 @@ export const BH_CONTRA = variant(BACKHAND, 1, 'contra');
  */
 export const READY: Key = key(v(-0.1, 1.3, 0.52), v(0.15, 0.75, 0.55), v(-1, 0, 0.15), v(-0.45, 0.85, -0.1), 0, v(0.0, 1.15, 0.42));
 
+/**
+ * The racket tap after a point (avatar.ts racketTap): the racket raised in front at shoulder height, head up and a
+ * little forward, the face towards the partner (the body is turned to them), the free hand down by the hip.
+ */
+export const TAP: Key = key(v(-0.18, 1.42, 0.5), v(-0.05, 0.9, 0.4), v(0, 0.15, 1), v(-0.5, 0.95, -0.1), 0, v(0.25, 0.95, 0.12));
+
+/**
+ * Walking back between points: the racket carried low in front of the hips, head up, the free hand on its throat
+ * (the walk's arm swing put the racket into the thighs in 1-2% of frames).
+ */
+export const CARRY: Key = key(v(-0.12, 1.02, 0.45), v(0.1, 0.8, 0.6), v(-1, 0, 0.1), v(-0.55, 0.75, -0.15), 0, v(0.02, 1.0, 0.44));
+
 // ---- left-handers: every key mirrored across the body's centre plane (model x -> -x) ----
 
 function mirrorKey(k: Key): Key {
@@ -317,4 +329,6 @@ export function leftFamily(f: Family): Family {
 }
 
 export const READY_LEFT: Key = mirrorKey(READY);
+export const TAP_LEFT: Key = mirrorKey(TAP);
+export const CARRY_LEFT: Key = mirrorKey(CARRY);
 export const SERVE_ADDRESS_LEFT: Key = mirrorKey(SERVE_ADDRESS);

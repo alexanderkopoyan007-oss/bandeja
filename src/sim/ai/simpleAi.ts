@@ -119,6 +119,9 @@ export class SimpleAi {
   }
 
   reset(): void {
+    // (a ball out of reach at the end of the last rally is not the serve's: the avatar held the serve's backswing
+    // as beaten, and swung 0.1 s late)
+    this.reach = true;
     this.planVersion = -1;
     this.ohKind = OH_ANY;
     this.bajada = false;
@@ -192,7 +195,8 @@ export class SimpleAi {
     const serving = m.score.serverPlayer() === this.index;
 
     if (m.phase === PH_SETUP) {
-      if (!serving) return;
+      // (the serve's moment is drawn once everyone is in place after the walk back: MatchSim.walking)
+      if (!serving || m.walking !== 0) return;
       if (this.servePressAt < 0) {
         this.servePressAt = t0 + 0.7 + 0.7 * rng.next();
         const r = rng.next();

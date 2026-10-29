@@ -1743,3 +1743,37 @@ Measured (2,040 points, level 1, seed0 501; docs/review/match-stats-l1-r2fix3.tx
 - Endings W / FE / UE: 37.1 / 26.1 / 36.8 → 38.5 / 26.4 / 35.0 (34-42 / 29-33 / 29-33).
 - Shots per point 11.3 → 11.3, seconds 14.8 → 14.5. Out-of-court winners 5.1% → 11.2% of winners (17).
 - In points: bandeja 40.5% (44-48), smash 35.3%, bajada 15.6% (14-17).
+
+### Review round 2, High #5: between points
+Before, a point's dead time (1.1-1.7 s) ended with everyone teleported to their places and the serve 0.5 s later.
+Human matches dipped to black over the jump; autoplay and the attract match showed it.
+- **The walk back** (`MatchSim.walking`, `walkStep`). After a point, partners meet first: they walk to 0.8 m apart,
+  for at most 1.2 s. Then everyone walks to their place at up to 2.2 m/s (a brisk walk, arriving without
+  overshooting), with 5 s in all before they are put there anyway. After a fault or let there is no meeting. The
+  next serve's moment is drawn only once everyone is in place, and any key a human presses skips the walk.
+  - The dead time after a point is 1.2 s (was 1.7): the reactions carry on into the walk.
+  - A change of ends still cuts. Nobody walks round the net: the dead time is held 0.35 s longer
+    (`MatchSim.cutComing`), and the picture dips (ui/transitions.ts) over the cut, only there.
+  - `walkBack: false` keeps the old teleport, for tools.
+  - Point end to the next toss: 5.7 s median (`tools/out/r3-walk.ts`; was about 3.3). FIP allows 20 s.
+- **The avatar** (`avatar.ts`):
+  - **Racket tap.** Partners within 1.3 m during the meeting turn 80% of the way to each other and raise the racket
+    in front at shoulder height for 0.75 s (`TAP` in strokes.ts).
+  - **Carry.** Walking, the racket is carried low in front of the hips with the free hand on its throat (`CARRY`).
+    The run clip's arm swing put it into the thighs in 1-2% of frames; with the carry, 0.2-0.3%. Both keys are eased
+    in and out: switched at once they flipped the racket 140-158° in a frame.
+  - Nobody watches the ball while walking: it jumps into the server's hand as the walk starts, and the head
+    followed it 96° in a frame once that was no longer a cut.
+- **The cut-away camera** (`BroadcastCamera.cutaway`, `?cutaway=0` off). While everyone walks, the camera cuts to
+  a net-post camera, 1.7 m up and 0.7 m in from the side glass, on the side of the pair that won the point. It
+  follows their middle (34°) and cuts back to the broadcast angle for the serve, as TV coverage cuts to a pair
+  after a point. The cut also hides the ball going into the server's hand.
+- **The server's routine** (`BallView.serveBounce`, drawn only; the sim holds the ball). 0.25 s after everyone is in
+  place, two bounces from the hand, 0.5 s each, with the bounce sound (`Soundscape.routineBounce`).
+- **Bugs found on the way.**
+  - The AI's "out of reach" flag survived from the last rally into the next serve.
+  - The avatar's own "beaten" flag did too: the serve's branch never reset it. A serve after a rally the server
+    lost on a ball out of reach held its backswing and swung 0.1 s late. 4 of p0's serves in seed 7 met the ball
+    0.06-0.11 s after the sim's contact. Both are reset now.
+- **QA.** animQa's serve measures no longer count the server's walk back (it counts with the rest of play). The
+  left-hander mirror test plays 120 s (12 of their hits in 90 s now).

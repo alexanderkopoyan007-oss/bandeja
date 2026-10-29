@@ -309,7 +309,8 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       prevRoot[i]!.copy(a.root.position);
       const motion = k > 1 && !jump;
       const ai = a as unknown as { fam: { name: string }; w: number };
-      const serving = ((m.phase === PH_SETUP || m.phase === PH_TOSS) && m.score.serverPlayer() === i)
+      // (not the walk back to the place first, MatchSim.walking: it counts with the rest of play)
+      const serving = ((m.phase === PH_SETUP || m.phase === PH_TOSS) && m.walking === 0 && m.score.serverPlayer() === i)
         || (ai.fam.name.startsWith('serve') && ai.w > 0.01);
       if (serving && motion) sv.frames++;
       playerFrames++;

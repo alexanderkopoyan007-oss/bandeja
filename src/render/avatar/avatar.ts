@@ -20,7 +20,7 @@ import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import {
-  BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   type Family, type Key,
 } from './strokes.ts';
@@ -344,6 +344,12 @@ const PREP_MIN = 0.06;
 const BODY_TURN = 0.35;
 /** Extra turn to the racket side while the ball goes past to the glass (rad), and how fast it comes and goes (s). */
 const WALL_TURN = 1.0;
+/** Racket tap (racketTap): partners this close (m), for this long (s), turned this share of the way to each other. */
+const TAP_NEAR = 1.3;
+const TAP_HOLD = 0.75;
+const TAP_TURN = 0.8;
+/** How far towards the carry key (CARRY) the racket goes while walking back. */
+const CARRY_W = 0.9;
 const WALL_EASE = 0.2;
 /** How far the head turns from the chest to watch the ball (rad), and the neck's share of it. */
 const LOOK_YAW = 1.25;
@@ -558,6 +564,16 @@ export class Avatar {
   /** The chest's turn from square this frame (hips and spine together, rad). */
   private chestTurn = 0;
   private readonly outAddr = new THREE.Quaternion(0, 0, 0, 0);
+  /** The racket tap between partners after a point (racketTap): weight, time close, the way to the partner. */
+  private tapW = 0;
+  private tapT = 0;
+  private tapYaw = 0;
+  private readonly outTap = new THREE.Quaternion(0, 0, 0, 0);
+  /** The racket carried while walking back: weight (eased), and its key blend. */
+  private carryW = 0;
+  private readonly outCarry = new THREE.Quaternion(0, 0, 0, 0);
+  private readonly carryMix: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
+  private readonly tapMix: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   private readonly readyMix: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   /** Serving: the address is the ready pose (from the point's setup to the contact). */
   private addr = false;
@@ -1114,6 +1130,8 @@ export class Avatar {
       const ai = sim.ai[idx];
       const at = ai && ai.pressed && !ai.released && ai.releaseAt > sim.tossIdeal ? ai.releaseAt : sim.tossIdeal;
       this.known = ai !== null && ai !== undefined;
+      // (not the last rally's: a serve held as beaten waited at the backswing and swung 0.1 s late)
+      this.beaten = false;
       this.predAt(sim, at, this.conW);
       return at;
     }
@@ -1444,19 +1462,31 @@ export class Avatar {
     const cut = rx * rx + rz * rz > 0.25;
     if (cut) this.resetInertia();
     // Serving: from the point's setup to the contact the address is the ready pose (side-on, the ball in hand).
-    this.addr = sim.score.serverPlayer() === idx && (sim.phase === PH_SETUP || (sim.phase === PH_TOSS && sim.rally.hitter < 0));
+    // (not while walking back to the places: sim.walking)
+    const placed = sim.walking === 0;
+    this.addr = placed && sim.score.serverPlayer() === idx && (sim.phase === PH_SETUP || (sim.phase === PH_TOSS && sim.rally.hitter < 0));
     // Ready position while a point is on (and for the receiver waiting for the serve), not at a sprint; the server's
     // is the address. Decided before the stance, which it turns. A cut (players placed for the next point) starts in
     // the new point's pose, not on the way to it.
-    this.on = sim.phase === PH_RALLY || ((sim.phase === PH_SETUP || sim.phase === PH_TOSS) && sim.score.serverPlayer() !== idx);
-    const want = this.addr ? 1 : this.on ? 0.85 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
+    this.on = sim.phase === PH_RALLY || (placed && (sim.phase === PH_SETUP || sim.phase === PH_TOSS) && sim.score.serverPlayer() !== idx);
+    this.racketTap(sim, idx, p, dt);
+    let want = this.addr ? 1 : this.on ? 0.85 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
+    if (want < this.tapW) want = this.tapW;
+    // Walking back: the racket carried (CARRY), not swung with the arms; eased in and out (carryW).
+    this.carryW += ((placed ? 0 : 1) - this.carryW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.2) : 0);
+    if (this.carryW < 0.001) this.carryW = 0;
+    if (want < CARRY_W * this.carryW) want = CARRY_W * this.carryW;
     this.ready += (want - this.ready) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
     this.addrW += ((this.addr ? 1 : 0) - this.addrW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.1) : 0);
     this.mixReady();
+    if (this.carryW > 0.001) this.mixKey(this.carryMix, this.handed > 0 ? CARRY : CARRY_LEFT, this.carryW, this.outCarry);
+    if (this.tapW > 0.001) this.mixKey(this.tapMix, this.handed > 0 ? TAP : TAP_LEFT, this.tapW, this.outTap);
     const sq = Math.max(this.w, this.ready * this.addrW);
     // (a contrapared is played facing the player's own back glass)
     const face = this.fam.glass ? net + Math.PI : net;
     this.yaw = p.facing + wrapAngle(face - this.hand * this.handed * WALL_TURN * this.wall - p.facing) * sq;
+    // Turned towards the partner for the racket tap.
+    if (this.tapW > 0.001) this.yaw += wrapAngle(this.tapYaw - this.yaw) * this.tapW * TAP_TURN;
     // The body turns no faster than a person turns (the sim faces the ball at once, even one that has just passed).
     if (this.inertial && (Avatar.inertMask & 4) !== 0) {
       this.yawI.in[0] = this.yaw;
@@ -1634,6 +1664,39 @@ export class Avatar {
     this.readyKey = m;
   }
 
+  /**
+   * After a point the partners meet as they walk back (MatchSim.walking 1) and touch rackets: within TAP_NEAR m of
+   * each other, for TAP_HOLD s, each turns towards the other with the racket up in front (TAP).
+   */
+  private racketTap(sim: MatchSim, idx: number, p: Player, dt: number): void {
+    let want = 0;
+    if (sim.doubles && sim.walking === 1) {
+      const q = sim.players[idx ^ 2]!;
+      const mx = q.pos.x - p.pos.x, mz = q.pos.z - p.pos.z;
+      if (mx * mx + mz * mz < TAP_NEAR * TAP_NEAR) {
+        this.tapT += dt;
+        want = this.tapT < TAP_HOLD ? 1 : 0;
+        // (facing f looks along (-sin f, -cos f))
+        this.tapYaw = Math.atan2(-mx, -mz);
+      }
+    } else this.tapT = 0;
+    this.tapW += (want - this.tapW) * (dt > 0 ? 1 - Math.exp(-dt / 0.12) : 0);
+    if (this.tapW < 0.001) this.tapW = 0;
+  }
+
+  /** The ready key carried towards `k` by u, into `m` (the racket's turn kept continuous through `prev`). */
+  private mixKey(m: Key, k: Key, u: number, prev: THREE.Quaternion): void {
+    const r = this.readyKey;
+    BL.u = u;
+    m.p.copy(r.p); lerpV(m.p, k.p);
+    m.pole.copy(r.pole); lerpV(m.pole, k.pole);
+    m.off.copy(r.off); lerpV(m.off, k.off);
+    m.yaw = r.yaw + (k.yaw - r.yaw) * u;
+    m.q.copy(r.q);
+    nlerpQ(m.q, k.q, prev);
+    this.readyKey = m;
+  }
+
   private resetInertia(): void {
     this.warpOff = 0;
     this.leanOk = false;
@@ -1779,8 +1842,10 @@ export class Avatar {
     this.lastPhase = phase;
     if (!this.react) return;
     const rt = t - this.reactStart;
-    const w = smoothstep(0, 0.2, rt) * (1 - smoothstep(1.25, 1.55, rt)) * (phase === PH_DEAD ? 1 : 0);
-    if (rt > 1.6 || phase !== PH_DEAD) { this.react = null; return; }
+    // (it carries on into the walk back, which starts 1.2 s after the point)
+    const live = phase === PH_DEAD || sim.walking > 0;
+    const w = smoothstep(0, 0.2, rt) * (1 - smoothstep(1.25, 1.55, rt)) * (live ? 1 : 0);
+    if (rt > 1.6 || !live) { this.react = null; return; }
     const tmp = this.tmp;
     tmp.t = this.reactFrom + rt;
     sampleClip(this.react, tmp);

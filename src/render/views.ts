@@ -2,7 +2,7 @@
 import * as THREE from 'three/webgpu';
 import { PAL, gradeColour } from '../ui/palette.ts';
 import type { MatchSim } from '../sim/match.ts';
-import { PH_RALLY, PH_TOSS } from '../sim/match.ts';
+import { PH_RALLY, PH_SETUP, PH_TOSS } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
 import { PF_FLOOR } from '../sim/ball/predict.ts';
 import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
@@ -81,12 +81,18 @@ export class BallView {
     scene.add(this.marker);
   }
 
+  /** The server's routine bounce touched the floor this frame (serveBounce): the game plays its sound. */
+  routineBounce = false;
+  /** When everyone was last in place for the serve (sim time), for the server's routine bounces. */
+  private placedAt = -1;
+
   update(sim: MatchSim, alpha: number, humanTeam: number): void {
     const b = sim.ball.pos;
     const p = sim.prevBall;
     const x = p.x + (b.x - p.x) * alpha;
-    const y = p.y + (b.y - p.y) * alpha;
+    let y = p.y + (b.y - p.y) * alpha;
     const z = p.z + (b.z - p.z) * alpha;
+    y = this.serveBounce(sim, y, sim.time + alpha * DT);
     this.mesh.position.set(x, y, z);
     {
       const t = sim.time + alpha * DT;
@@ -134,7 +140,32 @@ export class BallView {
       }
     }
   }
+
+  /** The ball's drawn height during the server's routine bounces (else `y`); sets routineBounce at each floor. */
+  private serveBounce(sim: MatchSim, y: number, t: number): number {
+    this.routineBounce = false;
+    if (sim.phase !== PH_SETUP || sim.walking !== 0) { this.placedAt = -1; this.lastRoutine = -1; return y; }
+    if (this.placedAt < 0) this.placedAt = t;
+    const u = t - this.placedAt - ROUTINE_AFTER;
+    if (u < 0 || u >= ROUTINE_BOUNCES * ROUTINE_PERIOD) return y;
+    const k = Math.floor(u / ROUTINE_PERIOD);
+    const f = u / ROUTINE_PERIOD - k;
+    const r = sim.world.spec.radius;
+    // Down from the hand, off the floor at the half period, back up into it.
+    const a = 2 * f - 1;
+    if (f >= 0.5 && this.lastRoutine !== k) { this.lastRoutine = k; this.routineBounce = true; }
+    return r + (y - r) * a * a;
+  }
+  private lastRoutine = -1;
 }
+
+/**
+ * The server's routine before the serve, drawn only (the sim holds the ball in the hand): once everyone is in place,
+ * after ROUTINE_AFTER s, ROUTINE_BOUNCES bounces from the hand, each ROUTINE_PERIOD s, the ball fastest at the floor.
+ */
+const ROUTINE_AFTER = 0.25;
+const ROUTINE_BOUNCES = 2;
+const ROUTINE_PERIOD = 0.5;
 
 export class PlayerView {
   /** At the player's feet. */
@@ -251,9 +282,29 @@ const TILT_MARGIN = (2.5 * Math.PI) / 180;
 const TILT_MAX = (14 * Math.PI) / 180;
 const TILT_LAG = 0.2;
 
+/**
+ * The cut-away between points (BroadcastCamera.cutaways): while the players walk back (MatchSim.walking) a camera at
+ * the net post on the side of the pair that won the point, CUT_HEIGHT up, CUT_POST in from the side glass and
+ * CUT_NET onto their half, frames them (CUT_FOV, following their middle with CUT_LAG); the broadcast angle comes back
+ * for the serve, as TV coverage cuts to a close shot of a pair after a point.
+ */
+const CUT_HEIGHT = 1.7;
+const CUT_POST = 0.7;
+const CUT_NET = 0.8;
+const CUT_FOV = 34;
+const CUT_LAG = 0.35;
+
 /** Broadcast camera high behind the back glass of the human's end; swings round smoothly at changes of ends. */
 export class BroadcastCamera {
+  /** Cut away to a close camera while the players walk back between points (?cutaway=0 keeps the broadcast angle). */
+  static cutaways = true;
   readonly camera: THREE.PerspectiveCamera;
+  /** The cut-away: which team it frames, where it looks (followed), and whether it is on. */
+  private cutTeam = 0;
+  private cutOn = false;
+  private cutX = 0;
+  private cutZ = 0;
+  private cutSide = 1;
   private angle = 0;
   private from = 0;
   private to = 0;
@@ -289,6 +340,31 @@ export class BroadcastCamera {
     if (strength <= live) return;
     this.kickAt = now;
     this.kickAmp = Math.min(1, strength);
+  }
+
+  /** The cut-away's pose for this frame (see CUT_*); returns its field of view. A cut, not a move, when it starts. */
+  private cutaway(sim: MatchSim, dt: number): number {
+    const court = sim.world.court;
+    const ti = sim.doubles ? 2 : 1;
+    let mx = 0, mz = 0;
+    for (let i = this.cutTeam; i < sim.players.length; i += ti) { mx += sim.players[i]!.pos.x; mz += sim.players[i]!.pos.z; }
+    const n = sim.doubles ? 2 : 1;
+    mx /= n; mz /= n;
+    if (!this.cutOn) {
+      this.cutOn = true;
+      this.cutX = mx;
+      this.cutZ = mz;
+      // The post on the side away from the pair's middle (so the shot looks across them, not along the glass).
+      this.cutSide = mx > 0 ? -1 : 1;
+    } else if (dt > 0) {
+      const a = 1 - Math.exp(-dt / CUT_LAG);
+      this.cutX += (mx - this.cutX) * a;
+      this.cutZ += (mz - this.cutZ) * a;
+    }
+    const side = sim.side(this.cutTeam);
+    this.camera.position.set(this.cutSide * (court.halfW - CUT_POST), CUT_HEIGHT, side * CUT_NET);
+    this.camera.lookAt(this.cutX, 1.15, this.cutZ);
+    return CUT_FOV;
   }
 
   /** `ball`: where the ball is drawn (null: placing the camera before play). `now` in seconds. */
@@ -350,6 +426,11 @@ export class BroadcastCamera {
     }
     this.tilt += (tiltWant - this.tilt) * (dt > 0 ? 1 - Math.exp(-dt / (tiltWant > this.tilt ? TILT_LAG : TILT_LAG * 2)) : 0);
     if (this.tilt > 1e-5) this.camera.rotateX(this.tilt);
+    const pw = sim.pointWinner;
+    if (pw >= 0) this.cutTeam = pw;
+    if (BroadcastCamera.cutaways && sim.walking > 0 && this.turnStart < 0) {
+      fov = this.cutaway(sim, dt);
+    } else this.cutOn = false;
     if (fov !== this.fovNow) {
       this.fovNow = fov;
       this.camera.fov = fov;

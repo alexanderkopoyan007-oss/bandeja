@@ -115,6 +115,8 @@ export interface MatchConfig {
    * charges the swing and assisted timing lets it go. */
   tapSwing?: boolean;
   firstServer?: number;
+  /** Between points the players walk back to their places (default); false puts them there at once. */
+  walkBack?: boolean;
 }
 
 const TIMING: TimingWindows = tuning.timing;
@@ -133,6 +135,20 @@ const SERVE_PUSH = 3.2;
 const SERVE_BEFORE_APEX = 0.02;
 /** After a drop nobody swung at, the server picks the ball up: this long before they can drop it again. */
 const RETOSS_PAUSE = 0.6;
+/**
+ * Between points (MatchSim.walking): partners meet first (MEET_GAP m apart, at most MEET_MAX s; they touch rackets),
+ * then everyone walks to their places at WALK_SPEED m/s (a brisk walk: FIP allows 20 s between points, a game has
+ * a few), within WALK_MAX s in all. Within WALK_DONE m of the spot is there.
+ */
+const MEET_GAP = 0.8;
+const MEET_MAX = 1.2;
+const WALK_SPEED = 2.2;
+const WALK_MAX = 5;
+const WALK_DONE = 0.06;
+/** The ball dead after a point before the walk back starts (1.7 s with walkBack off). */
+const POINT_DEAD_WALK = 1.2;
+/** After a change of ends, the extra dead time for the picture to dip before the cut (s). */
+const ENDS_CUT = 0.35;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
@@ -182,6 +198,30 @@ export class MatchSim {
   time = 0;
   phase = PH_SETUP;
   phaseUntil = 0;
+  /**
+   * Walking back between points, in PH_SETUP: 0 no (the serve can come), 1 partners meeting, 2 to the places
+   * (walkHome*). A human's key press ends it (everyone at their place).
+   */
+  walking = 0;
+  readonly walkHomeX: Float64Array;
+  readonly walkHomeZ: Float64Array;
+  readonly walkHomeF: Float64Array;
+  /** When the meeting (stage 1) and the whole walk give up and everyone is put in place. */
+  private walkStage = -0.5;
+  private walkUntil = -0.5;
+  /** The next startPoint begins with the partners meeting (a point was played, not a fault or let). */
+  private walkMeet = 0;
+  /** The dead time is held ENDS_CUT longer after a change of ends, then everyone is put on the other side. */
+  private endsCut = 0;
+  /**
+   * This dead time ends with everyone put in their places at once, not walking there (a change of ends, or walkBack
+   * off): presentation cuts away over it (ui/transitions.ts).
+   */
+  get cutComing(): boolean {
+    return this.phase === PH_DEAD && (this.cfg.walkBack === false || this.endsCut !== 0);
+  }
+  /** Distance left from walkDrive (a field: a returned double would be boxed). */
+  private walkD = -0;
   serveNo = 1;
   tossIdeal = 0;
   tossEnd = 0;
@@ -236,6 +276,9 @@ export class MatchSim {
     this.cfg = cfg;
     this.doubles = cfg.doubles === true;
     const n = this.doubles ? 4 : 2;
+    this.walkHomeX = new Float64Array(n);
+    this.walkHomeZ = new Float64Array(n);
+    this.walkHomeF = new Float64Array(n);
     this.world = makeWorld(cfg.world);
     this.net = makeNetCloth(this.world);
     this.ball.cloth = this.net;
@@ -306,6 +349,15 @@ export class MatchSim {
     const sc = this.score;
     const sTeam = sc.serverTeam();
     const rTeam = 1 - sTeam;
+    // Walk back from where everyone stands (not at the start, and not across the net at a change of ends: the
+    // presentation cuts there).
+    let walk = this.cfg.walkBack !== false && this.tick > 0;
+    for (let i = 0; i < this.players.length; i++) {
+      const p = this.players[i]!;
+      this.walkHomeX[i] = p.pos.x;
+      this.walkHomeZ[i] = p.pos.z;
+      if (p.pos.z * this.side(p.team) <= 0) walk = false;
+    }
     for (const p of this.players) p.setHalf(this.side(p.team), c.halfW, c.halfL);
     if (sc.isDecidingPoint() && sc.decidingSide < 0) {
       // Receivers choose the side for the golden/star point. In doubles that picks who receives: a pair with a
@@ -364,10 +416,91 @@ export class MatchSim {
     const rb = this.rally.box;
     rb.x0 = this.box.x0; rb.x1 = this.box.x1; rb.z0 = this.box.z0; rb.z1 = this.box.z1;
     this.rally.lineTolerance = c.def.lineWidth / 2;
-    this.placeBallInHand();
     this.phase = PH_SETUP;
     this.phaseUntil = this.time + 0.5;
+    this.walking = 0;
+    if (walk) {
+      // The places are the walk's ends: back to where everyone was.
+      for (let i = 0; i < this.players.length; i++) {
+        const p = this.players[i]!;
+        const x = this.walkHomeX[i]!, z = this.walkHomeZ[i]!;
+        this.walkHomeX[i] = p.pos.x;
+        this.walkHomeZ[i] = p.pos.z;
+        this.walkHomeF[i] = p.facing;
+        p.pos.x = clamp(x, p.minX, p.maxX);
+        p.pos.z = clamp(z, p.minZ, p.maxZ);
+      }
+      this.walking = this.doubles && this.walkMeet !== 0 ? 1 : 2;
+      this.walkStage = this.time + MEET_MAX;
+      this.walkUntil = this.time + WALK_MAX;
+      this.phaseUntil = this.time + WALK_MAX + 1;
+    }
+    this.walkMeet = 0;
+    this.endsCut = 0;
+    this.placeBallInHand();
     for (const a of this.ai) a?.reset();
+  }
+
+  /** Everyone at their place for the serve (the walk done, given up, or skipped). */
+  private endWalk(): void {
+    if (this.walking === 0) return;
+    for (let i = 0; i < this.players.length; i++) {
+      const p = this.players[i]!;
+      p.pos.x = this.walkHomeX[i]!;
+      p.pos.z = this.walkHomeZ[i]!;
+      p.facing = this.walkHomeF[i]!;
+      p.vel.set(0, 0, 0);
+    }
+    this.walking = 0;
+    this.phaseUntil = this.time + 0.5;
+    this.placeBallInHand();
+  }
+
+  /** One tick of the walk back for every player (instead of their inputs' movement). */
+  private walkStep(): void {
+    let far = 0;
+    const meet = this.walking === 1;
+    for (let i = 0; i < this.players.length; i++) {
+      const p = this.players[i]!;
+      this.walkDrive(i, meet);
+      p.clock = this.time;
+      p.move();
+      if (this.walkD > (meet ? 0.25 : WALK_DONE)) far++;
+    }
+    if (meet && (far === 0 || this.time >= this.walkStage)) this.walking = 2;
+    else if (!meet && (far === 0 || this.time >= this.walkUntil)) this.endWalk();
+  }
+
+  /** Steer player i to their place, or (meeting) to MEET_GAP from their partner; the distance left in walkD. */
+  private walkDrive(i: number, meet: boolean): void {
+    const p = this.players[i]!;
+    let tx = this.walkHomeX[i]!;
+    let tz = this.walkHomeZ[i]!;
+    if (meet) {
+      const q = this.players[i ^ 2]!;
+      let ex = p.pos.x - q.pos.x;
+      let ez = p.pos.z - q.pos.z;
+      const el = sqrt(ex * ex + ez * ez);
+      if (el > 1e-6) { ex /= el; ez /= el; } else { ex = 1; ez = 0; }
+      tx = (p.pos.x + q.pos.x) * 0.5 + ex * MEET_GAP * 0.5;
+      tz = (p.pos.z + q.pos.z) * 0.5 + ez * MEET_GAP * 0.5;
+    }
+    const dx = tx - p.pos.x;
+    const dz = tz - p.pos.z;
+    const d = sqrt(dx * dx + dz * dz);
+    this.walkD = d;
+    if (d < 0.04) { p.driveX = 0; p.driveZ = 0; return; }
+    p.look();
+    const lx = p.qx;
+    const lz = p.qz;
+    p.qx = dx / d;
+    p.qz = dz / d;
+    p.topToward(lx, lz);
+    let v = sqrt(2 * 0.8 * p.tune.brake * d);
+    if (v > WALK_SPEED) v = WALK_SPEED;
+    const want = v / p.qTop;
+    p.driveX = (dx / d) * want;
+    p.driveZ = (dz / d) * want;
   }
 
   /** Some player of the team is human. */
@@ -434,6 +567,7 @@ export class MatchSim {
       }
       if (f) this.applyInput(i, f);
     }
+    if (this.walking > 0) this.walkStep();
     if (this.doubles) this.separatePartners();
 
     // Phase logic.
@@ -661,7 +795,8 @@ export class MatchSim {
     }
 
     p.clock = t0;
-    if (!isServerSetup && this.phase !== PH_DEAD) { p.driveX = dx; p.driveZ = dz; p.move(); }
+    if (this.walking > 0) { /* walkStep moves everyone */ }
+    else if (!isServerSetup && this.phase !== PH_DEAD) { p.driveX = dx; p.driveZ = dz; p.move(); }
     else if (this.phase === PH_DEAD) { p.driveX = 0; p.driveZ = 0; p.move(); }
 
     // Face the ball while preparing, otherwise the direction of travel / the net.
@@ -986,6 +1121,8 @@ export class MatchSim {
     const team = p.team;
     if (p.swing !== SW_IDLE) return;
     if (this.phase === PH_SETUP) {
+      // A human's key skips the walk back.
+      if (this.walking > 0) { if (!this.ai[i]) this.endWalk(); return; }
       if (i !== this.score.serverPlayer() || t < this.phaseUntil) return;
       // Drop the ball for the serve.
       this.phase = PH_TOSS;
@@ -1397,7 +1534,8 @@ export class MatchSim {
     if (r.result === R_POINT) {
       this.pendingPointWinner = r.winner;
       this.emit(E_POINT, r.winner, r.why, this.serveNo);
-      this.phaseUntil = this.time + 1.7;
+      // (the walk back follows: the point's reactions carry on while they walk)
+      this.phaseUntil = this.time + (this.cfg.walkBack !== false ? POINT_DEAD_WALK : 1.7);
     } else if (r.result === R_FAULT) {
       if (this.serveNo === 2) {
         this.pendingPointWinner = 1 - this.score.serverTeam();
@@ -1427,9 +1565,20 @@ export class MatchSim {
         this.phase = PH_OVER;
         return;
       }
+      if ((ev & EV_CHANGE_ENDS) !== 0 && this.cfg.walkBack !== false) {
+        // Changing ends: nobody walks round the net; the picture cuts (cutComing) a moment later, when everyone is
+        // put on the other side.
+        this.pendingPointWinner = -1;
+        this.endsCut = 1;
+        this.phaseUntil = this.time + ENDS_CUT;
+        return;
+      }
+    } else if (this.endsCut !== 0) {
+      // (the cut after a change of ends: the point is scored already)
     } else if (r.result === R_FAULT) {
       this.serveNo = 2;
     }
+    this.walkMeet = this.pendingPointWinner >= 0 ? 1 : 0;
     // A let replays the same serve number.
     this.startPoint();
   }
@@ -1472,6 +1621,8 @@ export class MatchSim {
     h.num(this.crossBack[0]!).num(this.crossBack[1]!).num(this.claimGap[0]!).num(this.claimGap[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     h.num(this.tossBounces).num(this.tossBX).num(this.tossBZ);
+    h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut);
+    for (let i = 0; i < this.players.length; i++) h.num(this.walkHomeX[i]!).num(this.walkHomeZ[i]!).num(this.walkHomeF[i]!);
     const st: number[] = [];
     this.score.writeState(st);
     this.rally.writeState(st);
