@@ -173,18 +173,12 @@ export function buildOutdoor(root: THREE.Group, def: ArenaDef, court: Court, sce
   // Floodlight poles on the side mesh near each end, two LED heads each aimed into the court.
   const po = def.poles!;
   const poles = new BoxBatch();
-  const heads: Array<{ at: THREE.Vector3; aim: THREE.Vector3; ours: boolean }> = [];
+  const heads = floodHeads(def, court.halfW, court.halfL);
   for (const ox of [0, ...(def.neighbours ?? [])]) for (const sx of [1, -1]) {
     for (const sz of [1, -1]) {
       const x = ox + sx * (court.halfW + 0.12), z = sz * (court.halfL - 1.0);
       poles.box(x, po.height / 2, z, 0.1, po.height, 0.1, po.color);
       poles.box(x - sx * 0.25, po.height - 0.05, z, 0.5, 0.06, 0.06, po.color);
-      for (let k = 0; k < po.heads; k++) {
-        const at = new THREE.Vector3(x - sx * 0.45, po.height - 0.15, z + (k - (po.heads - 1) / 2) * 0.55);
-        // Aimed across the court and towards the middle, like the heads in the night reference.
-        const aim = new THREE.Vector3(ox - sx * 2.5, 0, sz * (court.halfL - 6.5) * (k === 0 ? 1 : 0.4));
-        heads.push({ at, aim, ours: ox === 0 });
-      }
     }
   }
   const poleMesh = poles.mesh();
@@ -231,4 +225,25 @@ export function buildOutdoor(root: THREE.Group, def: ArenaDef, court: Court, sce
     }
   }
   return { sky };
+}
+
+/**
+ * The floodlight heads: two per pole, the poles on the side mesh near each end of our court and of each neighbour's,
+ * aimed across the court and towards the middle, like the heads in the night reference. `ours`: they light our court
+ * (spot lights at night); the neighbours' only glow. Also read by tests/render/nightLight.test.ts.
+ */
+export function floodHeads(def: ArenaDef, halfW: number, halfL: number): Array<{ at: THREE.Vector3; aim: THREE.Vector3; ours: boolean }> {
+  const po = def.poles!;
+  const heads: Array<{ at: THREE.Vector3; aim: THREE.Vector3; ours: boolean }> = [];
+  for (const ox of [0, ...(def.neighbours ?? [])]) for (const sx of [1, -1]) {
+    for (const sz of [1, -1]) {
+      const x = ox + sx * (halfW + 0.12), z = sz * (halfL - 1.0);
+      for (let k = 0; k < po.heads; k++) {
+        const at = new THREE.Vector3(x - sx * 0.45, po.height - 0.15, z + (k - (po.heads - 1) / 2) * 0.55);
+        const aim = new THREE.Vector3(ox - sx * 2.5, 0, sz * (halfL - 6.5) * (k === 0 ? 1 : 0.4));
+        heads.push({ at, aim, ours: ox === 0 });
+      }
+    }
+  }
+  return heads;
 }

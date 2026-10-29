@@ -2047,3 +2047,23 @@ Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`,
     (0.27-0.41%). Hand in torso and legs are unchanged.
   - animQa now reports the chest at the hit by stroke (`contact.chest`). The test wants backhands over 45° and
     forehands under 55° at the median (six seeds' minutes: backhands 59-81°, forehands 8-44°).
+
+## Review round 3, critic High #5: the night court blown out (2026-10-29)
+- **Measured** in real Chrome on WebGPU (`tools/shot.mjs`, 1600 × 900, the critic's centre-line probe):
+  - at night (floods at 95), turf 234 by the centre line, the line 251: contrast 1.07, the critic's numbers exactly;
+  - by day, turf 125, line 233: 1.87.
+- **Fix:** `data/arenas.json` club-night floods 95 → 16. Turf 119-123 near the camera, line 222: contrast 1.86. The
+  glass end is darker (98) and there is darkness past the fence.
+- **Test:** `tests/render/nightLight.test.ts` computes the floods' light on the court the way three does (spot
+  falloff, cone, cosine). It checks:
+  - the near court gets 1.3-3.5× the day sun's direct light: 2.15× now; it was 12.8× at 95; the day's sky adds the
+    rest;
+  - the corners get 40-115% of the middle.
+  - `floodHeads()` (outdoor.ts) places the heads for both the scene and the test.
+- **Trap found on the way:** Browser-pane captures (hidden tab, `?backend=webgl`) left the club's court lines out for
+  the first frames after a load.
+  - The court plane was still compiling, so it was skipped, and the rim plane 2 mm under it showed through. That
+    plane has no lines and, in the clubs, the turf's colour.
+  - Recolouring the rim turned the whole court red. Swapping a material in and out drew it.
+  - Real Chrome draws the lines from the start. Judge lines and lighting from `tools/shot.mjs`, not a freshly
+    loaded pane.

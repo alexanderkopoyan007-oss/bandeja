@@ -98,9 +98,9 @@
       "env": 0.35,
       "key": { "color": "#f3f0ea", "intensity": 0.0, "dir": [0, 1, 0], "shadow": false, "radius": 4 },
       "hemi": { "sky": "#1a2233", "ground": "#0c0d0f", "intensity": 0.12 },
-      "floods": { "intensity": 95, "angle": 1.15, "penumbra": 0.9, "decay": 1.2, "shadow": 1 }
+      "floods": { "intensity": 16, "angle": 1.15, "penumbra": 0.9, "decay": 1.2, "shadow": 1 }
     },
     "post": { "bloom": { "strength": 0.5, "radius": 0.5, "threshold": 7.5 } },
-    "//floods": "Eight heads (two per pole, four poles); spot lights aimed at the court. Only one casts a shadow (cost); the others light without."
+    "//floods": "Eight heads (two per pole, four poles); spot lights aimed at the court. Only one casts a shadow (cost); the others light without. Intensity 16: exposed like a broadcast of a lit court, the turf near the camera about as bright as by day (luminance 120-126) and darker towards the glass (review round 3, critic #5: at 95 the turf rendered at 234, more than twice the day, and the centre line at 251 stood out by 7%)."
   }
 }
