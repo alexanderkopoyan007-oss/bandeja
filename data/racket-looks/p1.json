@@ -1,0 +1,21 @@
+{
+  "//": "Player 1's racket as drawn (render/avatar/racket.ts; the sim's racket is data/rackets.json and is the same for everyone). Original, generic design: the maker is the game itself (BANDEJA), the model name is made up. shape: round | teardrop | diamond (the head's outline; the tip stays 14.5 cm above the face centre, the butt 31 cm below it). throat: teardrop | triangle (the heart's opening). balance (m from the butt) and weight (kg) describe the racket; they don't change the sim. art: the face graphic (racketArt.ts) in these colours. finish: sand (a gritty 3D face), matte or gloss. foam: the EVA core seen in the holes; skin: the carbon or glass layers either side of it. bumper: the protector strip over the top of the frame (clear 0 = solid colour, 1 = translucent over the frame's paint; span along the frame, m). holes: diameter d (FIP 9-13 mm), pitch centre to centre, rings that follow the outline before the grid fills the middle, margin (hole edge to the face's edge) and blank zones (ellipses x, y, a, b, rot in face metres) kept free for graphics.",
+  "name": "p1",
+  "model": "BRASA",
+  "line": "CARBON 18K  ·  EVA HARD  ·  38 MM",
+  "shape": "diamond",
+  "throat": "triangle",
+  "balance": 0.27,
+  "weight": 0.365,
+  "art": "ember",
+  "colours": { "base": "#141518", "a": "#ff7a1f", "b": "#c4161c", "c": "#d9b25b", "text": "#ffffff", "frame": "#101113", "accent": "#ff7a1f" },
+  "finish": "sand",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": { "colour": "#ff7a1f", "clear": 0, "span": 0.3 },
+  "grip": "#1b1c1f",
+  "tape": "#ff7a1f",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": { "d": 0.013, "pitch": 0.0245, "rings": 2, "margin": 0.012, "blank": [{ "x": 0, "y": -0.05, "a": 0.052, "b": 0.017, "rot": 0 }] }
+}

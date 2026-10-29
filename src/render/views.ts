@@ -8,7 +8,8 @@ import { PF_FLOOR } from '../sim/ball/predict.ts';
 import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
 import { decal, makeSpotTexture } from './decals.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
-import { Avatar, makeRacket } from './avatar/avatar.ts';
+import { Avatar } from './avatar/avatar.ts';
+import { dressRacket, makeRacketModel, racketLookFor } from './avatar/racket.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
 import { makeBall, spinBall } from './ballLook.ts';
@@ -150,6 +151,8 @@ export class PlayerView {
       // Dressed as one of the people when they loaded (each player a different one), else the mannequin.
       const people = asset.people;
       this.avatar = new Avatar(people.length ? people[idx % people.length]! : asset, kitFor(idx));
+      // Each player's own racket (data/racket-looks/).
+      dressRacket(this.avatar.racket, racketLookFor(idx));
       this.root = this.avatar.root;
       scene.add(this.root);
       return;
@@ -173,7 +176,7 @@ export class PlayerView {
     nose.position.set(0, 1.7, -0.12);
     this.root.add(nose);
     scene.add(this.root);
-    this.racket = makeRacket();
+    this.racket = makeRacketModel(racketLookFor(idx));
     scene.add(this.racket);
   }
 

@@ -1,0 +1,21 @@
+{
+  "//": "Player 2's racket as drawn. Fields as data/racket-looks/p1.json.",
+  "name": "p2",
+  "model": "MAREA",
+  "line": "FIBERGLASS  ·  EVA SOFT  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.255,
+  "weight": 0.355,
+  "art": "tide",
+  "colours": { "base": "#f3f5f7", "a": "#0b2e5c", "b": "#11a3b8", "c": "#7fe0e8", "text": "#0b2e5c", "frame": "#0b2346", "accent": "#11a3b8" },
+  "finish": "matte",
+  "foam": "#f4f4f1",
+  "skin": "#e2e4e6",
+  "bumper": { "colour": "#d8e4ea", "clear": 0.85, "span": 0.32 },
+  "grip": "#f1f1ee",
+  "tape": "#0b2346",
+  "cap": "#0b2346",
+  "cord": "#0b2346",
+  "holes": { "d": 0.013, "pitch": 0.0235, "rings": 1, "margin": 0.0115, "blank": [{ "x": 0, "y": 0.086, "a": 0.052, "b": 0.009, "rot": 0 }, { "x": 0, "y": -0.051, "a": 0.066, "b": 0.0125, "rot": 0 }] }
+}
