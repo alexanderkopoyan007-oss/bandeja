@@ -153,10 +153,7 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   are tested to stay distinct (`tests/sim/ai.test.ts`) but no player's real profile is behind any of them, by rule.
 
 ## Phase 5 (visual realism)
-- **A realistic body and face.** The players are the Y Bot mannequin (separate shells for the chest, belly and
-  joints, no face), dressed in the shader. Skin, hair and clothing can only go so far on it. Settled by: a
-  realistic rigged human the licence allows (Mixamo's other characters, downloaded by the owner with their Adobe
-  ID, or a CC0 base body from MakeHuman/MPFB, which needs Blender), then rebinding it to our skeleton.
+- **A realistic body and face:** replaced by MPFB people in Phase 9 (below, "the people").
 - **Glass reflections of the players.** The arena-glass photo shows the players mirrored in the side glass at
   grazing angles; our glass reflects only the arena baked at load. Phase 8 didn't build it: a planar reflection
   renders the scene again per glass wall in view, and High already fills the GPU unpaced (DECISIONS.md Phase 8).
@@ -302,9 +299,13 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 
 
 ## Phase 9 (expert review: the people)
-- **How they look to the owner.** Four MakeHuman men replace the mannequin (DECISIONS, "The people"). Their faces,
-  hair, builds and the kit over the T-shirt's shading have only been judged by me from captures. Settled by: the
-  owner playing a match and saying which looks wrong (`?people=0` shows the old mannequin to compare).
+- **How they look to the owner.** Four MakeHuman men replace the mannequin (DECISIONS, "The people", and "The
+  people made real", 29 Oct). Only I have judged them, from captures: the 2048 skin with baked occlusion, the scalp
+  under the hair, the eyes, the moving face and the fitted kit. MakeHuman's CC0 assets set the ceiling. The skin
+  is a 2048 texture with no scanned pores, the hair is cards, and there is one casual suit. A scanned
+  head (photogrammetry, as 2K and EA use) would need a licensed scan the brief's free-only rule rules out. Settled
+  by: the owner playing a match with `?cam=face` and `?cam=body&camp=N`, and saying what still reads as a game
+  character (`?people=0` shows the old mannequin to compare).
 - **Women's padel and more faces.** All four are men because the clips, strokes and grip were all tuned on a male
   mannequin, and a female MPFB body is a different build (shoulders, hips, height). Four faces repeat across every
   match. Settled by: whether the owner wants mixed or women's doubles and more people (each is a JSON file and about
@@ -313,3 +314,16 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   was in the packs. Settled by: a tighter shirt modelled for the game, or the owner accepting the casual fit.
 - **The thumb on the grip.** MPFB's short thumb ends 21-23 mm off the handle (the Y Bot's 14 mm) and the ball of the
   thumb presses up to 4.8 mm into the grip. Settled by: a close look in `?cam=hand` and whether it reads as a grip.
+
+## Phase 9 (expert review: rounds 2 and 3)
+- **How far a player reaches for a high ball.** The reach above the shoulder (`data/tuning.json` //reachHigh: 1.35 m
+  out up to 1.9 m, 1.10 m at 2.35, 0.87 m at 2.55, 0.3 m at 2.75) is derived from stature (Drillis & Contini) and a
+  racket's length, not measured in padel. Settled by: side-on high-speed video (240 fps or more) of bandejas,
+  víboras and smashes from a known distance, with the court lines for scale. Measure each contact's height and its
+  distance from the hitter's centre across the floor.
+- **Time between points.** The walk back makes the next toss come 5.7 s (median) after a point; FIP allows 20 s.
+  No study of padel's time between points was found. Settled by: timing 50 points of a Premier Padel broadcast
+  from the last bounce to the next serve's toss.
+- **The racket's type.** The frame and face print use the system's bold italic sans (our own slant), so the letters
+  differ between macOS, Windows and Linux. Settled by: a screenshot on Windows and Linux, or a bundled OFL font if
+  the owner wants it identical everywhere.
