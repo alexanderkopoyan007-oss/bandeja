@@ -42,6 +42,17 @@ describe('contrapared', () => {
     }
   });
 
+  it('a contrapared with no clean launch is searched for once, not again on every pass of the strike', () => {
+    // (a failed search flies about 80 balls, and the strike's passes repeated it: 13 ms in one tick of seed 1505)
+    const p = new V3(), v = new V3(), w = new V3();
+    p.set(4.4, 0.4, 9.4);
+    expect(solver.solveContra(p, -4, -8, -400, 14, 1.9, v, w)).toBe(false);
+    expect(solver.lastEvals).toBeGreaterThan(50);
+    expect(solver.solveContra(p, -4, -8, -300, 14, 1.9, v, w, true)).toBe(false);
+    expect(solver.lastEvals).toBeLessThanOrEqual(10);
+    expect(v.length()).toBeLessThanOrEqual(14 + 1e-9);
+  });
+
   it('with the swing errors most still go glass, net, far court', () => {
     const res: ShotResult = { reachable: false, speed: 0, idealX: 0, idealZ: 0 };
     let n = 0, ok = 0;
@@ -104,7 +115,9 @@ describe('contrapared', () => {
     expect(deep).toBe(contra);
     // Rarely into our own mesh above the glass, a real error (2 of 63 over 20 seeds before review round 2's error mix)
     expect(mesh / contra).toBeLessThan(0.1);
-    expect(lost / contra).toBeLessThan(0.25);
+    // A desperate save, often lost (60 seeds: 18 of 88 before the pros' serve mix, 33 of 105 after; one 30-seed range
+    // gave 5 of 43, the next 13 of 45, so a tighter bound over 14 seeds only measures the seed).
+    expect(lost / contra).toBeLessThan(0.45);
   });
 
   it('human (QA bot with the assist): plays it when the plan says so, and it comes back', () => {

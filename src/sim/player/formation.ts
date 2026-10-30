@@ -110,11 +110,12 @@ export function bounceIsFar(m: MatchSim): boolean {
  * lobbers were both up at the reply to a lob that got past 28% of the time (REVIEW.md round 3 #3). Followed on the
  * landing alone, without the read, the pair came in to 3 m and had the overhead smashed or volleyed at their feet.
  * A defensive style (data/ai.json net under 1) follows only a lob landing deep: LOB_LAND (m from the net) plus
- * LOB_LAND_SHY per unit of its net trait under 1.
+ * LOB_LAND_SHY per unit of its net trait under 1, and some of its lobs not at all (SimpleAi.lobStay).
  */
 function lobFollow(m: MatchSim, s: number, team: number): number {
   const pr = m.pred;
   const lobber = m.ai[m.lastStrikePlayer];
+  if (lobber && lobber.lobStay) return LOB_NO;
   const shy = lobber ? max(0, 1 - lobber.style.net) : 0;
   let top = 0;
   let land = 0;

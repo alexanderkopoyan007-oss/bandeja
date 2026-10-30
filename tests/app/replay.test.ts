@@ -72,15 +72,20 @@ function play(human: boolean, seed: number, seconds: number) {
 describe('instant replays', () => {
   for (const human of [false, true]) {
     it(`show the point that was played (${human ? 'with a human' : 'AI only'})`, () => {
-      const r = play(human, 21, 420);
-      expect(r.shown).toBeGreaterThan(0);
-      for (const c of r.checks) {
-        expect(c.shown.length).toBe(2);
-        expect(c.shown[0]).toBe(c.live[0]);
-        expect(c.shown[1]).toBeCloseTo(c.live[1]!, 9);
-        expect(c.liveHash).toBeDefined();
-        expect(c.hash).toBe(c.liveHash);
+      // (a big point is a matter of the seed: play on until there has been a replay to check)
+      let shown = 0;
+      for (let seed = 21; seed < 29 && shown === 0; seed++) {
+        const r = play(human, seed, 420);
+        shown += r.shown;
+        for (const c of r.checks) {
+          expect(c.shown.length).toBe(2);
+          expect(c.shown[0]).toBe(c.live[0]);
+          expect(c.shown[1]).toBeCloseTo(c.live[1]!, 9);
+          expect(c.liveHash).toBeDefined();
+          expect(c.hash).toBe(c.liveHash);
+        }
       }
+      expect(shown).toBeGreaterThan(0);
     });
   }
 });
