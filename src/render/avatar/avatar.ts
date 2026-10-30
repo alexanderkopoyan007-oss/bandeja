@@ -367,6 +367,8 @@ const JUMP_SHORT = 1.0;
 const LAND_DROP = 0.06;
 const LAND_TIME = 0.2;
 const FOLLOW = 0.3;
+/** How far a long follow-through's curve rises (m): a drive's hand comes up to the shoulder with the arm still long. */
+const THROUGH_UP = 0.25;
 const FADE = 0.35;
 const PREP = 0.28;
 /**
@@ -418,6 +420,10 @@ const SERVE_STAND = 0.8;
  * photos: 5-19 ready, 6 at the volley, 30 at a groundstroke; the knees and hips were already theirs).
  */
 const READY_UP = 1.1;
+/** The shoulder height (m, standing) READY's numbers are for. */
+const READY_SHOULDER = 1.355;
+/** And the arm's length (m). */
+const READY_ARM = 0.5;
 /** How much of the crouch for a low ball the knees take, and how far the trunk folds for it instead (rad, at 0.4 m). */
 const CROUCH_SHARE = 0.3;
 const LOW_BEND = 0.75;
@@ -660,6 +666,7 @@ export class Avatar {
   private readonly grips: Grip[];
   private grip: Grip;
   private readyKey: Key = READY;
+  private readyFit: Key = READY;
   /** The server's address before the toss (side-on, the ball in the free hand): this player's copy, the hand on the ball. */
   private readonly addrKey: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   /** The address's share of the ready pose (eased: at the serve's contact the address hands over to the ready pose). */
@@ -804,6 +811,8 @@ export class Avatar {
   private finishTo = 0;
   /** Shoulder to wrist, arm straight (m). */
   private readonly armLen: number;
+  /** This body's shoulders above READY_SHOULDER (m). */
+  private readonly shoulderUp: number;
   /** A shorter player jumps higher for the same ball (the sim's contacts are one height for everyone): JUMP_SHORT m per
    * metre under JUMP_HEIGHT. */
   private readonly jumpMore: number;
@@ -998,6 +1007,7 @@ export class Avatar {
     const rw = asset.restWorld;
     const bp = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(rw[asset.bone(n)]!);
     this.armLen = bp('RightArm').distanceTo(bp('RightForeArm')) + bp('RightForeArm').distanceTo(bp('RightHand'));
+    this.shoulderUp = bp('RightArm').y - READY_SHOULDER;
     this.jumpMore = Math.max(0, JUMP_HEIGHT - (asset.look?.height ?? JUMP_HEIGHT)) * JUMP_SHORT;
     this.grips = [this.makeGrip(asset, 'Right'), this.makeGrip(asset, 'Left')];
     const lim = new Float64Array(this.nb);
@@ -1093,7 +1103,13 @@ export class Avatar {
     this.armFree = h > 0 ? this.armL : this.armR;
     this.elbowRacket = h > 0 ? this.elbowR : this.elbowL;
     this.elbowFree = h > 0 ? this.elbowL : this.elbowR;
-    this.readyKey = h > 0 ? READY : READY_LEFT;
+    // The ready position's height follows the shoulders: the key is an absolute height, and on a taller body it hung the arm straight.
+    const rk0 = h > 0 ? READY : READY_LEFT, up = this.shoulderUp;
+    this.readyFit = { p: rk0.p.clone(), q: rk0.q, pole: rk0.pole.clone(), yaw: rk0.yaw, off: rk0.off.clone() };
+    // (and its reach the arm's, about the shoulder, so everybody bends the elbow alike)
+    const k = this.armLen / READY_ARM, fit = (o: THREE.Vector3): void => { o.y = READY_SHOULDER + up + (o.y - READY_SHOULDER) * k; o.z *= k; };
+    fit(this.readyFit.p); fit(this.readyFit.off); fit(this.readyFit.pole);
+    this.readyKey = this.readyFit;
     const ak = h > 0 ? SERVE_ADDRESS : SERVE_ADDRESS_LEFT;
     this.addrKey.p.copy(ak.p);
     this.addrKey.q.copy(ak.q);
@@ -1438,13 +1454,14 @@ export class Avatar {
         this.swingKey(this.relS + (1 - this.relS) * g);
         if (this.relBlend) this.blendFrom(smoothstep(0, 0.7, g));
         this.w = this.relW + (1 - this.relW) * smoothstep(0, 0.06, t - this.tRel);
-      } else if (t < this.tCon + FOLLOW) {
+      } else if (t < this.tCon + (f.follow ?? FOLLOW)) {
         // Follow-through, slowing down, carrying on through the ball before wrapping round.
-        const s = clamp01((t - this.tCon) / FOLLOW);
+        const s = clamp01((t - this.tCon) / (f.follow ?? FOLLOW));
         const e = 1 - (1 - s) * (1 - s);
         const k = this.contactKey();
         this.ctrl.copy(k.p).lerp(f.finish.p, 0.5);
-        this.ctrl.z += 0.25;
+        this.ctrl.z += f.through ?? 0.25;
+        if (f.through) this.ctrl.y += THROUGH_UP;
         bezier(k.p, this.ctrl, f.finish.p, e, this.kp);
         this.kq.copy(k.q).slerp(f.finish.q, e);
         this.kpole.copy(k.pole).lerp(f.finish.pole, e);
@@ -1454,7 +1471,7 @@ export class Avatar {
         this.finishTo = e;
       } else {
         this.setKey(f.finish, f.finish, 1);
-        this.fadeOut(this.tCon + FOLLOW, 1);
+        this.fadeOut(this.tCon + (f.follow ?? FOLLOW), 1);
         this.finishTo = 1;
       }
     }
@@ -1642,7 +1659,7 @@ export class Avatar {
     // the new point's pose, not on the way to it.
     this.on = sim.phase === PH_RALLY || (placed && (sim.phase === PH_SETUP || sim.phase === PH_TOSS) && sim.score.serverPlayer() !== idx);
     this.racketTap(sim, idx, p, dt);
-    let want = this.addr ? 1 : this.on ? 0.85 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
+    let want = this.addr ? 1 : this.on ? 0.97 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
     if (want < this.tapW) want = this.tapW;
     // Walking back (and to the net after match point): the racket carried (CARRY), not swung with the arms; eased in
     // and out (carryW).
@@ -1848,7 +1865,7 @@ export class Avatar {
 
   /** The ready pose: the serve's address, the plain ready position, or on the way between them (addrW). */
   private mixReady(): void {
-    const rk = this.handed > 0 ? READY : READY_LEFT;
+    const rk = this.readyFit;
     const a = this.addrW;
     if (a >= 0.999) { this.readyKey = this.addrKey; return; }
     if (a <= 0.001) { this.readyKey = rk; return; }
@@ -2195,7 +2212,7 @@ export class Avatar {
     // the hips leaned 18 cm towards a ball 0.4 s away at p90, and 20-29 cm through a serve's toss).
     const lean = before ? smoothstep(LEAN_FROM, LEAN_FULL, left) : 1;
     // (a volley is punched from a bent arm, elbow 63 on video: the body goes to the ball, not the arm)
-    const armTo = this.armLen * (this.fam.wrist ? VOLLEY_ARM : 0.96);
+    const armTo = this.armLen * (this.fam.arm ?? (this.fam.wrist ? VOLLEY_ARM : 0.96));
     const short = len > 1e-3 ? Math.max(0, len - armTo) * this.w * lean : 0;
     // How far above the arm's reach the contact is, whole (the smash's hop is decided before the lean is in).
     this.upNeed = before && len > 1e-3 && dy > 0 ? (Math.max(0, len - armTo) * dy) / len : 0;

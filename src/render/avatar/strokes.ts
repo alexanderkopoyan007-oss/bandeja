@@ -53,6 +53,11 @@ export interface Family {
    * arm stays bent in front of the chest wherever the ball comes. Its height follows the ball (avatar's reachFrom).
    */
   wrist?: THREE.Vector3;
+  /** How much of the arm's length the shoulder-to-wrist line takes at the contact (default the avatar's ARM_TO): under it the elbow stays bent and the body goes to the ball. */
+  arm?: number;
+  /** How long the follow-through takes (s; default the avatar's FOLLOW), and how far it goes on through the ball (m; default 0.25). */
+  follow?: number;
+  through?: number;
 }
 
 const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
@@ -71,14 +76,17 @@ function key(p: THREE.Vector3, a: THREE.Vector3, n: THREE.Vector3, pole: THREE.V
 
 export const FOREHAND: Family = {
   name: 'forehand',
-  back: key(v(-0.62, 1.12, -0.42), v(-0.25, 0.6, -0.75), v(-1, 0.05, -0.1), v(-0.55, 0.75, -0.55), -1.05, v(0.12, 1.25, 0.4)),
+  back: key(v(-0.75, 1.06, -0.35), v(-0.25, 0.6, -0.75), v(-1, 0.05, -0.1), v(-0.55, 0.75, -0.55), -1.05, v(0.12, 1.25, 0.4)),
   contact: key(v(-0.75, 1.0, 0.45), v(-0.85, 0.12, 0.5), v(0.05, 0.08, 1), v(-0.45, 0.8, -0.15), 0.15, v(0.64, 1.14, 0.32)),
-  finish: key(v(0.28, 1.55, 0.12), v(0.45, 0.35, -0.8), v(0.85, 0.1, 0.4), v(-0.15, 1.45, 0.45), 0.95, v(0.5, 1.1, -0.2)),
+  finish: key(v(0.2, 1.68, 0.2), v(0.35, 0.7, -0.6), v(0.85, 0.1, 0.4), v(-0.3, 1.2, 0.6), 0.95, v(0.5, 1.1, -0.2)),
   low: racketQuat(v(-0.6, -0.74, 0.32), v(0.05, 0.3, 1)),
   dip: 0.28,
   loop: 0.1,
   crouch: 1,
   punch: 1,
+  arm: 0.86,
+  follow: 0.5,
+  through: 0.85,
 };
 
 /**
@@ -99,6 +107,9 @@ export const BACKHAND: Family = {
   loop: 0.05,
   crouch: 1,
   punch: 1,
+  arm: 0.86,
+  follow: 0.5,
+  through: 0.85,
 };
 
 /**
@@ -332,7 +343,7 @@ export const BH_CONTRA = variant(BACKHAND, 1, 'contra');
  * elbows bent (with the racket 0.42 m out the racket hand sat 18 cm in front of the hips, and a running body's
  * pelvis tilted onto it: 8% of a left-handed pair's frames had a hand inside the pelvis).
  */
-export const READY: Key = key(v(-0.1, 1.28, 0.62), v(0.15, 0.75, 0.55), v(-1, 0, 0.15), v(-0.45, 0.85, -0.1), 0, v(-0.01, 1.13, 0.52));
+export const READY: Key = key(v(-0.1, 1.24, 0.43), v(0.15, 0.78, 0.5), v(-1, 0, 0.15), v(-0.5, 0.85, -0.15), 0, v(-0.02, 1.05, 0.38));
 
 /**
  * The racket tap after a point (avatar.ts racketTap): the racket raised in front at shoulder height, head up and a
