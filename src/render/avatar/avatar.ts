@@ -20,7 +20,7 @@ import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import {
-  BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   rightFamily,
   type Family, type Key,
@@ -360,6 +360,11 @@ const WALL_TURN = 1.0;
 const WALL_TURN_BH = 0.35;
 /** Racket tap (racketTap): partners this close (m), for this long (s), turned this share of the way to each other. */
 const TAP_NEAR = 1.3;
+/** The end of a match: the embrace starts with the partner within HUG_NEAR m; the beaten bend over BOW_AFTER s after
+ * match point, BOW_ANGLE rad down the spine. */
+const HUG_NEAR = 0.85;
+const BOW_AFTER = 1.1;
+const BOW_ANGLE = 0.62;
 const TAP_HOLD = 0.75;
 const TAP_TURN = 0.8;
 /** How far towards the carry key (CARRY) the racket goes while walking back. */
@@ -608,6 +613,10 @@ export class Avatar {
   private readonly outAddr = new THREE.Quaternion(0, 0, 0, 0);
   /** The racket tap between partners after a point (racketTap): weight, time close, the way to the partner. */
   private tapW = 0;
+  /** What tapW is carrying towards: TAP, or an end-of-match key. */
+  private tapKey: Key | null = null;
+  /** The bend of the beaten at the end of a match (0..1). */
+  private bowW = 0;
   private tapT = 0;
   private tapYaw = 0;
   private readonly outTap = new THREE.Quaternion(0, 0, 0, 0);
@@ -1542,7 +1551,7 @@ export class Avatar {
     this.addrW += ((this.addr ? 1 : 0) - this.addrW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.1) : 0);
     this.mixReady();
     if (this.carryW > 0.001) this.mixKey(this.carryMix, this.handed > 0 ? CARRY : CARRY_LEFT, this.carryW, this.outCarry);
-    if (this.tapW > 0.001) this.mixKey(this.tapMix, this.handed > 0 ? TAP : TAP_LEFT, this.tapW, this.outTap);
+    if (this.tapW > 0.001) this.mixKey(this.tapMix, this.tapKey ?? (this.handed > 0 ? TAP : TAP_LEFT), this.tapW, this.outTap);
     const sq = Math.max(this.w, this.ready * this.addrW);
     // (a contrapared is played facing the player's own back glass)
     const face = this.fam.glass ? net + Math.PI : net;
@@ -1631,6 +1640,10 @@ export class Avatar {
       q1.setFromAxisAngle(AXIS_Y, spineTurn);
       q2.setFromAxisAngle(AXIS_X, lean);
       for (let k = 0; k < 3; k++) this.spine[k]!.quaternion.multiply(q1).multiply(q2);
+    }
+    if (this.bowW > 0) {
+      q2.setFromAxisAngle(AXIS_X, (this.bowW * BOW_ANGLE) / 3);
+      for (let k = 0; k < 3; k++) this.spine[k]!.quaternion.multiply(q2);
     }
     // The clip pose (locomotion, reactions, the shoulder turn) carried on smoothly through any jump, before IK.
     if (this.inertial && (Avatar.inertMask & 1) !== 0) this.inertia.apply(this.bones, this.hips.position, this.inertiaSkip);
@@ -1738,8 +1751,25 @@ export class Avatar {
    */
   private racketTap(sim: MatchSim, idx: number, p: Player, dt: number): void {
     let want = 0;
+    let bow = 0;
     const net = sim.phase === PH_OVER && sim.overStage === 3;
-    if ((sim.doubles && sim.walking === 1) || net) {
+    if (sim.phase === PH_OVER && sim.overStage === 1) {
+      // The end of a match: the winners run together and embrace; the beaten bend over, hands on the knees. Alone, the
+      // winner goes on celebrating (reaction()).
+      this.tapT += dt;
+      if ((idx & 1) !== sim.score.winner) {
+        if (this.tapT > BOW_AFTER) { want = 1; bow = 1; this.tapKey = this.handed > 0 ? KNEES : KNEES_LEFT; }
+      } else if (sim.doubles) {
+        const q = sim.players[idx ^ 2]!;
+        const mx = q.pos.x - p.pos.x, mz = q.pos.z - p.pos.z;
+        if (mx * mx + mz * mz < HUG_NEAR * HUG_NEAR) {
+          want = 1;
+          this.tapKey = this.handed > 0 ? HUG : HUG_LEFT;
+          this.tapYaw = Math.atan2(-mx, -mz);
+        }
+      }
+    } else if ((sim.doubles && sim.walking === 1) || net) {
+      this.tapKey = null;
       const q = sim.players[net ? sim.overMate[idx]! : idx ^ 2]!;
       const mx = q.pos.x - p.pos.x, mz = q.pos.z - p.pos.z;
       if (mx * mx + mz * mz < TAP_NEAR * TAP_NEAR) {
@@ -1751,6 +1781,8 @@ export class Avatar {
     } else this.tapT = 0;
     this.tapW += (want - this.tapW) * (dt > 0 ? 1 - Math.exp(-dt / 0.12) : 0);
     if (this.tapW < 0.001) this.tapW = 0;
+    this.bowW += (bow - this.bowW) * (dt > 0 ? 1 - Math.exp(-dt / 0.3) : 0);
+    if (this.bowW < 0.001) this.bowW = 0;
   }
 
   /** The ready key carried towards `k` by u, into `m` (the racket's turn kept continuous through `prev`). */
@@ -1921,7 +1953,12 @@ export class Avatar {
     }
     this.lastPhase = phase;
     if (!this.react) return;
-    const rt = t - this.reactStart;
+    let rt = t - this.reactStart;
+    // (a match won: again and again until the partners meet)
+    if (phase === PH_OVER && sim.overStage === 1 && (idx & 1) === sim.score.winner && rt > 1.5 && this.tapW < 0.3) {
+      this.reactStart = t;
+      rt = 0;
+    }
     // (it carries on into the walk back, which starts 1.2 s after the point)
     const live = phase === PH_DEAD || sim.walking > 0 || (phase === PH_OVER && sim.overStage === 1);
     const w = smoothstep(0, 0.2, rt) * (1 - smoothstep(1.25, 1.55, rt)) * (live ? 1 : 0);

@@ -306,6 +306,13 @@ export const READY: Key = key(v(-0.1, 1.3, 0.52), v(0.15, 0.75, 0.55), v(-1, 0, 
 export const TAP: Key = key(v(-0.18, 1.42, 0.5), v(-0.05, 0.9, 0.4), v(0, 0.15, 1), v(-0.5, 0.95, -0.1), 0, v(0.25, 0.95, 0.12));
 
 /**
+ * The end of a match: the winners' embrace, the racket arm over the partner's shoulder with the racket out behind them,
+ * the free arm round their ribs; the beaten pair bent over, hands on the knees (the racket hanging from its hand).
+ */
+export const HUG: Key = key(v(-0.16, 1.64, 0.8), v(-0.03, 0.32, 1), v(1, 0, 0.05), v(-0.8, 0.85, -0.05), 0, v(0.24, 1.14, 0.46));
+export const KNEES: Key = key(v(-0.2, 0.3, 0.3), v(-0.2, -0.9, 0.35), v(0, 0.3, 1), v(-0.75, 0.8, -0.25), 0, v(0.15, 0.68, 0.2));
+
+/**
  * Walking back between points: the racket carried low in front of the hips, head up, the free hand on its throat
  * (the walk's arm swing put the racket into the thighs in 1-2% of frames).
  */
@@ -359,5 +366,7 @@ export function rightFamily(f: Family): Family {
 
 export const READY_LEFT: Key = mirrorKey(READY);
 export const TAP_LEFT: Key = mirrorKey(TAP);
+export const HUG_LEFT: Key = mirrorKey(HUG);
+export const KNEES_LEFT: Key = mirrorKey(KNEES);
 export const CARRY_LEFT: Key = mirrorKey(CARRY);
 export const SERVE_ADDRESS_LEFT: Key = mirrorKey(SERVE_ADDRESS);

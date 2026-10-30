@@ -154,7 +154,15 @@ const WALK_DONE = 0.06;
  * with the opponent in their lane for OVER_TAP s (3), the padel custom at the end of a match; then they step back
  * from the net to OVER_BACK m and stand (4; rackets hanging at their sides would otherwise touch the net).
  */
-const OVER_REACT = 1.6;
+const OVER_REACT = 3.6;
+/**
+ * The winners of a doubles match run to each other as the ball drops (after OVER_RUN_AFTER s, at OVER_RUN_SPEED m/s)
+ * and embrace, each OVER_HUG m from the middle between them; the avatars do the rest. A win was the same small gesture as
+ * a point, with the partners 5 m apart (review round 4, the critic's #2).
+ */
+const OVER_RUN_AFTER = 0.35;
+const OVER_RUN_SPEED = 4.6;
+const OVER_HUG = 0.2;
 const OVER_LANE = 1.25;
 const OVER_NET = 0.4;
 const OVER_WALK_MAX = 7;
@@ -240,6 +248,8 @@ export class MatchSim {
   /** Distance left from walkDrive (a field: a returned double would be boxed). */
   private walkD = -0;
   /** walkDrive's target (fields, as walkD). */
+  private walkSpeed = WALK_SPEED;
+  private overHugAt = -0.5;
   private walkTX = -0;
   private walkTZ = -0;
   /**
@@ -541,7 +551,7 @@ export class MatchSim {
     p.qz = dz / d;
     p.topToward(lx, lz);
     let v = sqrt(2 * 0.8 * p.tune.brake * d);
-    if (v > WALK_SPEED) v = WALK_SPEED;
+    if (v > this.walkSpeed) v = this.walkSpeed;
     const want = v / p.qTop;
     p.driveX = (dx / d) * want;
     p.driveZ = (dz / d) * want;
@@ -557,7 +567,19 @@ export class MatchSim {
       const p = this.players[i]!;
       p.clock = this.time;
       let d = 0;
-      if (stage === 2 || stage === 4) {
+      const hug = stage === 1 && this.doubles && p.team === this.score.winner;
+      if (hug && this.time >= this.overHugAt) {
+        // Half way to the partner, less the room two bodies take.
+        const q = this.players[i ^ 2]!;
+        const ax = q.pos.x - p.pos.x, az = q.pos.z - p.pos.z;
+        const gap = sqrt(ax * ax + az * az);
+        const stop = gap > 1e-6 ? max(0, 0.5 - OVER_HUG / gap) : 0;
+        this.walkTX = p.pos.x + ax * stop;
+        this.walkTZ = p.pos.z + az * stop;
+        this.walkSpeed = OVER_RUN_SPEED;
+        this.steerWalk(p);
+        this.walkSpeed = WALK_SPEED;
+      } else if (stage === 2 || stage === 4) {
         this.walkTX = this.overX[i]!;
         this.walkTZ = stage === 2 ? this.overZ[i]! : this.overZ[i]! * (OVER_BACK / OVER_NET);
         this.steerWalk(p);
@@ -570,7 +592,8 @@ export class MatchSim {
       p.move();
       // Watching the ball fall, then looking where they walk, then at the opponent across the net.
       const at = this.overAt;
-      if (stage === 1) at.copy(this.ball.pos);
+      if (hug && this.time >= this.overHugAt) at.copy(this.players[i ^ 2]!.pos);
+      else if (stage === 1) at.copy(this.ball.pos);
       else if (stage === 2 && d > 0.6) at.set(this.overX[i]!, 0, this.overZ[i]!);
       else at.copy(this.players[this.overMate[i]!]!.pos);
       p.faceTowards(at);
@@ -1683,6 +1706,7 @@ export class MatchSim {
         this.phase = PH_OVER;
         this.overStage = 1;
         this.overUntil = this.time + OVER_REACT;
+        this.overHugAt = this.time + OVER_RUN_AFTER;
         return;
       }
       if ((ev & EV_CHANGE_ENDS) !== 0 && this.cfg.walkBack !== false) {

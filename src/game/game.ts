@@ -37,7 +37,7 @@ const MAX_TICKS_PER_FRAME = 12;
 /** After match point: the results come OVER_HOLD_MS after the players have played the end out (MatchSim.overStage 4),
  * at the latest OVER_MAX_MS after it; Enter or Space skips to them from OVER_SKIP_AFTER_MS. */
 const OVER_HOLD_MS = 1500;
-const OVER_MAX_MS = 14000;
+const OVER_MAX_MS = 16000;
 const OVER_SKIP_AFTER_MS = 800;
 
 export interface GameOptions {

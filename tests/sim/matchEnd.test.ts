@@ -23,7 +23,7 @@ describe('the end of a match', () => {
       const ends = m.score.ends;
       const by = m.ball.pos.y;
       const z0 = m.players.map((p) => Math.sign(p.pos.z));
-      for (let i = 0; i < 120 * 12; i++) m.step(doubles ? [null, null, null, null] : [null, null]);
+      for (let i = 0; i < 120 * 14; i++) m.step(doubles ? [null, null, null, null] : [null, null]);
       expect(m.overStage).toBe(4);
       // Nobody changes ends after the last game.
       expect(m.score.ends).toBe(ends);
