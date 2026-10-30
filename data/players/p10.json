@@ -36,7 +36,8 @@
   "build": {
     "torso/torso-scale-horiz-incr": 0.3,
     "torso/torso-scale-vert-decr": 0.3,
-    "legs/measure-calf-circ-incr": 0.4
+    "legs/measure-calf-circ-incr": 0.4,
+    "legs/measure-thigh-circ-decr": 0.3
   },
   "face": {
     "head/head-rectangular": 0.3,

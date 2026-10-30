@@ -2442,11 +2442,18 @@ no ring narrower than the body it passes or than the ring above, since cloth han
 its own strip so it shades flat. Weights alone can't keep a raised knee behind the cloth, so `thighsPush` makes each thigh a tapered
 capsule that pushes cloth out of itself. The capsules come from the bones in `onObjectUpdate`, so avatar.ts didn't change and nothing
 allocates. Checked at 66 to 69 degrees of thigh flexion from four sides. Rejected: a hem flare of 0.26, which read as a tutu (0.15 and
-0.11 now); the push starting at `hang` 0.2 (a raised thigh came through the yoke; it starts at 0.08). A pleat's fold side lit up grey
-in a lunge because sheen ignored occlusion: sheen now takes `ao`, and less white on the shorts' part.
+0.11 now); the push starting at `hang` 0.2 (a raised thigh came through the yoke; it starts at 0.08). Dark cloth went grey at a grazing
+view because sheen is part white and ignored occlusion: it now takes `ao`, and has less white on the shorts' part.
 
-**The skirt's top stays inside the shirt.** Its rings first followed the body and came through the shirt's hem at the back as dark
-blocks. Rings under the hem are capped 1 cm inside the shirt's own outline.
+**A pleated skirt tore into a fringe in a lunge, and it wasn't the pleats.** `hemLag` removes the part of the lag that goes into the
+body, by the vertex's normal, and a pleat's two faces share corners but not normals, so the same lag sent each corner its own way. The
+skirt's swing is now plain, and the thighs keep it off the legs. Darkening the pleats' sides, shallower pleats (9, then 5 mm) and the
+sheen fix only hid this.
+
+**The skirt's top stays inside the shirt, and well inside.** Its rings first followed the body and came through the shirt's hem at the
+back as dark blocks. Capped 1 cm inside the shirt's outline, they still came through in a forward bend, in a ragged line, because the
+shirt bends in over the hips and two nearly touching surfaces cross raggedly. Now the rings go up to 3 cm in, the higher the further,
+and the inner shorts' top is deleted, since the skirt covers it.
 
 **Kit detail is shader, in the kit's two colours, and no colour changed.** Side panels, a cuff, seams, a ribbed collar band right
 round, a stripe down the shorts in the shirt's colour (the trim is near black on the warm kits, so it wouldn't show), a hem band on
@@ -2468,13 +2475,22 @@ for the chin, found from the profile). Heads were already right at 7.6-8 heads t
 was the women: waist 0.36 H, shoulders 3-4 cm narrow, calves thin, and p2's and p4's calves 6 cm under the other men's. `proportions`
 is not what it looks like: lowering it narrowed the waist and shortened the legs, so the women went to 1.0. `build` holds MakeHuman's
 targets per person. `measure-waist-circ-incr` hardly moved the narrowest ring (0.623 to 0.636 at full weight);
-`torso-scale-horiz-incr` plus `torso-scale-vert-decr` did. Men's shorts moved up, from about 75-80% of the way from crotch to knee to 60-65%.
+`torso-scale-horiz-incr` plus `torso-scale-vert-decr` did. Shorts moved up, from 73-84% of the way from crotch to knee
+to 61-67%. p10 takes `legs/measure-thigh-circ-decr` 0.3 as well: at 0.56 H her legs clipped each other 5.7 cm in the animation test, over its
+5 cm limit; the target took her thigh from 0.564 to 0.560 and her hips from 0.966 to 0.959, and she passes.
 
 **Hair.** A contact sheet of every style on one body settled it. bob01 and bob02 are helmets with one eye covered, and short03 too on
 a woman. ponytail01, afro01 and the braid read as hair at 6-8 m. p8 takes afro01 with a headband, p9 ponytail01 with a visor and
 `hair_tone` (the pony's texture has a blonde tip that didn't belong on her), p10 the braid, p7 stays in the ponytail. A band sits on
 the hair up to 3 cm off the skin, so it isn't lost inside an afro.
 
-**Skin at the TV camera** was measured, not changed. Near players' lit legs read about (243, 164, 134), luminance 0.47 against the
-turf's 0.12, hue 16 degrees: not pale. If anything warmer and redder than a photo's 18-25 degrees, which `SKIN_AMBIENT` and the
-scatter's red account for. Left alone: it's `SkinLighting` and it belongs with the faces.
+**Skin at the TV camera** was measured, not changed. On the three lighter women of a 1080p TV frame the skin's median is about
+(185, 135, 102), luminance 0.23-0.29 against the turf's 0.13, hue 22-25 degrees, saturation 0.45-0.53; its lit tenth about (224, 168,
+133), luminance 0.45, and up to (244, 186, 166) on the far side, facing the lights. It reads neither pale nor flat next to the turf,
+and the hue is a photo's. Left alone: it's `SkinLighting`, and that goes with the faces.
+
+**What's left.** The women's waist to hip is 0.69 on all four, a little hourglass for athletes (0.72-0.75 would be nearer), and their
+hips 0.55-0.57 H: the targets that widen the waist stop short and more would need a sculpted target. The pleats keep their shape in
+a lunge but have no cloth of their own. A skirt's normals don't follow the thighs' push. Collar points are rough from close to. p7 and p9 share a ponytail and p4 and p5 a
+short04, told apart by colour and by the visor. p10's braid is good from behind but her front hair is a swept cap. p4 hasn't had a clean look at
+6 m. Frame time on these meshes hasn't been measured.

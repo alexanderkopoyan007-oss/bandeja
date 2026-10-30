@@ -377,7 +377,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const bakedAO = mix(float(1), mix(float(0.3).add(skinAO.mul(0.7)), float(0.15).add(tex.w.mul(0.85)), mouthW), skinW.add(mouthW)).mul(vAO);
   // The waistband under the shirt was in the shirt's shadow when the occlusion was baked (MakeHuman's outfit); a shirt
   // riding up as the player bends showed it as a grey band. Above the shirt's hem the shorts are lit as they show.
-  const aoShorts = mix(ao, max(ao, float(0.82)), smoothstep(frame.hemY - 0.05, frame.hemY, p.y));
+  // (the women's suit's bottom half is jeans: its occlusion draws a fly and pockets, which read through white shorts)
+  const aoBottom = body.textures.cloth === 'suit-normal-f.webp' ? max(ao, float(0.78)) : ao;
+  const aoShorts = mix(aoBottom, max(aoBottom, float(0.82)), smoothstep(frame.hemY - 0.05, frame.hemY, p.y));
 
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
   const wet = smoothstep(0.02, 0.12, X.x.mul(shirtW).add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
