@@ -1103,8 +1103,7 @@ export class SimpleAi {
     } else if (this.volleying && this.conDepth < 5) {
       // A volley against two back works them: a high ball is put away short and angled, onto the side glass in
       // front of them; a low one is kept deep into a corner, with the middle as the safe way.
-      const me = m.players[this.index]!;
-      const cross = me.pos.x > 0.5 ? -1 : me.pos.x < -0.5 ? 1 : rng.next() < 0.5 ? -1 : 1;
+      const cross = this.standX > 0.5 ? -1 : this.standX < -0.5 ? 1 : rng.next() < 0.5 ? -1 : 1;
       const r = rng.next();
       if (this.conHeight > VOLLEY_ANGLE_H && r < VOLLEY_ANGLE) { x = cross * spread * (0.7 + 0.2 * rng.next()); depth = 4.6 + 1.0 * rng.next(); }
       else if (r < 0.75) { x = (rng.next() < 0.68 ? cross : -cross) * spread * (0.35 + 0.4 * rng.next()); depth = 6.4 + 1.2 * rng.next(); }
@@ -1114,8 +1113,7 @@ export class SimpleAi {
       // glass; "por el medio" is one option among them. Aimed between them every time, the outer metre of the court
       // saw 1.6% of flat balls, and cross against line read 42 / 58 where WPT reads 57.5 / 42.5 (Mellado-Arbelo et al.
       // 2019; review round 4, the pro's #1).
-      const me = m.players[this.index]!;
-      const cross = me.pos.x > 0.5 ? -1 : me.pos.x < -0.5 ? 1 : rng.next() < 0.5 ? -1 : 1;
+      const cross = this.standX > 0.5 ? -1 : this.standX < -0.5 ? 1 : rng.next() < 0.5 ? -1 : 1;
       const r = rng.next();
       if (r < BACK_CROSS) { x = cross * spread * (0.4 + 0.42 * rng.next()); depth = 6.3 + 1.5 * rng.next(); }
       else if (r < BACK_CROSS + BACK_LINE) { x = -cross * spread * (0.4 + 0.42 * rng.next()); depth = 6.3 + 1.5 * rng.next(); }

@@ -13,7 +13,7 @@ function play(doubles: boolean, matches: number, seed0: number): Tally {
   for (let k = 0; k < matches; k++) {
     const m = new MatchSim({ seed: seed0 + k, doubles, human: new Array(n).fill(false), aiLevel: [1, 1] });
     const none = new Array(n).fill(null);
-    let seen = 0, last = '', from = 0, bounces = 0;
+    let seen = 0, last = '', from = 0, bounces = 0, twoBack = false;
     for (let t = 0; m.phase !== PH_OVER && t < 120 * 2400; t++) {
       m.step(none);
       while (seen < m.eventSeq) {
@@ -26,8 +26,9 @@ function play(doubles: boolean, matches: number, seed0: number): Tally {
           if (last === 'bandeja') { out.oh++; if (bounces === 0 && Math.abs(e.z) > 6) out.ohFull++; }
           if (bounces === 0 && kind === 'drop' && Math.abs(e.z) < 5) { out.drops++; if (e.y < 0.85) out.dropLow++; }
           last = kind; from = e.x; bounces = 0;
+          twoBack = m.players.every((p) => p.team === e.team || Math.abs(p.pos.z) > 5);
         } else if (e.kind === E_FLOOR) {
-          if (bounces === 0 && Math.abs(from) > 1 && Math.abs(e.x) > 1 && (last === 'drive' || last === 'slice' || last === 'topspin')) {
+          if (bounces === 0 && twoBack && Math.abs(from) > 1 && Math.abs(e.x) > 1 && (last === 'drive' || last === 'slice' || last === 'topspin')) {
             if (e.x * from < 0) out.cross++; else out.line++;
           }
           bounces++;
