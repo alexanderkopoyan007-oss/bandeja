@@ -60,6 +60,9 @@ const GLASS_BONUS = 0.1;
  * 8 m (the plan cost only height and lateness), where players get back and let them come off the glass.
  */
 const PRESSURE_COST = 0.3;
+const RISE_PACE = 0.1;
+const RISE_LATE = 0;
+const RISE_COST = 1.2;
 /** A volley planned more than BACK_VOLLEY_Z (m) from the net costs BACK_VOLLEY, plus BACK_VOLLEY_LOW per metre the
  * contact is below BACK_VOLLEY_WAIST (m). */
 const BACK_VOLLEY_Z = 5.8;
@@ -216,6 +219,9 @@ export function planStand(
       const pace = (sqrt(vx * vx + vy * vy + vz * vz) - 14) / 12;
       const late = (0.9 - (ti - strikeT)) / 0.45;
       press = PRESSURE_COST * (clamp(pace, 0, 3) + clamp(late, 0, 2));
+      // Hard, soon, and on its way to a wall: a defender steps off its line and plays it off the glass (review round 5,
+      // the pro's #1: 83% of the replies to smashes against two back were struck on the rise).
+      if (pace > RISE_PACE && late > RISE_LATE && wallIdx >= 0 && i < wallIdx) press += RISE_COST;
     }
     if (slack >= 0) {
       let cost = overhead ? overheadCost(y, t, ohKind) + 0.03 * (ti - now)

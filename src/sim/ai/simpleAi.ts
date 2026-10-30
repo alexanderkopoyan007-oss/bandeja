@@ -7,7 +7,7 @@ import type { MatchSim } from '../match.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION } from '../input.ts';
 import { abs, clamp, floor, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
-import { PF_FLOOR } from '../ball/predict.ts';
+import { PF_FLOOR, type Prediction } from '../ball/predict.ts';
 import { findWindows, makeWindows, OH_ANY, OH_BANDEJA, OH_SMASH, OH_VIBORA } from '../contact/windows.ts';
 import { makeStandPlan, offGlassHigh, planStand, BAJADA_ABOVE, BAJADA_DEPTH, type StandPlan } from '../player/positioning.ts';
 import { smashLanding } from '../contact/smashAim.ts';
@@ -184,11 +184,23 @@ export class SimpleAi {
     return byLevel(SKILL.motor, this.level) * (1 + SKILL.pressure * pressure);
   }
 
+  /**
+   * How steady the swing is for this contact height (ShotRequest.control). At the net the clock is always short, so
+   * pressure alone can't tell a sitter from a shoe-top ball: the height can. A ball above the tape is the one a net
+   * player kills, the one at the shoes is the one that hurts them (sitters were lost 11.8% of the time, shoe-tops 1.6%:
+   * review round 5, the pro's #2).
+   */
+  control(height: number): number {
+    if (!this.volleying || this.conDepth >= 5) return 1;
+    return height >= SITTER_H ? SITTER_CONTROL : height < SHOE_H ? SHOE_CONTROL : 1;
+  }
+
   onStrike(m: MatchSim, striker: number): void {
     if (striker === this.team) {
       this.planned = false;
       this.pressed = false;
       this.released = false;
+      this.serveIn = m.rally.isServe && m.score.serverPlayer() === this.index;
       return;
     }
     this.reactAt = m.time + this.reaction() * (0.8 + 0.4 * m.aiRng.next());
@@ -285,6 +297,7 @@ export class SimpleAi {
     }
 
     if (m.phase !== PH_RALLY) {
+      this.serveIn = false;
       this.goX = p.pos.x;
       this.goZ = p.pos.z;
       this.drift(f, p, s);
@@ -437,6 +450,8 @@ export class SimpleAi {
   }
 
   /** The planned contact's height and distance from the net (overhead targets read them). */
+  /** Following their serve in, until their first shot after it. */
+  private serveIn = false;
   private conHeight = 0;
   private conDepth = 0;
   /**
@@ -519,11 +534,16 @@ export class SimpleAi {
     const easy = top * SKILL.formationEffort;
     if (!chase && v > easy) v = easy;
     if (v > top) v = top;
+    // Following the serve in: a run, not a sprint, still moving as the return is struck and through the third shot
+    // (peak 2.93 +- 0.43 m/s, 5.08 m from the net at the return, the third from 3.84 m at about 2 m/s: Ramon-Llin 2021;
+    // here 4.5 m/s to a stop at 4.09 m: review round 5, the pro's #4).
+    const cap = this.serveIn;
+    if (cap && v > SERVE_RUN) v = SERVE_RUN;
     const stop = sqrt(2 * t.brake * 0.8 * d);
     if (v > stop) {
       // Short of time for an overhead: arrive still moving (Player.ohArrive; planStand counted on it).
-      const va = p.ohArrive;
-      const late = chase && this.overhead && need > stop ? sqrt(va * va + 2 * t.brake * 0.8 * d) : stop;
+      const va = cap && chase ? SERVE_ARRIVE : p.ohArrive;
+      const late = (chase && this.overhead && need > stop) || (cap && chase) ? sqrt(va * va + 2 * t.brake * 0.8 * d) : stop;
       v = v > late ? late : v;
     }
     const want = v / top;
@@ -588,6 +608,16 @@ export class SimpleAi {
         if (!planStand(pr, p, s, now, m.rally.isServe, st, k, false, false)) { this.planned = false; this.contra = false; return; }
       }
     }
+    // A hard ball on its way to the glass with no time to set up for it: wait for it off the wall, out of its line. The
+    // plan's least-late contact was on the rise (first plan 0.18 s after a smash, in time for it 6.8%, while a contact
+    // off the glass existed in 65.8% of cases: review round 5, the pro's #1).
+    if (!overhead && !st.volley && !st.afterWall && m.bodyHitIdx(this.index, s) < 0 && this.tooHot(m, st.t)) {
+      const k = offGlassLow(pr, s, m.world.court.halfL);
+      if (k >= 0) planStand(pr, p, s, now, m.rally.isServe, st, k, true, false);
+      // Climbing off the glass out of reach: nothing to play. It was struck on the rise from a standstill (or it comes
+      // back over the net by itself, as a real kick smash does).
+      else if (k === CLIMBS && !st.inTime) { this.planned = false; this.contra = false; return; }
+    }
     this.overhead = overhead;
     // (a held swing follows the plan too: the sim judges its release against the windows of the kind planned now)
     this.contra = !overhead && st.contra;
@@ -604,7 +634,7 @@ export class SimpleAi {
     // #1), having planned to play them off the glass.
     if (hit >= 0 && st.inTime && hit < st.t + 0.09 && !overhead && this.hitOnTheWay(m, s, st.x, st.z) < 0) hit = -1;
     this.holdT = -0;
-    if (!overhead && !st.volley && st.inTime) {
+    if (!overhead && !st.volley) {
       this.holdShort(m, s, st.x, st.z, st.t);
       if (this.holdT > 0) hit = -1;
     }
@@ -612,8 +642,11 @@ export class SimpleAi {
       // No comfortable contact in time, or the ball comes at us before the planned one (a fast ball at the
       // body, typically at the net): block it from where we stand, at the first moment it is in reach, rather
       // than be hit while running to a spot we can't make.
+      // (not a hard ball on its way to the glass, unless it is coming at us: a defender gets out of its line and takes it
+      // off the wall, or it beats them. Blocked on the rise, smashes drew 19.1 forced errors in 100 to WPT's 0.8: review
+      // round 5, the pro's #1)
       const n = findWindows(pr, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, now, false);
-      if (n > 0 && this.wins[0]!.ideal < st.t + 0.09) {
+      if (n > 0 && this.wins[0]!.ideal < st.t + 0.09 && (hit >= 0 || !this.tooHot(m, this.wins[0]!.ideal))) {
         const w = this.wins[0]!;
         this.contra = false;
         sx = p.pos.x;
@@ -837,6 +870,8 @@ export class SimpleAi {
 
   private chooseShot(m: MatchSim, height: number, volley: boolean, depth: number): void {
     this.volleying = volley;
+    this.conHeight = height;
+    this.conDepth = depth;
     const opp = this.nearestOpponent(m);
     const r = m.aiRng.next();
     this.smash = false;
@@ -848,6 +883,14 @@ export class SimpleAi {
       // Off our own back glass: a ground-stroke key (the sim makes it a contrapared).
       this.shot = SHOT_LOB;
       this.contraTarget(m, r);
+      return;
+    }
+    if (!volley && this.tooHot(m, this.idealT)) {
+      // No time for a stroke: reaction 140-190 ms, preparation 0.11 s at the very fastest, and the swing (review round
+      // 5, the pro's #1: 29.6% of smashes were answered with a full stroke, lobs among them, within 0.5 s).
+      this.shot = SHOT_SLICE;
+      this.safe = true;
+      this.chooseTarget(m);
       return;
     }
     // A ball at overhead height in front: an overhead, chosen as one (the sim turned a drive key's high ball into a
@@ -901,6 +944,18 @@ export class SimpleAi {
     } else if (height > 1.05 && depth < 5) {
       this.punch = r < right;
     } else this.paceOf(m.aiRng.next());
+  }
+
+  /** A contact at t would be a hard ball, this soon after the opponent's strike: it can only be blocked. */
+  private tooHot(m: MatchSim, t: number): boolean {
+    if (t - m.lastStrikeTime >= RUSH_T) return false;
+    const pr = m.pred;
+    for (let i = 0; i < pr.n; i++) {
+      if (pr.t[i]! < t) continue;
+      const vx = pr.vx[i]!, vy = pr.vy[i]!, vz = pr.vz[i]!;
+      return vx * vx + vy * vy + vz * vz > RUSH_V * RUSH_V;
+    }
+    return false;
   }
 
   /** A slice's share of the slice-or-drive choices, tilted by the style's pace: a hitter drives flat, a defender
@@ -1017,7 +1072,10 @@ export class SimpleAi {
     // ball reached that glass on the full on a small error, and a third of singles points ended so (review round 3,
     // the pro's #10: 35.6%).
     let depthT = this.shot === SHOT_LOB ? 7.0 + 0.8 * rng.next() : this.shot === SHOT_DROP ? 1.8 : 5.2 + 1.3 * rng.next();
-    if (this.shot === SHOT_LOB) depthT = min(depthT, c.halfL - 1.0 - 0.6 * (1 - this.level));
+    if (this.shot === SHOT_LOB) {
+      depthT = min(depthT, c.halfL - 1.0 - 0.6 * (1 - this.level));
+      this.targetX = clamp(lobX(m.players[this.index]!.pos.x, this.targetX), -spread, spread);
+    }
     this.targetZ = -s * depthT;
   }
 
@@ -1065,7 +1123,7 @@ export class SimpleAi {
     } else if (this.shot === SHOT_LOB) {
       // Deep enough to get over and behind the net player, short of the back glass on the full: real lobs land
       // anywhere from about 5.5 m (good) to 8.6 m (excellent) from the net (Ramón-Llin et al. 2019).
-      x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.3 + 0.5 * rng.next());
+      x = lobX(m.players[this.index]!.pos.x, (rng.next() < 0.5 ? -1 : 1) * spread * (0.3 + 0.5 * rng.next()));
       depth = min(8.2, c.halfL - 1.8 - 0.6 * (1 - this.level)) - 1.2 * rng.next();
     } else if (this.shot === SHOT_DROP) {
       x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 1.2;
@@ -1107,9 +1165,13 @@ export class SimpleAi {
       // front of them; a low one is kept deep into a corner, with the middle as the safe way.
       const cross = this.standX > 0.5 ? -1 : this.standX < -0.5 ? 1 : rng.next() < 0.5 ? -1 : 1;
       const r = rng.next();
-      if (this.conHeight > VOLLEY_ANGLE_H && r < VOLLEY_ANGLE) { x = cross * spread * (0.7 + 0.2 * rng.next()); depth = 4.6 + 1.0 * rng.next(); }
-      else if (r < 0.75) { x = (rng.next() < 0.68 ? cross : -cross) * spread * (0.35 + 0.4 * rng.next()); depth = 6.4 + 1.2 * rng.next(); }
-      else { x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 0.7; depth = 6.6 + 1.3 * rng.next(); }
+      // (shorter off a sitter, which is hit hard and flat: 63% of those lost went on the full into the glass, at 73 km/h;
+      // short off the shoe tops, which can only be lifted and floats: they cleared the net by 1.20 m and landed 6.9 m
+      // deep, as safe as a ball can be: review round 5, the pro's #2)
+      const short = this.conHeight >= SITTER_H ? SITTER_SHORT : this.conHeight < SHOE_H ? SHOE_SHORT : 0;
+      if (this.conHeight > VOLLEY_ANGLE_H && r < VOLLEY_ANGLE) { x = cross * spread * (0.55 + 0.2 * rng.next()); depth = 4.6 + 1.0 * rng.next(); }
+      else if (r < 0.75) { x = (rng.next() < 0.68 ? cross : -cross) * spread * (0.35 + 0.4 * rng.next()); depth = 6.4 + 1.2 * rng.next() - short; }
+      else { x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 0.7; depth = 6.6 + 1.3 * rng.next() - short; }
     } else {
       // Both back: move them. Cross-court into the corner to open the line, down the line, or short into the side
       // glass; "por el medio" is one option among them. Aimed between them every time, the outer metre of the court
@@ -1132,6 +1194,44 @@ const BACK_LINE = 0.22;
 /** A net volley against two back over VOLLEY_ANGLE_H (m) is put away on the angle VOLLEY_ANGLE of the time. */
 const VOLLEY_ANGLE_H = 1.0;
 const VOLLEY_ANGLE = 0.5;
+/** Net volleys at or over SITTER_H (m) and under SHOE_H: the swing's spread (SimpleAi.motor), m taken off the depth. */
+const SITTER_H = 0.95;
+const SITTER_CONTROL = 2.2;
+const SITTER_SHORT = 1.0;
+const SHOE_H = 0.55;
+const SHOE_CONTROL = 0.5;
+const SHOE_SHORT = 1.6;
+/** No full stroke at a ball this soon after the strike (s) and this fast at contact (m/s). */
+const RUSH_T = 0.6;
+const RUSH_V = 15;
+/** Below this height (m) a ball off the glass can be taken at waist height, not over the shoulder. */
+const OFF_GLASS_Y = 1.45;
+const OFF_GLASS_OUT = 0.5;
+/** The server's run in, and their speed through the third shot (m/s). */
+const SERVE_RUN = 3.0;
+const SERVE_ARRIVE = 2.0;
+/** The line of a lob reaches the net at most this far from the middle: its height there clears the 3 m side fence. */
+const LOB_NET_X = 2.2;
+
+/** When the ball, off a wall on our half and out of the corner of it, is first at a height to take; CLIMBS if it reaches
+ * a wall and stays above that, -1 if it reaches no wall. (A time, as planStand's `keep`.) */
+function offGlassLow(pr: Prediction, side: number, halfL: number): number {
+  let wall = false;
+  for (let i = 0; i < pr.n; i++) {
+    const b = pr.bounces[i]!;
+    if (b > 1) break;
+    if (b !== 1 || pr.walls[i]! === 0 || pr.z[i]! * side <= 0) continue;
+    wall = true;
+    if (pr.y[i]! < OFF_GLASS_Y && halfL - abs(pr.z[i]!) > OFF_GLASS_OUT) return pr.t[i]!;
+  }
+  return wall ? CLIMBS : -1;
+}
+const CLIMBS = -2;
+
+/** A lob's landing x, kept so that its line crosses the net near the middle (the hitter at `from`). */
+function lobX(from: number, x: number): number {
+  return clamp(x, -2 * LOB_NET_X - from, 2 * LOB_NET_X - from);
+}
 
 /** "At the feet" of a player at x: FEET_SIDE m inside them, towards their partner at `mate` (a ball at the body is
  * a ball through it). */

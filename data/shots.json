@@ -3,7 +3,7 @@
   "drive":   { "name": "Drive",     "netClear": 0.40, "spinRpm": 600,   "depth": 0.72, "racketMax": 19.1, "impact": 0.128, "errorScale": 1.0, "timing": 1.0 },
   "topspin": { "name": "Topspin",   "netClear": 0.85, "spinRpm": 2300,  "depth": 0.78, "racketMax": 19.5, "impact": 0.128, "errorScale": 1.0, "timing": 0.99 },
   "slice":   { "name": "Slice",     "netClear": 0.30, "spinRpm": -1900, "depth": 0.70, "racketMax": 17.8, "impact": 0.128, "errorScale": 0.85, "timing": 1.04 },
-  "lob":     { "name": "Lob",       "netClear": 5.60, "spinRpm": 500,   "depth": 0.90, "racketMax": 13.5, "impact": 0.128, "errorScale": 1.1, "timing": 1.19 },
+  "lob":     { "name": "Lob",       "netClear": 5.60, "spinRpm": 500,   "depth": 0.90, "racketMax": 13.5, "impact": 0.128, "errorScale": 1.1, "motorYaw": 0.5, "timing": 1.19 },
   "drop":    { "name": "Drop shot", "netClear": 0.30, "spinRpm": -1500, "depth": 0.20, "racketMax": 9.6, "impact": 0.14, "errorScale": 1.2, "timing": 1.2 },
   "serve":   { "name": "Serve",     "netClear": 0.40, "spinRpm": -1300, "depth": 0.78, "racketMax": 15.9, "impact": 0.128, "errorScale": 0.8, "timing": 1.10 },
   "smash":   { "name": "Smash",     "netClear": 0.20, "spinRpm": 300,   "depth": 0.50, "racketMax": 29.5, "impact": 0.083, "errorScale": 1.25, "pace": true, "timing": 0.71 },

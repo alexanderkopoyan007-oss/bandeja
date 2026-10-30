@@ -1576,6 +1576,7 @@ export class MatchSim {
     this.lastPressure = serving ? 0 : pressureOf(sqrt(v.x * v.x + v.y * v.y + v.z * v.z), this.time - this.lastStrikeTime, d, p.speed(), b.pos.y, walls > 0, walls > 1);
     const ai = this.ai[i];
     r.motor = ai ? ai.motor(this.lastPressure) : 0;
+    r.control = ai ? ai.control(b.pos.y) : 1;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
 

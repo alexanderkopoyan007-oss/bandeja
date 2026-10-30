@@ -58,6 +58,8 @@ export interface ShotShape {
   spinFloor?: number;
   /** The shot's timing windows against the drive's (smaller = harder to time). */
   timing?: number;
+  /** The motor spread's share that turns the path sideways (default 1): a slow, open-faced lob holds its line. */
+  motorYaw?: number;
   /** Contrapared: the height on the hitter's own glass the ball is aimed at (m); higher tries follow if it fails. */
   glassHeight?: number;
 }
@@ -747,7 +749,7 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   const MO = SW.motor;
   // Early pulls the swing across the hitter's body, late pushes it the other way.
   const tim = clamp(req.timingDelta / 0.11, -2, 2);
-  const yaw = tim * SW.timingYaw * (PI / 180) * req.handSide + rng.normal() * (spread(SW.pathYaw) + mot * MO.pathYaw) * deg;
+  const yaw = tim * SW.timingYaw * (PI / 180) * req.handSide + rng.normal() * (spread(SW.pathYaw) + mot * MO.pathYaw * (shape.motorYaw ?? 1)) * deg;
   const pitch = rng.normal() * (spread(SW.pathPitch) + mot * MO.pathPitch) * deg;
   // The whole swing turned: face and path together.
   rotateYaw(faceN, yaw);
