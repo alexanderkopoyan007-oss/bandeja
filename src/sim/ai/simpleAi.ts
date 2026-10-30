@@ -37,6 +37,17 @@ const BAJADA_NET = 0.4;
 const CHIQ_NET = 0.35;
 /** Chance a net-shy style stays back behind its lob, per unit of its net trait under 1 (Muro, 0.6: 80%). */
 const LOB_STAY = 2.0;
+/** Singles: comes in behind a ball met within APPROACH_DEPTH (m) of the net with chance APPROACH_SHORT, behind any low
+ * ball with the opponent deep APPROACH_DEEP, behind a serve SERVE_VOLLEY (each by the style's net and the level). */
+const APPROACH_DEPTH = 6.8;
+const APPROACH_SHORT = 0.8;
+const APPROACH_DEEP = 0.4;
+const SERVE_VOLLEY = 0.7;
+/** A drop volley: the ball over DROP_HEIGHT (m, the tape and a bit), met within DROP_DEPTH (m) of the net, played by
+ * DROP_RATE of the volleys that qualify (scaled by the style's drop). */
+const DROP_HEIGHT = 0.98;
+const DROP_DEPTH = 3.8;
+const DROP_RATE = 0.12;
 /** Chance a net-shy style drops back again after a ball taken near the net, per unit of its net trait under 1. */
 const NET_BACK = 0.5;
 /** Chance a net-loving style comes in behind a low ball from the back, per unit of its net trait over 1 (Martillo, 1.6:
@@ -110,6 +121,12 @@ export class SimpleAi {
   punch = false;
   /** The current plan is a contrapared (positioning.ts): met facing our own back glass and hit up into it. */
   contra = false;
+  /** Singles: our last shot was one to follow in (the net-intent decision doubles keeps in MatchSim.intentUp). */
+  approach = false;
+  /** Waiting at (holdX, holdZ) for the ball to cross the way to the plan's spot, until holdT (holdShort). */
+  private holdT = -0;
+  private holdX = -0;
+  private holdZ = -0;
   private readonly wins = makeWindows();
   private readonly st = makeStandPlan();
   /** The contact this AI is set up for (the renderer times the swing to it). */
@@ -240,6 +257,7 @@ export class SimpleAi {
         }
         this.targetX = tx;
         this.targetZ = -s * depth;
+        if (!m.doubles) this.approach = rng.next() < SERVE_VOLLEY * (second ? 0.4 : 1) * (0.4 + 0.6 * this.level) * this.style.net;
       }
       if (!this.pressed && t1 > this.servePressAt && t0 >= m.phaseUntil) {
         f.push(true, SHOT_BUTTONS[this.shot]!, max(t0, this.servePressAt));
@@ -286,7 +304,7 @@ export class SimpleAi {
       // Recover to a base position: deep and covering the angle.
       const bx = m.ball.pos.x;
       const nearNet = abs(p.lastContact.z) < 5 && m.time - p.lastContactTime < 3 && abs(p.pos.z) < 6;
-      const baseZ = s * (nearNet ? 3.2 : 7.6);
+      const baseZ = s * (nearNet || this.approach ? 3.2 : 7.6);
       this.goX = clamp(bx * 0.35, -2.5, 2.5);
       this.goZ = baseZ;
       this.drift(f, p, s);
@@ -312,6 +330,11 @@ export class SimpleAi {
       this.goZ = this.standZ;
       // Be there, feet set, a little before the contact.
       this.goBy = this.idealT - 0.15;
+      if (t0 < this.holdT) {
+        this.goX = this.holdX;
+        this.goZ = this.holdZ;
+        this.goBy = this.holdT;
+      }
       this.chasing = true;
       this.drift(f, p, s);
       if (!this.pressed && p.swing === SW_IDLE && t0 >= this.idealT - 0.45) {
@@ -578,6 +601,11 @@ export class SimpleAi {
     // Blocked from where they stood, defenders volleyed 58% of bandejas at their shins from 7 m (REVIEW.md round 3
     // #1), having planned to play them off the glass.
     if (hit >= 0 && st.inTime && hit < st.t + 0.09 && !overhead && this.hitOnTheWay(m, s, st.x, st.z) < 0) hit = -1;
+    this.holdT = -0;
+    if (!overhead && !st.volley && st.inTime) {
+      this.holdShort(m, s, st.x, st.z, st.t);
+      if (this.holdT > 0) hit = -1;
+    }
     if ((!st.inTime || (hit >= 0 && hit < st.t + 0.09)) && !overhead) {
       // No comfortable contact in time, or the ball comes at us before the planned one (a fast ball at the
       // body, typically at the net): block it from where we stand, at the first moment it is in reach, rather
@@ -649,6 +677,62 @@ export class SimpleAi {
       if (ex * ex + ez * ez < r * r) return k;
     }
     return -1;
+  }
+
+  /**
+   * The contact is after the ball has gone by us (off the glass, usually) and the ball's line runs through us or
+   * between us and the spot: step DODGE off the line, on the spot's side if there is time and our own if not, and
+   * wait for it to pass. A player doesn't run through a ball they mean to play later: run straight at the spot,
+   * defenders crossed the line of a bandeja as it arrived, stopped to block it and half-volleyed it at their shins
+   * (89 of 94 such volleys were planned off the glass: review round 4, the pro's #4). Time enough to cross first, or
+   * too little left after the wait, leaves the plan as it is.
+   */
+  private holdShort(m: MatchSim, s: number, tx: number, tz: number, contact: number): void {
+    const p = m.players[this.index]!;
+    const pr = m.pred;
+    const px = p.pos.x;
+    const pz = p.pos.z;
+    const h = p.tune.height;
+    const now = m.time;
+    // Where the ball passes nearest, below the top of the body.
+    let near = HOLD_NEAR * HOLD_NEAR;
+    let k = -1;
+    for (let j = 0; j < pr.n; j++) {
+      const ti = pr.t[j]!;
+      if (ti < now || pr.z[j]! * s <= 0) continue;
+      if (pr.bounces[j]! > 1 || ti > contact - HOLD_GAP) break;
+      if (pr.y[j]! > h) continue;
+      const ex = px - pr.x[j]!;
+      const ez = pz - pr.z[j]!;
+      const d2 = ex * ex + ez * ez;
+      if (d2 < near) { near = d2; k = j; }
+    }
+    if (k < 0) return;
+    const vx = pr.vx[k]!;
+    const vz = pr.vz[k]!;
+    const v = sqrt(vx * vx + vz * vz);
+    if (v < 1) return;
+    const nx = -vz / v;
+    const nz = vx / v;
+    const bx = pr.x[k]!;
+    const bz = pr.z[k]!;
+    const dp = (px - bx) * nx + (pz - bz) * nz; // the player and the spot, off the ball's line
+    const ds = (tx - bx) * nx + (tz - bz) * nz;
+    const left = pr.t[k]! - now;
+    if (abs(dp) >= DODGE && abs(ds) >= DODGE && dp * ds > 0) return;
+    if (dp * ds < 0 && (abs(dp) + DODGE) / HOLD_RUN + HOLD_START < left - HOLD_GAP) return;
+    const toSpot = ds >= 0 ? 1 : -1;
+    const own = dp >= 0 ? 1 : -1;
+    const side = abs(dp) < DODGE && (DODGE + abs(dp)) / HOLD_RUN + HOLD_START < left ? toSpot : own;
+    const go = side * DODGE - dp;
+    if (abs(go) / HOLD_RUN + HOLD_START * 0.5 > left) return;
+    const hx = clamp(px + nx * go, p.minX, p.maxX);
+    const hz = clamp(pz + nz * go, p.minZ, p.maxZ);
+    const rest = sqrt((tx - hx) * (tx - hx) + (tz - hz) * (tz - hz));
+    if (rest / HOLD_RUN + HOLD_START > contact - pr.t[k]!) return;
+    this.holdX = hx;
+    this.holdZ = hz;
+    this.holdT = pr.t[k]! + HOLD_AFTER;
   }
 
   /**
@@ -792,6 +876,12 @@ export class SimpleAi {
       this.shot = SHOT_TOPSPIN;
       this.chiquita = true;
     }
+    // Singles has the same fight for the net: in behind a short ball, or a low ball with the opponent deep; a volley
+    // stays in. Nobody came in without this: the server was 7.6 m back at every return, volleys 3.7% of shots (28% in
+    // doubles; review round 4, the pro's #6).
+    const go = (0.4 + 0.6 * this.level) * st.net;
+    const r2 = m.aiRng.next();
+    this.approach = this.shot !== SHOT_LOB && (volley ? depth < 5 : r2 < (depth < APPROACH_DEPTH ? APPROACH_SHORT : abs(opp.pos.z) > 7 ? APPROACH_DEEP : 0) * go);
     this.chooseTarget(m);
   }
 
@@ -806,7 +896,7 @@ export class SimpleAi {
     if (height < 0.9) {
       this.safe = r < right;
       this.punch = r > 1 - 0.25 * (1 - this.level);
-    } else if (height > 1.25 && depth < 4.5) {
+    } else if (height > 1.05 && depth < 5) {
       this.punch = r < right;
     } else this.paceOf(m.aiRng.next());
   }
@@ -847,7 +937,10 @@ export class SimpleAi {
         this.shot = SHOT_LOB;
         go = 1;
       } else {
-        this.shot = up === 0 && r < 0.12 * st.drop ? SHOT_DROP : r < this.sliceOf(0.65) ? SHOT_SLICE : SHOT_DRIVE;
+        // A drop volley is played down from above the tape, from close in. Off any ball it was the AI's finisher: struck
+        // from 0.69 m, 0.26 a point, won 32% against the plain volley's 1% (review round 4, the pro's #2).
+        const drop = up === 0 && height > DROP_HEIGHT && depth < DROP_DEPTH ? DROP_RATE * st.drop : 0;
+        this.shot = r < drop ? SHOT_DROP : r < this.sliceOf(0.65) ? SHOT_SLICE : SHOT_DRIVE;
         // Pulled in by a short ball against a pair at the net: back out again unless already close in.
         go = (near || up < 2) && r2 >= NET_BACK * max(0, 1 - st.net) ? 1 : 0;
       }
@@ -912,7 +1005,9 @@ export class SimpleAi {
     const c = m.world.court;
     const s = m.side(this.team);
     const opp = m.players[1 - this.team]!;
-    const margin = (1.3 - 0.5 * this.level) * this.style.margin;
+    // More room than the shot's scatter: 0.8 m inside the side glass at the top level against a sideways miss of p90
+    // 1.3-1.4 m, and a fifth of singles points ended on the full into the side glass (review round 4, the pro's #5).
+    const margin = (2.0 - 0.6 * this.level) * this.style.margin;
     const side = opp.pos.x > 0 ? -1 : 1;
     const spread = c.halfW - margin;
     this.targetX = clamp(side * spread * (0.35 + 0.65 * rng.next()) + rng.normal() * 0.6, -spread, spread);
@@ -1005,14 +1100,38 @@ export class SimpleAi {
       // At the net player's feet (beside them, as above), or behind them into the back player's corner.
       if (rng.next() < 0.5) { x = feetX(net.pos.x, back.pos.x); depth = abs(net.pos.z) + 0.3 + 0.5 * rng.next(); }
       else { x = back.pos.x > 0 ? -spread * 0.7 : spread * 0.7; depth = 7.2 + 1.0 * rng.next(); }
+    } else if (this.volleying && this.conDepth < 5) {
+      // A volley against two back works them: a high ball is put away short and angled, onto the side glass in
+      // front of them; a low one is kept deep into a corner, with the middle as the safe way.
+      const me = m.players[this.index]!;
+      const cross = me.pos.x > 0.5 ? -1 : me.pos.x < -0.5 ? 1 : rng.next() < 0.5 ? -1 : 1;
+      const r = rng.next();
+      if (this.conHeight > VOLLEY_ANGLE_H && r < VOLLEY_ANGLE) { x = cross * spread * (0.7 + 0.2 * rng.next()); depth = 4.6 + 1.0 * rng.next(); }
+      else if (r < 0.75) { x = (rng.next() < 0.68 ? cross : -cross) * spread * (0.35 + 0.4 * rng.next()); depth = 6.4 + 1.2 * rng.next(); }
+      else { x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 0.7; depth = 6.6 + 1.3 * rng.next(); }
     } else {
-      x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 0.7;
-      depth = 6.6 + 1.3 * rng.next();
+      // Both back: move them. Cross-court into the corner to open the line, down the line, or short into the side
+      // glass; "por el medio" is one option among them. Aimed between them every time, the outer metre of the court
+      // saw 1.6% of flat balls, and cross against line read 42 / 58 where WPT reads 57.5 / 42.5 (Mellado-Arbelo et al.
+      // 2019; review round 4, the pro's #1).
+      const me = m.players[this.index]!;
+      const cross = me.pos.x > 0.5 ? -1 : me.pos.x < -0.5 ? 1 : rng.next() < 0.5 ? -1 : 1;
+      const r = rng.next();
+      if (r < BACK_CROSS) { x = cross * spread * (0.4 + 0.42 * rng.next()); depth = 6.3 + 1.5 * rng.next(); }
+      else if (r < BACK_CROSS + BACK_LINE) { x = -cross * spread * (0.4 + 0.42 * rng.next()); depth = 6.3 + 1.5 * rng.next(); }
+      else { x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 0.7; depth = 6.6 + 1.3 * rng.next(); }
     }
     this.targetX = clamp(x + rng.normal() * (0.5 - 0.3 * this.level), -spread, spread);
     this.targetZ = -s * depth;
   }
 }
+
+/** A ball against two back: shares going cross-court and down the line; the rest is through the middle. */
+const BACK_CROSS = 0.6;
+const BACK_LINE = 0.22;
+/** A net volley against two back over VOLLEY_ANGLE_H (m) is put away on the angle VOLLEY_ANGLE of the time. */
+const VOLLEY_ANGLE_H = 1.0;
+const VOLLEY_ANGLE = 0.5;
 
 /** "At the feet" of a player at x: FEET_SIDE m inside them, towards their partner at `mate` (a ball at the body is
  * a ball through it). */
@@ -1027,6 +1146,13 @@ const ESCAPE_ACCEL = 0.8;
 const ESCAPE_TOP = 4.3;
 /** How far (m) from the ball's line a player not taking it keeps (body 0.22 + ball 0.033 + a margin). */
 const DODGE = 0.55;
+/** holdShort: how near the player's the ball must pass (m), the run it reckons with (m/s), the start-up (s), how far
+ * ahead of the ball a crossing must be (s), how long after the ball's passing the wait ends (s). */
+const HOLD_NEAR = 2.5;
+const HOLD_RUN = 4.5;
+const HOLD_START = 0.2;
+const HOLD_GAP = 0.2;
+const HOLD_AFTER = 0.05;
 
 /**
  * A smash's landing depth (m from the net): the shortest at which a full-pace smash from the contact (`back` m from

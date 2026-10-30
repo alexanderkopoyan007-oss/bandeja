@@ -33,6 +33,9 @@ const UP_Z_WEAK = 1.4;
  * of its net trait away from 1 (data/ai.json). */
 const NET_CLOSE = 0.5;
 const SWITCH_BACK_T = 1.0;
+/** A back player steps READ_IN (m) in while our ball drops below READ_LOW (m) on the opponents' side. */
+const READ_IN = 1.0;
+const READ_LOW = 1.0;
 
 export interface Spot {
   x: number;
@@ -89,7 +92,10 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   const weak = ai ? 1 - ai.level : 0;
   const close = ai ? NET_CLOSE * (ai.style.net - 1) : 0;
   out.x = clamp(lane * s * half + (up ? UP_FOLLOW : BACK_FOLLOW) * (1 - 0.6 * weak) * m.ball.pos.x, p.minX + 0.3, p.maxX - 0.3);
-  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close : mid ? LOB_MID_Z : BACK_Z);
+  // Our low ball at a pair at the net: the volley has to be lifted, soft and maybe short, so a back player steps in
+  // to read it (from 8 m a drop volley landed 6.6 m from the nearest defender: review round 4, the pro's #2).
+  const read = !up && !mid && m.lastStrikeTeam === team && m.ball.pos.z * s < 0 && m.ball.pos.y < READ_LOW && m.ball.vel.y <= 0;
+  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close : mid ? LOB_MID_Z : read ? BACK_Z - READ_IN : BACK_Z);
 }
 
 /** The ball's next bounce on the floor is more than SWITCH_BACK_T away. (A boolean: a double returned from a call
