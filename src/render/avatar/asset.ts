@@ -75,8 +75,19 @@ export interface FaceData {
   nrm: Float32Array[];
 }
 
+/** What a person wears beyond the suit (data/players/*.json `kit`, tools/assets/mpfb/person_kit.py). */
+export interface KitCut {
+  top?: 'tee' | 'polo' | 'tank';
+  bottom?: 'shorts' | 'pleated' | 'aline';
+  head?: 'band' | 'visor';
+  /** Which of the kit's small marks (kit.ts). */
+  mark?: number;
+  seam?: 'raglan';
+}
+
 export interface BodyLook {
   name: string;
+  kit: KitCut;
   /** Standing height, soles to the top of the head (m). */
   height: number;
   /** Hair, brows and lashes: alpha-tested, on the same skeleton. */
@@ -86,7 +97,7 @@ export interface BodyLook {
   alphaMap: THREE.Texture | null;
   /** The suit's sculpted folds, a tangent-space normal map over the suit's own UVs (everyone's suit is the same one). */
   clothNormal: THREE.Texture | null;
-  textures: { opaque: string; alpha: string };
+  textures: { opaque: string; alpha: string; cloth?: string };
   /** The face's keys by name, in the order of every morphed mesh's influences (empty for a version-2 person). */
   morphs: string[];
   face: FaceData | null;
@@ -169,22 +180,26 @@ async function loadPerson(base: PlayerAsset, name: string, progress?: (frac: num
   try {
     const p = parseBodyAsset(await fetchGz(dir + name + '.bnz', progress), base);
     const look = p.look!;
-    [look.opaqueMap, look.alphaMap, look.clothNormal] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha), suitNormal(texture)]);
+    [look.opaqueMap, look.alphaMap, look.clothNormal] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha), suitNormal(texture, look.textures.cloth ?? 'suit-normal.webp')]);
     base.people.push(p);
   } catch (err) {
     console.warn(`person ${name} not loaded, that player is the mannequin:`, err);
   }
 }
 
-/** One copy for everybody; a player without it keeps the shader's noise folds. */
-let suitNormalMap: Promise<THREE.Texture | null> | null = null;
-function suitNormal(texture: (name: string) => Promise<THREE.Texture>): Promise<THREE.Texture | null> {
-  suitNormalMap ??= texture('suit-normal.webp').then((t) => {
-    t.colorSpace = THREE.NoColorSpace;
-    t.needsUpdate = true;
-    return t;
-  }, () => null);
-  return suitNormalMap;
+/** One copy per suit for everybody in it; a player without it keeps the shader's noise folds. */
+const suitNormalMaps = new Map<string, Promise<THREE.Texture | null>>();
+function suitNormal(texture: (name: string) => Promise<THREE.Texture>, file: string): Promise<THREE.Texture | null> {
+  let map = suitNormalMaps.get(file);
+  if (!map) {
+    map = texture(file).then((t) => {
+      t.colorSpace = THREE.NoColorSpace;
+      t.needsUpdate = true;
+      return t;
+    }, () => null);
+    suitNormalMaps.set(file, map);
+  }
+  return map;
 }
 
 async function fetchGz(url: string, progress?: (frac: number) => void): Promise<ArrayBuffer> {
@@ -363,7 +378,8 @@ interface BodyHeader {
   height: number;
   /** The body's hips height over the mannequin's: the clips' hips travel is scaled by it. */
   hips: number;
-  textures: { opaque: string; alpha: string };
+  textures: { opaque: string; alpha: string; cloth?: string };
+  kit?: KitCut;
   bones: BoneDef[];
   /** Inverse bind matrices, 16 per bone (column-major). */
   bind: number[];
@@ -427,14 +443,16 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
   geometry.setAttribute('bodyA', new THREE.BufferAttribute(pa, 4));
   geometry.setAttribute('bodyB', new THREE.BufferAttribute(pb, 4));
   // Per part, packed into one attribute (WebGPU allows 8 vertex buffers, skinning takes 5 of them): skin (lips,
-  // T-zone, eyelids, ears); eyes, shoes and socks: x = their baked occlusion; the shirt: x = where it gets wet first
-  // (kit.ts fills it in).
+  // T-zone, eyelids, ears); eyes, shoes and socks: x = their baked occlusion; the skirt: x = how far down it, 0 at the waist
+  // to 1 at the hem (`mask` in the file, 0 on shorts); the shirt: x = where it gets wet first, z = out from the chest and
+  // w = height in the T-pose (kit.ts fills them in).
   const X = new Float32Array(n * 4);
   const ao = geometry.getAttribute('bodyAO') as THREE.BufferAttribute | undefined;
   const mk = geometry.getAttribute('skinMask') as THREE.BufferAttribute | undefined;
   for (let v = 0; v < n; v++) {
     const c = part[v]!;
     if (c === P_SKIN && mk) for (let k = 0; k < 4; k++) X[v * 4 + k] = mk.array[v * 4 + k]!;
+    else if (c === P_SHORTS && mk) X[v * 4] = mk.array[v * 4]!;
     else if (c === P_EYE || c === P_SHOE || c === P_SOCK) X[v * 4] = ao ? ao.array[v]! : 1;
   }
   geometry.deleteAttribute('bodyAO');
@@ -449,7 +467,7 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     clips.set(name, { ...c, hips, speed: c.speed * h.hips });
   }
   return assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
-    name: h.name, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, textures: h.textures, morphs, face,
+    name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, textures: h.textures, morphs, face,
   });
 }
 

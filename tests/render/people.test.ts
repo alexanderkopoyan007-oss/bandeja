@@ -66,7 +66,7 @@ describe('people', () => {
       const n = A.length / 4;
       const count = (arr: Float32Array, k: number): number => { let c = 0; for (let v = 0; v < n; v++) if (arr[v * 4 + k]! > 0.5) c++; return c; };
       expect(count(A, 2)).toBeGreaterThan(5000); // skin
-      expect(count(A, 0)).toBeGreaterThan(1200); // shirt
+      expect(count(A, 0)).toBeGreaterThan(900); // shirt (a tank has no sleeves)
       expect(count(A, 1)).toBeGreaterThan(250); // shorts
       expect(count(B, 0)).toBeGreaterThan(500); // shoes
       expect(count(A, 3)).toBeGreaterThan(50); // socks
@@ -82,28 +82,28 @@ describe('people', () => {
   // the shorts' legs, all round (the leg in eight sectors about the hem's middle, the back of the knee included).
   it('has skin under the shorts all round each leg, a few cm up inside the hem', () => {
     for (const p of base.people) {
-      const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array;
+      const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array, X = p.geometry.getAttribute('bodyX').array as Float32Array;
       const n = r.length / 3;
+      // (the shorts themselves: a skirt's cloth, bodyX.x above 0, hangs clear of the leg, over the inner shorts)
+      const shorts = (v: number): boolean => A[v * 4 + 1]! > 0.5 && X[v * 4]! === 0;
       for (const side of [-1, 1]) {
         const leg = (v: number): boolean => Math.sign(r[v * 3]!) === side && r[v * 3 + 1]! < 0.95;
         let hem = Infinity;
-        for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v)) hem = Math.min(hem, r[v * 3 + 1]!);
+        for (let v = 0; v < n; v++) if (shorts(v) && leg(v)) hem = Math.min(hem, r[v * 3 + 1]!);
         let cx = 0, cz = 0, c = 0;
-        for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v) && r[v * 3 + 1]! < hem + 0.06) { cx += r[v * 3]!; cz += r[v * 3 + 2]!; c++; }
+        for (let v = 0; v < n; v++) if (shorts(v) && leg(v) && r[v * 3 + 1]! < hem + 0.06) { cx += r[v * 3]!; cz += r[v * 3 + 2]!; c++; }
         cx /= c; cz /= c;
         const top = new Array(8).fill(-1);
         for (let v = 0; v < n; v++) {
           const x = r[v * 3]!, y = r[v * 3 + 1]!, z = r[v * 3 + 2]!;
-          if (A[v * 4 + 2]! < 0.5 || Math.sign(x) !== side || Math.abs(x) < 0.04 || y < hem - 0.05 || y > hem + 0.2) continue;
+          if (A[v * 4 + 2]! < 0.5 || Math.sign(x) !== side || Math.abs(x) < 0.01 || y < hem - 0.05 || y > hem + 0.2) continue;
           const b = Math.floor(((Math.atan2(z - cz, x - cx) + Math.PI) / (2 * Math.PI)) * 8) % 8;
           top[b] = Math.max(top[b], y - hem);
         }
-        const had = top.filter((t) => t > -1);
-        // (measured 29 Oct: 1.3-8.2 cm, most 4-7; a sector can be empty where the inner thigh nears the middle, and within 4 cm of
-        // the midline one stray vertex can fill a sector: p8 read -4.3 there, between neighbours at 4 and 6)
-        expect(had.length).toBeGreaterThanOrEqual(6);
-        for (const t of had) expect(t).toBeGreaterThan(0.01);
-        expect(had.filter((t) => t > 0.035).length).toBeGreaterThanOrEqual(5);
+        // (measured 30 Oct, all ten: 3.6-9.0 cm in every one of the eight sectors. With the hems at mid-thigh the inside of the thigh a
+        // little way up lies 1-3 cm from the middle, so the midline is kept clear by only 1 cm: at 4 cm the inner sectors read -1 cm or
+        // nothing, though the skin was there)
+        expect(top.filter((t) => t > 0.03).length).toBe(8);
       }
     }
   });

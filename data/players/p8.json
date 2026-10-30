@@ -3,11 +3,11 @@
   "macro": {
     "gender": 0,
     "age": 0.52,
-    "muscle": 0.64,
+    "muscle": 0.72,
     "weight": 0.4,
-    "proportions": 0.8,
+    "proportions": 1.0,
     "height": 0.5,
-    "cupsize": 0.42,
+    "cupsize": 0.36,
     "firmness": 0.65,
     "race": {
       "asian": 0,
@@ -20,13 +20,28 @@
   "eye_colour": "brown",
   "eyebrows": "eyebrow008",
   "eyelashes": "eyelashes01",
-  "hair": "braid01",
+  "hair": "afro01",
   "clothes": [
-    "male_casualsuit06",
+    "female_casualsuit01",
     "shoes05"
   ],
-  "shorts": 0.72,
+  "shorts": 0.67,
   "height": 1.74,
+  "kit": {
+    "top": "tee",
+    "bottom": "shorts",
+    "mark": 3,
+    "head": "band"
+  },
+  "build": {
+    "torso/torso-scale-horiz-incr": 0.7,
+    "torso/torso-scale-vert-decr": 0.2,
+    "legs/upperlegs-height-incr": 0.2,
+    "legs/measure-calf-circ-incr": 0.5,
+    "legs/measure-thigh-circ-incr": 0.2,
+    "arms/l-lowerarm-muscle-incr": 0.5,
+    "arms/r-lowerarm-muscle-incr": 0.5
+  },
   "face": {
     "head/head-invertedtriangular": 0.3,
     "chin/chin-height-incr": 0.15,

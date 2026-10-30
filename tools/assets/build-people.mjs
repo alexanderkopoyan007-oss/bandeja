@@ -164,8 +164,8 @@ for (const name of names) {
   }
 
   const header = {
-    name, height: h.height, hips: +hips.toFixed(5), parts: h.parts,
-    textures: { opaque: `${name}-opaque.webp`, alpha: `${name}-alpha.webp` },
+    name, height: h.height, hips: +hips.toFixed(5), parts: h.parts, kit: h.kit ?? {},
+    textures: { opaque: `${name}-opaque.webp`, alpha: `${name}-alpha.webp`, cloth: h.textures.cloth ?? 'suit-normal.webp' },
     bones, bind, meshes,
   };
   const json = new TextEncoder().encode(JSON.stringify(header));
@@ -180,7 +180,7 @@ for (const name of names) {
   writeFileSync(OUT + name + '.bnz', gz);
   copyFileSync(dir + 'opaque.webp', OUT + header.textures.opaque);
   copyFileSync(dir + 'alpha.webp', OUT + header.textures.alpha);
-  if (existsSync(SRC + 'suit-normal.webp')) copyFileSync(SRC + 'suit-normal.webp', OUT + 'suit-normal.webp');
+  for (const f of ['suit-normal.webp', 'suit-normal-f.webp']) if (existsSync(SRC + f)) copyFileSync(SRC + f, OUT + f);
   const kb = (f) => (readFileSync(OUT + f).byteLength / 1024).toFixed(0);
   console.log(name, 'triangles', tris, 'soles lifted', (-sole * 1000).toFixed(1), 'mm, hips x', hips.toFixed(3), 'skeleton fit', (worst * 1000).toFixed(3), 'mm;',
     (gz.byteLength / 1024).toFixed(0), 'KB +', kb(header.textures.opaque), '+', kb(header.textures.alpha), 'KB textures');

@@ -3,8 +3,8 @@
   "macro": {
     "gender": 1,
     "age": 0.62,
-    "muscle": 0.6,
-    "weight": 0.52,
+    "muscle": 0.55,
+    "weight": 0.62,
     "proportions": 0.75,
     "height": 0.5,
     "cupsize": 0.5,
@@ -25,8 +25,16 @@
     "male_casualsuit06",
     "shoes05"
   ],
-  "shorts": 0.6,
+  "shorts": 0.635,
   "height": 1.77,
+  "kit": {
+    "top": "polo",
+    "bottom": "shorts",
+    "mark": 2
+  },
+  "build": {
+    "stomach/stomach-pregnant-incr": 0.12
+  },
   "face": {
     "head/head-rectangular": 0.4,
     "head/head-age-incr": 0.3,

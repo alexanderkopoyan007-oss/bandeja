@@ -29,9 +29,9 @@ for o in list(bpy.data.objects):
 
 body = HumanService.create_human(macro_detail_dict=spec['macro'], scale=0.1)
 # The bones of this one face, on the macro's average head: MakeHuman's detail targets ("face": {"nose/nose-hump-incr": 0.25}),
-# asymmetry among them (nobody's face is the same on both sides).
+# asymmetry among them (nobody's face is the same on both sides); "build" the same for the body's measures.
 targets_dir = os.path.join(os.path.dirname(TargetService.target_full_path('head-oval') or ''), '..')
-for key, weight in spec.get('face', {}).items():
+for key, weight in {**spec.get('face', {}), **spec.get('build', {})}.items():
     TargetService.load_target(body, os.path.normpath(os.path.join(targets_dir, key + '.target.gz')), weight=weight, name=key.split('/')[-1])
 rig = HumanService.add_builtin_rig(body, 'mixamo')
 

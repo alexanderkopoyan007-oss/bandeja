@@ -2486,3 +2486,72 @@ reads every bounce exactly. That's the real gap, and it stays open.
 would need about 30%. Real por tres is hit with topspin (Sánchez-Alcaraz 2020 counts it under topspin smashes), so `spinRpm` was tried
 at 1500 and 3000 against the flat 300. Out rose to 9.4 and 10.9, but smash W went to 60 and 69 (45), came-back winners to 52 and 56
 (35), and double bounces fell to 35 and 31 (48). Rejected. The glass settles this one (see "The glass keeps its grip loss").
+
+## The kit, the hair and the builds (2026-10-30)
+
+The owner on the people: "it looks better but still not good". This round took the kit, hair and body builds; how they move and
+the faces went on in parallel.
+
+**The women wear a women's cut.** `female_casualsuit01` is a fitted tee with a real waist, and it does have a fold map, in the lower
+half of its atlas (round 7's note that the women's top had none was about another suit). So `textures.cloth` names a map per suit. Its
+printed diffuse stays unused. Three of the four are in skirts and p8 is in shorts, because a tour has both. p7 and p10 wear tanks, cut
+from the tee along a plane from the shoulder's top to under the arm, and the plane is the shader's too (the binding, and `skinCut`,
+which stops the shoulder's skin coming through the shirt's coarser triangles in teeth).
+
+**A skirt is generated, and the legs are kept out of it by the vertex shader.** `make_skirt` builds rings from the body's own outline:
+no ring narrower than the body it passes or than the ring above, since cloth hangs from the widest place it has been. Each pleat is
+its own strip so it shades flat. Weights alone can't keep a raised knee behind the cloth, so `thighsPush` makes each thigh a tapered
+capsule that pushes cloth out of itself. The capsules come from the bones in `onObjectUpdate`, so avatar.ts didn't change and nothing
+allocates. Checked at 66 to 69 degrees of thigh flexion from four sides. Rejected: a hem flare of 0.26, which read as a tutu (0.15 and
+0.11 now); the push starting at `hang` 0.2 (a raised thigh came through the yoke; it starts at 0.08). Dark cloth went grey at a grazing
+view because sheen is part white and ignored occlusion: it now takes `ao`, and has less white on the shorts' part.
+
+**A pleated skirt tore into a fringe in a lunge, and it wasn't the pleats.** `hemLag` removes the part of the lag that goes into the
+body, by the vertex's normal, and a pleat's two faces share corners but not normals, so the same lag sent each corner its own way. The
+skirt's swing is now plain, and the thighs keep it off the legs. Darkening the pleats' sides, shallower pleats (9, then 5 mm) and the
+sheen fix only hid this.
+
+**The skirt's top stays inside the shirt, and well inside.** Its rings first followed the body and came through the shirt's hem at the
+back as dark blocks. Capped 1 cm inside the shirt's outline, they still came through in a forward bend, in a ragged line, because the
+shirt bends in over the hips and two nearly touching surfaces cross raggedly. Now the rings go up to 3 cm in, the higher the further,
+and the inner shorts' top is deleted, since the skirt covers it.
+
+**Kit detail is shader, in the kit's two colours, and no colour changed.** Side panels, a cuff, seams, a ribbed collar band right
+round, a stripe down the shorts in the shirt's colour (the trim is near black on the warm kits, so it wouldn't show), a hem band on
+skirts. The marks are invented shapes and uneven word blocks, on the chest, sleeve and back. Three diagonal bars, a tick and chevrons
+were avoided because each is somebody's logo. Below a pixel they fade (`fine`): at the TV camera 1 cm is under a pixel, at 6 m about 4.
+First panels at ±5 cm over the ribs took most of a slim torso; ±2-2.6 cm.
+
+**A polo's collar is a mesh,** because a band in the shader has no edge of its own. The first mesh hung inside the shirt and only its
+points came through, so the leaf is now laid on the shirt by ray (`on_shirt`) and follows the game's neckline. It is part
+`sock`: over the hips that colour is the trim, which saved a ninth vertex buffer. The same goes for the headband and visor.
+
+**Two old bugs turned up looking at legs and wrists.** `underShirt` had no height limit, so it took a slice out of the inside of every
+leg in front (it shows in the "before" frames, on p7's left leg). The wristbands had never drawn: `wristX` was a T-pose position and
+`p` is the modelled pose, where the wrist is 25 cm further in. Moved to the modelled pose, the plane dyed the thigh until it was
+bounded by distance. `sleeveX` had the same fault; bodyX.zw now hold the T-pose on the shirt.
+
+**Builds, from a tape measure.** `body_build` measures the baked mesh (convex hull for a girth, as a tape bridges hollows; vertex 747
+for the chin, found from the profile). Heads were already right at 7.6-8 heads to the height, so nothing was done to them. What was wrong
+was the women: waist 0.36 H, shoulders 3-4 cm narrow, calves thin, and p2's and p4's calves 6 cm under the other men's. `proportions`
+is not what it looks like: lowering it narrowed the waist and shortened the legs, so the women went to 1.0. `build` holds MakeHuman's
+targets per person. `measure-waist-circ-incr` hardly moved the narrowest ring (0.623 to 0.636 at full weight);
+`torso-scale-horiz-incr` plus `torso-scale-vert-decr` did. Shorts moved up, from 73-84% of the way from crotch to knee
+to 61-67%. p10 takes `legs/measure-thigh-circ-decr` 0.3 as well: at 0.56 H her legs clipped each other 5.7 cm in the animation test, over its
+5 cm limit; the target took her thigh from 0.564 to 0.560 and her hips from 0.966 to 0.959, and she passes.
+
+**Hair.** A contact sheet of every style on one body settled it. bob01 and bob02 are helmets with one eye covered, and short03 too on
+a woman. ponytail01, afro01 and the braid read as hair at 6-8 m. p8 takes afro01 with a headband, p9 ponytail01 with a visor and
+`hair_tone` (the pony's texture has a blonde tip that didn't belong on her), p10 the braid, p7 stays in the ponytail. A band sits on
+the hair up to 3 cm off the skin, so it isn't lost inside an afro.
+
+**Skin at the TV camera** was measured, not changed. On the three lighter women of a 1080p TV frame the skin's median is about
+(185, 135, 102), luminance 0.23-0.29 against the turf's 0.13, hue 22-25 degrees, saturation 0.45-0.53; its lit tenth about (224, 168,
+133), luminance 0.45, and up to (244, 186, 166) on the far side, facing the lights. It reads neither pale nor flat next to the turf,
+and the hue is a photo's. Left alone: it's `SkinLighting`, and that goes with the faces.
+
+**What's left.** The women's waist to hip is 0.69 on all four, a little hourglass for athletes (0.72-0.75 would be nearer), and their
+hips 0.55-0.57 H: the targets that widen the waist stop short and more would need a sculpted target. The pleats keep their shape in
+a lunge but have no cloth of their own. A skirt's normals don't follow the thighs' push. Collar points are rough from close to. p7 and p9 share a ponytail and p4 and p5 a
+short04, told apart by colour and by the visor. p10's braid is good from behind but her front hair is a swept cap. p4 hasn't had a clean look at
+6 m. Frame time on these meshes hasn't been measured.
