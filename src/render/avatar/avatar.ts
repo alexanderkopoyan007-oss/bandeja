@@ -1352,7 +1352,8 @@ export class Avatar {
     const f = this.fam;
     if (this.st === ST_PREP) {
       const left = this.hasCon ? this.tPlan - this.prepStart : PREP;
-      const u = smoothstep(0, left * PREP_SHARE < PREP ? Math.max(PREP_MIN, left * PREP_SHARE) : PREP, t - this.prepStart);
+      const prep = f.prep ?? PREP;
+      const u = smoothstep(0, left * PREP_SHARE < prep ? Math.max(PREP_MIN, left * PREP_SHARE) : prep, t - this.prepStart);
       if (this.swingS > 0) this.swingKey(this.swingS);
       else {
         // Held at the end of the backswing: no forward swing yet (keyS is what the racket clear's release reads; the

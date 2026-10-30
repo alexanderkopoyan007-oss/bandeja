@@ -42,6 +42,8 @@ export interface Family {
   viaS?: number;
   /** Played facing the player's own back glass (the contrapared): the stance turns round to it. */
   glass?: boolean;
+  /** How long the backswing takes (s; default the avatar's PREP). */
+  prep?: number;
   /** How far the stroke stands the trunk up out of the idle's ready crouch (0..1; default none). */
   stand?: number;
 }
@@ -110,6 +112,8 @@ export const OVERHEAD: Family = {
   crouch: 0,
   punch: 1,
   stand: 0.35,
+  prep: 0.45,
+  bodyTurn: 0.7,
 };
 
 /**
@@ -127,6 +131,8 @@ export const VIBORA: Family = {
   crouch: 0,
   punch: 1,
   stand: 0.35,
+  prep: 0.45,
+  bodyTurn: 0.7,
 };
 
 /**

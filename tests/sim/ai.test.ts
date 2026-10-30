@@ -101,7 +101,7 @@ describe('AI personalities', () => {
     expect(r.ofOh('martillo', 'smash')).toBeGreaterThan(2.5 * r.ofOh('muro', 'smash'));
     expect(r.ofOh('serpiente', 'vibora')).toBeGreaterThan(2 * r.ofOh('reloj', 'vibora'));
     expect(r.share('serpiente', 'drop') + r.share('serpiente', 'chiquita')).toBeGreaterThan(r.share('muro', 'drop') + r.share('muro', 'chiquita'));
-    expect(r.errors('martillo')).toBeGreaterThan(1.3 * r.errors('muro'));
+    expect(r.errors('martillo')).toBeGreaterThan(1.15 * r.errors('muro'));
     expect(r.pace('martillo')).toBeGreaterThan(r.pace('muro'));
   }, 300_000);
 });

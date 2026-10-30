@@ -417,14 +417,16 @@ export class BroadcastCamera {
   private cutaway(sim: MatchSim, dt: number): number {
     const court = sim.world.court;
     const net = sim.phase === PH_OVER && sim.overStage >= 3;
-    const ti = net ? 1 : sim.doubles ? 2 : 1;
+    // (a team's players are every second number, in singles too: stepping by 1 took both players, and team 0's points
+    // cut to the empty court between them)
+    const ti = net ? 1 : 2;
     let mx = 0, mz = 0;
     for (let i = net ? 0 : this.cutTeam; i < sim.players.length; i += ti) { mx += sim.players[i]!.pos.x; mz += sim.players[i]!.pos.z; }
     const n = net ? sim.players.length : sim.doubles ? 2 : 1;
     mx /= n; mz /= n;
     // The pair's half from where they are (nobody changes ends after match point).
     let wz = 0;
-    for (let i = this.cutTeam; i < sim.players.length; i += sim.doubles ? 2 : 1) wz += sim.players[i]!.pos.z;
+    for (let i = this.cutTeam; i < sim.players.length; i += 2) wz += sim.players[i]!.pos.z;
     const side = wz >= 0 ? 1 : -1;
     if (net !== this.netShot) { this.netShot = net; this.cutOn = false; }
     if (!this.cutOn) {
