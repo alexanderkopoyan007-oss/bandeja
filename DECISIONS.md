@@ -2205,8 +2205,14 @@ Done on branch r4-mediums, off phase9, so the round 4 reviewers kept a fixed bui
   strike's passes (less spin, less face speed) ran the whole search again: 323 flights in one tick, a dropped frame at
   CPU 4×.
   - After a failed search the later passes only refine the best try (`quick`, 10 flights at most). A strike's worst
-    went 323 → 54 flights over 8 matches; the same 60 seeds lost as many saves with and without it.
-  - The sim's mean tick is unchanged (about 11 µs).
+    went 323 → 54 flights over 8 matches. Over 30 seeds the same share of saves is lost with and without it (14 of
+    44, 15 of 46).
+  - Worst tick over six matches, in pairs back to back: 12.2 and 12.8 ms → 3.5 and 3.2 ms. One profiled run on the new
+    build still showed 13.0 ms, not repeated without the profiler and not traced.
+  - The mean tick rose 10.7 → 16.1 µs and the p99 stayed about 290 µs. The whole rise is the cloth net: it is awake 5.5%
+    of ticks (2.6% before), 52 wakes against 40 over those matches, because more balls hit it (the flatter víbora and
+    the serves near the lines are the likely reason; not separated). A sleeping net costs nothing and these are 0.03 ms
+    of an 8.3 ms frame, so it is left as it is.
 - **Tests that only measured the seed:** the contrapared's lost rate (over 60 seeds 18 of 88 before and 33 of 105
   after, with 30-seed ranges giving 5 of 43 and 13 of 45; the bound is now 0.45), the neighbour courts' count over
   120 s (now 300 s), and the replay test's one seed (it now plays seeds until it has a replay to check).
