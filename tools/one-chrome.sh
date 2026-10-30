@@ -17,10 +17,11 @@ for i in $(seq 1 7200); do
     unlink "$T" 2>/dev/null
     "$@" & pid=$!
     trap 'kill $pid 2>/dev/null; rmdir "$LOCK" 2>/dev/null' EXIT
-    while kill -0 $pid 2>/dev/null; do touch "$LOCK"; for j in $(seq 1 30); do kill -0 $pid 2>/dev/null || break; perl -e 'select(undef,undef,undef,1)'; done; done
+    while kill -0 $pid 2>/dev/null; do [ -d "$LOCK" ] && touch "$LOCK"; for j in $(seq 1 30); do kill -0 $pid 2>/dev/null || break; perl -e 'select(undef,undef,undef,1)'; done; done
     wait $pid; exit $?
   fi
-  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +20 2>/dev/null)" ]; then rmdir "$LOCK"; fi
+  # (a heartbeat that outran a stale-lock rmdir used to leave a plain file here, which neither mkdir nor rmdir can get past)
+  if [ -f "$LOCK" ]; then unlink "$LOCK" 2>/dev/null; elif [ -n "$(find "$LOCK" -maxdepth 0 -mmin +20 2>/dev/null)" ]; then rmdir "$LOCK"; fi
   perl -e 'select(undef,undef,undef,1)'
 done
 echo "one-chrome: lock busy for 2 hours" >&2; exit 75

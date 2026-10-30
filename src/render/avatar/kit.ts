@@ -41,7 +41,7 @@ function hemLag(lag: THREE.Node<'vec3'>, sway: THREE.Node<'float'>): THREE.Node<
   return positionLocal.add(d.sub(n.mul(min(dot(d, n), 0))));
 }
 
-export interface KitFrame { chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; floorY: number; footX?: number; footZ?: number }
+export interface KitFrame { chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; sleeveX?: number; wristX?: number; neck?: THREE.Vector3; collarDrop?: number; neckUv?: THREE.Vector2; floorY: number; footX?: number; footZ?: number }
 const FRAMES = new WeakMap<PlayerAsset, KitFrame>();
 
 function at(asset: PlayerAsset, name: string): THREE.Vector3 {
@@ -292,6 +292,18 @@ class SkinLighting extends THREE.PhysicalLightingModel {
 const SKIN_WRAP = 0.55;
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
 const FOLD_DEPTH = 1;
+const BIB_PLAIN = 0.9;
+/** The collar's bins across (count, m each), and how far inside the shirt's top its edge stays (m). */
+const COLLAR_BINS = 6;
+const COLLAR_MAX = 0.11;
+const COLLAR_BIN = 0.01;
+const COLLAR_EDGE = 0.006;
+/** Hem stitching this far in from the edge (m); the wristband's centre in from the wrist and half width (m); hair's swing
+ * as a multiple of the hems' lag. */
+const HEM_STITCH = 0.018;
+const WRIST_IN = 0.06;
+const WRIST_W = 0.034;
+const HAIR_SWING = 3;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;
 const LID_PLAIN = 1;
@@ -343,7 +355,12 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
   // The clothes' ambient occlusion is the grey in their rectangle; the skin's, teeth's and tongue's is the alpha.
   const ao = float(0.32).add(tex.x.mul(0.68));
-  const bakedAO = mix(float(1), mix(float(0.3).add(tex.w.mul(0.7)), float(0.15).add(tex.w.mul(0.85)), mouthW), skinW.add(mouthW)).mul(vAO);
+  // The skin under the shirt's collar was baked in the shirt's shadow, and the collar is cut lower than that shirt's:
+  // lifted to the neck's level, or it read as a dark bib under the chin.
+  const nk0 = frame.neck ?? frame.chest;
+  const bib = smoothstep(0.17, 0.1, p.x.sub(nk0.x).abs()).mul(smoothstep(nk0.y + 0.1, nk0.y - 0.03, p.y)).mul(skinW);
+  const skinAO = mix(tex.w, max(tex.w, float(0.76)), bib);
+  const bakedAO = mix(float(1), mix(float(0.3).add(skinAO.mul(0.7)), float(0.15).add(tex.w.mul(0.85)), mouthW), skinW.add(mouthW)).mul(vAO);
   // The waistband under the shirt was in the shirt's shadow when the occlusion was baked (MakeHuman's outfit); a shirt
   // riding up as the player bends showed it as a grey band. Above the shirt's hem the shorts are lit as they show.
   const aoShorts = mix(ao, max(ao, float(0.82)), smoothstep(frame.hemY - 0.05, frame.hemY, p.y));
@@ -367,8 +384,15 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // (MakeHuman's women wear eye shadow in the source: the lids take the hue of the skin round them and keep their shading)
   const round = body.opaqueMap ? texture(body.opaqueMap, uv()).level(float(LID_MIP)).xyz : tex.xyz;
   const shade = tex.xyz.dot(LUMA).div(round.dot(LUMA).max(0.02));
-  const skinBase = mix(tex.xyz, round.mul(shade), lids.mul(LID_PLAIN));
-  const skinCol = skinBase.mul(mix(float(1), tex.w, 0.3)).mul(float(1).add(smoothstep(0.4, 0.12, tex.y).mul(0.3)));
+  // (and the chest in the collar takes the neck's: on some skins the source's torso is another colour, and read orange)
+  const neckTone = body.opaqueMap && frame.neckUv ? texture(body.opaqueMap, vec2(frame.neckUv.x, frame.neckUv.y)).level(float(4)).xyz : round;
+  const skinBase = mix(mix(tex.xyz, round.mul(shade), lids.mul(LID_PLAIN)), neckTone.mul(shade), bib.mul(BIB_PLAIN));
+  // Skin isn't one even colour, and the source's millimetre texels are soft up close: blotches a few cm across, smaller
+  // ones with a little red in them, and the pores' own shade (round 7, the critic: "waxy, even skin").
+  const mottle = mx_noise_float(p.mul(42)).mul(0.6).add(mx_noise_float(p.mul(150)).mul(0.4));
+  const poreFine = mx_noise_float(p.mul(620));
+  const skinTone = vec3(1, 1, 1).add(vec3(0.13, 0.065, 0.055).mul(mottle)).mul(float(1).add(poreFine.mul(0.06).mul(footprintKeep(0.0012))));
+  const skinCol = skinBase.mul(skinTone).mul(mix(float(1), skinAO, 0.3)).mul(float(1).add(smoothstep(0.4, 0.12, tex.y).mul(0.3)));
   // (the source draws a brown iris dark red: its green and blue are lifted to the red's; whites and blue or green irises
   // keep theirs)
   // (a little darker than the source, and well under the lid's shadow: at 0.74 the eyes shone out of the sockets)
@@ -384,17 +408,31 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
     .add(color(look.socks).mul(sockW))
     .add(shoeC.mul(shoeW).mul(vAO));
   col = col.mul(float(1).sub(wet.mul(0.3)));
-  // A ribbed band 8 mm wide along the neckline.
-  const neckline = X.y.mul(shirtW);
+  // The neckline, worked out per pixel from the body's rest position (from a per-vertex value it ran in straight pieces
+  // across the shirt's big triangles), and a ribbed band 8 mm wide along it.
+  const nk = frame.neck ?? frame.chest;
+  const collarX = p.x.sub(nk.x);
+  const collarY = p.y.sub(nk.y - (frame.collarDrop ?? COLLAR_DROP)).sub(collarX.mul(collarX).mul(COLLAR_CURVE));
+  const neckline = float(COLLAR_MID).add(min(collarY, p.z.sub(nk.z - 0.01)).mul(COLLAR_SCALE)).mul(shirtW);
+  // The skin the build keeps for the neckline stops at it: below, on a close-fitting shirt, it came through in jagged pieces.
+  const underShirt = smoothstep(-0.012, -0.0125, collarY).mul(smoothstep(nk.z - 0.01, nk.z - 0.005, p.z))
+    .mul(smoothstep(0.1, 0.09, collarX.abs())).mul(skinW);
   col = col.mul(float(1).sub(smoothstep(0.465, 0.475, neckline).mul(0.16).mul(float(1).add(p.x.mul(900).sin().mul(0.35)))));
+  // Twin-needle hems on the shirt's waist and sleeves, a slim stitched line a little in from each edge; a towelling band
+  // on the wrists.
+  const stitched = (d: THREE.Node<'float'>): THREE.Node<'float'> => smoothstep(0.004, 0.0015, d.sub(HEM_STITCH).abs());
+  col = col.mul(float(1).sub(stitched(p.y.sub(frame.hemY)).add(stitched(float(frame.sleeveX ?? 0).sub(p.x.sub(frame.chest.x).abs()))).mul(0.14).mul(shirtW)));
+  const band = smoothstep(0.003, 0, p.x.abs().sub(float(frame.wristX ?? 0).sub(WRIST_IN)).abs().sub(WRIST_W)).mul(skinW);
+  col = mix(col, color(look.shirt).mul(float(0.92).add(p.x.mul(2400).sin().mul(0.08))), band);
   const m = new PersonNodeMaterial();
-  m.maskNode = neckline.lessThan(COLLAR_MID);
+  m.maskNode = neckline.lessThan(COLLAR_MID).and(underShirt.lessThan(0.5));
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
-  const skinRough = mix(float(0.5), float(0.33), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07));
+  const skinRough = mix(float(0.5), float(0.33), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07))
+    .add(mottle.mul(0.07)).add(poreFine.mul(0.05));
   m.roughnessNode = fabric.mul(float(0.88).sub(wet.mul(0.25)))
-    .add(skinW.mul(skinRough))
+    .add(skinW.mul(mix(skinRough, float(0.9), band)))
     .add(eyeW.mul(0.2)).add(teethW.mul(0.3)).add(tongueW.mul(0.38)).add(shoeW.mul(0.45));
   m.metalnessNode = float(0);
   // Specular occlusion for the direct light as well: deep creases (nostrils, the ears' hollows, the corners of the
@@ -417,10 +455,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   m.emissiveNode = vec3(1, 0.98, 0.94).mul(normalView.dot(CATCHLIGHT).clamp().pow(1100)).mul(eyeW).mul(1.5);
   const folds = mx_noise_float(vec3(p.x.mul(16), p.y.mul(44), p.z.mul(16))).mul(0.6)
     .add(mx_noise_float(p.mul(60)).mul(0.15));
-  // Pores: about 0.5 mm features, 12 µm deep, faded out wherever a pixel covers more than a few of them (bump.ts),
+  // Pores: about 0.5 mm features, 30 µm deep, faded out wherever a pixel covers more than a few of them (bump.ts),
   // less on the lips and lids.
-  const pores = mx_noise_float(p.mul(1900)).mul(0.6).add(mx_noise_float(p.mul(620)).mul(0.4))
-    .mul(0.000012).mul(skinW).mul(float(1).sub(lips.mul(0.7)).sub(lids.mul(0.5))).mul(footprintKeep(0.0012));
+  const pores = mx_noise_float(p.mul(1900)).mul(0.6).add(poreFine.mul(0.4))
+    .mul(0.00003).mul(skinW).mul(float(1).sub(lips.mul(0.7)).sub(lids.mul(0.5))).mul(footprintKeep(0.0012));
   // The suit's sculpted folds, MakeHuman's own normal map, over the suit's rectangle of the atlas (finish-player.py RECT).
   const bumped = heightBump(folds.mul(body.clothNormal ? sockW : fabric).mul(0.0025).add(pores), 0.023);
   if (body.clothNormal) {
@@ -433,6 +471,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   m.positionNode = hemLag(lag, shirtSway.add(shortsSway));
 
   const hair = new THREE.MeshPhysicalNodeMaterial();
+  // Long hair swings: below the nape it trails with the hems' spring, further (round 7, the critic: it moved as one piece
+  // with the head).
+  const neckY = frame.neck?.y ?? frame.chest.y + 0.2;
+  hair.positionNode = positionLocal.add(lag.mul(smoothstep(neckY + 0.04, neckY - 0.22, p.y).mul(HAIR_SWING)));
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
   const hAO = body.alphaGeometry.hasAttribute('bodyAO') ? attribute<'float'>('bodyAO', 'float') : float(1);
   // Strands, not a cap: brightness varies across the cards (fine) and along them (slowly); pale texels at the edge of a
@@ -495,9 +537,33 @@ function personFrame(asset: PlayerAsset): KitFrame {
   // How far inside the neckline a shirt vertex is (m): a scoop, low in front and rising to the sides of the neck. The
   // shader cuts along its zero (bodyX.y), so the edge runs smoothly across the triangles: dropped whole, they left a
   // torn edge (review round 6, the critic's #7). Only triangles well inside go.
+  // The cut has to fall inside the shirt everywhere, or the shirt's own neck hole is the edge, in straight pieces (a shirt
+  // fitted to a narrower neck has a lower hole). Per bin of distance from the middle, the top of the shirt's front.
+  const n0 = rest.length / 3;
+  const top = new Float64Array(COLLAR_BINS).fill(-Infinity);
+  let neckV = -1, neckD = Infinity;
+  for (let i = 0; i < n0; i++) {
+    const x = rest[i * 3]! - neck.x, y = rest[i * 3 + 1]!, z = rest[i * 3 + 2]! - neck.z;
+    if (A[i * 4 + 2]! > 0.5) {
+      const d = Math.hypot(x, y - neck.y - 0.05, z - 0.055);
+      if (d < neckD) { neckD = d; neckV = i; }
+    }
+    if (A[i * 4]! < 0.5 || z < 0.01 || Math.abs(x) >= COLLAR_BINS * COLLAR_BIN) continue;
+    const b = Math.floor(Math.abs(x) / COLLAR_BIN);
+    if (y > top[b]!) top[b] = y;
+  }
+  let collarDrop = COLLAR_DROP;
+  for (let b = 0; b < COLLAR_BINS; b++) {
+    if (top[b] === -Infinity) continue;
+    const dx = (b + 0.5) * COLLAR_BIN;
+    collarDrop = Math.max(collarDrop, neck.y + COLLAR_CURVE * dx * dx - top[b]! + COLLAR_EDGE);
+  }
+  collarDrop = Math.min(collarDrop, COLLAR_MAX);
+  const uvA = g.getAttribute('uv');
+  const neckUv = neckV >= 0 ? new THREE.Vector2(uvA.getX(neckV), uvA.getY(neckV)) : new THREE.Vector2(0.25, 0.5);
   const inCollar = (v: number): number => {
     const dx = rest[v * 3]! - neck.x;
-    return Math.min(rest[v * 3 + 1]! - (neck.y - COLLAR_DROP + COLLAR_CURVE * dx * dx), rest[v * 3 + 2]! - (neck.z - 0.01));
+    return Math.min(rest[v * 3 + 1]! - (neck.y - collarDrop + COLLAR_CURVE * dx * dx), rest[v * 3 + 2]! - (neck.z - 0.01));
   };
   for (let i = 0; i < n; i++) if (A[i * 4]! > 0.5) X[i * 4 + 1] = Math.min(1, Math.max(0, COLLAR_MID + inCollar(i) * COLLAR_SCALE));
   const gone = (v: number): boolean => A[v * 4]! > 0.5 && inCollar(v) > 0.04;
@@ -506,7 +572,7 @@ function personFrame(asset: PlayerAsset): KitFrame {
     kept.push(tri[i]!, tri[i + 1]!, tri[i + 2]!);
   }
   g.setIndex(kept);
-  let floorY = Infinity, shortsHemY = Infinity, hemY = Infinity;
+  let floorY = Infinity, shortsHemY = Infinity, hemY = Infinity, sleeveX = 0;
   for (let i = 0; i < n; i++) {
     const x = rest[i * 3]!, y = rest[i * 3 + 1]!, z = rest[i * 3 + 2]!;
     floorY = Math.min(floorY, y);
@@ -514,6 +580,7 @@ function personFrame(asset: PlayerAsset): KitFrame {
     if (A[i * 4]! < 0.5) continue;
     hemY = Math.min(hemY, y);
     const dx = x - chest.x;
+    sleeveX = Math.max(sleeveX, Math.abs(dx));
     X[i * 4] = Math.max(
       g3(dx, y - (chest.y + 0.02), z - (chest.z + 0.1), 0.06, 0.13, 0.09),
       g3(dx, y - (chest.y - 0.12), z - (chest.z - 0.1), 0.055, 0.26, 0.09),
@@ -525,7 +592,8 @@ function personFrame(asset: PlayerAsset): KitFrame {
   frame = {
     chest: chest.clone(), hips: hips.clone(), hemY: Number.isFinite(hemY) ? hemY : hips.y - 0.02,
     shortsHemY: Number.isFinite(shortsHemY) ? shortsHemY : hips.y - 0.3,
-    armSpan: halfSpan * 2, floorY, footX: Math.abs(at(asset, 'LeftFoot').x), footZ: at(asset, 'LeftFoot').z,
+    armSpan: halfSpan * 2, sleeveX, wristX: Math.abs(at(asset, 'LeftHand').x), neck: neck.clone(), collarDrop, neckUv,
+    floorY, footX: Math.abs(at(asset, 'LeftFoot').x), footZ: at(asset, 'LeftFoot').z,
   };
   PERSON_FRAMES.set(asset, frame);
   return frame;

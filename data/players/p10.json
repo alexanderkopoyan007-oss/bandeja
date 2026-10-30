@@ -18,13 +18,26 @@
   "skin": "middleage_caucasian_female",
   "eyes": "high-poly",
   "eye_colour": "green",
-  "eyebrows": "eyebrow010",
+  "eyebrows": "eyebrow012",
   "eyelashes": "eyelashes02",
-  "hair": "long01",
+  "hair": "ponytail01",
   "clothes": [
     "male_casualsuit06",
     "shoes05"
   ],
   "shorts": 0.72,
-  "height": 1.69
+  "height": 1.69,
+  "face": {
+    "head/head-rectangular": 0.3,
+    "head/head-age-incr": 0.2,
+    "nose/nose-hump-incr": 0.2,
+    "chin/chin-prominent-incr": 0.2,
+    "mouth/mouth-laugh-lines-in": 0.3,
+    "mouth/mouth-upperlip-height-decr": 0.2,
+    "asym/asym-jaw-3-l": 0.3,
+    "asym/asym-nose-2-r": 0.3,
+    "asym/asym-brown-2-r": 0.3,
+    "asym/asym-eye-2-r": 0.3,
+    "asym/asym-mouth-2-l": 0.3
+  }
 }

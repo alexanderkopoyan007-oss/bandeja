@@ -26,5 +26,17 @@
     "shoes05"
   ],
   "shorts": 0.72,
-  "height": 1.66
+  "height": 1.66,
+  "face": {
+    "head/head-round": 0.3,
+    "chin/chin-width-decr": 0.2,
+    "nose/nose-scale-depth-decr": 0.2,
+    "mouth/mouth-scale-horiz-decr": 0.15,
+    "eyebrows/eyebrows-trans-up": 0.2,
+    "asym/asym-jaw-1-r": 0.3,
+    "asym/asym-nose-3-r": 0.3,
+    "asym/asym-brown-1-l": 0.3,
+    "asym/asym-eye-1-l": 0.3,
+    "asym/asym-mouth-1-r": 0.3
+  }
 }

@@ -18,7 +18,7 @@
   "skin": "young_caucasian_male",
   "eyes": "high-poly",
   "eye_colour": "brown",
-  "eyebrows": "eyebrow001",
+  "eyebrows": "eyebrow008",
   "eyelashes": "eyelashes01",
   "hair": "short02",
   "clothes": [
@@ -26,5 +26,20 @@
     "shoes05"
   ],
   "shorts": 0.6,
-  "height": 1.8
+  "height": 1.8,
+  "face": {
+    "head/head-square": 0.3,
+    "chin/chin-width-incr": 0.2,
+    "nose/nose-hump-incr": 0.25,
+    "nose/nose-point-width-decr": 0.2,
+    "mouth/mouth-upperlip-volume-decr": 0.25,
+    "forehead/forehead-temple-incr": 0.2,
+    "eyebrows/eyebrows-trans-down": 0.2,
+    "neck/neck-scale-horiz-incr": 0.2,
+    "asym/asym-jaw-1-l": 0.3,
+    "asym/asym-nose-2-r": 0.3,
+    "asym/asym-brown-1-l": 0.3,
+    "asym/asym-eye-2-r": 0.3,
+    "asym/asym-mouth-1-l": 0.3
+  }
 }

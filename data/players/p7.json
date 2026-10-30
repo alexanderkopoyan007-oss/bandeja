@@ -18,7 +18,7 @@
   "skin": "young_caucasian_female",
   "eyes": "high-poly",
   "eye_colour": "blue",
-  "eyebrows": "eyebrow007",
+  "eyebrows": "eyebrow010",
   "eyelashes": "eyelashes02",
   "hair": "ponytail01",
   "clothes": [
@@ -26,5 +26,19 @@
     "shoes05"
   ],
   "shorts": 0.72,
-  "height": 1.71
+  "height": 1.71,
+  "face": {
+    "head/head-oval": 0.45,
+    "chin/chin-prominent-decr": 0.15,
+    "nose/nose-scale-horiz-decr": 0.2,
+    "nose/nose-point-up": 0.25,
+    "mouth/mouth-upperlip-volume-incr": 0.2,
+    "mouth/mouth-cupidsbow-incr": 0.3,
+    "eyebrows/eyebrows-angle-up": 0.2,
+    "asym/asym-jaw-1-l": 0.3,
+    "asym/asym-nose-1-r": 0.3,
+    "asym/asym-brown-2-l": 0.3,
+    "asym/asym-eye-3-r": 0.3,
+    "asym/asym-mouth-2-r": 0.3
+  }
 }

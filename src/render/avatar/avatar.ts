@@ -326,7 +326,7 @@ const RACKET_TOP = 0.17;
 const HAND_OVER = 0.1;
 const HAND_UNDER = 0.3;
 const VOLLEY_ARM = 0.84;
-const BACK_FOLLOW = 0.8;
+const BACK_FOLLOW = 1;
 const BACK_LOW = -0.7;
 const BACK_HIGH = 0.3;
 const HAND_TO_BALL = 0.36;
@@ -1230,7 +1230,9 @@ export class Avatar {
     const f = this.fam;
     if (!f.wrist || !this.hasCon) return f.back.p;
     const d = this.con.p.y - f.contact.p.y;
-    return this.backP.copy(f.back.p).setY(f.back.p.y + BACK_FOLLOW * (d < BACK_LOW ? BACK_LOW : d > BACK_HIGH ? BACK_HIGH : d));
+    const p = this.backP.copy(f.back.p);
+    p.y += BACK_FOLLOW * (d < BACK_LOW ? BACK_LOW : d > BACK_HIGH ? BACK_HIGH : d);
+    return p;
   }
 
   /** The key's racket turned the least way to point from the hand's place (Family.wrist) at the ball. */

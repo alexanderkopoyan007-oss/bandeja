@@ -213,7 +213,7 @@ export const SERVE_TURN_SHARE = SERVE_TURN;
  */
 export const VOLLEY_FH: Family = {
   name: 'volley-fh',
-  back: key(v(-0.62, 1.6, 0.05), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.85, v(0.26, 1.2, 0.42)),
+  back: key(v(-0.6, 1.42, 0.3), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.85, v(0.26, 1.2, 0.42)),
   contact: key(v(-0.5, 1.15, 0.65), v(-0.6, 0.3, 0.72), v(0.1, 0.25, 1), v(-0.42, 0.9, 0.0), -0.6, v(0.42, 1.06, 0.54)),
   finish: key(v(-0.4, 1.05, 0.8), v(-0.5, 0.25, 0.82), v(0.1, 0.35, 1), v(-0.42, 0.9, 0.1), -0.4, v(0.46, 1.05, 0.4)),
   dip: 0.04,
@@ -227,7 +227,7 @@ export const VOLLEY_FH: Family = {
 /** The same on the other side: side-on, the hand crossing to the free side of the chest, the free arm opening behind. */
 export const VOLLEY_BH: Family = {
   name: 'volley-bh',
-  back: key(v(0.55, 1.58, 0.0), v(0.3, 0.9, 0.15), v(0.7, 0.05, 0.7), v(0.2, 1.0, 0.3), 1.45, v(0.28, 1.2, 0.3)),
+  back: key(v(0.53, 1.42, 0.26), v(0.3, 0.9, 0.15), v(0.7, 0.05, 0.7), v(0.2, 1.0, 0.3), 1.45, v(0.28, 1.2, 0.3)),
   contact: key(v(0.5, 1.12, 0.6), v(0.6, 0.3, 0.72), v(-0.1, 0.25, 1), v(0.3, 1.0, 0.3), 1.1, v(0.5, 1.08, -0.2)),
   finish: key(v(0.4, 1.02, 0.8), v(0.5, 0.25, 0.82), v(-0.1, 0.35, 1), v(0.3, 1.0, 0.35), 0.9, v(0.58, 1.08, -0.3)),
   dip: 0.04,

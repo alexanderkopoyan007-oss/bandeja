@@ -18,7 +18,7 @@
   "skin": "middleage_asian_male",
   "eyes": "high-poly",
   "eye_colour": "brownlight",
-  "eyebrows": "eyebrow005",
+  "eyebrows": "eyebrow012",
   "eyelashes": "eyelashes01",
   "hair": "short01",
   "clothes": [
@@ -26,5 +26,18 @@
     "shoes05"
   ],
   "shorts": 0.6,
-  "height": 1.76
+  "height": 1.76,
+  "face": {
+    "head/head-square": 0.4,
+    "nose/nose-scale-horiz-incr": 0.2,
+    "nose/nose-hump-decr": 0.2,
+    "chin/chin-width-incr": 0.25,
+    "mouth/mouth-lowerlip-height-incr": 0.2,
+    "eyebrows/eyebrows-trans-down": 0.25,
+    "asym/asym-jaw-3-r": 0.3,
+    "asym/asym-nose-3-r": 0.3,
+    "asym/asym-brown-2-r": 0.3,
+    "asym/asym-eye-2-l": 0.3,
+    "asym/asym-mouth-2-l": 0.3
+  }
 }

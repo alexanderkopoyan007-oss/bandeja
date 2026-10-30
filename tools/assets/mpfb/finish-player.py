@@ -135,6 +135,29 @@ def finish(yb, spec, out, preview=False):
         o.data.update()
         print('FACE cornea faces out', len(dead), 'eye vertices left', len(o.data.vertices))
 
+    # ---------- the eyes clear of hair ----------
+    # A fringe over one eye is a look, not one anybody plays padel with (review round 7, the critic's #1: p5 and p9).
+    eye_pts = [o.matrix_world @ v.co for o in meshes if kinds[o.name] == 'eye' for v in o.data.vertices]
+    if eye_pts:
+        brow_z = max(c.z for c in eye_pts) + 0.016
+        eye_y = sum(c.y for c in eye_pts) / len(eye_pts)
+        for o in meshes:
+            if kinds[o.name] != 'hair':
+                continue
+            bm = bmesh.new()
+            bm.from_mesh(o.data)
+            dead = []
+            for f in bm.faces:
+                c = o.matrix_world @ f.calc_center_median()
+                if c.z < brow_z and c.y < eye_y + 0.015 and abs(c.x) < 0.09:
+                    dead.append(f)
+            bmesh.ops.delete(bm, geom=dead, context='FACES')
+            bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+            bm.to_mesh(o.data)
+            bm.free()
+            o.data.update()
+            print('FACE fringe faces out', len(dead))
+
     # ---------- the face's shape keys (before anything is scaled or deleted: the units index the whole basemesh) ----------
     units = face.expression_keys(body, meshes, kinds, spec)
     masks = face.region_masks(body, units, rig.data.bones[P + 'Head'].head_local.z)

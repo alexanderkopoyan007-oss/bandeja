@@ -1,17 +1,44 @@
 {
   "name": "p3",
   "macro": {
-    "gender": 1.0, "age": 0.62, "muscle": 0.6, "weight": 0.52, "proportions": 0.75, "height": 0.5,
-    "cupsize": 0.5, "firmness": 0.5,
-    "race": { "asian": 0.0, "caucasian": 1.0, "african": 0.0 }
+    "gender": 1.0,
+    "age": 0.62,
+    "muscle": 0.6,
+    "weight": 0.52,
+    "proportions": 0.75,
+    "height": 0.5,
+    "cupsize": 0.5,
+    "firmness": 0.5,
+    "race": {
+      "asian": 0.0,
+      "caucasian": 1.0,
+      "african": 0.0
+    }
   },
   "skin": "middleage_caucasian_male",
   "eyes": "high-poly",
   "eye_colour": "grey",
-  "eyebrows": "eyebrow006",
+  "eyebrows": "eyebrow004",
   "eyelashes": "eyelashes01",
   "hair": "short01",
-  "clothes": ["male_casualsuit06", "shoes05"],
+  "clothes": [
+    "male_casualsuit06",
+    "shoes05"
+  ],
   "shorts": 0.6,
-  "height": 1.77
+  "height": 1.77,
+  "face": {
+    "head/head-rectangular": 0.4,
+    "head/head-age-incr": 0.3,
+    "nose/nose-volume-incr": 0.3,
+    "nose/nose-point-down": 0.25,
+    "mouth/mouth-laugh-lines-in": 0.35,
+    "forehead/forehead-scale-vert-incr": 0.25,
+    "chin/chin-bones-incr": 0.3,
+    "asym/asym-jaw-1-r": 0.3,
+    "asym/asym-nose-3-l": 0.3,
+    "asym/asym-brown-1-r": 0.3,
+    "asym/asym-eye-3-l": 0.3,
+    "asym/asym-mouth-2-l": 0.3
+  }
 }
