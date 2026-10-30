@@ -289,6 +289,10 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   }
 }
 const SKIN_WRAP = 0.55;
+const LUMA = vec3(0.2126, 0.7152, 0.0722);
+/** How wide (mip) and how much the lids' hue comes from the skin round them. */
+const LID_MIP = 6;
+const LID_PLAIN = 1;
 const CATCHLIGHT = vec3(-0.29, 0.41, 0.864);
 /** The ambient on skin: warmer than neutral (light that has been through skin and bounced off a body) and stronger (the
  * sockets' baked occlusion is a shadow of the whole sky, which a floodlit court isn't). */
@@ -337,7 +341,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
   // The clothes' ambient occlusion is the grey in their rectangle; the skin's, teeth's and tongue's is the alpha.
   const ao = float(0.32).add(tex.x.mul(0.68));
-  const bakedAO = mix(float(1), mix(float(0.3).add(tex.w.mul(0.7)), tex.w, mouthW), skinW.add(mouthW)).mul(vAO);
+  const bakedAO = mix(float(1), mix(float(0.3).add(tex.w.mul(0.7)), float(0.15).add(tex.w.mul(0.85)), mouthW), skinW.add(mouthW)).mul(vAO);
   // The waistband under the shirt was in the shirt's shadow when the occlusion was baked (MakeHuman's outfit); a shirt
   // riding up as the player bends showed it as a grey band. Above the shirt's hem the shorts are lit as they show.
   const aoShorts = mix(ao, max(ao, float(0.82)), smoothstep(frame.hemY - 0.05, frame.hemY, p.y));
@@ -358,7 +362,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // Albedo: the skin a little darker in its deepest creases, the eyeball under the lids, the mouth's inside.
   // (dark skin lifted a little: under the same floodlights its faces read as masks beside the others', mean luminance
   // 23 of 255 against 68 and 99)
-  const skinCol = tex.xyz.mul(mix(float(1), tex.w, 0.3)).mul(float(1).add(smoothstep(0.4, 0.12, tex.y).mul(0.3)));
+  // (MakeHuman's women wear eye shadow in the source: the lids take the hue of the skin round them and keep their shading)
+  const round = body.opaqueMap ? texture(body.opaqueMap, uv()).level(float(LID_MIP)).xyz : tex.xyz;
+  const shade = tex.xyz.dot(LUMA).div(round.dot(LUMA).max(0.02));
+  const skinBase = mix(tex.xyz, round.mul(shade), lids.mul(LID_PLAIN));
+  const skinCol = skinBase.mul(mix(float(1), tex.w, 0.3)).mul(float(1).add(smoothstep(0.4, 0.12, tex.y).mul(0.3)));
   // (the source draws a brown iris dark red: its green and blue are lifted to the red's; whites and blue or green irises
   // keep theirs)
   const eyeCol = vec3(tex.x, max(tex.y, tex.x.mul(0.58)), max(tex.z, tex.x.mul(0.34))).mul(float(0.74).add(vAO.mul(0.26)));
@@ -373,7 +381,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
     .add(color(look.socks).mul(sockW))
     .add(shoeC.mul(shoeW).mul(vAO));
   col = col.mul(float(1).sub(wet.mul(0.3)));
+  // A ribbed band 8 mm wide along the neckline.
+  const neckline = X.y.mul(shirtW);
+  col = col.mul(float(1).sub(smoothstep(0.465, 0.475, neckline).mul(0.16).mul(float(1).add(p.x.mul(900).sin().mul(0.35)))));
   const m = new PersonNodeMaterial();
+  m.maskNode = neckline.lessThan(COLLAR_MID);
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
@@ -395,7 +407,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   m.sheenRoughnessNode = float(0.55);
   // (little on the lids: the red at their terminator drew an orange band over each eye)
   m.scatterNode = skinW.mul(float(0.42).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85)));
-  m.ambientFixNode = skinW.add(eyeW);
+  // (the mouth too: the sky's blue on teeth turned them blue-black with the head bowed)
+  m.ambientFixNode = skinW.add(eyeW).add(mouthW);
   // The catchlight: a floodlit cornea always holds a bright point, and a face without one reads as dead. The light it
   // would mirror isn't in the probe, so it is drawn: fixed in view space, where the eyeball's normal meets it.
   m.emissiveNode = vec3(1, 0.98, 0.94).mul(normalView.dot(CATCHLIGHT).clamp().pow(1100)).mul(eyeW).mul(1.5);
@@ -441,7 +454,12 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
 
 const PERSON_FRAMES = new WeakMap<PlayerAsset, KitFrame>();
 /** How far below the Neck joint (m, rest pose) the shirt's front is cut. */
-const COLLAR_DROP = 0.04;
+const COLLAR_DROP = 0.065;
+/** The neckline's rise to the sides of the neck (m per m squared): level with the neck joint 7.5 cm out. */
+const COLLAR_CURVE = 11.5;
+/** The field's value at the neckline and its slope (per m), stored in bodyX.y for the cut and the ribbed band. */
+const COLLAR_MID = 0.5;
+const COLLAR_SCALE = 2.5;
 
 /**
  * A person's landmarks (rest pose) and per-vertex sweat weights (bodyX.x on the shirt: where a shirt gets wet first,
@@ -465,9 +483,17 @@ function personFrame(asset: PlayerAsset): KitFrame {
   const index = g.getIndex()!;
   const tri = index.array;
   const kept: number[] = [];
-  const collar = (v: number): boolean => A[v * 4]! > 0.5 && rest[v * 3 + 1]! > neck.y - COLLAR_DROP && rest[v * 3 + 2]! > neck.z - 0.01;
+  // How far inside the neckline a shirt vertex is (m): a scoop, low in front and rising to the sides of the neck. The
+  // shader cuts along its zero (bodyX.y), so the edge runs smoothly across the triangles: dropped whole, they left a
+  // torn edge (review round 6, the critic's #7). Only triangles well inside go.
+  const inCollar = (v: number): number => {
+    const dx = rest[v * 3]! - neck.x;
+    return Math.min(rest[v * 3 + 1]! - (neck.y - COLLAR_DROP + COLLAR_CURVE * dx * dx), rest[v * 3 + 2]! - (neck.z - 0.01));
+  };
+  for (let i = 0; i < n; i++) if (A[i * 4]! > 0.5) X[i * 4 + 1] = Math.min(1, Math.max(0, COLLAR_MID + inCollar(i) * COLLAR_SCALE));
+  const gone = (v: number): boolean => A[v * 4]! > 0.5 && inCollar(v) > 0.04;
   for (let i = 0; i < tri.length; i += 3) {
-    if (collar(tri[i]!) || collar(tri[i + 1]!) || collar(tri[i + 2]!)) continue;
+    if (gone(tri[i]!) && gone(tri[i + 1]!) && gone(tri[i + 2]!)) continue;
     kept.push(tri[i]!, tri[i + 1]!, tri[i + 2]!);
   }
   g.setIndex(kept);

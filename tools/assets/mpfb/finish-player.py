@@ -200,6 +200,10 @@ def finish(yb, spec, out, preview=False):
     # As the MASK modifiers would (a vertex survives every mask), by bmesh: applying a modifier fails on a mesh with
     # shape keys, and bmesh keeps the keys and attributes of what stays.
     select_only(body)
+    # The skin behind the neckline stays: the game opens the collar (kit.ts, a smooth cut in the shader) and the gap showed
+    # holes and slivers where this skin had gone (review round 6, the critic's #7).
+    neck = rig.data.bones[P + 'Neck'].head_local
+    behind_collar = lambda c: abs(c.x - neck.x) < 0.105 and neck.z - 0.1 < c.z < neck.z + 0.03 and neck.y - 0.16 < c.y < neck.y + 0.025
     keep = np.ones(len(body.data.vertices), dtype=bool)
     for m in list(body.modifiers):
         if m.type != 'MASK':
@@ -213,6 +217,10 @@ def finish(yb, spec, out, preview=False):
                         inside[v.index] = True
         keep &= ~inside if m.invert_vertex_group else inside
         body.modifiers.remove(m)
+    # (the first BODY_VERTS are the skin; after them come MakeHuman's helpers, which must stay out)
+    for v in body.data.vertices[:13380]:
+        if behind_collar(v.co):
+            keep[v.index] = True
     bm = bmesh.new()
     bm.from_mesh(body.data)
     bm.verts.ensure_lookup_table()
@@ -252,7 +260,7 @@ def finish(yb, spec, out, preview=False):
     kd.balance()
     # (the thigh inside the shorts' legs stays, to SKIN_UP up: see the shorts above)
     inside_hem = (lambda z: hem - 0.05 < z < hem + SKIN_UP) if hem is not None else (lambda z: False)
-    gone = {v.index for v in bm.verts if v.index in covered and kd.find(v.co)[2] > 0.025 and not inside_hem(v.co.z)}
+    gone = {v.index for v in bm.verts if v.index in covered and kd.find(v.co)[2] > 0.025 and not inside_hem(v.co.z) and not behind_collar(v.co)}
     dead = [f for f in bm.faces if all(v.index in gone for v in f.verts)]
     bmesh.ops.delete(bm, geom=dead, context='FACES')
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
