@@ -345,8 +345,9 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
  * - Eyes: a wet cornea (clearcoat, nearly mirror) over the iris; the lids' occlusion baked per vertex.
  * - Teeth and tongue: wet, in the mouth's own occlusion (baked open).
  * - The shirt and shorts in the kit's colours shaded by the clothes' own ambient occlusion (their printed textures are
- *   not used), with a fabric sheen; socks and shoes coloured as the mannequin's kit. Sweat, fabric folds and the hems'
- *   lag work as on the mannequin.
+ *   not used), with a fabric sheen and the kit's detail (`kitDetail`); socks and shoes coloured as the mannequin's kit.
+ *   Sweat, fabric folds and the hems' lag work as on the mannequin. A skirt is the shorts' part with bodyX.x from 0 at its
+ *   top to 1 at its hem: it swings further, and the thighs push it out of their way (`thighsPush`).
  * The second material is the hair, brows and lashes: alpha to coverage over the MSAA samples (soft strands instead
  * of a hard alpha-tested edge), darker where cards lie near the scalp (baked per vertex), a soft sheen.
  */
@@ -381,7 +382,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
   const wet = smoothstep(0.02, 0.12, X.x.mul(shirtW).add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
 
-  const { shirtC, shortsC, sockC } = kitDetail(look, body.kit, frame, p, X, uv());
+  const { shirtC, shortsC, sockC, skinCut } = kitDetail(look, body.kit, frame, p, X);
   const hang = X.x.mul(shortsW);
 
   const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
@@ -450,7 +451,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
     .mul(smoothstep(0.17, 0.15, vec3(p.x.abs(), p.y, p.z).sub(vec3(wristAt.x, wristAt.y, wristAt.z)).length()));
   col = mix(col, color(look.shirt).mul(float(0.92).add(p.x.mul(2400).sin().mul(0.08))), band);
   const m = new PersonNodeMaterial();
-  m.maskNode = neckline.lessThan(COLLAR_MID).and(underShirt.lessThan(0.5));
+  m.maskNode = neckline.lessThan(COLLAR_MID).and(underShirt.lessThan(0.5)).and(skinCut.mul(skinW).lessThan(0.5));
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
@@ -469,7 +470,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
     .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
   m.clearcoatRoughnessNode = skinW.mul(float(0.32).sub(sweat.mul(0.1))).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
   // Cotton and polyester's soft rim.
-  m.sheenNode = mix(col, vec3(1, 1, 1), 0.35).mul(fabric.mul(0.6));
+  // (less on the shorts and skirts, which are often near black: at a grazing view the white in it turned them grey; and none
+  // in the cloth's own creases, or a pleat's inside lit up in a lunge)
+  m.sheenNode = mix(col, vec3(1, 1, 1), mix(float(0.35), float(0.12), shortsW)).mul(fabric.mul(0.6)).mul(ao);
   m.sheenRoughnessNode = float(0.55);
   // (little on the lids: the red at their terminator drew an orange band over each eye)
   m.scatterNode = skinW.mul(float(0.42).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85)));
@@ -493,9 +496,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
     m.normalNode = mix(bumped, uvNormal(fold.mul(FOLD_DEPTH), uv()), shirtW.add(shortsW));
   } else m.normalNode = bumped;
   const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
-  const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);
-  const hung = hemLag(lag, shirtSway.add(shortsSway).add(hang.mul(SKIRT_SWING)));
-  m.positionNode = body.kit.bottom === 'pleated' || body.kit.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung).mul(smoothstep(0.2, 0.6, hang))) : hung;
+  const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6).mul(float(1).sub(step(0.001, hang)));
+  // (a skirt's swing is plain: `hemLag` goes by the vertex's normal, and a pleat's two faces share corners but not normals, so
+  // it tore them apart into a fringe)
+  const hung = hemLag(lag, shirtSway.add(shortsSway)).add(lag.mul(hang.mul(SKIRT_SWING)));
+  m.positionNode = body.kit.bottom === 'pleated' || body.kit.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung).mul(smoothstep(0.08, 0.4, hang))) : hung;
 
   const hair = new THREE.MeshPhysicalNodeMaterial();
   // Long hair swings: below the nape it trails with the hems' spring, further (round 7, the critic: it moved as one piece
@@ -564,8 +569,8 @@ function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>)
  * to the body's modelled pose (`p`); on the arm, where that is lower than the rest pose, X.zw (the rest pose) hold them.
  * Anything finer than a pixel can show fades to its average, or it would shimmer at the TV camera's distance.
  */
-function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'vec3'>, X: THREE.Node<'vec4'>, _uv: THREE.Node<'vec2'>):
-{ shirtC: THREE.Node<'vec3'>; shortsC: THREE.Node<'vec3'>; sockC: THREE.Node<'vec3'> } {
+function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'vec3'>, X: THREE.Node<'vec4'>):
+{ shirtC: THREE.Node<'vec3'>; shortsC: THREE.Node<'vec3'>; sockC: THREE.Node<'vec3'>; skinCut: THREE.Node<'float'> } {
   const rgb = (c: number): THREE.Node<'vec3'> => { const k = new THREE.Color(c); return vec3(k.r, k.g, k.b); };
   const trim = rgb(look.trim), shirt = rgb(look.shirt);
   const ax = p.x.sub(frame.chest.x).abs(), tx = X.z, ty = X.w;
@@ -585,6 +590,7 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   // Seams: over the shoulder, and round the sleeve's root or, on a raglan, from the neck to the armpit.
   const shoulder = line(p.z.sub(nk.z - 0.016)).mul(step(armY - 0.01, p.y)).mul(step(0.05, ax));
   let seams: THREE.Node<'float'> = float(0);
+  let skinCut: THREE.Node<'float'> = float(0);
   if (cut.top !== 'tank') {
     const nx = 0.72, ny = 0.694; // the raglan's line (normal) in the rest pose's (out, up)
     seams = cut.seam === 'raglan' ? line(tx.sub(0.07).mul(nx).add(ty.sub(nk.y - 0.015).mul(ny))).mul(step(armY - 0.11, ty))
@@ -597,6 +603,8 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
     const no = new THREE.Vector2(a.y - b.y, b.x - a.x).normalize();
     const d = ax.sub(a.x).mul(no.x).add(p.y.sub(a.y).mul(no.y));
     s = mix(s, trim, smoothstep(float(-CUFF - 0.0015), float(-CUFF), d));
+    // The skin under that edge: the shirt's triangles are coarser than the shoulder's, and it came through in teeth.
+    skinCut = smoothstep(-0.004, -0.006, d).mul(step(armX - 0.09, ax)).mul(smoothstep(a.y + 0.01, a.y, p.y)).mul(step(b.y - 0.02, p.y));
   }
   s = s.mul(float(1).sub(seams.mul(0.16)));
   // Marks, drawn in metres from their centre.
@@ -638,7 +646,8 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   const legX = frame.legX ?? 0.09, legZ = frame.legZ ?? 0, hang = X.x;
   let b = rgb(look.shorts);
   if (cut.bottom === 'pleated' || cut.bottom === 'aline') {
-    b = mix(b, shirt, smoothstep(float(SKIRT_BAND - 0.003), float(SKIRT_BAND), hang).mul(step(hang, 1.01)));
+    // (the outside only: on the lining, under a lifted hem, it read as a torn flap)
+    b = mix(b, shirt, smoothstep(float(SKIRT_BAND - 0.003), float(SKIRT_BAND), hang).mul(step(uv().y, SKIRT_OUT_V)));
   } else {
     const stripe = smoothstep(0.0145, 0.0125, p.z.sub(legZ).abs()).mul(smoothstep(legX + 0.015, legX + 0.03, p.x.abs()));
     b = mix(b, shirt, stripe);
@@ -647,7 +656,7 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   }
   // (a band or a visor is on the sock part's colours, up on the head)
   const sockC = mix(rgb(look.socks), trim, step(frame.hips.y, p.y));
-  return { shirtC: s, shortsC: b, sockC };
+  return { shirtC: s, shortsC: b, sockC, skinCut };
 }
 
 const PERSON_FRAMES = new WeakMap<PlayerAsset, KitFrame>();
@@ -671,6 +680,8 @@ const MARK_Y = 0.07;
 const SKIRT_SWING = 1.6;
 const SKIRT_CLEAR = 0.012;
 const SKIRT_BAND = 0.94;
+/** Atlas v above which a skirt's texels are its lining (person_kit.py SKIRT_V, LINING_V, in finish-player.py's RECT). */
+const SKIRT_OUT_V = 0.236;
 
 /**
  * A person's landmarks (rest pose) and per-vertex sweat weights (bodyX.x on the shirt: where a shirt gets wet first,

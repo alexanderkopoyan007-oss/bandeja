@@ -66,7 +66,7 @@ describe('people', () => {
       const n = A.length / 4;
       const count = (arr: Float32Array, k: number): number => { let c = 0; for (let v = 0; v < n; v++) if (arr[v * 4 + k]! > 0.5) c++; return c; };
       expect(count(A, 2)).toBeGreaterThan(5000); // skin
-      expect(count(A, 0)).toBeGreaterThan(1200); // shirt
+      expect(count(A, 0)).toBeGreaterThan(900); // shirt (a tank has no sleeves)
       expect(count(A, 1)).toBeGreaterThan(250); // shorts
       expect(count(B, 0)).toBeGreaterThan(500); // shoes
       expect(count(A, 3)).toBeGreaterThan(50); // socks
@@ -82,14 +82,16 @@ describe('people', () => {
   // the shorts' legs, all round (the leg in eight sectors about the hem's middle, the back of the knee included).
   it('has skin under the shorts all round each leg, a few cm up inside the hem', () => {
     for (const p of base.people) {
-      const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array;
+      const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array, X = p.geometry.getAttribute('bodyX').array as Float32Array;
       const n = r.length / 3;
+      // (the shorts themselves: a skirt's cloth, bodyX.x above 0, hangs clear of the leg, over the inner shorts)
+      const shorts = (v: number): boolean => A[v * 4 + 1]! > 0.5 && X[v * 4]! === 0;
       for (const side of [-1, 1]) {
         const leg = (v: number): boolean => Math.sign(r[v * 3]!) === side && r[v * 3 + 1]! < 0.95;
         let hem = Infinity;
-        for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v)) hem = Math.min(hem, r[v * 3 + 1]!);
+        for (let v = 0; v < n; v++) if (shorts(v) && leg(v)) hem = Math.min(hem, r[v * 3 + 1]!);
         let cx = 0, cz = 0, c = 0;
-        for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v) && r[v * 3 + 1]! < hem + 0.06) { cx += r[v * 3]!; cz += r[v * 3 + 2]!; c++; }
+        for (let v = 0; v < n; v++) if (shorts(v) && leg(v) && r[v * 3 + 1]! < hem + 0.06) { cx += r[v * 3]!; cz += r[v * 3 + 2]!; c++; }
         cx /= c; cz /= c;
         const top = new Array(8).fill(-1);
         for (let v = 0; v < n; v++) {

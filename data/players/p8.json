@@ -25,7 +25,7 @@
     "female_casualsuit01",
     "shoes05"
   ],
-  "shorts": 0.7,
+  "shorts": 0.67,
   "height": 1.74,
   "kit": {
     "top": "tee",
@@ -34,7 +34,7 @@
     "head": "band"
   },
   "build": {
-    "torso/torso-scale-horiz-incr": 0.5,
+    "torso/torso-scale-horiz-incr": 0.7,
     "torso/torso-scale-vert-decr": 0.2,
     "legs/upperlegs-height-incr": 0.2,
     "legs/measure-calf-circ-incr": 0.5,

@@ -172,14 +172,16 @@ SKIRT_RINGS = (0.0, 0.11, 0.22, 0.34, 0.47, 0.6, 0.73, 0.87, 1.0)
 SKIRT_YOKE = 0.3
 SKIRT_GAP = 0.005
 SKIRT_TUCK = 0.05  # how far up under the shirt's hem the skirt's top goes
+SKIRT_UNDER = 0.01  # how far inside the shirt it stays there
 PLEATS = 34
 ALINE_COLS = 60
 LINING_V = 0.97
 SKIRT_V = 0.92
 
 
-def _skirt_shape(body, rig, top, hem, flare, cols):
-    """Rings (nrings, cols) of radii about the pelvis's centre, and that centre; the body's outline as a support function."""
+def _skirt_shape(body, rig, shirt, top, hem, flare, cols):
+    """Rings (nrings, cols) of radii about the pelvis's centre, and that centre; the body's outline as a support function. Up
+    under the shirt (`shirt`, its vertices) a ring stays inside it, or the skirt's top comes through the hem as dark blocks."""
     co = _body_co(body)
     dom = _dominant_bones(body)
     keep = np.array([not ('Arm' in d or 'Hand' in d) for d in dom])
@@ -197,6 +199,14 @@ def _skirt_shape(body, rig, top, hem, flare, cols):
         if i:
             dz = zs[i - 1] - z
             R[i] = np.maximum(R[i], R[i - 1] + flare * dz * (1 if SKIRT_RINGS[i] > SKIRT_YOKE else 0.2))
+    hem_z = shirt[:, 2].min()
+    for i, z in enumerate(zs):
+        if z < hem_z - 0.012:
+            continue
+        band = shirt[np.abs(shirt[:, 2] - max(z, hem_z + 0.012)) < 0.03]
+        # (well in, the higher the further: a player bending bends the shirt in over the hips, and two surfaces that nearly touch
+        # cross in a ragged line; these rings show only if the shirt rides right up)
+        R[i] = np.minimum(R[i], ((band[:, :2] - c) @ dirs.T).max(axis=0) - SKIRT_UNDER * (1 + 2 * max(0.0, min(1.0, (z - hem_z) / 0.05))))
     return R, c, th, zs
 
 
@@ -208,8 +218,21 @@ def make_skirt(body, suit, rig, spec, women):
     shirt_hem = min(suit.data.vertices[i].co.z for i in top_piece)
     top = shirt_hem + SKIRT_TUCK
     pleated = style == 'pleated'
+    # The inner shorts' top goes: the skirt covers it, and it came through the shirt's back in a bend.
+    bm = bmesh.new()
+    bm.from_mesh(suit.data)
+    limit = shirt_hem - 0.03
+    bm.verts.ensure_lookup_table()
+    dead = [f for f in bm.faces if not any(v.index in top_piece for v in f.verts) and min(v.co.z for v in f.verts) > limit]
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(suit.data)
+    bm.free()
+    suit.data.update()
+    top_piece = _shirt_verts(suit, women)
     cols = PLEATS if pleated else ALINE_COLS
-    R, c, th, zs = _skirt_shape(body, rig, top, hem, 0.15 if pleated else 0.11, cols)
+    shirt = np.array([suit.data.vertices[i].co for i in top_piece])
+    R, c, th, zs = _skirt_shape(body, rig, shirt, top, hem, 0.15 if pleated else 0.11, cols)
     nr = len(zs)
     verts, faces, uvs, hang, leg_w = [], [], [], [], []
 
@@ -221,7 +244,7 @@ def make_skirt(body, suit, rig, spec, women):
 
     pleat = lambda u: 0.0 if u <= SKIRT_YOKE else min(1.0, (u - SKIRT_YOKE) / 0.35)
     if pleated:
-        depth = 0.009
+        depth = 0.005
         for p in range(cols):
             a, b = th[p], th[p] + 2 * math.pi / cols
             q = (p + 1) % cols
@@ -315,7 +338,10 @@ def skirt_ao(size, pleated):
     under = 0.55 + 0.45 * np.clip(h / 0.12, 0, 1)
     if pleated:
         t = (uv_u * PLEATS) % 1
-        valley = 1 - 0.42 * np.clip((h - SKIRT_YOKE) / 0.3, 0, 1) * np.clip((t - 0.45) / 0.5, 0, 1) ** 1.5
+        deep = np.clip((h - SKIRT_YOKE) / 0.3, 0, 1)
+        valley = 1 - 0.42 * deep * np.clip((t - 0.45) / 0.5, 0, 1) ** 1.5
+        # (the fold's own side, the narrow strip at the end of each pleat, is deep in shadow)
+        valley = np.where(t > 0.94, 1 - 0.6 * deep, valley)
     else:
         a = uv_u * 2 * math.pi
         fold = 0.62 * np.sin(7 * a + 0.6) + 0.38 * np.sin(13 * a + 2.1)
@@ -422,7 +448,7 @@ def make_head_piece(body, hair, rig, eye_pts, style):
                 d = ex * math.sin(a) + ey * math.cos(a)
                 reach = L * max(0.0, math.cos(a / arc * math.pi / 2)) ** 0.55 * f
                 out = d * (r + reach) + ey * reach * 0.35
-                drop = -0.28 * reach - 0.012 * f * (a / arc) ** 2 * 3
+                drop = -0.28 * reach - 0.02 * f * (a / arc) ** 2
                 p = centre + up * (-0.5 * width + drop) + out
                 row_t.append(len(verts)); verts.append(tuple(p)); shade.append(1.0)
                 row_b.append(len(verts)); verts.append(tuple(p - up * (0.0035 - 0.0015 * f))); shade.append(0.5)
@@ -464,40 +490,53 @@ def make_head_piece(body, hair, rig, eye_pts, style):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# A polo's collar: a stand round the neck, open at the throat, and a leaf folded down over it onto the shoulders, its points
-# spread at the front. The shirt's own neckline (the game cuts it, kit.ts) stays under it. `drop`: how far under the Neck joint
-# the front opens (about the game's collarDrop).
-def make_collar(body, rig, drop=0.075):
+# A polo's collar: a stand round the neck, open at the throat, and a leaf folded down over it, lying on the shirt, its points
+# spread at the front. It follows the neckline the game cuts (kit.ts: `drop` under the Neck joint in front, COLLAR_CURVE up the
+# sides) and covers its ribbed band.
+def make_collar(body, suit, rig, women, drop=0.075, curve=11.5):
     from mathutils.bvhtree import BVHTree
     skin = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices],
                                 [tuple(p.vertices) for p in body.data.polygons if max(p.vertices) < N_BODY])
+    top = _shirt_verts(suit, women)
+    sm = suit.data
+    shirt = BVHTree.FromPolygons([v.co.copy() for v in sm.vertices], [tuple(p.vertices) for p in sm.polygons if p.vertices[0] in top])
     neck = rig.data.bones[P + 'Neck'].head_local.copy()
-    head = rig.data.bones[P + 'Head'].head_local.copy()
-    axis = (head - neck).normalized()
     # Round from one front point by the back to the other: `a` is the angle from straight forward (the model faces -y).
-    open_a = math.radians(28)
-    cols = 30
+    open_a = math.radians(26)
+    cols = 32
     verts, faces, shade = [], [], []
     rows = {k: [] for k in range(4)}
+    down = Vector((0, 0, -1))
+
+    def on_shirt(p, d):
+        """`p` brought onto the shirt's outside, along the way the shirt faces there (out and up)."""
+        n = (d * 0.55 + Vector((0, 0, 0.85))).normalized()
+        hit = shirt.ray_cast(p + n * 0.07, -n, 0.14)
+        return hit[0] + n * 0.0045 if hit[0] is not None else p
+
     for j in range(cols + 1):
         t = j / cols
         a = open_a + (2 * math.pi - 2 * open_a) * t
         d = Vector((math.sin(a), -math.cos(a), 0))
-        back = (1 - math.cos(a)) / 2  # 0 in front, 1 at the nape
-        # The fold's height over the Neck joint: low at the throat, up the sides, a little up the nape.
-        z = neck.z - drop * (1 - back) ** 1.4 + 0.022 * back + 0.015
-        p0 = neck + axis * ((z - neck.z) / max(axis.z, 0.5))
-        far = p0 + d * 0.3
-        hit = skin.ray_cast(far, -d, 0.3)
-        r = (hit[0] - p0).length if hit[0] is not None else 0.065
-        fold = Vector((p0.x, p0.y, z)) + d * (r + 0.007)
-        point = max(0.0, 1 - min(t, 1 - t) / 0.18)  # 1 at a collar point
-        reach = 0.03 + 0.016 * point
-        fall = 0.036 + 0.02 * point
-        leaf = fold + d * reach + Vector((0, 0, -fall))
-        mid = fold * 0.45 + leaf * 0.55 + d * 0.004
-        stand = fold + Vector((0, 0, -0.03)) - d * 0.004
-        for k, (p, sh) in enumerate(((stand, 0.55), (fold, 1.0), (mid, 1.0), (leaf, 0.92))):
+        # The skin's radius at the neckline's own height, which depends on how far out that is: twice round.
+        z = neck.z
+        r = 0.07
+        for _ in range(2):
+            x = r * math.sin(a)
+            line = neck.z - drop + curve * x * x
+            u = max(0.0, min(1.0, (math.cos(a) + 0.15) / 0.5))
+            z = (neck.z + 0.028) * (1 - u) + line * u
+            p0 = Vector((neck.x, neck.y, z))
+            hit = skin.ray_cast(p0 + d * 0.3, -d, 0.3)
+            r = (hit[0] - p0).length if hit[0] is not None else r
+        fold = p0 + d * (r + 0.006) + Vector((0, 0, 0.012))
+        point = max(0.0, 1 - min(t, 1 - t) / 0.16)  # 1 at a collar point
+        reach = 0.026 + 0.014 * point
+        fall = 0.03 + 0.024 * point
+        leaf = on_shirt(fold + d * reach + down * fall, d)
+        mid = on_shirt(fold * 0.5 + leaf * 0.5, d) + Vector((0, 0, 0.002))
+        stand = fold + down * 0.03 - d * 0.004
+        for k, (p, sh) in enumerate(((stand, 0.55), (fold, 1.0), (mid, 1.0), (leaf, 0.9))):
             rows[k].append(len(verts))
             verts.append(tuple(p))
             shade.append(sh)

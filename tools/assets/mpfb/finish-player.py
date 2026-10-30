@@ -233,7 +233,7 @@ def finish(yb, spec, out, preview=False):
     if skirt_style:
         wear(kit.make_skirt(body, suit, rig, spec, women))
     if outfit.get('top') == 'polo':
-        wear(kit.make_collar(body, rig))
+        wear(kit.make_collar(body, suit, rig, women))
     if outfit.get('head'):
         hair_o = next((o for o in meshes if kinds[o.name] == 'hair'), None)
         eyes = [v.co.copy() for o in meshes if kinds[o.name] == 'eye' for v in o.data.vertices]

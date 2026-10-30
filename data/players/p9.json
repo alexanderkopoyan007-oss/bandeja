@@ -40,7 +40,7 @@
     "head": "visor"
   },
   "build": {
-    "torso/torso-scale-horiz-incr": 0.25,
+    "torso/torso-scale-horiz-incr": 0.15,
     "torso/torso-scale-vert-decr": 0.3,
     "legs/measure-calf-circ-incr": 0.4
   },
