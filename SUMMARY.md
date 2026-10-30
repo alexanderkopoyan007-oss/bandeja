@@ -526,6 +526,28 @@ a guided first match, career and online still on the roadmap. Numbers from 2000 
 - **Modes (critic #10).** A three-round knock-out and four practice drills: back glass, side glass, lobs and overheads,
   and volleys.
 
+### Review round 5 (`REVIEW.md`)
+Two fresh reviews found eleven Highs, none Critical (`docs/review/round5-*.md`), and nine were new. Five are fixed, five are
+better and still short, and one, the faces, waits on the MetaHuman pilot. Numbers from 2000 points at level 1. Before | after:
+
+| | Before | After | Real life |
+|---|---|---|---|
+| Net volleys off a high ball, W / L (pro #2) | 6.9 / 11.8 | 5.8 / 2.2 | the ball to kill |
+| Net volleys off a low ball, W / L (pro #2) | 0.7 / 1.6 | 0.5 / 6.2 | the ball that hurts |
+| Lobs out on the full, share of points (pro #3) | 5.8% | 1.5-2.7% | |
+| Replies to a smash on the rise, against two back (pro #1) | 83% | 65% | under 15% |
+| Third shot struck from, metres from the net (pro #4) | 3.13 | 4.03 | 3.84 |
+| Women: winners by double bounce / came back / out (pro #5) | 46-52 / 31-34 / 13-15 | 73 / 17 / 4 | 76.9 / 11.8 / 11.3 |
+| Women: first serves in (pro #5) | 93 | 89.5 | 87.7 |
+| Women: serving pair wins (pro #5) | 64.4-65.0 | 58 | 48.5 |
+| Racket to ball, worst contact (critic #6) | 27.6 cm | 15.1 cm | |
+| Ready stance, trunk (pose pass) | 47° | 20.5° | 5-19° |
+
+- **Women's matches (critic #1, #4).** Fitted tops and shorts, four women's voices and the published women's game.
+- **Rematch and the knock-out (critic #2).** A rematch keeps everybody and the next round keeps your pair.
+- **Singles (critic #3).** The cut-away finds the winner.
+- **Faces (critic #5).** Teeth and hair are better. The faces are the next job, with MetaHuman.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

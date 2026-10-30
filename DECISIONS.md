@@ -2284,3 +2284,36 @@ now, flipped there because WebGL can't flip an ImageBitmap at upload, with strai
 occlusion. Measured at CPU 4x, fetched ahead: 3.5-3.7 s over eight casts. The swings of 5-9 s seen first were other sessions'
 Chromes on the machine; shader builds were 151 before and after, and the shader text only 4% longer.
 
+
+## Review round 5's Highs (2026-10-30)
+
+**Felt grips less the harder it is pressed.** A smash climbed the back glass because a hard bounce reached rolling, and rolling
+into glass kicks the ball up 5.5 m/s (Cross). Lowering mu on the floor broke the ITF's published speed rating (84.9, under 68
+wanted). The published figures don't conflict once friction falls with load, so `SurfaceSpec` gained `muFall` and `muRef`:
+jmax = mu J / (1 + muFall max(0, |vn| - muRef)). At muRef 5.5 it broke Cross's grip-slip change at 20 m/s (vn 8.45), so muRef
+moved to 8.5 and muFall was fitted at 0.12 against the real smash's 48 / 35 / 17 endings. A rational law, so `Math.pow` stays out
+of the sim. The fit is ours: nobody has measured this on padel felt (`OPEN_QUESTIONS.md`). What it leaves: the smash still
+climbs in many cases, and 65% of replies to it are on the rise, against the pro's under 15%.
+
+**Women's matches have their own table.** Everything published (SMF: serving pair 48.5, winners 76.9 / 11.8 / 11.3, first serves in
+87.7, T 30.3, middle 7.3, flat smash 17% of overheads, top speed 14.1 km/h) went into `ai-skill.json` `women`. Two values had no
+source and were fitted to how points end: smashEffort 0.73 and serveEffort 0.85. The serving pair still wins 58, not 48.5. Taking
+serve power down further put other published numbers out, so the gap stays open rather than being forced.
+
+**Rematch and the next round keep the people.** The cast was dealt from the match seed. It now has its own seed, and rivals come
+from another one, so a rematch keeps everybody and a knock-out round keeps your pair.
+
+**Poses measured from tour photos.** MediaPipe's heavy pose model on 33 WPT photos gives the same scale-free measures the avatar's
+bones give, so ours and theirs can be compared number by number. Depth from one photo is approximate. It found a ready stance
+bent 47° (5-19) and overheads with the hips left square. Those are fixed. It can't time a stroke, so stroke timing is still
+unchecked against video.
+
+**A racket tips about a ball the arm can't reach.** Critic #6 said low balls were taken late. Logging the worst ten showed otherwise:
+the sim's contact and the avatar's matched to 8 ms, and the wrist target was simply past the arm with the upper body fully
+bent. The racket now turns about the ball, head down, until the wrist is back in reach, up to 1 rad and never into the floor.
+Worst miss 27.6 → 15.1 cm. Balls under 0.16 m stay 9-15 cm off, because the frame can't go lower. The replay filter the critic also
+suggested isn't needed: replays are of winners, mostly overheads, which are 5 cm or better.
+
+**The launcher's IS-0007.** Unreal's install kept failing with alert IS-0007. The log's `SaveJsonAtomic: could not open staging
+file .../Data/Manifests/Pending/*.item.tmp` meant the launcher's `Data/Manifests/Pending` folder didn't exist. `mkdir -p` fixed it
+and the install ran to the end.

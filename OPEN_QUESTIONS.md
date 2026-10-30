@@ -347,3 +347,14 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **Camera presets.** TV close and Player are tuned so the end wall's mesh band never hides the far pair. They have
   been checked only in captures, not in play. Settled by: the owner playing a game on each (Settings > Picture >
   Camera).
+
+## Phase 9 (expert review: round 5)
+- **How felt's grip falls with load.** `muFall` 0.12 and `muRef` 8.5 are fitted to smash endings, not measured. Settled by: a ball
+  fired at a padel floor and glass at several speeds and 16-30° with high-speed video, as Cross 2008, or the ITF's rig.
+- **The women's serving pair.** It wins 58 against the published 48.5, with everything else in range. Settled by: serve and
+  return speeds from women's matches (no published figure was found), to replace the fitted serveEffort.
+- **Stroke timing against video.** Poses are compared with 33 photos, which show a moment, not its timing. Settled by:
+  broadcast clips at 50 fps or more, side-on, for each stroke; a coach's short at small size wasn't enough.
+- **The faces.** Unreal 5.8 is installed and MetaHuman's plugins are present. Whether a character can be exported and made to run
+  in a browser at this frame budget is untested, and Epic's licence page couldn't be opened to confirm the terms. Settled by:
+  one pilot character, judged by the owner, before the other nine.
