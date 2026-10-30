@@ -7,7 +7,7 @@
 import * as THREE from 'three/webgpu';
 import {
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
-  mx_noise_float, texture, uv, max, min, dot, normalView, normalLocal, diffuseColor,
+  mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor,
 } from 'three/tsl';
 import { heightBump, footprintKeep } from '../bump.ts';
 import type { PlayerAsset } from './asset.ts';
@@ -40,7 +40,7 @@ function hemLag(lag: THREE.Node<'vec3'>, sway: THREE.Node<'float'>): THREE.Node<
   return positionLocal.add(d.sub(n.mul(min(dot(d, n), 0))));
 }
 
-export interface KitFrame { chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; floorY: number }
+export interface KitFrame { chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; floorY: number; footX?: number; footZ?: number }
 const FRAMES = new WeakMap<PlayerAsset, KitFrame>();
 
 function at(asset: PlayerAsset, name: string): THREE.Vector3 {
@@ -166,7 +166,14 @@ export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THRE
   // Shoes: a gum sole round the bottom, a stripe in the shirt's colour along the side, the upper.
   const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
   const stripe = smoothstep(0.012, 0.004, p.y.sub(frame.floorY + 0.055).abs());
-  const shoeC = mix(mix(color(look.shoes), color(look.shirt), stripe.mul(0.9)), color(0x8a8378), sole);
+  // The upper: a knit that fades out with distance, laces up the instep, a heel counter in the stripe's colour.
+  const footX = float(frame.footX ?? 0).sub(p.x.abs()), toe = p.z.sub(frame.footZ ?? 0), top = smoothstep(frame.floorY + 0.05, frame.floorY + 0.07, p.y);
+  const knit = p.x.mul(1100).add(p.y.mul(700)).sin().mul(p.z.mul(1100).sub(p.y.mul(700)).sin()).mul(0.1).mul(footprintKeep(0.0016));
+  const lace = smoothstep(0.024, 0.02, footX.abs()).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top)
+    .mul(smoothstep(0.34, 0.2, toe.mul(1 / 0.0135).fract().sub(0.5).abs()));
+  const heel = smoothstep(-0.03, -0.045, toe).mul(0.8);
+  const upper = mix(mix(color(look.shoes).mul(float(1).add(knit)), color(look.shirt), stripe.mul(0.9).add(heel).min(1)), color(new THREE.Color(look.shoes).getHSL({ h: 0, s: 0, l: 0 }).l > 0.5 ? 0x8b9098 : 0xe8e8e8), lace);
+  const shoeC = mix(upper, color(0x8a8378), sole);
   let col: THREE.Node<'vec3'> = shirtC.mul(shirtW)
     .add(color(look.shorts).mul(shortsW))
     .add(skinC.mul(skinW))
@@ -216,9 +223,40 @@ export function kitFor(idx: number): KitLook {
  */
 class SkinLighting extends THREE.PhysicalLightingModel {
   scatter: THREE.Node<'float'>;
-  constructor(scatter: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
+  ambientFix: THREE.Node<'float'>;
+  constructor(scatter: THREE.Node<'float'>, ambientFix: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
     super(clearcoat, sheen, false, false, false, false);
     this.scatter = scatter;
+    this.ambientFix = ambientFix;
+  }
+
+  /** Skin and eyes take the ambient's brightness, not its colour: the court's probe is lit by a blue and a red floor,
+   * which pooled violet in the eye sockets and turned the whites lavender (review round 4, the critic's #1). */
+  override indirectDiffuse(builder: THREE.NodeBuilder): void {
+    const c = builder.context as unknown as { irradiance: THREE.Node<'vec3'> };
+    const irradiance = c.irradiance;
+    c.irradiance = this.ambient(irradiance);
+    super.indirectDiffuse(builder);
+    c.irradiance = irradiance;
+  }
+
+  /** (the environment's diffuse comes through here) */
+  override indirectSpecular(builder: THREE.NodeBuilder): void {
+    const c = builder.context as unknown as { iblIrradiance: THREE.Node<'vec3'>; radiance: THREE.Node<'vec3'> };
+    const ibl = c.iblIrradiance;
+    const radiance = c.radiance;
+    c.iblIrradiance = this.ambient(ibl);
+    // (skin facing down has the body under it, not the bright floor the probe saw: at a grazing view the bare reflection
+    // drew a pale band under every jaw)
+    c.radiance = this.ambient(radiance).mul(mix(float(1), smoothstep(-0.75, 0.05, normalWorld.y), this.ambientFix));
+    super.indirectSpecular(builder);
+    c.iblIrradiance = ibl;
+    c.radiance = radiance;
+  }
+
+  private ambient(light: THREE.Node<'vec3'>): THREE.Node<'vec3'> {
+    const luma = light.dot(vec3(0.2126, 0.7152, 0.0722));
+    return mix(light, vec3(luma, luma, luma).mul(SKIN_AMBIENT), this.ambientFix);
   }
 
   override direct(input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder): void {
@@ -230,14 +268,19 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   }
 }
 const SKIN_WRAP = 0.55;
+const CATCHLIGHT = vec3(-0.29, 0.41, 0.864);
+/** The ambient on skin: warmer than neutral (light that has been through skin and bounced off a body) and stronger (the
+ * sockets' baked occlusion is a shadow of the whole sky, which a floodlit court isn't). */
+const SKIN_AMBIENT = vec3(1.55, 1.34, 1.2);
 
 /** A person's body: MeshPhysicalNodeMaterial with the skin's lighting model (clearcoat for oil, sweat and the wet
  * eyes, mouth; sheen for the fabric). */
 export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
   static override get type(): string { return 'PersonNodeMaterial'; }
   scatterNode: THREE.Node<'float'> = float(0);
+  ambientFixNode: THREE.Node<'float'> = float(0);
   override setupLightingModel(): THREE.PhysicalLightingModel {
-    return new SkinLighting(this.scatterNode, this.useClearcoat, this.useSheen);
+    return new SkinLighting(this.scatterNode, this.ambientFixNode, this.useClearcoat, this.useSheen);
   }
 }
 
@@ -273,7 +316,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
   // The clothes' ambient occlusion is the grey in their rectangle; the skin's, teeth's and tongue's is the alpha.
   const ao = float(0.32).add(tex.x.mul(0.68));
-  const bakedAO = mix(float(1), tex.w, skinW.add(mouthW)).mul(vAO);
+  const bakedAO = mix(float(1), mix(float(0.3).add(tex.w.mul(0.7)), tex.w, mouthW), skinW.add(mouthW)).mul(vAO);
   // The waistband under the shirt was in the shirt's shadow when the occlusion was baked (MakeHuman's outfit); a shirt
   // riding up as the player bends showed it as a grey band. Above the shirt's hem the shorts are lit as they show.
   const aoShorts = mix(ao, max(ao, float(0.82)), smoothstep(frame.hemY - 0.05, frame.hemY, p.y));
@@ -283,10 +326,21 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
 
   const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
   const stripe = smoothstep(0.012, 0.004, p.y.sub(frame.floorY + 0.055).abs());
-  const shoeC = mix(mix(color(look.shoes), color(look.shirt), stripe.mul(0.9)), color(0x8a8378), sole);
+  // The upper: a knit that fades out with distance, laces up the instep, a heel counter in the stripe's colour.
+  const footX = float(frame.footX ?? 0).sub(p.x.abs()), toe = p.z.sub(frame.footZ ?? 0), top = smoothstep(frame.floorY + 0.05, frame.floorY + 0.07, p.y);
+  const knit = p.x.mul(1100).add(p.y.mul(700)).sin().mul(p.z.mul(1100).sub(p.y.mul(700)).sin()).mul(0.1).mul(footprintKeep(0.0016));
+  const lace = smoothstep(0.024, 0.02, footX.abs()).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top)
+    .mul(smoothstep(0.34, 0.2, toe.mul(1 / 0.0135).fract().sub(0.5).abs()));
+  const heel = smoothstep(-0.03, -0.045, toe).mul(0.8);
+  const upper = mix(mix(color(look.shoes).mul(float(1).add(knit)), color(look.shirt), stripe.mul(0.9).add(heel).min(1)), color(new THREE.Color(look.shoes).getHSL({ h: 0, s: 0, l: 0 }).l > 0.5 ? 0x8b9098 : 0xe8e8e8), lace);
+  const shoeC = mix(upper, color(0x8a8378), sole);
   // Albedo: the skin a little darker in its deepest creases, the eyeball under the lids, the mouth's inside.
-  const skinCol = tex.xyz.mul(mix(float(1), tex.w, 0.3));
-  const eyeCol = tex.xyz.mul(float(0.5).add(vAO.mul(0.5)));
+  // (dark skin lifted a little: under the same floodlights its faces read as masks beside the others', mean luminance
+  // 23 of 255 against 68 and 99)
+  const skinCol = tex.xyz.mul(mix(float(1), tex.w, 0.3)).mul(float(1).add(smoothstep(0.4, 0.12, tex.y).mul(0.3)));
+  // (the source draws a brown iris dark red: its green and blue are lifted to the red's; whites and blue or green irises
+  // keep theirs)
+  const eyeCol = vec3(tex.x, max(tex.y, tex.x.mul(0.58)), max(tex.z, tex.x.mul(0.34))).mul(float(0.74).add(vAO.mul(0.26)));
   const mouthCol = tex.xyz.mul(float(0.2).add(tex.w.mul(0.8)));
   let col: THREE.Node<'vec3'> = color(look.shirt).mul(ao).mul(shirtW)
     .add(color(look.shorts).mul(aoShorts).mul(shortsW))
@@ -299,14 +353,16 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const m = new PersonNodeMaterial();
   m.colorNode = col;
   m.aoNode = bakedAO;
-  const skinRough = mix(float(0.5), float(0.33), sweat).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07));
+  const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
+  const skinRough = mix(float(0.5), float(0.33), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07));
   m.roughnessNode = fabric.mul(float(0.88).sub(wet.mul(0.25)))
     .add(skinW.mul(skinRough))
     .add(eyeW.mul(0.2)).add(teethW.mul(0.3)).add(tongueW.mul(0.38)).add(shoeW.mul(0.45));
   m.metalnessNode = float(0);
   // Specular occlusion for the direct light as well: deep creases (nostrils, the ears' hollows, the corners of the
   // mouth) and the scalp under the hair don't shine (the baked occlusion is low there).
-  m.specularIntensityNode = mix(float(1), smoothstep(0.05, 0.55, tex.w), skinW.add(mouthW));
+  // (dark skin shows more of its specular: the same lobe over a darker base, a little stronger)
+  m.specularIntensityNode = mix(float(1), smoothstep(0.05, 0.55, tex.w).mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
   m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)))
     .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
@@ -314,7 +370,12 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // Cotton and polyester's soft rim.
   m.sheenNode = mix(col, vec3(1, 1, 1), 0.35).mul(fabric.mul(0.6));
   m.sheenRoughnessNode = float(0.55);
-  m.scatterNode = skinW.mul(float(0.55).add(ears.mul(0.9)));
+  // (little on the lids: the red at their terminator drew an orange band over each eye)
+  m.scatterNode = skinW.mul(float(0.42).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85)));
+  m.ambientFixNode = skinW.add(eyeW);
+  // The catchlight: a floodlit cornea always holds a bright point, and a face without one reads as dead. The light it
+  // would mirror isn't in the probe, so it is drawn: fixed in view space, where the eyeball's normal meets it.
+  m.emissiveNode = vec3(1, 0.98, 0.94).mul(normalView.dot(CATCHLIGHT).clamp().pow(1100)).mul(eyeW).mul(1.5);
   const folds = mx_noise_float(vec3(p.x.mul(16), p.y.mul(44), p.z.mul(16))).mul(0.6)
     .add(mx_noise_float(p.mul(60)).mul(0.15));
   // Pores: about 0.5 mm features, 12 µm deep, faded out wherever a pixel covers more than a few of them (bump.ts),
@@ -329,7 +390,13 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const hair = new THREE.MeshPhysicalNodeMaterial();
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
   const hAO = body.alphaGeometry.hasAttribute('bodyAO') ? attribute<'float'>('bodyAO', 'float') : float(1);
-  hair.colorNode = ht.xyz.mul(hAO);
+  // Strands, not a cap: brightness varies across the cards (fine) and along them (slowly); pale texels at the edge of a
+  // strand, where the atlas fades out over its white, go dark (they drew a light fringe under the lower lashes).
+  const strandUv = uv();
+  const strands = mx_noise_float(vec3(strandUv.x.mul(1400), strandUv.y.mul(260), float(0))).mul(0.55)
+    .add(mx_noise_float(vec3(strandUv.x.mul(420), strandUv.y.mul(90), float(3))).mul(0.45));
+  const strandLit = float(0.8).add(strands.mul(0.75));
+  hair.colorNode = ht.xyz.mul(smoothstep(0.1, 0.62, ht.w)).mul(hAO).mul(strandLit);
   hair.aoNode = hAO;
   // Coverage from the cards' alpha over the MSAA samples: strands fade out instead of being cut at a threshold. The
   // nearly clear texels are dropped outright, and the shadow keeps a hard cut (the shadow map has no samples).
@@ -340,7 +407,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   hair.side = THREE.DoubleSide;
   // Hair's highlight is dimmer and tinted by the hair (the light that enters a strand comes out coloured), and
   // weaker deep in the hair.
-  hair.roughnessNode = float(0.55);
+  hair.roughnessNode = float(0.52).sub(strands.mul(0.18));
   hair.metalnessNode = float(0);
   hair.specularIntensityNode = hAO.mul(0.6);
   hair.specularColorNode = mix(vec3(1, 1, 1), ht.xyz.mul(2.2), 0.6);
@@ -350,6 +417,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
 }
 
 const PERSON_FRAMES = new WeakMap<PlayerAsset, KitFrame>();
+/** How far below the Neck joint (m, rest pose) the shirt's front is cut. */
+const COLLAR_DROP = 0.04;
 
 /**
  * A person's landmarks (rest pose) and per-vertex sweat weights (bodyX.x on the shirt: where a shirt gets wet first,
@@ -367,6 +436,18 @@ function personFrame(asset: PlayerAsset): KitFrame {
   const g3 = (dx: number, dy: number, dz: number, rx: number, ry: number, rz: number): number =>
     Math.exp(-((dx / rx) ** 2 + (dy / ry) ** 2 + (dz / rz) ** 2));
   const X = g.getAttribute('bodyX').array as Float32Array;
+  // The shirt's front collar: skinned to the chest, it comes out through the neck under the chin as the head bows (a
+  // pale band under every jaw: review round 4, the critic's #1). It goes, and the neckline opens over the neck's skin.
+  const neck = at(asset, 'Neck');
+  const index = g.getIndex()!;
+  const tri = index.array;
+  const kept: number[] = [];
+  const collar = (v: number): boolean => A[v * 4]! > 0.5 && rest[v * 3 + 1]! > neck.y - COLLAR_DROP && rest[v * 3 + 2]! > neck.z - 0.01;
+  for (let i = 0; i < tri.length; i += 3) {
+    if (collar(tri[i]!) || collar(tri[i + 1]!) || collar(tri[i + 2]!)) continue;
+    kept.push(tri[i]!, tri[i + 1]!, tri[i + 2]!);
+  }
+  g.setIndex(kept);
   let floorY = Infinity, shortsHemY = Infinity, hemY = Infinity;
   for (let i = 0; i < n; i++) {
     const x = rest[i * 3]!, y = rest[i * 3 + 1]!, z = rest[i * 3 + 2]!;
@@ -386,7 +467,7 @@ function personFrame(asset: PlayerAsset): KitFrame {
   frame = {
     chest: chest.clone(), hips: hips.clone(), hemY: Number.isFinite(hemY) ? hemY : hips.y - 0.02,
     shortsHemY: Number.isFinite(shortsHemY) ? shortsHemY : hips.y - 0.3,
-    armSpan: halfSpan * 2, floorY,
+    armSpan: halfSpan * 2, floorY, footX: Math.abs(at(asset, 'LeftFoot').x), footZ: at(asset, 'LeftFoot').z,
   };
   PERSON_FRAMES.set(asset, frame);
   return frame;
