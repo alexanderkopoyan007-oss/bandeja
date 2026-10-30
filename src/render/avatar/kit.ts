@@ -304,6 +304,8 @@ const HEM_STITCH = 0.018;
 const WRIST_IN = 0.06;
 const WRIST_W = 0.034;
 const HAIR_SWING = 3;
+/** How far a strand's normal leans across its card. */
+const HAIR_TILT = 0.5;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;
 const LID_PLAIN = 1;
@@ -495,6 +497,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // Hair's highlight is dimmer and tinted by the hair (the light that enters a strand comes out coloured), and
   // weaker deep in the hair.
   hair.roughnessNode = float(0.52).sub(strands.mul(0.18));
+  // Each strand tilts its own way across the card, so the shine comes in fine broken lines and not one band over a helmet.
+  hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT), float(0)), strandUv);
   hair.metalnessNode = float(0);
   hair.specularIntensityNode = hAO.mul(0.6);
   hair.specularColorNode = mix(vec3(1, 1, 1), ht.xyz.mul(2.2), 0.6);

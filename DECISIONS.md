@@ -2375,3 +2375,53 @@ smashes are aimed, not in the glass.
 **The knees load before a smash's jump.** On video 93 and 67 degrees about 0.65 s before the hit, then straight. Added as a dip of the
 hips in the 0.34 s before take-off, smashes only (a bandeja's knees bend most at contact).
 
+
+## Review round 7's Highs (2026-10-30)
+
+**Everyone plans from when they will really start.** The Critical slice exploit was a planning fault, not a positioning one. A
+serve-and-volley server counted stopping and setting the feet into its `netVolley` plan and came out 0.05 s short, so both partners
+read "not in time" and the net player stayed taker to the bounce. A net volley can be played on the move (`onRun` in `planStand`),
+`claimCost` plans from the AI's `reactAt`, and a taker who can't get there hands the ball over (`MatchSim.handOver`) if the partner
+can. Nobody is forced to swap: the partner has to be under `CLAIM_OUT`. Tried and rejected first: pulling the pair's net spot in
+(a wider middle) cost the formation fix of round 6. `UP_HALF_GAP` 1.45 stays.
+
+**A player looks at their own smash.** The dodge lived inside `if (coming)`, and a smash coming back off the glass only counts as
+coming after it has passed the net, too late to move. The dodge now runs when `m.rally.hitter === this.team` too, and skips a ball
+that hasn't bounced on the far side.
+
+**The serve's cap ends when the chase starts.** `drift` capped the server to the follow-in speed for the whole serve state, so in
+singles they jogged after a return. The cap now holds only while the run is within `SERVE_RUN`.
+
+**A volley's take-back is the hand staying in front.** The racket was going back with the groundstroke's arm and came through from
+behind the hip: 1.2 m of swing. The back key is now near the contact's own hand, `BACK_FOLLOW` 1 carries its height with the ball,
+and the arm stops at `VOLLEY_ARM` 0.84 of its length, which bends the elbow. Numbers against the video: `docs/research/footage-pose.md`.
+
+**Real cloth folds, from CC0 art.** The fold map of `male_casualsuit06` is used; only its ambient occlusion was before. Its texture
+isn't, since it carries a logo. A cotangent frame from the derivatives (`uvNormal`) saves a tangent attribute. The women's old top
+had no such map, so all ten wear the one shirt, cut to each body.
+
+**The neckline is cut per pixel, and the skin under it is painted.** Cut per vertex, the collar ran in straight pieces across big
+triangles and read as torn. It's now a curve from the rest position, with its depth measured per person in bins round the neck
+(`personFrame`, `COLLAR_BINS` 6 and `COLLAR_MAX` 0.11: at 12 bins the outer ones read the shoulder and the shirt lost half its front).
+What's left open needs three things: the source's torso is a different colour from its neck on some skins (`neckTone`), its baked
+occlusion is a dark bib (`skinAO` lifted to 0.76), and on fitted bodies skin pokes through (`underShirt` cuts it).
+
+**Faces differ by target, and asymmetry is what does it.** Ten people on one head read as a family. `spec.face` loads MakeHuman's own
+detail targets before the rig. Five `asym/*` targets at 0.3 give each face its own lopsidedness, which is the difference between a
+mask and a person. `make-player.py` loads them in between `create_human` and `add_builtin_rig` so the rig follows.
+
+**Skin's texture is the source's up to the texel, and noise after.** The source is 2048² and its face gets about 312 × 262 of that,
+a hard limit. Below the texel: blotches at 2.4 and 0.7 cm, pores at 30 µm-scale noise, with a little red in the blotches. Nothing
+here makes a face better than its source. It only stops it reading as wax.
+
+**Fringes come off the eyes, and the ugly ones go.** `finish-player.py` deletes hair faces in front of the eyes and below the brow.
+p5's hair left a zigzag, so p5 took short04. p10 ties it up (ponytail01).
+
+**`one-chrome.sh` can't wedge on a plain file any more.** A heartbeat `touch` that ran just after a stale `rmdir` made the lock a
+plain file, and neither `mkdir` nor `rmdir` can clear one. All Chrome jobs waited on it for 48 minutes. Meridian's copy still has the
+race (`tools/audit/one-chrome.sh`).
+
+**Faces read young because they were young.** After all of the above p7 still looked like a teenage doll. Macro age 0.4 was the
+cause, with the eyes MakeHuman gives that age. Ages 0.52-0.62, the eyes scaled down (`eyes/*-eye-scale-decr` 0.2-0.4,
+`*-height2-decr`), cheekbones up and cheek volume down, and the shorter lashes on everybody did more for the face than any shader in
+this round. Hair got a normal per strand so its shine breaks into lines.

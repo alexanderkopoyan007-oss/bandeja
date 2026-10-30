@@ -375,3 +375,14 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   build before round 3 about the same, against 5.49 + 3.46 s at Phase 8. Settled by: a run on a quiet machine, then, if it is real,
   fetching people after the title is up.
 
+
+## Phase 9 (expert review: round 7)
+- **Whether a person can exploit the slice.** The bots hold their timing to a set noise. No person has played a slice-only match
+  against level 1. Settled by: one person playing three sets with only the slice key.
+- **The own-smash moment on camera.** The rate is measured (40 to 2 in 3000), but nobody has watched one. Settled by: a replay of
+  the moment, or a playtest.
+- **The faces past 312 texels.** MakeHuman's source gives a face 312 × 262 texels, so nothing in the shader adds real detail.
+  Settled by: the launcher's "MetaHuman Creator Core Data" option, then one Epic sign-in in the editor. The licence before any
+  MetaHuman mesh goes in the public repo: the owner's decision (`docs/research/` has nothing that overrides Epic's own text).
+- **Teeth at a grunt on WebGPU.** The colour was fixed by reading it in WebGL. Settled by: a real-Chrome shot of a smash, face camera.
+- **Groundstrokes on video.** Still not measured: a clean side-on clip of drives at a known frame rate.

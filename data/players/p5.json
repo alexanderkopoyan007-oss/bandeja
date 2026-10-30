@@ -1,8 +1,8 @@
 {
   "name": "p5",
   "macro": {
-    "gender": 1.0,
-    "age": 0.42,
+    "gender": 1,
+    "age": 0.54,
     "muscle": 0.72,
     "weight": 0.42,
     "proportions": 0.8,
@@ -38,6 +38,14 @@
     "asym/asym-nose-2-l": 0.3,
     "asym/asym-brown-1-l": 0.3,
     "asym/asym-eye-1-r": 0.3,
-    "asym/asym-mouth-1-r": 0.3
+    "asym/asym-mouth-1-r": 0.3,
+    "eyes/l-eye-scale-decr": 0.28,
+    "eyes/l-eye-height2-decr": 0.2,
+    "cheek/l-cheek-bones-incr": 0.25,
+    "cheek/l-cheek-volume-decr": 0.25,
+    "eyes/r-eye-scale-decr": 0.28,
+    "eyes/r-eye-height2-decr": 0.2,
+    "cheek/r-cheek-bones-incr": 0.25,
+    "cheek/r-cheek-volume-decr": 0.25
   }
 }

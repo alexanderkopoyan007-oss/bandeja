@@ -1,8 +1,8 @@
 {
   "name": "p1",
   "macro": {
-    "gender": 1.0,
-    "age": 0.5,
+    "gender": 1,
+    "age": 0.58,
     "muscle": 0.72,
     "weight": 0.42,
     "proportions": 0.8,
@@ -10,9 +10,9 @@
     "cupsize": 0.5,
     "firmness": 0.5,
     "race": {
-      "asian": 0.0,
-      "caucasian": 1.0,
-      "african": 0.0
+      "asian": 0,
+      "caucasian": 1,
+      "african": 0
     }
   },
   "skin": "young_caucasian_male",
@@ -40,6 +40,14 @@
     "asym/asym-nose-2-r": 0.3,
     "asym/asym-brown-1-l": 0.3,
     "asym/asym-eye-2-r": 0.3,
-    "asym/asym-mouth-1-l": 0.3
+    "asym/asym-mouth-1-l": 0.3,
+    "eyes/l-eye-scale-decr": 0.25,
+    "eyes/l-eye-height2-decr": 0.2,
+    "cheek/l-cheek-bones-incr": 0.3,
+    "cheek/l-cheek-volume-decr": 0.2,
+    "eyes/r-eye-scale-decr": 0.25,
+    "eyes/r-eye-height2-decr": 0.2,
+    "cheek/r-cheek-bones-incr": 0.3,
+    "cheek/r-cheek-volume-decr": 0.2
   }
 }

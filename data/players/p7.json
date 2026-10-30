@@ -2,7 +2,7 @@
   "name": "p7",
   "macro": {
     "gender": 0,
-    "age": 0.4,
+    "age": 0.52,
     "muscle": 0.6,
     "weight": 0.38,
     "proportions": 0.8,
@@ -19,7 +19,7 @@
   "eyes": "high-poly",
   "eye_colour": "blue",
   "eyebrows": "eyebrow010",
-  "eyelashes": "eyelashes02",
+  "eyelashes": "eyelashes01",
   "hair": "ponytail01",
   "clothes": [
     "male_casualsuit06",
@@ -39,6 +39,14 @@
     "asym/asym-nose-1-r": 0.3,
     "asym/asym-brown-2-l": 0.3,
     "asym/asym-eye-3-r": 0.3,
-    "asym/asym-mouth-2-r": 0.3
+    "asym/asym-mouth-2-r": 0.3,
+    "eyes/l-eye-scale-decr": 0.4,
+    "eyes/r-eye-scale-decr": 0.4,
+    "eyes/l-eye-height2-decr": 0.25,
+    "eyes/r-eye-height2-decr": 0.25,
+    "cheek/l-cheek-bones-incr": 0.3,
+    "cheek/r-cheek-bones-incr": 0.3,
+    "cheek/l-cheek-volume-decr": 0.25,
+    "cheek/r-cheek-volume-decr": 0.25
   }
 }

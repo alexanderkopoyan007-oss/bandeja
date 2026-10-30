@@ -266,3 +266,41 @@ Earlier statuses corrected by round 6:
 - R5 critic's "Teeth shading done": p7's teeth are still dark in one frame, seen not measured.
 - R4 #19: forced errors were 17-19, not 25.7. R4 #12: 68.4-76.0. R4 #20: Muro's price is 5.6-10 points.
 
+
+## Round 7
+
+Two reviews written blind on c96b20b, and a third pass that checked both on seeds neither had used. The reports are
+`docs/review/round7-pro.md`, `round7-critic.md` and `round7-verify.md`. One Critical, three Highs, and one High lowered to Medium by
+the verifier. None is strictly new, but the Critical and the volley are proven regressions on the same seeds, and earlier rounds
+counted regressions, so the loop goes on. Numbers after the fix: 2000 points at level 1 (`--seed0 1701`), men's, and the scratch
+reports named in `DECISIONS.md`.
+
+| # | Rank | Finding | Mark | Status |
+|---|---|---|---|---|
+| 1 | Critical | P: one key beats every level, the slice down the middle | REPEAT R6 #12, REGRESSION | **Fixed.** See the table below. The cause: the server's own volley was planned 0.05 s short (it counted stopping and setting the feet), so both partners read "not in time" and the net player kept a ball it could not reach. Slice returns that win 51 to 5% |
+| 2 | High | P: a smash winner comes back and loses the point | REPEAT R6 #16 | **Fixed.** 40 to 2 of 3000 points. The dodge sat inside the check that the ball was coming at the player, so the smasher never looked at their own ball |
+| 3 | Medium (P: High) | P: standard singles, the server jogs at 3.0 m/s | REPEAT R6 #14 | **Fixed.** Return winners 11.0 to 5.3%, server 49.3 to 52.9%. The serve's follow-in cap now ends when the chase starts |
+| 4 | High | P: the forehand volley hangs the racket from a straight arm | REPEAT R6 #5, REGRESSION | **Fixed.** Racket lean mid -62 to -31, low -64 to -31, backhand about 0. Elbow on the mid forehand 45 to 58 (63 on video), mid backhand 54 (54) |
+| 5 | High | C: the people don't look like actual humans close up | REPEAT | Better, still open. Each of the ten now has a head of their own with asymmetry, blotched skin with pores, clean necklines over a neck of the right colour, cloth with real folds. In a cut-away they read as people. A face at arm's length stops at the source's 312 × 262 texels, and only MetaHuman gets past that. The launcher's Core Data option is still not installed |
+| C2 | Medium | C: a volley is swung as far as a drive | REGRESSION | **Fixed** with #4. Racket path 1.18 / 0.75 / 0.62 to 0.66 / 0.62 / 0.53 m by height, a drive's about 1.0 |
+| C8 | Medium | C: the neckline reads as torn | | **Fixed.** Cut per pixel, fitted to each shirt |
+| C11 | Medium | C: hair is rigid | | **Better.** Long hair trails on the hems' spring. Bob and ponytail only |
+| C29 | Low | C: kits are plain | | Better. Stitched hems and wristbands; no print |
+| 6+ | Medium | P #5-20, C #3-22 | | Open except the three above. P #5 and #6 (bandeja, víbora and sitters at the net don't finish) are the largest game-side gaps: smash 58.2% of winners against 43, bandeja + víbora 1.7 against 12.7, out of the court 5.3 against 17 |
+| 40+ | Low | P #21-29, C #23-30 | | Open |
+
+Pro #1, the slice bot on the verifier's seeds (7301+, level 1, timing window 1.25), share of points won and matches won:
+
+| Timing noise | Before: slice | After: slice | After: drive |
+|---|---|---|---|
+| 45 ms | 63.4% (932), 21 of 21 over two ranges | 43.4% (957), 1 of 8 | 42.6% before |
+| 60 ms | 56.4% (902), 7 of 7 | 38.0% (967), 0 of 10 | |
+| 80 ms | 48.3% (1,030), 1 of 6 | 35.2% (980), 0 of 11 | 33.7% (935), 0 of 11 |
+
+Earlier statuses corrected by round 7 (verifier):
+- R6 #1 "Fixed, 31 to about 3.5": Better. 7.6-9.3 per 100 points, target under 5.
+- R6 #2, the volley's 14.4 to 23.7: the gain was drop volleys. Plain net volleys fell, and bandeja + víbora fell to 1-2.5% of winners.
+- R6 #4 "70.3 to 18.8": two measures. 70.3 was against two back, now 33.6; all replies 21.6-21.9.
+- R6 #5 "Better": the chest and hand held, the racket head got worse. Fixed here as #4.
+- R6 #7 "contact 50": 57-64. Inside the video's 54-65, so the status stands.
+- R6 #10 "worst 19": 40.8 cm on a low volley. The rate holds at 1.1%, so Medium stands.

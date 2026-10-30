@@ -2,7 +2,7 @@
   "name": "p10",
   "macro": {
     "gender": 0,
-    "age": 0.5,
+    "age": 0.56,
     "muscle": 0.62,
     "weight": 0.4,
     "proportions": 0.8,
@@ -19,7 +19,7 @@
   "eyes": "high-poly",
   "eye_colour": "green",
   "eyebrows": "eyebrow012",
-  "eyelashes": "eyelashes02",
+  "eyelashes": "eyelashes01",
   "hair": "ponytail01",
   "clothes": [
     "male_casualsuit06",
@@ -38,6 +38,14 @@
     "asym/asym-nose-2-r": 0.3,
     "asym/asym-brown-2-r": 0.3,
     "asym/asym-eye-2-r": 0.3,
-    "asym/asym-mouth-2-l": 0.3
+    "asym/asym-mouth-2-l": 0.3,
+    "eyes/l-eye-scale-decr": 0.35,
+    "eyes/l-eye-height2-decr": 0.25,
+    "cheek/l-cheek-bones-incr": 0.35,
+    "cheek/l-cheek-volume-decr": 0.2,
+    "eyes/r-eye-scale-decr": 0.35,
+    "eyes/r-eye-height2-decr": 0.25,
+    "cheek/r-cheek-bones-incr": 0.35,
+    "cheek/r-cheek-volume-decr": 0.2
   }
 }

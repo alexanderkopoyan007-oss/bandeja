@@ -588,6 +588,37 @@ MetaHuman. Numbers from 2000 points at level 1. Before is e39b531, the round's s
   build before round 3's 14.7 and 5.5 in the same runs, and Phase 8's 5.49 and 3.46 on a quiet machine. It needs a quiet rerun, and the ten
   people's meshes and textures are the likely cost (`OPEN_QUESTIONS.md`).
 
+### Review round 7 (`REVIEW.md`)
+Two fresh reviews and a third pass that re-measured both (`docs/review/round7-*.md`). One Critical, a one-key exploit, and three
+Highs; a fourth High was lowered to Medium. All are fixed except the faces. Numbers from 2000 points at level 1. Before is c96b20b,
+the round's start. Before | after:
+
+| | Before | After | Real life |
+|---|---|---|---|
+| Slice-only player against level 1, 45 ms timing (pro #1) | 63.4%, 21 of 21 matches | 43.4%, 1 of 8 | an exploit should lose |
+| Slice returns that win outright (pro #1) | 51% | 5% | |
+| Receivers winning in one return, share of points (pro #1) | 2.4% | 0.5% | |
+| Serving pair, 1-2 shot points (pro #1) | 64% | 83-88% | national 98 |
+| Smash coming back at its own side, of 3000 points (pro #2) | 40 | 2 | |
+| Hitting your own side's body, share of points (pro #2) | 1.8% | 0.5% | |
+| Singles: return winners, server wins (pro #3) | 11.0%, 49.3% | 5.3%, 52.9% | |
+| Volley: racket lean, mid forehand / low forehand (pro #4) | -62 / -64 | -31 / -31 | |
+| Volley: elbow, mid forehand / mid backhand (pro #4) | 45 / | 58 / 54 | 63 / 54 |
+| Volley: racket path by height, m (critic #2) | 1.18 / 0.75 / 0.62 | 0.66 / 0.62 / 0.53 | shorter than a drive's 1.0 |
+| Endings W / FE / UE | 36.2 / 27.6 / 36.2 | 36.7 / 27.6 / 35.7 | 34-42 / 29-33 / 29-33 |
+| Winners: double bounce / came back / out | | 42.2 / 46.1 / 5.3 | 48 / 35 / 17 |
+| Smash, volley, share of winners | 53.3, 21.0 | 58.2, 27.3 | 43, 28.4 |
+| Shots per point, seconds | 10.8, 14.7 | 11.6, 15.5 | 10-11, 9.4-14.8 |
+| Serving pair wins | 61.8-63.3% | 61.8% | about 62 |
+| GCs per 100k ticks, singles / doubles / avatars | | 8 / 8 / 6 | budget 10 |
+
+- **Two numbers went the wrong way.** Rallies grew by 0.8 shots to 11.6, over the pros' 10-11, because points that used to end on a
+  return now go on. The smash's share of winners rose to 58 (43): the fix took away cheap winners, and bandeja and víbora still don't
+  finish (1.7, real 12.7). That's the largest gap left in the game itself.
+- **The people.** All ten have their own faces with asymmetry, skin with blotches and pores, real cloth folds, clean necklines,
+  stitched hems, wristbands, and long hair on a spring. In a cut-away they read as people. Close up they read as a good game
+  character and not as a photograph, and the 312-texel face is why.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.
