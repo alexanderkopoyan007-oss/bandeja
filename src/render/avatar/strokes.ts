@@ -48,6 +48,11 @@ export interface Family {
   sit?: number;
   /** How far the stroke stands the trunk up out of the idle's ready crouch (0..1; default none). */
   stand?: number;
+  /**
+   * Where the hand goes for the contact (model frame; a volley's): the racket reaches from there to the ball, so the
+   * arm stays bent in front of the chest wherever the ball comes. Its height follows the ball (avatar's reachFrom).
+   */
+  wrist?: THREE.Vector3;
 }
 
 const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
@@ -199,20 +204,39 @@ export const SERVE: Family = {
 export const SERVE_ADDRESS: Key = courtKey([0.1, 0.35, 0.95], [0.95, 0.3, 0.1], [0, 0, 1], [-0.2, 0.45, 0.8], -1.45, [0.5, 0.5, 0.95]);
 export const SERVE_TURN_SHARE = SERVE_TURN;
 
-/** A volley is a short punch: the backswing and follow-through pulled most of the way in towards contact. */
-function volley(f: Family, name: string): Family {
-  const shrink = (k: Key, u: number): Key => ({
-    p: k.p.clone().lerp(f.contact.p, u),
-    q: k.q.clone().slerp(f.contact.q, u * 0.6),
-    pole: k.pole.clone().lerp(f.contact.pole, u),
-    yaw: k.yaw + (f.contact.yaw - k.yaw) * u,
-    off: k.off.clone(),
-  });
-  return { ...f, name, back: shrink(f.back, 0.55), finish: shrink(f.finish, 0.6), dip: f.dip * 0.2, loop: 0, crouch: 0.8, punch: 0.5 };
-}
+/**
+ * A volley is its own action, not a groundstroke cut short (review round 6, the pro's #5: square, the arm straight).
+ * Thirteen forehand volleys off a coach's clip (in-page pose, 6 fps), at the furthest forward of the hand: the wrist
+ * 0.39 m in front of the racket shoulder and 0.27 m below it, the elbow bent 63 degrees, the shoulders 25 turned on the
+ * hips, the free hand still in front of the chest (elbow 78). The take-back is the racket head up by the shoulder and
+ * no further back than the body; the hit a short punch; the racket's end out, forward and a little up from the hand.
+ */
+export const VOLLEY_FH: Family = {
+  name: 'volley-fh',
+  back: key(v(-0.62, 1.6, 0.05), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.85, v(0.26, 1.2, 0.42)),
+  contact: key(v(-0.5, 1.15, 0.65), v(-0.6, 0.3, 0.72), v(0.1, 0.25, 1), v(-0.42, 0.9, 0.0), -0.6, v(0.42, 1.06, 0.54)),
+  finish: key(v(-0.4, 1.05, 0.8), v(-0.5, 0.25, 0.82), v(0.1, 0.35, 1), v(-0.42, 0.9, 0.1), -0.4, v(0.46, 1.05, 0.4)),
+  dip: 0.04,
+  loop: 0,
+  crouch: 1.6,
+  punch: 0.5,
+  bodyTurn: 0.45,
+  wrist: v(-0.1, 1.14, 0.36),
+};
 
-export const VOLLEY_FH = volley(FOREHAND, 'volley-fh');
-export const VOLLEY_BH = volley(BACKHAND, 'volley-bh');
+/** The same on the other side: side-on, the hand crossing to the free side of the chest, the free arm opening behind. */
+export const VOLLEY_BH: Family = {
+  name: 'volley-bh',
+  back: key(v(0.55, 1.58, 0.0), v(0.3, 0.9, 0.15), v(0.7, 0.05, 0.7), v(0.2, 1.0, 0.3), 1.45, v(0.28, 1.2, 0.3)),
+  contact: key(v(0.5, 1.12, 0.6), v(0.6, 0.3, 0.72), v(-0.1, 0.25, 1), v(0.3, 1.0, 0.3), 1.1, v(0.5, 1.08, -0.2)),
+  finish: key(v(0.4, 1.02, 0.8), v(0.5, 0.25, 0.82), v(-0.1, 0.35, 1), v(0.3, 1.0, 0.35), 0.9, v(0.58, 1.08, -0.3)),
+  dip: 0.04,
+  loop: 0,
+  crouch: 1.6,
+  punch: 0.5,
+  bodyTurn: 0.6,
+  wrist: v(0.14, 1.12, 0.3),
+};
 
 /**
  * Groundstroke variants by shot. `side` is -1 for the forehand (racket side -x), +1 for the backhand.
@@ -351,6 +375,7 @@ function mirrorFamily(f: Family): Family {
     finish: mirrorKey(f.finish),
     low: f.low && new THREE.Quaternion(f.low.x, -f.low.y, -f.low.z, f.low.w),
     via: f.via && v(-f.via.x, f.via.y, f.via.z),
+    wrist: f.wrist && v(-f.wrist.x, f.wrist.y, f.wrist.z),
   };
 }
 

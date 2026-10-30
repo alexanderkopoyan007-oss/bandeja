@@ -322,6 +322,13 @@ const TIP_MAX = 1;
 const WALL_YAW_RATE = 8;
 /** Face centre to the top of the frame (m), and how close the frame comes to the floor when it tips. */
 const RACKET_TOP = 0.17;
+/** The hand's height at a volley: most above the ball (m, the racket's head dropped) and below it (the head up). */
+const HAND_OVER = 0.28;
+const HAND_UNDER = 0.3;
+const HAND_TO_BALL = 0.36;
+const shaftTo = new THREE.Vector3();
+const shaftFrom = new THREE.Vector3();
+const shaftTurn = new THREE.Quaternion();
 const RACKET_FLOOR = 0.02;
 /** Fastest a shin twists about its own length (rad/s): 2400°/s, four times a fast pivot's 180° in 0.3 s. */
 const SHIN_TWIST_RATE = (2400 * Math.PI) / 180;
@@ -1191,11 +1198,24 @@ export class Avatar {
       this.toModel(cc, k.p);
     } else this.toModel(cw, k.p);
     k.q.copy(f.contact.q);
-    if (f.low) k.q.slerp(f.low, smoothstep(0.95, 0.4, k.p.y));
+    if (f.wrist) this.reachFrom(k, f.wrist);
+    else if (f.low) k.q.slerp(f.low, smoothstep(0.95, 0.4, k.p.y));
     k.pole.copy(f.contact.pole);
     k.yaw = f.contact.yaw;
     k.off.copy(f.contact.off);
     return k;
+  }
+
+  /** The key's racket turned the least way to point from the hand's place (Family.wrist) at the ball. */
+  private reachFrom(k: Key, w: THREE.Vector3): void {
+    const wy = Math.max(k.p.y - HAND_UNDER, Math.min(k.p.y + HAND_OVER, w.y));
+    // The hand stays at that height however far out the ball is: the racket's end rises or drops by this much.
+    const up = (k.p.y - wy) / HAND_TO_BALL;
+    const hx = k.p.x - w.x, hz = k.p.z - w.z, hl = Math.sqrt(hx * hx + hz * hz) || 1, across = Math.sqrt(1 - up * up) / hl;
+    shaftTo.set(hx * across, up, hz * across);
+    shaftFrom.set(0, 1, 0).applyQuaternion(k.q);
+    shaftTurn.setFromUnitVectors(shaftFrom, shaftTo);
+    k.q.premultiply(shaftTurn);
   }
 
   /** Forward swing at progress s (0 = end of the backswing, 1 = the ball), into the blended key. */

@@ -71,6 +71,7 @@ const BACK_VOLLEY_Z = 5.8;
 /** Within NET_ZONE (m) of the net, what each metre given up to play a ball after its bounce costs. */
 const NET_ZONE = 4.6;
 const NET_HOLD = 0.1;
+const NET_VOLLEY_SOON = 0.2;
 /** A stroke on the run: what it costs against a set one, and the least time it leaves for the racket (s). */
 const STRETCH_COST = 0.5;
 const STRETCH_FEET = 0.03;
@@ -89,7 +90,9 @@ const OVERSHOOT_OK = 0.15;
  * is nearer), met the tuning's volleyFront in front of the body.
  */
 const VOLLEY_REACH_MIN = 0.35;
-const VOLLEY_REACH_MAX = 1.15;
+const VOLLEY_REACH_MAX = 0.95;
+/** How far off volleyFront (m) a volley's ball may pass and still be met without stepping to it. */
+const VOLLEY_DEPTH = 0.25;
 
 /**
  * Contrapared (shots.ts SHOT_CONTRAPARED): a ball that has bounced on our half and is between the player and their
@@ -197,7 +200,7 @@ export function planStand(
       sx = clamp(a < VOLLEY_REACH_MIN ? x + sg * VOLLEY_REACH_MIN : a > VOLLEY_REACH_MAX ? x + sg * VOLLEY_REACH_MAX : p.pos.x, p.minX, p.maxX);
       useFh = sg === fhSign;
       const z0 = z + side * vFront;
-      sz = clamp(abs(p.pos.z - z0) < 0.4 ? p.pos.z : z0 + (p.pos.z > z0 ? 0.4 : -0.4), p.minZ, p.maxZ);
+      sz = clamp(abs(p.pos.z - z0) < VOLLEY_DEPTH ? p.pos.z : z0 + (p.pos.z > z0 ? VOLLEY_DEPTH : -VOLLEY_DEPTH), p.minZ, p.maxZ);
     }
     const dx = sx - p.pos.x;
     const dz = sz - p.pos.z;
@@ -251,6 +254,7 @@ export function planStand(
     if (slack >= 0) {
       let cost = overhead ? overheadCost(y, t, ohKind) + 0.03 * (ti - now)
         : volleyKey ? volleyCost(y) + 0.25 * (ti - now)
+        : netVolley ? volleyCost(y) + NET_VOLLEY_SOON * (ti - now)
         : heightCost(y, t.overheadHeight) + 0.03 * (ti - now);
       if (kept) cost -= 0.35;
       if (!overhead && !volleyKey) {
