@@ -364,6 +364,13 @@ export const KNEES: Key = key(v(-0.2, 0.3, 0.3), v(-0.2, -0.9, 0.35), v(0, 0.3, 
  */
 export const CARRY: Key = key(v(-0.3, 0.8, 0.42), v(0, -0.25, 0.97), v(-1, 0, 0.1), v(-0.6, 0.95, -0.2), 0, v(0.3, 0.9, 0.08));
 
+/**
+ * After a point, instead of the two clips one time in three: a fist clenched at the chest with the racket down, or a hand on
+ * the hip and the racket hanging.
+ */
+export const FIST: Key = key(v(-0.32, 0.86, 0.4), v(0, -0.25, 0.97), v(-1, 0, 0.1), v(-0.6, 0.95, -0.2), 0, v(0.16, 1.28, 0.3));
+export const HIP: Key = key(v(-0.32, 0.72, 0.3), v(-0.05, -0.55, 0.8), v(-1, 0, 0.1), v(-0.6, 0.95, -0.2), 0, v(0.2, 1.0, 0.03));
+
 // ---- left-handers: every key mirrored across the body's centre plane (model x -> -x) ----
 
 function mirrorKey(k: Key): Key {
@@ -415,5 +422,7 @@ export const READY_LEFT: Key = mirrorKey(READY);
 export const TAP_LEFT: Key = mirrorKey(TAP);
 export const HUG_LEFT: Key = mirrorKey(HUG);
 export const KNEES_LEFT: Key = mirrorKey(KNEES);
+export const FIST_LEFT: Key = mirrorKey(FIST);
+export const HIP_LEFT: Key = mirrorKey(HIP);
 export const CARRY_LEFT: Key = mirrorKey(CARRY);
 export const SERVE_ADDRESS_LEFT: Key = mirrorKey(SERVE_ADDRESS);

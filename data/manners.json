@@ -1,0 +1,13 @@
+{
+  "//": "How each person plays, on top of the same strokes (render only, the sim never reads this): tempo scales the backswing's time, back its size, follow the follow-through's time; high and out move the ready position's hands (m). Ten people with one swing read as one person in ten shirts (round 7, the critic's #12).",
+  "p1": { "tempo": 1, "back": 1, "follow": 1, "high": 0, "out": 0 },
+  "p2": { "tempo": 1.08, "back": 1.12, "follow": 1.1, "high": -0.02, "out": 0.02 },
+  "p3": { "tempo": 0.94, "back": 0.86, "follow": 0.92, "high": 0.025, "out": -0.01 },
+  "p4": { "tempo": 0.9, "back": 0.94, "follow": 1.02, "high": 0.035, "out": -0.02 },
+  "p5": { "tempo": 1.05, "back": 1.1, "follow": 1.12, "high": -0.03, "out": 0.01 },
+  "p6": { "tempo": 0.96, "back": 0.9, "follow": 0.95, "high": 0.01, "out": 0 },
+  "p7": { "tempo": 0.97, "back": 1.02, "follow": 1, "high": 0.015, "out": 0 },
+  "p8": { "tempo": 1.06, "back": 1.1, "follow": 1.08, "high": -0.02, "out": 0.015 },
+  "p9": { "tempo": 0.92, "back": 0.9, "follow": 0.96, "high": 0.03, "out": -0.015 },
+  "p10": { "tempo": 1.02, "back": 0.98, "follow": 1.05, "high": -0.01, "out": 0.01 }
+}

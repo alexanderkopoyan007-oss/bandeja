@@ -19,8 +19,9 @@ import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
+import MANNERS from '../../../data/manners.json' with { type: 'json' };
 import {
-  BACKHAND, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, FIST, FIST_LEFT, HIP, HIP_LEFT, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   rightFamily,
   type Family, type Key,
@@ -369,6 +370,8 @@ const JUMP_SHORT = 1.0;
 const LAND_DROP = 0.06;
 const LAND_TIME = 0.2;
 const FOLLOW = 0.3;
+/** How long a held pose after a point lasts (s). */
+const MOOD_TIME = 1.3;
 /** How far a long follow-through's curve rises (m): a drive's hand comes up to the shoulder with the arm still long. */
 const THROUGH_UP = 0.25;
 const FADE = 0.35;
@@ -426,6 +429,8 @@ const READY_UP = 1.1;
 const READY_SHOULDER = 1.355;
 /** And the arm's length (m). */
 const READY_ARM = 0.5;
+interface Manner { tempo: number; back: number; follow: number; high: number; out: number }
+const PLAIN_MANNER: Manner = { tempo: 1, back: 1, follow: 1, high: 0, out: 0 };
 /** How much of the crouch for a low ball the knees take, and how far the trunk folds for it instead (rad, at 0.4 m). */
 const CROUCH_SHARE = 0.3;
 const LOW_BEND = 0.75;
@@ -559,6 +564,11 @@ export class Avatar {
   private readonly upper: Uint8Array;
   // Reaction after a point: the player whose shot ended it pumps a fist (won) or holds their head (lost).
   private react: Clip | null = null;
+  /** A held pose after the point instead of a clip, its sign (won, lost), when it began, and how many points this one has ended. */
+  private moodKey: Key | null = null;
+  private moodSign = 1;
+  private moodAt = -0;
+  private reactN = 0;
   private reactStart = 0;
   private reactFrom = 0;
   private lastPhase = -1;
@@ -816,6 +826,8 @@ export class Avatar {
   private readonly armLen: number;
   /** This body's shoulders above READY_SHOULDER (m). */
   private readonly shoulderUp: number;
+  /** How this person plays the same strokes (data/manners.json). */
+  private readonly manner: Manner;
   /** A shorter player jumps higher for the same ball (the sim's contacts are one height for everyone): JUMP_SHORT m per
    * metre under JUMP_HEIGHT. */
   private readonly jumpMore: number;
@@ -1011,6 +1023,7 @@ export class Avatar {
     const bp = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(rw[asset.bone(n)]!);
     this.armLen = bp('RightArm').distanceTo(bp('RightForeArm')) + bp('RightForeArm').distanceTo(bp('RightHand'));
     this.shoulderUp = bp('RightArm').y - READY_SHOULDER;
+    this.manner = (MANNERS as unknown as Record<string, Manner>)[asset.look?.name ?? ''] ?? PLAIN_MANNER;
     this.jumpMore = Math.max(0, JUMP_HEIGHT - (asset.look?.height ?? JUMP_HEIGHT)) * JUMP_SHORT;
     this.grips = [this.makeGrip(asset, 'Right'), this.makeGrip(asset, 'Left')];
     const lim = new Float64Array(this.nb);
@@ -1112,6 +1125,8 @@ export class Avatar {
     // (and its reach the arm's, about the shoulder, so everybody bends the elbow alike)
     const k = this.armLen / READY_ARM, fit = (o: THREE.Vector3): void => { o.y = READY_SHOULDER + up + (o.y - READY_SHOULDER) * k; o.z *= k; };
     fit(this.readyFit.p); fit(this.readyFit.off); fit(this.readyFit.pole);
+    this.readyFit.p.y += this.manner.high; this.readyFit.off.y += this.manner.high;
+    this.readyFit.p.z += this.manner.out; this.readyFit.off.z += this.manner.out;
     this.readyKey = this.readyFit;
     const ak = h > 0 ? SERVE_ADDRESS : SERVE_ADDRESS_LEFT;
     this.addrKey.p.copy(ak.p);
@@ -1246,8 +1261,11 @@ export class Avatar {
    * volley is a short punch with the legs under it, not an arm dropped from the shoulder (elbow 110 at -0.1 s, 31 at
    * contact: round 7, the pro's #4). */
   private backPoint(): THREE.Vector3 {
-    const f = this.fam;
-    if (!f.wrist || !this.hasCon) return f.back.p;
+    const f = this.fam, big = this.manner.back;
+    if (!f.wrist || !this.hasCon) {
+      if (big === 1) return f.back.p;
+      return this.backP.copy(f.contact.p).lerp(f.back.p, big);
+    }
     const d = this.con.p.y - f.contact.p.y;
     const p = this.backP.copy(f.back.p);
     p.y += BACK_FOLLOW * (d < BACK_LOW ? BACK_LOW : d > BACK_HIGH ? BACK_HIGH : d);
@@ -1444,7 +1462,7 @@ export class Avatar {
     const f = this.fam;
     if (this.st === ST_PREP) {
       const left = this.hasCon ? this.tPlan - this.prepStart : PREP;
-      const prep = f.prep ?? PREP;
+      const prep = (f.prep ?? PREP) * this.manner.tempo;
       const u = smoothstep(0, left * PREP_SHARE < prep ? Math.max(PREP_MIN, left * PREP_SHARE) : prep, t - this.prepStart);
       if (this.swingS > 0) this.swingKey(this.swingS);
       else {
@@ -1452,7 +1470,8 @@ export class Avatar {
         // last stroke's 0.99 left over here cancelled its carried push on almost every backswing frame).
         this.keyS = 0;
         this.setKey(f.back, f.back, 1);
-        if (f.wrist && this.hasCon) {
+        if (!f.wrist) this.kp.copy(this.backPoint());
+        else if (this.hasCon) {
           this.contactKey();
           this.kp.copy(this.backPoint());
           this.kq.copy(this.backTurn(this.contactKey()));
@@ -1466,9 +1485,9 @@ export class Avatar {
         this.swingKey(this.relS + (1 - this.relS) * g);
         if (this.relBlend) this.blendFrom(smoothstep(0, 0.7, g));
         this.w = this.relW + (1 - this.relW) * smoothstep(0, 0.06, t - this.tRel);
-      } else if (t < this.tCon + (f.follow ?? FOLLOW)) {
+      } else if (t < this.tCon + (f.follow ?? FOLLOW) * this.manner.follow) {
         // Follow-through, slowing down, carrying on through the ball before wrapping round.
-        const s = clamp01((t - this.tCon) / (f.follow ?? FOLLOW));
+        const s = clamp01((t - this.tCon) / ((f.follow ?? FOLLOW) * this.manner.follow));
         const e = 1 - (1 - s) * (1 - s);
         const k = this.contactKey();
         this.ctrl.copy(k.p).lerp(f.finish.p, 0.5);
@@ -1483,7 +1502,7 @@ export class Avatar {
         this.finishTo = e;
       } else {
         this.setKey(f.finish, f.finish, 1);
-        this.fadeOut(this.tCon + (f.follow ?? FOLLOW), 1);
+        this.fadeOut(this.tCon + (f.follow ?? FOLLOW) * this.manner.follow, 1);
         this.finishTo = 1;
       }
     }
@@ -1847,7 +1866,7 @@ export class Avatar {
     const sp = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
     this.puff += (Math.min(1, Math.max(0, (sp - 1.2) / 3)) - this.puff) * (dt > 0 ? 1 - Math.exp(-dt / 6) : 0);
     f.puff = sim.phase === PH_RALLY ? this.puff * 0.4 : this.puff;
-    f.mood = this.react === this.clips.celebrate ? 1 : this.react === this.clips.dejected ? -1 : 0;
+    f.mood = this.react === this.clips.celebrate ? 1 : this.react === this.clips.dejected ? -1 : this.moodKey ? this.moodSign : 0;
     f.moodT = t - this.reactStart;
     // The ball from between the eyes, in the head's own frame (+z ahead, +x its left, +y up).
     const hm = this.head.matrixWorld;
@@ -1927,6 +1946,10 @@ export class Avatar {
         this.tapYaw = Math.atan2(-mx, -mz);
       }
     } else this.tapT = 0;
+    if (this.moodKey) {
+      if (sim.time - this.moodAt < MOOD_TIME && want === 0) { want = 1; this.tapKey = this.moodKey; }
+      else if (sim.time - this.moodAt >= MOOD_TIME) this.moodKey = null;
+    }
     this.tapW += (want - this.tapW) * (dt > 0 ? 1 - Math.exp(-dt / 0.12) : 0);
     if (this.tapW < 0.001) this.tapW = 0;
     this.bowW += (bow - this.bowW) * (dt > 0 ? 1 - Math.exp(-dt / 0.3) : 0);
@@ -2086,9 +2109,17 @@ export class Avatar {
       this.react = null;
       if (won >= 0 && sim.lastStrikePlayer === idx) {
         const mine = (idx & 1) === won;
-        this.react = mine ? this.clips.celebrate : this.clips.dejected;
-        this.reactFrom = mine ? 0.4 : 0.9;
         this.reactStart = t;
+        // (one time in three not a clip: the same two reactions for everybody, every point, was the critic's #12)
+        this.reactN = (this.reactN + 1) | 0;
+        if ((this.reactN + idx) % 3 === 0) {
+          this.moodKey = mine ? (this.handed > 0 ? FIST : FIST_LEFT) : this.handed > 0 ? HIP : HIP_LEFT;
+          this.moodSign = mine ? 1 : -1;
+          this.moodAt = sim.time;
+        } else {
+          this.react = mine ? this.clips.celebrate : this.clips.dejected;
+          this.reactFrom = mine ? 0.4 : 0.9;
+        }
       }
     } else if (phase === PH_OVER && this.lastPhase !== PH_OVER) {
       const mine = (idx & 1) === sim.score.winner;
