@@ -284,6 +284,9 @@ const FINISH_EASE = 0.15;
  * it (SPINE_REACH, after the legs): taken by the hips alone every ball under 0.6 m was met in a full squat.
  */
 const DOWN_SHARE = 0.35;
+/** The share more for a ball just off the ground (under DOWN_LOW1 m, from DOWN_LOW0): a half-volley is got down to. */
+const DOWN_LOW = 0.45;
+const DOWN_LOW0 = 0.4, DOWN_LOW1 = 0.15;
 /** Most the upper body bends from the spine's base towards a ball out of the arm's reach (rad). */
 const SPINE_REACH = 0.75;
 /**
@@ -313,6 +316,11 @@ const ANKLE_MIN = 0.08;
 /** Fastest the racket turns (rad/s): 3600°/s, over a tennis forehand's racket at contact (about 1500°/s) and a
  * serve's; under it every stroke the QA has seen. */
 const RACKET_TURN_RATE = (3600 * Math.PI) / 180;
+/** Most the racket tips about the ball when the arm can't reach it (rad, tipRacket): past this the face no longer looks at the target. */
+const TIP_MAX = 1;
+/** Face centre to the top of the frame (m), and how close the frame comes to the floor when it tips. */
+const RACKET_TOP = 0.17;
+const RACKET_FLOOR = 0.02;
 /** Fastest a shin twists about its own length (rad/s): 2400°/s, four times a fast pivot's 180° in 0.3 s. */
 const SHIN_TWIST_RATE = (2400 * Math.PI) / 180;
 /** limitShins' turn back about the shin (a double passed to a call V8 doesn't inline is boxed). */
@@ -725,6 +733,9 @@ export class Avatar {
   private readonly footQR = new THREE.Quaternion();
   private readonly tgt = new THREE.Vector3();
   private readonly pole = new THREE.Vector3();
+  /** The racket's tip about a ball out of reach (tipRacket; rad), and that turn. */
+  private tip = 0;
+  private readonly tipQ = new THREE.Quaternion();
   /** The upper body's bend towards a ball out of reach (world), and whether last frame's is there to follow from. */
   private readonly lean = new THREE.Quaternion();
   private readonly leanT = new THREE.Quaternion();
@@ -2121,7 +2132,7 @@ export class Avatar {
     }
     this.reachX = rx;
     this.reachZ = rz;
-    const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * DOWN_SHARE : 0;
+    const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * (DOWN_SHARE + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y)) : 0;
     // The knees bend no faster than a body drops (the crouch jumped when the stroke or its contact changed). The
     // reach follows the stroke's key, which is smoothed already.
     let crouch = this.crouch;
@@ -2631,6 +2642,7 @@ export class Avatar {
       rotateWorld(base, LN);
       base.updateMatrixWorld(true);
     }
+    this.tipRacket(ua, w);
     v3.copy(ready.pole);
     BL.u = w;
     lerpV(v3, this.kpole);
@@ -2708,6 +2720,51 @@ export class Avatar {
     // switched off (the free arm 55-72 degrees, between points; QA army).
     this.fadeArm(this.armRacket, 0, smoothstep(0.01, ARM_FADE, Math.max(this.ready, w)));
     this.fadeArm(this.armFree, 3, smoothstep(0.01, ARM_FADE, Math.max(this.ready, w * 0.85)));
+  }
+
+  /**
+   * A ball still out of the arm's reach with the upper body bent: the racket tips about the ball (v1), the head going
+   * down and the wrist coming back within the arm's reach, as a hand reaching for a low ball does. With the racket held
+   * as the key has it, balls under 0.5 m were missed by 15-28 cm (review round 5, the critic's #6).
+   */
+  private tipRacket(ua: THREE.Bone, w: number): void {
+    const mu = ua.matrixWorld.elements, T = this.tgt;
+    const dx = v1.x - mu[12]!, dy = v1.y - mu[13]!, dz = v1.z - mu[14]!;
+    const gx = v1.x - T.x, gy = v1.y - T.y, gz = v1.z - T.z;
+    const D = Math.sqrt(dx * dx + dy * dy + dz * dz), g = Math.sqrt(gx * gx + gy * gy + gz * gz);
+    if (D < 1e-3 || g < 1e-3) { this.tip = 0; return; }
+    const tx = T.x - mu[12]!, ty = T.y - mu[13]!, tz = T.z - mu[14]!;
+    const R = this.armLen * 0.98;
+    let want = 0;
+    if (tx * tx + ty * ty + tz * tz > R * R) {
+      const now = Math.acos(Math.min(1, Math.max(-1, (dx * gx + dy * gy + dz * gz) / (D * g))));
+      const c = (D * D + g * g - R * R) / (2 * D * g);
+      want = Math.min(TIP_MAX, Math.max(0, now - (c >= 1 ? 0 : Math.acos(Math.max(-1, c))))) * w;
+    }
+    if (this.dt > 0) {
+      const lim = RACKET_TURN_RATE * this.dt;
+      want = Math.min(this.tip + lim, Math.max(this.tip - lim, want));
+    }
+    this.tip = want;
+    // Axis g x d, turning the racket's way from the ball to the hand towards the way from the ball to the shoulder.
+    const cx = gy * dz - gz * dy, cy = gz * dx - gx * dz, cz = gx * dy - gy * dx;
+    const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
+    if (want < 1e-3 || cl < 1e-6) return;
+    v3.x = cx / cl; v3.y = cy / cl; v3.z = cz / cl;
+    this.tipQ.setFromAxisAngle(v3, want);
+    q2.multiplyQuaternions(this.tipQ, q1);
+    q3.multiplyQuaternions(q2, this.grip.qInv);
+    v2.copy(this.grip.pos).applyQuaternion(q3);
+    // The frame stays off the floor, the tip given back in proportion: the head of a ball taken off the ground.
+    const y0 = v1.y + (gy / g) * RACKET_TOP, y1 = v1.y + (v2.y / g) * RACKET_TOP;
+    if (y1 < RACKET_FLOOR && y1 < y0) {
+      this.tip = want *= Math.max(0, (y0 - RACKET_FLOOR) / (y0 - y1));
+      this.tipQ.setFromAxisAngle(v3, want);
+      q2.multiplyQuaternions(this.tipQ, q1);
+      q3.multiplyQuaternions(q2, this.grip.qInv);
+      v2.copy(this.grip.pos).applyQuaternion(q3);
+    }
+    T.subVectors(v1, v2);
   }
 
   /** The arm's three bones from the clip's (armClipQ from `k`) to the solve's by `f`. */

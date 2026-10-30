@@ -493,7 +493,7 @@ export class App {
         id: 'results', title, sub: `${CUP[round]!.name} · ${sets}`, back: null, side: () => side,
         items: [
           won && !last
-            ? { kind: 'button', label: `On to the ${CUP[round + 1]!.name.toLowerCase()}`, primary: true, desc: `Stronger opponents: ${CUP[round + 1]!.level}.`, action: () => this.play(-1, round + 1) }
+            ? { kind: 'button', label: `On to the ${CUP[round + 1]!.name.toLowerCase()}`, primary: true, desc: `Stronger opponents: ${CUP[round + 1]!.level}.`, action: () => { this.keep = KEEP_PAIR; this.play(-1, round + 1); } }
             : { kind: 'button', label: 'Start again', primary: true, desc: 'A new draw, from the first round.', action: () => this.play(-1, 0) },
           { kind: 'button', label: 'Title screen', desc: 'Back to the club.', action: () => void this.toTitle() },
         ],
