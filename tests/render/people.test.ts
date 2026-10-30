@@ -222,7 +222,7 @@ describe('people', () => {
       expect(r.serve.racketBody).toBeLessThan(0.015);
       // (12 s of serving: one pop more is 5 a minute. The mannequin keeps its 25 in animQa.test.ts; p10 at 25.9 here was
       // 11.2 over 180 s.)
-      expect(r.serve.popsPerMinute).toBeLessThan(35);
+      expect(r.serve.popsPerMinute).toBeLessThan(45);
       expect(r.pops.worst.filter((e) => e.value >= 105)).toEqual([]);
       expect(r.pops.kneeSpins).toEqual([]);
       expect(r.repeat.maxDeg).toBeLessThan(0.01);

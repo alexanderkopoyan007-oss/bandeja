@@ -318,8 +318,17 @@ const ANKLE_MIN = 0.08;
 const RACKET_TURN_RATE = (3600 * Math.PI) / 180;
 /** Most the racket tips about the ball when the arm can't reach it (rad, tipRacket): past this the face no longer looks at the target. */
 const TIP_MAX = 1;
+/** Fastest the body's turn away from a wall changes (rad/s). */
+const WALL_YAW_RATE = 8;
 /** Face centre to the top of the frame (m), and how close the frame comes to the floor when it tips. */
 const RACKET_TOP = 0.17;
+/** The hand's height at a volley: most above the ball (m, the racket's head dropped) and below it (the head up). */
+const HAND_OVER = 0.28;
+const HAND_UNDER = 0.3;
+const HAND_TO_BALL = 0.36;
+const shaftTo = new THREE.Vector3();
+const shaftFrom = new THREE.Vector3();
+const shaftTurn = new THREE.Quaternion();
 const RACKET_FLOOR = 0.02;
 /** Fastest a shin twists about its own length (rad/s): 2400°/s, four times a fast pivot's 180° in 0.3 s. */
 const SHIN_TWIST_RATE = (2400 * Math.PI) / 180;
@@ -380,6 +389,13 @@ const BOW_AFTER = 1.1;
 const BOW_ANGLE = 0.62;
 const TAP_HOLD = 0.75;
 const TAP_TURN = 0.8;
+/**
+ * Walking back between points. There is no walk clip (docs/mixamo.md), so the jog is drawn WALK_UP of the way to the
+ * upright stand: the knees straighter, the trunk up, the step shorter and WALK_CADENCE more of them. (Review round 6,
+ * the critic's #2: a trot in the ready crouch, knees 40 degrees.)
+ */
+const WALK_UP = 0.8;
+const WALK_CADENCE = 0.4;
 /** How far towards the carry key (CARRY) the racket goes while walking back. */
 const CARRY_W = 0.9;
 const STAND_EASE = 0.4;
@@ -454,8 +470,8 @@ const LUNGE_REACH = 0.95;
 const LUNGE_BASE = 0.42;
 const LUNGE_LOW = 0.58;
 /** An overhead's feet: the racket-side foot back and the other forward (m), side-on (0.99 legs wide against 0.45). */
-const OH_FOOT_BACK = 0.42;
-const OH_FOOT_FRONT = 0.2;
+const OH_FOOT_BACK = 0.34;
+const OH_FOOT_FRONT = 0.16;
 /** Below this weight (the stroke's or the ready position's) the arm solve fades into the clip's arm. */
 const ARM_FADE = 0.15;
 /** Furthest a swing reaches past the arm (m: hand to the face's centre and the hips' reach), and the heights an
@@ -593,6 +609,8 @@ export class Avatar {
   private readonly standPose: Pose;
   private readonly allBones: Uint8Array;
   private standW = 0;
+  /** Between points: how far the jog is drawn towards the upright stand (WALK_UP, eased). */
+  private walkUp = 0;
   /** How much of the pose is the idle clip (not running): set by locomote. */
   private idleW = 1;
   private cutPending = false;
@@ -733,6 +751,8 @@ export class Avatar {
   private readonly footQR = new THREE.Quaternion();
   private readonly tgt = new THREE.Vector3();
   private readonly pole = new THREE.Vector3();
+  /** The body's turn away from a wall as shown (WALL_YAW_RATE). */
+  private wallYaw = 0;
   /** The racket's tip about a ball out of reach (tipRacket; rad), and that turn. */
   private tip = 0;
   private readonly tipQ = new THREE.Quaternion();
@@ -1187,11 +1207,24 @@ export class Avatar {
       this.toModel(cc, k.p);
     } else this.toModel(cw, k.p);
     k.q.copy(f.contact.q);
-    if (f.low) k.q.slerp(f.low, smoothstep(0.95, 0.4, k.p.y));
+    if (f.wrist) this.reachFrom(k, f.wrist);
+    else if (f.low) k.q.slerp(f.low, smoothstep(0.95, 0.4, k.p.y));
     k.pole.copy(f.contact.pole);
     k.yaw = f.contact.yaw;
     k.off.copy(f.contact.off);
     return k;
+  }
+
+  /** The key's racket turned the least way to point from the hand's place (Family.wrist) at the ball. */
+  private reachFrom(k: Key, w: THREE.Vector3): void {
+    const wy = Math.max(k.p.y - HAND_UNDER, Math.min(k.p.y + HAND_OVER, w.y));
+    // The hand stays at that height however far out the ball is: the racket's end rises or drops by this much.
+    const up = (k.p.y - wy) / HAND_TO_BALL;
+    const hx = k.p.x - w.x, hz = k.p.z - w.z, hl = Math.sqrt(hx * hx + hz * hz) || 1, across = Math.sqrt(1 - up * up) / hl;
+    shaftTo.set(hx * across, up, hz * across);
+    shaftFrom.set(0, 1, 0).applyQuaternion(k.q);
+    shaftTurn.setFromUnitVectors(shaftFrom, shaftTo);
+    k.q.premultiply(shaftTurn);
   }
 
   /** Forward swing at progress s (0 = end of the backswing, 1 = the ball), into the blended key. */
@@ -1501,7 +1534,8 @@ export class Avatar {
     let dist = 0, per = 0;
     const cy = this.clips.cycle;
     for (let i = 0; i < 5; i++) { dist += W[i]! * cy[i]!.speed * cy[i]!.duration; per += W[i]! * cy[i]!.duration; }
-    const freq = Math.min(sp / Math.max(dist, 1e-3), 1.7 / Math.max(per, 1e-3));
+    // (a walk's step is shorter than the jog's it is drawn from: more of them)
+    const freq = Math.min(sp / Math.max(dist, 1e-3), 1.7 / Math.max(per, 1e-3)) * (1 + WALK_CADENCE * this.walkUp);
     this.phase = (this.phase + freq * dt) % 1;
     this.idleClock += dt;
 
@@ -1526,6 +1560,12 @@ export class Avatar {
       if (w < 0.002) continue;
       tmp.t = this.phase;
       sampleCycle(cy[i]!, tmp);
+      if (this.walkUp > 0) {
+        const st = this.standPose;
+        st.w = this.walkUp;
+        blendMasked(tmp, st, this.allBones);
+        for (let k = 0; k < 3; k++) tmp.hips[k] = tmp.hips[k]! + (st.hips[k]! - tmp.hips[k]!) * this.walkUp;
+      }
       tmp.w = w;
       accumulate(acc, tmp);
     }
@@ -1620,14 +1660,22 @@ export class Avatar {
     const turn = this.kyaw * this.w + this.readyKey.yaw * this.ready * (1 - this.w);
     const btTo = this.w > 0.01 ? this.fam.bodyTurn ?? BODY_TURN : this.addr ? SERVE_TURN_SHARE : BODY_TURN;
     this.bt += (btTo - this.bt) * (dt > 0 && !cut ? 1 - Math.exp(-dt / 0.12) : 1);
-    const wallYaw = -this.hand * this.handed * (this.hand > 0 ? WALL_TURN : WALL_TURN_BH) * this.wall * sq;
+    // No faster than a body turns: the turn away from a wall changes sides with the stroke's hand (the hips 77° in a
+    // frame on a monkey's change of hand beside the glass).
+    const wallTo = -this.hand * this.handed * (this.hand > 0 ? WALL_TURN : WALL_TURN_BH) * this.wall * sq;
+    const wallLim = cut ? Math.PI : WALL_YAW_RATE * dt;
+    const wallYaw = Math.min(this.wallYaw + wallLim, Math.max(this.wallYaw - wallLim, wallTo));
+    this.wallYaw = wallYaw;
     this.chestTurn = turn + wallYaw;
     const yRoot = ys + turn * this.bt + wallYaw;
     this.root.rotation.y = yRoot;
 
     this.yRoot = yRoot;
     const ohStand = this.st === ST_PREP || this.st === ST_SWING ? this.fam.stand ?? 0 : 0;
-    const standTo = sim.phase === PH_OVER ? 1 : this.addr ? SERVE_STAND : ohStand;
+    const walks = sim.walking > 0 || sim.phase === PH_OVER;
+    this.walkUp += ((walks ? WALK_UP : 0) - this.walkUp) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / STAND_EASE) : 0);
+    if (this.walkUp < 0.001) this.walkUp = 0;
+    const standTo = sim.phase === PH_OVER ? 1 : this.addr ? SERVE_STAND : sim.walking > 0 ? WALK_UP : ohStand;
     this.standW += (standTo - this.standW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / (ohStand > 0 ? OVERHEAD_STAND_EASE : STAND_EASE)) : 0);
     if (this.standW < 0.001) this.standW = 0;
     this.locomote(p);

@@ -95,7 +95,7 @@ describe('AI personalities', () => {
     // Measured over 60 seeds at the end of Phase 4 (about 2,400 shots each): lobs Muro 28% / Martillo 11%; drives
     // Martillo 27% / Muro 6%; smashes of overheads Martillo 71% / Muro 16%; víboras of overheads Serpiente 68% /
     // Relojero 14%; errors per shot Martillo 8.3% / Muro 5.3% / Relojero 4.7%; pace Martillo 60.8 / Muro 57.9 km/h.
-    const r = signatures(24, 300);
+    const r = signatures(48, 300);
     expect(r.share('muro', 'lob')).toBeGreaterThan(1.6 * r.share('martillo', 'lob'));
     expect(r.share('martillo', 'drive')).toBeGreaterThan(2.5 * r.share('muro', 'drive'));
     expect(r.ofOh('martillo', 'smash')).toBeGreaterThan(2.5 * r.ofOh('muro', 'smash'));

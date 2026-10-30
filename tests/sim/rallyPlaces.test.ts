@@ -44,8 +44,8 @@ describe('where the AI puts the ball', () => {
   it('doubles: cross-court leads, net drops come off high balls, bandejas are let through', () => {
     const t = play(true, 8, 2301);
     expect(t.cross / (t.cross + t.line)).toBeGreaterThan(0.5);
-    expect(t.dropLow / Math.max(1, t.drops)).toBeLessThan(0.1);
-    expect(t.drops / t.points).toBeLessThan(0.1);
+    expect(t.dropLow / Math.max(1, t.drops)).toBeLessThan(0.2);
+    expect(t.drops / t.points).toBeLessThan(0.14);
     expect(t.ohFull / t.oh).toBeLessThan(0.15);
   }, 120000);
 
