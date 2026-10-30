@@ -916,7 +916,10 @@ export class SimpleAi {
     const side = opp.pos.x > 0 ? -1 : 1;
     const spread = c.halfW - margin;
     this.targetX = clamp(side * spread * (0.35 + 0.65 * rng.next()) + rng.normal() * 0.6, -spread, spread);
-    let depthT = this.shot === SHOT_LOB ? 8.6 : this.shot === SHOT_DROP ? 1.8 : 6.6 + 1.2 * rng.next();
+    // Short of the far glass by room for an error: aimed 6.6-7.8 m out from the back of the court (8.6 m for a lob), a
+    // ball reached that glass on the full on a small error, and a third of singles points ended so (review round 3,
+    // the pro's #10: 35.6%).
+    let depthT = this.shot === SHOT_LOB ? 7.0 + 0.8 * rng.next() : this.shot === SHOT_DROP ? 1.8 : 5.2 + 1.3 * rng.next();
     if (this.shot === SHOT_LOB) depthT = min(depthT, c.halfL - 1.0 - 0.6 * (1 - this.level));
     this.targetZ = -s * depthT;
   }
