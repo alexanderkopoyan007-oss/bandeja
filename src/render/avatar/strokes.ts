@@ -42,6 +42,8 @@ export interface Family {
   viaS?: number;
   /** Played facing the player's own back glass (the contrapared): the stance turns round to it. */
   glass?: boolean;
+  /** How far the stroke stands the trunk up out of the idle's ready crouch (0..1; default none). */
+  stand?: number;
 }
 
 const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
@@ -107,6 +109,7 @@ export const OVERHEAD: Family = {
   loop: 0.32,
   crouch: 0,
   punch: 1,
+  stand: 0.9,
 };
 
 /**
@@ -123,6 +126,7 @@ export const VIBORA: Family = {
   loop: 0.28,
   crouch: 0,
   punch: 1,
+  stand: 0.9,
 };
 
 /**

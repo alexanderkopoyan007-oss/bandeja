@@ -2176,3 +2176,37 @@ Round 3's two reviews are in `docs/review/round3-pro.md` and `round3-critic.md`,
     card names the opponents by surname.
   - **Left for the roadmap** (OPEN_QUESTIONS): careers, tournaments, unlocks and online play are whole milestones,
     not a fix.
+
+## Review round 3's Mediums, taken while round 4 reviewed (2026-10-30)
+Done on branch r4-mediums, off phase9, so the round 4 reviewers kept a fixed build.
+- **Pro #6, the serve** (`SimpleAi`). Serves went 31.9% to the side glass, 34.1% to the T and 34.0% to the middle. WPT
+  men go 64.6 / 24.3 / 11.1, from the left court 12% more to the glass and from the right 14% more to the T
+  (Sánchez-Alcaraz et al. 2020, `docs/research/shots-movement-feel.md` §6).
+  - First serves now go 70 / 19 / 11 from the left and 58 / 31 / 11 from the right. Second serves go wide less often
+    (50 or 40%), with 1.1 m to spare off the side.
+  - Measured, 2000 points at level 1 (`--seed0 901`): 60% into the side glass. First-serve faults 5.0% → 7.0% (WPT
+    2019 7.1, 2014 10.6). Double faults 0 of 101 → 2.8% of 142 (pros 2.1).
+- **Pro #12, serve-time places** (`MatchSim.startPoint`). The net player stood at exactly 2.60 m every time. Now 2.2-3.2
+  m from the net and 2.0-2.9 m off the middle; the receiver's partner 6.6-7.8 m. The ranges are our choice; no study
+  gives them. The draws come from the AI's RNG, so every seeded match changed.
+- **Pro #7, the víbora** (`data/shots.json`, `netClear` 0.8 → 0.5). It was 65 km/h against the bandeja's 71. The arc
+  solve held it up at a clearance its lower contact had to climb to. Now 79 km/h, flatter. No radar figure exists; the
+  order (víbora faster than bandeja) is the pro's and the research notes'.
+- **Critic #11, the serve's squat and the overhead's cramped contact: one cause.** The idle clip's ready crouch stayed
+  under both. Measured on a bandeja at contact: head 0.25 m in front of the feet at 1.37 m, ball 0.37 m behind it,
+  forearm across the face. The match end's upright stand now comes in under a server (`SERVE_STAND` 0.8) and under
+  overheads (`Family.stand` 0.9, in 0.15 s).
+  - Bandeja at contact: head over the feet at 1.57 m, racket 0.35 m out to the racket side, level with the body (the
+    research's tray contact, -0.01 m for trained players). Racket to ball stays under 2 cm; animQa's bounds pass.
+  - Serve: tall, knees a little bent, contact at the waist (captures r4serve).
+- **A 13 ms tick** (`solveContra`, found from the paired perf run's sim p99, then per-tick timing in Node: worst tick
+  2.8 ms in one build and 12.5-13.4 ms in the next). It repeats exactly from run to run. Seed 1505 tick 15581: an AI
+  contrapared with no clean launch searched 4 glass heights × 3 aims × up to 9 flights, about 80 balls, and the
+  strike's passes (less spin, less face speed) ran the whole search again: 323 flights in one tick, a dropped frame at
+  CPU 4×.
+  - After a failed search the later passes only refine the best try (`quick`, 10 flights at most). A strike's worst
+    went 323 → 54 flights over 8 matches; the same 60 seeds lost as many saves with and without it.
+  - The sim's mean tick is unchanged (about 11 µs).
+- **Tests that only measured the seed:** the contrapared's lost rate (over 60 seeds 18 of 88 before and 33 of 105
+  after, with 30-seed ranges giving 5 of 43 and 13 of 45; the bound is now 0.45), the neighbour courts' count over
+  120 s (now 300 s), and the replay test's one seed (it now plays seeds until it has a replay to check).
