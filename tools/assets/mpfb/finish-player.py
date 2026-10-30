@@ -28,6 +28,20 @@ from bl_ext.user_default.mpfb.services.assetservice import AssetService
 import person_face as face
 
 P = 'mixamorig:'
+def highest_piece(me):
+    """The vertices of the connected piece of the mesh that reaches highest."""
+    par = list(range(len(me.vertices)))
+    def find(a):
+        while par[a] != a:
+            par[a] = par[par[a]]
+            a = par[a]
+        return a
+    for e in me.edges:
+        par[find(e.vertices[0])] = find(e.vertices[1])
+    top = find(max(range(len(me.vertices)), key=lambda i: me.vertices[i].co.z))
+    return {i for i in range(len(me.vertices)) if find(i) == top}
+
+
 # Part codes (the game's body shader colours by them).
 PART = {'skin': 0, 'shirt': 1, 'shorts': 2, 'shoe': 3, 'eye': 4, 'sock': 5, 'hair': 6, 'brow': 7, 'lash': 8,
         'teeth': 9, 'tongue': 10}
@@ -502,6 +516,7 @@ def finish(yb, spec, out, preview=False):
         sd = face.shape_deltas(o)
         mk = [me.attributes[n].data for n in ('mask_lips', 'mask_tzone', 'mask_lids', 'mask_ears')] if kd == 'body' else None
         va = vao.get(o.name)
+        top_piece = highest_piece(me) if kd == 'suit' and spec['clothes'][0].startswith('female_') else None
         for tri in me.loop_triangles:
             u0, v0 = 0, 0
             for li in tri.loops:
@@ -516,8 +531,9 @@ def finish(yb, spec, out, preview=False):
                     if kd == 'body':
                         part, uv = 'skin', uv_to(RECT['skin'], OPAQUE_SIZE, u, v)
                     elif kd == 'suit':
-                        # The suit's atlas: the shirt on the top half, the trousers below.
-                        part = 'shirt' if v0 > 0.57 else 'shorts'
+                        # The suit's atlas: the shirt on the top half, the trousers below. A women's suit: separate pieces
+                        # whose atlases overlap in height.
+                        part = 'shirt' if (vi in top_piece if top_piece else v0 > 0.57) else 'shorts'
                         uv = uv_to(RECT['clothes'], OPAQUE_SIZE, u, v)
                     elif kd == 'shoe':
                         part, uv = ('sock' if co.z > sock_from else 'shoe'), (0.0, 0.0)

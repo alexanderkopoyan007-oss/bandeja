@@ -22,9 +22,9 @@
   "eyelashes": "eyelashes02",
   "hair": "braid01",
   "clothes": [
-    "male_casualsuit06",
+    "female_casualsuit02",
     "shoes05"
   ],
-  "shorts": 0.58,
+  "shorts": 0.72,
   "height": 1.74
 }

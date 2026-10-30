@@ -66,7 +66,7 @@ describe('people', () => {
       const n = A.length / 4;
       const count = (arr: Float32Array, k: number): number => { let c = 0; for (let v = 0; v < n; v++) if (arr[v * 4 + k]! > 0.5) c++; return c; };
       expect(count(A, 2)).toBeGreaterThan(5000); // skin
-      expect(count(A, 0)).toBeGreaterThan(1500); // shirt
+      expect(count(A, 0)).toBeGreaterThan(1200); // shirt
       expect(count(A, 1)).toBeGreaterThan(300); // shorts
       expect(count(B, 0)).toBeGreaterThan(500); // shoes
       expect(count(A, 3)).toBeGreaterThan(50); // socks
@@ -85,16 +85,16 @@ describe('people', () => {
       const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array;
       const n = r.length / 3;
       for (const side of [-1, 1]) {
-        const leg = (v: number): boolean => Math.sign(r[v * 3]!) === side && r[v * 3 + 1]! < 0.75;
+        const leg = (v: number): boolean => Math.sign(r[v * 3]!) === side && r[v * 3 + 1]! < 0.95;
         let hem = Infinity;
         for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v)) hem = Math.min(hem, r[v * 3 + 1]!);
         let cx = 0, cz = 0, c = 0;
-        for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v) && r[v * 3 + 1]! < hem + 0.01) { cx += r[v * 3]!; cz += r[v * 3 + 2]!; c++; }
+        for (let v = 0; v < n; v++) if (A[v * 4 + 1]! > 0.5 && leg(v) && r[v * 3 + 1]! < hem + 0.06) { cx += r[v * 3]!; cz += r[v * 3 + 2]!; c++; }
         cx /= c; cz /= c;
         const top = new Array(8).fill(-1);
         for (let v = 0; v < n; v++) {
           const x = r[v * 3]!, y = r[v * 3 + 1]!, z = r[v * 3 + 2]!;
-          if (A[v * 4 + 2]! < 0.5 || !leg(v) || Math.abs(x) < 0.03 || y < hem - 0.05 || y > hem + 0.2) continue;
+          if (A[v * 4 + 2]! < 0.5 || Math.sign(x) !== side || Math.abs(x) < 0.03 || y < hem - 0.05 || y > hem + 0.2) continue;
           const b = Math.floor(((Math.atan2(z - cz, x - cx) + Math.PI) / (2 * Math.PI)) * 8) % 8;
           top[b] = Math.max(top[b], y - hem);
         }
@@ -220,8 +220,8 @@ describe('people', () => {
       expect(r.clip.legs).toBeLessThan(0.05);
       expect(r.serve.handTorso).toBeLessThan(0.005);
       expect(r.serve.racketBody).toBeLessThan(0.015);
-      // (12 s of serving: one pop more is 5 a minute. The mannequin's 25 is held over 2,700 s in animQa.test.ts; p10 at
-      // 25.9 here was 11.2 over 180 s.)
+      // (12 s of serving: one pop more is 5 a minute. The mannequin keeps its 25 in animQa.test.ts; p10 at 25.9 here was
+      // 11.2 over 180 s.)
       expect(r.serve.popsPerMinute).toBeLessThan(35);
       expect(r.pops.worst.filter((e) => e.value >= 105)).toEqual([]);
       expect(r.pops.kneeSpins).toEqual([]);

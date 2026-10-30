@@ -63,8 +63,8 @@ function key(p: THREE.Vector3, a: THREE.Vector3, n: THREE.Vector3, pole: THREE.V
 export const FOREHAND: Family = {
   name: 'forehand',
   back: key(v(-0.62, 1.12, -0.42), v(-0.25, 0.6, -0.75), v(-1, 0.05, -0.1), v(-0.55, 0.75, -0.55), -1.05, v(0.12, 1.25, 0.4)),
-  contact: key(v(-0.75, 1.0, 0.45), v(-0.85, 0.12, 0.5), v(0.05, 0.08, 1), v(-0.45, 0.8, -0.15), 0.15, v(0.4, 1.05, 0.15)),
-  finish: key(v(0.28, 1.55, 0.12), v(0.45, 0.35, -0.8), v(0.85, 0.1, 0.4), v(-0.15, 1.45, 0.45), 0.95, v(0.35, 1.12, -0.05)),
+  contact: key(v(-0.75, 1.0, 0.45), v(-0.85, 0.12, 0.5), v(0.05, 0.08, 1), v(-0.45, 0.8, -0.15), 0.15, v(0.55, 1.12, 0.3)),
+  finish: key(v(0.28, 1.55, 0.12), v(0.45, 0.35, -0.8), v(0.85, 0.1, 0.4), v(-0.15, 1.45, 0.45), 0.95, v(0.5, 1.1, -0.2)),
   low: racketQuat(v(-0.6, -0.74, 0.32), v(0.05, 0.3, 1)),
   dip: 0.28,
   loop: 0.1,
@@ -103,13 +103,13 @@ export const OVERHEAD: Family = {
   name: 'overhead',
   // Trophy position: side-on, racket up behind the head, the free hand pointing at the ball.
   back: key(v(-0.32, 2.0, -0.32), v(0.05, 0.85, -0.5), v(-1, 0, 0.1), v(-0.65, 1.55, -0.2), -1.25, v(0.25, 2.1, 0.4)),
-  contact: key(v(-0.35, 2.0, 0.1), v(-0.18, 0.95, 0.22), v(0, 0.42, 0.91), v(-0.75, 1.55, -0.05), -0.95, v(0.35, 1.6, 0.3)),
+  contact: key(v(-0.35, 2.0, 0.1), v(0.32, 0.9, 0.28), v(0, 0.42, 0.91), v(-0.85, 1.5, -0.1), -0.95, v(0.62, 1.42, 0.35)),
   finish: key(v(0.05, 1.2, 0.5), v(0.35, -0.15, 0.9), v(0.05, -0.55, 0.85), v(-0.45, 1.2, 0.25), -0.15, v(0.4, 1.15, 0.05)),
   dip: -0.05,
   loop: 0.32,
   crouch: 0,
   punch: 1,
-  stand: 0.9,
+  stand: 0.35,
 };
 
 /**
@@ -120,13 +120,13 @@ export const OVERHEAD: Family = {
 export const VIBORA: Family = {
   name: 'vibora',
   back: key(v(-0.45, 1.85, -0.38), v(-0.1, 0.8, -0.58), v(-1, 0.05, 0.15), v(-0.7, 1.45, -0.25), -1.3, v(0.25, 1.95, 0.4)),
-  contact: key(v(-0.5, 1.7, 0.2), v(-0.55, 0.78, 0.28), v(0.3, 0.2, 0.93), v(-0.8, 1.35, 0), -0.7, v(0.35, 1.4, 0.25)),
+  contact: key(v(-0.5, 1.7, 0.2), v(0.12, 0.92, 0.3), v(0.3, 0.2, 0.93), v(-0.9, 1.3, -0.05), -0.7, v(0.62, 1.32, 0.3)),
   finish: key(v(0.32, 0.92, 0.32), v(0.55, -0.55, 0.45), v(0.3, -0.45, 0.85), v(-0.15, 1.05, 0.4), 0.6, v(0.38, 1.05, -0.08)),
   dip: 0.08,
   loop: 0.28,
   crouch: 0,
   punch: 1,
-  stand: 0.9,
+  stand: 0.35,
 };
 
 /**
@@ -137,7 +137,7 @@ export const SMASH: Family = {
   ...OVERHEAD,
   name: 'smash',
   back: key(v(-0.34, 1.92, -0.42), v(0.08, 0.7, -0.7), v(-1, 0, 0.12), v(-0.7, 1.5, -0.25), -1.4, v(0.25, 2.15, 0.45)),
-  contact: key(v(-0.28, 2.45, 0.42), v(-0.15, 0.95, 0.27), v(0.02, 0.08, 1), v(-0.7, 1.7, 0.25), 0.05, v(0.3, 1.25, 0.15)),
+  contact: key(v(-0.28, 2.45, 0.42), v(-0.15, 0.95, 0.27), v(0.02, 0.08, 1), v(-0.7, 1.7, 0.25), 0.05, v(0.45, 0.95, 0.2)),
   finish: key(v(0.38, 0.78, 0.12), v(0.6, -0.65, -0.3), v(0.2, -0.3, 0.9), v(-0.1, 1.0, 0.4), 0.75, v(0.35, 1.05, -0.1)),
   loop: 0.38,
 };
@@ -297,7 +297,7 @@ export const BH_CONTRA = variant(BACKHAND, 1, 'contra');
  * elbows bent (with the racket 0.42 m out the racket hand sat 18 cm in front of the hips, and a running body's
  * pelvis tilted onto it: 8% of a left-handed pair's frames had a hand inside the pelvis).
  */
-export const READY: Key = key(v(-0.1, 1.3, 0.52), v(0.15, 0.75, 0.55), v(-1, 0, 0.15), v(-0.45, 0.85, -0.1), 0, v(0.0, 1.15, 0.42));
+export const READY: Key = key(v(-0.1, 1.28, 0.62), v(0.15, 0.75, 0.55), v(-1, 0, 0.15), v(-0.45, 0.85, -0.1), 0, v(-0.01, 1.13, 0.52));
 
 /**
  * The racket tap after a point (avatar.ts racketTap): the racket raised in front at shoulder height, head up and a

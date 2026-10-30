@@ -283,7 +283,7 @@ const FINISH_EASE = 0.15;
  * The share of a low ball's shortfall the hips take by dropping; the rest is left to the upper body bending towards
  * it (SPINE_REACH, after the legs): taken by the hips alone every ball under 0.6 m was met in a full squat.
  */
-const DOWN_SHARE = 0.55;
+const DOWN_SHARE = 0.35;
 /** Most the upper body bends from the spine's base towards a ball out of the arm's reach (rad). */
 const SPINE_REACH = 0.75;
 /**
@@ -333,6 +333,11 @@ const JUMP_MAX = 0.3;
  * played off a small push or a scissor kick, lower than the smash's. */
 const JUMP_MAX_OH = 0.2;
 const JUMP_TOES = 0.12;
+/** The scissor kick at a hop of SCISSOR_FULL m or more: the back foot's way back and up, the front foot's way forward. */
+const SCISSOR_FULL = 0.15;
+const SCISSOR_BACK = 0.3;
+const SCISSOR_UP = 0.3;
+const SCISSOR_FRONT = 0.22;
 const JUMP_HEIGHT = 1.8;
 const JUMP_SHORT = 1.0;
 const LAND_DROP = 0.06;
@@ -376,6 +381,15 @@ const STAND_EASE = 0.4;
  * 45 degrees forward and the knees near 90).
  */
 const SERVE_STAND = 0.8;
+/**
+ * How far the trunk comes up from the idle clip's lean, standing (rad). The clip is a tennis ready crouch, trunk 47
+ * degrees forward through every shot played standing; padel players wait and hit far more upright (MediaPipe on WPT
+ * photos: 5-19 ready, 6 at the volley, 30 at a groundstroke; the knees and hips were already theirs).
+ */
+const READY_UP = 1.1;
+/** How much of the crouch for a low ball the knees take, and how far the trunk folds for it instead (rad, at 0.4 m). */
+const CROUCH_SHARE = 0.4;
+const LOW_BEND = 0.75;
 /**
  * How quickly an overhead (Family.stand) stands the trunk up (s): it is played upright, the head under the ball's
  * path. In the idle's crouch the head was 0.25 m in front of the feet at 1.37 m, the ball 0.37 m behind it: the
@@ -425,8 +439,15 @@ const LUNGE_MAX = 0.55;
 const LUNGE_RATE = 3;
 /** Furthest a lunging foot goes from its hip, as a share of the leg's length (the lock lets go at 0.985). */
 const LUNGE_REACH = 0.95;
-/** How far a low ball (under 0.45 m, from 0.95 m) steps the foot on its side towards it (m). */
-const LUNGE_LOW = 0.45;
+/** How far a stroke steps the foot on the ball's side towards it (m), and a low ball's (under 0.45 m, from 0.95 m). Pros
+ * meet groundstrokes on a base 1.2 legs wide, the feet well apart and the knees easy (43/40 degrees, MediaPipe on WPT
+ * photos), and a low ball with the trail leg nearly straight (45/21), the trunk folded 45 degrees: a lunge and a bend
+ * from the hips, where this got low by a squat (107/83) on feet at 0.9 legs. */
+const LUNGE_BASE = 0.3;
+const LUNGE_LOW = 0.5;
+/** An overhead's feet: the racket-side foot back and the other forward (m), side-on (0.99 legs wide against 0.45). */
+const OH_FOOT_BACK = 0.32;
+const OH_FOOT_FRONT = 0.14;
 /** Below this weight (the stroke's or the ready position's) the arm solve fades into the clip's arm. */
 const ARM_FADE = 0.15;
 /** Furthest a swing reaches past the arm (m: hand to the face's centre and the hips' reach), and the heights an
@@ -564,6 +585,8 @@ export class Avatar {
   private readonly standPose: Pose;
   private readonly allBones: Uint8Array;
   private standW = 0;
+  /** How much of the pose is the idle clip (not running): set by locomote. */
+  private idleW = 1;
   private cutPending = false;
 
   /** The next frame draws another match, or another moment (a replay starts or ends): every filter starts afresh. */
@@ -675,6 +698,7 @@ export class Avatar {
   private readonly koff = new THREE.Vector3();
   private kyaw = 0;
   private crouch = 0;
+  private bendW = 0;
   private readonly from: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   private readonly con: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   private readonly ctrl = new THREE.Vector3();
@@ -1377,7 +1401,8 @@ export class Avatar {
     if (this.inertial && (Avatar.inertMask & 24) !== 0) { this.keyT = t; this.smoothKey(); }
     // Low balls: bend the knees (contact or plan height), scaled by the stroke's weight.
     const cy = this.hasCon ? this.conW.y : 1;
-    this.crouch = f.crouch * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) * this.w;
+    this.crouch = f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) * this.w;
+    this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w : 0;
   }
 
   /** Pull the blended key back towards the snapshot: u = 0 is the snapshot, 1 the key as it is. */
@@ -1413,6 +1438,7 @@ export class Avatar {
     const sp = Math.sqrt(mx * mx + mz * mz);
     this.sp = sp;
     const move = smoothstep(0.12, 0.9, sp);
+    this.idleW = 1 - move;
     // Four directions: forward (jog or run by speed), left, back, right. The nearest one plays, its legs turned
     // onto the way the body is going (orientation warping, up to 45 degrees; the spine turns back so the upper body
     // faces as it did); only near halfway between two (WARP_BAND) do they cross-fade. A blend of two directions'
@@ -1634,9 +1660,9 @@ export class Avatar {
       this.hips.position.z = -hx * sw + hz * cw;
     }
     // Shoulder turn and lean in the spine.
-    if (this.w > 0 || turn !== 0) {
+    if (this.w > 0 || turn !== 0 || this.bendW > 0) {
       const spineTurn = (turn * (1 - this.bt)) / 3;
-      const lean = Math.min(0.4, this.crouch * 1.2) / 3;
+      const lean = (LOW_BEND * this.bendW) / 3;
       q1.setFromAxisAngle(AXIS_Y, spineTurn);
       q2.setFromAxisAngle(AXIS_X, lean);
       for (let k = 0; k < 3; k++) this.spine[k]!.quaternion.multiply(q1).multiply(q2);
@@ -1644,6 +1670,14 @@ export class Avatar {
     if (this.bowW > 0) {
       q2.setFromAxisAngle(AXIS_X, (this.bowW * BOW_ANGLE) / 3);
       for (let k = 0; k < 3; k++) this.spine[k]!.quaternion.multiply(q2);
+    }
+    // Up out of the idle clip's tennis crouch, the head kept level.
+    const up = READY_UP * this.idleW * (1 - this.standW);
+    if (up > 0) {
+      q2.setFromAxisAngle(AXIS_X, -up / 3);
+      for (let k = 0; k < 3; k++) this.spine[k]!.quaternion.multiply(q2);
+      q2.setFromAxisAngle(AXIS_X, up);
+      this.neck.quaternion.multiply(q2);
     }
     // The clip pose (locomotion, reactions, the shoulder turn) carried on smoothly through any jump, before IK.
     if (this.inertial && (Avatar.inertMask & 1) !== 0) this.inertia.apply(this.bones, this.hips.position, this.inertiaSkip);
@@ -2017,6 +2051,26 @@ export class Avatar {
     this.landAt = -1;
   }
 
+  /**
+   * In the air, an overhead's scissor kick: the racket-side leg comes through behind, knee bent, the other reaches
+   * forward for the landing (MediaPipe on WPT smashes: knees 138 and 37 at the top of the jump, where every smash here
+   * was dead straight, 1.7 degrees).
+   */
+  private scissor(): void {
+    if (this.jumpT0 < 0 || this.jumpT <= 0) return;
+    const u = (this.lastT - this.jumpT0) / this.jumpT;
+    if (u <= 0 || u >= 1) return;
+    const air = 4 * u * (1 - u);
+    const lift = this.jumpH * air;
+    if (lift < 0.02) return;
+    const k = Math.min(1, lift / SCISSOR_FULL);
+    const back = this.handed > 0 ? this.footR : this.footL, front = this.handed > 0 ? this.footL : this.footR;
+    const fx = this.stanceS, fz = this.stanceC;
+    back.x -= fx * SCISSOR_BACK * k; back.z -= fz * SCISSOR_BACK * k;
+    back.y += SCISSOR_UP * k;
+    front.x += fx * SCISSOR_FRONT * k; front.z += fz * SCISSOR_FRONT * k;
+  }
+
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */
   private solveLegs(): void {
     // How far the arm would fall short of where the key puts the wrist: the hips go that way (up to 40 cm out,
@@ -2078,7 +2132,7 @@ export class Avatar {
       crouch = D.out[0]!;
     }
     // No lower than a deep lunge (hips about 0.4 m; crouch, reach and drop together reached 0.62).
-    let drop = Math.min(DROP_MAX, crouch + push * 0.35 + down + this.splitDrop) - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
+    let drop = Math.min(DROP_MAX, crouch + push * 0.15 + down + this.splitDrop) - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
     // Up out of a low reach no faster than a body stands up from a lunge: the reach follows the stroke's key, which
     // swings up and in after the contact, and the hips came up 0.19 m in four frames.
     if (this.dt > 0 && drop < this.dropShown - HIP_RISE * this.dt) drop = this.dropShown - HIP_RISE * this.dt;
@@ -2111,6 +2165,7 @@ export class Avatar {
         if (low < 0) { A.y -= low; lifted = true; }
       }
     }
+    this.scissor();
     const moved = Math.abs(this.footL.x - fx0) + Math.abs(this.footL.z - fz0) + Math.abs(this.footR.x - gx0) + Math.abs(this.footR.z - gz0);
     if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant && !lifted && moved < 1e-4 && this.lockOn[0] === 0 && this.lockOn[1] === 0) {
       // The clip's knees as they are: no side to carry on from next time.
@@ -2258,20 +2313,32 @@ export class Avatar {
     // 0.55 m back), and each foot's offset moves no faster than LUNGE_RATE.
     const LO = this.lungeOff;
     let wlx = 0, wlz = 0, wrx = 0, wrz = 0;
-    if (this.hasCon && (this.st === ST_PREP || this.st === ST_SWING || this.st === ST_FADE) && s > 0.01) {
+    // (a stroke is met at walking pace or less as often as not, and its feet are set then too)
+    const sp = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
+    const set = Math.max(s, 1 - smoothstep(1.2, 3.2, sp));
+    if (this.hasCon && (this.st === ST_PREP || this.st === ST_SWING || this.st === ST_FADE) && set > 0.01) {
       const sh = this.armRacket[0]!.matrixWorld.elements;
       const dx = this.conW.x - sh[12]!, dz = this.conW.z - sh[14]!;
       const d = Math.max(1e-6, Math.sqrt(dx * dx + dz * dz));
       // A low ball steps the foot towards it too, so the body goes down into a lunge (front knee bent, the back one
       // low) rather than a squat over feet at standing width (every ball under 0.6 m was met in a full squat).
-      const wide = Math.max(0, d - LUNGE_FROM) * 1.3, low = LUNGE_LOW * smoothstep(0.95, 0.45, this.conW.y);
-      const out = Math.min(LUNGE_MAX, wide > low ? wide : low) * s * (this.st === ST_FADE ? this.w : 1);
+      const fam = rightFamily(this.fam);
+      const oh = fam === SMASH || fam === OVERHEAD || fam === VIBORA;
+      const wide = Math.max(0, d - LUNGE_FROM) * 1.3;
+      const low = oh ? 0 : LUNGE_BASE + (LUNGE_LOW - LUNGE_BASE) * smoothstep(0.95, 0.45, this.conW.y);
+      const out = Math.min(LUNGE_MAX, wide > low ? wide : low) * set * (this.st === ST_FADE ? this.w : 1);
       if (out > 0.04) {
         // The model's left (+x) in world: which side of the body the ball is on, as a share.
         const lw = smoothstep(-0.35, 0.35, (dx * Math.cos(yaw) - dz * Math.sin(yaw)) / d);
         const ox = (dx / d) * out, oz = (dz / d) * out;
         wlx = ox * lw; wlz = oz * lw;
         wrx = ox * (1 - lw); wrz = oz * (1 - lw);
+      }
+      if (oh) {
+        const k = set * (this.st === ST_FADE ? this.w : 1), fx = this.stanceS * k, fz = this.stanceC * k;
+        const back = this.handed > 0 ? OH_FOOT_BACK : -OH_FOOT_FRONT, front = this.handed > 0 ? OH_FOOT_FRONT : -OH_FOOT_BACK;
+        wlx += fx * front; wlz += fz * front;
+        wrx -= fx * back; wrz -= fz * back;
       }
     }
     const lim = LUNGE_RATE * this.dt;
