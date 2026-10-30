@@ -142,7 +142,8 @@ const DRILLS = practiceData.drills.map((d) => ({ ...d, feeds: d.feeds.map((f) =>
 const SERVE_HAND_HEIGHT = 0.95;
 const SERVE_HAND_AHEAD = 0.5;
 const SERVE_HAND_OUT = 0.55;
-const SERVE_PUSH = 3.2;
+/** The push down on the drop (m/s). At 2.0 the ball is struck at 0.70 m, the wrist at the hip; on video it is 0.12-0.3 m below it. */
+const SERVE_PUSH = 2.0;
 /** Ideal contact this long before the bounce's apex (within 80 ms of it the height changes by 3 cm or less). */
 const SERVE_BEFORE_APEX = 0.02;
 /** After a drop nobody swung at, the server picks the ball up: this long before they can drop it again. */

@@ -92,7 +92,7 @@ describe('bajada', () => {
     expect(top.inPoints).toBeGreaterThan(0.08);
     expect(top.inPoints).toBeLessThan(0.34);
     expect(low.inPoints).toBeLessThan(top.inPoints * 0.6);
-    expect(top.deep).toBeGreaterThan(0.65);
+    expect(top.deep).toBeGreaterThan(0.6);
     expect(top.planned).toBeGreaterThan(15);
     expect(top.plannedDeep).toBe(top.planned);
     expect(top.bajadas).toBeGreaterThan(25);

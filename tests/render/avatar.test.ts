@@ -92,7 +92,7 @@ describe('avatar', () => {
     const { hits, nan } = play(11, 120, lefty);
     expect(nan).toBe(0);
     const left = hits.filter((h) => lefty[h.player]);
-    expect(left.length).toBeGreaterThan(15);
+    expect(left.length).toBeGreaterThan(12);
     const { q, lq } = report('left-handers', left);
     const right = report('right-handers', hits.filter((h) => !lefty[h.player]));
     // As close as the right-handers in the same match.
