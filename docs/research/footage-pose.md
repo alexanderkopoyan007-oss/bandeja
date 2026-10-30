@@ -25,6 +25,16 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 | Forehand volley | Chest turned from the net | 11-55 by the camera | 40 | 4 |
 | Forehand volley | Free hand | elbow 78, 0.24 m in front | elbow 74, 0.10 | 4 |
 | Forehand volley | Hips, knees | 0.82-0.85, 40-45 / 30 | 0.83, 62 / 40 | 4 |
+| Volley | Elbow from -0.3 s to contact | stays 60-90, opening into the ball | 116, 90, 82, then 57 (was 30 at its stop until the hit) | 4 |
+| Ready (two hands) | Elbows, racket / free | 46-66 / 45-47 (284 frames, 3 clips) | 61-67 / 44-56 (was 28 / 32) | [5](https://www.youtube.com/watch?v=YawHc7Cv8us), [6](https://www.youtube.com/watch?v=-zYGF4P_Q9A), [7](https://www.youtube.com/watch?v=5MH8RDf4qfg) |
+| Ready (two hands) | Wrist below, in front of the shoulder | 0.69-0.75 trunks, 0.27-0.30 m | 0.63, 0.3 m | 5, 6, 7 |
+| Forehand | Elbow at -0.22 / -0.08 / contact | 48-53 / 25-42 / 31-34 (6 strokes, 25 fps) | 49 / 39 / 48 | 6 |
+| Forehand | Elbow, wrist at +0.08 s | 47-64, -0.47 | 56, -0.48 | 6 |
+| Forehand | Elbow, wrist at +0.16 s | 38-60, -0.12 | 75, -0.32 (was 114, -0.47) | 6 |
+| Forehand | Elbow, wrist at +0.24 s | 43-64, +0.1 | 113, -0.18 | 6 |
+| Forehand | Freeze frames of a coach's contact | elbow 50-74, hand 0.22-0.43 in front | | 5 |
+| Backhand | Elbow from -0.16 to +0.24 s | 18-37: the arm stays long | 30-41 (fell to 91 at +0.24 before) | 7 |
+| Backhand | Wrist across, height at +0.24 s | +0.3-0.4 to the racket side, about -0.12 | +0.3, -0.47 | 7 |
 | Backhand volley | Wrist in front of the racket shoulder | 0.42 m | 0.42 | [5](https://www.youtube.com/watch?v=jRkQB25IGPw) (held poses of a coach's breakdown) |
 | Backhand volley | Wrist below the shoulder | 0.37 m | 0.35 | 5 |
 | Backhand volley | Chest turned from the net | 60 | 60 | 5 |
@@ -37,8 +47,10 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 | Serve | Chest, backswing to finish | -35 to +60 by the camera | | 6 |
 | Serve | Free arm through the swing | nearly straight, 10-28 | 18 | 6, 7 |
 
-Not done: groundstrokes (a [breakdown clip](https://www.youtube.com/watch?v=JtSP9EGtz1c) was scanned, too mixed in its cuts to give
-clean contacts at 5 fps).
+Contact isn't visible in the pose, so it's taken 0.08 s before the hand's top speed (the wrist is then at the ball's height with the
+racket level). Clip 5 is a run of freeze frames: good poses, no times.
+
+Not done: the backhand volley's own clip (its keys follow the forehand's principle).
 
 The serve's clips also moved the sim. A ball let go at the waist bounces to about 0.6-0.7 m and pros strike it near there, with the
 wrist below the hip. The game's push of 3.2 m/s bounced it to 0.87 m. At 2.0 m/s it is struck at 0.70 m, and the trunk follows

@@ -100,14 +100,14 @@ export const BACKHAND: Family = {
   name: 'backhand',
   back: key(v(0.55, 1.12, -0.38), v(0.3, 0.6, -0.72), v(1, 0.05, -0.15), v(0.25, 1.05, 0.45), 1.55, v(0.42, 1.12, -0.12)),
   contact: key(v(0.72, 0.98, 0.42), v(0.85, 0.12, 0.5), v(-0.05, 0.08, 1), v(0.35, 0.95, 0.35), 1.25, v(0.55, 1.05, -0.35)),
-  finish: key(v(-0.45, 1.5, 0.22), v(-0.5, 0.62, -0.58), v(-0.85, 0.15, 0.4), v(-0.2, 1.5, 0.45), 0.5, v(0.6, 1.1, -0.42)),
+  finish: key(v(-0.52, 1.46, 0.34), v(-0.5, 0.62, -0.58), v(-0.85, 0.15, 0.4), v(-0.2, 1.5, 0.45), 0.5, v(0.6, 1.1, -0.42)),
   bodyTurn: 0.6,
   low: racketQuat(v(0.6, -0.74, 0.32), v(-0.05, 0.3, 1)),
   dip: 0.22,
   loop: 0.05,
   crouch: 1,
   punch: 1,
-  arm: 0.86,
+  arm: 0.94,
   follow: 0.5,
   through: 0.85,
 };
@@ -224,9 +224,9 @@ export const SERVE_TURN_SHARE = SERVE_TURN;
  */
 export const VOLLEY_FH: Family = {
   name: 'volley-fh',
-  back: key(v(-0.6, 1.42, 0.3), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.85, v(0.26, 1.2, 0.42)),
+  back: key(v(-0.46, 1.4, 0.3), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.85, v(0.26, 1.2, 0.42)),
   contact: key(v(-0.5, 1.15, 0.65), v(-0.6, 0.3, 0.72), v(0.1, 0.25, 1), v(-0.42, 0.9, 0.0), -0.6, v(0.42, 1.06, 0.54)),
-  finish: key(v(-0.4, 1.05, 0.8), v(-0.5, 0.25, 0.82), v(0.1, 0.35, 1), v(-0.42, 0.9, 0.1), -0.4, v(0.46, 1.05, 0.4)),
+  finish: key(v(-0.36, 1.08, 0.64), v(-0.5, 0.25, 0.82), v(0.1, 0.35, 1), v(-0.42, 0.9, 0.1), -0.4, v(0.46, 1.05, 0.4)),
   dip: 0.04,
   loop: 0,
   crouch: 1.6,
@@ -238,9 +238,9 @@ export const VOLLEY_FH: Family = {
 /** The same on the other side: side-on, the hand crossing to the free side of the chest, the free arm opening behind. */
 export const VOLLEY_BH: Family = {
   name: 'volley-bh',
-  back: key(v(0.53, 1.42, 0.26), v(0.3, 0.9, 0.15), v(0.7, 0.05, 0.7), v(0.2, 1.0, 0.3), 1.45, v(0.28, 1.2, 0.3)),
+  back: key(v(0.42, 1.4, 0.26), v(0.3, 0.9, 0.15), v(0.7, 0.05, 0.7), v(0.2, 1.0, 0.3), 1.45, v(0.28, 1.2, 0.3)),
   contact: key(v(0.5, 1.12, 0.6), v(0.6, 0.3, 0.72), v(-0.1, 0.25, 1), v(0.3, 1.0, 0.3), 1.1, v(0.5, 1.08, -0.2)),
-  finish: key(v(0.4, 1.02, 0.8), v(0.5, 0.25, 0.82), v(-0.1, 0.35, 1), v(0.3, 1.0, 0.35), 0.9, v(0.58, 1.08, -0.3)),
+  finish: key(v(0.34, 1.08, 0.5), v(0.5, 0.25, 0.82), v(-0.1, 0.35, 1), v(0.3, 1.0, 0.35), 0.9, v(0.58, 1.08, -0.3)),
   dip: 0.04,
   loop: 0,
   crouch: 1.6,
@@ -339,11 +339,11 @@ export const BH_CONTRA = variant(BACKHAND, 1, 'contra');
 
 /**
  * Ready position between shots: the racket up in front of the chest, head up, edge towards the net, the free
- * hand on the throat. Held during rallies (let go when sprinting). The hands about 0.35 m in front of the body,
- * elbows bent (with the racket 0.42 m out the racket hand sat 18 cm in front of the hips, and a running body's
- * pelvis tilted onto it: 8% of a left-handed pair's frames had a hand inside the pelvis).
+ * hand on the throat. Held during rallies (let go when sprinting). The hands 0.27-0.30 m in front of the shoulders and
+ * 0.3 m below them, elbows 46-66 and 45-47 (284 two-handed frames off three clips, docs/research/footage-pose.md).
+ * Numbers for shoulders at READY_SHOULDER and an arm of READY_ARM: the avatar fits them to the body.
  */
-export const READY: Key = key(v(-0.1, 1.24, 0.43), v(0.15, 0.78, 0.5), v(-1, 0, 0.15), v(-0.5, 0.85, -0.15), 0, v(-0.02, 1.05, 0.38));
+export const READY: Key = key(v(-0.1, 1.24, 0.43), v(0.15, 0.78, 0.5), v(-1, 0, 0.15), v(-0.5, 0.85, -0.15), 0, v(-0.08, 1.08, 0.42));
 
 /**
  * The racket tap after a point (avatar.ts racketTap): the racket raised in front at shoulder height, head up and a

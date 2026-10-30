@@ -327,6 +327,8 @@ const HAND_OVER = 0.1;
 const HAND_UNDER = 0.3;
 const VOLLEY_ARM = 0.84;
 const BACK_FOLLOW = 1;
+/** The ball this far below the volley's own contact height (m): the take-back's racket starts to drop, and has dropped. */
+const BACK_DROP0 = 0, BACK_DROP1 = -0.3;
 const BACK_LOW = -0.7;
 const BACK_HIGH = 0.3;
 const HAND_TO_BALL = 0.36;
@@ -728,6 +730,7 @@ export class Avatar {
   /** The contact pulled in to reach (contactKey). */
   private readonly conClamp = new THREE.Vector3();
   private readonly backP = new THREE.Vector3();
+  private readonly backQ = new THREE.Quaternion();
   private hasCon = false;
   /** Stroke weight (0 = pure locomotion) and the blended key it is pulling towards (model space). */
   w = 0;
@@ -1251,6 +1254,14 @@ export class Avatar {
     return p;
   }
 
+  /** The take-back's racket: head up, and for a low volley already dropping to the ball, or a head-up racket a low ball's way
+   * below it leaves the hand at the end of a straight arm (elbow at its stop until the hit, then 57; video 63 throughout). */
+  private backTurn(k: Key): THREE.Quaternion {
+    const f = this.fam;
+    if (!f.wrist || !this.hasCon) return f.back.q;
+    return this.backQ.copy(f.back.q).slerp(k.q, smoothstep(BACK_DROP0, BACK_DROP1, this.con.p.y - f.contact.p.y));
+  }
+
   /** The key's racket turned the least way to point from the hand's place (Family.wrist) at the ball. */
   private reachFrom(k: Key, w: THREE.Vector3): void {
     const wy = Math.max(k.p.y - HAND_UNDER, Math.min(k.p.y + HAND_OVER, w.y));
@@ -1281,7 +1292,7 @@ export class Avatar {
       this.ctrl.z -= f.loop;
     }
     bezier(bp, this.ctrl, k.p, e, this.kp);
-    this.kq.copy(f.back.q).slerp(k.q, e);
+    this.kq.copy(this.backTurn(k)).slerp(k.q, e);
     this.kpole.copy(f.back.pole).lerp(k.pole, e);
     this.koff.copy(f.back.off).lerp(k.off, e);
     this.kyaw = f.back.yaw + (k.yaw - f.back.yaw) * e;
@@ -1444,6 +1455,7 @@ export class Avatar {
         if (f.wrist && this.hasCon) {
           this.contactKey();
           this.kp.copy(this.backPoint());
+          this.kq.copy(this.backTurn(this.contactKey()));
         }
       }
       if (this.prepFromW > 0 && u < 1) this.blendFrom(u);
