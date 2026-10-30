@@ -32,6 +32,15 @@ const UP_Z_WEAK = 1.4;
 /** A style that likes the net stands closer in at the net (and a defensive one further out): NET_CLOSE (m) per unit
  * of its net trait away from 1 (data/ai.json). */
 const NET_CLOSE = 0.5;
+/** A pair at the net closes UP_IN (m) on a ball the opponents will meet under UP_PRESSED_Y or off their glass, drops
+ * UP_OUT on one they will meet over UP_FREE_Y, and the two stand UP_STAGGER either side of that depth (the published
+ * accounts are qualitative: the third shot is played from 3.84 +- 0.91 m, and "when one moves close to the net the
+ * partner drops back", Ramón-Llin 2019, 2021). */
+const UP_IN = 0.7;
+const UP_OUT = 0.7;
+const UP_PRESSED_Y = 0.75;
+const UP_FREE_Y = 1.1;
+const UP_STAGGER = 0.3;
 const SWITCH_BACK_T = 1.0;
 /** A back player steps READ_IN (m) in while our ball drops below READ_LOW (m) on the opponents' side. */
 const READ_IN = 1.0;
@@ -95,7 +104,28 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   // Our low ball at a pair at the net: the volley has to be lifted, soft and maybe short, so a back player steps in
   // to read it (from 8 m a drop volley landed 6.6 m from the nearest defender: review round 4, the pro's #2).
   const read = !up && !mid && m.lastStrikeTeam === team && m.ball.pos.z * s < 0 && m.ball.pos.y < READ_LOW && m.ball.vel.y <= 0;
-  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close : mid ? LOB_MID_Z : read ? BACK_Z - READ_IN : BACK_Z);
+  // The depth at the net breathes with the ball, and the pair staggers: the player on the ball's side closes, the
+  // other drops (review round 6, the pro's #6: both stood at 3.10 m whatever the opponents did, and 77% of net volleys
+  // were struck below the tape).
+  const breathe = up ? upDepth(m, team) : 0;
+  const stagger = up ? (((out.x - m.ball.pos.x) * (mate.pos.x - m.ball.pos.x) < 0 || abs(p.pos.x - m.ball.pos.x) <= abs(mate.pos.x - m.ball.pos.x)) ? -UP_STAGGER : UP_STAGGER) : 0;
+  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close + breathe + stagger : mid ? LOB_MID_Z : read ? BACK_Z - READ_IN : BACK_Z);
+}
+
+/**
+ * How far from UP_Z a pair at the net stands for the opponents' coming contact (m): in when it will be low or off
+ * their glass (they can only lift it), out when they have a ball to hit or lob from. Read off the taker's plan, as
+ * players read a body; no plan yet: no change.
+ */
+function upDepth(m: MatchSim, team: number): number {
+  if (m.rally.hitter !== team) return 0;
+  const k = m.taker[1 - team]!;
+  if (k < 0) return 0;
+  const ai = m.ai[k];
+  const plan = ai ? ai.standPlan : m.stand[k]!;
+  if (!plan.valid || plan.version !== m.pred.version) return 0;
+  if (plan.afterWall || plan.by < UP_PRESSED_Y) return -UP_IN;
+  return plan.by > UP_FREE_Y && !plan.overhead ? UP_OUT : 0;
 }
 
 /** The ball's next bounce on the floor is more than SWITCH_BACK_T away. (A boolean: a double returned from a call

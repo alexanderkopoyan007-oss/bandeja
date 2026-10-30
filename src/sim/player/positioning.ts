@@ -15,6 +15,8 @@ export interface StandPlan {
   t: number;
   bx: number;
   by: number;
+  /** Met on the run: the player arrives still moving. */
+  onRun: boolean;
   bz: number;
   /** +1 forehand, -1 backhand. */
   hand: number;
@@ -40,7 +42,7 @@ export interface StandPlan {
 }
 
 export function makeStandPlan(): StandPlan {
-  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, volleyKey: false, inTime: false, contra: false, turned: false, version: -1 };
+  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, onRun: false, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, volleyKey: false, inTime: false, contra: false, turned: false, version: -1 };
 }
 
 /** Margin kept between the ball's path and the body (on top of the body radius). */
@@ -66,6 +68,16 @@ const RISE_COST = 1.2;
 /** A volley planned more than BACK_VOLLEY_Z (m) from the net costs BACK_VOLLEY, plus BACK_VOLLEY_LOW per metre the
  * contact is below BACK_VOLLEY_WAIST (m). */
 const BACK_VOLLEY_Z = 5.8;
+/** Within NET_ZONE (m) of the net, what each metre given up to play a ball after its bounce costs. */
+const NET_ZONE = 4.6;
+const NET_HOLD = 0.1;
+/** A stroke on the run: what it costs against a set one, and the least time it leaves for the racket (s). */
+const STRETCH_COST = 0.5;
+const STRETCH_FEET = 0.03;
+const STRETCH_BACK = 0.5;
+/** A contact under DIE_MARGIN (s) before the ball's second bounce costs DIE_COST per second inside that margin. */
+const DIE_MARGIN = 0.4;
+const DIE_COST = 3;
 const BACK_VOLLEY = 0.4;
 const BACK_VOLLEY_LOW = 2.0;
 const BACK_VOLLEY_WAIST = 1.1;
@@ -116,10 +128,13 @@ export function planStand(
   const backZ = side > 0 ? p.maxZ : -p.minZ; // depth of the back limit (just in front of the glass)
   // Does the ball reach a wall after its bounce on our half (before bouncing again)?
   let wallIdx = -1;
+  let secondT = -1;
   for (let i = 0; i < pr.n; i++) {
-    if (pr.bounces[i]! === 1 && pr.walls[i]! > 0 && pr.z[i]! * side > 0) { wallIdx = i; break; }
-    if (pr.bounces[i]! > 1) break;
+    if (wallIdx < 0 && pr.bounces[i]! === 1 && pr.walls[i]! > 0 && pr.z[i]! * side > 0) wallIdx = i;
+    if (pr.bounces[i]! > 1) { secondT = pr.t[i]!; break; }
   }
+  // Holding the net: a ball passed by here is given up, and with it the net (see NET_HOLD).
+  const atNet = abs(p.pos.z) < NET_ZONE;
   let bestCost = 1e9;
   let found = false;
   let fbSlack = -1e9;
@@ -128,6 +143,7 @@ export function planStand(
   const wasContra = out.turned;
   out.valid = false;
   out.contra = false;
+  out.onRun = false;
   out.version = pr.version;
   out.overhead = overhead;
   out.volleyKey = volleyKey;
@@ -168,7 +184,10 @@ export function planStand(
     let useFh = overhead || abs(fhX - p.pos.x) <= abs(bhX - p.pos.x) + 0.6;
     let sx = clamp(useFh ? fhX : bhX, p.minX, p.maxX);
     let sz = clamp(z + side * (b === 0 ? behindV : behind), p.minZ, p.maxZ);
-    if (volleyKey) {
+    // (a net player meets a ball in the air the same way, whatever the key: a spot at a set distance from the ball had
+    // them walking to it, and a ball passing 0.8 m off the body was out of time from 3 m: the pro's #1)
+    const netVolley = atNet && !overhead && b === 0;
+    if (volleyKey || netVolley) {
       // Stay put if the ball passes within reach; otherwise the smallest step that brings it there, on the side
       // the player already is (forehand when it comes straight at them).
       const off = p.pos.x - x;
@@ -210,7 +229,13 @@ export function planStand(
         }
       }
     }
-    const slack = ti - now - need;
+    let slack = ti - now - need;
+    // Out of time to set the feet, in time to get there: a stroke on the run, for a ball that is otherwise lost (the
+    // pro's #3 and #24: 76% of shots were struck from a standstill and 15% of points ended on a ball nobody ran for).
+    // (across or forward: nobody strikes one running at their own glass, that is the contrapared's ball)
+    const onRun = slack < 0 && b === 1 && !overhead && !volleyKey && dist > 1e-3 && dz * side < STRETCH_BACK * dist
+      && ti - now - p.runT - STRETCH_FEET >= 0;
+    if (onRun) slack = 0;
     const afterWall = pr.walls[i]! > 0 && b === 1;
     // The easier ball: pace 14 m/s none, 26 m/s one unit; time since the strike 0.9 s none, 0.45 s one unit.
     let press = 0;
@@ -237,7 +262,14 @@ export function planStand(
         // volley would be played from: judged where the player was, defenders still on their way back volleyed 58%
         // of bandejas from 7 m at 0.6 m high (REVIEW.md round 3 #1).
         if (b === 0 && abs(sz) > BACK_VOLLEY_Z) cost += BACK_VOLLEY + BACK_VOLLEY_LOW * max(0, BACK_VOLLEY_WAIST - y);
+        // A net player's ball is the one in the air: backing off to wait for the rebound gives up the net (review
+        // round 6, the pro's #1: 31 reachable flat balls per 100 points were let past, 70% to be played off the glass).
+        if (atNet && b === 1) cost += NET_HOLD * (abs(sz) - abs(p.pos.z) > 0 ? abs(sz) - abs(p.pos.z) : 0);
+        // A ball about to die: the last moments before its second bounce are no plan to walk to (the pro's #3: 15% of
+        // points ended on a soft ball the defender was waiting for at the glass).
+        if (b === 1 && secondT >= 0 && secondT - ti < DIE_MARGIN) cost += DIE_COST * (DIE_MARGIN - (secondT - ti));
         cost += press;
+        if (onRun) cost += STRETCH_COST;
       }
       if (cost < bestCost && clearOfBall(pr, now, i, sx, sz, t.height, t.bodyRadius)) {
         bestCost = cost;
@@ -245,6 +277,7 @@ export function planStand(
         write(out, sx, sz, ti, x, y, z, useFh ? 1 : -1, afterWall, b === 0);
         out.inTime = true;
         out.contra = false;
+        out.onRun = onRun;
       }
     } else if (!found && slack > fbSlack) {
       fbSlack = slack;

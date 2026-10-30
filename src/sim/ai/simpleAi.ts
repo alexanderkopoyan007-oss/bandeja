@@ -552,8 +552,9 @@ export class SimpleAi {
     const stop = sqrt(2 * t.brake * 0.8 * d);
     if (v > stop) {
       // Short of time for an overhead: arrive still moving (Player.ohArrive; planStand counted on it).
-      const va = cap && chase ? SERVE_ARRIVE : p.ohArrive;
-      const late = (chase && this.overhead && need > stop) || (cap && chase) ? sqrt(va * va + 2 * t.brake * 0.8 * d) : stop;
+      const run = chase && this.st.onRun;
+      const va = (cap && chase) || run ? SERVE_ARRIVE : p.ohArrive;
+      const late = (chase && this.overhead && need > stop) || (cap && chase) || run ? sqrt(va * va + 2 * t.brake * 0.8 * d) : stop;
       v = v > late ? late : v;
     }
     const want = v / top;
