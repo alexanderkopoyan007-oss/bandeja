@@ -454,8 +454,8 @@ const LUNGE_REACH = 0.95;
 const LUNGE_BASE = 0.3;
 const LUNGE_LOW = 0.5;
 /** An overhead's feet: the racket-side foot back and the other forward (m), side-on (0.99 legs wide against 0.45). */
-const OH_FOOT_BACK = 0.32;
-const OH_FOOT_FRONT = 0.14;
+const OH_FOOT_BACK = 0.42;
+const OH_FOOT_FRONT = 0.2;
 /** Below this weight (the stroke's or the ready position's) the arm solve fades into the clip's arm. */
 const ARM_FADE = 0.15;
 /** Furthest a swing reaches past the arm (m: hand to the face's centre and the hips' reach), and the heights an
@@ -1413,7 +1413,7 @@ export class Avatar {
     if (this.inertial && (Avatar.inertMask & 24) !== 0) { this.keyT = t; this.smoothKey(); }
     // Low balls: bend the knees (contact or plan height), scaled by the stroke's weight.
     const cy = this.hasCon ? this.conW.y : 1;
-    this.crouch = f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) * this.w;
+    this.crouch = (f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) + (f.sit ?? 0)) * this.w;
     this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w : 0;
   }
 
