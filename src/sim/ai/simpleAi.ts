@@ -406,14 +406,18 @@ export class SimpleAi {
     // The partner's ball: keep to our own side of its line where it passes us, never across it (half the body
     // winners hit the player who wasn't taking the ball, mostly on their way across it to the formation spot, too
     // late to stop once they saw it: REVIEW.md round 2 #3).
-    if (coming) {
+    // Our own ball coming back over the net after its bounce is the same: a step out of its line (a smash winner that
+    // hit its own smasher lost 1.3% of points: round 7, the pro's #2).
+    const pr0 = m.pred;
+    if (coming || m.rally.hitter === this.team) {
       const now = m.time;
-      const pr = m.pred;
+      const pr = pr0;
       const h = p.tune.height;
       const pz = p.pos.z;
       for (let k = 0; k < pr.n; k++) {
         if (pr.t[k]! < now || pr.z[k]! * s <= 0 || pr.y[k]! > h) continue;
         if (pr.bounces[k]! > 1) break;
+        if (!coming && pr.bounces[k]! === 0) continue;
         const dz = pr.z[k]! - pz;
         if (dz > 0.15 || dz < -0.15) continue;
         const bx = pr.x[k]!;
@@ -429,7 +433,7 @@ export class SimpleAi {
       }
     }
     // In place by the next strike (about when the ball has bounced on its way to whoever plays it).
-    const pr = m.pred;
+    const pr = pr0;
     let by = m.time + 1;
     for (let i = 0; i < pr.n; i++) {
       if ((pr.flags[i]! & PF_FLOOR) !== 0) { by = pr.t[i]! + 0.25; break; }
@@ -557,7 +561,9 @@ export class SimpleAi {
     // Following the serve in: a run, not a sprint, still moving as the return is struck and through the third shot
     // (peak 2.93 +- 0.43 m/s, 5.08 m from the net at the return, the third from 3.84 m at about 2 m/s: Ramon-Llin 2021;
     // here 4.5 m/s to a stop at 4.09 m: review round 5, the pro's #4).
-    const cap = this.serveIn;
+    // The cap is the run in: a ball that needs more than that is chased (singles' server jogged after the return and
+    // lost it, 11% of points: round 7, the pro's #3).
+    const cap = this.serveIn && (!chase || need <= SERVE_RUN);
     if (cap && v > SERVE_RUN) v = SERVE_RUN;
     const stop = sqrt(2 * t.brake * 0.8 * d);
     if (v > stop) {
@@ -626,7 +632,7 @@ export class SimpleAi {
       this.ohKind = OH_ANY;
       const k = this.overhead ? -1 : keep;
       if (!(close && k >= 0 && planStand(pr, p, s, now, m.rally.isServe, st, k, true, false))) {
-        if (!planStand(pr, p, s, now, m.rally.isServe, st, k, false, false)) { this.planned = false; this.contra = false; return; }
+        if (!planStand(pr, p, s, now, m.rally.isServe, st, k, false, false)) { this.planned = false; this.contra = false; m.handOver(this.index); return; }
       }
     }
     // A hard ball on its way to the glass with no time to set up for it: wait for it off the wall, out of its line. The
@@ -677,7 +683,7 @@ export class SimpleAi {
         t = hit >= 0 ? max(w.start, min(w.ideal, hit - 0.09)) : w.ideal;
         height = w.height;
         volley = w.volley;
-      }
+      } else if (!st.inTime) m.handOver(this.index);
     }
     const changed = !this.planned || abs(t - this.idealT) > 0.15;
     this.standX = sx;

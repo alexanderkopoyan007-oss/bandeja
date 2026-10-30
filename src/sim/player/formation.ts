@@ -8,8 +8,9 @@ export const UP_Z = 3.1;
 export const BACK_Z = 8.0;
 /** Half the gap between partners (m) and how far the pair follows the ball across (share of its x), up and back.
  * No published distance between partners exists (OPEN_QUESTIONS.md); these are coaching geometry, checked against
- * the volley winners and middle balls in tools/match-stats.ts. */
-const UP_HALF_GAP = 1.7;
+ * the volley winners and middle balls in tools/match-stats.ts. At the net 2.9 m apart: at 3.4 m a ball down the middle
+ * passed 1.7 m from both, and flat balls that far off got past 30% of the time (round 7, the pro's #1). */
+const UP_HALF_GAP = 1.45;
 const BACK_HALF_GAP = 2.3;
 const UP_FOLLOW = 0.4;
 const BACK_FOLLOW = 0.3;

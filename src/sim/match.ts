@@ -1046,6 +1046,16 @@ export class MatchSim {
   standDown(i: number): void {
     const p = this.players[i]!;
     if (this.ai[i] && p.swing === SW_CHARGE) p.swing = SW_IDLE;
+    this.handOver(i);
+  }
+
+  /** The taker can't get to it: the ball is their partner's at once, while it is still in the air between them. */
+  handOver(i: number): void {
+    if (!this.doubles) return;
+    const team = i & 1;
+    if (this.taker[team] !== i) return;
+    const o = i ^ 2;
+    if (this.claimCost(o, this.side(team), this.time) < CLAIM_OUT) this.setTaker(team, o);
   }
 
   private setTaker(team: number, i: number): void {
@@ -1059,7 +1069,11 @@ export class MatchSim {
   private claimCost(i: number, s: number, t0: number): number {
     const p = this.players[i]!;
     const plan = this.claim[i]!;
-    if (!planStand(this.pred, p, s, t0, this.rally.isServe, plan, -1, false, false)) return CLAIM_OUT * 2;
+    // Judged from when an AI will actually move: a claim made from the strike's own tick had the net player take a ball
+    // down the middle that they could no longer reach once they had reacted (round 7, the pro's #1).
+    const ai = this.ai[i];
+    const from = ai && ai.reactAt > t0 ? ai.reactAt : t0;
+    if (!planStand(this.pred, p, s, from, this.rally.isServe, plan, -1, false, false)) return CLAIM_OUT * 2;
     const dx = plan.x - p.pos.x;
     const dz = plan.z - p.pos.z;
     return sqrt(dx * dx + dz * dz) + (plan.inTime ? 0 : CLAIM_OUT);

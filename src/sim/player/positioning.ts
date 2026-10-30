@@ -236,8 +236,10 @@ export function planStand(
     // Out of time to set the feet, in time to get there: a stroke on the run, for a ball that is otherwise lost (the
     // pro's #3 and #24: 76% of shots were struck from a standstill and 15% of points ended on a ball nobody ran for).
     // (across or forward: nobody strikes one running at their own glass, that is the contrapared's ball)
-    const onRun = slack < 0 && b === 1 && !overhead && !volleyKey && dist > 1e-3 && dz * side < STRETCH_BACK * dist
-      && ti - now - p.runT - STRETCH_FEET >= 0;
+    // And a ball in the air at the net, met on the move with no stop and no setting the feet: the server running in was
+    // short of a return down the middle by the stop alone, 0.05 s, and let it by (round 7, the pro's #1).
+    const onRun = slack < 0 && dist > 1e-3 && ti - now - p.runT - STRETCH_FEET >= 0
+      && (netVolley || (b === 1 && !overhead && !volleyKey && dz * side < STRETCH_BACK * dist));
     if (onRun) slack = 0;
     const afterWall = pr.walls[i]! > 0 && b === 1;
     // The easier ball: pace 14 m/s none, 26 m/s one unit; time since the strike 0.9 s none, 0.45 s one unit.
