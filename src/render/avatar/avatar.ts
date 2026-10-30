@@ -318,6 +318,8 @@ const ANKLE_MIN = 0.08;
 const RACKET_TURN_RATE = (3600 * Math.PI) / 180;
 /** Most the racket tips about the ball when the arm can't reach it (rad, tipRacket): past this the face no longer looks at the target. */
 const TIP_MAX = 1;
+/** Fastest the body's turn away from a wall changes (rad/s). */
+const WALL_YAW_RATE = 8;
 /** Face centre to the top of the frame (m), and how close the frame comes to the floor when it tips. */
 const RACKET_TOP = 0.17;
 const RACKET_FLOOR = 0.02;
@@ -733,6 +735,8 @@ export class Avatar {
   private readonly footQR = new THREE.Quaternion();
   private readonly tgt = new THREE.Vector3();
   private readonly pole = new THREE.Vector3();
+  /** The body's turn away from a wall as shown (WALL_YAW_RATE). */
+  private wallYaw = 0;
   /** The racket's tip about a ball out of reach (tipRacket; rad), and that turn. */
   private tip = 0;
   private readonly tipQ = new THREE.Quaternion();
@@ -1620,7 +1624,12 @@ export class Avatar {
     const turn = this.kyaw * this.w + this.readyKey.yaw * this.ready * (1 - this.w);
     const btTo = this.w > 0.01 ? this.fam.bodyTurn ?? BODY_TURN : this.addr ? SERVE_TURN_SHARE : BODY_TURN;
     this.bt += (btTo - this.bt) * (dt > 0 && !cut ? 1 - Math.exp(-dt / 0.12) : 1);
-    const wallYaw = -this.hand * this.handed * (this.hand > 0 ? WALL_TURN : WALL_TURN_BH) * this.wall * sq;
+    // No faster than a body turns: the turn away from a wall changes sides with the stroke's hand (the hips 77° in a
+    // frame on a monkey's change of hand beside the glass).
+    const wallTo = -this.hand * this.handed * (this.hand > 0 ? WALL_TURN : WALL_TURN_BH) * this.wall * sq;
+    const wallLim = cut ? Math.PI : WALL_YAW_RATE * dt;
+    const wallYaw = Math.min(this.wallYaw + wallLim, Math.max(this.wallYaw - wallLim, wallTo));
+    this.wallYaw = wallYaw;
     this.chestTurn = turn + wallYaw;
     const yRoot = ys + turn * this.bt + wallYaw;
     this.root.rotation.y = yRoot;

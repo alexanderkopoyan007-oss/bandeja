@@ -1217,6 +1217,8 @@ const RUSH_V = 15;
 /** Below this height (m) a ball off the glass can be taken at waist height, not over the shoulder. */
 const OFF_GLASS_Y = 1.45;
 const OFF_GLASS_OUT = 0.5;
+/** Fastest a ball off the glass may be rising for the planner to meet it there (m/s). */
+const OFF_GLASS_RISE = 1.5;
 /** The server's run in, and their speed through the third shot (m/s). */
 const SERVE_RUN = 3.0;
 const SERVE_ARRIVE = 2.0;
@@ -1232,7 +1234,8 @@ function offGlassLow(pr: Prediction, side: number, halfL: number): number {
     if (b > 1) break;
     if (b !== 1 || pr.walls[i]! === 0 || pr.z[i]! * side <= 0) continue;
     wall = true;
-    if (pr.y[i]! < OFF_GLASS_Y && halfL - abs(pr.z[i]!) > OFF_GLASS_OUT) return pr.t[i]!;
+    // Not as it climbs: just off the glass the ball is low, and going up at 5-8 m/s.
+    if (pr.y[i]! < OFF_GLASS_Y && halfL - abs(pr.z[i]!) > OFF_GLASS_OUT && pr.y[i]! - pr.y[i - 1]! < OFF_GLASS_RISE * (pr.t[i]! - pr.t[i - 1]!)) return pr.t[i]!;
   }
   return wall ? CLIMBS : -1;
 }

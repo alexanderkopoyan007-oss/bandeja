@@ -21,7 +21,7 @@ describe('contrapared stroke', () => {
     const L = [false, true, true, false];
     const facing: number[] = [];
     let n = 0;
-    for (const [seed, lefty] of [[3, L], [6, []]] as Array<[number, boolean[]]>) {
+    for (const [seed, lefty] of [[3, L], [6, []], [9, []]] as Array<[number, boolean[]]>) {
       let seen = 0;
       const r = runAnimQa(a, {
         seed, seconds: 240, lefty,
