@@ -453,6 +453,14 @@ def finish(yb, spec, out, preview=False):
         elif kd in ALPHA_PARTS:
             paste(alpha, img_of(o), RECT[kd])
 
+    # ---------- the suit's sculpted folds (one file for everybody in that suit) ----------
+    if spec['clothes'][0] == 'male_casualsuit06':
+        n_png = AssetService.find_asset_absolute_path('male_casualsuit06/male_casualsuit06_normal.png', asset_subdir='clothes')
+        n_img = bpy.data.images.load(n_png)
+        n_img.colorspace_settings.name = 'Non-Color'
+        save(pixels(n_img, 1024, 1024), (1024, 1024), os.path.join(os.path.dirname(out.rstrip('/')), 'suit-normal.webp'), False)
+        bpy.data.images.remove(n_img)
+
     # ---------- the scalp and brows under the hair ----------
     t0 = time.time()
     skin = opaque[0:RECT['skin'][3], 0:RECT['skin'][2]]

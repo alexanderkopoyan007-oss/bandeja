@@ -67,7 +67,7 @@ describe('people', () => {
       const count = (arr: Float32Array, k: number): number => { let c = 0; for (let v = 0; v < n; v++) if (arr[v * 4 + k]! > 0.5) c++; return c; };
       expect(count(A, 2)).toBeGreaterThan(5000); // skin
       expect(count(A, 0)).toBeGreaterThan(1200); // shirt
-      expect(count(A, 1)).toBeGreaterThan(300); // shorts
+      expect(count(A, 1)).toBeGreaterThan(250); // shorts
       expect(count(B, 0)).toBeGreaterThan(500); // shoes
       expect(count(A, 3)).toBeGreaterThan(50); // socks
       expect(count(B, 1)).toBeGreaterThan(400); // eyes

@@ -29,3 +29,18 @@ export function heightBump(height: THREE.Node<'float'>, cell: number): THREE.Nod
   const grad = det.sign().mul(dFdx(height).mul(r1).add(dFdy(height).mul(r2))).mul(keep);
   return det.abs().mul(n).sub(grad).normalize();
 }
+
+/**
+ * A view-space normal for `material.normalNode` from a tangent-space normal map's xy (-1..1), on a mesh without
+ * tangents: the frame comes from the screen derivatives of the position and `uv` (Schüler, "Followup: Normal Mapping
+ * Without Precomputed Tangents", 2013).
+ */
+export function uvNormal(xy: THREE.Node<'vec2'>, uv: THREE.Node<'vec2'>): THREE.Node<'vec3'> {
+  const dp1 = dFdx(positionView), dp2 = dFdy(positionView), d1 = dFdx(uv), d2 = dFdy(uv);
+  const n = normalView;
+  const p2 = dp2.cross(n), p1 = n.cross(dp1);
+  const t = p2.mul(d1.x).add(p1.mul(d2.x)), b = p2.mul(d1.y).add(p1.mul(d2.y));
+  const m = max(t.dot(t), b.dot(b)).sqrt().max(1e-9);
+  const z = float(1).sub(xy.dot(xy)).max(0).sqrt();
+  return t.div(m).mul(xy.x).add(b.div(m).mul(xy.y)).add(n.mul(z)).normalize();
+}

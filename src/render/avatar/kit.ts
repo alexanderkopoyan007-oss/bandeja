@@ -6,10 +6,11 @@
 // turns shinier as it sweats. Shirt and shorts hems lag the body when it accelerates.
 import * as THREE from 'three/webgpu';
 import {
+  vec2,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
   mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor,
 } from 'three/tsl';
-import { heightBump, footprintKeep } from '../bump.ts';
+import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import type { PlayerAsset } from './asset.ts';
 
 export const R_SHIRT = 0, R_SHORTS = 1, R_SKIN = 2, R_HAIR = 3, R_SOCK = 4, R_SHOE = 5;
@@ -290,6 +291,7 @@ class SkinLighting extends THREE.PhysicalLightingModel {
 }
 const SKIN_WRAP = 0.55;
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
+const FOLD_DEPTH = 1;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;
 const LID_PLAIN = 1;
@@ -369,7 +371,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const skinCol = skinBase.mul(mix(float(1), tex.w, 0.3)).mul(float(1).add(smoothstep(0.4, 0.12, tex.y).mul(0.3)));
   // (the source draws a brown iris dark red: its green and blue are lifted to the red's; whites and blue or green irises
   // keep theirs)
-  const eyeCol = vec3(tex.x, max(tex.y, tex.x.mul(0.58)), max(tex.z, tex.x.mul(0.34))).mul(float(0.74).add(vAO.mul(0.26)));
+  // (a little darker than the source, and well under the lid's shadow: at 0.74 the eyes shone out of the sockets)
+  const eyeCol = vec3(tex.x, max(tex.y, tex.x.mul(0.58)), max(tex.z, tex.x.mul(0.34))).mul(0.8).mul(float(0.5).add(vAO.mul(0.5)));
   // (teeth sit at occlusion about 0.27: multiplied straight they rendered blue-grey, 100 of 239: review round 5, the
   // critic's #4. The throat, below 0.1, stays dark.)
   const mouthCol = tex.xyz.mul(float(0.2).add(smoothstep(0.1, 0.4, tex.w).mul(0.8)));
@@ -418,7 +421,13 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // less on the lips and lids.
   const pores = mx_noise_float(p.mul(1900)).mul(0.6).add(mx_noise_float(p.mul(620)).mul(0.4))
     .mul(0.000012).mul(skinW).mul(float(1).sub(lips.mul(0.7)).sub(lids.mul(0.5))).mul(footprintKeep(0.0012));
-  m.normalNode = heightBump(folds.mul(fabric).mul(0.0025).add(pores), 0.023);
+  // The suit's sculpted folds, MakeHuman's own normal map, over the suit's rectangle of the atlas (finish-player.py RECT).
+  const bumped = heightBump(folds.mul(body.clothNormal ? sockW : fabric).mul(0.0025).add(pores), 0.023);
+  if (body.clothNormal) {
+    const suitUv = vec2(uv().x.sub(2 / 3).mul(3), uv().y.sub(0.5).mul(2));
+    const fold = texture(body.clothNormal, suitUv).xy.mul(2).sub(1);
+    m.normalNode = mix(bumped, uvNormal(fold.mul(FOLD_DEPTH), uv()), shirtW.add(shortsW));
+  } else m.normalNode = bumped;
   const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
   const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);
   m.positionNode = hemLag(lag, shirtSway.add(shortsSway));

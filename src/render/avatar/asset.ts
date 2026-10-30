@@ -84,6 +84,8 @@ export interface BodyLook {
   /** The atlases (null until loaded: node tools and tests never load them). */
   opaqueMap: THREE.Texture | null;
   alphaMap: THREE.Texture | null;
+  /** The suit's sculpted folds, a tangent-space normal map over the suit's own UVs (everyone's suit is the same one). */
+  clothNormal: THREE.Texture | null;
   textures: { opaque: string; alpha: string };
   /** The face's keys by name, in the order of every morphed mesh's influences (empty for a version-2 person). */
   morphs: string[];
@@ -167,11 +169,22 @@ async function loadPerson(base: PlayerAsset, name: string, progress?: (frac: num
   try {
     const p = parseBodyAsset(await fetchGz(dir + name + '.bnz', progress), base);
     const look = p.look!;
-    [look.opaqueMap, look.alphaMap] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha)]);
+    [look.opaqueMap, look.alphaMap, look.clothNormal] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha), suitNormal(texture)]);
     base.people.push(p);
   } catch (err) {
     console.warn(`person ${name} not loaded, that player is the mannequin:`, err);
   }
+}
+
+/** One copy for everybody; a player without it keeps the shader's noise folds. */
+let suitNormalMap: Promise<THREE.Texture | null> | null = null;
+function suitNormal(texture: (name: string) => Promise<THREE.Texture>): Promise<THREE.Texture | null> {
+  suitNormalMap ??= texture('suit-normal.webp').then((t) => {
+    t.colorSpace = THREE.NoColorSpace;
+    t.needsUpdate = true;
+    return t;
+  }, () => null);
+  return suitNormalMap;
 }
 
 async function fetchGz(url: string, progress?: (frac: number) => void): Promise<ArrayBuffer> {
@@ -436,7 +449,7 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     clips.set(name, { ...c, hips, speed: c.speed * h.hips });
   }
   return assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
-    name: h.name, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, textures: h.textures, morphs, face,
+    name: h.name, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, textures: h.textures, morphs, face,
   });
 }
 

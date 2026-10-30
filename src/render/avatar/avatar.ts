@@ -323,8 +323,12 @@ const WALL_YAW_RATE = 8;
 /** Face centre to the top of the frame (m), and how close the frame comes to the floor when it tips. */
 const RACKET_TOP = 0.17;
 /** The hand's height at a volley: most above the ball (m, the racket's head dropped) and below it (the head up). */
-const HAND_OVER = 0.28;
+const HAND_OVER = 0.1;
 const HAND_UNDER = 0.3;
+const VOLLEY_ARM = 0.84;
+const BACK_FOLLOW = 0.8;
+const BACK_LOW = -0.7;
+const BACK_HIGH = 0.3;
 const HAND_TO_BALL = 0.36;
 const shaftTo = new THREE.Vector3();
 const shaftFrom = new THREE.Vector3();
@@ -716,6 +720,7 @@ export class Avatar {
   private readonly fadeOk = new Uint8Array(2);
   /** The contact pulled in to reach (contactKey). */
   private readonly conClamp = new THREE.Vector3();
+  private readonly backP = new THREE.Vector3();
   private hasCon = false;
   /** Stroke weight (0 = pure locomotion) and the blended key it is pulling towards (model space). */
   w = 0;
@@ -1218,6 +1223,16 @@ export class Avatar {
     return k;
   }
 
+  /** Where the racket waits: a volley's take-back goes with the ball's height (`con` holds this contact), so that a low
+   * volley is a short punch with the legs under it, not an arm dropped from the shoulder (elbow 110 at -0.1 s, 31 at
+   * contact: round 7, the pro's #4). */
+  private backPoint(): THREE.Vector3 {
+    const f = this.fam;
+    if (!f.wrist || !this.hasCon) return f.back.p;
+    const d = this.con.p.y - f.contact.p.y;
+    return this.backP.copy(f.back.p).setY(f.back.p.y + BACK_FOLLOW * (d < BACK_LOW ? BACK_LOW : d > BACK_HIGH ? BACK_HIGH : d));
+  }
+
   /** The key's racket turned the least way to point from the hand's place (Family.wrist) at the ball. */
   private reachFrom(k: Key, w: THREE.Vector3): void {
     const wy = Math.max(k.p.y - HAND_UNDER, Math.min(k.p.y + HAND_OVER, w.y));
@@ -1235,18 +1250,19 @@ export class Avatar {
     this.keyS = s;
     const f = this.fam;
     const k = this.contactKey();
+    const bp = this.backPoint();
     // Accelerating into the ball along a curve below (groundstrokes) or behind the head (overheads).
     const e = Math.pow(s, 1.7);
     if (f.via) {
       // The control point that puts the curve through `via` at its moment: B(ev) = via.
       const ev = Math.pow(f.viaS ?? 0.5, 1.7), u = 1 - ev, c = 1 / (2 * ev * u);
-      this.ctrl.copy(f.via).addScaledVector(f.back.p, -u * u).addScaledVector(k.p, -ev * ev).multiplyScalar(c);
+      this.ctrl.copy(f.via).addScaledVector(bp, -u * u).addScaledVector(k.p, -ev * ev).multiplyScalar(c);
     } else {
-      this.ctrl.copy(f.back.p).lerp(k.p, 0.5);
+      this.ctrl.copy(bp).lerp(k.p, 0.5);
       this.ctrl.y -= f.dip;
       this.ctrl.z -= f.loop;
     }
-    bezier(f.back.p, this.ctrl, k.p, e, this.kp);
+    bezier(bp, this.ctrl, k.p, e, this.kp);
     this.kq.copy(f.back.q).slerp(k.q, e);
     this.kpole.copy(f.back.pole).lerp(k.pole, e);
     this.koff.copy(f.back.off).lerp(k.off, e);
@@ -1407,6 +1423,10 @@ export class Avatar {
         // last stroke's 0.99 left over here cancelled its carried push on almost every backswing frame).
         this.keyS = 0;
         this.setKey(f.back, f.back, 1);
+        if (f.wrist && this.hasCon) {
+          this.contactKey();
+          this.kp.copy(this.backPoint());
+        }
       }
       if (this.prepFromW > 0 && u < 1) this.blendFrom(u);
       this.w = this.prepFromW + (1 - this.prepFromW) * u;
@@ -2172,9 +2192,11 @@ export class Avatar {
     // Leaning in over the last LEAN_FROM s before the contact, not from the start of the prep (from the contact's key
     // the hips leaned 18 cm towards a ball 0.4 s away at p90, and 20-29 cm through a serve's toss).
     const lean = before ? smoothstep(LEAN_FROM, LEAN_FULL, left) : 1;
-    const short = len > 1e-3 ? Math.max(0, len - this.armLen * 0.96) * this.w * lean : 0;
+    // (a volley is punched from a bent arm, elbow 63 on video: the body goes to the ball, not the arm)
+    const armTo = this.armLen * (this.fam.wrist ? VOLLEY_ARM : 0.96);
+    const short = len > 1e-3 ? Math.max(0, len - armTo) * this.w * lean : 0;
     // How far above the arm's reach the contact is, whole (the smash's hop is decided before the lean is in).
-    this.upNeed = before && len > 1e-3 && dy > 0 ? (Math.max(0, len - this.armLen * 0.96) * dy) / len : 0;
+    this.upNeed = before && len > 1e-3 && dy > 0 ? (Math.max(0, len - armTo) * dy) / len : 0;
     const dh = Math.sqrt(dx * dx + dz * dz);
     const push = dh > 1e-3 ? Math.min(0.4, (short * dh) / len) : 0;
     let rx = dh > 1e-3 ? (dx / dh) * push : 0;
