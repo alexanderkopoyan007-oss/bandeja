@@ -2260,3 +2260,27 @@ embrace and the bow are keys (`HUG`, `KNEES`) through the racket tap's mix.
 **Knock-out and Practice** are the smallest honest answer to "one mode". The coach feeds with the serve's own motion, so nothing
 new had to be animated and the rules treat a feed as a rally ball (`cfg.practice`). A guided first match, which replaces the key
 panel, touches the HUD and is the owner's to see first.
+
+**After round 4: the determinism test, and what the cast cost (2026-10-30)**
+
+**The warm-up got its own net.** `is deterministic` failed after the AI changes: seed 42 hashed 3080249363 then 1581959315. The
+first diff was tick 0, and only the first sim built in a process differed. `makeNetCloth` warmed the first net with six throws and
+handed that same net to the match: its scratch fields stayed as the throws left them, and `reset()` wrote +0 to `quiet` where a
+fresh net holds -0, which the hash reads as different bits. The test had passed only because a hit on the net overwrites `quiet`
+and the new RNG stream is the first where seed 42 stays off the net for 83 s. Resetting `quiet` to -0 would have passed the test
+and left the rest of the scratch behind, so the warm-up now throws at a net of its own. `tests/sim/match.test.ts` holds it.
+
+**Two tests were under-powered, not wrong.** Styles head to head ran 8 seeds x 300 s, where the gap swings -7% to +6% between
+seed groups; whole matches give Muro 27%, Martillo 38.5% (three ranges of 24 seeds). It now runs 900 s a seed with the same 3%
+bound. The human bot's contrapared rate is 87 of 161 plans over 48 seeds (0.48-0.60 by group of 16), and the bug it guards gave
+0.19, so the bound is 0.4, not 0.5.
+
+**The cast did cost load time, against what the entry above expected.** "Ten people cost no more than four" held for the
+download and for the first play, not for the next match: on the slow-laptop proxy Quick match went from 5.2 s to 13.2 s, about 4 s
+of it fetching four new people. The next seed is known, so the title and the results screen fetch that match's cast ahead
+(`App.fetchAhead`), and a match joins any fetch under way (`fetching` in asset.ts). Only behind the title and the results, never
+during a match: parsing a person is main-thread work, and nothing should hitch in a rally. Textures decode in `createImageBitmap`
+now, flipped there because WebGL can't flip an ImageBitmap at upload, with straight alpha because the alpha is the skin's
+occlusion. Measured at CPU 4x, fetched ahead: 3.5-3.7 s over eight casts. The swings of 5-9 s seen first were other sessions'
+Chromes on the machine; shader builds were 151 before and after, and the shader text only 4% longer.
+
