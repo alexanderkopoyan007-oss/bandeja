@@ -498,6 +498,34 @@ Before | after:
   - The sim's p99 a frame rose 1.0 → 1.7-1.8 ms at CPU 4×, and 0.2 → 0.4 ms unthrottled. This is round 3's AI
     planning: replays off read the same.
 
+### Review round 4 (`REVIEW.md`)
+Two fresh reviews found ten Highs, none Critical (`docs/review/round4-*.md`), and two of them were new. Eight Highs are
+fixed. The people (#7) are better and close to what the MakeHuman source can give, and the modes (#10) are better, with
+a guided first match, career and online still on the roadmap. Numbers from 2000 points at level 1. Before | after:
+
+| | Before | After | Real life |
+|---|---|---|---|
+| Flat shots, cross-court / down the line (pro #1) | 42 / 58 | 56.4 / 43.6 | 57.5 / 42.5 (WPT) |
+| The outer metre of the court, share of flat shots (pro #1) | 1.6% | 5.7% | |
+| Back-glass climbs, share of shots (pro #11) | 20.6% | 15.8% | 12.8% |
+| Drop volleys a point; contact height (pro #2) | 0.26, from 0.69 m | 0.05, from 1.20 m | |
+| Serve: side glass / T / middle (pro #3) | even round the box | 57-60 / 25 / 15-17 | 64.6 / 24.3 / 11.1 |
+| Bandejas volleyed on the full against two players back (pro #4) | 20% | 9.4% | let through to the glass |
+| Singles: points ended on the full into a wall (pro #5) | 38% | 13.2% | |
+| Singles: volleys, share of shots (pro #6) | 3.7% | 11.2% | |
+| Singles: server's distance from the net at the return, p10 / p50 / p90 (pro #6) | 7.60 m every time | 4.13 / 4.76 / 7.61 m | our variant |
+
+- **Up close (critic #7).** The violet in the eye sockets, the lavender eye whites and the pale band under the jaw were
+  our own shading, not the source. Skin now takes a warm ambient light, the irises are brown, the eyes have a
+  catchlight, dark skin keeps its sheen, and hair and shoes have detail. Close up they still read as well-made game
+  characters, not photographs.
+- **The match end (critic #8).** The winners run to each other and embrace, the losers bend over with their hands on
+  their knees, then both pairs walk to the net.
+- **The cast (critic #9).** Ten people, four of them women, in men's or women's matches, with eight kits and names
+  from nations that fit the face. Only the four people on court are loaded for a match.
+- **Modes (critic #10).** A three-round knock-out and four practice drills: back glass, side glass, lobs and overheads,
+  and volleys.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.
@@ -536,3 +564,10 @@ Before | after:
     would never be played.
   - The stadium's end stand hid when the camera passed its front row, not its back row, so the rows in front of a
     closer camera went missing.
+- **Review round 4's fixes turned up:**
+  - The first net built in a page took the warm-up's throws and then served as the first match's net. Its leftovers
+    made the first match differ from every later one until the net was next hit, and the determinism test showed it
+    only once a seed stayed off the net for 83 s.
+  - The ambient light on skin didn't change at all at first: three adds the environment's diffuse in its specular
+    step, so both had to be overridden.
+  - One skin made Blender quit silently during the build, and one hairstyle covered an eye. Both were swapped.
