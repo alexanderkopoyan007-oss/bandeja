@@ -283,7 +283,7 @@ const FINISH_EASE = 0.15;
  * The share of a low ball's shortfall the hips take by dropping; the rest is left to the upper body bending towards
  * it (SPINE_REACH, after the legs): taken by the hips alone every ball under 0.6 m was met in a full squat.
  */
-const DOWN_SHARE = 0.35;
+const DOWN_SHARE = 0.22;
 /** The share more for a ball just off the ground (under DOWN_LOW1 m, from DOWN_LOW0): a half-volley is got down to. */
 const DOWN_LOW = 0.45;
 const DOWN_LOW0 = 0.4, DOWN_LOW1 = 0.15;
@@ -396,7 +396,7 @@ const SERVE_STAND = 0.8;
  */
 const READY_UP = 1.1;
 /** How much of the crouch for a low ball the knees take, and how far the trunk folds for it instead (rad, at 0.4 m). */
-const CROUCH_SHARE = 0.4;
+const CROUCH_SHARE = 0.3;
 const LOW_BEND = 0.75;
 /**
  * How quickly an overhead (Family.stand) stands the trunk up (s): it is played upright, the head under the ball's
@@ -451,8 +451,8 @@ const LUNGE_REACH = 0.95;
  * meet groundstrokes on a base 1.2 legs wide, the feet well apart and the knees easy (43/40 degrees, MediaPipe on WPT
  * photos), and a low ball with the trail leg nearly straight (45/21), the trunk folded 45 degrees: a lunge and a bend
  * from the hips, where this got low by a squat (107/83) on feet at 0.9 legs. */
-const LUNGE_BASE = 0.3;
-const LUNGE_LOW = 0.5;
+const LUNGE_BASE = 0.42;
+const LUNGE_LOW = 0.58;
 /** An overhead's feet: the racket-side foot back and the other forward (m), side-on (0.99 legs wide against 0.45). */
 const OH_FOOT_BACK = 0.42;
 const OH_FOOT_FRONT = 0.2;
