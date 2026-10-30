@@ -203,3 +203,35 @@ Earlier statuses corrected by round 4:
 - R3 #27 (lobs scarce): closed. 1.9 a point against about 2.0.
 - R3 #21 "limited by the source" was wrong for the eyes: the violet, the orange and the lavender were our shading.
 - R3 #5, #8 and #11 were Better, not Fixed.
+
+## Round 5
+
+Two reviews written blind on phase9 at 59125d6. The full reports are `docs/review/round5-pro.md` and
+`docs/review/round5-critic.md`. Nothing was Critical. Nine Highs were new (P #1-3, #5; C #1-4, #6), so the loop goes on to
+round 6. Numbers after the fix: 2000 points at level 1 (`--seed0 1701`), men's and women's, and `tools/anim-check.ts`.
+
+| # | Rank | Finding | Mark | Status |
+|---|---|---|---|---|
+| 1 | High | P: smashes are answered on the rise | NEW | Better. Felt grips less the harder it is pressed (`muFall`, pinned to Cross's and the ITF's numbers), and a defender plans for the ball's fall off the glass, or gives it up if it only climbs. Of 842 smashes, no reply 513, on the rise 213 (68 of them contraparedes), off the wall 112: 65% of replies on the rise, against under 15% wanted. Smash W 58.7 (45), FE 5.7 (0.8), UE 4.2 (6). Still High |
+| 2 | High | P: net volleys run backwards | NEW | **Fixed.** High W 5.8 L 2.2; low W 0.5 L 6.2. The shot's height and depth were only set for overheads |
+| 3 | High | P: lobs sail out over the side fence | NEW | **Fixed.** 1.5-2.7% of points |
+| 4 | High | P: the server sprints in and parks | REPEAT R4 #13 | Better. Third shot taken from 4.03 m (3.84 wanted) |
+| 5 | High | P: women's matches are men's matches | NEW | Better. A table of published differences (`ai-skill.json` `women`): winners 73 / 17 / 4 (76.9 / 11.8 / 11.3), first serves in 89.5 (87.7), speed 0.93. The serving pair still wins 58 (48.5), the gap in `OPEN_QUESTIONS.md` |
+| 6 | High | C: women play in men's clothes | NEW | **Fixed.** A fitted top and shorts, separated by mesh piece |
+| 7 | High | C: you become someone else every game | NEW | **Fixed.** Rematch keeps the whole cast; On to the next round keeps your pair and deals new rivals |
+| 8 | High | C: singles cuts to an empty court | NEW | **Fixed.** The cut-away finds the winner with one player a side |
+| 9 | High | C: women grunt in men's voices | NEW | **Fixed.** Four women's voices (f0 172-231 Hz) |
+| 10 | High | C: the people don't reach "actual humans" close up | REPEAT | Open for the faces (MetaHuman pilot, the owner's request). Teeth shading and three new haircuts done |
+| 11 | High | C: the racket misses the ball on one contact in twenty | REPEAT R4 #27, R3 #20 | Better. The miss was reach, not timing: the racket now tips about a ball the arm can't reach, off the floor. Worst 27.6 → 15.1 cm over 720 s, none over 15.1 in about 440 contacts. Balls under 0.16 m stay 9-15 cm off; the frame can't go further down |
+| 12 | Medium | C: overheads start late and end at a pose | NEW | Better for the start: 0.45 s up, 0.75 s pressed. The akimbo tail stands |
+| 13 | Medium | Pose pass against 33 tour photos (the owner's request, not a finding) | | Ready stance 47 → 20.5° (5-19), bandeja hips 76° shoulders side-on. Bandeja elbow still 100 against 47 |
+| 14+ | Medium | P #6-22, C #7-9, #11-15, #17-23 | | Open |
+| 36+ | Low | P #23-29, C #24-37 | | Open |
+
+Earlier statuses corrected by round 5:
+- R4 #20 "Fixed": fixed at a price. El Muro now loses all three pairings by 4-6 points.
+- R4 #12 "Better: 75-82": 74.8-76.3, the floor is the ceiling.
+- R4 #19: forced errors 25.7-26.0, not 27-28.
+- R1 #3: all walls 28.0 against 19.0; side + double 12.2 against 6.2.
+- R4 #9 and #8 were Better, not Fixed. R2 #5 held for doubles only.
+- R4 #7 "close to the source's limit" was overstated: the mouth and hair were ours.
