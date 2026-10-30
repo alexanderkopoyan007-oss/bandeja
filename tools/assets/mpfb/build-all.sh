@@ -14,7 +14,7 @@ mkdir -p assets-src/people
 node tools/assets/mpfb/ybot-rest.mjs assets-src/people/ybot-rest.json
 for n in $NAMES; do
   "$BLENDER" -b --python tools/assets/mpfb/make-player.py -- data/players/$n.json assets-src/people/ybot-rest.json \
-    assets-src/people/$n $PREVIEW 2>&1 | grep -E "^(PLAYER|HEIGHT|SHORTS|HEM|COVERED|ALIGN|MESH|WROTE|FACE|MASKED|AO|PAINT|FIT)|Error|Traceback|line [0-9]+" || true
+    assets-src/people/$n $PREVIEW 2>&1 | grep -E "^(PLAYER|HEIGHT|BUILD|SKIRT|TANK|HEADPIECE|COLLAR|SHORTS|HEM|COVERED|ALIGN|MESH|WROTE|FACE|MASKED|AO|PAINT|FIT)|Error|Traceback|line [0-9]+" || true
   [ -f assets-src/people/$n/body.json ] || { echo "no body for $n"; exit 1; }
 done
 node tools/assets/build-people.mjs $NAMES

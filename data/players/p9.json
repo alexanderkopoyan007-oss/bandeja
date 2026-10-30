@@ -5,7 +5,7 @@
     "age": 0.52,
     "muscle": 0.58,
     "weight": 0.36,
-    "proportions": 0.8,
+    "proportions": 1.0,
     "height": 0.5,
     "cupsize": 0.4,
     "firmness": 0.65,
@@ -20,13 +20,30 @@
   "eye_colour": "brownlight",
   "eyebrows": "eyebrow009",
   "eyelashes": "eyelashes01",
-  "hair": "bob01",
+  "hair": "ponytail01",
+  "hair_tone": [
+    0.3,
+    0.3,
+    0.32
+  ],
   "clothes": [
-    "male_casualsuit06",
+    "female_casualsuit01",
     "shoes05"
   ],
-  "shorts": 0.72,
+  "shorts": 0.71,
   "height": 1.66,
+  "kit": {
+    "top": "tee",
+    "bottom": "aline",
+    "skirt": 0.665,
+    "mark": 0,
+    "head": "visor"
+  },
+  "build": {
+    "torso/torso-scale-horiz-incr": 0.25,
+    "torso/torso-scale-vert-decr": 0.3,
+    "legs/measure-calf-circ-incr": 0.4
+  },
   "face": {
     "head/head-round": 0.3,
     "chin/chin-width-decr": 0.2,

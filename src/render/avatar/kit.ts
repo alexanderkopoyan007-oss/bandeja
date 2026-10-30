@@ -6,12 +6,12 @@
 // turns shinier as it sweats. Shirt and shorts hems lag the body when it accelerates.
 import * as THREE from 'three/webgpu';
 import {
-  vec2,
+  vec2, step, sin,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
   mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor,
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
-import type { PlayerAsset } from './asset.ts';
+import type { KitCut, PlayerAsset } from './asset.ts';
 
 export const R_SHIRT = 0, R_SHORTS = 1, R_SKIN = 2, R_HAIR = 3, R_SOCK = 4, R_SHOE = 5;
 
@@ -41,7 +41,18 @@ function hemLag(lag: THREE.Node<'vec3'>, sway: THREE.Node<'float'>): THREE.Node<
   return positionLocal.add(d.sub(n.mul(min(dot(d, n), 0))));
 }
 
-export interface KitFrame { chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; sleeveX?: number; wristX?: number; neck?: THREE.Vector3; collarDrop?: number; neckUv?: THREE.Vector2; floorY: number; footX?: number; footZ?: number }
+export interface KitFrame {
+  chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; sleeveX?: number; neck?: THREE.Vector3; collarDrop?: number; neckUv?: THREE.Vector2;
+  floorY: number; footX?: number; footZ?: number;
+  /** The wrist and the forearm's direction in the modelled pose, the arm on its +x side (the arms are lower there than in the rest pose). */
+  wrist?: THREE.Vector3; foreDir?: THREE.Vector3;
+  /** The shoulder joint out from the chest's middle and its height; the leg's joint out and its depth; the top of the shirt's back. */
+  armX?: number; armY?: number; armZ?: number; legX?: number; legZ?: number; backTop?: number;
+  /** Radius of the thigh at the hip and at the knee (m). */
+  thighR?: [number, number];
+  /** The side of the shirt's depth (m) at the hem and under the arm. */
+  sideZ?: [number, number];
+}
 const FRAMES = new WeakMap<PlayerAsset, KitFrame>();
 
 function at(asset: PlayerAsset, name: string): THREE.Vector3 {
@@ -370,6 +381,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
   const wet = smoothstep(0.02, 0.12, X.x.mul(shirtW).add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
 
+  const { shirtC, shortsC, sockC } = kitDetail(look, body.kit, frame, p, X, uv());
+  const hang = X.x.mul(shortsW);
+
   const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
   const stripe = smoothstep(0.012, 0.004, p.y.sub(frame.floorY + 0.055).abs());
   // The upper: a knit that fades out with distance, laces up the instep, a heel counter in the stripe's colour.
@@ -402,12 +416,12 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // (teeth sit at occlusion about 0.27: multiplied straight they rendered blue-grey, 100 of 239: review round 5, the
   // critic's #4. The throat, below 0.1, stays dark.)
   const mouthCol = tex.xyz.mul(float(0.2).add(smoothstep(0.1, 0.4, tex.w).mul(0.8)));
-  let col: THREE.Node<'vec3'> = color(look.shirt).mul(ao).mul(shirtW)
-    .add(color(look.shorts).mul(aoShorts).mul(shortsW))
+  let col: THREE.Node<'vec3'> = shirtC.mul(ao).mul(shirtW)
+    .add(shortsC.mul(aoShorts).mul(shortsW))
     .add(skinCol.mul(skinW))
     .add(eyeCol.mul(eyeW))
     .add(mouthCol.mul(mouthW))
-    .add(color(look.socks).mul(sockW))
+    .add(sockC.mul(sockW))
     .add(shoeC.mul(shoeW).mul(vAO));
   col = col.mul(float(1).sub(wet.mul(0.3)));
   // The neckline, worked out per pixel from the body's rest position (from a per-vertex value it ran in straight pieces
@@ -417,14 +431,23 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const collarY = p.y.sub(nk.y - (frame.collarDrop ?? COLLAR_DROP)).sub(collarX.mul(collarX).mul(COLLAR_CURVE));
   const neckline = float(COLLAR_MID).add(min(collarY, p.z.sub(nk.z - 0.01)).mul(COLLAR_SCALE)).mul(shirtW);
   // The skin the build keeps for the neckline stops at it: below, on a close-fitting shirt, it came through in jagged pieces.
+  // (down to the chest only: left open below, it took a slice out of the inside of every leg)
   const underShirt = smoothstep(-0.012, -0.0125, collarY).mul(smoothstep(nk.z - 0.01, nk.z - 0.005, p.z))
-    .mul(smoothstep(0.1, 0.09, collarX.abs())).mul(skinW);
-  col = col.mul(float(1).sub(smoothstep(0.465, 0.475, neckline).mul(0.16).mul(float(1).add(p.x.mul(900).sin().mul(0.35)))));
+    .mul(smoothstep(0.1, 0.09, collarX.abs())).mul(smoothstep(nk.y - 0.3, nk.y - 0.28, p.y)).mul(skinW);
+  // The collar's ribbed band in the kit's second colour, right round: the back of the neck is the shirt's own edge.
+  const backBand = smoothstep(float(frame.backTop ?? 9).sub(COLLAR_RIB + 0.002), float(frame.backTop ?? 9).sub(COLLAR_RIB), p.y).mul(step(p.z, nk.z - 0.02)).mul(shirtW);
+  const rib = float(0.9).add(p.x.mul(900).sin().mul(0.08));
+  col = mix(col, color(look.trim).mul(ao).mul(rib), smoothstep(0.465, 0.475, neckline).add(backBand).min(1));
   // Twin-needle hems on the shirt's waist and sleeves, a slim stitched line a little in from each edge; a towelling band
   // on the wrists.
   const stitched = (d: THREE.Node<'float'>): THREE.Node<'float'> => smoothstep(0.004, 0.0015, d.sub(HEM_STITCH).abs());
-  col = col.mul(float(1).sub(stitched(p.y.sub(frame.hemY)).add(stitched(float(frame.sleeveX ?? 0).sub(p.x.sub(frame.chest.x).abs()))).mul(0.14).mul(shirtW)));
-  const band = smoothstep(0.003, 0, p.x.abs().sub(float(frame.wristX ?? 0).sub(WRIST_IN)).abs().sub(WRIST_W)).mul(skinW);
+  const hems = stitched(p.y.sub(frame.hemY)).add(stitched(float(frame.sleeveX ?? 0).sub(X.z)).mul(body.kit.top === 'tank' ? 0 : 1)).mul(shirtW)
+    .add(stitched(p.y.sub(frame.shortsHemY)).mul(shortsW));
+  col = col.mul(float(1).sub(hems.mul(0.14)));
+  const wristAt = frame.wrist!, fore = frame.foreDir!;
+  const wristD = vec3(p.x.abs(), p.y, p.z).sub(vec3(wristAt.x, wristAt.y, wristAt.z)).dot(vec3(fore.x, fore.y, fore.z));
+  const band = smoothstep(0.003, 0, wristD.add(WRIST_IN).abs().sub(WRIST_W)).mul(skinW)
+    .mul(smoothstep(0.17, 0.15, vec3(p.x.abs(), p.y, p.z).sub(vec3(wristAt.x, wristAt.y, wristAt.z)).length()));
   col = mix(col, color(look.shirt).mul(float(0.92).add(p.x.mul(2400).sin().mul(0.08))), band);
   const m = new PersonNodeMaterial();
   m.maskNode = neckline.lessThan(COLLAR_MID).and(underShirt.lessThan(0.5));
@@ -465,12 +488,14 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const bumped = heightBump(folds.mul(body.clothNormal ? sockW : fabric).mul(0.0025).add(pores), 0.023);
   if (body.clothNormal) {
     const suitUv = vec2(uv().x.sub(2 / 3).mul(3), uv().y.sub(0.5).mul(2));
-    const fold = texture(body.clothNormal, suitUv).xy.mul(2).sub(1);
+    // (the suit's rectangle only: a skirt has pleats of its own)
+    const fold = texture(body.clothNormal, suitUv).xy.mul(2).sub(1).mul(step(0.5, uv().y));
     m.normalNode = mix(bumped, uvNormal(fold.mul(FOLD_DEPTH), uv()), shirtW.add(shortsW));
   } else m.normalNode = bumped;
   const shirtSway = smoothstep(frame.chest.y, frame.hemY, p.y).mul(shirtW);
   const shortsSway = smoothstep(frame.hips.y - 0.05, frame.shortsHemY, p.y).mul(shortsW).mul(0.6);
-  m.positionNode = hemLag(lag, shirtSway.add(shortsSway));
+  const hung = hemLag(lag, shirtSway.add(shortsSway).add(hang.mul(SKIRT_SWING)));
+  m.positionNode = body.kit.bottom === 'pleated' || body.kit.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung).mul(smoothstep(0.2, 0.6, hang))) : hung;
 
   const hair = new THREE.MeshPhysicalNodeMaterial();
   // Long hair swings: below the nape it trails with the hems' spring, further (round 7, the critic: it moved as one piece
@@ -507,6 +532,124 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   return { material: m, hair, state: { sweat: sweatU, lag } };
 }
 
+/**
+ * A skirt stays off the legs: each thigh, a tapered capsule from the hip to the knee where the skeleton has it this frame,
+ * pushes the cloth out of itself (the weights alone leave a raised knee through the hem). The result is an offset for the
+ * skinned position `at`. The bones are read where the mesh is drawn, so the capsules are the skeleton's own pose.
+ */
+function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>): THREE.Node<'vec3'> {
+  const ids = [asset.bone('LeftUpLeg'), asset.bone('LeftLeg'), asset.bone('RightUpLeg'), asset.bone('RightLeg')];
+  const ends = ids.map(() => uniform(new THREE.Vector3()));
+  ends[0]!.onObjectUpdate((f) => {
+    const mesh = f.object as THREE.SkinnedMesh;
+    for (let i = 0; i < 4; i++) {
+      const v = ends[i]!.value as THREE.Vector3;
+      v.setFromMatrixPosition(mesh.skeleton.bones[ids[i]!]!.matrixWorld).applyMatrix4(mesh.bindMatrixInverse);
+    }
+  });
+  const [r0, r1] = frame.thighR ?? [0.09, 0.06];
+  const push = (a: THREE.Node<'vec3'>, b: THREE.Node<'vec3'>): THREE.Node<'vec3'> => {
+    const ab = b.sub(a);
+    const t = at.sub(a).dot(ab).div(ab.dot(ab)).clamp();
+    const d = at.sub(a.add(ab.mul(t)));
+    const l = d.length().max(1e-4);
+    return d.mul(max(mix(float(r0), float(r1), t).add(SKIRT_CLEAR).sub(l), 0).div(l));
+  };
+  return push(ends[0]!, ends[1]!).add(push(ends[2]!, ends[3]!));
+}
+
+/**
+ * The kit's detail, all in the kit's own colours: side panels and seams, a cuff, small invented marks on the chest, sleeve,
+ * back and leg (never a real brand), a stripe down the shorts, a band round a skirt's hem, a polo's placket. Patterns are fixed
+ * to the body's modelled pose (`p`); on the arm, where that is lower than the rest pose, X.zw (the rest pose) hold them.
+ * Anything finer than a pixel can show fades to its average, or it would shimmer at the TV camera's distance.
+ */
+function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'vec3'>, X: THREE.Node<'vec4'>, _uv: THREE.Node<'vec2'>):
+{ shirtC: THREE.Node<'vec3'>; shortsC: THREE.Node<'vec3'>; sockC: THREE.Node<'vec3'> } {
+  const rgb = (c: number): THREE.Node<'vec3'> => { const k = new THREE.Color(c); return vec3(k.r, k.g, k.b); };
+  const trim = rgb(look.trim), shirt = rgb(look.shirt);
+  const ax = p.x.sub(frame.chest.x).abs(), tx = X.z, ty = X.w;
+  const armX = frame.armX ?? 0.2, armY = frame.armY ?? frame.chest.y, armZ = frame.armZ ?? 0, nk = frame.neck ?? frame.chest;
+  const front = step(frame.chest.z, p.z);
+  const fine = footprintKeep(0.011);
+  const line = (d: THREE.Node<'float'>, w = 0.0028): THREE.Node<'float'> => smoothstep(w, w * 0.4, d.abs()).mul(fine);
+  // The side panel, under the arm to the hem, a little narrower at the waist.
+  const panelUp = smoothstep(frame.hemY, armY - 0.12, p.y);
+  const panelW = mix(float(PANEL_HEM), float(PANEL_ARM), panelUp);
+  const dz = p.z.sub(mix(float(frame.sideZ?.[0] ?? 0), float(frame.sideZ?.[1] ?? 0), panelUp)).abs();
+  const below = smoothstep(armY - 0.075, armY - 0.095, p.y).mul(smoothstep(armX + 0.015, armX - 0.01, tx)).mul(smoothstep(0.05, 0.07, ax));
+  const panel = smoothstep(panelW.add(0.0025), panelW, dz).mul(below);
+  const panelEdge = line(dz.sub(panelW).sub(0.006)).mul(below);
+  let s = mix(shirt, trim, panel);
+  s = s.mul(float(1).sub(panelEdge.mul(0.18)));
+  // Seams: over the shoulder, and round the sleeve's root or, on a raglan, from the neck to the armpit.
+  const shoulder = line(p.z.sub(nk.z - 0.016)).mul(step(armY - 0.01, p.y)).mul(step(0.05, ax));
+  let seams: THREE.Node<'float'> = float(0);
+  if (cut.top !== 'tank') {
+    const nx = 0.72, ny = 0.694; // the raglan's line (normal) in the rest pose's (out, up)
+    seams = cut.seam === 'raglan' ? line(tx.sub(0.07).mul(nx).add(ty.sub(nk.y - 0.015).mul(ny))).mul(step(armY - 0.11, ty))
+      : shoulder.add(line(tx.sub(armX + 0.02)));
+    // The cuff, in the kit's second colour.
+    s = mix(s, trim, smoothstep(float(frame.sleeveX ?? 9).sub(CUFF + 0.0015), float(frame.sleeveX ?? 9).sub(CUFF), tx));
+  } else {
+    // A tank's armhole has a binding, along the cut (person_kit.py cut_tank).
+    const a = new THREE.Vector2(armX - 0.035, armY + 0.07), b = new THREE.Vector2(armX - 0.01, armY - 0.15);
+    const no = new THREE.Vector2(a.y - b.y, b.x - a.x).normalize();
+    const d = ax.sub(a.x).mul(no.x).add(p.y.sub(a.y).mul(no.y));
+    s = mix(s, trim, smoothstep(float(-CUFF - 0.0015), float(-CUFF), d));
+  }
+  s = s.mul(float(1).sub(seams.mul(0.16)));
+  // Marks, drawn in metres from their centre.
+  const e = 0.0007;
+  const box = (q: THREE.Node<'vec2'>, cx: number, cy: number, hx: number, hy: number): THREE.Node<'float'> =>
+    smoothstep(e, 0, max(q.x.sub(cx).abs().sub(hx), q.y.sub(cy).abs().sub(hy)));
+  const dist = (q: THREE.Node<'vec2'>, cx: number, cy: number): THREE.Node<'float'> => q.sub(vec2(cx, cy)).length();
+  const maker = (q: THREE.Node<'vec2'>): THREE.Node<'float'> => {
+    const k = (cut.mark ?? 0) % 4;
+    const bar = box(q, 0.008, 0, 0.0155, 0.003);
+    const head = k === 0 ? smoothstep(0.0082 + e, 0.0082, dist(q, -0.0165, 0))
+      : k === 1 ? smoothstep(0.0028 + e, 0.0028, dist(q, -0.0165, 0).sub(0.0075).abs())
+        : k === 2 ? smoothstep(0.0115 + e, 0.0115, q.x.add(0.0165).abs().add(q.y.abs()))
+          : max(smoothstep(0.0046 + e, 0.0046, dist(q, -0.0205, 0.002)), smoothstep(0.0046 + e, 0.0046, dist(q, -0.0115, -0.002)));
+    return max(head, bar);
+  };
+  /** A word: uneven blocks on a line, read as letters from a few metres. */
+  const word = (q: THREE.Node<'vec2'>, hx: number, hy: number, seed: number): THREE.Node<'float'> =>
+    box(q, 0, 0, hx, hy).mul(smoothstep(-0.3, 0.05, sin(q.x.div(hy).mul(1.9).add(seed)).add(sin(q.x.div(hy).mul(1.17).add(seed * 2.3)))));
+  const chest = (x: number, y: number): THREE.Node<'vec2'> => vec2(p.x.sub(x), p.y.sub(frame.chest.y + y));
+  const onTank = cut.top === 'tank' ? -0.012 : 0;
+  const chestL = maker(chest(MARK_X, MARK_Y + onTank));
+  const chestR = word(chest(-MARK_X, MARK_Y + onTank), 0.03, 0.006, 1.3 + (cut.mark ?? 0));
+  const back = word(vec2(p.x, p.y.sub(frame.chest.y + 0.125)), 0.075, 0.012, 2.2 + (cut.mark ?? 0)).mul(step(p.z, frame.chest.z));
+  const sleeve = cut.top === 'tank' ? float(0) : word(vec2(tx.sub(armX + 0.085), p.z.sub(armZ)), 0.028, 0.0055, 0.7 + (cut.mark ?? 0))
+    .mul(step(armY, ty)).mul(step(0, p.x));
+  const marks = chestL.add(chestR).mul(front).add(back).add(sleeve).min(1).mul(fine).mul(smoothstep(armX + 0.2, armX + 0.15, tx));
+  s = mix(s, trim, marks);
+  // A polo's placket: a strip down from the neck with two buttons.
+  if (cut.top === 'polo') {
+    const nkLow = nk.y - (frame.collarDrop ?? COLLAR_DROP);
+    const cx = p.x.sub(nk.x);
+    const placket = smoothstep(0.0135, 0.012, cx.abs()).mul(smoothstep(nkLow - PLACKET - 0.0015, nkLow - PLACKET, p.y)).mul(front);
+    s = mix(s, mix(shirt, trim, 0.82), placket);
+    const button = (y: number): THREE.Node<'float'> => smoothstep(0.0048, 0.0036, vec2(cx, p.y.sub(nkLow - y)).length());
+    s = mix(s, shirt, button(0.03).add(button(0.062)).mul(front).mul(fine));
+  }
+  // Shorts: the shirt's colour down the outside of the leg, a small mark over the hem; a skirt: the same colour round its hem.
+  const legX = frame.legX ?? 0.09, legZ = frame.legZ ?? 0, hang = X.x;
+  let b = rgb(look.shorts);
+  if (cut.bottom === 'pleated' || cut.bottom === 'aline') {
+    b = mix(b, shirt, smoothstep(float(SKIRT_BAND - 0.003), float(SKIRT_BAND), hang).mul(step(hang, 1.01)));
+  } else {
+    const stripe = smoothstep(0.0145, 0.0125, p.z.sub(legZ).abs()).mul(smoothstep(legX + 0.015, legX + 0.03, p.x.abs()));
+    b = mix(b, shirt, stripe);
+    const leg = maker(vec2(p.x.sub(legX + 0.015), p.y.sub(frame.shortsHemY + 0.07)).mul(1.1)).mul(step(legZ + 0.02, p.z)).mul(fine);
+    b = mix(b, shirt, leg);
+  }
+  // (a band or a visor is on the sock part's colours, up on the head)
+  const sockC = mix(rgb(look.socks), trim, step(frame.hips.y, p.y));
+  return { shirtC: s, shortsC: b, sockC };
+}
+
 const PERSON_FRAMES = new WeakMap<PlayerAsset, KitFrame>();
 /** How far below the Neck joint (m, rest pose) the shirt's front is cut. */
 const COLLAR_DROP = 0.065;
@@ -515,6 +658,19 @@ const COLLAR_CURVE = 11.5;
 /** The field's value at the neckline and its slope (per m), stored in bodyX.y for the cut and the ribbed band. */
 const COLLAR_MID = 0.5;
 const COLLAR_SCALE = 2.5;
+/** The ribbed band's width round the back of the neck; the cuff's, the armhole's binding; the placket's length (m). */
+const COLLAR_RIB = 0.016;
+const CUFF = 0.016;
+const PLACKET = 0.085;
+/** The side panel's half width over the ribs at the arm and at the hem; the chest's marks in from the middle and up from the Spine2 joint (m). */
+const PANEL_ARM = 0.02;
+const PANEL_HEM = 0.026;
+const MARK_X = 0.082;
+const MARK_Y = 0.07;
+/** How far a skirt's hem trails as a multiple of the hems' lag; how far it stands off a thigh (m); where its hem's band starts (0-1 down the skirt). */
+const SKIRT_SWING = 1.6;
+const SKIRT_CLEAR = 0.012;
+const SKIRT_BAND = 0.94;
 
 /**
  * A person's landmarks (rest pose) and per-vertex sweat weights (bodyX.x on the shirt: where a shirt gets wet first,
@@ -576,7 +732,7 @@ function personFrame(asset: PlayerAsset): KitFrame {
     kept.push(tri[i]!, tri[i + 1]!, tri[i + 2]!);
   }
   g.setIndex(kept);
-  let floorY = Infinity, shortsHemY = Infinity, hemY = Infinity, sleeveX = 0;
+  let floorY = Infinity, shortsHemY = Infinity, hemY = Infinity, sleeveX = 0, backTop = -Infinity;
   for (let i = 0; i < n; i++) {
     const x = rest[i * 3]!, y = rest[i * 3 + 1]!, z = rest[i * 3 + 2]!;
     floorY = Math.min(floorY, y);
@@ -585,6 +741,9 @@ function personFrame(asset: PlayerAsset): KitFrame {
     hemY = Math.min(hemY, y);
     const dx = x - chest.x;
     sleeveX = Math.max(sleeveX, Math.abs(dx));
+    if (z < neck.z - 0.02 && Math.abs(x - neck.x) < 0.05) backTop = Math.max(backTop, y);
+    X[i * 4 + 2] = Math.abs(dx);
+    X[i * 4 + 3] = y;
     X[i * 4] = Math.max(
       g3(dx, y - (chest.y + 0.02), z - (chest.z + 0.1), 0.06, 0.13, 0.09),
       g3(dx, y - (chest.y - 0.12), z - (chest.z - 0.1), 0.055, 0.26, 0.09),
@@ -593,11 +752,55 @@ function personFrame(asset: PlayerAsset): KitFrame {
     );
   }
   (g.getAttribute('bodyX') as THREE.BufferAttribute).needsUpdate = true;
+  // The wrist and elbow in the modelled pose: where the skin's weight passes from one bone to the next.
+  const si = g.getAttribute('skinIndex').array, sw = g.getAttribute('skinWeight').array as Float32Array, bind = g.getAttribute('position').array as Float32Array;
+  const between = (b0: number, b1: number): THREE.Vector3 => {
+    const c = new THREE.Vector3();
+    let m = 0;
+    for (let i = 0; i < n; i++) {
+      if (A[i * 4 + 2]! < 0.5) continue;
+      let w0 = 0, w1 = 0;
+      for (let k = 0; k < 4; k++) { if (si[i * 4 + k] === b0) w0 = sw[i * 4 + k]!; else if (si[i * 4 + k] === b1) w1 = sw[i * 4 + k]!; }
+      if (w0 > 0.25 && w1 > 0.25) { c.x += Math.abs(bind[i * 3]!); c.y += bind[i * 3 + 1]!; c.z += bind[i * 3 + 2]!; m++; }
+    }
+    return c.multiplyScalar(1 / Math.max(1, m));
+  };
+  const wrist = between(asset.bone('LeftForeArm'), asset.bone('LeftHand')), elbow = between(asset.bone('LeftArm'), asset.bone('LeftForeArm'));
+  const armJ = at(asset, 'LeftArm'), legJ = at(asset, 'LeftUpLeg'), kneeJ = at(asset, 'LeftLeg');
+  // The thigh's radius at either end, from the shorts and the skin, its 90th percentile (the rest of a ring is the muscle's belly).
+  const thighAt = (t: number): number => {
+    const d = kneeJ.clone().sub(legJ), l2 = d.lengthSq();
+    const out: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const x = rest[i * 3]! - legJ.x, y = rest[i * 3 + 1]! - legJ.y, z = rest[i * 3 + 2]! - legJ.z;
+      if ((A[i * 4 + 2]! < 0.5 && A[i * 4 + 1]! < 0.5) || X[i * 4]! > 0.01 && A[i * 4 + 1]! > 0.5) continue;
+      if (rest[i * 3]! * legJ.x <= 0) continue;
+      const u = (x * d.x + y * d.y + z * d.z) / l2;
+      if (Math.abs(u - t) > 0.06) continue;
+      const r = Math.hypot(x - u * d.x, y - u * d.y, z - u * d.z);
+      if (r < 0.16) out.push(r);
+    }
+    out.sort((a, b) => a - b);
+    return out[Math.floor(out.length * 0.9)] ?? 0.08;
+  };
+  // The shirt's outline at a height: the middle of the front's and back's extents.
+  const midZ = (y0: number): number => {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < n; i++) {
+      if (A[i * 4]! < 0.5 || Math.abs(rest[i * 3 + 1]! - y0) > 0.03 || Math.abs(rest[i * 3]! - chest.x) > armJ.x * Math.sign(armJ.x)) continue;
+      lo = Math.min(lo, rest[i * 3 + 2]!); hi = Math.max(hi, rest[i * 3 + 2]!);
+    }
+    return Number.isFinite(lo) ? (lo + hi) / 2 : chest.z;
+  };
   frame = {
     chest: chest.clone(), hips: hips.clone(), hemY: Number.isFinite(hemY) ? hemY : hips.y - 0.02,
     shortsHemY: Number.isFinite(shortsHemY) ? shortsHemY : hips.y - 0.3,
-    armSpan: halfSpan * 2, sleeveX, wristX: Math.abs(at(asset, 'LeftHand').x), neck: neck.clone(), collarDrop, neckUv,
+    sideZ: [midZ(hemY + 0.04), midZ(armJ.y - 0.12)],
+    armSpan: halfSpan * 2, sleeveX, neck: neck.clone(), collarDrop, neckUv,
     floorY, footX: Math.abs(at(asset, 'LeftFoot').x), footZ: at(asset, 'LeftFoot').z,
+    wrist, foreDir: wrist.clone().sub(elbow).normalize(),
+    armX: Math.abs(armJ.x - chest.x), armY: armJ.y, armZ: armJ.z, legX: Math.abs(legJ.x), legZ: legJ.z,
+    backTop: Number.isFinite(backTop) ? backTop : undefined, thighR: [thighAt(0.2), thighAt(0.92)],
   };
   PERSON_FRAMES.set(asset, frame);
   return frame;

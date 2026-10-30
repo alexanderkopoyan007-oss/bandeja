@@ -5,7 +5,7 @@
     "age": 0.58,
     "muscle": 0.72,
     "weight": 0.42,
-    "proportions": 0.8,
+    "proportions": 0.9,
     "height": 0.5,
     "cupsize": 0.5,
     "firmness": 0.5,
@@ -25,8 +25,17 @@
     "male_casualsuit06",
     "shoes05"
   ],
-  "shorts": 0.6,
+  "shorts": 0.645,
   "height": 1.8,
+  "kit": {
+    "top": "tee",
+    "bottom": "shorts",
+    "mark": 0
+  },
+  "build": {
+    "arms/l-lowerarm-muscle-incr": 0.5,
+    "arms/r-lowerarm-muscle-incr": 0.5
+  },
   "face": {
     "head/head-square": 0.3,
     "chin/chin-width-incr": 0.2,

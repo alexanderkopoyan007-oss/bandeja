@@ -18,6 +18,8 @@
 #   the clothes' ambient occlusion for team colours, eyes, teeth, tongue) and alpha-tested (hair, brows, lashes). The
 #   suit's own diffuse (a printed logo, jeans) and the trainers' texture (a photo of a branded shoe) are not used:
 #   the game colours them.
+# - What the suit doesn't have is generated in person_kit.py from the body it goes on (spec "kit"): the sleeves off a tank, a
+#   skirt, a headband or visor.
 import os, json, math, struct
 import bpy, bmesh, mathutils
 import numpy as np
@@ -26,22 +28,9 @@ from mathutils import Vector, Matrix
 from bl_ext.user_default.mpfb.services.targetservice import TargetService
 from bl_ext.user_default.mpfb.services.assetservice import AssetService
 import person_face as face
+import person_kit as kit
 
 P = 'mixamorig:'
-def highest_piece(me):
-    """The vertices of the connected piece of the mesh that reaches highest."""
-    par = list(range(len(me.vertices)))
-    def find(a):
-        while par[a] != a:
-            par[a] = par[par[a]]
-            a = par[a]
-        return a
-    for e in me.edges:
-        par[find(e.vertices[0])] = find(e.vertices[1])
-    top = find(max(range(len(me.vertices)), key=lambda i: me.vertices[i].co.z))
-    return {i for i in range(len(me.vertices)) if find(i) == top}
-
-
 # Part codes (the game's body shader colours by them).
 PART = {'skin': 0, 'shirt': 1, 'shorts': 2, 'shoe': 3, 'eye': 4, 'sock': 5, 'hair': 6, 'brow': 7, 'lash': 8,
         'teeth': 9, 'tongue': 10}
@@ -51,7 +40,7 @@ ALPHA_PARTS = ('hair', 'brow', 'lash')
 OPAQUE_SIZE = (3072, 2048)
 ALPHA_SIZE = (2560, 2048)
 RECT = {'skin': (0, 0, 2048, 2048), 'clothes': (2048, 1024, 1024, 1024), 'eye': (2048, 512, 512, 512),
-        'teeth': (2560, 512, 512, 512), 'tongue': (2048, 0, 512, 512),
+        'teeth': (2560, 512, 512, 512), 'tongue': (2048, 0, 512, 512), 'skirt': (2560, 0, 512, 512),
         'hair': (0, 0, 2048, 2048), 'brow': (2048, 1024, 512, 512), 'lash': (2048, 512, 512, 512)}
 # The game skeleton's bone order (ybot-rest.json keys) is the output order.
 SIDES = ('Left', 'Right')
@@ -60,6 +49,7 @@ SIDES = ('Left', 'Right')
 SKIN_UP = 0.06
 HEM_FLARE = 0.004
 HEM_UP = 0.04
+SHORTS_EASE = 0.012
 FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky')
 
 
@@ -85,6 +75,10 @@ def kind_of(o, spec):
     n = o.name
     if n == 'Human':
         return 'body'
+    if n.startswith('Skirt'):
+        return 'skirt'
+    if n.startswith('HeadPiece') or n.startswith('Collar'):
+        return 'extra'
     for part, key in (('eye', 'eyes'), ('brow', 'eyebrows'), ('lash', 'eyelashes'), ('hair', 'hair'), ('teeth', 'teeth'),
                       ('tongue', 'tongue')):
         if spec.get(key) and n.endswith(spec[key]):
@@ -179,6 +173,7 @@ def finish(yb, spec, out, preview=False):
             if m.type == 'ARMATURE':
                 m.object = rig
     print('HEIGHT', round(hi - lo, 4), '->', want, 'scale', round(k, 4))
+    print('BUILD', json.dumps(kit.body_build(body, rig, spec['name'])))
 
     # ---------- shorts ----------
     hem = spec.get('shorts')
@@ -205,9 +200,13 @@ def finish(yb, spec, out, preview=False):
         print('SHORTS cut', len(dead), 'faces at', hem)
 
     # ---------- the kit fitted (person_face.fit_suit), before the skin under it is masked away ----------
+    outfit = spec.get('kit', {})
+    women = spec['clothes'][0].startswith('female_')
     if suit is not None:
-        face.fit_suit(body, suit, rig.data.bones[P + 'Hips'].head_local.z)
-        face.cut_shorts_under_shirt(suit)
+        if outfit.get('top') == 'tank':
+            kit.cut_tank(suit, body, rig, women, face.shirt_polygons(suit.data, women))
+        face.fit_suit(body, suit, rig.data.bones[P + 'Hips'].head_local.z, women)
+        face.cut_shorts_under_shirt(suit, women)
         if hem is not None:
             sm = suit.data
             n_flare = 0
@@ -216,8 +215,29 @@ def finish(yb, spec, out, preview=False):
                 if u < 1:
                     v.co += v.normal * HEM_FLARE * (1 - max(0.0, u))
                     n_flare += 1
+            if women and outfit.get('bottom', 'shorts') == 'shorts':
+                # The women's suit's legs are jeans-tight: a pair of shorts stands off the leg, more towards the hem.
+                top = face.highest_piece(sm)
+                z0 = rig.data.bones[P + 'Hips'].head_local.z - 0.04
+                for v in sm.vertices:
+                    if v.index not in top and v.co.z < z0:
+                        v.co += v.normal * SHORTS_EASE * min(1.0, (z0 - v.co.z) / (z0 - hem))
             sm.update()
             print('HEM flared', n_flare, 'vertices')
+
+    # ---------- what the suit doesn't have (person_kit.py), built on the fitted body and suit ----------
+    def wear(o):
+        meshes.append(o)
+        kinds[o.name] = kind_of(o, spec)
+    skirt_style = outfit.get('bottom') in ('pleated', 'aline') and outfit['bottom']
+    if skirt_style:
+        wear(kit.make_skirt(body, suit, rig, spec, women))
+    if outfit.get('top') == 'polo':
+        wear(kit.make_collar(body, rig))
+    if outfit.get('head'):
+        hair_o = next((o for o in meshes if kinds[o.name] == 'hair'), None)
+        eyes = [v.co.copy() for o in meshes if kinds[o.name] == 'eye' for v in o.data.vertices]
+        wear(kit.make_head_piece(body, hair_o, rig, eyes, outfit['head']))
 
     # ---------- helpers and hidden skin out ----------
     # As the MASK modifiers would (a vertex survives every mask), by bmesh: applying a modifier fails on a mesh with
@@ -407,6 +427,10 @@ def finish(yb, spec, out, preview=False):
         o.hide_render = False
     for o in by_kind.get('hair', []):
         vao[o.name] = face.hair_depth_ao(o, body)
+    for o in by_kind.get('extra', []):
+        a = np.empty(len(o.data.vertices), dtype=np.float32)
+        o.data.attributes['shade'].data.foreach_get('value', a)
+        vao[o.name] = a
     print('AO baked in', round(time.time() - t0, 1), 's; skin mean', round(float(ao['body'].mean()), 3))
 
     # ---------- atlases ----------
@@ -473,16 +497,22 @@ def finish(yb, spec, out, preview=False):
         elif kd in ('teeth', 'tongue'):
             r = paste(opaque, img_of(o), RECT[kd])
             r[:, :, 3] = ao.get(kd, 1)
+        elif kd == 'skirt':
+            paste(opaque, kit.skirt_ao(RECT['skirt'][2], skirt_style == 'pleated'), RECT['skirt'])
         elif kd in ALPHA_PARTS:
-            paste(alpha, img_of(o), RECT[kd])
+            r = paste(alpha, img_of(o), RECT[kd])
+            if kd == 'hair' and spec.get('hair_tone'):
+                # (the same hairstyle in another person's colour)
+                r[:, :, :3] = r[:, :, :3] * np.array(spec['hair_tone'], dtype=np.float32)
 
     # ---------- the suit's sculpted folds (one file for everybody in that suit) ----------
-    if spec['clothes'][0] == 'male_casualsuit06':
-        n_png = AssetService.find_asset_absolute_path('male_casualsuit06/male_casualsuit06_normal.png', asset_subdir='clothes')
-        n_img = bpy.data.images.load(n_png)
-        n_img.colorspace_settings.name = 'Non-Color'
-        save(pixels(n_img, 1024, 1024), (1024, 1024), os.path.join(os.path.dirname(out.rstrip('/')), 'suit-normal.webp'), False)
-        bpy.data.images.remove(n_img)
+    suit_name = spec['clothes'][0]
+    n_png = AssetService.find_asset_absolute_path(f'{suit_name}/{suit_name}_normal.png', asset_subdir='clothes')
+    n_img = bpy.data.images.load(n_png)
+    n_img.colorspace_settings.name = 'Non-Color'
+    cloth_file = 'suit-normal-f.webp' if women else 'suit-normal.webp'
+    save(pixels(n_img, 1024, 1024), (1024, 1024), os.path.join(os.path.dirname(out.rstrip('/')), cloth_file), False)
+    bpy.data.images.remove(n_img)
 
     # ---------- the scalp and brows under the hair ----------
     t0 = time.time()
@@ -554,8 +584,9 @@ def finish(yb, spec, out, preview=False):
         seen = {}
         sd = face.shape_deltas(o)
         mk = [me.attributes[n].data for n in ('mask_lips', 'mask_tzone', 'mask_lids', 'mask_ears')] if kd == 'body' else None
+        hang = me.attributes['hang'].data if kd == 'skirt' else None
         va = vao.get(o.name)
-        top_piece = highest_piece(me) if kd == 'suit' and spec['clothes'][0].startswith('female_') else None
+        top_piece = face.highest_piece(me) if kd == 'suit' and spec['clothes'][0].startswith('female_') else None
         for tri in me.loop_triangles:
             u0, v0 = 0, 0
             for li in tri.loops:
@@ -574,6 +605,10 @@ def finish(yb, spec, out, preview=False):
                         # whose atlases overlap in height.
                         part = 'shirt' if (vi in top_piece if top_piece else v0 > 0.57) else 'shorts'
                         uv = uv_to(RECT['clothes'], OPAQUE_SIZE, u, v)
+                    elif kd == 'skirt':
+                        part, uv = 'shorts', uv_to(RECT['skirt'], OPAQUE_SIZE, u, v)
+                    elif kd == 'extra':
+                        part, uv = 'sock', (0.0, 0.0)
                     elif kd == 'shoe':
                         part, uv = ('sock' if co.z > sock_from else 'shoe'), (0.0, 0.0)
                     elif kd in ('eye', 'teeth', 'tongue'):
@@ -596,7 +631,7 @@ def finish(yb, spec, out, preview=False):
                     B['sw'] += sw
                     B['part'].append(PART[part])
                     B['ao'].append(float(va[vi]) if va is not None else 1.0)
-                    B['mask'] += [mk[k][vi].value for k in range(4)] if mk else [0.0] * 4
+                    B['mask'] += [mk[k][vi].value for k in range(4)] if mk else [hang[vi].value if hang else 0.0, 0.0, 0.0, 0.0]
                     for name in face.MORPHS:
                         d = sd.get(name)
                         if d is None:
@@ -617,7 +652,8 @@ def finish(yb, spec, out, preview=False):
     header = {'name': spec['name'], 'height': want, 'bones': bone_names,
               'joints': [[joints[n].x, joints[n].z, -joints[n].y] for n in bone_names],
               'move': [game_m(move[n]) for n in bone_names],
-              'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp'}, 'parts': PART, 'morphs': face.MORPHS,
+              'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': cloth_file}, 'parts': PART, 'morphs': face.MORPHS,
+              'kit': outfit,
               'meshes': {}}
     for kind, B in buffers.items():
         ent = {'vertices': len(B['part']), 'indices': len(B['index'])}

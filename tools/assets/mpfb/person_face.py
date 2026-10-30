@@ -430,18 +430,40 @@ def shape_deltas(o, nv_basis_normals=True):
 FIT_GAP = 0.006
 
 
-def fit_suit(body, suit, hips_z, n_body=13380):
+def highest_piece(me):
+    """The vertices of the connected piece of the mesh that reaches highest."""
+    par = list(range(len(me.vertices)))
+    def find(a):
+        while par[a] != a:
+            par[a] = par[par[a]]
+            a = par[a]
+        return a
+    for e in me.edges:
+        par[find(e.vertices[0])] = find(e.vertices[1])
+    top = find(max(range(len(me.vertices)), key=lambda i: me.vertices[i].co.z))
+    return {i for i in range(len(me.vertices)) if find(i) == top}
+
+
+def shirt_polygons(sm, women):
+    """Per polygon of a suit, is it the shirt? The men's suit has one atlas with the shirt on its top half; a women's suit
+    is separate pieces, whose atlases overlap in height."""
+    if women:
+        top = highest_piece(sm)
+        return [p.vertices[0] in top for p in sm.polygons]
+    uvl = sm.uv_layers.active.data
+    return [sum(uvl[li].uv.y for li in p.loop_indices) / p.loop_total > 0.57 for p in sm.polygons]
+
+
+def fit_suit(body, suit, hips_z, women=False, n_body=13380):
     me = body.data
     verts = [v.co.copy() for v in me.vertices]
     polys = [tuple(p.vertices) for p in me.polygons if max(p.vertices) < n_body]
     tree = BVHTree.FromPolygons(verts, polys)
     sm = suit.data
-    uvl = sm.uv_layers.active.data
     n = len(sm.vertices)
     shirt = np.zeros(n, dtype=bool)
-    for p in sm.polygons:
-        v = sum(uvl[li].uv.y for li in p.loop_indices) / p.loop_total
-        if v > 0.57:
+    for p, s in zip(sm.polygons, shirt_polygons(sm, women)):
+        if s:
             for vi in p.vertices:
                 shirt[vi] = True
     co = _co(suit)
@@ -487,7 +509,7 @@ def fit_suit(body, suit, hips_z, n_body=13380):
     print('FIT suit moved median', round(float(np.median(d)) * 1000, 1), 'mm, max', round(float(d.max()) * 1000, 1), 'mm;',
           int(shirt.sum()), 'shirt vertices')
 
-def cut_shorts_under_shirt(suit, reach=0.03, band=0.02, sink=0.01, tuck=0.05):
+def cut_shorts_under_shirt(suit, women=False, reach=0.03, band=0.02, sink=0.01, tuck=0.05):
     """
     The shorts' waistband out from under the shirt (REVIEW.md round 2 #12, round 3): the two layers sit a few mm
     apart, so a bend or a twist pushed the shorts through the shirt's back as a ragged black notch. As for the skin
@@ -500,11 +522,7 @@ def cut_shorts_under_shirt(suit, reach=0.03, band=0.02, sink=0.01, tuck=0.05):
     from mathutils.bvhtree import BVHTree
     from mathutils.kdtree import KDTree
     sm = suit.data
-    uvl = sm.uv_layers.active.data
-    is_shirt = []
-    for p in sm.polygons:
-        v = sum(uvl[li].uv.y for li in p.loop_indices) / p.loop_total
-        is_shirt.append(v > 0.57)
+    is_shirt = shirt_polygons(sm, women)
     verts = [v.co.copy() for v in sm.vertices]
     tree = BVHTree.FromPolygons(verts, [tuple(p.vertices) for p, s in zip(sm.polygons, is_shirt) if s])
     bm = bmesh.new()
