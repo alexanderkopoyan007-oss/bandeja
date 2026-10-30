@@ -8,6 +8,13 @@ function runAi(seed: number, ticks: number): MatchSim {
 }
 
 describe('match', () => {
+  it('the first match built is like any other (the net\'s warm-up throws stay out of it)', () => {
+    // Keep this first in the file: only the first net built in a process runs the warm-up.
+    const a = new MatchSim({ seed: 42, human: [false, false] });
+    const b = new MatchSim({ seed: 42, human: [false, false] });
+    expect(a.hash()).toBe(b.hash());
+  });
+
   it('is deterministic: same seed and inputs give the same state after 10k ticks', () => {
     expect(runAi(42, 10000).hash()).toBe(runAi(42, 10000).hash());
     expect(runAi(42, 10000).hash()).not.toBe(runAi(43, 10000).hash());

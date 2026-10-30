@@ -88,13 +88,14 @@ describe('the AI serve and overheads', () => {
 
 describe('the styles, head to head', () => {
   it('the attacking pair is at the net more than the defensive one (review round 3, the pro\'s #8)', () => {
-    // (each pair's players are one style, so the team is the style; net time as match-stats counts it)
+    // (each pair's players are one style, so the team is the style; net time as match-stats counts it. 900 s a seed:
+    // over 300 s the gap ran from -7% to +6% across eight seed groups; whole matches give 27% against 38.5%.)
     const near = [0, 0];
     let ticks = 0;
     for (let seed = 1; seed <= 8; seed++) {
       const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false], aiLevel: [1, 1], aiStyle: ['muro', 'martillo', 'muro', 'martillo'] });
       const frames = [null, null, null, null];
-      for (let k = 0; k < 300 * 120 && m.phase !== PH_OVER; k++) {
+      for (let k = 0; k < 900 * 120 && m.phase !== PH_OVER; k++) {
         m.step(frames);
         if (m.phase !== PH_RALLY) continue;
         ticks++;

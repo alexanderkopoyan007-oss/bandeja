@@ -62,34 +62,39 @@ export function makeWorld(o: WorldOptions = {}): BallWorld {
 let warmed = false;
 
 /**
- * The match's net as cloth, hung in this world's court and air (and wind). The first one built also runs a ball
- * into itself and is put back at rest, so the solver is compiled before play (no JIT stalls on the first net).
+ * The match's net as cloth, hung in this world's court and air (and wind). The first call also runs a ball into a net
+ * of its own, so the solver is compiled before play (no JIT stalls on the first net). Never the match's own: its
+ * scratch fields would stay as the throws left them, and the first match of a page would differ from every later one.
  */
 export function makeNetCloth(world: BallWorld): NetCloth {
-  const net = new NetCloth(world.court, netClothSpec, world.rho);
   if (!warmed) {
     warmed = true;
-    const b = new Ball();
-    b.cloth = net;
-    // Into the body at three speeds, onto the cable, a clip of the tape from the far side, a slow roll.
-    for (let k = 0; k < 6; k++) {
-      const s = k === 4 ? -1 : 1;
-      const y = k < 3 ? 0.3 + 0.25 * k : k === 5 ? 0.0328 : 0.88;
-      b.pos.set(-1 + 0.5 * k, y, 1.5 * s);
-      b.vel.set(0, k === 3 ? 0.5 : 0, -s * (k < 3 ? 12 + 8 * k : k === 5 ? 3 : 20));
-      b.spin.set(k === 4 ? 200 : 0, 0, 0);
-      b.clearNet();
-      b.rolling = false;
-      b.ahead = 0;
-      for (let i = 0; i < 90; i++) {
-        net.beginTick();
-        b.step(world, DT, null);
-        if (!b.coupled && net.awake) net.freeTick();
-      }
-    }
-    net.reset();
+    warmCloth(world);
   }
+  const net = new NetCloth(world.court, netClothSpec, world.rho);
   net.windX = world.env.windX;
   net.windZ = world.env.windZ;
   return net;
+}
+
+function warmCloth(world: BallWorld): void {
+  const net = new NetCloth(world.court, netClothSpec, world.rho);
+  const b = new Ball();
+  b.cloth = net;
+  // Into the body at three speeds, onto the cable, a clip of the tape from the far side, a slow roll.
+  for (let k = 0; k < 6; k++) {
+    const s = k === 4 ? -1 : 1;
+    const y = k < 3 ? 0.3 + 0.25 * k : k === 5 ? 0.0328 : 0.88;
+    b.pos.set(-1 + 0.5 * k, y, 1.5 * s);
+    b.vel.set(0, k === 3 ? 0.5 : 0, -s * (k < 3 ? 12 + 8 * k : k === 5 ? 3 : 20));
+    b.spin.set(k === 4 ? 200 : 0, 0, 0);
+    b.clearNet();
+    b.rolling = false;
+    b.ahead = 0;
+    for (let i = 0; i < 90; i++) {
+      net.beginTick();
+      b.step(world, DT, null);
+      if (!b.coupled && net.awake) net.freeTick();
+    }
+  }
 }
