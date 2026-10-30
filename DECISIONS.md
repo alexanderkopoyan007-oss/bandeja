@@ -2425,3 +2425,64 @@ race (`tools/audit/one-chrome.sh`).
 cause, with the eyes MakeHuman gives that age. Ages 0.52-0.62, the eyes scaled down (`eyes/*-eye-scale-decr` 0.2-0.4,
 `*-height2-decr`), cheekbones up and cheek volume down, and the shorter lashes on everybody did more for the face than any shader in
 this round. Hair got a normal per strand so its shine breaks into lines.
+
+## The movement pass, from video (2026-10-30)
+
+The owner's worst parts after round 7 were faces, bodies in play, how they move, and hair and kit. Movement went by the numbers in
+`docs/research/footage-pose.md`: the same joint angles measured on pros in 12 clips (pose in the page, only numbers kept) and on the
+game's own swings (`r8-gs`, the same trunk frame).
+
+**The ready pose is fitted to the person.** It was one set of absolute heights, and shoulders run 1.32-1.487 m. `readyFit` moves the
+pose to each shoulder and arm in `setHanded`. Elbows 28 / 32 became 61-67 / 44-56 (video 46-66 / 45-47).
+
+**A stroke says how far the arm goes, and how long it follows.** `Family` gained `arm`, `follow` and `through`. Forehand arm 0.86,
+backhand 0.94 (a two-hander's reach is shorter). The forehand's elbow now goes 49 / 39 / 48 / 56 / 75 / 113 / 118 through the swing, on
+the video's 48-53 / 25-42 / 31-34 / 47-64 / 38-60 / 43-64 / 55-108. The last two run high: the finish folds a little early.
+
+**Stay near the contact key's racket on a low volley.** `backTurn` blends the take-back's racket to the contact's as the ball drops
+(`BACK_DROP0` 0, `BACK_DROP1` -0.3), so a low volley isn't lifted before it's dug out. The elbow used to sit at its stop to the hit;
+it now goes 116, 90, 86, 82, 57, 43, 60, 81.
+
+**The serve bends at the back and straightens into the ball.** A new `back` and `via` take out a 92-degree spike: 73, 52, 31, 30, 30,
+44, 48, 30.
+
+**Ten people move ten ways.** `data/manners.json`, render only: tempo, take-back size, follow-through, how high and how far out the
+ready hands sit. A player can be told by their swing with the face out of shot. A reaction is one point in three a held pose (`FIST`,
+`HIP`) instead of a clip, since two clips repeat within a game.
+
+**Not changed:** the trunk in groundstrokes reads 26-38 against the video's 2-34. The clips are coach feeds with high balls, and the
+game's balls are lower.
+
+## High volleys finish; bandejas don't, and why (2026-10-30)
+
+Round 7's pro #5-7. Tuned on seeds 1701+ at 2000 points, then checked old against new on 3001+ at 6000 points, because the first check
+showed the tuning seeds had flattered it (`DROP_RATE` 0.07 read smash 57 / volley 27 on 1701+, and 61 / 24 on 1901+).
+
+| 6000 points, seeds 3001+ | Before | After | Real |
+|---|---|---|---|
+| Volley W | 3.1% | 3.7% | 3.4-5.7 |
+| Smash, volley, share of winners | 55.0, 29.8 | 54.0, 32.5 | 43, 28.4 |
+| Smash W / FE / UE | 47.5 / 11.5 / 3.6 | 46.9 / 9.3 / 4.3 | 45 / 0.8 / 6 |
+| Winners: double bounce / came back / out | 46.0 / 42.3 / 6.6 | 47.4 / 40.8 / 6.9 | 48 / 35 / 17 |
+| Endings W / FE / UE | 36.4 / 26.8 / 36.9 | 38.6 / 25.7 / 35.7 | 34-42 / 29-33 / 29-33 |
+| Shots, seconds per point | 11.7, 15.5 | 11.6, 15.5 | 10-11, 9.4-14.8 |
+
+**A high volley goes short, and inside the glass.** `VOLLEY_ANGLE` 0.5 to 0.8 of balls above `VOLLEY_ANGLE_H`, landing 3.3-4.5 m from
+the net at spread 0.55-0.85. A first version out to 1.0 of the spread put 119 into the glass on the full in 3000 points, against 75.
+
+**A smash goes for the side glass from 5.5 m, not 4.5.** `SMASH_X3_DEPTH`. It moved the smash's errors the right way and took some of
+the winners that came back. It barely moved winners that left the court.
+
+**The drop stays at 0.12.** The pro asked for about 0.05 a point. At 0.07 the volley's share fell to 27.3, but the gap went to the
+smash, 58.1 of winners, and W fell. The drop is still too good a shot (W 52-57%). That's left open, and cutting it isn't the fix.
+
+**The short, wide bandeja was tried and rejected.** A bandeja landing 5.4-6.4 m from the net at the side glass won 0.9%, and drew 2.9
+forced errors in 100 against 3.9. A víbora at 5-6 m won 1.5% and drew 2.6 against 6.4. A defender has 1.2-1.4 s from strike to reply
+at these speeds, and runs 4-5 m in it. Landing short only gets them there sooner, and the ball that was hard off the back glass is
+now easy. Real bandeja winners must come from something the sim doesn't have: a defender who misreads a ball off the glass. The AI
+reads every bounce exactly. That's the real gap, and it stays open.
+
+**Spin doesn't get the ball out of the court.** Every contact and landing tried peaks at 13% of smashes leaving, and 17% of winners
+would need about 30%. Real por tres is hit with topspin (Sánchez-Alcaraz 2020 counts it under topspin smashes), so `spinRpm` was tried
+at 1500 and 3000 against the flat 300. Out rose to 9.4 and 10.9, but smash W went to 60 and 69 (45), came-back winners to 52 and 56
+(35), and double bounces fell to 35 and 31 (48). Rejected. The glass settles this one (see "The glass keeps its grip loss").

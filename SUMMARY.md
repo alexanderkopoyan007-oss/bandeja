@@ -619,6 +619,19 @@ the round's start. Before | after:
   stitched hems, wristbands, and long hair on a spring. In a cut-away they read as people. Close up they read as a good game
   character and not as a photograph, and the 312-texel face is why.
 
+### The movement pass, and the owner's four worst parts (30 Oct)
+Elbow angles in degrees, on the same measure for pros on video and the game's own swings (`docs/research/footage-pose.md`):
+
+| | Before | After | Video |
+|---|---|---|---|
+| Ready, right / left elbow | 28 / 32 | 61-67 / 44-56 | 46-66 / 45-47 |
+| Forehand elbow at contact | 30 (its stop) | 48 | 31-34 |
+| Volley elbow, take-back to contact | 30 (its stop) | 116 to 57 | 54-63 at contact |
+| Serve, largest spike | 92 | none | |
+
+Medium-preset p99, machine at load 30-60, so noisy: 19.1 / 15.7 ms before and 17.3 / 18.0 after. High 28.6 / 15.8 and 26.0 / 22.4. Load
+on broadband, title plus match: 14.17 + 9.75 s and 18.45 + 10.33 s. Nothing here is beyond the noise. A quiet rerun is still open.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

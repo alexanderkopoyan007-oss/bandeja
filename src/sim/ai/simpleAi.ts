@@ -1188,15 +1188,16 @@ export class SimpleAi {
       if (rng.next() < 0.5) { x = feetX(net.pos.x, back.pos.x); depth = abs(net.pos.z) + 0.3 + 0.5 * rng.next(); }
       else { x = back.pos.x > 0 ? -spread * 0.7 : spread * 0.7; depth = 7.2 + 1.0 * rng.next(); }
     } else if (this.volleying && this.conDepth < 5) {
-      // A volley against two back works them: a high ball is put away short and angled, onto the side glass in
-      // front of them; a low one is kept deep into a corner, with the middle as the safe way.
+      // A volley against two back works them: a high ball is put away short and angled, in front of them and inside the
+      // side glass (out to spread 0.75 it won 1-3%, landing 3-4 m out 4-8%, and wider it went into the glass on the
+      // full); a low one is kept deep into a corner, with the middle as the safe way.
       const cross = this.standX > 0.5 ? -1 : this.standX < -0.5 ? 1 : rng.next() < 0.5 ? -1 : 1;
       const r = rng.next();
       // (shorter off a sitter, which is hit hard and flat: 63% of those lost went on the full into the glass, at 73 km/h;
       // short off the shoe tops, which can only be lifted and floats: they cleared the net by 1.20 m and landed 6.9 m
       // deep, as safe as a ball can be: review round 5, the pro's #2)
       const short = this.conHeight >= SITTER_H ? SITTER_SHORT : this.conHeight < SHOE_H ? SHOE_SHORT : 0;
-      if (this.conHeight > VOLLEY_ANGLE_H && r < VOLLEY_ANGLE) { x = cross * spread * (0.55 + 0.2 * rng.next()); depth = 4.6 + 1.0 * rng.next(); }
+      if (this.conHeight > VOLLEY_ANGLE_H && r < VOLLEY_ANGLE) { x = cross * spread * (0.55 + 0.3 * rng.next()); depth = 3.3 + 1.2 * rng.next(); }
       else if (r < 0.75) { x = (rng.next() < 0.68 ? cross : -cross) * spread * (0.35 + 0.4 * rng.next()); depth = 6.4 + 1.2 * rng.next() - short; }
       else { x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 0.7; depth = 6.6 + 1.3 * rng.next() - short; }
     } else {
@@ -1220,7 +1221,7 @@ const BACK_CROSS = 0.6;
 const BACK_LINE = 0.22;
 /** A net volley against two back over VOLLEY_ANGLE_H (m) is put away on the angle VOLLEY_ANGLE of the time. */
 const VOLLEY_ANGLE_H = 1.0;
-const VOLLEY_ANGLE = 0.5;
+const VOLLEY_ANGLE = 0.8;
 /** Net volleys at or over SITTER_H (m) and under SHOE_H: the swing's spread (SimpleAi.motor), m taken off the depth. */
 const SITTER_H = 0.95;
 const SITTER_CONTROL = 2.2;
@@ -1294,7 +1295,7 @@ function smashDepth(m: MatchSim, back: number, h: number): number {
 }
 const SMASH_MARGIN = 0.45;
 /** A smash met this close (m from the net) and this high (m) is a put-away aimed for the side glass (por tres). */
-const SMASH_X3_DEPTH = 4.5;
+const SMASH_X3_DEPTH = 5.5;
 const SMASH_X3_HEIGHT = 2.2;
 const SMASH_MIN = 3.2;
 /** How long before an overhead's contact the racket starts up (s): real preparation takes about 0.52-0.54 s of footwork

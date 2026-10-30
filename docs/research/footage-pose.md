@@ -55,3 +55,6 @@ Not done: the backhand volley's own clip (its keys follow the forehand's princip
 The serve's clips also moved the sim. A ball let go at the waist bounces to about 0.6-0.7 m and pros strike it near there, with the
 wrist below the hip. The game's push of 3.2 m/s bounced it to 0.87 m. At 2.0 m/s it is struck at 0.70 m, and the trunk follows
 without any new key, since the bend comes from the contact's height.
+
+After the movement pass the game's serve elbow runs 73, 52, 31, 30, 30, 44, 48, 30 through the stroke, with no 92-degree spike at the
+back. The wrist's bounce height above stands.
