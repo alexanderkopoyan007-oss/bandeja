@@ -20,6 +20,8 @@ const ARENAS: Choice[] = [
   { value: 'club-day', label: 'Club, day' }, { value: 'club-night', label: 'Club, night' },
 ];
 
+const nextSeed = (s: number): number => (Math.imul(s, 1103515245) + 12345) >>> 1;
+
 export class App {
   private readonly renderer: THREE.WebGPURenderer;
   private readonly hud: HTMLElement;
@@ -94,7 +96,7 @@ export class App {
     await frame();
     stage(attract ? 'Building the arena' : 'Setting up the court', 0.1);
     await frame();
-    const seed = (this.seedBase = (Math.imul(this.seedBase, 1103515245) + 12345) >>> 1);
+    const seed = (this.seedBase = nextSeed(this.seedBase));
     const opts = optionsFromSetup(attract ? this.settings.setup : this.gameSetup(), this.settings, seed, this.asset, attract, this.params);
     opts.people = castParam(this.params);
     if (!attract && this.drill >= 0) {
@@ -119,10 +121,16 @@ export class App {
       else setTimeout(() => this.rebuildAttract(), 0);
     };
     g.start();
+    if (attract) this.fetchAhead();
     this.playing = !attract;
     if (this.settings.showFps && !attract) g.debug.toggle();
     // The window was left while the match was loading (the blur came before there was a match to pause).
     if (!attract && (document.hidden || !document.hasFocus())) g.onMenu();
+  }
+
+  /** The next match's people, fetched while nothing is at stake, so starting it doesn't wait for the network. */
+  private fetchAhead(): void {
+    if (this.asset && peopleWanted(this.params)) void loadPeople(this.asset, dealCast(nextSeed(this.seedBase), castParam(this.params)).people);
   }
 
   private rebuildAttract(): void {
@@ -199,6 +207,7 @@ export class App {
   private results(st: MatchStats): void {
     this.game?.setMenuPaused(true);
     this.menu.open(this.resultsScreen(st), true);
+    this.fetchAhead();
   }
 
   // ---- settings applied outside a game --------------------------------------------------------------------

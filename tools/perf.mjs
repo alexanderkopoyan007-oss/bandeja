@@ -296,18 +296,20 @@ async function load(name, { down, up, rtt, throttle, noYield = false }) {
   if (noYield) await page.evaluateOnNewDocument(() => { Object.defineProperty(window, 'scheduler', { value: undefined, writable: true, configurable: true }); });
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__app?.menu?.isOpen, { timeout: 120000, polling: 50 });
-  const r = await page.evaluate(async () => {
+  // TITLE_WAIT=<ms>: stay on the title that long before Quick match, as a player does (the next cast fetches meanwhile).
+  const r = await page.evaluate(async (wait) => {
     const title = performance.now();
     const boot = window.__loadLog.map((e) => `${e.name} ${(e.t / 1000).toFixed(2)}`).join(' | ');
     const paint = performance.getEntriesByType('paint').find((e) => e.name === 'first-contentful-paint')?.startTime ?? -1;
     const bytes = performance.getEntriesByType('resource').reduce((a, e) => a + (e.encodedBodySize || 0), 0)
       + (performance.getEntriesByType('navigation')[0]?.encodedBodySize ?? 0);
+    if (wait > 0) await new Promise((res) => setTimeout(res, wait));
     const t = performance.now();
     await window.__app.startMatch();
     await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
     const build = window.__loadLog.map((e) => `${e.name} +${((e.t - t) / 1000).toFixed(2)}`).join(' | ');
     return { paint, title, match: performance.now() - t, bytes, boot, build };
-  });
+  }, Number(process.env.TITLE_WAIT ?? 0));
   await browser.close();
   const s = (ms) => `${(ms / 1000).toFixed(2)} s`;
   console.log(`\n[load: ${name}] ${down} Mbit/s down, ${rtt} ms RTT, CPU ${throttle}x`);

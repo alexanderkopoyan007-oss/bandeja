@@ -130,31 +130,47 @@ export async function loadPlayerAsset(url: string, progress?: (frac: number) => 
   return base;
 }
 
+/** People being fetched, by name: a match and the title's fetch ahead (app.ts) share one download. */
+const fetching = new Map<string, Promise<void>>();
+
 /**
  * Loads the people a match needs into `base.people` (public/assets/people/, next to the asset's folder), those not
  * already there. A person that fails to load is left out (that player is the mannequin) and said in the console.
  */
 export async function loadPeople(base: PlayerAsset, people: string[], progress?: (frac: number) => void): Promise<void> {
-  const url = base.url;
   const wanted = people.filter((n) => !base.people.some((p) => p.look!.name === n));
   const n = wanted.length;
-  const dir = new URL('people/', url).href;
-  const loader = new THREE.TextureLoader();
+  for (let i = 0; i < n; i++) {
+    const name = wanted[i]!;
+    let job = fetching.get(name);
+    if (!job) {
+      job = loadPerson(base, name, progress && ((f) => progress((i + f) / n))).finally(() => fetching.delete(name));
+      fetching.set(name, job);
+    }
+    await job;
+  }
+}
+
+async function loadPerson(base: PlayerAsset, name: string, progress?: (frac: number) => void): Promise<void> {
+  const dir = new URL('people/', base.url).href;
+  // Decoded off the main thread, flipped there too (WebGL can't flip an ImageBitmap when it uploads one), straight alpha
+  // (the alpha is the skin's occlusion). An <img> decodes on the main thread inside the first upload, in the warm-up.
+  const loader = new THREE.ImageBitmapLoader().setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none' });
   const texture = async (file: string): Promise<THREE.Texture> => {
-    const t = await loader.loadAsync(dir + file);
+    const t = new THREE.Texture(await loader.loadAsync(dir + file));
+    t.flipY = false;
+    t.needsUpdate = true;
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
     return t;
   };
-  for (let i = 0; i < n; i++) {
-    try {
-      const p = parseBodyAsset(await fetchGz(dir + wanted[i] + '.bnz', progress && ((f) => progress((i + f) / n))), base);
-      const look = p.look!;
-      [look.opaqueMap, look.alphaMap] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha)]);
-      base.people.push(p);
-    } catch (err) {
-      console.warn(`person ${wanted[i]} not loaded, that player is the mannequin:`, err);
-    }
+  try {
+    const p = parseBodyAsset(await fetchGz(dir + name + '.bnz', progress), base);
+    const look = p.look!;
+    [look.opaqueMap, look.alphaMap] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha)]);
+    base.people.push(p);
+  } catch (err) {
+    console.warn(`person ${name} not loaded, that player is the mannequin:`, err);
   }
 }
 
