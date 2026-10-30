@@ -149,3 +149,57 @@ Round 2 statuses the reviewers didn't support:
 - R2 #12 (clothes) was Better and is now fixed as #7.
 - R2 #16 (hair) is Better.
 - R1 #8 (serve faults) doesn't hold. It is open as #13.
+
+## Round 4
+
+Two reviews written blind on phase9 at 78637a7. The full reports are `docs/review/round4-pro.md` and
+`docs/review/round4-critic.md`. Round 3's Mediums (branch r4-mediums) were not in that commit; they are marked here.
+Nothing was Critical. Two Highs were new (the pro's #1 and #2), so the loop goes on to round 5. Numbers after the fix: 2000
+points at level 1 (`--seed0 1301`), `tools/out/r4p2-*` re-run on the fixed code.
+
+| # | Rank | Finding | Mark | Status |
+|---|---|---|---|---|
+| 1 | High | P: everything flat goes down the middle: cross/line 42/58 (WPT 57.5/42.5), the outer metre 1.6% | NEW | **Fixed.** A table of cross-court corner, line and middle, judged from the contact's side: cross/line 56.4/43.6, middle 28%, |x| 0-1 m 14%, the outer metre 5.7%. Back-wall shots fell with it (below) |
+| 2 | High | P: the drop volley is the finisher (W 32%, 0.26 a point), the plain volley W 1% | NEW | **Fixed.** A drop only off a ball above the tape from close in: 0.05 a point, struck from 1.20 m, 8% of what it was. Plain net volley W 1.0 → 1.8-2.2, volleys overall W 2.0-2.8 (pros 3-6). Angles: 44-61% land wider than 2.5 m (6%). Back players step in as our low ball drops at the net pair |
+| 3 | High | P: the serve goes evenly round the box | REPEAT R3 #13 | **Fixed** on r4-mediums: side glass 57-60 / T 25 / middle 15-17 (WPT 64.6 / 24.3 / 11.1). First-serve faults 6.2%, return errors on side-glass serves 7.5% |
+| 4 | High | P: bandejas half-volleyed at the shins | REPEAT R3 #1 | **Fixed.** 89 of 94 were emergency blocks by a defender running across the ball's line to a plan off the glass. They step off the line and wait (`holdShort`): 20% → 9.4% against two back |
+| 5 | High | P: singles ends on the full into a wall, half the side glass | REPEAT R3 #17 | **Fixed.** Margin 1.4 m at level 1, depth on r4-mediums: on the full 38 → 13.2% of points, side glass 19.5 → 8.5% |
+| 6 | High | P: singles has no fight for the net | REPEAT R3 #17 | **Fixed.** Serve and volley, approach rule: server 4.13/4.76/7.61 m at the return, volleys 3.7 → 11.2% of shots, server wins 56.9% (50) |
+| 7 | High | C: people convince at TV distance, not close up | REPEAT R3 #21 | **Better, close to the source's limit.** Ambient hue off skin and eyes (no violet sockets, no lavender whites), brown irises, catchlights, no orange lid band, strand detail, laces and a knit on the shoes, no pale band under the jaw. Faces are MakeHuman's: still not 2K's scanned heads |
+| 8 | High | C: winning the match is a point's gesture | REPEAT R3 #5 | **Fixed.** 3.6 s: the winners run together and embrace, the beaten bend over, hands on knees, then the walk to the net and the tap |
+| 9 | High | C: the same four men in the same kit under new names | REPEAT R3 #11 | **Fixed.** Ten people (four women), men's or women's matches, names from nations that fit the face, eight kits, all from the seed; people load per match. Choosing your own look is M5 |
+| 10 | High | C: one mode and no teaching | REPEAT R3 #11 | **Better.** A knock-out (three rounds) and four practice drills. A guided first match, career and online stay on the roadmap (OPEN_QUESTIONS.md) |
+| 11 | Medium | P: back glass climbing back, 20.6% of shots | REGRESSION of R1 #3 | **Fixed** by #1: 15.8% (pros 12.8) |
+| 12 | Medium | P: the serving pair lost its short points (66-74%) | REGRESSION of R2 #13 | Better: 75-82 |
+| 13 | Medium | P: server runs in too far and too fast | NEW | Open |
+| 14 | Medium | P: net volleys struck low (70.8% under the tape) | NEW | Open |
+| 15 | Medium | P: stretched low contacts met late; animQa's window hides them | REPEAT R3 #20 | Open |
+| 16 | Medium | P: beaten players still swing (9 per 100 points) | NEW | Open |
+| 17 | Medium | P: the net pair doesn't chase what passes it | NEW | Open |
+| 18 | Medium | P: the víbora is a slower bandeja | REPEAT R3 #14 | **Fixed** on r4-mediums: 79 against 71 km/h |
+| 19 | Medium | P: endings read as qualifiers | REPEAT R3 #16 | Better: 33.8-36.6 / 27-28 / 35.6-38.4 (main draw 34-42 / 29-33 / 29-33) |
+| 20 | Medium | P: the styles' net trait doesn't show | REPEAT R3 #15 | **Fixed** on r4-mediums: Muro 28.6%, Martillo 37.0% net time |
+| 21 | Medium | P: too few serve faults | REPEAT | Better: 6.2% at level 1 (pros 7-10), 0.8% double (2.1) |
+| 22 | Medium | P: forehand volley played square | NEW | Open |
+| 23 | Medium | P: everything struck from a standstill | NEW | Open |
+| 24 | Medium | P: the bottom of the ladder is short | NEW | Open: 4.6 / 6.3 (5.6 / 7.3 derived). docs/ai.md's table refreshed |
+| 25 | Medium | P, C: stiff overhead and serve poses | REPEAT R3 #22 | **Fixed** on r4-mediums for the crouch; the Y of the arms stays |
+| 26 | Medium | C: no voice or music, silent replays | REPEAT R3 #19 | Open |
+| 27 | Medium | C: one contact in sixty 15 cm or more off | REPEAT R3 #20 | Open |
+| 28 | Medium | C: the end-wall mesh over the net zone | NEW | Open, the owner's choice of camera |
+| 29 | Medium | C: TV close loses a player a fifth of the time | NEW | Open |
+| 30 | Medium | C: replays need a last pass | NEW | Open |
+| 31 | Medium | C: empty grey in the stadium | REPEAT R2 #9 | Open |
+| 32 | Medium | C: nobody works the court | REPEAT | Open |
+| 33 | Medium | C: reactions are one clip each | NEW | Open |
+| 34 | Medium | C: no opening, no walk at a change of ends | NEW | Open |
+| 35 | Medium | C: club scenery a generation behind | REPEAT R1 #11 | Open |
+| 36+ | Low | The rest of both reports (13 items) | | Open; serve-time places (P #24) **fixed** on r4-mediums |
+
+Earlier statuses corrected by round 4:
+- R3 #1 was Better, not Fixed, until `holdShort`.
+- R1 #3 "Fixed for the AI" had slipped to 20.6% and is back at 15.8%.
+- R2 #6 and R3 #12 (too few short points): closed. Scaled to the same mean, the shape matches; what stays is a mean near the top of WPT 2020's range.
+- R3 #27 (lobs scarce): closed. 1.9 a point against about 2.0.
+- R3 #21 "limited by the source" was wrong for the eyes: the violet, the orange and the lavender were our shading.
+- R3 #5, #8 and #11 were Better, not Fixed.

@@ -2216,3 +2216,47 @@ Done on branch r4-mediums, off phase9, so the round 4 reviewers kept a fixed bui
 - **Tests that only measured the seed:** the contrapared's lost rate (over 60 seeds 18 of 88 before and 33 of 105
   after, with 30-seed ranges giving 5 of 43 and 13 of 45; the bound is now 0.45), the neighbour courts' count over
   120 s (now 300 s), and the replay test's one seed (it now plays seeds until it has a replay to check).
+
+## Review round 4's Highs (2026-10-30)
+
+**Styles and singles on r4-mediums.** A net-shy pair now stays behind most of its lobs (`lobStay`) and drops back from the
+net (`NET_BACK`), and a net-loving pair comes in behind low balls (`NET_PRESS`), because the styles' net time ran the wrong
+way: Muro 40.6, Martillo 32.6. Now 28.6 and 37.0. Singles aims 5.2-6.5 m out, short of the far glass.
+
+**Where the rally goes.** Against two back the AI aimed between them, always. The table (`BACK_CROSS`, `BACK_LINE`) is fitted
+to one number, WPT's 57.5/42.5 cross/line (Mellado-Arbelo et al. 2019), and gives 56.4/43.6. Two traps: cross-court has to be
+judged from the contact's side (`standX`), not where the player stood when planning, or a player who crosses the court plays
+the wrong ball; and aiming 0.55-0.95 of the way to the side took side-wall shots to 7.4% and UE to 40%, so the table stops at
+0.82. No published landing width exists, so that part is judged by shots off the side glass (6%, pros 2.7) and the ending mix.
+
+**Net drops.** Only off a ball above 0.98 m, within 3.8 m of the net. They were 0.26 a point from 0.69 m and won 32%; now 0.05 a
+point, from 1.20 m. Winning 21-31% of the time is still high, but on 5% of the old count it no longer shapes a match.
+
+**`holdShort`, not a cost.** R3 #1 and the pro's #4 looked like a planning fault. The probe (`tools/out/r5-shin.ts`) showed 89 of
+94 low deep volleys were the reflex block: the plan was right (off the glass), and the player ran across the ball's line to
+reach it, was hit-tested 0.04 s before it arrived, and blocked. So the AI steps DODGE off the line and waits, on the side of
+the spot if there is time. Tried first along the run, which failed on balls coming straight down it (the line and the run
+are parallel), so it works across the ball's own line.
+
+**Singles' approach** mirrors doubles' `intentUp` without the pair: `approach` set with each shot and serve. Kept deliberately
+below doubles' volley share: on a 10 m court one player can't cover the net as two do.
+
+**Weaker servers** got `room`: the side-glass targets faulted 30% of first serves at level 0.
+
+**People.** `SkinLighting.ambient` takes the brightness of the ambient and drops its hue on skin and eyes, because the court's
+probe sees a blue and a red floor. Both ways of reaching the model had to change: `indirectDiffuse` and `indirectSpecular`, which
+is where three adds the environment's diffuse (changing only the first did nothing). The pale band under every jaw looked like a
+mesh fault and was found by hiding each body mesh in turn and then sampling the atlas: it was the bare reflection at a grazing
+view, which `normalWorld.y` now occludes. The front collar is cut at load, in `personFrame`.
+
+**The cast.** People load per match, not at boot, so ten people cost no more than four: download and first-play stay as they
+were. The shirt is `male_casualsuit06` on every body: it fits, though it puffs at the hem on the women's hips. `young_caucasian_
+female2` makes Blender quit without an error, so p10 uses `middleage_caucasian_female`. The sim's contacts are one height for
+everyone, so a shorter player jumps higher (`jumpMore`): on the shortest, smash p90 went 17 → 5 cm.
+
+**Winning.** 3.6 s, sim-side so that replays, the camera and the walk to the net all read it (`OVER_REACT`, `overHugAt`). The
+embrace and the bow are keys (`HUG`, `KNEES`) through the racket tap's mix.
+
+**Knock-out and Practice** are the smallest honest answer to "one mode". The coach feeds with the serve's own motion, so nothing
+new had to be animated and the rules treat a feed as a rally ball (`cfg.practice`). A guided first match, which replaces the key
+panel, touches the HUD and is the owner's to see first.
