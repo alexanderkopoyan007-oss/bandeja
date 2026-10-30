@@ -245,15 +245,17 @@ export class SimpleAi {
         const toT = toGlass + (second ? 0.38 : fromLeft ? 0.19 : 0.31);
         let tx: number;
         let depth: number;
+        // (weaker servers aim well inside the lines: the same targets faulted 30% of first serves at level 0)
+        const room = 1 - this.level;
         if (wide < toGlass) {
-          tx = outer - toOut * (second ? 1.1 : 0.85);
-          depth = second ? 5.5 + 0.5 * rng.next() : 5.8 + 0.6 * rng.next();
+          tx = outer - toOut * ((second ? 1.1 : 0.85) + 0.65 * room);
+          depth = (second ? 5.5 + 0.5 * rng.next() : 5.8 + 0.6 * rng.next()) - 0.9 * room;
         } else if (wide < toT) {
-          tx = inner + toOut * (second ? 0.8 : 0.6);
-          depth = second ? 4.9 + 0.8 * rng.next() : 5.4 + 0.8 * rng.next();
+          tx = inner + toOut * ((second ? 0.8 : 0.6) + 0.4 * room);
+          depth = (second ? 4.9 + 0.8 * rng.next() : 5.4 + 0.8 * rng.next()) - 0.75 * room;
         } else {
           tx = (inner + outer) * 0.5;
-          depth = second ? 4.9 + 0.8 * rng.next() : 5.4 + 0.8 * rng.next();
+          depth = (second ? 4.9 + 0.8 * rng.next() : 5.4 + 0.8 * rng.next()) - 0.75 * room;
         }
         this.targetX = tx;
         this.targetZ = -s * depth;

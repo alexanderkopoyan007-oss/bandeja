@@ -81,14 +81,14 @@ never miss an easy ball on purpose, and a ball that is already out of reach when
 swung at (a late swing at a fast ball off the glass can still miss it, as a real one does).
 
 Fitted against the published ladder from novices to professionals (rally length; `docs/research/`). Measured at
-the end of Phase 4 (1,000 matches at level 1, 300 at each other level; `scratch/l*-*.txt`):
+the end of Phase 4, and again after review round 4 moved the rally (2,000 points a level, `node tools/match-stats.ts`):
 
 | Level | Shots a point | Seconds a point | Benchmark | First-serve faults | Double faults (of second serves) |
 |---|---|---|---|---|---|
-| 0 | 5.2 | 6.8 | novices about 5.6 | 16.8% | 5.2% |
-| 0.5 | 7.1 | 9.3 | trained recreational players about 7.3 | 12.0% | 2.7% |
-| 0.75 | 8.7 | 11.6 | national 8.0 (Ramón-Llin et al. 2020) | 9.4% | 1.4% |
-| 1 | 10.9 | 14.9 | professional men 10-11 shots, 9.4-14.8 s | 6.5% (pros about 10) | 0.6% (pros about 2) |
+| 0 | 4.6 | 6.0 | novices about 5.6 | 10.1% | 5.8% |
+| 0.5 | 6.3 | 8.3 | trained recreational players about 7.3 | 8.7% | 5.6% |
+| 0.75 | 7.9 | 10.4 | national 8.0 (Ramón-Llin et al. 2020) | 6.7% | 1.5% |
+| 1 | 11.0 | 14.7 | professional men 10-11 shots, 9.4-14.8 s | 6.2% (pros about 10) | 0.8% (pros about 2) |
 
 The novice and trained figures are derived, not measured directly: Sánchez-Alcaraz et al. 2021 give the serve's
 share of all shots (21.5% for novices, 15.8% for trained players), and shots a point = serves a point / that share,
