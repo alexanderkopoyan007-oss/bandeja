@@ -1,0 +1,30 @@
+{
+  "name": "p10",
+  "macro": {
+    "gender": 0,
+    "age": 0.5,
+    "muscle": 0.62,
+    "weight": 0.4,
+    "proportions": 0.8,
+    "height": 0.5,
+    "cupsize": 0.42,
+    "firmness": 0.65,
+    "race": {
+      "asian": 0,
+      "caucasian": 0.85,
+      "african": 0.15
+    }
+  },
+  "skin": "middleage_caucasian_female",
+  "eyes": "high-poly",
+  "eye_colour": "green",
+  "eyebrows": "eyebrow010",
+  "eyelashes": "eyelashes02",
+  "hair": "ponytail01",
+  "clothes": [
+    "male_casualsuit06",
+    "shoes05"
+  ],
+  "shorts": 0.55,
+  "height": 1.69
+}

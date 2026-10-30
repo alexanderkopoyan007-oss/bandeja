@@ -12,6 +12,7 @@ import { Avatar } from './avatar/avatar.ts';
 import { dressRacket, makeRacketModel, racketLookFor } from './avatar/racket.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
+import type { Cast } from '../game/cast.ts';
 import { makeBall, spinBall } from './ballLook.ts';
 import { DT } from '../sim/core/constants.ts';
 
@@ -185,11 +186,11 @@ export class PlayerView {
   private readonly racket: THREE.Group | null = null;
   private readonly ready = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null) {
+  constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null, cast?: Cast) {
     if (asset) {
-      // Dressed as one of the people when they loaded (each player a different one), else the mannequin.
-      const people = asset.people;
-      this.avatar = new Avatar(people.length ? people[idx % people.length]! : asset, kitFor(idx));
+      // Dressed as the person dealt to them (game/cast.ts) when they loaded, else the mannequin.
+      const person = cast ? asset.people.find((p) => p.look!.name === cast.people[idx]) : asset.people[idx];
+      this.avatar = new Avatar(person ?? asset, kitFor(idx, cast?.kits));
       // Each player's own racket (data/racket-looks/).
       dressRacket(this.avatar.racket, racketLookFor(idx));
       this.root = this.avatar.root;

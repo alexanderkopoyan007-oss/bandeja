@@ -199,14 +199,35 @@ export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THRE
   return { material: m, state: { sweat: sweatU, lag } };
 }
 
-/** Kits by player number (team + 2 * slot): partners in the same shirt, each team its own; skins and hair vary. */
-export function kitFor(idx: number): KitLook {
+/**
+ * The kits a match can be dealt, by team: warm against cool, so the two sides stay apart at the far end of the court and
+ * under simulated colour blindness (tests/app/palette.test.ts). The first of each is the game's default pair.
+ */
+const KITS: Pick<KitLook, 'shirt' | 'trim' | 'shorts'>[][] = [
+  [
+    { shirt: 0xd8402e, trim: 0x22252b, shorts: 0x1d2433 },
+    { shirt: 0xe8841c, trim: 0x22252b, shorts: 0x20242c },
+    { shirt: 0xc4256c, trim: 0xf1f3f6, shorts: 0x22252b },
+    { shirt: 0xf0c52e, trim: 0x22252b, shorts: 0x1d2433 },
+  ],
+  [
+    { shirt: 0x2563c9, trim: 0xf1f3f6, shorts: 0xf1f3f6 },
+    { shirt: 0x0f8a7e, trim: 0xf1f3f6, shorts: 0xf1f3f6 },
+    { shirt: 0x5a3fb8, trim: 0xf1f3f6, shorts: 0xe9ebf0 },
+    { shirt: 0xf1f3f6, trim: 0x2563c9, shorts: 0x1f3f8a },
+  ],
+];
+export const KIT_COUNT = 4;
+
+/** Kits by player number (team + 2 * slot): partners in the same shirt, each team its own (`kits`: which of the team's
+ * kits, cast.ts); skins and hair vary. */
+export function kitFor(idx: number, kits: readonly [number, number] = [0, 0]): KitLook {
   const team = idx & 1;
-  const kits: KitLook[] = [
-    { shirt: 0xd8402e, trim: 0x22252b, shorts: 0x1d2433, socks: 0xf2f2f2, shoes: 0xeeeeee, skin: 0xe2b08c, hair: 0x2a1d14 },
-    { shirt: 0x2563c9, trim: 0xf1f3f6, shorts: 0xf1f3f6, socks: 0xf2f2f2, shoes: 0x23262c, skin: 0xc68e66, hair: 0x18120e },
+  const shoes: KitLook[] = [
+    { shirt: 0, trim: 0, shorts: 0, socks: 0xf2f2f2, shoes: 0xeeeeee, skin: 0xe2b08c, hair: 0x2a1d14 },
+    { shirt: 0, trim: 0, shorts: 0, socks: 0xf2f2f2, shoes: 0x23262c, skin: 0xc68e66, hair: 0x18120e },
   ];
-  const k = { ...kits[team]! };
+  const k = { ...shoes[team]!, ...KITS[team]![kits[team]!]! };
   if (idx >= 2) {
     // The partner: same kit, their own looks.
     k.skin = team ? 0xf0c9a8 : 0x9c6b4a;

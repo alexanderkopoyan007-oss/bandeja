@@ -333,6 +333,8 @@ const JUMP_MAX = 0.3;
  * played off a small push or a scissor kick, lower than the smash's. */
 const JUMP_MAX_OH = 0.2;
 const JUMP_TOES = 0.12;
+const JUMP_HEIGHT = 1.8;
+const JUMP_SHORT = 1.0;
 const LAND_DROP = 0.06;
 const LAND_TIME = 0.2;
 const FOLLOW = 0.3;
@@ -730,6 +732,9 @@ export class Avatar {
   private finishTo = 0;
   /** Shoulder to wrist, arm straight (m). */
   private readonly armLen: number;
+  /** A shorter player jumps higher for the same ball (the sim's contacts are one height for everyone): JUMP_SHORT m per
+   * metre under JUMP_HEIGHT. */
+  private readonly jumpMore: number;
   /**
    * Pops smoothed over (see inertia.ts): the clip pose before IK, the head after looking, the stance's facing, the
    * stroke's key and weight, the hips' drop and reach. `inertial = false` shows the raw pose (QA comparisons).
@@ -921,6 +926,7 @@ export class Avatar {
     const rw = asset.restWorld;
     const bp = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(rw[asset.bone(n)]!);
     this.armLen = bp('RightArm').distanceTo(bp('RightForeArm')) + bp('RightForeArm').distanceTo(bp('RightHand'));
+    this.jumpMore = Math.max(0, JUMP_HEIGHT - (asset.look?.height ?? JUMP_HEIGHT)) * JUMP_SHORT;
     this.grips = [this.makeGrip(asset, 'Right'), this.makeGrip(asset, 'Left')];
     const lim = new Float64Array(this.nb);
     this.inertiaSkip = new Uint8Array(this.nb);
@@ -1963,7 +1969,7 @@ export class Avatar {
     if (fam !== SMASH && fam !== OVERHEAD && fam !== VIBORA) return;
     const tc = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
     if (tc < 0 || t >= tc) return;
-    const h = Math.min(fam === SMASH ? JUMP_MAX : JUMP_MAX_OH, this.upNeed - JUMP_TOES);
+    const h = Math.min((fam === SMASH ? JUMP_MAX : JUMP_MAX_OH) + this.jumpMore, this.upNeed - JUMP_TOES);
     if (h < 0.03) return;
     const T = 2 * Math.sqrt((2 * h) / 9.81);
     if (t < tc - T / 2) return;

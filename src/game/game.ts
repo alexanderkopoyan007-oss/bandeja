@@ -10,6 +10,7 @@ import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView, ReplayCamera, type CameraPreset } from '../render/views.ts';
 import { Replays, RP_IDLE, RP_PREP, RP_SHOW } from './replay.ts';
 import { dealNames, nameOf, type PlayerName } from './names.ts';
+import { dealCast } from './cast.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
 import { DEFAULT_KEYS } from './input/bindings.ts';
@@ -48,6 +49,8 @@ export interface GameOptions {
   /** Review only (`?cam=hand|body|ball|face`, `&camp=N` the player): a close camera on a player's racket hand, the whole
    * player, or the ball, instead of the broadcast camera. */
   closeCam?: string;
+  /** ?people=a,b,c,d: these people instead of the cast dealt from the seed. */
+  people?: string[];
   closeCamPlayer?: number;
   /** The human's player number (team + 2 * slot); ignored with autoplay. */
   human: number;
@@ -259,7 +262,8 @@ export class Game {
     this.replays.enabled = opts.replays !== false && !opts.closeCam;
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
-    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar));
+    const cast = dealCast(opts.match.seed ?? 0, opts.people);
+    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, cast));
     if (!opts.autoplay) this.players[opts.human]!.markYou();
     this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
     this.assists = new AssistView(this.scene);
@@ -299,14 +303,14 @@ export class Game {
     this.feedback.shake = prefs.shake !== false;
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
     // Score rows name the players: YOU, and each AI by the name dealt from the seed (game/names.ts).
-    this.names = dealNames(opts.match.seed ?? 0, this.sim.players.length);
+    this.names = dealNames(opts.match.seed ?? 0, this.sim.players.length, cast);
     const who = (i: number, short: boolean): string => (!opts.autoplay && i === opts.human ? 'YOU' : nameOf(this.names[i]!, short));
     const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
     const names: [string, string] = [row(0), row(1)];
     this.hud = new Hud(hudRoot, names, sets);
     if (opts.gfx === 'tv') {
       const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
-      this.tv = new TvGraphics(hudRoot, names, [hex(kitFor(0).shirt), hex(kitFor(1).shirt)], sets, this.sim);
+      this.tv = new TvGraphics(hudRoot, names, [hex(kitFor(0, cast.kits).shirt), hex(kitFor(1, cast.kits).shirt)], sets, this.sim);
     }
     this.hud.pro = opts.pro;
     this.hud.setTiming(opts.match.timingScale ?? 1);

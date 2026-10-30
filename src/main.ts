@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Game } from './game/game.ts';
-import { loadPlayerAsset, peopleFor, type PlayerAsset } from './render/avatar/asset.ts';
+import { loadPlayerAsset, peopleWanted, type PlayerAsset } from './render/avatar/asset.ts';
+import { castParam, dealCast } from './game/cast.ts';
 import { findPhoto, PhotoOverlay } from './game/photoMatch.ts';
 import { App, applyRootLook } from './app/app.ts';
 import { LoadingScreen } from './ui/loading.ts';
@@ -78,9 +79,11 @@ async function start(): Promise<void> {
     for (const k of ['court', 'floor', 'arena'] as const) if (photo[k] && !params.has(k)) params.set(k, photo[k]!);
     if (!params.has('autoplay')) params.set('autoplay', '1');
   }
+  // (the cast comes from the seed, so it is fixed here: the people load before the options are read)
+  if (!params.has('seed')) params.set('seed', String((Math.random() * 2 ** 31) | 0));
   // The player body loads alongside the renderer; ?avatar=0 (or a failed load) plays with the M1 capsules.
   const avatar = params.get('avatar') === '0' ? Promise.resolve(null)
-    : loadPlayerAsset(new URL('assets/player.bnz', document.baseURI).href, undefined, peopleFor(params)).catch((err: unknown): PlayerAsset | null => {
+    : loadPlayerAsset(new URL('assets/player.bnz', document.baseURI).href, undefined, peopleWanted(params) ? dealCast(Number(params.get('seed')), castParam(params)).people : []).catch((err: unknown): PlayerAsset | null => {
       console.warn('player body not loaded, using capsules:', err);
       return null;
     });
@@ -92,7 +95,9 @@ async function start(): Promise<void> {
     return;
   }
 
-  const game = new Game(optionsFromUrl(params, await avatar), renderer, document.getElementById('hud')!);
+  const urlOptions = optionsFromUrl(params, await avatar);
+  urlOptions.people = castParam(params);
+  const game = new Game(urlOptions, renderer, document.getElementById('hud')!);
   // Exposed before the warm-up: tools that step the game themselves don't need it (and a hidden tab stalls it).
   (window as unknown as { __bandeja: Game }).__bandeja = game;
   // Tools driving a hidden tab (no animation frames there): step the game by hand, `secs` of 60 Hz frames.

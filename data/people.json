@@ -1,0 +1,18 @@
+{
+  "//": "Who can be dealt to a match (src/game/cast.ts): the people in data/players/, and the nations their names may come from, so that a name fits the face. A match is men or women throughout.",
+  "men": [
+    { "name": "p1", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] },
+    { "name": "p2", "nations": ["BRA", "FRA", "POR", "NED"] },
+    { "name": "p3", "nations": ["ESP", "SWE", "NED", "ITA", "ARG"] },
+    { "name": "p4", "nations": ["JPN", "KOR"] },
+    { "name": "p5", "nations": ["ESP", "ARG", "MEX", "BRA"] },
+    { "name": "p6", "nations": ["MEX", "ARG", "BRA"] }
+  ],
+  "women": [
+    { "name": "p7", "nations": ["ESP", "ITA", "FRA", "SWE", "NED", "ARG"] },
+    { "name": "p8", "nations": ["BRA", "FRA", "POR"] },
+    { "name": "p9", "nations": ["JPN", "KOR"] },
+    { "name": "p10", "nations": ["ESP", "ARG", "MEX", "POR"] }
+  ],
+  "womensMatches": 0.35
+}

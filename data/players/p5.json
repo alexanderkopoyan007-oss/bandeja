@@ -1,0 +1,30 @@
+{
+  "name": "p5",
+  "macro": {
+    "gender": 1.0,
+    "age": 0.42,
+    "muscle": 0.72,
+    "weight": 0.42,
+    "proportions": 0.8,
+    "height": 0.55,
+    "cupsize": 0.5,
+    "firmness": 0.5,
+    "race": {
+      "asian": 0,
+      "caucasian": 0.8,
+      "african": 0.2
+    }
+  },
+  "skin": "young_caucasian_male2",
+  "eyes": "high-poly",
+  "eye_colour": "brown",
+  "eyebrows": "eyebrow003",
+  "eyelashes": "eyelashes01",
+  "hair": "short03",
+  "clothes": [
+    "male_casualsuit06",
+    "shoes05"
+  ],
+  "shorts": 0.6,
+  "height": 1.82
+}

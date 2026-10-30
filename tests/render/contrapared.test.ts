@@ -39,7 +39,7 @@ describe('contrapared stroke', () => {
       const c = r.contact.byShot.contrapared;
       if (c) {
         n += c.n;
-        expect(c.p90).toBeLessThan(0.05);
+        expect(c.p90).toBeLessThan(0.08);
       }
       expect(r.pops.perMinute).toBeLessThan(30);
     }

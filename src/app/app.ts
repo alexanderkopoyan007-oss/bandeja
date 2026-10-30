@@ -4,7 +4,8 @@
 import * as THREE from 'three/webgpu';
 import { Game } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
-import { loadPlayerAsset, peopleFor, type PlayerAsset } from '../render/avatar/asset.ts';
+import { loadPeople, loadPlayerAsset, peopleWanted, type PlayerAsset } from '../render/avatar/asset.ts';
+import { castParam, dealCast } from '../game/cast.ts';
 import { LoadingScreen } from '../ui/loading.ts';
 import { Menu, type Item, type Screen, type Choice } from '../ui/menu/menu.ts';
 import { setSafeColours } from '../ui/palette.ts';
@@ -65,7 +66,7 @@ export class App {
     const url = new URL('assets/player.bnz', document.baseURI).href;
     for (let attempt = 0; !this.asset; attempt++) {
       try {
-        this.asset = await loadPlayerAsset(url, (f) => L.stage('Fetching the players', 0.12 + 0.4 * f), peopleFor(this.params));
+        this.asset = await loadPlayerAsset(url, (f) => L.stage('Fetching the players', 0.12 + 0.1 * f));
       } catch (err) {
         if (attempt >= 2) throw new Error(`the players could not be downloaded (${String(err)}). Check the connection`);
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
@@ -91,6 +92,10 @@ export class App {
     await frame();
     const seed = (this.seedBase = (Math.imul(this.seedBase, 1103515245) + 12345) >>> 1);
     const opts = optionsFromSetup(this.settings.setup, this.settings, seed, this.asset, attract, this.params);
+    opts.people = castParam(this.params);
+    if (this.asset && peopleWanted(this.params)) {
+      await loadPeople(this.asset, dealCast(seed, opts.people).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f));
+    }
     const g = new Game(opts, this.renderer, this.hud);
     (window as unknown as { __bandeja: Game }).__bandeja = g;
     this.game = g;

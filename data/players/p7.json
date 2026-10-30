@@ -1,0 +1,30 @@
+{
+  "name": "p7",
+  "macro": {
+    "gender": 0,
+    "age": 0.4,
+    "muscle": 0.6,
+    "weight": 0.38,
+    "proportions": 0.8,
+    "height": 0.5,
+    "cupsize": 0.42,
+    "firmness": 0.65,
+    "race": {
+      "asian": 0,
+      "caucasian": 1,
+      "african": 0
+    }
+  },
+  "skin": "young_caucasian_female",
+  "eyes": "high-poly",
+  "eye_colour": "blue",
+  "eyebrows": "eyebrow007",
+  "eyelashes": "eyelashes02",
+  "hair": "ponytail01",
+  "clothes": [
+    "male_casualsuit06",
+    "shoes05"
+  ],
+  "shorts": 0.56,
+  "height": 1.71
+}

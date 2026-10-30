@@ -54,6 +54,8 @@ export interface PlayerAsset {
   look: BodyLook | null;
   /** On the mannequin's asset: the people the players are dressed as (empty: everyone is the mannequin). */
   people: PlayerAsset[];
+  /** Where it was loaded from (people load from beside it, match by match). */
+  url: string;
 }
 
 /** Part codes of a person's vertices (tools/assets/mpfb/finish-player.py). */
@@ -88,12 +90,12 @@ export interface BodyLook {
   face: FaceData | null;
 }
 
-/** The people the players are dressed as, by player number (public/assets/people/). */
-export const PEOPLE = ['p1', 'p2', 'p3', 'p4'];
+/** The roster (public/assets/people/, data/players/); a match loads the four it deals (game/cast.ts). */
+export const PEOPLE = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'];
 
-/** Which people a page loads: all of them, or none with ?people=0 (every player the mannequin). */
-export function peopleFor(params: URLSearchParams): string[] {
-  return params.get('people') === '0' ? [] : PEOPLE;
+/** Are people wanted at all? ?people=0 keeps every player the mannequin. */
+export function peopleWanted(params: URLSearchParams): boolean {
+  return params.get('people') !== '0';
 }
 
 interface MeshHeader {
@@ -117,12 +119,25 @@ const JOINT_SHADE = 0.22;
 
 /**
  * `progress`: the share downloaded so far (0..1), for the loading screen. `people`: the names of the people to
- * load beside the mannequin (public/assets/people/, next to `url`'s folder); a person that fails to load is left
- * out (the players fall back to the mannequin) and said in the console.
+ * load beside the mannequin (see loadPeople).
  */
 export async function loadPlayerAsset(url: string, progress?: (frac: number) => void, people: string[] = []): Promise<PlayerAsset> {
   const n = 1 + people.length;
   const base = parsePlayerAsset(await fetchGz(url, progress && ((f) => progress(f / n))));
+  base.url = url;
+  await loadPeople(base, people, progress && ((f) => progress((1 + f * people.length) / n)));
+  progress?.(1);
+  return base;
+}
+
+/**
+ * Loads the people a match needs into `base.people` (public/assets/people/, next to the asset's folder), those not
+ * already there. A person that fails to load is left out (that player is the mannequin) and said in the console.
+ */
+export async function loadPeople(base: PlayerAsset, people: string[], progress?: (frac: number) => void): Promise<void> {
+  const url = base.url;
+  const wanted = people.filter((n) => !base.people.some((p) => p.look!.name === n));
+  const n = wanted.length;
   const dir = new URL('people/', url).href;
   const loader = new THREE.TextureLoader();
   const texture = async (file: string): Promise<THREE.Texture> => {
@@ -131,18 +146,16 @@ export async function loadPlayerAsset(url: string, progress?: (frac: number) => 
     t.anisotropy = 4;
     return t;
   };
-  for (let i = 0; i < people.length; i++) {
+  for (let i = 0; i < n; i++) {
     try {
-      const p = parseBodyAsset(await fetchGz(dir + people[i] + '.bnz', progress && ((f) => progress((1 + i + f) / n))), base);
+      const p = parseBodyAsset(await fetchGz(dir + wanted[i] + '.bnz', progress && ((f) => progress((i + f) / n))), base);
       const look = p.look!;
       [look.opaqueMap, look.alphaMap] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha)]);
       base.people.push(p);
     } catch (err) {
-      console.warn(`person ${people[i]} not loaded, that player is the mannequin:`, err);
+      console.warn(`person ${wanted[i]} not loaded, that player is the mannequin:`, err);
     }
   }
-  progress?.(1);
-  return base;
 }
 
 async function fetchGz(url: string, progress?: (frac: number) => void): Promise<ArrayBuffer> {
@@ -226,6 +239,7 @@ function assemble(bones: BoneDef[], geometry: THREE.BufferGeometry, boneInverses
     },
     look,
     people: [],
+    url: '',
   };
   CLIPS.set(asset, clips);
   return asset;

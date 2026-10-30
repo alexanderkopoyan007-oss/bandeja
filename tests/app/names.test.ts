@@ -1,3 +1,4 @@
+import { dealCast } from '../../src/game/cast.ts';
 import { describe, expect, it } from 'vitest';
 import { dealNames, nameOf, PRO_SURNAMES } from '../../src/game/names.ts';
 
@@ -24,5 +25,27 @@ describe('player names', () => {
     const n = { first: 'Diego', last: 'Campos', nation: 'ESP' };
     expect(nameOf(n, true)).toBe('D. Campos');
     expect(nameOf(n, false)).toBe('Diego Campos');
+  });
+});
+
+describe('the cast', () => {
+  it('a match is men or women throughout, the names fit, the seed decides it', () => {
+    let women = 0;
+    const seen = new Set<string>();
+    for (let seed = 1; seed < 400; seed++) {
+      const c = dealCast(seed);
+      expect(new Set(c.people).size).toBe(4);
+      const ws = c.people.filter((p) => Number(p.slice(1)) >= 7).length;
+      expect(ws === 0 || ws === 4).toBe(true);
+      expect(c.women).toBe(ws === 4);
+      if (c.women) women++;
+      for (const p of c.people) seen.add(p);
+      expect(dealCast(seed)).toEqual(c);
+      const names = dealNames(seed, 4, c);
+      names.forEach((n, i) => expect(c.nations[i]).toContain(n.nation));
+    }
+    expect(women).toBeGreaterThan(90);
+    expect(women).toBeLessThan(200);
+    expect(seen.size).toBe(10);
   });
 });
