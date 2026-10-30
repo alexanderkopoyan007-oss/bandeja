@@ -456,8 +456,8 @@ const LUNGE_REACH = 0.95;
 const LUNGE_BASE = 0.42;
 const LUNGE_LOW = 0.58;
 /** An overhead's feet: the racket-side foot back and the other forward (m), side-on (0.99 legs wide against 0.45). */
-const OH_FOOT_BACK = 0.42;
-const OH_FOOT_FRONT = 0.2;
+const OH_FOOT_BACK = 0.34;
+const OH_FOOT_FRONT = 0.16;
 /** Below this weight (the stroke's or the ready position's) the arm solve fades into the clip's arm. */
 const ARM_FADE = 0.15;
 /** Furthest a swing reaches past the arm (m: hand to the face's centre and the hips' reach), and the heights an

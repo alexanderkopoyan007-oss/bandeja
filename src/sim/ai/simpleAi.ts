@@ -1282,7 +1282,7 @@ const SMASH_X3_HEIGHT = 2.2;
 const SMASH_MIN = 3.2;
 /** How long before an overhead's contact the racket starts up (s): real preparation takes about 0.52-0.54 s of footwork
  * (docs/research/serve-and-strokes-motion.md), and it was up only 0.36 s before the ball. */
-const OH_PRESS = 0.75;
+const OH_PRESS = 1;
 /** A smash landing this short (m from the net) kicks off the glass hard enough to be a winner. */
 const KILL_DEPTH = 6.0;
 /** How far (m) inside KILL_DEPTH the landing must be for the AI's full smash rate (less: a share of it). */
