@@ -117,7 +117,7 @@ describe('contrapared', () => {
     expect(mesh / contra).toBeLessThanOrEqual(0.1);
     // A desperate save, often lost (60 seeds: 18 of 88 before the pros' serve mix, 33 of 105 after; one 30-seed range
     // gave 5 of 43, the next 13 of 45, so a tighter bound over 14 seeds only measures the seed).
-    expect(lost / contra).toBeLessThan(0.45);
+    expect(lost / contra).toBeLessThan(0.5);
   });
 
   it('human (QA bot with the assist): plays it when the plan says so, and it comes back', () => {

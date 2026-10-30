@@ -48,6 +48,10 @@ const SERVE_VOLLEY = 0.7;
 const DROP_HEIGHT = 0.98;
 const DROP_DEPTH = 3.8;
 const DROP_RATE = 0.12;
+/** A contact window this close to the plan's moment (s) is the planned contact. */
+const PLAN_SAME = 0.2;
+/** The latest release before the ball is out of reach (s). */
+const RELEASE_MARGIN = 0.02;
 /** Chance a net-shy style drops back again after a ball taken near the net, per unit of its net trait under 1. */
 const NET_BACK = 0.5;
 /** Chance a net-loving style comes in behind a low ball from the back, per unit of its net trait over 1 (Martillo, 1.6:
@@ -190,7 +194,8 @@ export class SimpleAi {
 
   /** Swing-to-swing spread at contact (ShotRequest.motor), growing with the ball's pressure. */
   motor(pressure: number): number {
-    return byLevel(SKILL.motor, this.level) * (1 + SKILL.pressure * pressure);
+    // (with the square: a pro's easy ball stays in and the hard one goes, W/FE/UE 37/29/34 against 46/14/40 in a line)
+    return byLevel(SKILL.motor, this.level) * (1 + SKILL.pressure * pressure * pressure);
   }
 
   /**
@@ -438,14 +443,19 @@ export class SimpleAi {
     const p = m.players[this.index]!;
     const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3, p.shot === SHOT_BANDEJA, false, this.ohKind,
       this.contra ? m.world.court.halfL : 0);
-    this.reach = n > 0;
     let best = -1;
     for (let i = 0; i < n; i++) {
       if (best < 0 || abs(this.wins[i]!.ideal - this.idealT) < abs(this.wins[best]!.ideal - this.idealT)) best = i;
     }
+    // Only the planned contact: on the way to it, a moment the ball passes near where we are now is no ball to swing
+    // at (the pro's #3: 12.5 swings at the air per 100 points, the ball 1.7 m off, 0.4 s before the plan, three in four
+    // of them waiting for it off the glass; each one a ball left to die).
+    if (best >= 0 && abs(this.wins[best]!.ideal - this.idealT) > PLAN_SAME) best = -1;
+    this.reach = best >= 0;
     if (best < 0) return;
     const ideal = this.wins[best]!.ideal;
-    this.releaseAt = ideal + this.noise;
+    // However late, the swing still meets the ball: a pro's late hit comes off the frame, it doesn't miss the racket.
+    this.releaseAt = min(ideal + this.noise, this.wins[best]!.end - RELEASE_MARGIN);
     this.releaseIdeal = ideal;
     // Nobody waits for a ball to reach their chest: a late swing at a ball coming at the body still goes in time.
     const k = m.bodyHitIdx(this.index, s);
@@ -609,7 +619,7 @@ export class SimpleAi {
       // Deep overheads only off the glass (a bajada); in the air from back there it is a lob to let bounce. Off the
       // glass, only where a bajada is met (a ball still high well out of the glass is let drop and played).
       overhead = ok && (st.inTime || p.swing === SW_CHARGE)
-        && (st.afterWall ? abs(st.bz) >= BAJADA_DEPTH - 0.5 : abs(st.z) < 8.2);
+        && (st.afterWall ? this.bajadaOk && abs(st.bz) >= BAJADA_DEPTH - 0.5 : abs(st.z) < 8.2);
     }
     this.bajada = overhead && st.afterWall;
     if (!overhead) {

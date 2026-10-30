@@ -77,7 +77,7 @@ const STRETCH_COST = 0.5;
 const STRETCH_FEET = 0.03;
 const STRETCH_BACK = 0.5;
 /** A contact under DIE_MARGIN (s) before the ball's second bounce costs DIE_COST per second inside that margin. */
-const DIE_MARGIN = 0.4;
+const DIE_MARGIN = 0.22;
 const DIE_COST = 3;
 const BACK_VOLLEY = 0.4;
 const BACK_VOLLEY_LOW = 2.0;

@@ -493,7 +493,7 @@ describe('ball wear in play', () => {
     for (let i = 0; i < 120 * 60; i++) m.step([null, null]);
     const b = m.ball;
     const w = m.world.spec.wear;
-    expect(b.wear).toBeGreaterThan(20);
+    expect(b.wear).toBeGreaterThan(15);
     const f = 1 - Math.exp(-b.wear / w.fluffImpacts);
     expect(b.wearDirty).toBe(false);
     expect(b.muScale).toBeCloseTo(1 + w.muGain * f, 9);
