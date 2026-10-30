@@ -350,6 +350,9 @@ const JUMP_MAX = 0.3;
  * played off a small push or a scissor kick, lower than the smash's. */
 const JUMP_MAX_OH = 0.2;
 const JUMP_TOES = 0.12;
+/** The dip before a smash's take-off: how far the hips drop (m) and over how long (s). */
+const JUMP_DIP = 0.15;
+const JUMP_DIP_TIME = 0.34;
 /** The scissor kick at a hop of SCISSOR_FULL m or more: the back foot's way back and up, the front foot's way forward. */
 const SCISSOR_FULL = 0.15;
 const SCISSOR_BACK = 0.3;
@@ -2103,7 +2106,12 @@ export class Avatar {
     const h = Math.min((fam === SMASH ? JUMP_MAX : JUMP_MAX_OH) + this.jumpMore, this.upNeed - JUMP_TOES);
     if (h < 0.03) return;
     const T = 2 * Math.sqrt((2 * h) / 9.81);
-    if (t < tc - T / 2) return;
+    if (t < tc - T / 2) {
+      // The knees load before a smash's jump (on video 93 and 67 degrees about 0.65 s before the hit, then straight).
+      const v = (t - (tc - T / 2 - JUMP_DIP_TIME)) / JUMP_DIP_TIME;
+      if (v > 0 && fam === SMASH) this.splitDrop += JUMP_DIP * Math.sin(Math.PI * v);
+      return;
+    }
     const T2 = Math.min(T, 2 * (tc - t));
     this.jumpT = T2;
     this.jumpH = (9.81 * T2 * T2) / 8;

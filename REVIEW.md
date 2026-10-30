@@ -235,3 +235,34 @@ Earlier statuses corrected by round 5:
 - R1 #3: all walls 28.0 against 19.0; side + double 12.2 against 6.2.
 - R4 #9 and #8 were Better, not Fixed. R2 #5 held for doubles only.
 - R4 #7 "close to the source's limit" was overstated: the mouth and hair were ours.
+
+## Round 6
+
+Two reviews written blind on e39b531. The full reports are `docs/review/round6-pro.md` and `docs/review/round6-critic.md`. The
+critic's is partial: it was stopped before its status-check job ran, and what that would have covered is listed under "Not
+checked" there, not counted as passed. Nothing was Critical. Ten Highs, seven of them new or regressions, so the loop goes on.
+Numbers after the fix: 2000 points at level 1 (`--seed0 1701`), men's, and the scratch reports named in `DECISIONS.md`.
+
+| # | Rank | Finding | Mark | Status |
+|---|---|---|---|---|
+| 1 | High | P: net players let reachable balls past | NEW | **Fixed.** 31 per 100 points to about 3.5. A net player meets a ball in the air from where they stand, and backing off for the rebound costs |
+| 2 | High | P: points end on the smash, forced errors halved | REGRESSION | Better. W / FE / UE 44.7 / 16.9 / 38.5 to 38.1 / 27.0 / 34.9 (34-42 / 29-33 / 29-33). Smash 55.7 to 52.2% of winners (43), volley 14.4 to 23.7 (28.4). Winners out of the court fell from 13.2 to 5.8 (17), the price of the glass change |
+| 3 | High | P: defenders watch soft balls die | NEW | Better. 18.4% of points to 11.2 (under 8 wanted). The cause was the AI's release: swings at the air fell from 12.5 to 1.0 per 100 points |
+| 4 | High | P: smashes answered on the rise | REPEAT R5 #1 | Better. 70.3% of replies to 18.8 (under 15), 70% now off the glass |
+| 5 | High | P: the forehand volley is square and straight-armed | NEW | Better. Own keys from 13 volleys on video: chest 5 to 40°, wrist 0.26 to 0.41 m in front (0.39). Elbow 30 to 34-41 (63): the ball is lower and further than a coach's feed |
+| 6 | High | P: the formation is on rails | NEW | **Fixed.** Nearer net player p10 / 50 / 90 at 2.10 / 2.63 / 3.66 m, pair stagger 0.47 / 1.35 m, was 3.10 and 0.02. 67.8% of net volleys are still below the tape (77) |
+| 7 | High | C: before a bandeja the arm goes straight up | REGRESSION, REPEAT | **Fixed** by the video pass that was already on the branch: elbow at -0.2 s 85, contact 50 (54-65 on video) |
+| 8 | High | C: the walk back is a trot | NEW | Better. 2.2 to 1.5 m/s, hips 0.88 to 0.96, racket low in one hand. No walk clip: it is the jog drawn most of the way to the upright stand, and the straighter knee is 30 (under 20 walking) |
+| 9 | High | C: the people don't reach "actual humans" close up | REPEAT | Open. The MetaHuman pilot waits on one Epic sign-in and one launcher option |
+| 10 | High | C: the racket misses the ball one contact in thirty | REPEAT | Better, now Medium. 3 of 293 contacts over 15 cm, worst 19, median 1. The critic's probe found 3.2% and 63 cm on e39b531, by another method |
+| 11+ | Medium | P #7-25, C #5-22 | | Open except: P #8 (beaten players still swing) better with #3, P #20 (contraparedes) 11.9% of points (11-13), P #24 (strokes from a standstill) better with strokes on the run |
+| 48+ | Low | P #26-34, C #23-29 | | Open |
+
+Earlier statuses corrected by round 6:
+- R5 #1 and #2 held only for what they measured: the inversion of high and low volleys is gone, but "Fixed" was too strong for #2.
+- R5 #11 "none over 15.1 in about 440 contacts": not reproduced on e39b531.
+- R5 #12 "0.45 s up": 0.65 s, which is better.
+- R5 #13 "Bandeja elbow still 100 against 47": fixed at contact, regressed before it, now fixed.
+- R5 critic's "Teeth shading done": p7's teeth are still dark in one frame, seen not measured.
+- R4 #19: forced errors were 17-19, not 25.7. R4 #12: 68.4-76.0. R4 #20: Muro's price is 5.6-10 points.
+

@@ -358,3 +358,20 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **The faces.** Unreal 5.8 is installed and MetaHuman's plugins are present. Whether a character can be exported and made to run
   in a browser at this frame budget is untested, and Epic's licence page couldn't be opened to confirm the terms. Settled by:
   one pilot character, judged by the owner, before the other nine.
+
+## Phase 9 (expert review: round 6)
+- **Timing from slow-motion clips.** Times in `docs/research/footage-pose.md` from slowed clips are scaled by an estimate (about ×7
+  on one clip). Settled by: a clip whose frame rate is known, or a stroke of known real length in the same clip.
+- **The volley's elbow.** 34-41 in play against 63 on video, but the video is a coach's feed at chest height. Settled by: side-on
+  match footage of net exchanges, to learn how far pros really bend it on a ball at 0.7 m.
+- **How high pros volley.** 67.8% of our net volleys are below the tape and the pro's report calls that too many, with no published
+  figure. Settled by: contact heights counted from broadcast footage of net exchanges.
+- **The smash's share of winners.** 52% against 43; the smash itself is in range (W 48), so the gap is in what else ends points.
+  Settled by: last-shot data by zone, to see which winners are missing.
+- **Forced errors by a fixed rule.** Analysts code them by eye; ours is `pressureOf`. A match of 27 against 29-33 is a match of two
+  different definitions. Settled by: one match coded by an analyst alongside the game's rule.
+- **A real walk.** The walk is the jog made upright. Settled by: the owner downloading a Mixamo walk (`docs/mixamo.md`).
+- **Load time.** Title playable + first frame read about 14 + 7 s at broadband and CPU 4× with the machine at load average 6-13, the
+  build before round 3 about the same, against 5.49 + 3.46 s at Phase 8. Settled by: a run on a quiet machine, then, if it is real,
+  fetching people after the title is up.
+

@@ -548,6 +548,46 @@ better and still short, and one, the faces, waits on the MetaHuman pilot. Number
 - **Singles (critic #3).** The cut-away finds the winner.
 - **Faces (critic #5).** Teeth and hair are better. The faces are the next job, with MetaHuman.
 
+### Review round 6 (`REVIEW.md`)
+Two fresh reviews found ten Highs, none Critical (`docs/review/round6-*.md`; the critic's is partial, stopped before its status
+job ran). Three are fixed, one is down to Medium, five are better and short of the real figure, and one, the faces, waits on
+MetaHuman. Numbers from 2000 points at level 1. Before is e39b531, the round's start. Before | after:
+
+| | Before | After | Real life |
+|---|---|---|---|
+| Endings W / FE / UE (pro #2) | 44.7 / 16.9 / 38.5 | 38.1 / 27.0 / 34.9 | 34-42 / 29-33 / 29-33 |
+| Winners: double bounce / came back / out | 39.8 / 43.6 / 13.2 | 50.0 / 40.2 / 5.8 | 48 / 35 / 17 |
+| Smash, share of winners (pro #2) | 55.7 | 52.2 | 43 |
+| Volley, share of winners (pro #2) | 14.4 | 23.7 | 28.4 |
+| Swings at the air, per 100 points (pro #3) | 12.5 | 1.0 | about none |
+| Soft balls left to die, share of points (pro #3) | 18.4% | 11.2% | under 8% |
+| Reachable balls let past at the net, per 100 points (pro #1) | 31 | 3.5 | |
+| Replies to a smash on the rise (pro #4) | 70.3% | 18.8% | under 15% |
+| Net pair's depth, p10 / 50 / 90, m (pro #6) | 3.09 / 3.10 / 3.18 | 2.10 / 2.63 / 3.66 | breathes |
+| Stagger within the net pair, median, m (pro #6) | 0.02 | 0.47 | |
+| Forehand volley: chest off square (pro #5) | 5° | 40° | 25° on the hips, 11-55 by camera |
+| Forehand volley: wrist in front of the shoulder (pro #5) | 0.26 m | 0.41 m | 0.39 m |
+| Forehand volley: elbow (pro #5) | 30° (its stop) | 34-41° | 63° |
+| Bandeja: elbow at -0.2 s / contact (critic #1) | 30 / 39 | 85 / 50 | about 60 / 54-65 |
+| Walk back: speed, hips (critic #2) | 2.2 m/s, 0.88 | 1.5 m/s, 0.96 | 1.2-1.5 m/s |
+| Bajadas, share of points | 17.9 | 17.1 | 14-17 |
+| Contraparedes, share of points | 19.4 | 11.9 | 11-13 |
+| Shots per point, seconds | 10.7, 14.6 | 10.4, 14.1 | 10-11, 9.4-14.8 |
+| Lower levels, shots per point: 0 / 0.5 | | 5.2 / 6.9 | 5.6 / 7.3 |
+
+- **One number went the wrong way.** Winners out of the court fell from 13.2% to 5.8% (17), the price of more grip loss on glass.
+  Lowering it again gave 42.8 / 44.8 / 7.8 at 0.25 and 37.7 / 47.6 / 10.2 at 0.18: more out, further off on the other two, so it stays.
+- **Real footage.** Bandeja, víbora, smash and forehand volley are compared with pose read from public clips, numbers only
+  (`docs/research/footage-pose.md`). Groundstrokes, the serve and the backhand volley aren't.
+- **Women** moved too: 13.5 shots, 19.3 s, W / FE / UE 23.2 / 31.7 / 45.1, serving pair 51.2 (48.5, was 57.0), winners 85 / 6 / 1 (76.9 /
+  11.8 / 11.3). The serving pair is much closer; the winners are thinner and the rally still long.
+- **Performance.** Paired runs against the build before round 3 (load average 6-12). High at 120 Hz: 120.5 fps both. Medium, CPU 4×:
+  frames over 20 ms 1.06% then 0.52%, CPU p99 20.1-24.9 ms then 14.8, sim p99 0.2 then 0.5 ms, max 1.4 then 3.0. Allocation: 3-7 GCs in
+  100,000 ticks (budget 10).
+- **Load is over budget on this loaded machine.** Broadband, CPU 4×: title playable 13.9-14.4 s and Quick match 6.1-7.2 s, against the
+  build before round 3's 14.7 and 5.5 in the same runs, and Phase 8's 5.49 and 3.46 on a quiet machine. It needs a quiet rerun, and the ten
+  people's meshes and textures are the likely cost (`OPEN_QUESTIONS.md`).
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

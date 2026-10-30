@@ -2317,3 +2317,61 @@ suggested isn't needed: replays are of winners, mostly overheads, which are 5 cm
 **The launcher's IS-0007.** Unreal's install kept failing with alert IS-0007. The log's `SaveJsonAtomic: could not open staging
 file .../Data/Manifests/Pending/*.item.tmp` meant the launcher's `Data/Manifests/Pending` folder didn't exist. `mkdir -p` fixed it
 and the install ran to the end.
+
+## Review round 6's Highs (2026-10-30)
+
+**Real footage is read in the browser, and only numbers are kept.** The owner asked for the animations to be copied from pros. No
+open padel match video exists, and footage must stay out of the repo and the build. So MediaPipe's pose landmarker runs on the page
+of a public video: each frame is drawn to a canvas, the landmarks go to a table of angles, and nothing else is saved. The numbers
+and their clips are in `docs/research/footage-pose.md`. Limits: slow-motion clips dilate time, a coach's feed is higher and closer
+than a match ball, and monocular depth is poor (stance width from video reads narrow).
+
+**A volley is its own action.** It was a groundstroke shrunk towards its contact, so it kept the groundstroke's arm: chest square,
+the wrist out to the side, the elbow at its stop. It has its own keys now, and `Family.wrist`: the hand goes to a set place in
+front of the chest and the racket turns the least way to reach the ball from there, its height following the ball. Thirteen
+forehand volleys gave wrist 0.39 m in front of the racket shoulder, 0.27 below, elbow 63, shoulders 25 on the hips, free hand in
+front (elbow 78). The elbow stays at 34-41 because in play the ball is lower and further out than in a coach's feed: bending it
+more needs the hips down at 0.76, past the 0.82-0.85 on video.
+
+**A net player's ball is the one in the air.** `planStand` treats any ball in the air within NET_ZONE as a volley spot, whatever
+the key: stay put if it passes within reach, otherwise the smallest step. Backing off for the rebound costs NET_HOLD a metre.
+`netVolley` changes the spot, not the time needed: dropping the braking as well made the smash W 55% and the rally 9 shots.
+
+**A stroke may be struck on the run, across or forward.** Out of time to set the feet, in time to get there: the plan allows it for
+a ball otherwise lost. Not backing up to the glass (STRETCH_BACK): that is the contrapared's ball, and allowing it took
+contraparedes from 12 to 7 in 100 points.
+
+**The pair breathes.** `upDepth` reads the taker's coming contact: closer on a low or wall ball, back on a free high one, the
+player on the ball's side closing and the other dropping.
+
+**The AI swings at the contact it planned.** The biggest find of the round. On the way to its spot, `trackRelease` took the window
+nearest the plan from where the player stood, which could be a moment 0.4 s earlier when the ball passed nearby. So it swung at the
+air (12.5 a 100 points, 1.7 m off, three in four waiting for the ball off the glass) and the ball died. That was the cause of the
+pro's #3. Only a window within PLAN_SAME of the plan counts now, and a late release is capped at the window's end: a pro's late hit
+comes off the frame, it doesn't miss the racket.
+
+**Errors follow the square of pressure.** With the air shots gone the rallies grew to 12 shots. `motor` was base × (1 + 3 p); it is
+now base × (1 + 5.5 p²), base 0.38. An easy ball stays in and a hard one goes, which is what the forced/unforced split measures:
+in a line W / FE / UE was 46 / 14 / 40, with the square 38 / 27 / 35. This is the first time forced errors are in reach of the pros',
+after six rounds at about half. `pressureOf` itself didn't change (Phase 4's rule). Easing volleys' pressure was tried: it got
+volley UE into range (3.5) but took FE back to 22 and left the smash's share alone, so it was dropped.
+
+**The bajada skill now does something.** A net player's lob could become an overhead off the glass whatever `bajadaOk` said, so
+lowering the skill barely moved it. It is gated now and the top level is 0.3: 17.1% of points (14-17). DIE_MARGIN also went from 0.4 to
+0.22 s: at 0.4 it made players take a falling ball at head height instead of letting it drop.
+
+**The walk back is a walk.** No walk clip exists and Mixamo needs the owner's login, so the jog is drawn 80% of the way to the
+upright stand with 32% more steps, at 1.5 m/s. A real clip would be better (`OPEN_QUESTIONS.md`).
+
+**Test bounds moved.** Where a change moved a count measured on a few seeds, the bound moved with a note of the real spread rather
+than the seed being hunted: contrapared and bajada counts, serve-window pops (7 a minute over eight seeds, 0-18 by seed), drops per
+point. The bajada bound of 0.34 is back within reach of the pros' figure.
+
+**The glass keeps its grip loss.** `muFall` 0.35 on glass took winners out of the court from 13.2 to 5.8% (17). Lowering it again was
+tried: 0.25 gave 42.8 / 44.8 / 7.8 and 0.18 gave 37.7 / 47.6 / 10.2 against the real 48 / 35 / 17, with the smash's share of winners rising to
+55 and 60. More out, further off on the other two, so 0.35 stays and the missing "out" winners are an open gap, probably in where
+smashes are aimed, not in the glass.
+
+**The knees load before a smash's jump.** On video 93 and 67 degrees about 0.65 s before the hit, then straight. Added as a dip of the
+hips in the 0.34 s before take-off, smashes only (a bandeja's knees bend most at contact).
+
