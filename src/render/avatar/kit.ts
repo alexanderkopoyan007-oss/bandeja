@@ -362,7 +362,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // (the source draws a brown iris dark red: its green and blue are lifted to the red's; whites and blue or green irises
   // keep theirs)
   const eyeCol = vec3(tex.x, max(tex.y, tex.x.mul(0.58)), max(tex.z, tex.x.mul(0.34))).mul(float(0.74).add(vAO.mul(0.26)));
-  const mouthCol = tex.xyz.mul(float(0.2).add(tex.w.mul(0.8)));
+  // (teeth sit at occlusion about 0.27: multiplied straight they rendered blue-grey, 100 of 239: review round 5, the
+  // critic's #4. The throat, below 0.1, stays dark.)
+  const mouthCol = tex.xyz.mul(float(0.2).add(smoothstep(0.1, 0.4, tex.w).mul(0.8)));
   let col: THREE.Node<'vec3'> = color(look.shirt).mul(ao).mul(shirtW)
     .add(color(look.shorts).mul(aoShorts).mul(shortsW))
     .add(skinCol.mul(skinW))

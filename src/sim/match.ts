@@ -24,7 +24,7 @@ import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/format
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
 import { smashLanding } from './contact/smashAim.ts';
-import { SimpleAi } from './ai/simpleAi.ts';
+import { SimpleAi, WOMENS_SPEED } from './ai/simpleAi.ts';
 import { makeWorld, makeNetCloth, type WorldOptions } from './setup.ts';
 import type { NetCloth } from './court/netCloth.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
@@ -108,6 +108,8 @@ export interface MatchConfig {
   aiStyle?: string[];
   /** Left-handed players, by player number. */
   lefty?: boolean[];
+  /** A women's match: they move and hit as women do, and play it differently (data/ai-skill.json `women`). */
+  women?: boolean;
   /** Widens timing windows (accessibility). */
   timingScale?: number;
   /** Positioning assist strength 0..1 for human players. */
@@ -126,6 +128,8 @@ export interface MatchConfig {
 }
 
 const TIMING: TimingWindows = tuning.timing;
+/** Players in a women's match: the same but for top speed (data/ai-skill.json). */
+const WOMENS_TUNING = { ...DEFAULT_TUNING, maxSpeed: DEFAULT_TUNING.maxSpeed * WOMENS_SPEED, sideSpeed: DEFAULT_TUNING.sideSpeed * WOMENS_SPEED, backSpeed: DEFAULT_TUNING.backSpeed * WOMENS_SPEED, fvSpeed: DEFAULT_TUNING.fvSpeed * WOMENS_SPEED };
 /** The drills (MatchConfig.practice) with their shots as ids. */
 const DRILLS = practiceData.drills.map((d) => ({ ...d, feeds: d.feeds.map((f) => ({ ...f, shotId: (SHOT_KEYS as readonly string[]).indexOf(f.shot) })) }));
 /**
@@ -344,10 +348,11 @@ export class MatchSim {
     this.claim = [];
     this.aim = [];
     this.prevPlayers = [];
+    const tune = cfg.women ? WOMENS_TUNING : DEFAULT_TUNING;
     for (let i = 0; i < n; i++) {
-      this.players.push(new Player(i, DEFAULT_TUNING));
+      this.players.push(new Player(i, tune));
       if (cfg.lefty?.[i]) this.players[i]!.handed = -1;
-      this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, styleOf(cfg.aiStyle?.[i])));
+      this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, styleOf(cfg.aiStyle?.[i]), cfg.women === true));
       if (!cfg.human[i]) { this.players[i]!.glassWait = this.ai[i]!.glassWait; this.players[i]!.ohArrive = this.ai[i]!.ohArrive; }
       this.aiFrames.push(new InputFrame());
       this.stand.push(makeStandPlan());
@@ -1564,7 +1569,7 @@ export class MatchSim {
     r.moving = clamp(p.speed() / t.maxSpeed, 0, 1);
     r.stretch = clamp((d - t.reachComfort) / (t.reachMax - t.reachComfort), 0, 1);
     const ai0 = this.ai[i];
-    r.power = ai0 && shot === SHOT_SMASH ? ai0.smashEffort() : 1;
+    r.power = !ai0 ? 1 : shot === SHOT_SMASH ? ai0.smashEffort() : shot === SHOT_SERVE ? ai0.serveEffort() : 1;
     r.control = 1;
     // Serve spin follows the key (slice, kick, flat); it is solved with, so the serve still lands on its target.
     r.spinScale = serving && !feed ? (p.shot === SHOT_TOPSPIN ? -0.9 : p.shot === SHOT_DRIVE ? 0.15 : 1) : 1;

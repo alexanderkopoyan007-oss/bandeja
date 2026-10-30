@@ -483,9 +483,11 @@ const GLOTTIS = (() => {
   return t;
 })();
 
-/** The players' voices (by player number): four men's voices, a little apart in pitch and size. */
+/** The players' voices (by player number): four men's voices, a little apart in pitch and size, then four women's
+ * (about 1.7 x the pitch through a tract about 15% shorter: speech 165-255 Hz, Titze 1989). */
 export const PLAYER_VOICES: VoiceSpec[] = [
   { f0: 112, tract: 1.0 }, { f0: 124, tract: 0.95 }, { f0: 101, tract: 1.05 }, { f0: 136, tract: 0.93 },
+  { f0: 190, tract: 0.85 }, { f0: 211, tract: 0.81 }, { f0: 172, tract: 0.89 }, { f0: 231, tract: 0.79 },
 ];
 
 /**

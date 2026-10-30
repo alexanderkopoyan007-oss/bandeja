@@ -112,6 +112,7 @@ interface Job {
   matches: boolean;
   levels: [number, number];
   styles: string[];
+  women?: boolean;
 }
 
 function runJob(job: Job): Counts {
@@ -120,7 +121,7 @@ function runJob(job: Job): Counts {
   const ps = (i: number): StyleCounts => (c.perStyle[styleKey(i)] ??= { shots: 0, lobs: 0, touch: 0, overheads: 0, smashes: 0, viboras: 0, volleys: 0, wall: 0, netTicks: 0, ticks: 0, W: 0, UE: 0, FE: 0 });
   const pl = (team: number) => (c.perLevel[String(job.levels[team])] ??= { W: 0, FE: 0, UE: 0, points: 0, won: 0 });
   for (const seed of job.seeds) {
-    const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false], aiLevel: job.levels, aiStyle: job.styles });
+    const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false], aiLevel: job.levels, aiStyle: job.styles, women: job.women });
     let seen = 0;
     let hits: Hit[] = [];
     let pointStart = -1;
@@ -449,7 +450,7 @@ export function report(s: Summary, c: Counts): string {
 
 // ---- running -------------------------------------------------------------------------------------------------
 
-export async function runStats(opt: { points?: number; matches?: number; levels: [number, number]; styles: string[]; workers?: number; seed0?: number }): Promise<{ summary: Summary; counts: Counts }> {
+export async function runStats(opt: { points?: number; matches?: number; levels: [number, number]; styles: string[]; women?: boolean; workers?: number; seed0?: number }): Promise<{ summary: Summary; counts: Counts }> {
   const workers = Math.max(1, Math.min(opt.workers ?? Math.min(6, availableParallelism() - 2), 16));
   const matches = opt.matches ?? 0;
   // Points mode: many short runs (one seed each, `per` points) so the sample spans many seeds.
@@ -457,7 +458,7 @@ export async function runStats(opt: { points?: number; matches?: number; levels:
   const nSeeds = matches > 0 ? matches : Math.ceil((opt.points ?? 1500) / per);
   const seed0 = opt.seed0 ?? 1;
   const seeds = Array.from({ length: nSeeds }, (_, i) => (seed0 + i) * 7919);
-  const jobs: Job[] = Array.from({ length: workers }, (_, w) => ({ seeds: seeds.filter((_, i) => i % workers === w), points: per, matches: matches > 0, levels: opt.levels, styles: opt.styles }));
+  const jobs: Job[] = Array.from({ length: workers }, (_, w) => ({ seeds: seeds.filter((_, i) => i % workers === w), points: per, matches: matches > 0, levels: opt.levels, styles: opt.styles, women: opt.women }));
   const file = fileURLToPath(import.meta.url);
   const parts = await Promise.all(jobs.filter((j) => j.seeds.length).map((j) => new Promise<Counts>((res, rej) => {
     const w = new Worker(file, { workerData: j });
@@ -479,7 +480,7 @@ if (!isMainThread) {
   const t0 = performance.now();
   const { summary, counts } = await runStats({
     points: arg('points') ? Number(arg('points')) : undefined, matches: arg('matches') ? Number(arg('matches')) : undefined,
-    levels, styles, workers: arg('workers') ? Number(arg('workers')) : undefined, seed0: arg('seed0') ? Number(arg('seed0')) : undefined,
+    levels, styles, women: process.argv.includes('--women'), workers: arg('workers') ? Number(arg('workers')) : undefined, seed0: arg('seed0') ? Number(arg('seed0')) : undefined,
   });
   if (!process.argv.includes('--quiet')) console.log(report(summary, counts));
   if (process.argv.includes('--pressure')) {

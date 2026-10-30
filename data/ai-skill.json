@@ -20,6 +20,17 @@
   "formationEffort": 0.8,
   "glassWait": 0,
   "ohArrive": 1.5,
+  "women": {
+    "//": "How a women's match differs from a men's (review round 5, the pro's #5; docs/review/round5-pro.md has the sources). speed: top running speed against the men's (14.1 against 15.2 km/h). smash: how much of an overhead is a smash against the men's (17% of overheads against 26.6%). smashEffort: how hard against the men's, fitted to how points end (no published speed). lob: how often against the men's. serveGlass, serveT: first serves to the glass and the T (T 30.3%, middle 7.3%). serveEdge: how far inside the line a first serve aims, in serve-box steps against the men's 0.85 (first serves in 87.7% against 92.9%). serveEffort: how hard against the men's, fitted with smashEffort. At these values, 2000 points: winners 68-72 / 20-21 / 4 by double bounce, came back, out (published 76.9 / 11.8 / 11.3), first serves in 89 (87.7), but the serving pair still wins 57-59 (published 48.5).",
+    "speed": 0.93,
+    "smashEffort": 0.73,
+    "smash": 0.64,
+    "lob": 1.25,
+    "serveGlass": 0.625,
+    "serveT": 0.3,
+    "serveEdge": 0.62,
+    "serveEffort": 0.85
+  },
   "bajada": [
     0.05,
     0.35,

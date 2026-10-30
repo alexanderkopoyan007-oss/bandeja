@@ -180,7 +180,7 @@ export class Soundscape {
         if (player >= 0 && this.rand() < (GRUNTER[player] ?? 0.5) * effort) {
           const p = sim.players[player]!;
           const eb = binFor(GRUNT_E, effort, this.rand());
-          out.play('grunt', player * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, 1, delay + 0.015, BUS_PLAYERS);
+          out.play('grunt', (player + (sim.cfg.women ? 4 : 0)) * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, 1, delay + 0.015, BUS_PLAYERS);
         }
         // The crowd gasps at a great get: a smash or a ball off two walls sent back (never at a serve).
         if (this.big && a !== SHOT_SERVE && sim.phase === PH_RALLY && this.lastHitTeam >= 0 && team !== this.lastHitTeam) {

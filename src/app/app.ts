@@ -21,6 +21,10 @@ const ARENAS: Choice[] = [
 ];
 
 const nextSeed = (s: number): number => (Math.imul(s, 1103515245) + 12345) >>> 1;
+/** Who the next game keeps of the last one's cast (build). */
+const KEEP_NONE = 0;
+const KEEP_ALL = 1;
+const KEEP_PAIR = 2;
 
 export class App {
   private readonly renderer: THREE.WebGPURenderer;
@@ -33,6 +37,9 @@ export class App {
   private game: Game | null = null;
   /** The game is the player's match (not the title screen's AI match). */
   private playing = false;
+  /** The seed of the cast on court, and what the next game keeps of it. */
+  private castSeed = 0;
+  private keep = KEEP_NONE;
   private seedBase = (Math.random() * 2 ** 31) | 0;
   /** What the next game is: a drill of data/practice.json, or a round of the knock-out; -1 for neither. */
   private drill = -1;
@@ -99,13 +106,18 @@ export class App {
     const seed = (this.seedBase = nextSeed(this.seedBase));
     const opts = optionsFromSetup(attract ? this.settings.setup : this.gameSetup(), this.settings, seed, this.asset, attract, this.params);
     opts.people = castParam(this.params);
+    // A rematch is the same four; a knock-out's next round the same pair against new opponents.
+    if (attract || this.keep === KEEP_NONE) this.castSeed = seed;
+    opts.castSeed = this.castSeed;
+    if (!attract && this.keep === KEEP_PAIR) opts.rivals = seed;
+    this.keep = KEEP_NONE;
     if (!attract && this.drill >= 0) {
       opts.match.practice = this.drill;
       opts.match.firstServer = 1;
       opts.match.walkBack = false;
     }
     if (this.asset && peopleWanted(this.params)) {
-      await loadPeople(this.asset, dealCast(seed, opts.people).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f));
+      await loadPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f));
     }
     const g = new Game(opts, this.renderer, this.hud);
     (window as unknown as { __bandeja: Game }).__bandeja = g;
@@ -490,7 +502,7 @@ export class App {
     return {
       id: 'results', title: won ? 'You win' : sim.doubles ? 'They win' : 'You lose', sub: `Game, set and match · ${sets}`, back: null, side: () => side,
       items: [
-        { kind: 'button', label: 'Rematch', primary: true, desc: 'The same setup again.', action: () => this.play(-1, -1) },
+        { kind: 'button', label: 'Rematch', primary: true, desc: 'The same setup again.', action: () => { this.keep = KEEP_ALL; this.play(-1, -1); } },
         { kind: 'button', label: 'Change setup', desc: 'Mode, opponents, venue, court and scoring, then onto court.', action: () => this.menu.open(this.setupScreen()) },
         { kind: 'button', label: 'Title screen', desc: 'Back to the club.', action: () => void this.toTitle() },
       ],

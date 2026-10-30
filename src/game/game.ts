@@ -51,6 +51,10 @@ export interface GameOptions {
   closeCam?: string;
   /** ?people=a,b,c,d: these people instead of the cast dealt from the seed. */
   people?: string[];
+  /** The seed the cast and their names are dealt from (default the match's): a rematch keeps it. */
+  castSeed?: number;
+  /** A knock-out's later round: team 0 kept, opponents shuffled from this seed (cast.ts). */
+  rivals?: number;
   closeCamPlayer?: number;
   /** The human's player number (team + 2 * slot); ignored with autoplay. */
   human: number;
@@ -237,6 +241,9 @@ export class Game {
     this.hudLayer.className = 'layer';
     this.hudLayer.style.cssText = opts.attract ? 'display:none' : 'position:absolute;inset:0';
     hudRoot = this.hudLayer;
+    const castSeed = opts.castSeed ?? opts.match.seed ?? 0;
+    const cast = dealCast(castSeed, opts.people, opts.rivals);
+    opts.match.women = cast.women;
     this.sim = new MatchSim(opts.match);
     const court = this.sim.world.court;
 
@@ -262,7 +269,6 @@ export class Game {
     this.replays.enabled = opts.replays !== false && !opts.closeCam;
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
-    const cast = dealCast(opts.match.seed ?? 0, opts.people);
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, cast));
     if (!opts.autoplay) this.players[opts.human]!.markYou();
     this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
@@ -303,7 +309,11 @@ export class Game {
     this.feedback.shake = prefs.shake !== false;
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
     // Score rows name the players: YOU, and each AI by the name dealt from the seed (game/names.ts).
-    this.names = dealNames(opts.match.seed ?? 0, this.sim.players.length, cast);
+    this.names = dealNames(castSeed, this.sim.players.length, cast);
+    if (opts.rivals !== undefined) {
+      const r = dealNames(opts.rivals, this.sim.players.length, cast);
+      for (let i = 1; i < r.length; i += 2) this.names[i] = r[i]!;
+    }
     const who = (i: number, short: boolean): string => (!opts.autoplay && i === opts.human ? 'YOU' : nameOf(this.names[i]!, short));
     const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
     const names: [string, string] = [row(0), row(1)];

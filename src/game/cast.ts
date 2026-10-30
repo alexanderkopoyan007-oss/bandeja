@@ -28,8 +28,9 @@ export function seeded(seed: number, salt: number): () => number {
   };
 }
 
-/** The cast for `seed`; `only` (?people=a,b,c,d) names the people instead. */
-export function dealCast(seed: number, only?: string[]): Cast {
+/** The cast for `seed`; `only` (?people=a,b,c,d) names the people instead. `rivals`: the same pairing's team 0 against
+ * two others of the roster, shuffled from that seed (a knock-out's later rounds). */
+export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
   const rnd = seeded(seed, 0x2f0b4a87);
   const women = rnd() < roster.womensMatches;
   const pool: Person[] = [...(women ? roster.women : roster.men)];
@@ -39,6 +40,16 @@ export function dealCast(seed: number, only?: string[]): Cast {
     const t = pool[i]!; pool[i] = pool[j]!; pool[j] = t;
   }
   const kits: [number, number] = [Math.floor(rnd() * KIT_COUNT), Math.floor(rnd() * KIT_COUNT)];
+  if (rivals !== undefined) {
+    const r = seeded(rivals, 0x7c1e93d5);
+    const rest = pool.filter((_, i) => i !== 0 && i !== 2);
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(r() * (i + 1));
+      const t = rest[i]!; rest[i] = rest[j]!; rest[j] = t;
+    }
+    pool[1] = rest[0]!;
+    pool[3] = rest[1]!;
+  }
   const all = [...roster.men, ...roster.women];
   const picked = only?.length ? only.map((n) => all.find((p) => p.name === n) ?? pool[0]!) : pool.slice(0, 4);
   return { people: picked.map((p) => p.name), women: only?.length ? roster.women.some((p) => p.name === only[0]) : women, nations: picked.map((p) => p.nations), kits };

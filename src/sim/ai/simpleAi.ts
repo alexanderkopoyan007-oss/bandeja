@@ -53,7 +53,8 @@ const NET_BACK = 0.5;
 /** Chance a net-loving style comes in behind a low ball from the back, per unit of its net trait over 1 (Martillo, 1.6:
  * 36%). A style that lobs little has no other way forward: Martillo sat back at 32.6% net time against Muro's 40.6%. */
 const NET_PRESS = 0.6;
-const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; ohArrive: number; bajada: number[] };
+const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; ohArrive: number; bajada: number[]; women: { speed: number; smashEffort: number; smash: number; lob: number; serveGlass: number; serveT: number; serveEdge: number; serveEffort: number } };
+export const WOMENS_SPEED = SKILL.women.speed;
 /** A value by level: v holds it at evenly spaced levels from 0 to 1 (two or more), interpolated linearly between. */
 function byLevel(v: number[], level: number): number {
   const n = v.length - 1;
@@ -136,11 +137,14 @@ export class SimpleAi {
   private readonly spot: Spot = { x: 0, z: 0 };
 
   readonly style: AiStyle;
+  readonly women: boolean;
 
-  constructor(index: number, level: number, style: AiStyle = styleOf(undefined)) {
+  constructor(index: number, level: number, style: AiStyle = styleOf(undefined), women = false) {
     this.index = index;
     this.team = index & 1;
-    this.style = style;
+    this.women = women;
+    // A women's match smashes less and lobs more whatever the player's style (data/ai-skill.json).
+    this.style = women ? { ...style, smash: style.smash * SKILL.women.smash, lob: style.lob * SKILL.women.lob } : style;
     this.level = clamp(level + style.level, 0, 1);
   }
 
@@ -176,7 +180,12 @@ export class SimpleAi {
 
   /** How hard this AI swings a smash (ShotRequest.power): weaker players smash slower (data/ai-skill.json). */
   smashEffort(): number {
-    return byLevel(SKILL.smashEffort, this.level);
+    return byLevel(SKILL.smashEffort, this.level) * (this.women ? SKILL.women.smashEffort : 1);
+  }
+
+  /** How hard this AI serves (ShotRequest.power). */
+  serveEffort(): number {
+    return this.women ? SKILL.women.serveEffort : 1;
   }
 
   /** Swing-to-swing spread at contact (ShotRequest.motor), growing with the ball's pressure. */
@@ -253,17 +262,18 @@ export class SimpleAi {
         const outer = inner === b.x0 ? b.x1 : b.x0;
         const toOut = outer > inner ? 1 : -1;
         const fromLeft = p.pos.x * s < 0; // (the server's left, facing the net)
-        const toGlass = second ? (fromLeft ? 0.5 : 0.4) : fromLeft ? 0.7 : 0.58;
-        const toT = toGlass + (second ? 0.38 : fromLeft ? 0.19 : 0.31);
+        const w = this.women;
+        const toGlass = second ? (fromLeft ? 0.5 : 0.4) : w ? SKILL.women.serveGlass : fromLeft ? 0.7 : 0.58;
+        const toT = toGlass + (second ? 0.38 : w ? SKILL.women.serveT : fromLeft ? 0.19 : 0.31);
         let tx: number;
         let depth: number;
         // (weaker servers aim well inside the lines: the same targets faulted 30% of first serves at level 0)
         const room = 1 - this.level;
         if (wide < toGlass) {
-          tx = outer - toOut * ((second ? 1.1 : 0.85) + 0.65 * room);
+          tx = outer - toOut * ((second ? 1.1 : w ? SKILL.women.serveEdge : 0.85) + 0.65 * room);
           depth = (second ? 5.5 + 0.5 * rng.next() : 5.8 + 0.6 * rng.next()) - 0.9 * room;
         } else if (wide < toT) {
-          tx = inner + toOut * ((second ? 0.8 : 0.6) + 0.4 * room);
+          tx = inner + toOut * ((second ? 0.8 : w ? SKILL.women.serveEdge - 0.25 : 0.6) + 0.4 * room);
           depth = (second ? 4.9 + 0.8 * rng.next() : 5.4 + 0.8 * rng.next()) - 0.75 * room;
         } else {
           tx = (inner + outer) * 0.5;

@@ -108,7 +108,7 @@ export function families(env: BankEnv): FamilyDef[] {
     },
     { name: 'scuff', bins: 1, variants: va.scuff!, sr: SR, peak: pk.scuff, render: (r, _b, e) => V.scuff(r, e.floor, r.range(0.5, 1)), floorRef: true },
     {
-      name: 'grunt', bins: 12, variants: va.grunt!, sr: V.LO_SR, peak: pk.grunt,
+      name: 'grunt', bins: 24, variants: va.grunt!, sr: V.LO_SR, peak: pk.grunt,
       render: (r, b) => V.grunt(r, V.PLAYER_VOICES[Math.floor(b / 3)]!, GRUNT_E[b % 3]!),
     },
     {
