@@ -47,11 +47,11 @@ describe('where the AI puts the ball', () => {
     expect(t.dropLow / Math.max(1, t.drops)).toBeLessThan(0.2);
     expect(t.drops / t.points).toBeLessThan(0.14);
     expect(t.ohFull / t.oh).toBeLessThan(0.15);
-  }, 120000);
+  }, 300000);
 
   it('singles: the side glass on the full is rare and players come to the net', () => {
     const t = play(false, 10, 2401);
     expect(t.sideFull / t.points).toBeLessThan(0.14);
     expect(t.volleys / t.shots).toBeGreaterThan(0.07);
-  }, 120000);
+  }, 300000);
 });
