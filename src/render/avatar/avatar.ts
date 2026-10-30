@@ -389,6 +389,13 @@ const BOW_AFTER = 1.1;
 const BOW_ANGLE = 0.62;
 const TAP_HOLD = 0.75;
 const TAP_TURN = 0.8;
+/**
+ * Walking back between points. There is no walk clip (docs/mixamo.md), so the jog is drawn WALK_UP of the way to the
+ * upright stand: the knees straighter, the trunk up, the step shorter and WALK_CADENCE more of them. (Review round 6,
+ * the critic's #2: a trot in the ready crouch, knees 40 degrees.)
+ */
+const WALK_UP = 0.8;
+const WALK_CADENCE = 0.4;
 /** How far towards the carry key (CARRY) the racket goes while walking back. */
 const CARRY_W = 0.9;
 const STAND_EASE = 0.4;
@@ -602,6 +609,8 @@ export class Avatar {
   private readonly standPose: Pose;
   private readonly allBones: Uint8Array;
   private standW = 0;
+  /** Between points: how far the jog is drawn towards the upright stand (WALK_UP, eased). */
+  private walkUp = 0;
   /** How much of the pose is the idle clip (not running): set by locomote. */
   private idleW = 1;
   private cutPending = false;
@@ -1525,7 +1534,8 @@ export class Avatar {
     let dist = 0, per = 0;
     const cy = this.clips.cycle;
     for (let i = 0; i < 5; i++) { dist += W[i]! * cy[i]!.speed * cy[i]!.duration; per += W[i]! * cy[i]!.duration; }
-    const freq = Math.min(sp / Math.max(dist, 1e-3), 1.7 / Math.max(per, 1e-3));
+    // (a walk's step is shorter than the jog's it is drawn from: more of them)
+    const freq = Math.min(sp / Math.max(dist, 1e-3), 1.7 / Math.max(per, 1e-3)) * (1 + WALK_CADENCE * this.walkUp);
     this.phase = (this.phase + freq * dt) % 1;
     this.idleClock += dt;
 
@@ -1550,6 +1560,12 @@ export class Avatar {
       if (w < 0.002) continue;
       tmp.t = this.phase;
       sampleCycle(cy[i]!, tmp);
+      if (this.walkUp > 0) {
+        const st = this.standPose;
+        st.w = this.walkUp;
+        blendMasked(tmp, st, this.allBones);
+        for (let k = 0; k < 3; k++) tmp.hips[k] = tmp.hips[k]! + (st.hips[k]! - tmp.hips[k]!) * this.walkUp;
+      }
       tmp.w = w;
       accumulate(acc, tmp);
     }
@@ -1656,7 +1672,10 @@ export class Avatar {
 
     this.yRoot = yRoot;
     const ohStand = this.st === ST_PREP || this.st === ST_SWING ? this.fam.stand ?? 0 : 0;
-    const standTo = sim.phase === PH_OVER ? 1 : this.addr ? SERVE_STAND : ohStand;
+    const walks = sim.walking > 0 || sim.phase === PH_OVER;
+    this.walkUp += ((walks ? WALK_UP : 0) - this.walkUp) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / STAND_EASE) : 0);
+    if (this.walkUp < 0.001) this.walkUp = 0;
+    const standTo = sim.phase === PH_OVER ? 1 : this.addr ? SERVE_STAND : sim.walking > 0 ? WALK_UP : ohStand;
     this.standW += (standTo - this.standW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / (ohStand > 0 ? OVERHEAD_STAND_EASE : STAND_EASE)) : 0);
     if (this.standW < 0.001) this.standW = 0;
     this.locomote(p);

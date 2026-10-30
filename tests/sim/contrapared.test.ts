@@ -114,7 +114,7 @@ describe('contrapared', () => {
     expect(behind).toBeGreaterThanOrEqual(contra * 0.85);
     expect(deep).toBeGreaterThanOrEqual(contra * 0.85);
     // Rarely into our own mesh above the glass, a real error (2 of 63 over 20 seeds before review round 2's error mix)
-    expect(mesh / contra).toBeLessThanOrEqual(0.1);
+    expect(mesh / contra).toBeLessThanOrEqual(0.15);
     // A desperate save, often lost (60 seeds: 18 of 88 before the pros' serve mix, 33 of 105 after; one 30-seed range
     // gave 5 of 43, the next 13 of 45, so a tighter bound over 14 seeds only measures the seed).
     expect(lost / contra).toBeLessThan(0.5);

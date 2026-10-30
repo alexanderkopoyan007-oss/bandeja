@@ -348,10 +348,10 @@ export const HUG: Key = key(v(-0.16, 1.64, 0.8), v(-0.03, 0.32, 1), v(1, 0, 0.05
 export const KNEES: Key = key(v(-0.2, 0.3, 0.3), v(-0.2, -0.9, 0.35), v(0, 0.3, 1), v(-0.75, 0.8, -0.25), 0, v(0.15, 0.68, 0.2));
 
 /**
- * Walking back between points: the racket carried low in front of the hips, head up, the free hand on its throat
- * (the walk's arm swing put the racket into the thighs in 1-2% of frames).
+ * Walking back between points: the racket carried low in one hand at the side, its head forward and a little down,
+ * clear of the thigh (the walk's arm swing put it into the thighs in 1-2% of frames), the free arm hanging.
  */
-export const CARRY: Key = key(v(-0.12, 1.02, 0.45), v(0.1, 0.8, 0.6), v(-1, 0, 0.1), v(-0.55, 0.75, -0.15), 0, v(0.02, 1.0, 0.44));
+export const CARRY: Key = key(v(-0.3, 0.8, 0.42), v(0, -0.25, 0.97), v(-1, 0, 0.1), v(-0.6, 0.95, -0.2), 0, v(0.3, 0.9, 0.08));
 
 // ---- left-handers: every key mirrored across the body's centre plane (model x -> -x) ----
 

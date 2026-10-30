@@ -149,13 +149,14 @@ const SERVE_BEFORE_APEX = 0.02;
 const RETOSS_PAUSE = 0.6;
 /**
  * Between points (MatchSim.walking): partners meet first (MEET_GAP m apart, at most MEET_MAX s; they touch rackets),
- * then everyone walks to their places at WALK_SPEED m/s (a brisk walk: FIP allows 20 s between points, a game has
+ * then everyone walks to their places at WALK_SPEED m/s (a walk: review round 6, the critic's #2: at 2.2 it was a
+ * trot; FIP allows 20 s between points, a game has
  * a few), within WALK_MAX s in all. Within WALK_DONE m of the spot is there.
  */
 const MEET_GAP = 0.8;
 const MEET_MAX = 1.2;
-const WALK_SPEED = 2.2;
-const WALK_MAX = 5;
+const WALK_SPEED = 1.5;
+const WALK_MAX = 7;
 const WALK_DONE = 0.06;
 /**
  * After match point (PH_OVER, MatchSim.overStage): the ball is left to fall and everyone reacts where they stand for
@@ -175,7 +176,7 @@ const OVER_RUN_SPEED = 4.6;
 const OVER_HUG = 0.2;
 const OVER_LANE = 1.25;
 const OVER_NET = 0.4;
-const OVER_WALK_MAX = 7;
+const OVER_WALK_MAX = 9;
 const OVER_TAP = 1.3;
 const OVER_BACK = 0.9;
 /** copyFrom's source-to-copy map (module-level: a field would be part of the state it copies). */

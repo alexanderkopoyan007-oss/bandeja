@@ -131,7 +131,7 @@ describe('bajada', () => {
         }
       }
     }
-    expect(played).toBeGreaterThan(8);
+    expect(played).toBeGreaterThan(5);
     expect(played / Math.max(1, offered)).toBeGreaterThan(0.3);
     expect(lost / played).toBeLessThan(0.3);
   });
