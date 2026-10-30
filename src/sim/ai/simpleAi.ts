@@ -206,17 +206,23 @@ export class SimpleAi {
         this.shot = second ? (r < 0.85 ? SHOT_SLICE : SHOT_TOPSPIN) : r < 0.6 ? SHOT_SLICE : r < 0.85 ? SHOT_DRIVE : SHOT_TOPSPIN;
         const b = m.box;
         const wide = rng.next();
-        // The box's outer side is the side wall: a wide serve that bounces short runs on into the side mesh (a fault
-        // after the bounce), so wide serves go deep, onto the side glass. A second serve goes to the T or the body.
+        // Where pros serve (WPT men, Sánchez-Alcaraz et al. 2020, docs/research/shots-movement-feel.md §6): 64.6% into
+        // the side glass, 24.3% to the T, 11.1% to the middle; from the left court 12% more to the side glass, from
+        // the right 14% more to the T. The box's outer side is the side wall: a wide serve that bounces short runs on
+        // into the side mesh (a fault after the bounce), so wide serves go deep, onto the side glass. A second serve
+        // keeps more room, and goes wide less often.
         const inner = abs(b.x0) < abs(b.x1) ? b.x0 : b.x1; // the centre line
         const outer = inner === b.x0 ? b.x1 : b.x0;
         const toOut = outer > inner ? 1 : -1;
+        const fromLeft = p.pos.x * s < 0; // (the server's left, facing the net)
+        const toGlass = second ? (fromLeft ? 0.5 : 0.4) : fromLeft ? 0.7 : 0.58;
+        const toT = toGlass + (second ? 0.38 : fromLeft ? 0.19 : 0.31);
         let tx: number;
         let depth: number;
-        if (!second && wide < 0.35) {
-          tx = outer - toOut * 0.85;
-          depth = 5.8 + 0.6 * rng.next();
-        } else if (wide < (second ? 0.5 : 0.7)) {
+        if (wide < toGlass) {
+          tx = outer - toOut * (second ? 1.1 : 0.85);
+          depth = second ? 5.5 + 0.5 * rng.next() : 5.8 + 0.6 * rng.next();
+        } else if (wide < toT) {
           tx = inner + toOut * (second ? 0.8 : 0.6);
           depth = second ? 4.9 + 0.8 * rng.next() : 5.4 + 0.8 * rng.next();
         } else {

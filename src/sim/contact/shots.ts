@@ -524,6 +524,10 @@ export class ShotSolver {
   // the glass mirrored back).
   private cR = 0;
   private cL = 0;
+  // The last solveContra's best try (glass-height attempt, speed, yaw), where a quick re-solve starts.
+  private cAttempt = 0;
+  private cS = 20;
+  private cYaw = -0;
   private cDir = new V3();
 
   /** Fly a contrapared launch (speed s, elevation th along cDir) and measure it against the unfolded target. */
@@ -552,7 +556,7 @@ export class ShotSolver {
    * it tries higher on the glass. False if no launch within `cap` does it cleanly (the best try within the cap is
    * written then). Writes velocity and spin.
    */
-  solveContra(p: V3, tx: number, tz: number, rpm: number, cap: number, gh0: number, outV: V3, outW: V3): boolean {
+  solveContra(p: V3, tx: number, tz: number, rpm: number, cap: number, gh0: number, outV: V3, outW: V3, quick = false): boolean {
     this.evals = 0;
     const c = this.world.court;
     const side = p.z > 0 ? 1 : -1;
@@ -575,18 +579,24 @@ export class ShotSolver {
     let bestTh = 0.8;
     let bestYaw = 0;
     let bestErr = 1e9;
-    for (let attempt = 0; attempt < 4 && !ok; attempt++) {
+    // `quick`: the same contrapared solved again within one strike (less spin or face speed) after a search that
+    // found no clean launch: only the best try so far is refined, from where it ended. A full search that fails
+    // flies about 80 balls, and the strike's passes repeated it up to five times: 13 ms in one tick.
+    const a0 = quick ? this.cAttempt : 0;
+    const a1 = quick ? this.cAttempt + 1 : 4;
+    let bestAttempt = a0;
+    for (let attempt = a0; attempt < a1 && !ok; attempt++) {
       const gh = min(glassTop - 0.25, gh0 + 0.3 * attempt);
       // Elevation through the glass point at a typical speed (the drop over a metre or two is small).
-      let s = 20;
+      let s = quick ? this.cS : 20;
       let th = atan2(gh - p.y, dg);
       for (let k = 0; k < 2; k++) {
         const tf = dg / (s * cos(th));
         th = atan2(gh - p.y + 4.9 * tf * tf, dg);
       }
       th = clamp(th, 0.1, 1.35);
-      let yaw = 0;
-      for (let outer = 0; outer < 3; outer++) {
+      let yaw = quick ? this.cYaw : 0;
+      for (let outer = 0; outer < (quick ? 1 : 3); outer++) {
         this.cDir.set(ax, 0, az);
         rotateYaw(this.cDir, yaw);
         ShotSolver.spinFor(rpm, this.cDir.x, this.cDir.z, outW);
@@ -613,10 +623,13 @@ export class ShotSolver {
         && !this.exited && !Number.isNaN(this.netY) && this.netY > netH + 0.15 && this.landZ * side < 0
         && this.flyTop < this.world.roofY - ROOF_MARGIN;
       const err = abs(this.cR) + abs(this.cL);
-      if (clean && s <= cap && err < 0.4) { ok = true; bestS = s; bestTh = th; bestYaw = yaw; break; }
-      if (clean && err < bestErr) { bestErr = err; bestS = min(s, cap); bestTh = th; bestYaw = yaw; }
-      else if (bestErr === 1e9 && attempt === 0) { bestS = min(s, cap); bestTh = th; bestYaw = yaw; }
+      if (clean && s <= cap && err < 0.4) { ok = true; bestS = s; bestTh = th; bestYaw = yaw; bestAttempt = attempt; break; }
+      if (clean && err < bestErr) { bestErr = err; bestS = min(s, cap); bestTh = th; bestYaw = yaw; bestAttempt = attempt; }
+      else if (bestErr === 1e9 && attempt === a0) { bestS = min(s, cap); bestTh = th; bestYaw = yaw; bestAttempt = attempt; }
     }
+    this.cAttempt = bestAttempt;
+    this.cS = bestS;
+    this.cYaw = bestYaw;
     this.cDir.set(ax, 0, az);
     rotateYaw(this.cDir, bestYaw);
     ShotSolver.spinFor(rpm, this.cDir.x, this.cDir.z, outW);
@@ -697,7 +710,7 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   // face cannot give the spin the flight was solved with (friction), solve the flight again with what it gives.
   for (let pass = 0; pass < 5; pass++) {
     ball.vel.copy(vin);
-    out.reachable = contra ? solver.solveContra(ball.pos, req.targetX, req.targetZ, rpm, cap, shape.glassHeight ?? 1.9, ball.vel, ball.spin)
+    out.reachable = contra ? solver.solveContra(ball.pos, req.targetX, req.targetZ, rpm, cap, shape.glassHeight ?? 1.9, ball.vel, ball.spin, pass > 0 && !out.reachable)
       : (shape.pace === true && solver.solvePace(ball.pos, req.targetX, req.targetZ, rpm, cap, paceClear, ball.vel, ball.spin))
       || solver.solve(ball.pos, req.targetX, req.targetZ, rpm, shape.pace === true ? paceClear : clear, cap, ball.vel, ball.spin);
     if (shape.sideRpm) addSidespin(solver, ball, req, (shape.sideRpm * 2 * PI) / 60 * (0.7 + 0.3 * q));

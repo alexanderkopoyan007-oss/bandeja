@@ -363,6 +363,12 @@ const TAP_TURN = 0.8;
 /** How far towards the carry key (CARRY) the racket goes while walking back. */
 const CARRY_W = 0.9;
 const STAND_EASE = 0.4;
+/**
+ * How far from the idle's ready crouch a server stands, from the address to the contact: a server is tall behind the
+ * ball with the knees a little bent (review round 3, critic #11: all through the serve the idle's crouch had the trunk
+ * 45 degrees forward and the knees near 90).
+ */
+const SERVE_STAND = 0.8;
 const WALL_EASE = 0.2;
 /** How far the head turns from the chest to watch the ball (rad), and the neck's share of it. */
 const LOOK_YAW = 1.25;
@@ -539,7 +545,8 @@ export class Avatar {
   private readonly tmp: Pose;
   /**
    * After match point nobody stands ready: the idle's ready crouch gives way (standW, eased over STAND_EASE s) to an
-   * upright stand (standPose: the celebrate clip's first frame, arms down, the racket hanging from the hand).
+   * upright stand (standPose: the celebrate clip's first frame, arms down, the racket hanging from the hand). A server
+   * takes SERVE_STAND of it.
    */
   private readonly standPose: Pose;
   private readonly allBones: Uint8Array;
@@ -1560,7 +1567,7 @@ export class Avatar {
     this.root.rotation.y = yRoot;
 
     this.yRoot = yRoot;
-    this.standW += ((sim.phase === PH_OVER ? 1 : 0) - this.standW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / STAND_EASE) : 0);
+    this.standW += ((sim.phase === PH_OVER ? 1 : this.addr ? SERVE_STAND : 0) - this.standW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / STAND_EASE) : 0);
     if (this.standW < 0.001) this.standW = 0;
     this.locomote(p);
     this.reaction(sim, idx, t);

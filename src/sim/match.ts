@@ -415,12 +415,16 @@ export class MatchSim {
     recv.pos.set(-sideSign * c.halfW * 0.5, 0, -ss * (c.halfL - 1.4));
     recv.facing = ss > 0 ? Math.PI : 0;
     if (this.doubles) {
-      // Server's partner at the net on the other side; receiver's partner back on the other side, a step in.
+      // Server's partner at the net on the other side; receiver's partner back on the other side, a step in. Both
+      // vary from point to point, as pros' do (review round 3, the pro's Low #12: always 2.60 m and 7.60 m): the net
+      // player 2.2-3.2 m from the net and 2.0-2.9 m off the middle, the receiver's partner from just inside the
+      // service line to 7.8 m.
+      const rr = this.aiRng;
       const sp = this.players[server.index ^ 2]!;
-      sp.pos.set(-sideSign * c.halfW * 0.5, 0, ss * 2.6);
+      sp.pos.set(-sideSign * c.halfW * (0.4 + 0.18 * rr.next()), 0, ss * (2.2 + rr.next()));
       sp.facing = server.facing;
       const rp = this.players[recv.index ^ 2]!;
-      rp.pos.set(sideSign * c.halfW * 0.5, 0, -ss * (c.halfL - 2.4));
+      rp.pos.set(sideSign * c.halfW * 0.5, 0, -ss * (c.halfL - 3.4 + 1.2 * rr.next()));
       rp.facing = recv.facing;
     }
     for (const p of this.players) {
