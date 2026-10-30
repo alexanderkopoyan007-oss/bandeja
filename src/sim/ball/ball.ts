@@ -36,6 +36,9 @@ export interface SurfaceSpec {
   eSlope: number;
   eMin: number;
   mu: number;
+  /** How fast mu falls above the impact speed muRef (per m/s of normal speed): see Ball.bounce. */
+  muFall: number;
+  muRef: number;
   grip: number;
   jitterDeg: number;
   speedJitter: number;
@@ -1396,7 +1399,8 @@ export class Ball {
     const kGrip = ((1 + s.grip) * m * alpha) / (1 + alpha);
     jt.copy(u).scale(-kGrip);
     const jtl = jt.length();
-    const jmax = s.mu * this.muScale * jn;
+    // Felt grips less the harder it is pressed, so friction measured at a light impact doesn't hold at a smash's.
+    const jmax = s.mu * this.muScale * jn / (1 + s.muFall * max(0, -vn - s.muRef));
     if (jtl > jmax && jtl > 0) jt.scale(jmax / jtl);
 
     // Apply.

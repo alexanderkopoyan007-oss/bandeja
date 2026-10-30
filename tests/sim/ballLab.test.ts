@@ -106,6 +106,18 @@ describe('ball lab: glass', () => {
     expect(sm.apexAfterGlass).toBeLessThan(9);
   });
 
+  it('felt grips less the harder it is pressed: friction measured at a light impact is kept, a hard shallow bounce slips', () => {
+    expect(get('spr-glass').itf!.mu).toBeCloseTo(0.35, 2);
+    expect(get('cpr-turf').itf!.mu).toBeCloseTo(0.59, 2);
+    const deg = Math.PI / 180;
+    const a = 22 * deg;
+    const run = runShot({ id: 'h', group: 'floor', label: '', pos: [0, 0.0328 + 0.1, 4 - 0.1 / Math.tan(a)], vel: [0, -30 * Math.sin(a), 30 * Math.cos(a)], spin: [0, 0, 0], contacts: 1, secs: 0.3 }, makeWorld({ floor: 'turf' }), null);
+    const c = run.contacts[0]!;
+    const mu = (c.vtIn - c.vtOut) / ((1 + c.en) * Math.abs(c.vnIn));
+    expect(mu).toBeGreaterThan(0.38);
+    expect(mu).toBeLessThan(0.5);
+  });
+
   it('how far and how high balls come back off the back glass stays where it is tuned (model values, not data)', () => {
     // [comes back (m), apex after the glass (m), height 1 m out (m)], each within a band around today's numbers:
     // a change to the bounce that moves these is a change to how wall play feels, and must be meant.
