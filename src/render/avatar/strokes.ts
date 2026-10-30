@@ -194,7 +194,7 @@ function courtKey(p: number[], a: number[], n: number[], pole: number[], yaw: nu
 const SERVE_TURN = 0.82;
 export const SERVE: Family = {
   name: 'serve',
-  back: courtKey([-0.68, 0.38, 1.5], [-0.1, 0.15, 1], [0.85, 0.5, 0.15], [-0.55, 0.55, 0.85], -1.75, [0.37, 0.47, 1.0]),
+  back: courtKey([-0.52, 0.4, 1.42], [-0.1, 0.15, 1], [0.85, 0.5, 0.15], [-0.55, 0.55, 0.85], -1.75, [0.37, 0.47, 1.0]),
   contact: courtKey([0.5, 0.55, 0.9], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.5, 0.75], -0.8, [0.49, 0.09, 0.82]),
   finish: courtKey([0.75, 0.15, 1.25], [0.7, 0.1, 0.7], [-0.3, 0, 0.95], [0.4, 0.4, 1.0], -0.3, [0.33, -0.19, 0.87]),
   dip: 0.1,
@@ -204,7 +204,7 @@ export const SERVE: Family = {
   bodyTurn: SERVE_TURN,
   lead: 0.3,
   // K4, mid forward swing (-120 ms of 300): out to the racket side and dropping, high to low.
-  via: v(-0.55, 1.1, -0.3),
+  via: v(-0.72, 1.0, -0.22),
   viaS: 0.6,
 };
 
