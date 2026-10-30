@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MatchSim, E_FAULT, E_FLOOR, E_HIT, E_POINT, E_WALL, PH_OVER } from '../../src/sim/match.ts';
+import { MatchSim, E_FAULT, E_FLOOR, E_HIT, E_POINT, E_WALL, PH_OVER, PH_RALLY } from '../../src/sim/match.ts';
 import { SHOT_BANDEJA, SHOT_KEYS, SHOT_VIBORA } from '../../src/sim/contact/shots.ts';
 import { WALL_BACK_FAR, WALL_BACK_NEAR } from '../../src/sim/court/court.ts';
 
@@ -83,5 +83,25 @@ describe('the AI serve and overheads', () => {
     expect(Math.min(...r.back)).toBeGreaterThanOrEqual(6.6 - 1e-9);
     expect(Math.max(...r.back)).toBeLessThanOrEqual(7.8 + 1e-9);
     expect(Math.max(...r.back) - Math.min(...r.back)).toBeGreaterThan(0.8);
+  });
+});
+
+describe('the styles, head to head', () => {
+  it('the attacking pair is at the net more than the defensive one (review round 3, the pro\'s #8)', () => {
+    // (each pair's players are one style, so the team is the style; net time as match-stats counts it)
+    const near = [0, 0];
+    let ticks = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false], aiLevel: [1, 1], aiStyle: ['muro', 'martillo', 'muro', 'martillo'] });
+      const frames = [null, null, null, null];
+      for (let k = 0; k < 300 * 120 && m.phase !== PH_OVER; k++) {
+        m.step(frames);
+        if (m.phase !== PH_RALLY) continue;
+        ticks++;
+        for (const p of m.players) if (Math.abs(p.pos.z) < 4) near[p.team]!++;
+      }
+    }
+    const muro = near[0]! / (2 * ticks), martillo = near[1]! / (2 * ticks);
+    expect(martillo).toBeGreaterThan(muro + 0.03);
   });
 });

@@ -35,6 +35,13 @@ const BAJADA_HARD = 0.45;
 const BAJADA_NET = 0.4;
 /** Chance a pair follows its chiquita in to the net, per unit of the style's net. */
 const CHIQ_NET = 0.35;
+/** Chance a net-shy style stays back behind its lob, per unit of its net trait under 1 (Muro, 0.6: 80%). */
+const LOB_STAY = 2.0;
+/** Chance a net-shy style drops back again after a ball taken near the net, per unit of its net trait under 1. */
+const NET_BACK = 0.5;
+/** Chance a net-loving style comes in behind a low ball from the back, per unit of its net trait over 1 (Martillo, 1.6:
+ * 36%). A style that lobs little has no other way forward: Martillo sat back at 32.6% net time against Muro's 40.6%. */
+const NET_PRESS = 0.6;
 const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; ohArrive: number; bajada: number[] };
 /** A value by level: v holds it at evenly spaced levels from 0 to 1 (two or more), interpolated linearly between. */
 function byLevel(v: number[], level: number): number {
@@ -94,6 +101,8 @@ export class SimpleAi {
   smash = false;
   /** The overhead is a víbora (precision held at release). */
   vibora = false;
+  /** This lob isn't followed in, whatever comes of it (a net-shy style: LOB_STAY). */
+  lobStay = false;
   /** The topspin is a chiquita (precision held at release). */
   chiquita = false;
   /** A volley played safe (precision held: more net clearance, less pace) or put away (power held). */
@@ -840,7 +849,7 @@ export class SimpleAi {
       } else {
         this.shot = up === 0 && r < 0.12 * st.drop ? SHOT_DROP : r < this.sliceOf(0.65) ? SHOT_SLICE : SHOT_DRIVE;
         // Pulled in by a short ball against a pair at the net: back out again unless already close in.
-        go = near || up < 2 ? 1 : 0;
+        go = (near || up < 2) && r2 >= NET_BACK * max(0, 1 - st.net) ? 1 : 0;
       }
     } else if (up === 2) {
       // Lob them (and take the net if it gets past), dip a chiquita at their feet, or keep it low; from the
@@ -851,12 +860,13 @@ export class SimpleAi {
       this.chiquita = this.shot === SHOT_TOPSPIN;
       // A chiquita at their feet is the other way to the net (lobs are 60.6% of net takes, the rest mostly low balls
       // at the feet: Muñoz et al. 2017), taken as readily as the style likes the net.
-      go = this.chiquita && r2 < CHIQ_NET * st.net * netSense ? 1 : 0;
+      go = this.chiquita ? (r2 < CHIQ_NET * st.net * netSense ? 1 : 0) : this.shot !== SHOT_LOB && r2 < this.netPress(netSense) ? 1 : 0;
     } else if (up === 1) {
       const lob = min(0.9, 0.3 * st.lob * lobSense);
       const chiq = height > 0.4 && height < 1.4 ? min(0.4, 0.15 * st.drop) * (1 - lob) : 0;
       this.shot = r < lob ? SHOT_LOB : r < lob + chiq ? SHOT_TOPSPIN : r < lob + chiq + (1 - this.sliceOf(0.5)) * (1 - lob - chiq) ? SHOT_DRIVE : SHOT_SLICE;
       this.chiquita = this.shot === SHOT_TOPSPIN;
+      go = this.shot !== SHOT_LOB && r2 < this.netPress(netSense) ? 1 : 0;
     } else {
       // Both back: work the ball through the middle; a short ball is the chance to come in.
       const lob = min(0.5, 0.05 * st.lob);
@@ -864,6 +874,13 @@ export class SimpleAi {
       go = depth < 7.4 && r2 < 0.45 * st.net * netSense ? 1 : r2 < 0.12 * st.net * netSense ? 1 : 0;
     }
     m.intentUp[this.team] = go;
+    this.lobStay = this.shot === SHOT_LOB && r2 < LOB_STAY * max(0, 1 - st.net);
+  }
+
+  /** How readily a net-loving style comes in behind a low ball from the back, with the opponents at the net (a neutral
+   * or net-shy style leaves that to the lob and the chiquita). */
+  private netPress(netSense: number): number {
+    return NET_PRESS * max(0, this.style.net - 1) * netSense;
   }
 
   private nearestOpponent(m: MatchSim): Player {
