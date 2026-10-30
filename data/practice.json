@@ -1,0 +1,13 @@
+{
+  "//": "Practice drills (app Practice screen, MatchSim cfg.practice): the coach across the net bounces a ball and feeds one of `feeds`, then plays on. spot: where the player starts, m from the net. x: |x| of the target (either side), depth: m from the net.",
+  "drills": [
+    { "name": "Back glass", "desc": "Deep balls that come off your back glass. Let them come; take them as they drop.", "spot": 8.2,
+      "feeds": [{ "shot": "topspin", "x": [0.5, 3.2], "depth": [8.2, 9.0] }, { "shot": "slice", "x": [0.5, 3.2], "depth": [8.2, 9.0] }] },
+    { "name": "Side glass", "desc": "Wide balls into the side glass and the corners. Read the angle off the glass.", "spot": 7.6,
+      "feeds": [{ "shot": "drive", "x": [3.9, 4.5], "depth": [6.4, 7.8] }, { "shot": "slice", "x": [3.9, 4.5], "depth": [6.8, 8.2] }] },
+    { "name": "Lobs and overheads", "desc": "Lobs over you at the net: bandeja, víbora, smash, or back to the glass.", "spot": 3.4,
+      "feeds": [{ "shot": "lob", "x": [0.5, 3.5], "depth": [4.8, 6.4] }, { "shot": "lob", "x": [0.5, 3.5], "depth": [6.4, 8.0] }] },
+    { "name": "Volleys", "desc": "Balls at you at the net: punch them deep, drop them short, play the angles.", "spot": 3.2,
+      "feeds": [{ "shot": "drive", "x": [0.3, 2.4], "depth": [3.8, 5.2] }, { "shot": "slice", "x": [0.3, 2.4], "depth": [3.8, 5.2] }, { "shot": "topspin", "x": [0.3, 2.4], "depth": [2.8, 3.8] }] }
+  ]
+}

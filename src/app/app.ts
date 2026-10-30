@@ -6,6 +6,7 @@ import { Game } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
 import { loadPeople, loadPlayerAsset, peopleWanted, type PlayerAsset } from '../render/avatar/asset.ts';
 import { castParam, dealCast } from '../game/cast.ts';
+import practiceData from '../../data/practice.json';
 import { LoadingScreen } from '../ui/loading.ts';
 import { Menu, type Item, type Screen, type Choice } from '../ui/menu/menu.ts';
 import { setSafeColours } from '../ui/palette.ts';
@@ -31,6 +32,9 @@ export class App {
   /** The game is the player's match (not the title screen's AI match). */
   private playing = false;
   private seedBase = (Math.random() * 2 ** 31) | 0;
+  /** What the next game is: a drill of data/practice.json, or a round of the knock-out; -1 for neither. */
+  private drill = -1;
+  private cupRound = -1;
   /** A match start or a return to the title is under way (repeat presses are ignored). */
   private busy = false;
   /** The title's AI match being built again after it ended (a match start waits for it). */
@@ -91,8 +95,13 @@ export class App {
     stage(attract ? 'Building the arena' : 'Setting up the court', 0.1);
     await frame();
     const seed = (this.seedBase = (Math.imul(this.seedBase, 1103515245) + 12345) >>> 1);
-    const opts = optionsFromSetup(this.settings.setup, this.settings, seed, this.asset, attract, this.params);
+    const opts = optionsFromSetup(attract ? this.settings.setup : this.gameSetup(), this.settings, seed, this.asset, attract, this.params);
     opts.people = castParam(this.params);
+    if (!attract && this.drill >= 0) {
+      opts.match.practice = this.drill;
+      opts.match.firstServer = 1;
+      opts.match.walkBack = false;
+    }
     if (this.asset && peopleWanted(this.params)) {
       await loadPeople(this.asset, dealCast(seed, opts.people).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f));
     }
@@ -121,6 +130,20 @@ export class App {
     this.rebuilding = this.build(true, () => undefined)
       .catch((err: unknown) => console.error('title match', err))
       .finally(() => { this.rebuilding = null; });
+  }
+
+  /** The setup a game runs on: the player's, or a knock-out round's or a drill's version of it. */
+  private gameSetup(): MatchSetup {
+    const st = this.settings.setup;
+    if (this.drill >= 0) return { ...st, mode: 'singles', court: 'standard', level: 'club' };
+    if (this.cupRound >= 0) return { ...st, level: CUP[this.cupRound]!.level, length: 'short' };
+    return st;
+  }
+
+  private play(drill: number, cupRound: number): void {
+    this.drill = drill;
+    this.cupRound = cupRound;
+    void this.startMatch();
   }
 
   private async startMatch(): Promise<void> {
@@ -204,11 +227,20 @@ export class App {
       id: 'title', title: 'Padel', sub: 'A match is on court one', back: null,
       items: [
         { kind: 'button', label: 'Play', primary: true, desc: 'Set up a match: doubles or singles, your partner and opponents, the venue, the scoring.', action: () => this.menu.open(this.setupScreen()) },
-        { kind: 'button', label: 'Quick match', desc: () => `Straight onto court with your last setup: ${this.setupLine()}.`, action: () => void this.startMatch() },
+        { kind: 'button', label: 'Quick match', desc: () => `Straight onto court with your last setup: ${this.setupLine()}.`, action: () => this.play(-1, -1) },
+        { kind: 'button', label: 'Knock-out', desc: 'Three rounds, a short set each, against stronger players every round. Lose and you are out.', action: () => this.play(-1, 0) },
+        { kind: 'button', label: 'Practice', desc: 'A coach feeds you the shots padel is made of: off the glass, overheads, volleys.', action: () => this.menu.open(this.practiceScreen()) },
         { kind: 'button', label: 'Settings', desc: 'Timing, assists, picture quality, sound and accessibility.', action: () => this.menu.open(this.settingsScreen()) },
         { kind: 'button', label: 'Controls', desc: 'Every shot on the keyboard and the gamepad; change any key.', action: () => this.menu.open(this.controlsScreen()) },
         { kind: 'button', label: 'Credits', desc: 'The libraries, assets and references the game is built from.', action: () => this.menu.open(this.creditsScreen()) },
       ],
+    };
+  }
+
+  private practiceScreen(): Screen {
+    return {
+      id: 'practice', title: 'Practice', sub: 'The coach feeds, you play it out. Pause to leave.',
+      items: practiceData.drills.map((d, i) => ({ kind: 'button' as const, label: d.name, desc: d.desc, action: () => this.play(i, -1) })),
     };
   }
 
@@ -252,7 +284,7 @@ export class App {
         ch('length', 'Length', [{ value: 'short', label: 'Short set (to 4)' }, { value: 'set', label: 'One set' }, { value: 'three', label: 'Best of three' }],
           'A tie-break at 6-6 (4-4 in a short set).'),
         ch('hand', 'You play', [{ value: 'right', label: 'Right-handed' }, { value: 'left', label: 'Left-handed' }], 'Your racket hand.'),
-        { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court with this setup (it is kept for Quick match).', action: () => void this.startMatch() },
+        { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court with this setup (it is kept for Quick match).', action: () => this.play(-1, -1) },
       ],
       focus: 0,
     };
@@ -432,16 +464,37 @@ export class App {
     const side = `<div class="card"><h2>${mins} min · longest rally ${st.longestRally} shots</h2><table>`
       + `<tr><td class="l"></td><td class="w">${sim.doubles ? 'Your pair' : 'You'}</td><td class="w">${them}</td></tr>`
       + rows.map((r) => `<tr><td class="l">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('') + '</table></div>';
+    const round = this.cupRound;
+    if (round >= 0) {
+      const last = round === CUP.length - 1;
+      const title = !won ? `Out in the ${CUP[round]!.name.toLowerCase()}` : last ? 'Champions' : `Through the ${CUP[round]!.name.toLowerCase()}`;
+      return {
+        id: 'results', title, sub: `${CUP[round]!.name} · ${sets}`, back: null, side: () => side,
+        items: [
+          won && !last
+            ? { kind: 'button', label: `On to the ${CUP[round + 1]!.name.toLowerCase()}`, primary: true, desc: `Stronger opponents: ${CUP[round + 1]!.level}.`, action: () => this.play(-1, round + 1) }
+            : { kind: 'button', label: 'Start again', primary: true, desc: 'A new draw, from the first round.', action: () => this.play(-1, 0) },
+          { kind: 'button', label: 'Title screen', desc: 'Back to the club.', action: () => void this.toTitle() },
+        ],
+      };
+    }
     return {
       id: 'results', title: won ? 'You win' : sim.doubles ? 'They win' : 'You lose', sub: `Game, set and match · ${sets}`, back: null, side: () => side,
       items: [
-        { kind: 'button', label: 'Rematch', primary: true, desc: 'The same setup again.', action: () => void this.startMatch() },
+        { kind: 'button', label: 'Rematch', primary: true, desc: 'The same setup again.', action: () => this.play(-1, -1) },
         { kind: 'button', label: 'Change setup', desc: 'Mode, opponents, venue, court and scoring, then onto court.', action: () => this.menu.open(this.setupScreen()) },
         { kind: 'button', label: 'Title screen', desc: 'Back to the club.', action: () => void this.toTitle() },
       ],
     };
   }
 }
+
+/** The knock-out's rounds. */
+const CUP: Array<{ name: string; level: MatchSetup['level'] }> = [
+  { name: 'Quarter-final', level: 'club' },
+  { name: 'Semi-final', level: 'advanced' },
+  { name: 'Final', level: 'pro' },
+];
 
 /** The document-wide look from the settings (text size, reduced motion, high contrast): also used by main.ts before
  * the app exists, so the first loading screen follows them. */

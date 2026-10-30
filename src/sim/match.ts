@@ -5,7 +5,7 @@ import { Prediction, PF_FLOOR, PF_WALL } from './ball/predict.ts';
 import { Rng } from './core/rng.ts';
 import { DT, TEAM_NEAR } from './core/constants.ts';
 import { Hasher } from './core/hash.ts';
-import { abs, clamp, max, min, sqrt } from './core/smath.ts';
+import { abs, clamp, floor, max, min, sqrt } from './core/smath.ts';
 import { V3 } from './core/v3.ts';
 import { copyState } from './core/copyState.ts';
 import { SURF_GLASS, WALL_SIDE_LEFT, WALL_SIDE_RIGHT } from './court/court.ts';
@@ -13,7 +13,7 @@ import { Score, SIDE_RIGHT, SIDE_LEFT, DEFAULT_FORMAT, EV_GAME, EV_SET, EV_MATCH
 import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
 import { Player, SW_IDLE, SW_CHARGE, SW_COMMITTED, SW_RECOVER, DEFAULT_TUNING } from './player/player.ts';
 import {
-  ShotSolver, strike, SHAPES, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
+  ShotSolver, strike, SHAPES, SHOT_KEYS, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, SHOT_CONTRAPARED, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
@@ -28,6 +28,7 @@ import { SimpleAi } from './ai/simpleAi.ts';
 import { makeWorld, makeNetCloth, type WorldOptions } from './setup.ts';
 import type { NetCloth } from './court/netCloth.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
+import practiceData from '../../data/practice.json' with { type: 'json' };
 
 // Phases
 export const PH_SETUP = 0;
@@ -119,9 +120,14 @@ export interface MatchConfig {
   firstServer?: number;
   /** Between points the players walk back to their places (default); false puts them there at once. */
   walkBack?: boolean;
+  /** Practice (data/practice.json, by index; singles, the human player 0): no serves and no score. The coach, player 1,
+   * bounces a ball and feeds the drill's next ball with the serve's own motion, then the ball is played out. */
+  practice?: number;
 }
 
 const TIMING: TimingWindows = tuning.timing;
+/** The drills (MatchConfig.practice) with their shots as ids. */
+const DRILLS = practiceData.drills.map((d) => ({ ...d, feeds: d.feeds.map((f) => ({ ...f, shotId: (SHOT_KEYS as readonly string[]).indexOf(f.shot) })) }));
 /**
  * The serve's ball (docs/research/serve-and-strokes-motion.md §1.3-1.4, 4.1): held at the free hand's release point,
  * ahead of the body and out to the racket side, where it will bounce (pushed straight down, the bounce spot is the
@@ -437,6 +443,7 @@ export class MatchSim {
       rp.pos.set(sideSign * c.halfW * 0.5, 0, -ss * (c.halfL - 3.4 + 1.2 * rr.next()));
       rp.facing = recv.facing;
     }
+    if (this.cfg.practice !== undefined) recv.pos.z = -ss * DRILLS[this.cfg.practice]!.spot;
     for (const p of this.players) {
       p.vel.set(0, 0, 0);
       p.swing = SW_IDLE;
@@ -1518,14 +1525,20 @@ export class MatchSim {
     this.shotHeight = b.pos.y;
     this.shotMod = p.mod;
     this.shotContra = !serving && p.contra;
-    const shot = serving ? SHOT_SERVE : this.shotFor(p, this.rally.bounces === 0);
+    const drill = serving && this.cfg.practice !== undefined ? DRILLS[this.cfg.practice]! : null;
+    const feed = drill ? drill.feeds[floor(this.aiRng.next() * drill.feeds.length)]! : null;
+    const shot = feed ? feed.shotId : serving ? SHOT_SERVE : this.shotFor(p, this.rally.bounces === 0);
     this.shotContra = false;
 
     // Target.
     const c = this.world.court;
     const a = this.aim[i]!;
     const r = this.req;
-    if (serving) {
+    if (feed) {
+      const rr = this.aiRng;
+      r.targetX = (rr.next() < 0.5 ? -1 : 1) * (feed.x[0]! + (feed.x[1]! - feed.x[0]!) * rr.next());
+      r.targetZ = -s * (feed.depth[0]! + (feed.depth[1]! - feed.depth[0]!) * rr.next());
+    } else if (serving) {
       const bx = this.box;
       const cx = (bx.x0 + bx.x1) * 0.5;
       const half = (bx.x1 - bx.x0) * 0.5;
@@ -1554,7 +1567,7 @@ export class MatchSim {
     r.power = ai0 && shot === SHOT_SMASH ? ai0.smashEffort() : 1;
     r.control = 1;
     // Serve spin follows the key (slice, kick, flat); it is solved with, so the serve still lands on its target.
-    r.spinScale = serving ? (p.shot === SHOT_TOPSPIN ? -0.9 : p.shot === SHOT_DRIVE ? 0.15 : 1) : 1;
+    r.spinScale = serving && !feed ? (p.shot === SHOT_TOPSPIN ? -0.9 : p.shot === SHOT_DRIVE ? 0.15 : 1) : 1;
     r.bodyX = p.pos.x;
     r.bodyZ = p.pos.z;
     // How hard this ball is to play (ai/pressure.ts): an AI's swing is less steady under pressure.
@@ -1576,7 +1589,10 @@ export class MatchSim {
     if (!this.ai[i]) this.intentUp[team] = -1;
     this.lastStrikeTime = this.time;
 
-    if (serving) {
+    if (feed) {
+      this.rally.onStrike(team, s, false);
+      this.phase = PH_RALLY;
+    } else if (serving) {
       this.rally.onStrike(team, s, true, contactY, t.waistHeight);
       // 6.2: dropped behind the service line on the server's own side of the centre line, and struck before the
       // ball crossed either (a ball on a line has not crossed it). (QA army: a partner walking into the server
@@ -1696,7 +1712,7 @@ export class MatchSim {
   private afterDead(): void {
     const r = this.rally;
     if (this.pendingPointWinner >= 0) {
-      const ev = this.score.pointWon(this.pendingPointWinner);
+      const ev = this.cfg.practice !== undefined ? 0 : this.score.pointWon(this.pendingPointWinner);
       this.serveNo = 1;
       if (ev & EV_GAME) this.emit(E_GAME, this.pendingPointWinner);
       if (ev & EV_SET) this.emit(E_SET, this.pendingPointWinner);

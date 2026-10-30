@@ -257,7 +257,7 @@ export class SimpleAi {
         }
         this.targetX = tx;
         this.targetZ = -s * depth;
-        if (!m.doubles) this.approach = rng.next() < SERVE_VOLLEY * (second ? 0.4 : 1) * (0.4 + 0.6 * this.level) * this.style.net;
+        if (!m.doubles && m.cfg.practice === undefined) this.approach = rng.next() < SERVE_VOLLEY * (second ? 0.4 : 1) * (0.4 + 0.6 * this.level) * this.style.net;
       }
       if (!this.pressed && t1 > this.servePressAt && t0 >= m.phaseUntil) {
         f.push(true, SHOT_BUTTONS[this.shot]!, max(t0, this.servePressAt));
