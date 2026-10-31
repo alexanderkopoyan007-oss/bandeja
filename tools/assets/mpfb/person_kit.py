@@ -2,8 +2,8 @@
 #
 # All of it is generated here, from the body it goes on, so it is ours (CC0): a skirt, a headband or a visor, a polo's
 # collar. `spec["kit"]`: {"top": "tee"|"polo"|"tank", "bottom": "shorts"|"pleated"|"aline", "head": null|"band"|"visor",
-# "mark": 0..3}. Bones are the rig's, in the modelled pose; the game skeleton's bind goes through the same weights as the
-# body's.
+# "mark": 0..3, "shoes" and "sole": colours for the game}. Bones are the rig's, in the modelled pose; the game skeleton's bind
+# goes through the same weights as the body's.
 import math
 import bpy, bmesh
 import numpy as np
@@ -120,6 +120,9 @@ def body_build(body, rig, name):
 
 # ---------------------------------------------------------------------------------------------------------------
 # The top cut to a tank: the sleeves off along a plane from the shoulder's top to under the arm.
+TANK_SKIN = 0.06  # how far inside that plane the body keeps its skin
+
+
 def cut_tank(suit, body, rig, women, shirt_polys):
     bm = bmesh.new()
     bm.from_mesh(suit.data)
@@ -149,17 +152,90 @@ def cut_tank(suit, body, rig, women, shirt_polys):
     bm.to_mesh(suit.data)
     bm.free()
     suit.data.update()
-    # The arm's skin is shown again from a little inside the cut (the mask for the suit is by vertex group).
+    # The arm's skin is shown again from well inside the cut (the mask for the suit is by vertex group). A vertex lost
+    # takes all its triangles with it, and the skin's triangles here are 2-3 cm across: kept from 2 cm in, the skin's edge
+    # ran in teeth past the shirt's and the court showed between them (round 8). The game draws the edge (kit.ts `skinCut`).
     g = body.vertex_groups.get('Delete.' + suit.name.split('.')[-1])
     if g:
         out = []
         for v in body.data.vertices[:N_BODY]:
             for a, no in planes:
-                if (v.co - a).dot(no) > -0.02:
+                if (v.co - a).dot(no) > -TANK_SKIN:
                     out.append(v.index)
                     break
         g.remove(out)
     print('TANK sleeves off, faces', n_faces0, '->', len(suit.data.polygons))
+    return planes
+
+
+def hug_armholes(suit, body, planes, women, reach=0.04, lift=0.002):
+    """
+    A tank's armhole lies on the skin. The tee it is cut from stands off the shoulder, by up to 2 cm in front of the arm, and
+    the torso is hollow under the shirt: all round each armhole there was a gap to look through, in at one armhole and out of
+    the other, or of the neck (round 8). Each vertex of the edge goes to `lift` off the skin (on it, or under it, the two cross
+    in a ragged line and the occlusion bake goes black along it), staying in the cut's plane so the game's binding and
+    `skinCut` still fit, and takes the nearest skin vertex's weights, so it stays there as the arm moves; the shirt eases to it
+    over `reach`.
+    """
+    from mathutils.bvhtree import BVHTree
+    from mathutils.kdtree import KDTree
+    skin = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices[:N_BODY]],
+                                [tuple(p.vertices) for p in body.data.polygons if max(p.vertices) < N_BODY])
+    me = suit.data
+    top = _shirt_verts(suit, women)
+    uses = {}
+    for p in me.polygons:
+        if p.vertices[0] in top:
+            for k in p.edge_keys:
+                uses[k] = uses.get(k, 0) + 1
+    edge = {i for k, c in uses.items() if c == 1 for i in k}
+    moved = {}
+    gap = []
+    for a, no in planes:
+        for i in edge:
+            co = me.vertices[i].co
+            if abs((co - a).dot(no)) > 0.012:
+                continue
+            p = co.copy()
+            for _ in range(4):
+                q, n, _, _ = skin.find_nearest(p)
+                step = q + n * lift - p
+                p = p + step - no * step.dot(no)
+            gap.append((p - co).length)
+            moved[i] = p - co
+    ids = list(moved)
+    kd = KDTree(len(ids))
+    for k, i in enumerate(ids):
+        kd.insert(me.vertices[i].co, k)
+    kd.balance()
+    near = {}
+    for i in top:
+        if i in moved:
+            continue
+        _, k, d = kd.find(me.vertices[i].co)
+        if d < reach:
+            near[i] = (moved[ids[k]], (1 - d / reach) ** 2)
+    for i, dv in moved.items():
+        me.vertices[i].co += dv
+    for i, (dv, w) in near.items():
+        me.vertices[i].co += dv * w
+    # The weights: the skin's own.
+    kb = KDTree(N_BODY)
+    for v in body.data.vertices[:N_BODY]:
+        kb.insert(v.co, v.index)
+    kb.balance()
+    names = {g.index: g.name for g in body.vertex_groups}
+    for i in ids:
+        _, j, _ = kb.find(me.vertices[i].co)
+        for g in suit.vertex_groups:
+            if g.name.startswith(P):
+                g.remove([i])
+        for e in body.data.vertices[j].groups:
+            n = names.get(e.group, '')
+            if n.startswith(P):
+                (suit.vertex_groups.get(n) or suit.vertex_groups.new(name=n)).add([i], e.weight, 'REPLACE')
+    me.update()
+    print('TANK edge on the skin:', len(ids), 'vertices, moved up to', round(max(gap) * 1000, 1), 'mm, median', round(float(np.median(gap)) * 1000, 1), 'mm')
 
 
 # ---------------------------------------------------------------------------------------------------------------

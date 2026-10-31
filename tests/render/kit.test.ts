@@ -5,9 +5,99 @@ import { existsSync, readFileSync } from 'node:fs';
 import * as THREE from 'three/webgpu';
 import { mannequinWithPeople } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
-import { kitFor } from '../../src/render/avatar/kit.ts';
+import { kitFor, personCut, personMaterial } from '../../src/render/avatar/kit.ts';
+import type { PlayerAsset } from '../../src/render/avatar/asset.ts';
+import { runAnimQa } from '../../src/render/avatar/animQa.ts';
 
 const cast = JSON.parse(readFileSync(new URL('../../data/people.json', import.meta.url), 'utf8')) as { men: { name: string }[]; women: { name: string }[] };
+
+/** Directions a camera looks from: round the player, a little under them to well over. */
+function ring(elevations: number[]): number[][] {
+  const out: number[][] = [];
+  for (const el of elevations) for (let az = 0; az < 360; az += 45) {
+    const a = az * Math.PI / 180, e = el * Math.PI / 180;
+    out.push([-Math.sin(a) * Math.cos(e), -Math.sin(e), -Math.cos(a) * Math.cos(e)]);
+  }
+  return out;
+}
+
+const GRID = 0.003;
+
+/**
+ * What the renderer would leave of a body, in software, along parallel rays 3 mm apart looking along `dir`: the mesh in `pos`, the
+ * shader's cuts (`personCut`) by the modelled pose, with back faces (`both`) or without. A hole is a run of rays that meet nothing
+ * drawn yet belong to the body: they meet something undrawn, or they pass inside the shirt's outline, through the hollow under it
+ * (the gaps between limbs aren't in that outline). `at`: where a hole's rays first meet the body (modelled pose), null if they
+ * meet nothing at all.
+ */
+function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: boolean): { size: number; at: number[] | null }[] {
+  const g = p.geometry, rest = g.getAttribute('position').array as Float32Array, A = g.getAttribute('bodyA').array as Float32Array;
+  const cut = personCut(p);
+  const up = [0, 1, 0];
+  const cross = (a: number[], b: number[]): number[] => [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
+  const unit = (a: number[]): number[] => { const l = Math.hypot(a[0]!, a[1]!, a[2]!); return a.map((x) => x / l); };
+  const w = unit(dir), u = unit(cross(up, w)), v = cross(w, u);
+  const n = pos.length / 3;
+  const U = new Float32Array(n), V = new Float32Array(n), D = new Float32Array(n);
+  let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = pos[i * 3]!, y = pos[i * 3 + 1]!, z = pos[i * 3 + 2]!;
+    U[i] = x * u[0]! + y * u[1]! + z * u[2]!; V[i] = x * v[0]! + y * v[1]! + z * v[2]!; D[i] = x * w[0]! + y * w[1]! + z * w[2]!;
+    u0 = Math.min(u0, U[i]!); u1 = Math.max(u1, U[i]!); v0 = Math.min(v0, V[i]!); v1 = Math.max(v1, V[i]!);
+  }
+  u0 -= 3 * GRID; v0 -= 3 * GRID;
+  const nu = Math.ceil((u1 + 3 * GRID - u0) / GRID) + 1, nv = Math.ceil((v1 + 3 * GRID - v0) / GRID) + 1;
+  const undrawn = new Uint8Array(nu * nv), drawn = new Uint8Array(nu * nv), shirt = new Uint8Array(nu * nv), near = new Float32Array(nu * nv).fill(Infinity), first = new Float32Array(nu * nv * 3);
+  const f = p.look!.face!;
+  const tris = [...f.bodyIndex, ...Array.from(f.index, (i) => f.verts[i]!)];
+  for (let t = 0; t < tris.length; t += 3) {
+    const i0 = tris[t]!, i1 = tris[t + 1]!, i2 = tris[t + 2]!;
+    const x0 = U[i0]!, y0 = V[i0]!, x1 = U[i1]!, y1 = V[i1]!, x2 = U[i2]!, y2 = V[i2]!;
+    const area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+    if (area === 0) continue;
+    const front = area < 0; // (u is the camera's left: a counter-clockwise face comes out negative)
+    const c0 = Math.max(0, Math.floor((Math.min(x0, x1, x2) - u0) / GRID)), c1 = Math.min(nu - 1, Math.ceil((Math.max(x0, x1, x2) - u0) / GRID));
+    const r0 = Math.max(0, Math.floor((Math.min(y0, y1, y2) - v0) / GRID)), r1 = Math.min(nv - 1, Math.ceil((Math.max(y0, y1, y2) - v0) / GRID));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const px = u0 + c * GRID, py = v0 + r * GRID;
+      const l1 = ((px - x0) * (y2 - y0) - (x2 - x0) * (py - y0)) / area, l2 = ((x1 - x0) * (py - y0) - (px - x0) * (y1 - y0)) / area, l0 = 1 - l1 - l2;
+      if (l0 < 0 || l1 < 0 || l2 < 0) continue;
+      const mix = (a: Float32Array, s: number, k: number): number => l0 * a[i0 * s + k]! + l1 * a[i1 * s + k]! + l2 * a[i2 * s + k]!;
+      const x = mix(rest, 3, 0), y = mix(rest, 3, 1), z = mix(rest, 3, 2), id = r * nu + c;
+      const depth = l0 * D[i0]! + l1 * D[i1]! + l2 * D[i2]!;
+      if (depth < near[id]!) { near[id] = depth; first[id * 3] = x; first[id * 3 + 1] = y; first[id * 3 + 2] = z; }
+      if (mix(A, 4, 0) > 0.5) shirt[id] = 1;
+      if (cut(x, y, z, mix(A, 4, 0), mix(A, 4, 2))) continue; // (a part that is cut away is no part of the outline)
+      if (front || both) drawn[id] = 1;
+      else undrawn[id] = 1;
+    }
+  }
+  // Outside the shirt's outline: every ray the image's edge can reach without crossing the shirt.
+  const out = new Uint8Array(nu * nv);
+  const open = [0];
+  out[0] = 1;
+  while (open.length) {
+    const k = open.pop()!, c = k % nu;
+    for (const o of [c > 0 ? k - 1 : -1, c < nu - 1 ? k + 1 : -1, k - nu, k + nu]) if (o >= 0 && o < out.length && !shirt[o] && !out[o]) { out[o] = 1; open.push(o); }
+  }
+  const seen = new Uint8Array(nu * nv);
+  const found: { size: number; at: number[] | null }[] = [];
+  const hole = (k: number): boolean => !drawn[k] && (!!undrawn[k] || !shirt[k] && !out[k]);
+  for (let s = 0; s < seen.length; s++) {
+    if (seen[s] || !hole(s)) continue;
+    const stack = [s];
+    seen[s] = 1;
+    let size = 0, hit = 0, mx = 0, my = 0, mz = 0;
+    while (stack.length) {
+      const k = stack.pop()!, c = k % nu;
+      size++;
+      if (near[k]! < Infinity) { hit++; mx += first[k * 3]!; my += first[k * 3 + 1]!; mz += first[k * 3 + 2]!; }
+      for (const o of [c > 0 ? k - 1 : -1, c < nu - 1 ? k + 1 : -1, k - nu, k + nu]) if (o >= 0 && o < seen.length && !seen[o] && hole(o)) { seen[o] = 1; stack.push(o); }
+    }
+    found.push({ size, at: hit ? [mx / hit, my / hit, mz / hit] : null });
+  }
+  return found;
+}
 
 describe('kit', () => {
   const base = mannequinWithPeople();
@@ -108,4 +198,44 @@ describe('kit', () => {
   it('builds the dressed material for every cut', () => {
     for (const p of base.people) expect(() => new Avatar(p, kitFor(0))).not.toThrow();
   });
+
+  // Round 8: p10's tank had saw-toothed gaps through both shoulders, and the court showed through her. The skin came back only
+  // from 2 cm inside the cut, a whole triangle at a time, and the shirt's edge stood up to 2 cm off the shoulder, over a hollow
+  // torso. Both ways of looking are held here: from outside, the armhole's edge closes on the skin with nothing behind it to see;
+  // and with every face drawn, as the game draws them, nobody has a way through them. (Measured on the old build: 150-280 px a
+  // view along each armhole, about 3 cm across at 3 mm a ray, and rays clean through from armhole to armhole.)
+  it('closes a tank\'s armholes on the skin', () => {
+    for (const p of base.people.filter((x) => x.look!.kit.top === 'tank')) {
+      const arm = at(p, 'LeftArm');
+      for (const pos of [p.geometry.getAttribute('position').array as Float32Array, p.restPos]) for (const dir of ring([0, 20, 45])) {
+        const seen = holes(p, pos, dir, false).filter((h) => h.at && Math.abs(h.at[0]!) > Math.abs(arm.x) - 0.06 && h.at[1]! > arm.y - 0.2 && h.at[1]! < arm.y + 0.09);
+        // (in the T-pose, with the arm drawn up and looking along the edge, 6 rays: half a square centimetre)
+        expect(seen.filter((h) => h.size >= 8).map((h) => [h.size, ...h.at!])).toEqual([]);
+      }
+    }
+  });
+
+  it('has no way through anyone, standing or in play, from anywhere a camera goes', () => {
+    for (const p of base.people) {
+      expect(personMaterial(p, kitFor(0)).material.side).toBe(THREE.DoubleSide);
+      const n = p.geometry.getAttribute('position').count;
+      const poses = [p.geometry.getAttribute('position').array as Float32Array];
+      const v = new THREE.Vector3();
+      let next = 2.5;
+      runAnimQa(p, { seed: 14601, seconds: 6, lefty: [], onFrame: (m, av) => {
+        if (m.time < next) return;
+        next += 3;
+        const a = av[poses.length]! as unknown as { mesh: THREE.SkinnedMesh; refreshSkin(): void };
+        a.refreshSkin();
+        const pos = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) (a.mesh.getVertexPosition(i, v).applyMatrix4(a.mesh.matrixWorld)).toArray(pos, i * 3);
+        poses.push(pos);
+      } });
+      expect(poses.length).toBe(3);
+      // (in play a sleeve and the body can close round a gap between them: there only rays that meet something and aren't drawn)
+      poses.forEach((pos, k) => {
+        for (const dir of ring([-15, 0, 20, 45])) expect(holes(p, pos, dir, true).filter((h) => h.size >= 3 && (k === 0 || h.at)).map((h) => [h.size, h.at])).toEqual([]);
+      });
+    }
+  }, 120_000);
 });

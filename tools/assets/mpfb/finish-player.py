@@ -202,9 +202,10 @@ def finish(yb, spec, out, preview=False):
     # ---------- the kit fitted (person_face.fit_suit), before the skin under it is masked away ----------
     outfit = spec.get('kit', {})
     women = spec['clothes'][0].startswith('female_')
+    armholes = None
     if suit is not None:
         if outfit.get('top') == 'tank':
-            kit.cut_tank(suit, body, rig, women, face.shirt_polygons(suit.data, women))
+            armholes = kit.cut_tank(suit, body, rig, women, face.shirt_polygons(suit.data, women))
         face.fit_suit(body, suit, rig.data.bones[P + 'Hips'].head_local.z, women)
         face.cut_shorts_under_shirt(suit, women)
         if hem is not None:
@@ -286,6 +287,8 @@ def finish(yb, spec, out, preview=False):
             for v in o.data.vertices:
                 v.co += v.normal * 0.003
             o.data.update()
+    if armholes:
+        kit.hug_armholes(suit, body, armholes, women)
     dg = bpy.context.evaluated_depsgraph_get()
     trees = [BVHTree.FromObject(o, dg, deform=False) for o in covers]
     bm = bmesh.new()

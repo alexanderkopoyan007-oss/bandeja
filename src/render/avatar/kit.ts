@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
   vec2, step, sin,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
-  mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor,
+  mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor, frontFacing, faceDirection,
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import type { KitCut, PlayerAsset } from './asset.ts';
@@ -301,6 +301,8 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   }
 }
 const SKIN_WRAP = 0.55;
+/** How dark the inside of the cloth is: it sits in the body's shadow, and no bake covers it. */
+const BODY_INSIDE = 0.3;
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
 const FOLD_DEPTH = 1;
 const BIB_PLAIN = 0.9;
@@ -309,6 +311,9 @@ const COLLAR_BINS = 6;
 const COLLAR_MAX = 0.11;
 const COLLAR_BIN = 0.01;
 const COLLAR_EDGE = 0.006;
+/** How far the skin goes on under the neckline and under a tank's armhole before the shader cuts it (m). */
+const UNDER_NECKLINE = 0.005;
+const UNDER_ARMHOLE = 0.01;
 /** Hem stitching this far in from the edge (m); the wristband's centre in from the wrist and half width (m); hair's swing
  * as a multiple of the hems' lag. */
 const HEM_STITCH = 0.018;
@@ -435,7 +440,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const neckline = float(COLLAR_MID).add(min(collarY, p.z.sub(nk.z - 0.01)).mul(COLLAR_SCALE)).mul(shirtW);
   // The skin the build keeps for the neckline stops at it: below, on a close-fitting shirt, it came through in jagged pieces.
   // (down to the chest only: left open below, it took a slice out of the inside of every leg)
-  const underShirt = smoothstep(-0.012, -0.0125, collarY).mul(smoothstep(nk.z - 0.01, nk.z - 0.005, p.z))
+  const underShirt = smoothstep(-UNDER_NECKLINE, -UNDER_NECKLINE - 0.0005, collarY).mul(smoothstep(nk.z - 0.01, nk.z - 0.005, p.z))
     .mul(smoothstep(0.1, 0.09, collarX.abs())).mul(smoothstep(nk.y - 0.3, nk.y - 0.28, p.y)).mul(skinW);
   // The collar's ribbed band in the kit's second colour, right round: the back of the neck is the shirt's own edge.
   const backBand = smoothstep(float(frame.backTop ?? 9).sub(COLLAR_RIB + 0.002), float(frame.backTop ?? 9).sub(COLLAR_RIB), p.y).mul(step(p.z, nk.z - 0.02)).mul(shirtW);
@@ -454,6 +459,13 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   col = mix(col, color(look.shirt).mul(float(0.92).add(p.x.mul(2400).sin().mul(0.08))), band);
   const m = new PersonNodeMaterial();
   m.maskNode = neckline.lessThan(COLLAR_MID).and(underShirt.lessThan(0.5)).and(skinCut.mul(skinW).lessThan(0.5));
+  // Both sides are drawn. A body here is a shell, hollow under the clothes: wherever a camera saw past an edge, into a collar
+  // or up a sleeve or a skirt, it met the far side's back, and culled that showed the court through the player (round 8).
+  // Closed surfaces hide their own backs, so this only shows at those edges, as the cloth's inside in its own shadow. The
+  // shadow map is drawn from the same faces as ever.
+  m.side = THREE.DoubleSide;
+  m.shadowSide = THREE.BackSide;
+  col = col.mul(mix(float(BODY_INSIDE), float(1), faceDirection.mul(0.5).add(0.5)));
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
@@ -601,12 +613,12 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
     s = mix(s, trim, smoothstep(float(frame.sleeveX ?? 9).sub(CUFF + 0.0015), float(frame.sleeveX ?? 9).sub(CUFF), tx));
   } else {
     // A tank's armhole has a binding, along the cut (person_kit.py cut_tank).
-    const a = new THREE.Vector2(armX - 0.035, armY + 0.07), b = new THREE.Vector2(armX - 0.01, armY - 0.15);
-    const no = new THREE.Vector2(a.y - b.y, b.x - a.x).normalize();
+    const { a, no } = tankCut(frame);
     const d = ax.sub(a.x).mul(no.x).add(p.y.sub(a.y).mul(no.y));
     s = mix(s, trim, smoothstep(float(-CUFF - 0.0015), float(-CUFF), d));
-    // The skin under that edge: the shirt's triangles are coarser than the shoulder's, and it came through in teeth.
-    skinCut = smoothstep(-0.004, -0.006, d).mul(step(armX - 0.09, ax)).mul(smoothstep(a.y + 0.01, a.y, p.y)).mul(step(b.y - 0.02, p.y));
+    // The skin under that edge: the shirt's triangles are coarser than the shoulder's, and it came through in teeth. Down
+    // to the shirt's hem: above it, in the armpit, it came through in patches; below, this slab would cut the legs.
+    skinCut = smoothstep(-UNDER_ARMHOLE + 0.001, -UNDER_ARMHOLE - 0.001, d).mul(step(armX - 0.09, ax)).mul(smoothstep(a.y + 0.01, a.y, p.y)).mul(step(frame.hemY + 0.05, p.y));
   }
   s = s.mul(float(1).sub(seams.mul(0.16)));
   // Marks, drawn in metres from their centre.
@@ -648,8 +660,8 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   const legX = frame.legX ?? 0.09, legZ = frame.legZ ?? 0, hang = X.x;
   let b = rgb(look.shorts);
   if (cut.bottom === 'pleated' || cut.bottom === 'aline') {
-    // (the outside only: on the lining, under a lifted hem, it read as a torn flap)
-    b = mix(b, shirt, smoothstep(float(SKIRT_BAND - 0.003), float(SKIRT_BAND), hang).mul(step(uv().y, SKIRT_OUT_V)));
+    // (the outside only: on the lining or the cloth's inside, under a lifted hem, it read as a torn flap)
+    b = mix(b, shirt, smoothstep(float(SKIRT_BAND - 0.003), float(SKIRT_BAND), hang).mul(step(uv().y, SKIRT_OUT_V)).mul(float(frontFacing)));
   } else {
     const stripe = smoothstep(0.0145, 0.0125, p.z.sub(legZ).abs()).mul(smoothstep(legX + 0.015, legX + 0.03, p.x.abs()));
     b = mix(b, shirt, stripe);
@@ -659,6 +671,36 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   // (a band or a visor is on the sock part's colours, up on the head)
   const sockC = mix(rgb(look.socks), trim, step(frame.hips.y, p.y));
   return { shirtC: s, shortsC: b, sockC, skinCut };
+}
+
+/** A tank's armhole in (out from the chest, height), a plane from the shoulder's top to under the arm: person_kit.py cut_tank. */
+function tankCut(frame: KitFrame): { a: THREE.Vector2; no: THREE.Vector2 } {
+  const armX = frame.armX ?? 0.2, armY = frame.armY ?? frame.chest.y;
+  const a = new THREE.Vector2(armX - 0.035, armY + 0.07), b = new THREE.Vector2(armX - 0.01, armY - 0.15);
+  return { a, no: new THREE.Vector2(a.y - b.y, b.x - a.x).normalize() };
+}
+
+const edge = (lo: number, hi: number, x: number): number => { const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo))); return t * t * (3 - 2 * t); };
+
+/**
+ * `personMaterial`'s mask in plain numbers, for the tests' software rendering (tests/render/kit.test.ts): is this point of a body
+ * (modelled pose, with its shirt's and skin's weights) cut away?
+ */
+export function personCut(asset: PlayerAsset): (x: number, y: number, z: number, shirtW: number, skinW: number) => boolean {
+  const frame = personFrame(asset);
+  const nk = frame.neck ?? frame.chest, drop = frame.collarDrop ?? COLLAR_DROP;
+  const tank = asset.look!.kit.top === 'tank' ? tankCut(frame) : null;
+  const armX = frame.armX ?? 0.2;
+  return (x, y, z, shirtW, skinW) => {
+    const cx = x - nk.x, cy = y - (nk.y - drop) - cx * cx * COLLAR_CURVE;
+    if ((COLLAR_MID + Math.min(cy, z - (nk.z - 0.01)) * COLLAR_SCALE) * shirtW >= COLLAR_MID) return true;
+    const under = edge(-UNDER_NECKLINE, -UNDER_NECKLINE - 0.0005, cy) * edge(nk.z - 0.01, nk.z - 0.005, z) * edge(0.1, 0.09, Math.abs(cx)) * edge(nk.y - 0.3, nk.y - 0.28, y) * skinW;
+    if (under >= 0.5) return true;
+    if (!tank) return false;
+    const ax = Math.abs(x - frame.chest.x), d = (ax - tank.a.x) * tank.no.x + (y - tank.a.y) * tank.no.y;
+    const cut = edge(-UNDER_ARMHOLE + 0.001, -UNDER_ARMHOLE - 0.001, d) * (ax < armX - 0.09 ? 0 : 1) * edge(tank.a.y + 0.01, tank.a.y, y) * (y < frame.hemY + 0.05 ? 0 : 1);
+    return cut * skinW >= 0.5;
+  };
 }
 
 const PERSON_FRAMES = new WeakMap<PlayerAsset, KitFrame>();
