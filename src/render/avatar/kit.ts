@@ -397,6 +397,7 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
  */
 export function personMaterial(asset: PlayerAsset, look: KitLook): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
   const body = asset.look!;
+  if (body.kit.baked) return bakedMaterial(asset);
   const frame = personFrame(asset);
   // Parts (asset.ts): A = shirt, shorts, skin, socks; B = shoes, eyes, teeth, tongue. bodyX by part: skin (lips,
   // T-zone, lids, ears); eyes, shoes, socks: x = their baked occlusion; the shirt: x = where it gets wet first.
@@ -607,6 +608,36 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);
   return { material: m, hair, state: { sweat: sweatU, lag, sway } };
+}
+
+/**
+ * A person who is one fused surface with the look in its texture (the Meshy pilot, tools/assets/meshy/): the atlas's colour, its alpha
+ * the skin (warm, lit by `PersonNodeMaterial` as the rest of the cast's skin), the rest matte cloth with a sheen; the tangent-space
+ * normals baked from the full mesh over `clothNormal`. Stubs: no team colours, no hems (there is no separate cloth to lag), no sweat
+ * patches, no hair cards (the second mesh is a speck inside the head).
+ */
+function bakedMaterial(asset: PlayerAsset): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
+  const body = asset.look!;
+  const sweatU = uniform(new THREE.Vector2());
+  const sweat = sweatU.x;
+  const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
+  // (0.25 at no skin: decimate-bake.py)
+  const skin = tex.w.sub(0.25).div(0.75).clamp();
+  const m = new PersonNodeMaterial();
+  m.colorNode = tex.xyz;
+  m.side = THREE.DoubleSide;
+  m.shadowSide = THREE.BackSide;
+  m.roughnessNode = mix(float(0.86), mix(float(0.5), float(0.33), sweat), skin);
+  m.metalnessNode = float(0);
+  m.clearcoatNode = skin.mul(float(0.05).add(sweat.mul(0.35)));
+  m.clearcoatRoughnessNode = float(0.32);
+  m.sheenNode = mix(tex.xyz, vec3(1, 1, 1), 0.3).mul(float(1).sub(skin).mul(0.6));
+  m.sheenRoughnessNode = float(0.55);
+  if (body.clothNormal) m.normalNode = uvNormal(texture(body.clothNormal, uv()).xy.mul(2).sub(1), uv());
+  m.scatterNode = skin.mul(SKIN_SCATTER);
+  m.ambientFixNode = skin;
+  m.toneBackNode = skin.mul(SKIN_TONE_BACK);
+  return { material: m, hair: new PersonNodeMaterial(), state: { sweat: sweatU, lag: uniform(new THREE.Vector3()), sway: uniform(new THREE.Vector3()) } };
 }
 
 /**

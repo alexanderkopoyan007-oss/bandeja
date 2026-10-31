@@ -50,7 +50,7 @@ export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
     pool[1] = rest[0]!;
     pool[3] = rest[1]!;
   }
-  const all = [...roster.men, ...roster.women];
+  const all = [...roster.men, ...roster.women, ...roster.guests];
   const picked = only?.length ? only.map((n) => all.find((p) => p.name === n) ?? pool[0]!) : pool.slice(0, 4);
   return { people: picked.map((p) => p.name), women: only?.length ? roster.women.some((p) => p.name === only[0]) : women, nations: picked.map((p) => p.nations), kits };
 }

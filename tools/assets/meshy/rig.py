@@ -1,0 +1,390 @@
+# Step 2 of the Meshy pilot: rigs the decimated mesh (decimate-bake.py's low.npz) on the game skeleton, in Blender's Python.
+#   Blender -b --python tools/assets/meshy/rig.py -- <low-dir> <person-dir (read-person.mjs)> <out-dir>
+#
+# The person is not in p1's pose (arms about 18 degrees off the body, not 42; longer arms, shorter legs), so p1's skeleton can't
+# just be laid over it. What happens instead:
+# - Its joints in its own pose are the landmarks below, measured from slices through the mesh (mirrored: it is symmetric to 2 mm);
+#   hip, knee, elbow and shoulder heights are judgement, the rest is geometry. Hands: p1's fitted by the palm's frame, each
+#   finger's chain then aimed at that fingertip.
+# - p1's body is moved onto those joints, bone by bone, and each vertex here takes the weights of the nearest point on it.
+# - The arms are then raised to p1's angle with those weights and the mesh is bound there: a bind with the arms down has
+#   to swing 165 degrees overhead, and linear blend skinning collapses a shoulder at that (p1's 139 are what it was made for).
+# - The moves to the T-pose are finish-player.py's, so body.json is what build-people.mjs reads from any person.
+import json, os, sys
+import numpy as np
+from mathutils import Vector
+from mathutils.bvhtree import BVHTree
+
+args = sys.argv[sys.argv.index('--') + 1:]
+LOW, P1, OUT = args[0], args[1], args[2]
+os.makedirs(OUT, exist_ok=True)
+
+SIDES = ('Left', 'Right')
+FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky')
+
+# ---------- the person's joints in its own pose (game axes: y up, faces +z, +x its left; the left side, mirrored for the right) ----------
+LM = {
+    'Hips': (0, 1.000, -0.029), 'Spine': (0, 1.0933, -0.015), 'Spine1': (0, 1.1866, -0.033), 'Spine2': (0, 1.3146, -0.091),
+    'Neck': (0, 1.525, -0.005), 'Head': (0, 1.565, -0.008), 'HeadTop_End': (0, 1.800, 0.005),
+    'LeftShoulder': (0.067, 1.488, -0.012), 'LeftArm': (0.200, 1.415, -0.045), 'LeftForeArm': (0.260, 1.165, -0.067), 'LeftHand': (0.358, 0.900, -0.030),
+    'LeftUpLeg': (0.105, 0.955, -0.025), 'LeftLeg': (0.158, 0.490, -0.025), 'LeftFoot': (0.222, 0.100, -0.060),
+}
+# The hand's frame: fingers' direction, across towards the thumb; and the fingertips.
+HAND_F = np.array((0.387, -0.919, -0.075))
+HAND_K = np.array((0.074, -0.050, 0.996))
+TIPS = {'Thumb': (0.388, 0.785, 0.070), 'Index': (0.425, 0.720, 0.024), 'Middle': (0.427, 0.702, -0.003), 'Ring': (0.413, 0.706, -0.030), 'Pinky': (0.397, 0.731, -0.056)}
+TIP_IN = 0.007  # how far inside the tip the last joint stands
+RAISE = np.radians(24)  # the arms up to p1's angle
+PART_SOURCE_OUT = (4, 9, 10)  # p1's eyes, teeth and tongue give no weights
+
+# ---------- p1 ----------
+j = json.load(open(f'{P1}/p1.json'))
+names = [b['name'] for b in j['bones']]
+nb = len(names)
+ix = {n: i for i, n in enumerate(names)}
+parent = [b['parent'] for b in j['bones']]
+bind_p = np.array(j['bindPose']).reshape(-1, 4, 4).transpose(0, 2, 1)
+A_p = bind_p[:, :3, 3].copy()
+rest_p = np.array(j['restWorld']).reshape(-1, 4, 4).transpose(0, 2, 1)
+J1 = rest_p[:, :3, 3].copy()  # p1's T-pose joints: their directions are the game skeleton's
+nv_p = j['parts']['opaque']['vertices']
+P = np.fromfile(f'{P1}/p1-opaque-pos.f32', dtype=np.float32).reshape(-1, 3).astype(np.float64)
+SI_p = np.fromfile(f'{P1}/p1-opaque-si.u8', dtype=np.uint8).reshape(-1, 4)
+SW_p = np.fromfile(f'{P1}/p1-opaque-sw.f32', dtype=np.float32).reshape(-1, 4)
+PART_p = np.fromfile(f'{P1}/p1-opaque-part.u8', dtype=np.uint8)
+TRI_p = np.fromfile(f'{P1}/p1-opaque-index.u32', dtype=np.uint32).reshape(-1, 3).astype(np.int64)
+TRI_p = TRI_p[~np.isin(PART_p[TRI_p].max(axis=1), PART_SOURCE_OUT) & ~np.isin(PART_p[TRI_p].min(axis=1), PART_SOURCE_OUT)]
+W_p = np.zeros((nv_p, nb), dtype=np.float64)
+np.add.at(W_p, (np.arange(nv_p)[:, None].repeat(4, 1), SI_p), SW_p)
+
+# ---------- the person ----------
+d = np.load(f'{LOW}/low.npz')
+B = d['co'].astype(np.float64)
+V = np.stack([B[:, 0], B[:, 2], -B[:, 1]], 1)
+TRI = d['tri'].astype(np.int64)
+UV = d['uv']
+HI = d['hico']
+HI = np.stack([HI[:, 0], HI[:, 2], -HI[:, 1]], 1)
+print('RIG person', len(V), 'verts', len(TRI), 'tris, p1 source tris', len(TRI_p))
+
+
+def unit(v):
+    return v / np.linalg.norm(v)
+
+
+def mirror(p):
+    return np.array((-p[0], p[1], p[2]))
+
+
+def rot_between(a, b):
+    a, b = unit(a), unit(b)
+    v = np.cross(a, b)
+    c = float(a @ b)
+    s = np.linalg.norm(v)
+    if s < 1e-9:
+        return np.eye(3)
+    k = v / s
+    K = np.array(((0, -k[2], k[1]), (k[2], 0, -k[0]), (-k[1], k[0], 0)))
+    return np.eye(3) + s * K + (1 - c) * K @ K
+
+
+def frame(d_, e):
+    x = unit(d_)
+    y = e - x * (e @ x)
+    y = unit(y)
+    return np.stack((x, y, np.cross(x, y)), axis=1)
+
+
+def sim(p_from, p_to, R, s=1.0):
+    """A similarity carrying p_from to p_to."""
+    m = np.eye(4)
+    m[:3, :3] = R * s
+    m[:3, 3] = p_to - m[:3, :3] @ p_from
+    return m
+
+
+# The left foot: its long axis from the sole's outline.
+sole = HI[(HI[:, 1] < 0.03) & (HI[:, 0] > 0)]
+c = sole.mean(0)
+u, s_, vt = np.linalg.svd((sole - c)[:, [0, 2]], full_matrices=False)
+fd = vt[0] * np.sign(vt[0][1])
+foot_dir = np.array((fd[0], 0, fd[1]))
+foot_len = float(np.ptp((sole - c)[:, [0, 2]] @ vt[0]))
+print('RIG foot axis', foot_dir.round(3), 'length', round(foot_len, 3), 'toe-out', round(float(np.degrees(np.arctan2(fd[0], fd[1]))), 1), 'deg')
+heel_pt = c - foot_dir * (foot_len / 2)
+p_foot_len = 0.283
+
+A = np.zeros((nb, 3))
+for n, p in LM.items():
+    A[ix[n]] = p
+    if n.startswith('Left'):
+        A[ix['Right' + n[4:]]] = mirror(p)
+f0 = A[ix['LeftFoot']]
+ft = foot_len / p_foot_len
+for n, along, y in (('LeftToeBase', 0.149, 0.048), ('LeftToe_End', 0.204, 0.031)):
+    q = f0 + foot_dir * along * ft
+    q[1] = y
+    A[ix[n]] = q
+    A[ix['Right' + n[4:]]] = mirror(q)
+
+# ---------- the bones' moves from p1's bind pose onto those joints ----------
+X = np.tile(np.eye(4), (nb, 1, 1))
+kids = {i: [k for k in range(nb) if parent[k] == i] for i in range(nb)}
+TO = {}
+for s in SIDES:
+    TO.update({s + 'Shoulder': s + 'Arm', s + 'Arm': s + 'ForeArm', s + 'ForeArm': s + 'Hand', s + 'UpLeg': s + 'Leg', s + 'Leg': s + 'Foot', s + 'Foot': s + 'ToeBase', s + 'ToeBase': s + 'Toe_End'})
+TO.update({'Spine': 'Spine1', 'Spine1': 'Spine2', 'Spine2': 'Neck', 'Neck': 'Head', 'Head': 'HeadTop_End'})
+
+# Left hand first (the right is its mirror image).
+WR = A[ix['LeftHand']]
+F_m = unit(HAND_F)
+K_m = unit(HAND_K - F_m * (HAND_K @ F_m))
+wp = A_p[ix['LeftHand']]
+F_p = unit(A_p[ix['LeftHandMiddle1']] - wp)
+K_p = A_p[ix['LeftHandIndex1']] - A_p[ix['LeftHandPinky1']]
+K_p = unit(K_p - F_p * (K_p @ F_p))
+Rh = np.stack((F_m, K_m, np.cross(F_m, K_m)), 1) @ np.stack((F_p, K_p, np.cross(F_p, K_p)), 1).T
+tip_len = np.linalg.norm(np.array(TIPS['Middle']) - WR)
+p_len = np.linalg.norm(A_p[ix['LeftHandMiddle4']] - wp) + TIP_IN
+sh = float(tip_len / p_len)
+Xh = sim(wp, WR, Rh, sh)
+print('RIG hand scale', round(sh, 3), 'tip', round(float(tip_len), 3))
+Xleft = {}
+Xleft['Hand'] = Xh
+
+
+def tf(m, p):
+    return m[:3, :3] @ p + m[:3, 3]
+
+
+for f in FINGERS:
+    a = np.array(TIPS[f])
+    j1 = tf(Xh, A_p[ix[f'LeftHand{f}1']])
+    j4 = tf(Xh, A_p[ix[f'LeftHand{f}4']])
+    goal = a - unit(a - j1) * TIP_IN
+    R = rot_between(j4 - j1, goal - j1)
+    k = float(np.linalg.norm(goal - j1) / np.linalg.norm(j4 - j1))
+    Xf = sim(j1, j1, R, k) @ Xh
+    print('RIG finger', f, 'aim', round(float(np.degrees(np.arccos(np.clip(unit(j4 - j1) @ unit(goal - j1), -1, 1)))), 1), 'deg, length x', round(k, 3))
+    for q in (1, 2, 3, 4):
+        n = f'LeftHand{f}{q}'
+        A[ix[n]] = tf(Xf, A_p[ix[n]])
+        A[ix['Right' + n[4:]]] = mirror(A[ix[n]])
+        Xleft[f'Hand{f}{q}'] = Xf
+Mx = np.diag((-1.0, 1, 1, 1))
+for n, m in Xleft.items():
+    X[ix['Left' + n]] = m
+    # (p1's right hand is close to his left mirrored: the mirrored move would need his joints mirrored, so it maps his own)
+    X[ix['Right' + n]] = Mx @ m @ Mx
+
+for n, to in TO.items():
+    i, c_ = ix[n], ix[to]
+    v_p = A_p[c_] - A_p[i]
+    v_m = A[c_] - A[i]
+    k = float(np.linalg.norm(v_m) / max(np.linalg.norm(v_p), 1e-9))
+    X[i] = sim(A_p[i], A[i], rot_between(v_p, v_m), k)
+X[ix['Hips']] = sim(A_p[ix['Hips']], A[ix['Hips']], np.eye(3))
+for s in SIDES:  # the toe's tip has nothing to aim at: as its parent
+    X[ix[s + 'Toe_End']] = X[ix[s + 'ToeBase']]
+X[ix['HeadTop_End']] = X[ix['Head']]
+
+# p1 on the person's joints.
+hp = np.c_[P, np.ones(len(P))]
+Pm = np.zeros_like(P)
+for b in range(nb):
+    w = W_p[:, b]
+    if w.max() > 0:
+        Pm += w[:, None] * (hp @ X[b].T)[:, :3]
+
+# ---------- weights: the nearest point on him ----------
+tree = BVHTree.FromPolygons([Vector(p) for p in Pm], [tuple(int(x) for x in t) for t in TRI_p])
+W = np.zeros((len(V), nb), dtype=np.float64)
+dist = np.zeros(len(V))
+for v, p in enumerate(V):
+    loc, _, ti, d_ = tree.find_nearest(Vector(p))
+    t = TRI_p[ti]
+    a, b_, c_ = Pm[t[0]], Pm[t[1]], Pm[t[2]]
+    loc = np.array(loc)
+    v0, v1, v2 = b_ - a, c_ - a, loc - a
+    d00, d01, d11, d20, d21 = v0 @ v0, v0 @ v1, v1 @ v1, v2 @ v0, v2 @ v1
+    den = d00 * d11 - d01 * d01
+    if abs(den) < 1e-14:
+        bary = (1.0, 0.0, 0.0)
+    else:
+        q = (d11 * d20 - d01 * d21) / den
+        r = (d00 * d21 - d01 * d20) / den
+        bary = (1 - q - r, q, r)
+    W[v] = bary[0] * W_p[t[0]] + bary[1] * W_p[t[1]] + bary[2] * W_p[t[2]]
+    dist[v] = d_
+print('RIG nearest p1 surface, cm: median', round(float(np.median(dist)) * 100, 2), 'p95', round(float(np.percentile(dist, 95)) * 100, 2), 'max', round(float(dist.max()) * 100, 2))
+# Parts for what reads them (the shader takes its look from the texture): p1's, for skin or cloth.
+fit_parts = np.zeros(len(V), dtype=np.uint8)
+for v, p in enumerate(V):
+    _, _, ti, _ = tree.find_nearest(Vector(p))
+    fit_parts[v] = PART_p[TRI_p[ti][0]]
+
+# ---------- a little smoothing over the mesh: nearest-surface weights jump across the medial lines (armpit, between fingers) ----------
+edges = np.unique(np.sort(np.concatenate((TRI[:, [0, 1]], TRI[:, [1, 2]], TRI[:, [2, 0]])), axis=1), axis=0)
+deg = np.bincount(edges.ravel(), minlength=len(V)).astype(np.float64)[:, None]
+for _ in range(3):
+    acc = np.zeros_like(W)
+    np.add.at(acc, edges[:, 0], W[edges[:, 1]])
+    np.add.at(acc, edges[:, 1], W[edges[:, 0]])
+    W = 0.5 * W + 0.5 * acc / np.maximum(deg, 1)
+
+# ---------- raised to p1's angle, and bound there ----------
+Xr = np.tile(np.eye(4), (nb, 1, 1))
+subtree = {}
+
+
+def under(i):
+    return [i] + [k for c_ in kids[i] for k in under(c_)]
+
+
+for s, sg in (('Left', 1), ('Right', -1)):
+    S = A[ix[s + 'Arm']]
+    a = RAISE * sg
+    R = np.array(((np.cos(a), -np.sin(a), 0), (np.sin(a), np.cos(a), 0), (0, 0, 1)))
+    for i in under(ix[s + 'Arm']):
+        Xr[i] = sim(S, S, R)
+hv = np.c_[V, np.ones(len(V))]
+Vb = np.zeros_like(V)
+for b in range(nb):
+    w = W[:, b]
+    if w.max() > 0:
+        Vb += w[:, None] * (hv @ Xr[b].T)[:, :3]
+Ab = np.array([tf(Xr[i], A[i]) for i in range(nb)])
+sa = unit(Ab[ix['LeftForeArm']] - Ab[ix['LeftArm']])
+print('RIG upper arm off the body at the bind', round(float(np.degrees(np.arccos(-sa[1]))), 1), 'deg; p1',
+      round(float(np.degrees(np.arccos(-unit(A_p[ix['LeftForeArm']] - A_p[ix['LeftArm']])[1]))), 1))
+sa0 = unit(A[ix['LeftForeArm']] - A[ix['LeftArm']])
+print('RIG upper arm as modelled', round(float(np.degrees(np.arccos(-sa0[1]))), 1), 'deg')
+
+# ---------- prune to four ----------
+order = np.argsort(-W, axis=1)[:, :4]
+row = np.arange(len(V))[:, None]
+sw = W[row, order]
+sw[sw < 1e-4] = 0
+sw /= np.maximum(sw.sum(1, keepdims=True), 1e-9)
+si = order.astype(np.uint8)
+W4 = np.zeros_like(W)
+W4[row, order] = sw
+
+# ---------- the moves to the T-pose: finish-player.py's, on the game skeleton's directions ----------
+AIM = {}
+for s in SIDES:
+    AIM[s + 'UpLeg'] = (s + 'Leg', 'min')
+    AIM[s + 'Leg'] = (s + 'Foot', 'min')
+    AIM[s + 'Arm'] = (s + 'ForeArm', 'min')
+    AIM[s + 'ForeArm'] = (s + 'Hand', 'palm')
+    AIM[s + 'Hand'] = (s + 'HandMiddle1', 'palm')
+    for f in FINGERS:
+        for q in (1, 2, 3):
+            AIM[f'{s}Hand{f}{q}'] = (f'{s}Hand{f}{q + 1}', 'min' if f == 'Thumb' else 'palm')
+Mv = np.tile(np.eye(4), (nb, 1, 1))
+ends = {'HeadTop_End', 'LeftToe_End', 'RightToe_End'} | {f'{s}Hand{f}4' for s in SIDES for f in FINGERS}
+for i in range(nb):  # parents come first
+    n = names[i]
+    pm = Mv[parent[i]] if parent[i] >= 0 else np.eye(4)
+    if n in ends:
+        Mv[i] = pm
+        continue
+    h = tf(pm, Ab[i])
+    if n in AIM:
+        to, how = AIM[n]
+        d0 = tf(pm, Ab[ix[to]]) - h
+        d1 = J1[ix[to]] - J1[i]
+        if how == 'palm':
+            s = 'Left' if n.startswith('Left') else 'Right'
+            e0 = tf(pm, Ab[ix[s + 'HandIndex1']]) - tf(pm, Ab[ix[s + 'HandPinky1']])
+            e1 = J1[ix[s + 'HandIndex1']] - J1[ix[s + 'HandPinky1']]
+            R = frame(d1, e1) @ frame(d0, e0).T
+        else:
+            R = rot_between(d0, d1)
+        Mv[i] = sim(h, h, R) @ pm
+    else:
+        Mv[i] = sim(Ab[i], h, np.eye(3))
+Jt = np.array([tf(Mv[i], Ab[i]) for i in range(nb)])
+worst = 0.0
+for n, (to, how) in AIM.items():
+    i = ix[n]
+    worst = max(worst, float(np.degrees(np.arccos(np.clip(unit(Jt[ix[to]] - Jt[i]) @ unit(J1[ix[to]] - J1[i]), -1, 1)))))
+print('RIG worst posed bone direction', round(worst, 3), 'deg')
+for n in ('Hips', 'Neck', 'Head', 'LeftArm', 'LeftForeArm', 'LeftHand', 'LeftHandMiddle4', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToe_End'):
+    print('RIG joint', n.ljust(16), 'bind', Ab[ix[n]].round(3), 'T', Jt[ix[n]].round(3), 'p1 T', J1[ix[n]].round(3))
+
+# Edge stretch into the T-pose: what skinning does to the triangles on the way to the rest pose.
+hb = np.c_[Vb, np.ones(len(Vb))]
+Vt = np.zeros_like(Vb)
+for b in range(nb):
+    w = W4[:, b]
+    if w.max() > 0:
+        Vt += w[:, None] * (hb @ Mv[b].T)[:, :3]
+e0 = np.linalg.norm(Vb[edges[:, 0]] - Vb[edges[:, 1]], axis=1)
+e1 = np.linalg.norm(Vt[edges[:, 0]] - Vt[edges[:, 1]], axis=1)
+ratio = e1 / np.maximum(e0, 1e-5)
+print('RIG T-pose edge stretch p1/p50/p99/max', np.percentile(ratio, [1, 50, 99, 100]).round(2), 'T min', Vt.min(0).round(3), 'max', Vt.max(0).round(3))
+top = np.argsort(-W4, axis=1)[:, 0]
+bad = ratio > 1.6
+tally = {}
+for a_, b__ in edges[bad]:
+    n_ = names[top[a_]]
+    tally[n_] = tally.get(n_, 0) + 1
+print('RIG stretched edges by bone', len(edges), sorted(tally.items(), key=lambda kv: -kv[1])[:14])
+
+# ---------- normals of the bound shape ----------
+fn = np.cross(Vb[TRI[:, 1]] - Vb[TRI[:, 0]], Vb[TRI[:, 2]] - Vb[TRI[:, 0]])
+Nv = np.zeros_like(Vb)
+for c_ in range(3):
+    np.add.at(Nv, TRI[:, c_], fn)
+Nv /= np.maximum(np.linalg.norm(Nv, axis=1, keepdims=True), 1e-12)
+
+# ---------- split at the UV seams, out ----------
+seen = {}
+pos, nrm, uv_o, si_o, sw_o, part, index = [], [], [], [], [], [], []
+for t in range(len(TRI)):
+    for c_ in range(3):
+        v = int(TRI[t, c_])
+        u_, v_ = float(UV[t, c_, 0]), float(UV[t, c_, 1])
+        key = (v, round(u_, 5), round(v_, 5))
+        if key not in seen:
+            seen[key] = len(seen)
+            pos.append(Vb[v])
+            nrm.append(Nv[v])
+            uv_o.append((u_, v_))
+            si_o.append(si[v])
+            sw_o.append(sw[v])
+            part.append(fit_parts[v])
+        index.append(seen[key])
+print('RIG game vertices', len(seen), 'triangles', len(TRI), 'source vertices', len(V))
+
+PARTS = {'skin': 0, 'shirt': 1, 'shorts': 2, 'shoe': 3, 'eye': 4, 'sock': 5, 'hair': 6, 'brow': 7, 'lash': 8, 'teeth': 9, 'tongue': 10}
+blob = bytearray()
+
+
+def put(arr, kind):
+    data = np.asarray(arr, dtype=kind).tobytes()
+    at = [len(blob), len(data)]
+    blob.extend(data)
+    blob.extend(b'\0' * ((4 - len(blob) % 4) % 4))
+    return at
+
+
+def mesh(pos_, nrm_, uv_, si_, sw_, part_, index_):
+    return {'vertices': len(part_), 'indices': len(index_), 'pos': put(pos_, '<f4'), 'nrm': put(nrm_, '<f4'), 'uv': put(uv_, '<f4'),
+            'si': put(si_, 'u1'), 'sw': put(sw_, '<f4'), 'part': put(part_, 'u1'), 'index': put(index_, '<u4')}
+
+
+meshes = {'opaque': mesh(pos, nrm, uv_o, si_o, sw_o, part, index)}
+# No hair cards: one speck inside the head, so that everything that expects a second mesh has one.
+hd = Ab[ix['Head']] + np.array((0, 0.09, 0))
+meshes['alpha'] = mesh([hd, hd + (0.001, 0, 0), hd + (0, 0.001, 0)], [(0, 1, 0)] * 3, [(0, 0)] * 3, [[ix['Head'], 0, 0, 0]] * 3, [[1, 0, 0, 0]] * 3, [6] * 3, [0, 1, 2])
+
+header = {
+    'name': 'meshy', 'height': 1.80, 'bones': names, 'joints': Jt.tolist(), 'move': [Mv[i].flatten(order='F').tolist() for i in range(nb)],
+    'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': 'meshy-normal.webp'}, 'parts': PARTS, 'morphs': [],
+    'kit': {'baked': True, 'top': 'tee', 'bottom': 'shorts', 'mark': 0}, 'meshes': meshes,
+}
+open(f'{OUT}/body.bin', 'wb').write(bytes(blob))
+json.dump(header, open(f'{OUT}/body.json', 'w'))
+print('RIG wrote', OUT, len(blob) // 1024, 'KB')

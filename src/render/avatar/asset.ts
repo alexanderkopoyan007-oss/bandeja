@@ -86,6 +86,8 @@ export interface KitCut {
   /** Their own shoes' upper and sole (CSS hex): MakeHuman has one trainer, so a colour per person. */
   shoes?: string;
   sole?: string;
+  /** One fused surface with its look baked into a texture (tools/assets/meshy/): no parts for the shader to colour, `bakedMaterial`. */
+  baked?: boolean;
 }
 
 export interface BodyLook {
@@ -154,7 +156,7 @@ const fetching = new Map<string, Promise<void>>();
  * already there. A person that fails to load is left out (that player is the mannequin) and said in the console.
  */
 export async function loadPeople(base: PlayerAsset, people: string[], progress?: (frac: number) => void): Promise<void> {
-  const wanted = people.filter((n) => !base.people.some((p) => p.look!.name === n));
+  const wanted = [...new Set(people)].filter((n) => !base.people.some((p) => p.look!.name === n));
   const n = wanted.length;
   for (let i = 0; i < n; i++) {
     const name = wanted[i]!;

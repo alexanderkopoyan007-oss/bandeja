@@ -14,5 +14,8 @@
     { "name": "p9", "nations": ["JPN", "KOR"] },
     { "name": "p10", "nations": ["ESP", "ARG", "MEX", "POR"] }
   ],
+  "guests": [
+    { "name": "meshy", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] }
+  ],
   "womensMatches": 0.35
 }
