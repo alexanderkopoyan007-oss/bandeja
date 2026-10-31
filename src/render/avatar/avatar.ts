@@ -496,6 +496,49 @@ const NECK_SHARE = 0.4;
 const STEP_DIST = 0.13;
 const STEP_YAW = 0.55;
 const STEP_TIME = 0.15;
+/**
+ * The run in a rally, drawn as the walk is (walkFeet): the clips have each foot down 17% of the cycle, both off 65-78% of
+ * the time (about 30 in real running), and clip by clip no foot height changes that. On over RUN_V_ON m/s, off under
+ * RUN_V_OFF; handed to the foot locks RUN_PLANT s before a contact. Strides a second, RUN_HZ0 + RUN_HZ_V a m/s up to
+ * RUN_HZ_MAX; the share of a stride a foot is down, RUN_DUTY0 at RUN_V0 to RUN_DUTY1 at RUN_V1; RUN_AHEAD of that ahead of
+ * the hips (nearer the half a walk puts down, and the knee lands straight); feet RUN_WIDTH of the hip's width off the
+ * middle, RUN_WIDE going sideways, or they pass through each other; RUN_CLEAR + RUN_CLEAR_V a m/s of clearance and
+ * RUN_KICK rad of heel at speed; RUN_ROLL rad of heel up as a foot leaves. RUN_REACH of the leg from the hips, a planted
+ * foot goes. RUN_STILL: nearer its place than this (m), a foot isn't due a step.
+ */
+const RUN_V_ON = 0.9;
+const RUN_V_OFF = 0.55;
+const RUN_PLANT = 0.2;
+const RUN_IN = 0.1;
+const RUN_HZ0 = 1.15;
+const RUN_HZ_V = 0.15;
+const RUN_HZ_MAX = 1.75;
+const RUN_V0 = 1;
+const RUN_V1 = 3.5;
+const RUN_DUTY0 = 0.52;
+const RUN_DUTY1 = 0.31;
+const RUN_AHEAD = 0.36;
+const RUN_WIDTH = 1.1;
+const RUN_WIDE = 1.3;
+const RUN_CLEAR = 0.05;
+const RUN_CLEAR_V = 0.035;
+const RUN_KICK = 0.9;
+const RUN_ROLL = 0.75;
+const RUN_REACH = 0.58;
+const RUN_STILL = 0.06;
+/** How far the hips sit lower in a run (m), and more a m/s. */
+const RUN_SINK = 0.02;
+const RUN_SINK_V = 0.018;
+/** How far each hand swings at speed (m; the racket hand 0.4 of it): they were 15 cm apart, the arms carried. */
+const RUN_ARM = 0.2;
+/** Where in the swing the foot is highest, and how fast a planted foot rolls (rad/s). */
+const RUN_PEAK = 0.4;
+const RUN_ALONG = 0.1;
+const RUN_ROLL_RATE = 9;
+/** The least a foot is down, as a share of its time in a steady run. */
+const RUN_DOWN = 0.75;
+/** A foot this far behind its stance's end goes before its turn. */
+const RUN_BEHIND = 1.4;
 /** A step for reach moves the foot at least this far (m). */
 const STEP_MIN = 0.04;
 /** A planted foot whose heading is this far (rad) from the body's steps even while the other foot is stepping: held
@@ -720,6 +763,13 @@ export class Avatar {
   private gaitW = 0;
   private gaitH = 0;
   private gaitOn = 0;
+  /** 1: walkFeet is drawing a rally's run, not the walk back; which foot goes next, and how long since one went (s). */
+  private gaitRun = 0;
+  private gaitNext = 0;
+  private gaitUp = 0;
+  /** The hips' push off the body's middle this frame (m). */
+  private hipOutX = 0;
+  private hipOutZ = 0;
   private gaitPhase = 0;
   private gaitSince = 0;
   private gaitLast = 0;
@@ -1783,6 +1833,11 @@ export class Avatar {
     // (a walk's step is shorter than the jog's it is drawn from: more of them)
     const freq = Math.min(sp / Math.max(dist, 1e-3), 1.7 / Math.max(per, 1e-3)) * (1 + WALK_CADENCE * this.walkUp);
     this.phase = (this.phase + freq * dt) % 1;
+    // The arms and hips in time with the feet: the clips' left foot comes down at phase 0, as gaitPhase's does.
+    if (this.gaitRun > 0 && this.gaitW > 0) {
+      const d = ((this.gaitPhase - this.phase + 1.5) % 1) - 0.5, pull = dt > 0 ? 1 - Math.exp(-dt / 0.04) : 0;
+      this.phase = (this.phase + d * pull * this.gaitW + 1) % 1;
+    }
     this.idleClock += dt;
 
     const acc = this.pose;
@@ -1928,9 +1983,14 @@ export class Avatar {
       this.walkTurn = cut ? 0 : this.walkTurn + (e > lim ? lim : e < -lim ? -lim : e);
       this.yaw += this.walkTurn;
       const gait = this.gaitW > 0 ? WALK_GAIT_V * 0.5 : WALK_GAIT_V;
-      const ramp = dt > 0 ? dt / WALK_IN : 0;
-      this.gaitW = cut || this.w >= 0.02 ? 0 : going && sp > gait ? Math.min(1, this.gaitW + ramp) : Math.max(0, this.gaitW - ramp);
-      this.gaitH += ((this.gaitW > 0 ? 1 : 0) - this.gaitH) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / WALK_IN) : 0);
+      // Running in a rally, up to the last steps before a contact (a backswing is begun on the run).
+      const near2 = this.st === ST_SWING || (this.st === ST_PREP && this.hasCon && this.tPlan - t < RUN_PLANT) || (this.st === ST_FADE && this.w > 0.5);
+      const running = !going && sim.phase === PH_RALLY && !near2 && sp > (this.gaitRun > 0 && this.gaitW > 0 ? RUN_V_OFF : RUN_V_ON);
+      if (going) this.gaitRun = 0;
+      else if (running) this.gaitRun = 1;
+      const ramp = dt > 0 ? dt / (this.gaitRun > 0 ? RUN_IN : WALK_IN) : 0;
+      this.gaitW = cut || (going && this.w >= 0.02) ? 0 : running || (going && sp > gait) ? Math.min(1, this.gaitW + ramp) : Math.max(0, this.gaitW - ramp);
+      this.gaitH += ((this.gaitW > 0 && this.gaitRun === 0 ? 1 : 0) - this.gaitH) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / WALK_IN) : 0);
       if (this.gaitH < 0.001) this.gaitH = 0;
     }
     // Turned towards the partner for the racket tap.
@@ -2566,6 +2626,10 @@ export class Avatar {
       hipX += this.stanceC * sway;
       hipZ -= this.stanceS * sway;
     }
+    // A run sits lower than a stand: the back leg has to reach its foot (hips at 0.96 m, 7-15% past it, the foot left the floor).
+    if (this.gaitRun > 0 && this.gaitW > 0) drop += this.gaitW * (RUN_SINK + RUN_SINK_V * Math.min(this.sp, 4));
+    this.hipOutX = hipX;
+    this.hipOutZ = hipZ;
     const plant = this.plantW >= 0.01;
     const pushed = Math.abs(hipX) + Math.abs(hipZ);
 
@@ -2886,11 +2950,15 @@ export class Avatar {
       return;
     }
     const vx = this.vx, vz = this.vz, sp = Math.sqrt(vx * vx + vz * vz), dt = this.dt;
-    const rx = this.root.position.x, rz = this.root.position.z;
-    const yaw = this.yRoot, c = Math.cos(yaw), s = Math.sin(yaw);
+    const run = this.gaitRun > 0;
+    // (a run's feet go by the hips: the lean has them up to 30 cm ahead of the body's middle, out of the back leg's reach)
+    const rx = this.root.position.x + (run ? this.hipOutX : 0), rz = this.root.position.z + (run ? this.hipOutZ : 0);
+    // (a run's legs are turned onto the way it goes: warp)
+    const yaw = run ? this.yRoot + this.warp : this.yRoot, c = Math.cos(yaw), s = Math.sin(yaw);
     if (this.gaitOn === 0) {
       this.gaitOn = 1;
       this.gaitSince = 1;
+      this.gaitUp = 0;
       for (let f = 0; f < 2; f++) {
         const A = f === 0 ? this.footL : this.footR;
         this.gaitPlant[f]!.set(A.x, 0, A.z);
@@ -2900,20 +2968,35 @@ export class Avatar {
       }
     }
     const step = WALK_STEP * this.legLen, hz0 = (0.5 * sp) / step;
-    const hz = hz0 < WALK_HZ0 ? WALK_HZ0 : hz0 > WALK_HZ1 ? WALK_HZ1 : hz0;
+    const hz = run ? Math.min(RUN_HZ_MAX, RUN_HZ0 + RUN_HZ_V * sp) : hz0 < WALK_HZ0 ? WALK_HZ0 : hz0 > WALK_HZ1 ? WALK_HZ1 : hz0;
+    const fast = run ? smoothstep(RUN_V0, RUN_V1, sp) : 0;
+    const stance = run ? RUN_DUTY0 + (RUN_DUTY1 - RUN_DUTY0) * fast : WALK_STANCE;
     const ux = sp > 1e-3 ? vx / sp : s, uz = sp > 1e-3 ? vz / sp : c;
-    const stay = (sp * WALK_STANCE) / hz, ahead = stay * WALK_AHEAD * 0.5, back = stay - ahead;
+    const stay = (sp * stance) / hz, ahead = stay * (run ? RUN_AHEAD : WALK_AHEAD * 0.5), back = stay - ahead;
+    // Each foot on its own side of the body, along it (a shuffle's feet never cross, and a walk's body is along the way).
+    const across = ux * c - uz * s, wide = run ? RUN_WIDTH + (RUN_WIDE - RUN_WIDTH) * across * across : WALK_WIDTH;
     const G = this.gaitSwing, P = this.gaitPlant;
     this.gaitSince += dt;
-    // How far ahead of the body each foot is, along the way it is going.
-    const rel0 = (P[0]!.x - rx) * ux + (P[0]!.z - rz) * uz, rel1 = (P[1]!.x - rx) * ux + (P[1]!.z - rz) * uz;
-    const d0x = P[0]!.x - rx, d0z = P[0]!.z - rz, d1x = P[1]!.x - rx, d1z = P[1]!.z - rz;
+    this.gaitUp += dt;
+    const off = run ? this.hipW * wide : 0;
+    // How far ahead of its place each foot is, along the way it is going.
+    const d0x = P[0]!.x - rx - c * off, d0z = P[0]!.z - rz + s * off, d1x = P[1]!.x - rx + c * off, d1z = P[1]!.z - rz - s * off;
+    const rel0 = d0x * ux + d0z * uz, rel1 = d1x * ux + d1z * uz;
     const far0 = d0x * d0x + d0z * d0z, far1 = d1x * d1x + d1z * d1z;
-    const reach = this.legLen * WALK_REACH, r2 = reach * reach;
+    const reach = this.legLen * (run ? RUN_REACH : WALK_REACH), r2 = reach * reach;
     // Left behind by a turn back: it goes whatever the other foot is doing.
     const hard = G[0]! < 0 && far0 > r2 ? 0 : G[1]! < 0 && far1 > r2 ? 1 : -1;
     let go = hard;
-    if (go < 0 && G[0]! < 0 && G[1]! < 0 && this.gaitSince >= 0.1 / hz) {
+    if (go < 0 && run) {
+      // By turns, half a stride apart, sooner if the foot has fallen behind: a foot goes while the other is in the air,
+      // and that is what a run's flight is.
+      const f = this.gaitNext;
+      // (and only once it has pushed: a run's first strides took off 20 ms after they landed)
+      if (G[f]! < 0 && this.gaitUp >= 0.2 / hz && this.gaitDown[f]! >= (RUN_DOWN * stance) / hz) {
+        const rel = f === 0 ? rel0 : rel1, far = f === 0 ? far0 : far1;
+        if ((rel < -back * RUN_BEHIND && G[1 - f]! < 0) || (this.gaitUp >= 0.5 / hz && far > RUN_STILL * RUN_STILL)) go = f;
+      }
+    } else if (go < 0 && G[0]! < 0 && G[1]! < 0 && this.gaitSince >= 0.1 / hz) {
       // The one further behind, or the one further away when the walk has changed direction under them.
       const f = far0 > far1 + 0.05 ? 0 : far1 > far0 + 0.05 ? 1 : rel0 < rel1 ? 0 : 1, rel = f === 0 ? rel0 : rel1;
       const turned = wrapAngle(yaw - this.gaitYaw[f]!);
@@ -2921,6 +3004,8 @@ export class Avatar {
     }
     if (go >= 0) {
       G[go] = 0;
+      this.gaitNext = 1 - go;
+      this.gaitUp = 0;
       this.gaitFrom[go]!.copy(P[go]!);
       this.gaitYawFrom[go] = this.gaitYaw[go]!;
       this.gaitPitch[go] = this.gaitPitchNow[go]!;
@@ -2929,7 +3014,7 @@ export class Avatar {
     const last = this.gaitLast === 0 ? 0 : 0.5, at = this.gaitSince * hz;
     const was = wrapAngle(2 * Math.PI * (last + (at < 0.49 ? at : 0.49) - this.gaitPhase)) / (2 * Math.PI);
     this.gaitPhase = (this.gaitPhase + (hz + 4 * was) * dt + 1) % 1;
-    const swingT = (1 - WALK_STANCE) / hz, h = this.ankleY, b = this.ballLen, hl = b * 0.45;
+    const swingT = (1 - stance) / hz, h = this.ankleY, b = this.ballLen, hl = b * 0.45;
     for (let f = 0; f < 2; f++) {
       const sign = f === 0 ? 1 : -1;
       const A = f === 0 ? this.footL : this.footR, Q = f === 0 ? this.footQL : this.footQR, toe = this.toes[f]!;
@@ -2950,27 +3035,41 @@ export class Avatar {
       let pitch: number, x: number, z: number, y = h, fy: number, bend = 1;
       if (u < 0) {
         const tl = this.gaitDown[f] = this.gaitDown[f]! + dt;
-        const rel = (Pf.x - rx) * ux + (Pf.z - rz) * uz, sg = stay > 1e-3 ? (ahead - rel) / stay : 0;
-        pitch = WALK_ROLL * smoothstep(0.5, 1, sg) - WALK_HEEL * (1 - smoothstep(0, 0.1 / hz, tl));
+        const rel = f === 0 ? rel0 : rel1, sg = stay > 1e-3 ? (ahead - rel) / stay : 0;
+        pitch = run ? RUN_ROLL * smoothstep(0.45, 1, sg) : WALK_ROLL * smoothstep(0.5, 1, sg) - WALK_HEEL * (1 - smoothstep(0, 0.1 / hz, tl));
         x = Pf.x;
         z = Pf.z;
         fy = this.gaitYaw[f]!;
       } else {
         // Where the body will be when it lands, the step ahead of that, on its own side of the line.
         const left = (1 - u) * swingT;
-        const wd = sign * this.hipW * WALK_WIDTH;
+        const wd = sign * this.hipW * wide;
         To.set(rx + vx * left + ux * ahead + c * wd, 0, rz + vz * left + uz * ahead - s * wd);
         YT[f] = yaw + sign * WALK_TOE;
-        const e = smoothstep(0, 1, u), F = this.gaitFrom[f]!;
+        // (a run's foot goes up before it goes along, and comes down onto its place: it skated the floor both ways)
+        const e = run ? smoothstep(RUN_ALONG, 1 - RUN_ALONG, u) : smoothstep(0, 1, u), F = this.gaitFrom[f]!;
         x = F.x + (To.x - F.x) * e;
         z = F.z + (To.z - F.z) * e;
         // (from where it is, not from where it took off: half way round, the short way flips)
         const YN = this.gaitYawFrom;
         YN[f] = YN[f]! + (wrapAngle(YT[f]! - YN[f]!) * dt) / (left > dt ? left : dt);
         fy = YN[f]!;
-        pitch = this.gaitPitch[f]! * (1 - smoothstep(0, 0.45, u)) - WALK_HEEL * smoothstep(0.45, 1, u);
-        y += WALK_CLEAR * Math.sin(Math.PI * u);
+        pitch = this.gaitPitch[f]! * (1 - smoothstep(0, 0.45, u));
+        if (run) {
+          // The heel comes up behind and the knee through: highest early in the swing.
+          const up = u < RUN_PEAK ? smoothstep(0, RUN_PEAK, u) : 1 - smoothstep(RUN_PEAK, 1, u);
+          pitch += RUN_KICK * fast * up;
+          y += (RUN_CLEAR + RUN_CLEAR_V * sp) * up;
+        } else {
+          pitch -= WALK_HEEL * smoothstep(0.45, 1, u);
+          y += WALK_CLEAR * Math.sin(Math.PI * u);
+        }
         bend = 1 - smoothstep(0, 0.35, u);
+      }
+      // (no faster than an ankle turns: a foot landing short of its place began the roll in a frame)
+      if (run && this.gaitOn === 2) {
+        const was = this.gaitPitchNow[f]!, lim = RUN_ROLL_RATE * dt;
+        pitch = pitch > was + lim ? was + lim : pitch < was - lim ? was - lim : pitch;
       }
       this.gaitPitchNow[f] = pitch;
       // Rolling over the ball of the foot (heel up) or the heel (toes up): where that takes the ankle.
@@ -3013,6 +3112,7 @@ export class Avatar {
         this.relTOk[f] = 0;
       }
     }
+    this.gaitOn = 2;
   }
 
   /**
@@ -3136,8 +3236,9 @@ export class Avatar {
       const reach = this.legLen * (1 - LEAN_STROKE * w);
       v2.x += this.hipTiltX * reach + this.tiltX * LEAN_HAND;
       v2.z += this.hipTiltZ * reach + this.tiltZ * LEAN_HAND;
-      // The walk's arm swing, smaller with the racket in it.
-      const sw = this.handed * WALK_ARM * 0.4 * this.gaitH * Math.cos(2 * Math.PI * this.gaitPhase);
+      // The walk's or the run's arm swing, smaller with the racket in it.
+      const pump = WALK_ARM * this.gaitH + (this.gaitRun > 0 ? RUN_ARM * this.gaitW * smoothstep(RUN_V0, RUN_V1, this.sp) : 0);
+      const sw = this.handed * pump * 0.4 * Math.cos(2 * Math.PI * this.gaitPhase);
       v2.x += this.stanceS * sw;
       v2.z += this.stanceC * sw;
       this.quatToWorld(ready.q, q2);
@@ -3274,7 +3375,8 @@ export class Avatar {
     if (this.ready > 0) {
       this.toWorld(ready.off, v2);
       v2.x += fx; v2.y += fy; v2.z += fz;
-      const sw = -this.handed * WALK_ARM * this.gaitH * Math.cos(2 * Math.PI * this.gaitPhase);
+      const pump = WALK_ARM * this.gaitH + (this.gaitRun > 0 ? RUN_ARM * this.gaitW * smoothstep(RUN_V0, RUN_V1, this.sp) : 0);
+      const sw = -this.handed * pump * Math.cos(2 * Math.PI * this.gaitPhase);
       v2.x += this.stanceS * sw;
       v2.z += this.stanceC * sw;
       BL.u = this.ready;

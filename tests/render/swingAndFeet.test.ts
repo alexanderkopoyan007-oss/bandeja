@@ -1,6 +1,7 @@
 // Review round 9's faults in how the body moves, held. The overheads were hit before the swing (racket 1 m/s 0.1 s out,
 // 0.5 m of path before the ball); every stroke's racket fell by a quarter on the frame of the ball; and a player
-// standing tall tapped on the spot six times a second.
+// standing tall tapped on the spot six times a second. And the drawn run (round 10): the clips had both feet off 55-77%
+// of the time and each down a tenth of a second.
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three/webgpu';
 import { readFileSync } from 'node:fs';
@@ -23,7 +24,10 @@ describe('swings and feet', () => {
   /** Per shot, racket speed (m/s) by frame from the ball, -12..+6, medians. */
   const speed: Record<number, number[][]> = {};
   let standing = 0, lifts = 0;
+  let running = 0, bothOff = 0;
   const FRAMES = 24;
+  /** Each planted foot in a run: seconds down, and how far its toe went (m). */
+  const down: number[] = [], slid: number[] = [];
 
   it('plays', () => {
     const a = asset();
@@ -31,13 +35,17 @@ describe('swings and feet', () => {
       const rings: number[][][] = [[], [], [], []];
       const open: Array<{ pl: number; shot: number; at: number }> = [];
       const up = [false, false, false, false], still = [0, 0, 0, 0];
+      const plant = Array.from({ length: 8 }, () => ({ on: false, x: 0, z: 0, far: 0, n: 0 }));
       let seen = 0, frame = 0;
       runAnimQa(a, {
         seed, seconds: 150,
         onFrame: (m, av) => {
           frame++;
           for (let i = 0; i < 4; i++) {
-            const x = av[i] as unknown as { racket: THREE.Object3D; root: THREE.Object3D; feet: Float64Array; lockOn: Uint8Array };
+            const x = av[i] as unknown as {
+              racket: THREE.Object3D; root: THREE.Object3D; feet: Float64Array; lockOn: Uint8Array;
+              vx: number; vz: number; gaitRun: number; gaitW: number; gaitSwing: Float64Array; toes: THREE.Object3D[];
+            };
             x.root.updateMatrixWorld(true);
             v.set(0, 0, 0).applyMatrix4(x.racket.matrixWorld);
             const r = rings[i]!;
@@ -52,6 +60,25 @@ describe('swings and feet', () => {
               if (lifted && !up[i]) lifts++;
               up[i] = lifted;
             } else up[i] = false;
+            // The run.
+            const sp = Math.hypot(x.vx, x.vz);
+            const inRun = x.gaitRun > 0 && x.gaitW >= 1 && m.walking === 0;
+            if (inRun && sp > 1.5 && sp < 4) {
+              running += 1 / 120;
+              if (x.gaitSwing[0]! >= 0 && x.gaitSwing[1]! >= 0) bothOff += 1 / 120;
+            }
+            for (let f = 0; f < 2; f++) {
+              const p = plant[i * 2 + f]!;
+              if (inRun && sp > 1.5 && x.gaitSwing[f]! < 0) {
+                v.setFromMatrixPosition(x.toes[f]!.matrixWorld);
+                if (!p.on) { p.on = true; p.x = v.x; p.z = v.z; p.far = 0; p.n = 0; }
+                p.far = Math.max(p.far, Math.hypot(v.x - p.x, v.z - p.z));
+                p.n++;
+              } else if (p.on) {
+                p.on = false;
+                if (p.n > 6) { down.push(p.n / 120); slid.push(p.far); }
+              }
+            }
           }
           while (seen < m.eventSeq) {
             const e = m.events[seen % m.events.length]!;
@@ -99,5 +126,16 @@ describe('swings and feet', () => {
     expect(standing).toBeGreaterThan(30);
     // Each of a player's real steps; it was 6.2 lifts a second.
     expect(lifts / standing).toBeLessThan(2.5);
+  });
+
+  it('runs on the ground, not over it', () => {
+    expect(running).toBeGreaterThan(40);
+    expect(down.length).toBeGreaterThan(300);
+    // Both feet off 25-35% in real running (the clips: 55-77); a foot down 0.2-0.25 s (the clips: 0.11).
+    expect(bothOff / running).toBeLessThan(0.45);
+    expect(bothOff / running).toBeGreaterThan(0.08);
+    expect(med(down)).toBeGreaterThan(0.15);
+    // And where it was put.
+    expect(med(slid)).toBeLessThan(0.05);
   });
 });
