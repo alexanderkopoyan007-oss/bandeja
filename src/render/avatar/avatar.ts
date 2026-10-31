@@ -328,6 +328,9 @@ const RACKET_TOP = 0.17;
 const HAND_OVER = 0.1;
 const HAND_UNDER = 0.3;
 const VOLLEY_ARM = 0.84;
+/** The arm no longer than this share of itself on the way back to ready (see solveArms), eased over RECOVER_EASE s. */
+const RECOVER_ARM = 0.8;
+const RECOVER_EASE = 0.06;
 const VOLLEY_BEND = 0.86;
 const VOLLEY_BEND_RATE = 9;
 const BACK_FOLLOW = 1;
@@ -917,6 +920,7 @@ export class Avatar {
   private keyS = 0;
   /** How fast the key was going into the ball (m/s), and last frame's place. */
   private swingV = 0;
+  private recoverW = 0;
   private readonly kpWas = new THREE.Vector3();
   /** The racket's push out of the body last frame (world, m), let go over CLEAR_EASE. */
   private readonly clearOff = new THREE.Vector3();
@@ -3193,6 +3197,19 @@ export class Avatar {
     this.dir0.copy(this.elbowRacket.dir);
     this.side0.copy(this.elbowRacket.side);
     this.bend0 = this.elbowRacket.bend[0]!;
+    // On the way back to ready the arm stays bent: the hand's way from the finish to the ready key passes further from
+    // the shoulder turning under it than the arm is long, and the elbow went 132, 41, 97 in a fifth of a second.
+    this.recoverW += ((this.st === ST_FADE ? 1 : 0) - this.recoverW) * (this.dt > 0 ? 1 - Math.exp(-this.dt / RECOVER_EASE) : 1);
+    if (this.recoverW > 0.001) {
+      const e = ua.matrixWorld.elements;
+      const dx = this.tgt.x - e[12]!, dy = this.tgt.y - e[13]!, dz = this.tgt.z - e[14]!;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const lim = this.armLen * (1.05 - (1.05 - RECOVER_ARM) * this.recoverW);
+      if (d > lim) {
+        const r = lim / d;
+        this.tgt.set(e[12]! + dx * r, e[13]! + dy * r, e[14]! + dz * r);
+      }
+    }
     this.keepOff(ua, this.tgt, this.elbowRacket.dir);
     // Last frame's push out of the body, dying away (see racketClear).
     // Gone by the contact (the racket has to be on the ball then), let go over the last fifth of the forward swing.
