@@ -38,6 +38,8 @@ const SHIRT = [
 export interface CrowdLook {
   /** The crowd's brightness (the stands are lit far less than the court). */
   light: number;
+  /** One shirt for all (sRGB), instead of the crowd's mix: the umpire's. */
+  shirt?: number;
 }
 
 /**
@@ -73,7 +75,7 @@ export function buildCrowd(stands: Spectator[][], mood: THREE.UniformNode<'vec3'
       const scale = 0.96 + rnd() * 0.08;
       const drop = (L.people[person]!.seat - HIPS_ON_SEAT) * scale;
       who.set([person, scale, drop, rnd() < 0.5 ? 1 : -1], i * 4);
-      c.setHex(SHIRT[Math.floor(rnd() * SHIRT.length)]!, THREE.SRGBColorSpace).offsetHSL(0, -0.05, (rnd() - 0.6) * 0.06);
+      c.setHex(look.shirt ?? SHIRT[Math.floor(rnd() * SHIRT.length)]!, THREE.SRGBColorSpace).offsetHSL(0, -0.05, (rnd() - 0.6) * 0.06);
       tint.set([c.r, c.g, c.b], i * 3);
     }
     const g = geo.clone();
@@ -144,7 +146,11 @@ export function buildCrowd(stands: Spectator[][], mood: THREE.UniformNode<'vec3'
   return meshes;
 }
 
+const atlases = new Map<string, THREE.Texture>();
+
 function loadAtlas(path: string, space: THREE.ColorSpace): THREE.Texture {
+  const had = atlases.get(path);
+  if (had) return had;
   const t = new THREE.TextureLoader().load(new URL(path, document.baseURI).href, undefined, undefined, (err) => {
     console.warn('crowd atlas failed to load:', path, err);
   });
@@ -153,5 +159,6 @@ function loadAtlas(path: string, space: THREE.ColorSpace): THREE.Texture {
   t.generateMipmaps = true;
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.magFilter = THREE.LinearFilter;
+  atlases.set(path, t);
   return t;
 }

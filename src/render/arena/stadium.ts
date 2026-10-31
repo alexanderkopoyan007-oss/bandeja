@@ -59,6 +59,8 @@ function boardTexture(base: string): THREE.CanvasTexture {
   return t;
 }
 
+/** The umpire sits in the court's light, not the stands'. */
+const UMPIRE_LIGHT = 1;
 /** The stands are lit far less than the court (arena-wide-2: dark stands round a bright court and roof); their
  * albedo is scaled down to stand in for that rather than lighting them separately. */
 const STAND_LIGHT = 0.55;
@@ -193,7 +195,7 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   for (const dx of [-0.25, 0.25]) for (const dz of [-0.25, 0.25]) side.box(cx + dx, 0.75, dz, 0.05, 1.5, 0.05, '#c9ccd1');
   side.box(cx, 1.5, 0, 0.6, 0.08, 0.6, '#c9ccd1');
   side.box(cx + 0.27, 1.85, 0, 0.06, 0.6, 0.6, '#1b2a63');
-  side.box(cx - 0.3, 0.7, 0, 0.3, 0.05, 0.6, '#c9ccd1');
+  side.box(cx - 0.35, 1.02, 0, 0.3, 0.05, 0.6, '#c9ccd1');
   for (const z of [-3, 3]) {
     side.box(-cx, 0.23, z, 0.5, 0.46, 2.2, '#2b2f38');
     side.box(-cx - 0.05, 0.6, z - 0.5, 0.35, 0.3, 0.5, '#c23a2c');
@@ -203,6 +205,10 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   const sideMesh = side.mesh();
   sideMesh.castShadow = true;
   root.add(sideMesh);
+  // The umpire: one of the crowd's people in a dark jacket on the chair, looking at the court. A mood of their own, or
+  // they'd clap the winners.
+  const umpire = buildCrowd([[{ x: cx, y: 1.54 - 0.42, z: 0, yaw: -Math.PI / 2 }]], uniform(new THREE.Vector3()), rnd, { light: UMPIRE_LIGHT, shirt: 0x1a2340 });
+  root.add(umpire[0]!);
 
   return {
     update(_t: number, m: CrowdState, cam?: THREE.Vector3): void {

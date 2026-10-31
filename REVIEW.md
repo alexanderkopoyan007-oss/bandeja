@@ -368,7 +368,8 @@ at High, so the loop goes on. The verifier lowered two of the five Highs to Medi
 | 13 | Medium | P #5: weight behind the feet at contact | | **Better.** A stroke's `weight` moves the hips towards the net through the swing: FH slice -0.14 to -0.03 m, FH lob -0.13 to 0, volleys -0.12 and -0.06 to about 0, BH 0 to 0.07 |
 | 14 | Medium | C #17: hair moves as one piece | | **Better**, as a shader: clumps differ and a stride throws long hair side to side. Three of ten people have long hair; no one has judged it by eye |
 | 15 | Medium | C #21: a singles win is a shrug | | **Better.** Both arms up, the racket at 2.2 m, through the first stage of the end of the match |
-| 16 | Medium | P #3, #6-22, C #9, #13-16, #18-20, #22-29 | | Open |
+| 16 | Medium | C #23: grey stadium roof, empty chair | | **Half.** An umpire sits on the chair. The roof stays white: it matches the reference photo (arena-wide-2), so the critic's dark roof would move away from the real arena |
+| 17 | Medium | P #3, #6-22, C #9, #13-16, #18-20, #22, #24-29 | | Open |
 | 30+ | Low | P #23-31, C #30-40 | | Open |
 
 Earlier statuses corrected by round 9 (verifier):
