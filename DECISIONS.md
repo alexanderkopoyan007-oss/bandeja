@@ -2841,3 +2841,31 @@ to where it was. `STEP_MIN` 4 cm. The critic named `gaitSince`, the verifier ref
 `cutBack` puts the lens CUT_BACK from their back glass when they are going back over a metre on average. Faces 56 to 62 and 46 to 60, backs 30 to 21 and 24 to 17.
 
 **Tried and dropped.** `FOOT_LOW`, low feet in a run: flight 54 to 53%, skate over its bound. The flight is in the clip: a foot-height tweak can't reach it.
+
+## After round 9: a run on the floor, and weight where it goes (2026-10-31)
+
+**The clips can't run on the ground.** Each foot down 17% of the cycle, both off 55-77% of the time; round 9 tried foot heights and got 54 to 53. So the rally run is
+drawn as the walk is (`walkFeet`, `RUN_*`): strides a second and the share of a stride a foot is down, by speed (1.5-1.75 strides a second, 0.52 down to 0.31 of a stride), tuned to the critic's general running figures, both off about 25-35% at 3-5 m/s and
+200-250 ms down; there is no padel study behind them. The clips keep the trunk and arms. All directions share it, because free time at 1.5 m/s and over is 28% of play and it splits forward 11.8, strafe 8.7, back 3.9, side-on 3.6.
+
+**Feet go by the hips, not the root.** The lean carries the hips up to 30 cm ahead of the body's middle: a foot measured from the root was out of the back leg's reach at the
+end of every stance, and left the floor. They sink RUN_SINK + RUN_SINK_V a m/s for the same reason.
+
+**A strip found what the numbers didn't.** `both off` read 26%, in range, and a side-on strip of a 3 m/s run showed a hop with the feet side by side. A foot past its reach could lift while
+the other was in the middle of its swing, and that is the same both-off number as a real flight. `RUN_TURNS` keeps them in turns: frames with both feet in the same part of a swing 0.0%, toes over
+10 cm with both up 18 to 11%. The second strip showed the foot skimming the floor for the last third of its swing, which read as a slide: held up to RUN_FALL and put down. `skate` went 21-23 to 16-18,
+both down at 3-4.5 m/s 23.5 to 4.2%. **Look at a side-on strip of anything drawn: flight, duty and skate can all be right on a hop.**
+
+**Side steps don't cross.** Below SIDE_RUN_ON the hips face the ball, so a long step has the hips past the leading foot and that leg under the other, and the trailing foot landed beyond the other.
+The trailing foot lands no nearer the hips' middle than RUN_CLOSE of its line, in the walk too, and steps are RUN_SIDE_HZ quicker going sideways. Legs through each other .0733/.0977/.0641 to .0518/.0542/.0468
+on animQa's seeds (the clips, with their own crossing: .0549/.0495/.0421). `animQa`'s `onLegs` says which capsules and when.
+
+**The trunk's lean was aimed by the root.** Past WARP_SPINE_MAX the chest turns with the hips, so a side-on run's lean went across its way. `fw` and `lf` now use `yRoot + chestWarp`.
+This and the hips taking all of the sideways tilt (LEAN_SIDE is gone: drawn feet don't cross) give, feet to head, start / steady / brake: forwards 28 / 10 / 0, sideways 19 / 8 / -2 (the critic's 30 / 19 / 11 and 12 / 11 / 10).
+LEAN_BRAKE 1.5 has a stop go past upright, and RUN_UP takes the clips' lean from 20 degrees at a steady run to 15.
+
+**The walk's stride.** WALK_STEP 0.74 to 1 leg: 2.13 steps a second at 0.71 m (real 2.0, 0.75; it was 2.60, 0.58), knee p50 32 to 20.
+
+**Dropped.** The forehand's folding finish, C #12: on the drawn stroke, not the shot key, the elbow is 54 / 60 / 65 (p1) and 54 / 43 / 51 (p7), in the video's 47-64 / 38-60 / 43-64.
+Round 9's swing fixes took it there, so the proposed change to the finish key is not made.
+

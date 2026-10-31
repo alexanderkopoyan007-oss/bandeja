@@ -360,7 +360,12 @@ at High, so the loop goes on. The verifier lowered two of the five Highs to Medi
 | 5 | Medium | C #2: feet tap on the spot (verifier lowered it from High) | NEW | **Fixed.** 6.2 lifts a second, travel 0.2 cm, to 1.5, travel 13-17 cm: real steps. It wasn't `gaitSince`: standing tall the leg is at 0.986 of its length against a limit of 0.985 |
 | 6 | Medium | C #6: cut-aways show backs | REGRESSION of the walk fix | **Better.** A pair going back from the net is filmed from their back glass: doubles faces / backs 56 / 30 to 62 / 21, singles 46 / 24 to 60 / 17, same probe through the game's camera. Round 8's 80 / 9 came from walking backwards |
 | 7 | Medium | C #8: the racket dips on the ball | R8 #9 | **Fixed.** A sum: the end of the swing was counted from the wrong frame. Drive 11.0 / 7.7 / 9.0 to 11.1 / 11.8 / 10.9 m/s, slice 12.9 / 11.2 / 8.3 to 13.0 / 12.5 / 11.6 |
-| 8 | Medium | P #3, #5-22, C #4, #5, #9-29 | | Open |
+| 8 | Medium | C #4: the run barely touches the floor | | **Better.** Drawn: a foot down 0.19 s (0.11; real 0.20-0.25), both off 17% at 1.5-3 m/s and 12% at 3-4.5 (65-78; real 25-35 at speed, so now under it), both down 4% at speed. Arms still carried |
+| 9 | Medium | C #5: weight sideways and in a hard stop | | **Better.** Feet to head, start / steady / brake: forwards 30 / 19 / 11 to 28 / 10 / 0, sideways 12 / 11 / 10 to 19 / 8 / -2. A real stop goes further past upright |
+| 10 | Medium | C #10: feet slide in runs | | **Better** in the run, `skate` 20-22 to 16-18, planted toe travel p50 1-2 cm, p90 10 at 1.5-3 m/s. Strokes' stances not touched |
+| 11 | Medium | C #11: the walk back is quick and short | | **Fixed** on step: 2.60 steps a second and 0.58 m to 2.13 and 0.71 (real 2.0, 0.75). p1's lean 14 degrees stands |
+| 12 | Medium | C #12: the forehand's finish folds | | **Doesn't reproduce.** By the stroke drawn: 54 / 60 / 65 p1, 54 / 43 / 51 p7, video 47-64 / 38-60 / 43-64. Nothing changed for it |
+| 13 | Medium | P #3, #5-22, C #9, #13-29 | | Open |
 | 30+ | Low | P #23-31, C #30-40 | | Open |
 
 Earlier statuses corrected by round 9 (verifier):

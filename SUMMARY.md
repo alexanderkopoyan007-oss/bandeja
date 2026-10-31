@@ -684,6 +684,13 @@ One new High (strokes drawn with the back to the net) and one proven High regres
 - **Cut-aways.** A pair going back is filmed from their back glass: backs 30 to 21%, faces 56 to 62.
 - **Performance.** With the kit's double-sided draw in, load 8-13: medium p99 16.5 ms, high 21.7, high paced at 120 Hz 8.3 with no frame missed and CPU p99 2.8 ms. Quick match to its first frame 6.4-7.0 s on broadband at CPU 4×.
 
+### After round 9: how they move
+The rally run is drawn now instead of played from the clips, and a side-on strip of it caught a hop no number had.
+- **The run.** A foot down 0.11 to 0.19 s, both feet off 65-78% to 12-17% (real 25-35 at speed: now under it), feet in turns, the foot put down, not slid in.
+- **Side steps.** Quicker and shorter, and the legs no longer pass through each other: legs clipping .064-.098 to .047-.054.
+- **Weight.** Sideways and in a hard stop, feet to head: forwards 30 / 19 / 11 to 28 / 10 / 0, sideways 12 / 11 / 10 to 19 / 8 / -2. The trunk at a steady run 20 to 15 degrees.
+- **The walk back.** 2.6 steps a second at 0.58 m to 2.13 at 0.71 (real 2.0, 0.75).
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

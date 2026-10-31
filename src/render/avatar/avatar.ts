@@ -529,10 +529,14 @@ const RUN_STILL = 0.06;
 /** How far the hips sit lower in a run (m), and more a m/s. */
 const RUN_SINK = 0.02;
 const RUN_SINK_V = 0.018;
+/** How much of the forward clips' lean goes from the trunk in a drawn run (rad): they lean 20 degrees at a steady 3 m/s, a
+ * person about 10. */
+const RUN_UP = 0.22;
 /** How far each hand swings at speed (m; the racket hand 0.4 of it): they were 15 cm apart, the arms carried. */
 const RUN_ARM = 0.2;
 /** Where in the swing the foot is highest, and how fast a planted foot rolls (rad/s). */
-const RUN_PEAK = 0.4;
+const RUN_PEAK = 0.3;
+const RUN_FALL = 0.66;
 const RUN_ALONG = 0.1;
 const RUN_ROLL_RATE = 9;
 /** The least a foot is down, as a share of its time in a steady run. */
@@ -2102,7 +2106,8 @@ export class Avatar {
     {
       // (as the chest faces: past WARP_SPINE_MAX it turns with the hips, and a side-on run leaned across its way)
       const y = yRoot + this.chestWarp, k = LEAN_TRUNK * (1 - LEAN_STROKE * this.w), c = Math.cos(y), s = Math.sin(y);
-      const fw = (this.tiltX * s + this.tiltZ * c) * k, lf = (this.tiltX * c - this.tiltZ * s) * k;
+      const up = this.gaitRun > 0 ? RUN_UP * this.gaitW * (this.cycleW[0]! + this.cycleW[1]!) * (1 - LEAN_STROKE * this.w) : 0;
+      const fw = (this.tiltX * s + this.tiltZ * c) * k - up, lf = (this.tiltX * c - this.tiltZ * s) * k;
       this.hipTiltX = this.tiltX;
       this.hipTiltZ = this.tiltZ;
       if (fw * fw + lf * lf > 1e-6) {
@@ -3076,7 +3081,8 @@ export class Avatar {
           // The heel comes up behind and the knee through: highest early in the swing.
           const up = u < RUN_PEAK ? smoothstep(0, RUN_PEAK, u) : 1 - smoothstep(RUN_PEAK, 1, u);
           pitch += RUN_KICK * fast * up;
-          y += (RUN_CLEAR + RUN_CLEAR_V * sp) * up;
+          // (held up late and put down: lowered all the way it skimmed the floor for the last third, and read as a slide)
+          y += (RUN_CLEAR + RUN_CLEAR_V * sp) * (u < RUN_PEAK ? up : 1 - smoothstep(RUN_FALL, 1, u));
         } else {
           pitch -= WALK_HEEL * smoothstep(0.45, 1, u);
           y += WALK_CLEAR * Math.sin(Math.PI * u);
