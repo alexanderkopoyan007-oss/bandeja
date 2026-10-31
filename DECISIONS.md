@@ -2479,13 +2479,47 @@ smash, 58.1 of winners, and W fell. The drop is still too good a shot (W 52-57%)
 **The short, wide bandeja was tried and rejected.** A bandeja landing 5.4-6.4 m from the net at the side glass won 0.9%, and drew 2.9
 forced errors in 100 against 3.9. A víbora at 5-6 m won 1.5% and drew 2.6 against 6.4. A defender has 1.2-1.4 s from strike to reply
 at these speeds, and runs 4-5 m in it. Landing short only gets them there sooner, and the ball that was hard off the back glass is
-now easy. Real bandeja winners must come from something the sim doesn't have: a defender who misreads a ball off the glass. The AI
-reads every bounce exactly. That's the real gap, and it stays open.
+now easy. That pointed at the cause, in the next section.
 
 **Spin doesn't get the ball out of the court.** Every contact and landing tried peaks at 13% of smashes leaving, and 17% of winners
 would need about 30%. Real por tres is hit with topspin (Sánchez-Alcaraz 2020 counts it under topspin smashes), so `spinRpm` was tried
 at 1500 and 3000 against the flat 300. Out rose to 9.4 and 10.9, but smash W went to 60 and 69 (45), came-back winners to 52 and 56
 (35), and double bounces fell to 35 and 31 (48). Rejected. The glass settles this one (see "The glass keeps its grip loss").
+
+## Nobody reads the glass exactly (2026-10-31)
+
+The AI's plan came from a noise-free look-ahead, so a defender always knew how a ball would come off the glass, to the centimetre, from
+the moment it was struck. Nothing that went through the glass ever beat anyone. That was the one cause behind several gaps that looked
+separate: bandeja and víbora don't finish, the smash takes their winners, rallies run long, too few points are over in 4 s.
+
+**A player now sets up a little off the true spot until the ball has come off the glass.** `READ_ERR` 0.4 m sigma at the top level
+(`2 - level` times that below it), drawn once a ball, and held until `READ_LAG` 0.12 s after the ball reaches the glass. They then see
+it and correct. It's only for balls planned after a wall, so a volley or a groundstroke off the floor is untouched.
+
+| 6000 points, unseen seeds 3201+ | Read exactly | Misread | Real |
+|---|---|---|---|
+| Shots, seconds per point | 11.3, 15.1 | 10.2, 13.7 | 10-11, 9.4-14.8 |
+| Rally over 11 s | 50.9% | 45.7% | 26 |
+| Endings W / FE / UE | 39.4 / 26.0 / 34.6 | 38.8 / 27.6 / 33.6 | 34-42 / 29-33 / 29-33 |
+| Smash, volley, share of winners | 54.4, 32.0 | 48.0, 33.0 | 43, 28.4 |
+| Bandeja + víbora, share of winners | 1.5 | 6.0 | 12.7 |
+| Bandeja W, víbora W | 0.5, 0.8 | 2.0, 3.9 | 3.5-7.2 |
+| Volley W | 3.8 | 4.3 | 3.4-5.7 |
+| Winners: double bounce / came back / out | 49.3 / 40.5 / 6.0 | 53.3 / 35.6 / 6.2 | 48 / 35 / 17 |
+| Serving pair wins | 61.6 | 63.9 | about 62 |
+
+Two went the wrong way: double-bounce winners overshoot by 5, and the serving pair by 2. Level 0.5 also moved the right way (W 18.6 to 27.1,
+UE 59.3 to 50.8) and so did the women (shots 13.8 to 12.1, W 22.2 to 28.2). Singles didn't move (5.5 to 5.4 shots, server 51.7 to 52.1).
+The slice-only bot at 45 ms went 43.4 to 47.7% (±2.9), still losing, and the drive bot at 80 ms 33.7 to 35.1.
+
+**The size:** 0.25 gave 10.9 shots and smash 51.6, and 0.4 gave 10.1 and 48.9 (seeds 3001+). 0.6 gave 8.1 shots with W 47 and 0.9 gave 6.8,
+both measured before the two fixes below. Beyond 0.4 points would run shorter than the pros'.
+
+**Two fixes it needed.** On the first try body hits went from 4 to 12% of winners, and serves became aces (0.8 W). A player set up off the
+spot stood in the ball's line, so a misread now ends if the ball would hit them, on the way or standing, and the serve is never misread:
+receivers stand ready for exactly that ball.
+
+The look-ahead stays exact for everything else, and nothing here touches the ball.
 
 ## The kit, the hair and the builds (2026-10-30)
 

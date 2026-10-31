@@ -632,6 +632,21 @@ Elbow angles in degrees, on the same measure for pros on video and the game's ow
 Medium-preset p99, machine at load 30-60, so noisy: 19.1 / 15.7 ms before and 17.3 / 18.0 after. High 28.6 / 15.8 and 26.0 / 22.4. Load
 on broadband, title plus match: 14.17 + 9.75 s and 18.45 + 10.33 s. Nothing here is beyond the noise. A quiet rerun is still open.
 
+### Nobody reads the glass exactly (31 Oct)
+The largest single gain in how points play since the rounds began, and one line of cause: the AI knew how every ball would come off the
+glass. A defender now sets up slightly off the spot until the ball has come off it. 6000 points on unseen seeds, before | after:
+
+| | Before | After | Real life |
+|---|---|---|---|
+| Shots, seconds per point | 11.3, 15.1 | 10.2, 13.7 | 10-11, 9.4-14.8 |
+| Smash, volley, share of winners | 54.4, 32.0 | 48.0, 33.0 | 43, 28.4 |
+| Bandeja + víbora, share of winners | 1.5 | 6.0 | 12.7 |
+| Winners: double bounce / came back / out | 49.3 / 40.5 / 6.0 | 53.3 / 35.6 / 6.2 | 48 / 35 / 17 |
+| Endings W / FE / UE | 39.4 / 26.0 / 34.6 | 38.8 / 27.6 / 33.6 | 34-42 / 29-33 / 29-33 |
+
+Balls leaving the court are still far short (6 against 17), rallies still have too few short points (45.7% over 11 s against 26), and
+double-bounce winners now overshoot by 5.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

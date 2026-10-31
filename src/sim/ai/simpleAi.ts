@@ -219,6 +219,9 @@ export class SimpleAi {
     }
     this.reactAt = m.time + this.reaction() * (0.8 + 0.4 * m.aiRng.next());
     this.correctAt = -1;
+    const read = m.rally.isServe ? 0 : READ_ERR * (2 - this.level);
+    this.readX = m.aiRng.normal() * read;
+    this.readZ = m.aiRng.normal() * read;
     this.planVersion = -1;
     // The plan was for the last ball: until this one is planned (after the reaction) nobody may read it as this
     // ball's (the partner's lane switch did, and ran across and back on 13% of the balls its mate took).
@@ -344,9 +347,12 @@ export class SimpleAi {
     // On the way to the planned contact, a ball that will hit us first (walking into its line, or a contact planned
     // after it passes): plan again, which blocks it from where we stand. Checked as we move, not only when the plan
     // was made (net players walked into the ball on their way to a contact behind them: a tenth of all points).
-    if (this.planned && !this.pressed && !this.overhead && t0 >= this.reactAt && (this.tick++ & 3) === 0) {
+    if (this.planned && (!this.pressed || this.glassT >= 0) && !this.overhead && t0 >= this.reactAt && (this.tick++ & 3) === 0) {
       const k = m.bodyHitIdx(this.index, s);
-      if (k >= 0 && m.pred.t[k]! < this.idealT - 0.05) this.planVersion = -1;
+      if (k >= 0) {
+        this.glassT = -1; // nobody misreads a ball coming at them
+        if (!this.pressed && m.pred.t[k]! < this.idealT - 0.05) this.planVersion = -1;
+      }
     }
     if (this.planned && this.planVersion >= 0 && m.pred.version !== this.planVersion && this.correctAt < 0
       && t0 >= this.reactAt && this.surprised(m)) {
@@ -358,6 +364,12 @@ export class SimpleAi {
     if (this.planned) {
       this.goX = this.standX;
       this.goZ = this.standZ;
+      // Nobody reads a ball off the glass exactly until it has come off: set up a little off the spot, then correct.
+      if (this.glassT >= 0 && t0 < this.glassT + READ_LAG) {
+        const c = m.world.court;
+        this.goX = clamp(this.goX + this.readX, -c.halfW + 0.3, c.halfW - 0.3);
+        this.goZ = clamp(this.goZ + this.readZ, -c.halfL + 0.3, c.halfL - 0.3);
+      }
       // Be there, feet set, a little before the contact.
       this.goBy = this.idealT - 0.15;
       if (t0 < this.holdT) {
@@ -601,6 +613,11 @@ export class SimpleAi {
   private refX = 0;
   private refY = 0;
   private refZ = 0;
+  /** This ball's misread, m: where the player sets up off the true spot until the ball has come off the glass (READ_ERR). */
+  private readX = 0;
+  private readZ = 0;
+  /** When the planned ball reaches the glass on our side; negative if it is played before any glass. */
+  private glassT = -1;
 
   private plan(m: MatchSim): void {
     const pr = m.pred;
@@ -689,6 +706,15 @@ export class SimpleAi {
     this.standX = sx;
     this.standZ = sz;
     this.idealT = t;
+    this.glassT = -1;
+    if (st.afterWall) {
+      for (let i = 0; i < pr.n; i++) {
+        if (pr.bounces[i]! !== 1 || pr.walls[i]! === 0) continue;
+        this.glassT = pr.t[i]!;
+        break;
+      }
+      if (this.glassT >= 0 && this.hitOnTheWay(m, s, sx + this.readX, sz + this.readZ) >= 0) this.glassT = -1;
+    }
     for (let i = 0; i < pr.n; i++) {
       if (pr.t[i]! < t) continue;
       this.refX = pr.x[i]!; this.refY = pr.y[i]!; this.refZ = pr.z[i]!;
@@ -1215,6 +1241,12 @@ export class SimpleAi {
     this.targetZ = -s * depth;
   }
 }
+
+/** A ball off the glass: how far (m, sigma, at the top level) a player's set-up is off the true spot, and how long after
+ * the ball reaches the glass (s) they go on with it. Read exactly, nothing that went through the glass ever beat a
+ * defender: bandeja + víbora 1.6% of winners (12.7), smash 55 (43), 11.6 shots (10-11). */
+const READ_ERR = 0.4;
+const READ_LAG = 0.12;
 
 /** A ball against two back: shares going cross-court and down the line; the rest is through the middle. */
 const BACK_CROSS = 0.6;

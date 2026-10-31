@@ -287,7 +287,7 @@ reports named in `DECISIONS.md`.
 | C11 | Medium | C: hair is rigid | | **Better.** Long hair trails on the hems' spring. Bob and ponytail only |
 | C29 | Low | C: kits are plain | | Better. Stitched hems and wristbands; no print |
 | P5 | Medium | P: sitters at the net aren't put away | | **Better.** High volleys go short, inside the glass: volley W 3.1 to 3.7 (3.4-5.7), 6000 points. The drop wasn't cut: at 0.07 the gap went to the smash. It still wins 52-57% |
-| P6 | Medium | P: bandeja and víbora almost never finish | | **Open, cause found.** The short, wide one was tried and did worse (W 0.9 and 1.5, fewer forced errors). A defender has 1.2-1.4 s and reads every bounce exactly. Real ones need a misread off the glass, which the AI doesn't have |
+| P6 | Medium | P: bandeja and víbora almost never finish | | **Better.** The cause was the AI reading every ball off the glass exactly. With a misread, bandeja + víbora 1.5 to 6.0% of winners (12.7), smash 54 to 48 (43), shots 11.3 to 10.2 (10-11), 6000 unseen points. The short, wide target did worse and was rejected |
 | P7 | Medium | P: nobody leaves the court | | **Open.** Out 6.6 to 6.9 of winners (17). Aim peaks at 13% of smashes, and topspin at 1500-3000 rpm reached 9-11 but sent smash W to 60-69 (45), so it was rejected |
 | C12 | Medium | C: one reaction each way, one set of strokes for ten people | | **Better.** Ready, forehand, backhand, volley and serve re-keyed from video; ten manners of playing (`data/manners.json`); reactions are one point in three a held pose (`DECISIONS.md`, "The movement pass") |
 | 6+ | Medium | P #8-20, C #3, C #4-22 except C8, C11, C12 | | Open |
