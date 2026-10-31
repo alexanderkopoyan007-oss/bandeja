@@ -20,15 +20,15 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 | Smash | Legs at contact | 27 / 23 | 71 / 2 (airborne) | 2 |
 | Forehand volley | Wrist in front of the racket shoulder | 0.39 m (0.35-0.48) | 0.41 (before the take-back was shortened) | [4](https://www.youtube.com/watch?v=xgknoDRg-Gc) (13 volleys, 6 fps) |
 | Forehand volley | Wrist below the shoulder | 0.27 m (0.13-0.38) | 0.35-0.43 | 4 |
-| Forehand volley | Elbow | 63 (53-79) | 58 mid height, 30 low; backhand 54 | 4 |
+| Forehand volley | Elbow | 63 (53-79) | 61 mid height, 50-56 low (30 at its stop until 31 Oct); backhand 54 | 4 |
 | Forehand volley | Shoulders on the hips | 25 (20-37) | 18 | 4 |
 | Forehand volley | Chest turned from the net | 11-55 by the camera | 40 | 4 |
 | Forehand volley | Free hand | elbow 78, 0.24 m in front | elbow 74, 0.10 | 4 |
 | Forehand volley | Hips, knees | 0.82-0.85, 40-45 / 30 | 0.83, 62 / 40 | 4 |
-| Volley | Elbow from -0.3 s to contact | stays 60-90, opening into the ball | 116, 90, 82, then 57 (was 30 at its stop until the hit) | 4 |
+| Volley | Elbow from -0.3 s to contact | forehand 61, 95, 98, 98, 47; backhand 98, 98, 100, 77, 30 (mid height, measured by round 8; 57 was a mid forehand's contact only) | 116, 90, 82, then 57 (was 30 at its stop until the hit) | 4 |
 | Ready (two hands) | Elbows, racket / free | 46-66 / 45-47 (284 frames, 3 clips) | 61-67 / 44-56 (was 28 / 32) | [5](https://www.youtube.com/watch?v=YawHc7Cv8us), [6](https://www.youtube.com/watch?v=-zYGF4P_Q9A), [7](https://www.youtube.com/watch?v=5MH8RDf4qfg) |
 | Ready (two hands) | Wrist below, in front of the shoulder | 0.69-0.75 trunks, 0.27-0.30 m | 0.63, 0.3 m | 5, 6, 7 |
-| Forehand | Elbow at -0.22 / -0.08 / contact | 48-53 / 25-42 / 31-34 (6 strokes, 25 fps) | 49 / 39 / 48 | 6 |
+| Forehand | Elbow at -0.22 / -0.08 / contact | 30-31 / 39 / 48 (the first read 49 here until round 8 measured it) | 49 / 39 / 48 | 6 |
 | Forehand | Elbow, wrist at +0.08 s | 47-64, -0.47 | 56, -0.48 | 6 |
 | Forehand | Elbow, wrist at +0.16 s | 38-60, -0.12 | 75, -0.32 (was 114, -0.47) | 6 |
 | Forehand | Elbow, wrist at +0.24 s | 43-64, +0.1 | 113, -0.18 | 6 |
@@ -38,7 +38,7 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 | Backhand volley | Wrist in front of the racket shoulder | 0.42 m | 0.42 | [5](https://www.youtube.com/watch?v=jRkQB25IGPw) (held poses of a coach's breakdown) |
 | Backhand volley | Wrist below the shoulder | 0.37 m | 0.35 | 5 |
 | Backhand volley | Chest turned from the net | 60 | 60 | 5 |
-| Backhand volley | Elbow | 54 | 37 | 5 |
+| Backhand volley | Elbow | 54 | 30-33 | 5 |
 | Backhand volley | Free hand at contact | 0.27 in front, 0.23 below, elbow 62 | 0.23, 0.26, elbow 100 | 5 |
 | Backhand volley | Take-back | wrist at shoulder height, across the chest, elbow 59-68, both hands up | keyed the same | 5 |
 | Serve | Wrist against the hip at contact | 0.12-0.3 m below (3 serves, 25 fps) | at the hip (was 0.10 above) | [6](https://www.youtube.com/watch?v=-e0uxZZOePQ), [7](https://www.youtube.com/watch?v=gvxuqyt_hn0) |

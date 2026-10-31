@@ -647,6 +647,23 @@ glass. A defender now sets up slightly off the spot until the ball has come off 
 Balls leaving the court are still far short (6 against 17), rallies still have too few short points (45.7% over 11 s against 26), and
 double-bounce winners now overshoot by 5.
 
+### How they move, round 8 (31 Oct)
+The owner named four worst parts. This is the third, how they move. Before | after, same seeds:
+
+| | Before | After | Real life |
+|---|---|---|---|
+| Whole body lean starting / steady / braking (deg) | 18.0 / 17.3 / 16.6 | 30.5 / 19.3 / 11.2 | starts lean hard, stops lean back |
+| Lobbed net player going back, chest under 40 deg from square | 70.2% | 9.5% | rarely |
+| Pops of 15 degrees or more, per player-minute | 4.83 | 2.1 | 0 |
+| Walk back: going forwards | 13% | 67% | nearly all of it |
+| Walk back: both feet off the floor | 21% | 4.3% | 0 |
+| Walk back: footsteps a second | 5.25 | about 2 | 2 |
+| Low volley elbow (under 0.85 m) | 30 | 50-56 | 63 |
+| Racket speed just after a drive's contact (m/s) | 7.2-7.6 | 9.3-9.9 | as it arrived |
+
+Still short: a jog is in the air 64-68% of the time (real 30-40), hard stops don't lean back, the walk has no pelvis twist, and the
+thighs of the four women overlap in 11% of frames, which is the test's wide capsules more than anything you'd see.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

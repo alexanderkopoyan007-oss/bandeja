@@ -68,7 +68,7 @@ values in `data/ai-skill.json` are given at levels 0, 0.5 and 1 and interpolated
 | Timing error SD (s, before difficulty) | 0.030 | 0.023 | 0.018 |
 | Motor spread (per unit of `swing.motor`) | 1.10 | 0.92 | 0.65 |
 | Correction delay (s, mean; each one ×0.8-1.2) | 0.17 | 0.14 | 0.11 |
-| Net depth when attacking (m from the net; regional players 4.5, national 3.8: Ramón-Llin et al. 2019) | 4.5 | 3.8 | 3.1 |
+| Net depth when attacking (m from the net; regional players 4.5, national 3.8: Ramón-Llin et al. 2019). The 3.1 is the setting; round 8 measured the pair at 2.40 at the opponents' strike | 4.5 | 3.8 | 3.1 |
 | How much the pair follows the ball across | 0.4× | 0.7× | 1× |
 | Lobs against a net pair (vs driving into them) | 0.5× | 0.75× | 1× |
 | Taking the net from the back | 0.4× | 0.7× | 1× |

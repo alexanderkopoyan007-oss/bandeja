@@ -2589,3 +2589,47 @@ hips 0.55-0.57 H: the targets that widen the waist stop short and more would nee
 a lunge but have no cloth of their own. A skirt's normals don't follow the thighs' push. Collar points are rough from close to. p7 and p9 share a ponytail and p4 and p5 a
 short04, told apart by colour and by the visor. p10's braid is good from behind but her front hair is a swept cap. p4 hasn't had a clean look at
 6 m. Frame time on these meshes hasn't been measured.
+
+## Weight, the turn going back, and a walk that is a walk (2026-10-31)
+
+Round 8's two new Highs and its proven regression, then the movement Mediums the owner named. All in `src/render/avatar/avatar.ts`.
+
+**The body answers its acceleration.** A spring on the player's own acceleration (`carryWeight`, 13 rad/s, damping 0.62, capped at
+0.36 rad) tips the whole body from the ankles: the hips forward of the feet and the trunk over them. The gain 0.055 rad per m/s² is
+about half of physics: 8 m/s² would be 39 degrees on a sprinter, and at the real figure the feet ran out from under a body that only
+ever takes two steps. Measured feet to head on p1, before and after: starting 18.0 to 30.5, steady 17.3 to 19.3, braking 16.6 to
+11.2. The real thing leans back in a hard stop; ours still leans a little forward because the jog's own lean is under it.
+Two things came with it. The lean carried the chest through the ready racket (2-3.5% of frames, recorded 0.09-0.27), so the ready
+key now goes with the hips and the trunk. And the hips take only 40% of the sideways part (`LEAN_SIDE`): a crossover's thighs are
+already passing each other. A stroke's keys lean for themselves, so it fades to 15% through a stroke (`LEAN_STROKE`; at 30% a low
+volley's elbow fell under its bound).
+
+**The turn going back.** A lobbed net player now turns side-on: the stance turns 1.25 rad as they go back with the ball going past
+them, so the hands and the racket go too (on the shoulders alone, the racket stayed square). Going back over 2 m/s the chest is under
+40 degrees from square 9.5% of the time, from 70.2; side-on 65.8, from 28; turned away 24.7, from 1.9. Women the same (8.0, 64.4, 27.6).
+
+**Pops.** The direction clips' weights cross-faded in a frame, and the warp stepped when a shuffle changed quarter. The bent ready arm
+showed both as a 6 cm jump of the shoulder. Weights are eased over 60 ms and the warp rate-limited everywhere: pops of 15 degrees or
+more 4.83 to 2.1 a player-minute (2.28 before the movement pass), all pops 24.8 to 13.
+
+**The walk.** It was the jog slowed down, and worse: the sim keeps a walker's facing on the net, so 83% of the way back was sideways
+or backwards. `walkFeet` draws the feet instead, and the avatar turns to where it is going (the sim's facing is left alone: it decides
+the serve). A first version timed steps from a phase, and failed the moment a walker slowed for a partner or turned back: a foot stayed
+planted a leg's length behind. So a foot goes when the body has passed it, or when it is further than 0.62 legs from the body, which
+holds at any speed. They come back to face the net over the last 1.8 m, because the serve is half a second after they arrive. The
+gait hands its state to the foot locks, so stopping needs no special case. Walking forwards 67% from 13, both feet off 4.3% from 21,
+and footsteps come at about 2 a second from 5.25, which also fixes the rattle `soundscape.ts` got from the jog's soles. The Women's
+thighs now count overlapping in 11% of frames (bound moved to 13, from 6): every step of a walk passes them inside two wide capsules,
+and the capsules don't narrow at the knee. Past 12 cm is 0.5% of frames. The arrival is a small jump in the sim (`endWalk` puts them on
+the spot from up to 6 cm off), which shows as a few leg pops in that one frame; the serve QA now starts 0.3 s after it.
+
+**Low volleys.** 70% of volleys are under 0.85 m and every one sat on the elbow's stop, 30 degrees. The hips and knees were already
+deep (0.70-0.78 m, 73-78 degrees), so more squat was wrong; the trunk comes over the ball instead, before the arm straightens. Elbow 50
+under 0.6 m and 56 under 0.85, video 63. The bend is rate-limited at 9 rad/s, because at the spine's normal 20 rad/s pops doubled.
+
+**Through the ball.** The racket fell to 60% of its speed in a frame at every hit: the follow-through set off at its own pace. It now
+starts from the swing's speed, capped so a fast swing doesn't overshoot (smash at 32 m/s uncapped). Drive 11.8 then 9.3-9.9 m/s from
+7.2-7.6, slice 12.6 then 10.8 from 6.6-7.6, smash 11.9 then 14.5 from 8.2-12.
+
+**Back to ready.** The hand's way from the finish to the ready key passed further from the turning shoulder than the arm is long, so
+the elbow bent, straightened and bent again. The arm is held to 0.8 of its length while the stroke fades.
