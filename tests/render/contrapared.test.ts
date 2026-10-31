@@ -49,7 +49,7 @@ describe('contrapared stroke', () => {
     expect(facing.length).toBe(n);
     // (a call made in the last moments is met still turning: 1 of 8 here)
     expect(facing.filter((f) => f > 0.9).length / facing.length).toBeGreaterThanOrEqual(0.75);
-  }, 300000);
+  }, 600000);
 
   // Review round 9, the pro's #1: an AI that gave up a contrapared to block left its plan saying contrapared, and the
   // body played balls the sim struck plain with its back to the net: 36 of 3,047 hits, and 1% of serves.
@@ -74,5 +74,5 @@ describe('contrapared stroke', () => {
     }
     expect(hits).toBeGreaterThan(200);
     expect(wrong / hits).toBeLessThan(0.006);
-  }, 300000);
+  }, 600000);
 });

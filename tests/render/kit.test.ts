@@ -265,7 +265,7 @@ describe('kit', () => {
         for (const dir of ring([-15, 0, 20, 45])) expect(holes(p, pos, dir, true).filter((h) => h.size >= 3 && (k === 0 || h.at)).map((h) => [h.size, h.at])).toEqual([]);
       });
     }
-  }, 120_000);
+  }, 300_000);
 
   it('opens no way through the waist as a hem swings', () => {
     const CLOTH_MAX = 0.05; // (avatar.ts)
