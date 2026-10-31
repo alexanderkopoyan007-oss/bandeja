@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
   vec2, step, sin, select,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
-  mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor, frontFacing, faceDirection,
+  mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor, frontFacing, faceDirection, positionViewDirection,
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import type { KitCut, PlayerAsset } from './asset.ts';
@@ -313,6 +313,8 @@ class SkinLighting extends THREE.PhysicalLightingModel {
 const SKIN_WRAP = 0.55;
 /** How much of that bleed skin takes. It goes with the key's strength: 0.42 was set under a key of 1.6, and at 3.0 the red alone was a lit tube's shadow side. */
 const SKIN_SCATTER = 0.22;
+/** How much of the tone map's offset skin gets back (`PersonNodeMaterial.setupOutput`): all of it turned dark skin ashen, and a little of the toe's depth is what keeps skin rich in shadow. */
+const SKIN_TONE_BACK = 0.65;
 /** How dark the inside of the cloth is: it sits in the body's shadow, and no bake covers it. */
 const BODY_INSIDE = 0.3;
 /** The same for a skirt, a fold's own shade: a thigh pushes a skirt through itself, its back comes out in front, and at 0.3 that was a dark slash on white cloth. */
@@ -337,6 +339,17 @@ const HAIR_SWING = 3;
 const HAIR_CLUMP = 0.5;
 /** How far a strand's normal leans across its card. */
 const HAIR_TILT = 0.5;
+/** Hair: the size (m) under which a pixel can't show strands; where the atlas's hair ends (u, finish-player.py RECT: brows and lashes keep their own tone); the darkest a
+ * head of hair is (linear albedo); from afar, how big its lumps are (per m), how edge-on a card has to be to start thinning, the roughness, the highlight's strength and the rim's. */
+const HAIR_STRAND = 0.008;
+const HAIR_U = 0.8;
+const HAIR_FLOOR = 0.018;
+const HAIR_WARM = vec3(1.3, 0.95, 0.72);
+const HAIR_LUMP = 42;
+const HAIR_FRINGE = 0.55;
+const HAIR_FAR_ROUGH = 0.46;
+const HAIR_FAR_SPEC = 1.6;
+const HAIR_SHEEN = 0.012;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;
 const LID_PLAIN = 1;
@@ -521,7 +534,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   m.scatterNode = skinW.mul(float(SKIN_SCATTER).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85)));
   // (the mouth too: the sky's blue on teeth turned them blue-black with the head bowed)
   m.ambientFixNode = skinW.add(eyeW).add(mouthW);
-  m.toneBackNode = skinW;
+  m.toneBackNode = skinW.mul(SKIN_TONE_BACK);
   // The catchlight: a floodlit cornea always holds a bright point, and a face without one reads as dead. The light it
   // would mirror isn't in the probe, so it is drawn: fixed in view space, where the eyeball's normal meets it.
   m.emissiveNode = vec3(1, 0.98, 0.94).mul(normalView.dot(CATCHLIGHT).clamp().pow(1100)).mul(eyeW).mul(1.5);
@@ -546,7 +559,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const hung = hemLag(lag, shirtSway.add(shortsSway)).add(lag.mul(hang.mul(SKIRT_SWING)));
   m.positionNode = body.kit.bottom === 'pleated' || body.kit.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung).mul(smoothstep(0.08, 0.4, hang))) : hung;
 
-  const hair = new THREE.MeshPhysicalNodeMaterial();
+  const hair = new PersonNodeMaterial();
   // Long hair swings: below the nape it trails with the hems' spring, further (round 7, the critic: it moved as one piece
   // with the head).
   const neckY = frame.neck?.y ?? frame.chest.y + 0.2;
@@ -562,25 +575,36 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const strandUv = uv();
   const strands = mx_noise_float(vec3(strandUv.x.mul(1400), strandUv.y.mul(260), float(0))).mul(0.55)
     .add(mx_noise_float(vec3(strandUv.x.mul(420), strandUv.y.mul(90), float(3))).mul(0.45));
-  const strandLit = float(0.8).add(strands.mul(0.75));
-  hair.colorNode = ht.xyz.mul(smoothstep(0.1, 0.62, ht.w)).mul(hAO).mul(strandLit);
+  // At the broadcast camera a strand is far under a pixel and the head is about 30 of them, and what made a black ball of it was not the
+  // cards: most of the sources' hair is near black (linear 0.005-0.02), the tone map's toe takes that to nothing, a strand's edge darkening
+  // works on the alpha's average there and halves it, and the strands' noise only speckles. So hair keeps its tone (`toneBackNode`), no
+  // head of hair is darker than HAIR_FLOOR, and from about 3 mm a pixel (`far`) the look goes from strands to a mass with soft edges: the
+  // noise and the tilt fade to a few big lumps, a broad sheen from above, and cards seen edge on thin out into the background.
+  const far = float(1).sub(footprintKeep(HAIR_STRAND));
+  const onHead = step(uv().x, HAIR_U);
+  const base = ht.xyz.add(HAIR_WARM.mul(max(float(HAIR_FLOOR).sub(ht.xyz.dot(LUMA)), 0)).mul(onHead));
+  const lump = mx_noise_float(p.mul(HAIR_LUMP));
+  const strandLit = mix(float(0.8).add(strands.mul(0.75)), float(1).add(lump.mul(0.4)), far);
+  hair.colorNode = base.mul(mix(smoothstep(0.1, 0.62, ht.w), float(1), far)).mul(mix(hAO, hAO.sqrt(), far)).mul(strandLit);
   hair.aoNode = hAO;
+  hair.toneBackNode = float(1);
   // Coverage from the cards' alpha over the MSAA samples: strands fade out instead of being cut at a threshold. The
   // nearly clear texels are dropped outright, and the shadow keeps a hard cut (the shadow map has no samples).
-  hair.opacityNode = smoothstep(0.06, 0.7, ht.w);
+  const edgeOn = normalView.dot(positionViewDirection).abs().add(lump.mul(0.14));
+  hair.opacityNode = mix(smoothstep(0.06, 0.7, ht.w), smoothstep(0.03, 0.72, ht.w).mul(smoothstep(0, HAIR_FRINGE, edgeOn)), far);
   hair.alphaToCoverage = true;
   hair.maskNode = ht.w.greaterThan(0.05);
   hair.maskShadowNode = ht.w.greaterThan(0.5);
   hair.side = THREE.DoubleSide;
   // Hair's highlight is dimmer and tinted by the hair (the light that enters a strand comes out coloured), and
   // weaker deep in the hair.
-  hair.roughnessNode = float(0.52).sub(strands.mul(0.18));
+  hair.roughnessNode = mix(float(0.52).sub(strands.mul(0.18)), float(HAIR_FAR_ROUGH), far);
   // Each strand tilts its own way across the card, so the shine comes in fine broken lines and not one band over a helmet.
-  hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT), float(0)), strandUv);
+  hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT).mul(float(1).sub(far)), float(0)), strandUv);
   hair.metalnessNode = float(0);
-  hair.specularIntensityNode = hAO.mul(0.6);
-  hair.specularColorNode = mix(vec3(1, 1, 1), ht.xyz.mul(2.2), 0.6);
-  hair.sheenNode = ht.xyz.mul(0.5).mul(hAO);
+  hair.specularIntensityNode = hAO.mul(mix(float(0.6), float(1), far));
+  hair.specularColorNode = mix(vec3(1, 1, 1), base.mul(2.2), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
+  hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);
   return { material: m, hair, state: { sweat: sweatU, lag, sway } };
 }
