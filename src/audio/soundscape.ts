@@ -3,7 +3,7 @@
 // shape (the rally's length, the score), and asks an AudioSink for sounds. Never writes to the sim. Pure logic: the
 // tests drive it with a recording sink.
 import {
-  E_HIT, E_FLOOR, E_WALL, E_NET, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_SWING, E_WHIFF, PH_RALLY, PH_TOSS, PH_SETUP,
+  E_HIT, E_FLOOR, E_WALL, E_NET, E_BODY, E_ROOF, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_SWING, E_WHIFF, PH_RALLY, PH_TOSS, PH_SETUP,
   type MatchSim,
 } from '../sim/match.ts';
 import {
@@ -172,7 +172,7 @@ export class Soundscape {
     while (this.seenReplay < sim.eventSeq) {
       const e = sim.events[this.seenReplay % sim.events.length]!;
       this.seenReplay++;
-      if (e.kind !== E_SWING && e.kind !== E_WHIFF && e.kind !== E_HIT && e.kind !== E_FLOOR && e.kind !== E_WALL && e.kind !== E_NET) continue;
+      if (e.kind !== E_SWING && e.kind !== E_WHIFF && e.kind !== E_HIT && e.kind !== E_FLOOR && e.kind !== E_WALL && e.kind !== E_NET && e.kind !== E_BODY && e.kind !== E_ROOF) continue;
       const delay = Math.min(0.05, Math.max(0, e.time - renderTime));
       this.event(sim, e.kind, e.team, e.player, e.a, e.b, e.c, e.x, e.y, e.z, e.d, e.q, delay, renderTime);
     }
@@ -267,6 +267,13 @@ export class Soundscape {
         }
         break;
       }
+      case E_BODY:
+        out.play('body', 0, x, y, z, 0.8, this.rate, delay, BUS_BALL);
+        break;
+      case E_ROOF:
+        // A covered club's steel roof, high up.
+        out.play('metal', 1, x, y, z, 0.7, this.rate, delay, BUS_BALL);
+        break;
       case E_POINT:
         this.pointEnds(sim, team, a, now);
         this.rallyOver();

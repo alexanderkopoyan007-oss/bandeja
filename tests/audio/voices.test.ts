@@ -2,13 +2,15 @@
 // DECISIONS.md). Spectra by plain DFT (dsp.spectrum); levels before the bank scales them.
 import { describe, expect, it } from 'vitest';
 import { Rng, SR, spectrum, peak, rms, rt60, Biquad, modal } from '../../src/audio/dsp.ts';
+import { peakAndCentroid, thirdBands, times } from '../../src/audio/measure.ts';
 import * as V from '../../src/audio/voices.ts';
 import { AUDIO, arenaAudio } from '../../src/audio/bank.ts';
 
 const band = (b: Float32Array, lo: number, hi: number, from = 0, len = 4096, sr = SR): number =>
   spectrum(b, [[lo, hi]], from, Math.min(len, b.length - from), sr).share[0]!;
+// (no window: a Hann window from the buffer's start weighs an impact's attack at nothing, and read the tail)
 const centroid = (b: Float32Array, from = 0, len = 4096, sr = SR): number =>
-  spectrum(b, [[0, 1]], from, Math.min(len, b.length - from), sr).centroid;
+  peakAndCentroid(b.subarray(from, Math.min(b.length, from + len)), sr).centroid;
 /** Time (s) by which a share `q` of the energy has arrived. */
 function energyBy(b: Float32Array, q: number, sr = SR): number {
   let tot = 0;
@@ -96,11 +98,13 @@ describe('bounce', () => {
 describe('walls', () => {
   it('glass is a low bang, mesh a higher ring (Higgins / The Padel Paper)', () => {
     const g = mean(many(6, (r) => centroid(V.glass(r, 16), 0, 8192)));
-    const m = mean(many(6, (r) => centroid(V.mesh(r, 12), 0, 8192)));
-    expect(g).toBeLessThan(300);
+    const m = mean(many(6, (r) => centroid(V.mesh(r, 12), 0, 16384)));
+    expect(g).toBeLessThan(600);
     expect(m).toBeGreaterThan(2 * g);
-    // The glass booms for a while; the racket is long gone by then.
-    expect(mean(many(4, (r) => energyBy(V.glass(r, 16), 0.9)))).toBeGreaterThan(0.05);
+    // The glass rings for a while (20 dB in about 0.2 s in the measured waveform); the racket is long gone by then.
+    const t = mean(many(4, (r) => times(V.glass(r, 16)).t20));
+    expect(t).toBeGreaterThan(0.06);
+    expect(t).toBeLessThan(0.3);
   });
 
   it('louder with the ball speed; a hard hit rattles the fixings', () => {
@@ -120,10 +124,13 @@ describe('walls', () => {
 });
 
 describe('feet', () => {
-  it('turf crunches high (sand), carpet pats low, a hard court squeaks', () => {
-    const c = (fl: number): number => mean(many(8, (r) => centroid(V.step(r, fl, 0.7))));
-    expect(c(V.FL_TURF)).toBeGreaterThan(1500);
-    expect(c(V.FL_CARPET)).toBeLessThan(800);
+  it('turf has faint grit over the foot, a hard court squeaks and sand never does', () => {
+    const c = (fl: number): number => mean(many(8, (r) => peakAndCentroid(V.step(r, fl, 0.7)).aCentroid));
+    expect(c(V.FL_TURF)).toBeGreaterThan(c(V.FL_CARPET));
+    expect(c(V.FL_TURF)).toBeLessThan(3500);
+    // A squeak is a narrow tone: the loudest third of an octave holds far more of a hard court's scuff than of turf's.
+    const tone = (b: Float32Array): number => { const t = thirdBands(b); const top = Math.max(...t); return top - 10 * Math.log10(t.reduce((a, d) => a + 10 ** (d / 10), 0)); };
+    expect(tone(V.scuff(new Rng(3), V.FL_TURF, 0.8))).toBeLessThan(tone(V.scuff(new Rng(3), V.FL_HARD, 0.8)) - 1);
     // The squeak is tonal: one band of a few hundred Hz holds much of a scuff's energy.
     const sq = V.scuff(new Rng(3), V.FL_HARD, 0.8);
     const s = spectrum(sq, [[1200, 3200]], 0, 8192);

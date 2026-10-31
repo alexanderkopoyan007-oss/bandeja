@@ -3,7 +3,7 @@
 // a model of the limiter and the soft clip. Keep it in step with engine.ts. The limiter is a model of a
 // DynamicsCompressorNode (a 6 ms look-ahead as in Chromium, the node's attack and release on the linked peak), not the
 // node itself: read its gain reduction as an estimate.
-import { AUDIO, arenaAudio, renderFamily, renderRoom, families, type BankEnv, type Sample } from './bank.ts';
+import { AUDIO, AMB_SEND, BED_SEND, CROWD_SEND, arenaAudio, renderFamily, renderRoom, families, type BankEnv, type Sample } from './bank.ts';
 import { Biquad, resample, SR } from './dsp.ts';
 import { fft, pow2 } from './measure.ts';
 import { BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
@@ -162,7 +162,7 @@ export class OfflineEngine implements AudioSink {
       const stepSr = (sample.sr * s.rate) / SR;
       const cL = sample.ch[0]!, cR = sample.ch[1] ?? cL;
       if (!s.flat) { air.set('lp', Math.min(20000, AUDIO.distance.airHz / (1 + pos.d / AUDIO.distance.airM)), Math.SQRT1_2); air.reset(); }
-      const send = s.flat ? 0.7 : 0.5 + pos.d / 40;
+      const send = s.flat ? (a.crowdSend ?? CROWD_SEND) : s.bus === BUS_AMB ? AMB_SEND : 0.5 + pos.d / 40;
       const start = Math.round(s.at * SR);
       const count = Math.floor((cL.length / stepSr) - s.offset * SR / s.rate);
       let peakAbs = 0;
@@ -187,7 +187,7 @@ export class OfflineEngine implements AudioSink {
       if (!s) continue;
       const cL = s.ch[0]!, cR = s.ch[1] ?? cL;
       const step = s.sr / SR;
-      const send = 0.6;
+      const send = a.bedSend ?? BED_SEND;
       let g = 0, target = 0, tc = 1, ri = 0;
       let phase = this.rand() * cL.length;
       for (let i = 0; i < n; i++) {

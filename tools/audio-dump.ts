@@ -5,10 +5,11 @@
 // the engine's chain (src/audio/offline.ts) and prints what the mix does: hits per second, repeats, levels by family,
 // the limiter's work, the whole match's A-weighted third-octave spectrum against Piana et al.'s Fig. 6.
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { AUDIO, families, renderFamily, type BankEnv, type FamilyDef, type Sample } from '../src/audio/bank.ts';
+import REF from '../data/audio-reference.json' with { type: 'json' };
+import { AUDIO, arenaAudio, families, racketBin, renderFamily, renderRoom, type BankEnv, type FamilyDef, type Sample } from '../src/audio/bank.ts';
 import { resample, SR } from '../src/audio/dsp.ts';
-import { lafmax, mono, OCTAVES, octaveBands, peakAndCentroid, thirdBands, THIRDS, times, wavBytes, aWeight, fastMax, sel } from '../src/audio/measure.ts';
-import { OfflineEngine, offlineBank, type Listener } from '../src/audio/offline.ts';
+import { bands, lafmax, mono, OCTAVES, octaveBands, peakAndCentroid, thirdBands, THIRDS, times, wavBytes, aWeight, fastMax, sel } from '../src/audio/measure.ts';
+import { OfflineEngine, convolve, offlineBank, type Listener } from '../src/audio/offline.ts';
 import { Soundscape, type FeetSource } from '../src/audio/soundscape.ts';
 import { FLOOR_NAMES, FL_TURF } from '../src/audio/voices.ts';
 import * as Shots from '../src/sim/contact/shots.ts';
@@ -204,5 +205,49 @@ function aDbAt(f: number): number {
   return 20 * Math.log10((12194 ** 2 * f2 * f2) / ((f2 + 20.6 ** 2) * Math.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2)) * (f2 + 12194 ** 2))) + 2;
 }
 
-if (!has('--mix-only')) dumpFamilies();
+/** The top bins against Wadman et al.'s spectra: dB per Hz over a third of an octave, against each curve's own top. */
+function refCompare(): void {
+  const bk = offlineBank(env);
+  const avgPsd = (row: Sample[], fs: number[]): number[] => {
+    const e = fs.map(() => 0);
+    for (const s of row) {
+      const b = bands(mono(at48(s)), fs, 2 ** (1 / 6));
+      b.forEach((d, i) => { e[i] = e[i]! + 10 ** (d / 10); });
+    }
+    return e.map((x, i) => 10 * Math.log10(x / row.length / (fs[i]! * 0.2316)));
+  };
+  const show = (name: string, row: Sample[], ref: number[][]): void => {
+    const fs = ref.map((p) => p[0]!), want = ref.map((p) => p[1]!);
+    const got = avgPsd(row, fs);
+    const off = got.reduce((a, d, i) => a + d - want[i]!, 0) / got.length;
+    let rms = 0; for (let i = 0; i < got.length; i++) rms += (got[i]! - off - want[i]!) ** 2;
+    console.log(`${name.padEnd(9)} f    ` + fs.map((f) => pad(f >= 1000 ? `${(f / 1000).toFixed(1)}k` : f, 6)).join(''));
+    console.log(`          real ` + want.map((d) => pad(d, 6)).join(''));
+    console.log(`          ours ` + got.map((d) => pad((d - off).toFixed(0), 6)).join('') + `   rms ${Math.sqrt(rms / got.length).toFixed(1)} dB`);
+  };
+  console.log('# against Wadman et al. Fig. 4.3.2 (dry renders, best level fit)');
+  const R = REF.psd;
+  show('racket', bk.get('racket')![racketBin(0, 2, 0)]!, R.racket);
+  show('racket.6', bk.get('racket')![racketBin(0, 1, 0)]!, R.racket);
+  show('glass', bk.get('glass')![3]!, R.glass);
+  show('mesh', bk.get('mesh')![2]!, R.mesh);
+  const laf = (s: Sample[]): number => s.reduce((a, x) => a + lafmax(mono(at48(x))), 0) / s.length;
+  const r = laf(bk.get('racket')![racketBin(0, 2, 0)]!), g = laf(bk.get('glass')![3]!), m = laf(bk.get('mesh')![2]!);
+  console.log(`LAFmax: racket ${r.toFixed(1)}  glass ${g.toFixed(1)} (${(g - r).toFixed(1)}, real +${(95.4 - 92.5).toFixed(1)})  mesh ${m.toFixed(1)} (${(m - r).toFixed(1)}, real ${(87.6 - 2.5 - 92.5).toFixed(1)} at equal distance)`);
+  // A hard hit through the arena's room: the tail's peak envelope against the hit's peak, as read off Fig. 4.3.1.
+  const a = arenaAudio(arena), hit = at48(bk.get('racket')![racketBin(0, 2, 0)]![0]!)[0]!;
+  const room = renderRoom(arena);
+  const x = new Float32Array(Math.round(1.2 * SR)); x.set(hit);
+  const wet = convolve(x, room.ch[0]!, x.length);
+  const wg = 10 ** (a.wet / 20);
+  for (let i = 0; i < x.length; i++) x[i] = x[i]! + wet[i]! * wg;
+  const pk = (t0: number, t1: number): number => { let p = 0; for (let i = Math.round(t0 * SR); i < t1 * SR; i++) p = Math.max(p, Math.abs(x[i]!)); return p; };
+  const top = pk(0, 0.02);
+  console.log(`hit's tail in ${arena}, peak in 10 ms against the hit (dB): ` + REF.hitTail.map(([t, d]) => `+${t! * 1000}ms real ${d} ours ${dbl(pk(t!, t! + 0.01) / top).toFixed(1)}`).join('  '));
+  const mt = times(mono(at48(bk.get('mesh')![2]![0]!)));
+  console.log(`mesh: attack ${(mt.attack * 1000).toFixed(0)} ms, t-20 ${mt.t20.toFixed(2)} s (real about 0.85), t-40 ${mt.t40.toFixed(2)}`);
+}
+
+if (has('--ref')) refCompare();
+else if (!has('--mix-only')) dumpFamilies();
 if (has('--mix') || has('--mix-only')) mix(Number(flag('--mix', flag('--mix-only', '120'))));

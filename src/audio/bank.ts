@@ -7,7 +7,12 @@ import { Rng, SR, peak, rms } from './dsp.ts';
 import * as V from './voices.ts';
 
 export const AUDIO = spec;
-export type ArenaAudio = typeof spec.arenas.stadium & { room: V.RoomSpec; birds?: boolean };
+export type ArenaAudio = typeof spec.arenas.stadium & { room: V.RoomSpec; birds?: boolean; crowdSend?: number; bedSend?: number };
+
+/** How much of a sound from outside the court reaches the room (sends to the reverb): a crowd in a hall is in it. */
+export const CROWD_SEND = 0.7, BED_SEND = 0.6;
+/** A sound of the place (a bird in the trees): none of it goes through the cage. */
+export const AMB_SEND = 0.1;
 
 export interface BankEnv {
   /** Floor kind (voices.ts FL_*): bounces and feet. */
@@ -96,6 +101,7 @@ export function families(env: BankEnv): FamilyDef[] {
       name: 'net', bins: 4, variants: va.net!, sr: SR, peak: pk.net, render: (r, b) => V.net(r, b >= 2, NET_V[b % 2]!),
       law: { x: (b) => NET_V[b % 2]!, ladder: (b) => (b >= 2 ? 1 : 0) },
     },
+    { name: 'body', bins: 1, variants: va.body!, sr: SR, peak: pk.body, render: (r) => V.body(r) },
     {
       name: 'metal', bins: 4, variants: va.metal!, sr: SR, peak: pk.metal, render: (r, b) => V.metal(r, b >= 2 ? V.MT_NETPOST : V.MT_POST, METAL_V[b % 2]!),
       law: { x: (b) => METAL_V[b % 2]!, ladder: (b) => (b >= 2 ? 1 : 0) },

@@ -1,0 +1,13 @@
+{
+  "//": "What real padel measures (docs/research/sound.md has the sources and how each number was read). Tools and tests compare the synthesis with these; the game doesn't read them. psd: the smoothed power spectrum of one hit in dB against its own top, read off Wadman et al. 2021 Fig. 4.3.2 (10 dB = 62 px; a padel cage, microphone 2 m, the mesh 1.5 m; below about 125 Hz the curves meet the background, so they aren't used). lafmax: their Fig. 4.2.3, dBA. cageT20: their Fig. 4.2.5, the outdoor cage's reverberation in seconds. meshDecay: seconds after its top and dB against it, read off Fig. 4.3.1. piana: A-weighted third-octave sound power of a whole game without shouting, dB(A), read off Piana et al. 2025 Fig. 6.",
+  "psd": {
+    "racket": [[125, -2], [250, -1], [400, -2], [500, -2], [700, 0], [1000, -7], [1400, -10], [1700, -13], [2000, -20], [2500, -17], [3200, -19], [4000, -25], [5000, -32], [8000, -43]],
+    "glass": [[125, 0], [250, -2], [400, -4], [500, -8], [700, -13], [1000, -10], [1400, -10], [2000, -16], [3000, -27], [4000, -31], [6000, -32], [8000, -44]],
+    "mesh": [[500, -5], [800, 0], [1000, 0], [1400, -7], [1700, -13], [2500, -5], [3200, -8], [4000, -11], [5000, -15], [6000, -16], [7500, -13], [10000, -18], [16000, -28]]
+  },
+  "lafmax": { "racket2m": 92.5, "glass2m": 95.4, "mesh1p5m": 87.6, "tennisRacket2m": 80.9, "gameInCage": 88.9, "game31m": 63.8 },
+  "cageT20": [[63, 0.53], [125, 0.8], [250, 1.0], [500, 1.25], [1000, 1.24], [2000, 0.61], [4000, 0.68], [8000, 0.47]],
+  "meshDecay": [[0.25, -6], [0.5, -10], [0.85, -20], [1.35, -26]],
+  "hitTail": [[0.06, -9.5], [0.1, -14], [0.2, -17.5], [0.3, -23.5], [0.5, -33]],
+  "piana": { "hz": [100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000], "dBA": [63, 64, 66, 69, 72, 74, 73.5, 75, 76, 79, 79, 78.5, 78, 75, 75.5, 75, 70, 66, 67, 64, 57] }
+}

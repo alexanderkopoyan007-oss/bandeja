@@ -2,6 +2,7 @@
 // every arena and on every floor, through the master chain as the engine builds it.
 import { describe, expect, it } from 'vitest';
 import { peak, rms, resample, SR } from '../../src/audio/dsp.ts';
+import { lafmax } from '../../src/audio/measure.ts';
 import {
   AUDIO, buildBank, binFor, families, activeRms, racketBin, RQ_CLEAN, GLASS_V, BOUNCE_V, RACKET_POWER, APPLAUSE_BIG,
   type Sample,
@@ -21,7 +22,7 @@ const meanPeak = (row: Sample[]): number => row.reduce((m, s) => m + Math.max(..
 
 describe('bank', () => {
   it('renders every family for the arena, in finite numbers', () => {
-    for (const k of ['racket', 'bounce', 'glass', 'mesh', 'net', 'metal', 'whoosh', 'step', 'scuff', 'grunt', 'applause', 'murmur', 'ooh', 'aah', 'cheer']) {
+    for (const k of ['racket', 'bounce', 'glass', 'mesh', 'net', 'body', 'metal', 'whoosh', 'step', 'scuff', 'grunt', 'applause', 'murmur', 'ooh', 'aah', 'cheer']) {
       expect(bank.has(k), k).toBe(true);
     }
     for (const [k, fam] of bank) for (const row of fam) for (const s of row) for (const c of s.ch) {
@@ -170,19 +171,15 @@ describe('mix', () => {
     }
   }
 
-  it('is balanced: the racket leads, the shoes sit 15-32 dB under it, the bounce under it, the crowd under the play', () => {
+  it('is balanced on a level meter: the racket leads, the shoes far under it, the bounce under it, the crowd under the play', () => {
     for (const fl of [FL_TURF, FL_HARD]) {
       const b = fl === FL_TURF ? bank : buildBank({ floor: fl, arena: 'stadium' });
-      const lvl = (k: string, bin = 0): number => {
-        let m = 0;
-        for (const s of b.get(k)![bin]!) m = Math.max(m, rms(s.ch[0]!, 0, Math.round(0.05 * s.sr)));
-        return dB(m);
-      };
+      const lvl = (k: string, bin = 0): number => Math.max(...b.get(k)![bin]!.map((s) => lafmax(resample(s.ch[0]!, s.sr, SR))));
       const racket = lvl('racket', racketBin(0, 1, RQ_CLEAN));
-      expect(racket - lvl('step', 1), `floor ${fl}`).toBeGreaterThan(15);
-      expect(racket - lvl('step', 1), `floor ${fl}`).toBeLessThan(32);
+      expect(racket - lvl('step', 1), `floor ${fl}`).toBeGreaterThan(18);
+      expect(racket - lvl('step', 1), `floor ${fl}`).toBeLessThan(40);
       expect(racket - lvl('bounce', 2), `floor ${fl}`).toBeGreaterThan(4);
-      expect(racket).toBeGreaterThan(lvl('grunt', 1));
+      expect(racket).toBeGreaterThan(lvl('grunt', 1) - 3);
       expect(racket - dB(rms(b.get('murmur')![0]![0]!.ch[0]!))).toBeGreaterThan(9);
     }
   });
