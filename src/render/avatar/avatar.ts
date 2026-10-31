@@ -21,7 +21,7 @@ import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import MANNERS from '../../../data/manners.json' with { type: 'json' };
 import {
-  BACKHAND, FIST, FIST_LEFT, HIP, HIP_LEFT, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
+  BACKHAND, TRIUMPH, TRIUMPH_LEFT, FIST, FIST_LEFT, HIP, HIP_LEFT, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   rightFamily,
   type Family, type Key,
@@ -2256,7 +2256,7 @@ export class Avatar {
     const net = sim.phase === PH_OVER && sim.overStage === 3;
     if (sim.phase === PH_OVER && sim.overStage === 1) {
       // The end of a match: the winners run together and embrace; the beaten bend over, hands on the knees. Alone, the
-      // winner goes on celebrating (reaction()).
+      // winner goes on celebrating (reaction()), both arms up.
       this.tapT += dt;
       if ((idx & 1) !== sim.score.winner) {
         if (this.tapT > BOW_AFTER) { want = 1; bow = 1; this.tapKey = this.handed > 0 ? KNEES : KNEES_LEFT; }
@@ -2268,6 +2268,10 @@ export class Avatar {
           this.tapKey = this.handed > 0 ? HUG : HUG_LEFT;
           this.tapYaw = Math.atan2(-mx, -mz);
         }
+      } else {
+        want = 1;
+        this.tapKey = this.handed > 0 ? TRIUMPH : TRIUMPH_LEFT;
+        this.tapYaw = this.yaw;
       }
     } else if ((sim.doubles && sim.walking === 1) || net) {
       this.tapKey = null;

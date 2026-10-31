@@ -378,6 +378,8 @@ export const TAP: Key = key(v(-0.18, 1.42, 0.5), v(-0.05, 0.9, 0.4), v(0, 0.15, 
  * the free arm round their ribs; the beaten pair bent over, hands on the knees (the racket hanging from its hand).
  */
 export const HUG: Key = key(v(-0.16, 1.64, 0.8), v(-0.03, 0.32, 1), v(1, 0, 0.05), v(-0.8, 0.85, -0.05), 0, v(0.24, 1.14, 0.46));
+/** A win alone: both arms up, the racket high. */
+export const TRIUMPH: Key = key(v(-0.34, 2.28, 0.18), v(-0.12, 1, 0.08), v(0.1, 0, 1), v(-0.85, 0.3, -0.1), 0, v(0.34, 1.86, 0.2));
 export const KNEES: Key = key(v(-0.2, 0.3, 0.3), v(-0.2, -0.9, 0.35), v(0, 0.3, 1), v(-0.75, 0.8, -0.25), 0, v(0.15, 0.68, 0.2));
 
 /**
@@ -444,6 +446,7 @@ export const READY_LEFT: Key = mirrorKey(READY);
 export const TAP_LEFT: Key = mirrorKey(TAP);
 export const HUG_LEFT: Key = mirrorKey(HUG);
 export const KNEES_LEFT: Key = mirrorKey(KNEES);
+export const TRIUMPH_LEFT: Key = mirrorKey(TRIUMPH);
 export const FIST_LEFT: Key = mirrorKey(FIST);
 export const HIP_LEFT: Key = mirrorKey(HIP);
 export const CARRY_LEFT: Key = mirrorKey(CARRY);
