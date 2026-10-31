@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import * as THREE from 'three/webgpu';
 import { mannequinWithPeople } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
-import { kitFor, personCut, personMaterial } from '../../src/render/avatar/kit.ts';
+import { kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
 import type { PlayerAsset } from '../../src/render/avatar/asset.ts';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
 
@@ -28,9 +28,12 @@ const GRID = 0.003;
  * shader's cuts (`personCut`) by the modelled pose, with back faces (`both`) or without. A hole is a run of rays that meet nothing
  * drawn yet belong to the body: they meet something undrawn, or they pass inside the shirt's outline, through the hollow under it
  * (the gaps between limbs aren't in that outline). `at`: where a hole's rays first meet the body (modelled pose), null if they
- * meet nothing at all.
+ * meet nothing at all. `waist`: the hole is shut in by the shirt and the shorts or skirt together, touching both, so a line runs clean
+ * through the body between them (a gap between limbs isn't shut in by cloth: below a sleeve it's open past bare arm). `core`: how near
+ * the hole's rays pass to the line `axis` (m): a hem hung forward off a bent body and a raised thigh shut in some air in front of the
+ * belly, which is no way through the body.
  */
-function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: boolean): { size: number; at: number[] | null }[] {
+function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: boolean, axis?: THREE.Vector3[]): { size: number; at: number[] | null; waist: boolean; core: number }[] {
   const g = p.geometry, rest = g.getAttribute('position').array as Float32Array, A = g.getAttribute('bodyA').array as Float32Array;
   const cut = personCut(p);
   const up = [0, 1, 0];
@@ -47,7 +50,7 @@ function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: bool
   }
   u0 -= 3 * GRID; v0 -= 3 * GRID;
   const nu = Math.ceil((u1 + 3 * GRID - u0) / GRID) + 1, nv = Math.ceil((v1 + 3 * GRID - v0) / GRID) + 1;
-  const undrawn = new Uint8Array(nu * nv), drawn = new Uint8Array(nu * nv), shirt = new Uint8Array(nu * nv), near = new Float32Array(nu * nv).fill(Infinity), first = new Float32Array(nu * nv * 3);
+  const undrawn = new Uint8Array(nu * nv), drawn = new Uint8Array(nu * nv), shirt = new Uint8Array(nu * nv), bottom = new Uint8Array(nu * nv), near = new Float32Array(nu * nv).fill(Infinity), first = new Float32Array(nu * nv * 3);
   const f = p.look!.face!;
   const tris = [...f.bodyIndex, ...Array.from(f.index, (i) => f.verts[i]!)];
   for (let t = 0; t < tris.length; t += 3) {
@@ -67,6 +70,7 @@ function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: bool
       const depth = l0 * D[i0]! + l1 * D[i1]! + l2 * D[i2]!;
       if (depth < near[id]!) { near[id] = depth; first[id * 3] = x; first[id * 3 + 1] = y; first[id * 3 + 2] = z; }
       if (mix(A, 4, 0) > 0.5) shirt[id] = 1;
+      if (mix(A, 4, 1) > 0.5) bottom[id] = 1;
       if (cut(x, y, z, mix(A, 4, 0), mix(A, 4, 2))) continue; // (a part that is cut away is no part of the outline)
       if (front || both) drawn[id] = 1;
       else undrawn[id] = 1;
@@ -80,21 +84,41 @@ function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: bool
     const k = open.pop()!, c = k % nu;
     for (const o of [c > 0 ? k - 1 : -1, c < nu - 1 ? k + 1 : -1, k - nu, k + nu]) if (o >= 0 && o < out.length && !shirt[o] && !out[o]) { out[o] = 1; open.push(o); }
   }
+  // The same outline with the shorts or skirt in it.
+  const outCloth = new Uint8Array(nu * nv);
+  open.push(0);
+  outCloth[0] = 1;
+  while (open.length) {
+    const k = open.pop()!, c = k % nu;
+    for (const o of [c > 0 ? k - 1 : -1, c < nu - 1 ? k + 1 : -1, k - nu, k + nu]) if (o >= 0 && o < out.length && !shirt[o] && !bottom[o] && !outCloth[o]) { outCloth[o] = 1; open.push(o); }
+  }
   const seen = new Uint8Array(nu * nv);
-  const found: { size: number; at: number[] | null }[] = [];
-  const hole = (k: number): boolean => !drawn[k] && (!!undrawn[k] || !shirt[k] && !out[k]);
+  const found: { size: number; at: number[] | null; waist: boolean; core: number }[] = [];
+  // The axis on the image, for how near a ray at (c, r) passes it.
+  const ends = (axis ?? []).map((e) => [e.x * u[0]! + e.y * u[1]! + e.z * u[2]!, e.x * v[0]! + e.y * v[1]! + e.z * v[2]!] as [number, number]);
+  const toAxis = (c: number, r: number): number => {
+    if (ends.length < 2) return Infinity;
+    const [a, b] = ends as [[number, number], [number, number]], x = u0 + c * GRID - a[0], y = v0 + r * GRID - a[1], ex = b[0] - a[0], ey = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, (x * ex + y * ey) / (ex * ex + ey * ey || 1)));
+    return Math.hypot(x - t * ex, y - t * ey);
+  };
+  const hole = (k: number): boolean => !drawn[k] && (!!undrawn[k] || !shirt[k] && !out[k] || !shirt[k] && !bottom[k] && !outCloth[k]);
   for (let s = 0; s < seen.length; s++) {
     if (seen[s] || !hole(s)) continue;
     const stack = [s];
     seen[s] = 1;
-    let size = 0, hit = 0, mx = 0, my = 0, mz = 0;
+    let size = 0, hit = 0, mx = 0, my = 0, mz = 0, byShirt = false, byBottom = false, core = Infinity;
     while (stack.length) {
       const k = stack.pop()!, c = k % nu;
       size++;
+      core = Math.min(core, toAxis(c, Math.floor(k / nu)));
       if (near[k]! < Infinity) { hit++; mx += first[k * 3]!; my += first[k * 3 + 1]!; mz += first[k * 3 + 2]!; }
-      for (const o of [c > 0 ? k - 1 : -1, c < nu - 1 ? k + 1 : -1, k - nu, k + nu]) if (o >= 0 && o < seen.length && !seen[o] && hole(o)) { seen[o] = 1; stack.push(o); }
+      for (const o of [c > 0 ? k - 1 : -1, c < nu - 1 ? k + 1 : -1, k - nu, k + nu]) {
+        if (o < 0 || o >= seen.length) continue;
+        if (hole(o)) { if (!seen[o]) { seen[o] = 1; stack.push(o); } } else { byShirt ||= !!shirt[o]; byBottom ||= !!bottom[o]; }
+      }
     }
-    found.push({ size, at: hit ? [mx / hit, my / hit, mz / hit] : null });
+    found.push({ size, at: hit ? [mx / hit, my / hit, mz / hit] : null, waist: byShirt && byBottom && hit === 0, core });
   }
   return found;
 }
@@ -239,4 +263,67 @@ describe('kit', () => {
       });
     }
   }, 120_000);
+
+  it('opens no way through the waist as a hem swings', () => {
+    const CLOTH_MAX = 0.05; // (avatar.ts)
+    const CORE = 0.08; // (inside the hips: the way p8's waist opened on a hem that slid ran within 3 cm of the axis, the air in front of a belly 9 cm or more off it)
+    const bad: string[] = [];
+    for (const p of base.people) {
+      const g = p.geometry, rest = g.getAttribute('position').array as Float32Array, A = g.getAttribute('bodyA').array as Float32Array;
+      const n = rest.length / 3, tris = p.look!.face!.bodyIndex, sway = personSway(p);
+      const weldAt = new Map<string, number>(), weld = new Int32Array(n);
+      for (let i = 0; i < n; i++) {
+        const key = `${Math.round(rest[i * 3]! * 2e4)},${Math.round(rest[i * 3 + 1]! * 2e4)},${Math.round(rest[i * 3 + 2]! * 2e4)}`;
+        weld[i] = weldAt.get(key) ?? (weldAt.set(key, i), i);
+      }
+      // The most bent moments of a rally: a lean is what turned a lag up the body.
+      const bent: { lean: number; pos: Float32Array; axis: THREE.Vector3[] }[] = [];
+      const v = new THREE.Vector3(), hips = new THREE.Vector3(), neck = new THREE.Vector3();
+      let next = 0.5;
+      runAnimQa(p, { seed: 14601, seconds: 6, lefty: [], onFrame: (m, av) => {
+        if (m.time < next) return;
+        next += 0.25;
+        for (const raw of av) {
+          const a = raw as unknown as { mesh: THREE.SkinnedMesh; refreshSkin(): void };
+          a.refreshSkin();
+          a.mesh.worldToLocal(a.mesh.skeleton.getBoneByName('Hips')!.getWorldPosition(hips));
+          a.mesh.worldToLocal(a.mesh.skeleton.getBoneByName('Neck')!.getWorldPosition(neck));
+          const lean = Math.acos(neck.clone().sub(hips).normalize().y);
+          if (bent.length === 2 && lean <= bent[1]!.lean) continue;
+          const pos = new Float32Array(n * 3);
+          for (let i = 0; i < n; i++) a.mesh.getVertexPosition(i, v).toArray(pos, i * 3);
+          bent.push({ lean, pos, axis: [hips.clone(), neck.clone()] });
+          bent.sort((x, y) => y.lean - x.lean);
+          bent.length = Math.min(2, bent.length);
+        }
+      } });
+      expect(bent[0]!.lean).toBeGreaterThan(0.25);
+      for (const { pos, axis } of bent) {
+        const normal = new Float32Array(n * 3);
+        const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+        for (let t = 0; t < tris.length; t += 3) {
+          const i0 = tris[t]!, i1 = tris[t + 1]!, i2 = tris[t + 2]!;
+          a.fromArray(pos, i0 * 3); b.fromArray(pos, i1 * 3); c.fromArray(pos, i2 * 3);
+          b.sub(a); c.sub(a); b.cross(c);
+          for (const i of [i0, i1, i2]) for (let k = 0; k < 3; k++) normal[weld[i]! * 3 + k] = normal[weld[i]! * 3 + k]! + b.getComponent(k);
+        }
+        for (const lag of [[CLOTH_MAX, 0, 0], [-CLOTH_MAX, 0, 0], [0, 0, CLOTH_MAX], [0, 0, -CLOTH_MAX]]) {
+          const d = new THREE.Vector3(...(lag as [number, number, number]));
+          const moved = pos.slice();
+          for (let i = 0; i < n; i++) {
+            const k = sway(i);
+            if (k <= 0 || A[i * 4]! + A[i * 4 + 1]! < 0.5) continue;
+            const no = a.fromArray(normal, weld[i]! * 3).normalize();
+            const push = hemPush(d, k, no);
+            moved[i * 3] = moved[i * 3]! + push.x; moved[i * 3 + 1] = moved[i * 3 + 1]! + push.y; moved[i * 3 + 2] = moved[i * 3 + 2]! + push.z;
+          }
+          for (const dir of ring([-12, 8])) {
+            const through = holes(p, moved, dir, true, axis).filter((h) => h.waist && h.size >= 3 && h.core < CORE);
+            if (through.length) bad.push(`${p.look!.kit.top} ${p.look!.kit.bottom} ${n} lag ${lag} from ${dir.map((x) => x.toFixed(1))}: ${through.map((h) => `${h.size} rays ${h.core.toFixed(3)} m off the axis`)}`);
+          }
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  }, 300_000);
 });

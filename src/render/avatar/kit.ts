@@ -30,15 +30,21 @@ const REGIONS = new WeakMap<PlayerAsset, Float32Array>();
 
 /** Bind-pose landmarks the shader's masks are placed by (metres, model space; the model faces +z). */
 /**
- * The hems' lag as a displacement, less any part of it into the body (REVIEW.md round 3: a lag pointing into the
- * back, as the player pulled up or turned, put the shirt's hem behind the shorts in face-sized steps, and where the
- * skin under it is removed the court showed through). `normalLocal` is the skinned normal here (three skins
- * positionLocal and normalLocal before positionNode runs).
+ * The hems' lag as a displacement: the part of it that carries the cloth off the body, along the cloth's own normal, and no more. The
+ * part into the body would put the hem behind the shorts (REVIEW.md round 3). The part along the surface slid a hem off the end of what
+ * is under it: on a back leaning over, a lag into it runs 5 cm x sin(lean) up the spine, past the 0-2 cm of shorts p8 has under her
+ * shirt, and the court showed through the waist (round 8). The hem still swings: a ring pushed out by a cos(angle) is near enough the
+ * ring moved by a, and its outline goes 4.2-4.8 cm on a 5 cm lag. `normalLocal` is the skinned normal here (three skins positionLocal
+ * and normalLocal before positionNode runs).
  */
 function hemLag(lag: THREE.Node<'vec3'>, sway: THREE.Node<'float'>): THREE.Node<'vec3'> {
-  const d = lag.mul(sway);
   const n = normalLocal.normalize();
-  return positionLocal.add(d.sub(n.mul(min(dot(d, n), 0))));
+  return positionLocal.add(n.mul(max(dot(lag.mul(sway), n), 0)));
+}
+
+/** `hemLag` in plain numbers, for a test: how far a vertex with normal `n` moves at a lag of `lag` times `sway`. */
+export function hemPush(lag: THREE.Vector3, sway: number, n: THREE.Vector3): THREE.Vector3 {
+  return n.clone().multiplyScalar(Math.max(lag.dot(n) * sway, 0));
 }
 
 export interface KitFrame {
@@ -303,6 +309,8 @@ class SkinLighting extends THREE.PhysicalLightingModel {
 const SKIN_WRAP = 0.55;
 /** How dark the inside of the cloth is: it sits in the body's shadow, and no bake covers it. */
 const BODY_INSIDE = 0.3;
+/** The same for a skirt, a fold's own shade: a thigh pushes a skirt through itself, its back comes out in front, and at 0.3 that was a dark slash on white cloth. */
+const SKIRT_INSIDE = 0.75;
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
 const FOLD_DEPTH = 1;
 const BIB_PLAIN = 0.9;
@@ -443,7 +451,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const underShirt = smoothstep(-UNDER_NECKLINE, -UNDER_NECKLINE - 0.0005, collarY).mul(smoothstep(nk.z - 0.01, nk.z - 0.005, p.z))
     .mul(smoothstep(0.1, 0.09, collarX.abs())).mul(smoothstep(nk.y - 0.3, nk.y - 0.28, p.y)).mul(skinW);
   // The collar's ribbed band in the kit's second colour, right round: the back of the neck is the shirt's own edge.
-  const backBand = smoothstep(float(frame.backTop ?? 9).sub(COLLAR_RIB + 0.002), float(frame.backTop ?? 9).sub(COLLAR_RIB), p.y).mul(step(p.z, nk.z - 0.02)).mul(shirtW);
+  // (round the neck only: past the neck the shirt's top is the shoulder, and a level band ran out along it in dark wings)
+  const backBand = smoothstep(float(frame.backTop ?? 9).sub(COLLAR_RIB + 0.002), float(frame.backTop ?? 9).sub(COLLAR_RIB), p.y).mul(step(p.z, nk.z - 0.02)).mul(shirtW)
+    .mul(smoothstep(COLLAR_BACK + 0.002, COLLAR_BACK, collarX.abs()));
   const rib = float(0.9).add(p.x.mul(900).sin().mul(0.08));
   col = mix(col, color(look.trim).mul(ao).mul(rib), smoothstep(0.465, 0.475, neckline).add(backBand).min(1));
   // Twin-needle hems on the shirt's waist and sleeves, a slim stitched line a little in from each edge; a towelling band
@@ -465,7 +475,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // shadow map is drawn from the same faces as ever.
   m.side = THREE.DoubleSide;
   m.shadowSide = THREE.BackSide;
-  col = col.mul(mix(float(BODY_INSIDE), float(1), faceDirection.mul(0.5).add(0.5)));
+  col = col.mul(mix(mix(float(BODY_INSIDE), float(SKIRT_INSIDE), smoothstep(0, 0.1, hang)), float(1), faceDirection.mul(0.5).add(0.5)));
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
@@ -703,6 +713,16 @@ export function personCut(asset: PlayerAsset): (x: number, y: number, z: number,
   };
 }
 
+/** `personMaterial`'s sway in plain numbers, for a test: how much of the lag moves vertex `i`, by its modelled height. */
+export function personSway(asset: PlayerAsset): (i: number) => number {
+  const frame = personFrame(asset), g = asset.geometry;
+  const pos = g.getAttribute('position').array as Float32Array, A = g.getAttribute('bodyA').array as Float32Array, X = g.getAttribute('bodyX').array as Float32Array;
+  return (i) => {
+    const y = pos[i * 3 + 1]!, shirtW = A[i * 4]!, shortsW = A[i * 4 + 1]!;
+    return edge(frame.chest.y, frame.hemY, y) * shirtW + edge(frame.hips.y - 0.05, frame.shortsHemY, y) * shortsW * 0.6 * (X[i * 4]! * shortsW < 0.001 ? 1 : 0);
+  };
+}
+
 const PERSON_FRAMES = new WeakMap<PlayerAsset, KitFrame>();
 /** How far below the Neck joint (m, rest pose) the shirt's front is cut. */
 const COLLAR_DROP = 0.065;
@@ -713,6 +733,8 @@ const COLLAR_MID = 0.5;
 const COLLAR_SCALE = 2.5;
 /** The ribbed band's width round the back of the neck; the cuff's, the armhole's binding; the placket's length (m). */
 const COLLAR_RIB = 0.016;
+/** How far out from the spine that band goes (m): where the neck hole turns forward, as the neckline's sides rise level with the neck. */
+const COLLAR_BACK = 0.08;
 const CUFF = 0.016;
 const PLACKET = 0.085;
 /** The side panel's half width over the ribs at the arm and at the hem; the chest's marks in from the middle and up from the Spine2 joint (m). */
@@ -760,7 +782,9 @@ function personFrame(asset: PlayerAsset): KitFrame {
   for (let i = 0; i < n0; i++) {
     const x = rest[i * 3]! - neck.x, y = rest[i * 3 + 1]!, z = rest[i * 3 + 2]! - neck.z;
     if (A[i * 4 + 2]! > 0.5) {
-      const d = Math.hypot(x, y - neck.y - 0.05, z - 0.055);
+      // (the throat's base, low and off the middle: 5 cm over the joint was under the chin, and on half the cast the blur took
+      // in the lip, which turned the chest in the collar salmon)
+      const d = Math.hypot(Math.abs(x) - 0.02, y - neck.y + 0.02, z - 0.06);
       if (d < neckD) { neckD = d; neckV = i; }
     }
     if (A[i * 4]! < 0.5 || z < 0.01 || Math.abs(x) >= COLLAR_BINS * COLLAR_BIN) continue;
