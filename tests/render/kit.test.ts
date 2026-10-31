@@ -97,10 +97,13 @@ function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: bool
   // The axis on the image, for how near a ray at (c, r) passes it.
   const ends = (axis ?? []).map((e) => [e.x * u[0]! + e.y * u[1]! + e.z * u[2]!, e.x * v[0]! + e.y * v[1]! + e.z * v[2]!] as [number, number]);
   const toAxis = (c: number, r: number): number => {
-    if (ends.length < 2) return Infinity;
-    const [a, b] = ends as [[number, number], [number, number]], x = u0 + c * GRID - a[0], y = v0 + r * GRID - a[1], ex = b[0] - a[0], ey = b[1] - a[1];
-    const t = Math.max(0, Math.min(1, (x * ex + y * ey) / (ex * ex + ey * ey || 1)));
-    return Math.hypot(x - t * ex, y - t * ey);
+    let best = Infinity;
+    for (let i = 0; i + 1 < ends.length; i++) {
+      const a = ends[i]!, b = ends[i + 1]!, x = u0 + c * GRID - a[0], y = v0 + r * GRID - a[1], ex = b[0] - a[0], ey = b[1] - a[1];
+      const t = Math.max(0, Math.min(1, (x * ex + y * ey) / (ex * ex + ey * ey || 1)));
+      best = Math.min(best, Math.hypot(x - t * ex, y - t * ey));
+    }
+    return best;
   };
   const hole = (k: number): boolean => !drawn[k] && (!!undrawn[k] || !shirt[k] && !out[k] || !shirt[k] && !bottom[k] && !outCloth[k]);
   for (let s = 0; s < seen.length; s++) {
@@ -278,7 +281,7 @@ describe('kit', () => {
       }
       // The most bent moments of a rally: a lean is what turned a lag up the body.
       const bent: { lean: number; pos: Float32Array; axis: THREE.Vector3[] }[] = [];
-      const v = new THREE.Vector3(), hips = new THREE.Vector3(), neck = new THREE.Vector3();
+      const v = new THREE.Vector3(), hips = new THREE.Vector3(), neck = new THREE.Vector3(), mid = new THREE.Vector3(), chest = new THREE.Vector3();
       let next = 0.5;
       runAnimQa(p, { seed: 14601, seconds: 6, lefty: [], onFrame: (m, av) => {
         if (m.time < next) return;
@@ -292,7 +295,11 @@ describe('kit', () => {
           if (bent.length === 2 && lean <= bent[1]!.lean) continue;
           const pos = new Float32Array(n * 3);
           for (let i = 0; i < n; i++) a.mesh.getVertexPosition(i, v).toArray(pos, i * 3);
-          bent.push({ lean, pos, axis: [hips.clone(), neck.clone()] });
+          // (along the spine, not from hips to neck: a body carrying its weight bends, and the air in front of a belly
+          // came inside CORE of the chord)
+          a.mesh.worldToLocal(a.mesh.skeleton.getBoneByName('Spine1')!.getWorldPosition(mid));
+          a.mesh.worldToLocal(a.mesh.skeleton.getBoneByName('Spine2')!.getWorldPosition(chest));
+          bent.push({ lean, pos, axis: [hips.clone(), mid.clone(), chest.clone(), neck.clone()] });
           bent.sort((x, y) => y.lean - x.lean);
           bent.length = Math.min(2, bent.length);
         }

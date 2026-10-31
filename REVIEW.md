@@ -321,7 +321,7 @@ exist, and 6000 points on unseen seeds for the sim.
 | 1 | High | P: the lobbed net player backpedals square to the net | NEW | **Fixed.** Going back over 2 m/s, chest under 40 degrees from square 70.2 to 9.5% (men), 8.0 (women); side-on 28 to 66 |
 | 2 | High | C: the bodies carry no weight | NEW | **Fixed.** Feet to head starting / steady / braking 18.0 / 17.3 / 16.6 to 30.5 / 19.3 / 11.2. A hard stop still doesn't lean back |
 | 3 | High | P: women's overheads don't finish | REPEAT, not a regression | **Fixed.** `women.smashEffort` 0.85. Seeds 9101+, 6000 points: smash W 9.6 to 30.0 (29-33), seconds 17.0 to 16.0, W / FE / UE 28.2 / 32.5 / 39.3 to 31.7 / 31.0 / 37.3 (30-36 / 28-32 / 35-37). Volleys still take 43% of winners; the serving pair 61 (48.5) |
-| 4 | High | C: the people don't look human close up | REPEAT | Open. The kit, hair and shoes pass is under way; faces past 312 texels need MetaHuman (`OPEN_QUESTIONS.md`) |
+| 4 | High | C: the people don't look human close up | REPEAT | Better, still open. Ten different heads of hair, a pair of shoes each, no holes in the kit from any game camera. Faces past 312 texels need MetaHuman (`OPEN_QUESTIONS.md`) |
 | 5 | Medium | P #2: only a lob moves a net pair (verifier lowered it from High) | | Open |
 | 6 | Medium | C #7: pops of 15 degrees or more doubled | REGRESSION, proven | **Fixed.** 4.83 to 2.1 a player-minute (2.28 before the movement pass), all pops 24.8 to 13. Direction weights eased, warp rate-limited |
 | 7 | Medium | C #8: the walk back is a retimed jog | | **Fixed.** Drawn feet, turned to where they are going: forwards 13 to 67%, both feet off 21 to 4.3%, footsteps 5.25 to about 2 a second. No pelvis twist yet |
@@ -331,8 +331,9 @@ exist, and 6000 points on unseen seeds for the sim.
 | 11 | Medium | C #6: the arm flicks straight on the way back | | **Better.** Flicks of 25 degrees: serve 69 to 45%, volley 71 to 49, slice 57 to 38; the measure's window also catches the next stroke |
 | 12 | Medium | C #11, #12: quiet mix, silent replays | REPEAT | **Better.** 12 dB lift (calculated: rally -33, all -28, peak -4; not retapped). Replays play the point, pitched down. No voice on court |
 | 13 | Medium | P #9, #11, C #9, #10: forehand coil late, víbora body, smash arc | | Open |
-| 14 | Medium | P #4-7, #12, #13, #17; C #13-25 | | Open, except the kit's below |
-| 15 | Medium | C: p10's tank holes, p3's polo sliver (verifier) | NEW | In the kit pass |
+| 14 | Medium | P #4-7, #12, #13, #17; C #13, #15-25 | | Open |
+| 15 | Medium | C: p10's tank holes, p3's polo sliver (verifier) | NEW | **Fixed.** p7 had the same fault. The pass found four more: p8's hips open to the court in play, wings on the back band, a salmon chest in the collar, dark skirt streaks. 7 of about 8,640 probe views still leak, all from 65 degrees above the player with the hair hidden, which no game camera does |
+| 16 | Medium | C #14: ten people, one pair of shoes, six haircuts | | **Better.** All ten heads differ, each person has their own shoe and sole colour. It is still one trainer mesh |
 | 40+ | Low | P #19-30, C #26-30 | | Open |
 
 Earlier statuses corrected by round 8 (verifier):

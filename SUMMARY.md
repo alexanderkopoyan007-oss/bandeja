@@ -647,6 +647,15 @@ glass. A defender now sets up slightly off the spot until the ball has come off 
 Balls leaving the court are still far short (6 against 17), rallies still have too few short points (45.7% over 11 s against 26), and
 double-bounce winners now overshoot by 5.
 
+### Review round 8 (`REVIEW.md`)
+Two new Highs (the lobbed player's backpedal, bodies with no weight), two repeats at High (women's overheads, faces close up) and a proven
+Medium regression (pops doubled). Three of the four Highs fixed and the regression gone. The people close up stay High: better, and limited by the source.
+- **Women's matches.** One value, `women.smashEffort` 0.85, a stale fit. Verified on seeds the agent didn't use (9101+, 6000 points): smash W 9.6 to 30.0
+  (tour 29-33), 17.0 to 16.0 s a point, W / FE / UE 28.2 / 32.5 / 39.3 to 31.7 / 31.0 / 37.3 (30-36 / 28-32 / 35-37). Volleys still take 43% of winners.
+- **Kit.** Tanks, the polo, p8's hips and all ten heads and shoes (`DECISIONS.md`).
+- **Sound.** 12 dB louder; replays have sound.
+- **Performance.** Before the kit merge, paired at load 9-14: medium p99 17.9 to 15.9 ms, high 20.7 to 18.6, so no cost from the movement work.
+
 ### How they move, round 8 (31 Oct)
 The owner named four worst parts. This is the third, how they move. Before | after, same seeds:
 

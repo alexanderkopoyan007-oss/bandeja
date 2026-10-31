@@ -386,3 +386,15 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   MetaHuman mesh goes in the public repo: the owner's decision (`docs/research/` has nothing that overrides Epic's own text).
 - **Teeth at a grunt on WebGPU.** The colour was fixed by reading it in WebGL. Settled by: a real-Chrome shot of a smash, face camera.
 - **Groundstrokes on video.** Still not measured: a clean side-on clip of drives at a known frame rate.
+
+## Phase 9 (expert review: round 8)
+- **The faces, still.** The launcher has `metahuman_content` on its install list, and nothing downloads until the owner presses Install in the Epic Games
+  Launcher (the prompt comes from `open 'com.epicgames.launcher://apps/ue%3A18b3b415bc434c5b974f50488360ca31%3AUE_5.8?action=install'`, and times out after
+  ten minutes). Then one Epic sign-in in the editor. Settled by: those two clicks, then the licence decision before any MetaHuman mesh goes in the public repo.
+  If it is dropped, restore the launcher's `.item` file, because "incomplete" may stop the editor launching.
+- **How loud the mix is now.** The 12 dB lift is arithmetic on round 7's tap, which returned nothing in round 8. Settled by: a tap of 60 s at default volume, or one
+  person's ears on laptop speakers.
+- **Replay sound by ear.** Tested as a list of what plays and at what pitch. Settled by: watching one replay with sound on.
+- **The walk in motion.** Measured foot by foot, not watched on a screen in full speed. Settled by: a minute of watching between points.
+- **WebGL's kit.** The hole scans ran on both backends, but only WebGPU frames were looked at. Settled by: one shot of each person on WebGL.
+- **The women's smash speed.** 117 km/h is a fit to how it ends points: no tour woman's speed is in our sources. Settled by: radar figures from a women's tour match.
