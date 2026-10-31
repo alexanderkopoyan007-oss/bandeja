@@ -20,7 +20,8 @@
   "eye_colour": "brown",
   "eyebrows": "eyebrow002",
   "eyelashes": "eyelashes01",
-  "hair": "short04",
+  "hair": "short03",
+  "hair_tone": [0.42, 0.38, 0.36],
   "clothes": [
     "male_casualsuit06",
     "shoes05"
@@ -28,6 +29,8 @@
   "shorts": 0.66,
   "height": 1.82,
   "kit": {
+    "shoes": "#f3f2ee",
+    "sole": "#8a8378",
     "top": "tee",
     "bottom": "shorts",
     "mark": 1,

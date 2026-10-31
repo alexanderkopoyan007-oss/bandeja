@@ -28,6 +28,8 @@
   "shorts": 0.735,
   "height": 1.71,
   "kit": {
+    "shoes": "#e9b9ae",
+    "sole": "#f0ece4",
     "top": "tank",
     "bottom": "pleated",
     "skirt": 0.695,

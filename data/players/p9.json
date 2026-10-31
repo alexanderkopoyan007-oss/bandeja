@@ -20,12 +20,9 @@
   "eye_colour": "brownlight",
   "eyebrows": "eyebrow009",
   "eyelashes": "eyelashes01",
-  "hair": "ponytail01",
-  "hair_tone": [
-    0.3,
-    0.3,
-    0.32
-  ],
+  "hair": "long01",
+  "hair_tone": [0.38, 0.36, 0.37],
+  "hair_trim": 0.025,
   "clothes": [
     "female_casualsuit01",
     "shoes05"
@@ -33,6 +30,8 @@
   "shorts": 0.71,
   "height": 1.66,
   "kit": {
+    "shoes": "#63b4c6",
+    "sole": "#f0ece4",
     "top": "tee",
     "bottom": "aline",
     "skirt": 0.665,
