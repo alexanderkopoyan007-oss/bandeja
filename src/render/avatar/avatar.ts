@@ -30,6 +30,7 @@ import {
 const UP = new THREE.Vector3(0, 1, 0);
 const AXIS_Y = new THREE.Vector3(0, 1, 0);
 const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
 
 const v1 = new THREE.Vector3();
 const v2 = new THREE.Vector3();
@@ -511,8 +512,37 @@ const WARP_BAND = 0.1;
 const SIDE_RUN_ON = 2.6;
 const SIDE_RUN_OFF = 2.1;
 const SIDE_RUN_MAX = 1.35;
+/** How quickly the direction clips' weights follow the way of travel (s). */
+const CYCLE_EASE = 0.06;
 /** Most the spine turns back against the legs' warp (rad); past it the chest turns with the hips. */
 const WARP_SPINE_MAX = Math.PI / 4;
+/**
+ * The run back for a ball going over or past: side-on, shoulder to the net, not backpedalling square. Turns the
+ * stance RETREAT_TURN (the overhead's own take-back) as the player goes back between RETREAT_V0 and RETREAT_V1 (m/s). The
+ * spine may turn back RETREAT_SPINE more against the legs running away. A lobbed net player's chest was 13-17 degrees
+ * from square for the first second (review round 8, the pro's #1).
+ */
+const RETREAT_TURN = 1.25;
+const RETREAT_V0 = 0.8;
+const RETREAT_V1 = 1.8;
+const RETREAT_SPINE = 0.5;
+const RETREAT_IN = 0.09;
+const RETREAT_OUT = 0.22;
+/**
+ * The body's weight: the player tilts towards their acceleration from the ankles, hips over the driving foot and behind
+ * a braking one, and the trunk goes with it. LEAN_GAIN rad per m/s² (physics' atan(a/g) is 0.1), at most LEAN_MAX, on a
+ * spring (LEAN_W rad/s, damping LEAN_Z) so it lags the push and settles. LEAN_TRUNK of the angle again in the spine,
+ * LEAN_STROKE of it gone in a stroke, whose keys lean for themselves. Trunk and body answered at 3% of physics, the same
+ * in a start, a steady run and a hard stop (review round 8, the critic's #1).
+ */
+const LEAN_GAIN = 0.055;
+const LEAN_MAX = 0.36;
+const LEAN_W = 13;
+const LEAN_Z = 0.62;
+const LEAN_TRUNK = 1;
+const LEAN_STROKE = 0.7;
+const LEAN_HAND = 0.25;
+const LEAN_SIDE = 0.4;
 /** How fast the chest turns with the hips into a side-on run and back out of it (rad/s): switched at once, the
  * chest, arms and head jumped up to 45 degrees in a frame. */
 const WARP_CHEST_RATE = 3.5;
@@ -616,6 +646,10 @@ export class Avatar {
   /** Bits: 1 foot locks, 2 soles kept above the floor (for comparisons). */
   static feetMask = 3;
   private readonly cycleW = new Float64Array(5);
+  private readonly cycleTo = new Float64Array(5);
+  private cycleOk = false;
+  private warpShown = 0;
+  private warpShownOk = false;
   /** Orientation warp (rad): how far the legs turn from the playing clip's direction onto the body's travel. */
   private warp = 0;
   /** Running side-on (SIDE_RUN_ON). */
@@ -771,6 +805,18 @@ export class Avatar {
   /** Hips pushed towards a ball out of reach (world x, z). */
   private reachX = 0;
   private reachZ = 0;
+  /** The weight's tilt (rad, towards world x and z) and its rate; last frame's filtered velocity. */
+  private tiltX = 0;
+  private tiltZ = 0;
+  private hipTiltX = 0;
+  private hipTiltZ = 0;
+  private tiltVX = 0;
+  private tiltVZ = 0;
+  private lastVX = 0;
+  private lastVZ = 0;
+  private tiltOk = false;
+  /** How far into the run back (0-1), and the spine's extra room for it. */
+  private retreat = 0;
 
   // Scratch per avatar.
   private readonly footL = new THREE.Vector3();
@@ -1549,6 +1595,7 @@ export class Avatar {
     const k = dt > 0 ? 1 - Math.exp(-dt / 0.08) : 1;
     this.vx += (p.vel.x - this.vx) * k;
     this.vz += (p.vel.z - this.vz) * k;
+    this.carryWeight();
     // Velocity in the model's frame (+z forward, +x its left).
     const c = Math.cos(yRoot), s = Math.sin(yRoot);
     const mx = this.vx * c - this.vz * s;
@@ -1599,10 +1646,20 @@ export class Avatar {
       const lim = WARP_SWITCH_RATE * this.dt, o = this.warpOff;
       this.warpOff = o > lim ? o - lim : o < -lim ? o + lim : 0;
       this.warp -= this.warpOff;
+      // Nor anywhere else: a clip's edge at a shuffle stepped it 20 degrees in a frame.
+      const d = this.warp - this.warpShown;
+      if (this.warpShownOk && lim > 0) this.warp = this.warpShown + (d > lim ? lim : d < -lim ? -lim : d);
+      this.warpShown = this.warp;
+      this.warpShownOk = true;
     }
     const run = smoothstep(2.6, 4.4, sp);
-    const W = this.cycleW;
-    W[0] = wf * (1 - run); W[1] = wf * run; W[2] = wl; W[3] = wb; W[4] = wr;
+    // Eased: the way of travel can swing through a clip's edge in two frames at a shuffle, and the chest of one clip
+    // isn't the chest of the next (the shoulders jumped 6 cm in a frame, both elbows 15-26 degrees).
+    const W = this.cycleW, Wt = this.cycleTo;
+    Wt[0] = wf * (1 - run); Wt[1] = wf * run; Wt[2] = wl; Wt[3] = wb; Wt[4] = wr;
+    const ease = this.cycleOk && dt > 0 ? 1 - Math.exp(-dt / CYCLE_EASE) : 1;
+    this.cycleOk = true;
+    for (let i = 0; i < 5; i++) W[i] = W[i]! + (Wt[i]! - W[i]!) * ease;
     // One shared phase: advance it by distance over the blended stride, capped so the legs never spin.
     let dist = 0, per = 0;
     const cy = this.clips.cycle;
@@ -1643,6 +1700,32 @@ export class Avatar {
       accumulate(acc, tmp);
     }
     normalize(acc);
+  }
+
+  /** The tilt's spring on this frame's acceleration (LEAN_*). */
+  private carryWeight(): void {
+    const dt = this.dt;
+    if (!this.tiltOk || dt <= 0) {
+      this.tiltOk = dt > 0 || this.tiltOk;
+      this.lastVX = this.vx;
+      this.lastVZ = this.vz;
+      return;
+    }
+    const ax = (this.vx - this.lastVX) / dt, az = (this.vz - this.lastVZ) / dt;
+    this.lastVX = this.vx;
+    this.lastVZ = this.vz;
+    let tx = ax * LEAN_GAIN, tz = az * LEAN_GAIN;
+    const t = Math.sqrt(tx * tx + tz * tz);
+    if (t > LEAN_MAX) { tx *= LEAN_MAX / t; tz *= LEAN_MAX / t; }
+    const h = dt < 0.02 ? dt : 0.02;
+    const w2 = LEAN_W * LEAN_W, d = 2 * LEAN_Z * LEAN_W;
+    for (let left = dt; left > 1e-6; left -= h) {
+      const u = left < h ? left : h;
+      this.tiltVX += (w2 * (tx - this.tiltX) - d * this.tiltVX) * u;
+      this.tiltVZ += (w2 * (tz - this.tiltZ) - d * this.tiltVZ) * u;
+      this.tiltX += this.tiltVX * u;
+      this.tiltZ += this.tiltVZ * u;
+    }
   }
 
   /** The strafes' warp for direction q (quarter turns from forward), as locomote has it outside a side-on run. */
@@ -1707,6 +1790,16 @@ export class Avatar {
     // (a contrapared is played facing the player's own back glass)
     const face = this.fam.glass ? net + Math.PI : net;
     this.yaw = p.facing + wrapAngle(face - p.facing) * sq;
+    {
+      // Going back with the ball going past: side-on, the stance turned so the hands and the racket go with it, into
+      // the overhead's own turn as the stroke's weight comes in.
+      const side = sim.side(p.team);
+      const past = sim.phase === PH_RALLY && sim.rally.hitter >= 0 && sim.rally.hitter !== p.team && sim.ball.vel.z * side > 0;
+      const to = past ? smoothstep(RETREAT_V0, RETREAT_V1, this.vz * side) : 0;
+      this.retreat += (to - this.retreat) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / (to > this.retreat ? RETREAT_IN : RETREAT_OUT)) : 0);
+      if (this.retreat < 0.001) this.retreat = 0;
+      this.yaw -= this.handed * RETREAT_TURN * this.retreat * (1 - this.w);
+    }
     // Turned towards the partner for the racket tap.
     if (this.tapW > 0.001) this.yaw += wrapAngle(this.tapYaw - this.yaw) * this.tapW * TAP_TURN;
     // The body turns no faster than a person turns (the sim faces the ball at once, even one that has just passed).
@@ -1772,8 +1865,8 @@ export class Avatar {
     // unchanged up to WARP_SPINE_MAX of warp; past it (a side-on run) the chest turns with the hips, no faster than
     // WARP_CHEST_RATE.
     {
-      const wa = this.warp;
-      const want = wa > WARP_SPINE_MAX ? wa - WARP_SPINE_MAX : wa < -WARP_SPINE_MAX ? wa + WARP_SPINE_MAX : 0;
+      const wa = this.warp, room = WARP_SPINE_MAX + RETREAT_SPINE * this.retreat;
+      const want = wa > room ? wa - room : wa < -room ? wa + room : 0;
       const lim = cut ? Math.PI : WARP_CHEST_RATE * dt, d = want - this.chestWarp;
       this.chestWarp += d > lim ? lim : d < -lim ? -lim : d;
     }
@@ -1803,6 +1896,22 @@ export class Avatar {
     if (this.bowW > 0) {
       q2.setFromAxisAngle(AXIS_X, (this.bowW * BOW_ANGLE) / 3);
       for (let k = 0; k < 3; k++) this.spine[k]!.quaternion.multiply(q2);
+    }
+    // The weight in the trunk: forwards about its x, sideways about its z (+z tips it to -x). The neck keeps the head
+    // near level.
+    {
+      const k = LEAN_TRUNK * (1 - LEAN_STROKE * this.w), c = Math.cos(yRoot), s = Math.sin(yRoot);
+      const fw = (this.tiltX * s + this.tiltZ * c) * k, lf = (this.tiltX * c - this.tiltZ * s) * k;
+      // The hips take the sideways part less (LEAN_SIDE): a crossover's thighs are already passing each other.
+      this.hipTiltX = this.tiltX - (1 - LEAN_SIDE) * (this.tiltX * c - this.tiltZ * s) * c;
+      this.hipTiltZ = this.tiltZ + (1 - LEAN_SIDE) * (this.tiltX * c - this.tiltZ * s) * s;
+      if (fw * fw + lf * lf > 1e-6) {
+        q2.setFromAxisAngle(AXIS_X, fw / 3);
+        q1.setFromAxisAngle(AXIS_Z, -lf / 3);
+        for (let j = 0; j < 3; j++) this.spine[j]!.quaternion.multiply(q2).multiply(q1);
+        q2.setFromAxisAngle(AXIS_X, -fw * 0.6);
+        this.neck.quaternion.multiply(q2);
+      }
     }
     // Up out of the idle clip's tennis crouch, the head kept level.
     const up = READY_UP * this.idleW * (1 - this.standW);
@@ -1972,6 +2081,16 @@ export class Avatar {
   private resetInertia(): void {
     this.warpOff = 0;
     this.leanOk = false;
+    this.cycleOk = false;
+    this.warpShownOk = false;
+    this.tiltOk = false;
+    this.tiltX = 0;
+    this.tiltZ = 0;
+    this.hipTiltX = 0;
+    this.hipTiltZ = 0;
+    this.tiltVX = 0;
+    this.tiltVZ = 0;
+    this.retreat = 0;
     this.fadeOk.fill(0);
     this.elbowR.bend[1] = 0;
     this.elbowL.bend[1] = 0;
@@ -2296,8 +2415,13 @@ export class Avatar {
     const room = this.hips.matrixWorld.elements[13]! - HIP_FLOOR;
     if (drop > room) drop = room > 0 ? room : drop < 0 ? drop : 0;
     this.dropShown = drop;
+    // The weight from the ankles: the hips over the driving foot, behind a braking one.
+    const tk = this.legLen * (1 - LEAN_STROKE * this.w);
+    const hipX = this.reachX + this.hipTiltX * tk, hipZ = this.reachZ + this.hipTiltZ * tk;
+    const tilt2 = this.hipTiltX * this.hipTiltX + this.hipTiltZ * this.hipTiltZ;
+    drop += 0.5 * tilt2 * tk;
     const plant = this.plantW >= 0.01;
-    const pushed = Math.abs(this.reachX) + Math.abs(this.reachZ);
+    const pushed = Math.abs(hipX) + Math.abs(hipZ);
 
     this.footL.setFromMatrixPosition(this.legL[2]!.matrixWorld);
     this.footR.setFromMatrixPosition(this.legR[2]!.matrixWorld);
@@ -2331,8 +2455,8 @@ export class Avatar {
     bendFwd.set(s, 0, c);
     bendDir(this.legL[0]!, this.legL[1]!, this.legL[2]!, bendFwd, bendL);
     bendDir(this.legR[0]!, this.legR[1]!, this.legR[2]!, bendFwd, bendR);
-    this.hips.position.x += this.reachX * c - this.reachZ * s;
-    this.hips.position.z += this.reachX * s + this.reachZ * c;
+    this.hips.position.x += hipX * c - hipZ * s;
+    this.hips.position.z += hipX * s + hipZ * c;
     this.hips.position.y -= drop;
     this.hips.updateMatrixWorld(true);
     // Knees bend the way the clip bends them.
@@ -2714,6 +2838,11 @@ export class Avatar {
     alignQ(q1, this.prevFkQ);
     if (this.ready > 0) {
       this.toWorld(ready.p, v2);
+      // The key is placed for a body over its feet: the weight takes the hips and the chest forward of them, and they
+      // came through the racket it left behind (3% of frames).
+      const reach = this.legLen * (1 - LEAN_STROKE * w);
+      v2.x += this.hipTiltX * reach + this.tiltX * LEAN_HAND;
+      v2.z += this.hipTiltZ * reach + this.tiltZ * LEAN_HAND;
       this.quatToWorld(ready.q, q2);
       alignQ(q2, this.prevReadyQ);
       BL.u = this.ready;
