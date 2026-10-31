@@ -453,6 +453,16 @@ const LAND_DROP = 0.06;
 const LAND_TIME = 0.2;
 const FOLLOW = 0.3;
 const FOLLOW_N = 3;
+/** A hip's range (solveLegs): how far round from the hips a foot (rad), and a knee, may point; the knee's least reach out
+ * of the hip-ankle line as a pole; sin of how far a leg goes out to the side, and across the other. */
+const FOOT_OFF_HIPS = (65 * Math.PI) / 180, KNEE_OFF_HIPS = (42 * Math.PI) / 180, KNEE_MIN_OUT = 0.35, KNEE_OUT = 0.14;
+const HIP_OUT = 0.68, HIP_ACROSS = 0.36;
+/** How far under the hips the trunk's ellipse goes (of the hips to the neck). */
+const TRUNK_BELOW = -0.08;
+/** A run's free hand from its shoulder, in arm's lengths: out, up the trunk, forward, and its swing fore and aft. */
+const RUN_HAND_OUT = 0.08, RUN_HAND_UP = -0.62, RUN_HAND_FWD = 0.22, RUN_HAND_SWING = 0.3;
+/** An ankle's range from flat on a square shin, up and pointed (rad). */
+const ANKLE_UP = (34 * Math.PI) / 180, ANKLE_DOWN = (50 * Math.PI) / 180;
 /** How far (m) a volley's way out bows on through the ball. */
 const PUNCH_THROUGH = 0.08;
 /** How long a held pose after a point lasts (s). */
@@ -885,6 +895,13 @@ export class Avatar {
   private readonly gaitYawTo = new Float64Array(2);
   /** Rest pose (model space): feet and toes flat on the floor, toes in their feet, the ankle's height, hips' half-width. */
   private readonly footRestQ = [new THREE.Quaternion(), new THREE.Quaternion()];
+  /** Each foot's way forward, in its own bone. */
+  private readonly footFwd = [new THREE.Vector3(), new THREE.Vector3()];
+  /** Each foot's turn from the hips, last frame (solveLegs). */
+  private readonly footOff = [-0, -0];
+  /** The trunk's half width and depth (outOfTrunk), from the shoulders. */
+  private trunkW = 0.18;
+  private trunkD = 0.115;
   private readonly toeRestQ = [new THREE.Quaternion(), new THREE.Quaternion()];
   private readonly toeRestLocal = [new THREE.Quaternion(), new THREE.Quaternion()];
   private readonly ankleY: number;
@@ -1313,6 +1330,12 @@ export class Avatar {
     for (let f = 0; f < 2; f++) {
       const n = f === 0 ? 'Left' : 'Right';
       asset.restWorld[asset.bone(n + 'Foot')]!.decompose(v1, this.footRestQ[f]!, v2);
+      this.footFwd[f]!.set(0, 0, 1).applyQuaternion(qFoot.copy(this.footRestQ[f]!).invert());
+      if (f === 0) {
+        const sw = v1.setFromMatrixPosition(asset.restWorld[asset.bone('LeftArm')]!).distanceTo(v2.setFromMatrixPosition(asset.restWorld[asset.bone('RightArm')]!));
+        this.trunkW = sw * 0.42;
+        this.trunkD = sw * 0.27;
+      }
       asset.restWorld[asset.bone(n + 'ToeBase')]!.decompose(v1, this.toeRestQ[f]!, v2);
       this.toeRestLocal[f]!.copy(this.footRestQ[f]!).invert().multiply(this.toeRestQ[f]!);
     }
@@ -2912,7 +2935,12 @@ export class Avatar {
     this.hips.position.z += hipX * s + hipZ * c;
     this.hips.position.y -= drop;
     this.hips.updateMatrixWorld(true);
-    // Knees bend the way the clip bends them.
+    // Knees bend the way the clip bends them, turned to the foot; see the limits below.
+    const ml = this.legL[0]!.matrixWorld.elements, mr = this.legR[0]!.matrixWorld.elements;
+    let ox = mr[12]! - ml[12]!, oz = mr[14]! - ml[14]!;
+    const ol = Math.sqrt(ox * ox + oz * oz) || 1;
+    ox /= ol; oz /= ol;
+    const pelvis = Math.atan2(oz, -ox);
     for (let side = 0; side < 2; side++) {
       const leg = side === 0 ? this.legL : this.legR;
       const bd = side === 0 ? bendL : bendR;
@@ -2920,6 +2948,33 @@ export class Avatar {
       // height folded the leg flat, the knee down at the ankle (where its side is undefined). Lowered, not moved.
       const A = side === 0 ? this.footL : this.footR;
       const mh = leg[0]!.matrixWorld.elements;
+      // What a hip lets a leg do. A foot no further round from the hips than FOOT_OFF_HIPS (it pivots as the body turns
+      // over it), the knee over the foot as far as the thigh turns in its socket, the leg no further out or across than
+      // the hip's range: feet were put down and legs swung with nothing asking any of that, and 12% of frames had a knee
+      // more than 55 degrees off its foot.
+      const FQ = side === 0 ? this.footQL : this.footQR;
+      v1.copy(this.footFwd[side]!).applyQuaternion(FQ);
+      // (carried on from last frame's, not taken the short way: a foot right behind the hips went from one limit to the
+      // other in a frame, a 128-degree pop)
+      const wasOff = this.footOff[side]!;
+      let off = wasOff + wrapAngle(wrapAngle(Math.atan2(v1.x, v1.z) - pelvis) - wasOff);
+      this.footOff[side] = off;
+      if (off > FOOT_OFF_HIPS || off < -FOOT_OFF_HIPS) {
+        const to = off > 0 ? FOOT_OFF_HIPS : -FOOT_OFF_HIPS;
+        qWalk.setFromAxisAngle(AXIS_Y, to - off);
+        FQ.premultiply(qWalk);
+        off = to;
+      }
+      const kh = pelvis + (off > KNEE_OFF_HIPS ? KNEE_OFF_HIPS : off < -KNEE_OFF_HIPS ? -KNEE_OFF_HIPS : off) + (side === 0 ? KNEE_OUT : -KNEE_OUT);
+      const br = Math.sqrt(bd.x * bd.x + bd.z * bd.z), bk = br > KNEE_MIN_OUT ? br : KNEE_MIN_OUT;
+      bd.x = Math.sin(kh) * bk;
+      bd.z = Math.cos(kh) * bk;
+      {
+        const ax = A.x - mh[12]!, ay = A.y - mh[13]!, az = A.z - mh[14]!, out = side === 0 ? -1 : 1;
+        const l = (ax * ox + az * oz) * out, d = Math.sqrt(ax * ax + ay * ay + az * az);
+        const most = d * HIP_OUT, least = -d * HIP_ACROSS, back = l > most ? most - l : l < least ? least - l : 0;
+        if (back !== 0) { A.x += ox * out * back; A.z += oz * out * back; }
+      }
       // The pole: the clip's bend direction out from the middle of the hip-to-ankle line as it is now. Out from the
       // clip's own knee it carried where the clip had the foot: a foot put down elsewhere (a step released in front
       // while backpedalling with the hips low) took the pole across the leg and the knee swung round 150-165 degrees
@@ -2938,8 +2993,33 @@ export class Avatar {
         }
       }
       twoBoneIK(leg[0]!, leg[1]!, leg[2]!, A, this.pole, side === 0 ? this.kneeL : this.kneeR, side === 0 ? this.kneeSideL : this.kneeSideR);
-      setWorldQuat(leg[2]!, side === 0 ? this.footQL : this.footQR);
+      setWorldQuat(leg[2]!, FQ);
       leg[2]!.updateMatrixWorld(true);
+      // An ankle's range. The shin past it with the foot flat: the heel comes up, rolling over the ball of the foot, and the
+      // leg is solved again to where that takes the ankle (3-8% of frames were past 40 degrees, 3 in 4 going backwards).
+      // A foot pointed past it comes back up.
+      const mk = leg[1]!.matrixWorld.elements, ma = leg[2]!.matrixWorld.elements;
+      v2.set(mk[12]! - ma[12]!, mk[13]! - ma[13]!, mk[14]! - ma[14]!).normalize();
+      v1.copy(this.footFwd[side]!).applyQuaternion(FQ);
+      const dot = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z, up = Math.PI / 2 - Math.acos(dot < -1 ? -1 : dot > 1 ? 1 : dot);
+      if (up > ANKLE_UP || up < -ANKLE_DOWN) {
+        const fy = Math.atan2(v1.x, v1.z), sf = Math.sin(fy), cf = Math.cos(fy);
+        const p = up > 0 ? up - ANKLE_UP : up + ANKLE_DOWN;
+        v3.x = cf; v3.y = 0; v3.z = -sf;
+        qWalk.setFromAxisAngle(v3, p);
+        FQ.premultiply(qWalk);
+        if (p > 0) {
+          const b = this.ballLen, h = this.ankleY, sn = Math.sin(p), cs = Math.cos(p), fw = b * (1 - cs) + h * sn;
+          A.x += sf * fw;
+          A.z += cf * fw;
+          A.y += b * sn + h * (cs - 1);
+        }
+        this.soleLow(side, A, FQ);
+        if (this.low1 < 0) A.y -= this.low1;
+        twoBoneIK(leg[0]!, leg[1]!, leg[2]!, A, this.pole, side === 0 ? this.kneeL : this.kneeR, side === 0 ? this.kneeSideL : this.kneeSideR);
+        setWorldQuat(leg[2]!, FQ);
+        leg[2]!.updateMatrixWorld(true);
+      }
     }
   }
 
@@ -3567,6 +3647,25 @@ export class Avatar {
     basisQuat(ay * nz - az * ny, az * nx - ax * nz, ax * ny - ay * nx, ax, ay, az, nx, ny, nz, out);
   }
 
+  /**
+   * A hand target out of the trunk: an ellipse round the spine from the hips to the neck, wider than deep, in the
+   * chest's frame (chestAxes). Whatever put it there, keys or a turn under them, a hand doesn't go through a body.
+   */
+  private outOfTrunk(T: THREE.Vector3): void {
+    const H = this.hips.matrixWorld.elements, N = this.neck.matrixWorld.elements;
+    const ax = N[12]! - H[12]!, ay = N[13]! - H[13]!, az = N[14]! - H[14]!, ll = ax * ax + ay * ay + az * az;
+    const dx = T.x - H[12]!, dy = T.y - H[13]!, dz = T.z - H[14]!, u = (dx * ax + dy * ay + dz * az) / ll;
+    if (u < TRUNK_BELOW || u > 1) return;
+    const px = dx - ax * u, py = dy - ay * u, pz = dz - az * u;
+    const O = this.chestOut, F = this.chestFwd, rw = this.trunkW, rd = this.trunkD;
+    const x = px * O.x + py * O.y + pz * O.z, z = px * F.x + py * F.y + pz * F.z, e2 = (x * x) / (rw * rw) + (z * z) / (rd * rd);
+    if (e2 >= 1) return;
+    const e = Math.sqrt(e2), k = e > 1e-3 ? 1 / e - 1 : 0, mx = x * k, mz = e > 1e-3 ? z * k : rd;
+    T.x += O.x * mx + F.x * mz;
+    T.y += O.y * mx + F.y * mz;
+    T.z += O.z * mx + F.z * mz;
+  }
+
   /** After the ball, the hand going to its place in the chest's frame (OverArm.under), the racket as the key has it. */
   private overAfter(o: number[], ua: THREE.Bone): void {
     const u = this.st === ST_FADE ? 1 : smoothstep(OVER_AFTER0, OVER_AFTER1, this.lastT - this.tCon);
@@ -3825,6 +3924,7 @@ export class Avatar {
     if (cl0 > cap0) { const r = cl0 > 1e-9 ? cap0 / cl0 : 0; co.x *= r; co.y *= r; co.z *= r; }
     const t0x = this.tgt.x, t0y = this.tgt.y, t0z = this.tgt.z;
     this.tgt.x += co.x; this.tgt.y += co.y; this.tgt.z += co.z;
+    this.outOfTrunk(this.tgt);
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
     this.wristLimit(fa, hand, before ? Math.min(1, sLeft) : smoothstep(0, WRIST_AFTER, this.lastT - this.tCon));
     setWorldQuat(hand, q3);
@@ -3848,6 +3948,19 @@ export class Avatar {
       const sw = -this.handed * pump * Math.cos(2 * Math.PI * this.gaitPhase);
       v2.x += this.stanceS * sw;
       v2.z += this.stanceC * sw;
+      // A run's free arm pumps beside the body. From its place in front of the belly it went straight back through the
+      // hips, 7% of a run's frames with the forearm inside the pelvis.
+      const runW = this.gaitRun > 0 ? this.gaitW * smoothstep(RUN_V0, RUN_V1, this.sp) : 0;
+      if (runW > 0) {
+        this.chestAxes(ul, ua);
+        const O = this.chestOut, U = this.chestUp, F = this.chestFwd, a = this.armLen, fw = RUN_HAND_FWD - (this.handed * Math.cos(2 * Math.PI * this.gaitPhase) * RUN_HAND_SWING);
+        const hx = mf[12]! + (O.x * RUN_HAND_OUT + U.x * RUN_HAND_UP + F.x * fw) * a;
+        const hy = mf[13]! + (O.y * RUN_HAND_OUT + U.y * RUN_HAND_UP + F.y * fw) * a;
+        const hz = mf[14]! + (O.z * RUN_HAND_OUT + U.z * RUN_HAND_UP + F.z * fw) * a;
+        v2.x += (hx - v2.x) * runW;
+        v2.y += (hy - v2.y) * runW;
+        v2.z += (hz - v2.z) * runW;
+      }
       BL.u = this.ready;
       lerpV(v1, v2);
     }
@@ -3877,6 +3990,8 @@ export class Avatar {
       BL.u = 1 - ikF;
       lerpV(this.pole, v2);
     }
+    this.chestAxes(ul, ua);
+    this.outOfTrunk(v1);
     this.shoulderLimit(ul, v1, 1, ARM_BEHIND);
     this.keepOff(ul, v1, this.elbowFree.dir);
     hingeIK(ul, fl, hl, v1, this.pole, this.elbowFree);
