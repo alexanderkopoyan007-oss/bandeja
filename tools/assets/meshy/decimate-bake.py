@@ -140,17 +140,23 @@ low.data.materials.clear()
 low.data.materials.append(mlow)
 
 
-def bake(name, space, **kw):
-    im = bpy.data.images.new(name, TEX, TEX, alpha=False)
+def bake(name, space, cage=0.005, ray=0.014, margin=10, **kw):
+    im = bpy.data.images.new(name, TEX, TEX, alpha=True)
     im.colorspace_settings.name = space
     node.image = im
     for o in bpy.data.objects:
         o.select_set(o in (hi, low))
     bpy.context.view_layer.objects.active = low
     t0 = time.time()
-    bpy.ops.object.bake(use_selected_to_active=True, cage_extrusion=0.005, max_ray_distance=0.014, margin=10, target='IMAGE_TEXTURES', use_clear=True, **kw)
+    bpy.ops.object.bake(use_selected_to_active=True, cage_extrusion=cage, max_ray_distance=ray, margin=margin, target='IMAGE_TEXTURES', use_clear=True, **kw)
     print('MESHY bake', name, round(time.time() - t0, 1), 's')
     return im
+
+
+def texels(im):
+    px = np.empty(TEX * TEX * 4, dtype=np.float32)
+    im.pixels.foreach_get(px)
+    return px.reshape(TEX, TEX, 4)
 
 
 def smooth(a, b, x):
@@ -158,15 +164,36 @@ def smooth(a, b, x):
     return t * t * (3 - 2 * t)
 
 
+# (a texel whose short ray misses stays flat: a long ray comes back from the wrong wall of a crease with a wild normal)
 nm = bake('normal', 'Non-Color', type='NORMAL', normal_space='TANGENT')
+nb = texels(nm)
+nb[:, :, 3] = 1
+nm.pixels.foreach_set(nb.reshape(-1))
 nm.filepath_raw = os.path.join(OUT, 'normal.webp')
 nm.file_format = 'WEBP'
 nm.save(filepath=os.path.join(OUT, 'normal.webp'), quality=88)
 
-col = bake('colour', 'sRGB', type='DIFFUSE', pass_filter={'COLOR'})
-small = np.empty(TEX * TEX * 4, dtype=np.float32)
-col.pixels.foreach_get(small)
-small = small.reshape(TEX, TEX, 4)
+# Colour: where the low surface bridges a crease deeper than the short ray (the fused armpits, folds in the shirt), it misses and the
+# texel stays black; those take a long ray's colour, and then the islands' edges are bled out by hand (the bakes have no margin, so
+# that a miss can be told from a hit).
+near = texels(bake('colour', 'sRGB', margin=0, type='DIFFUSE', pass_filter={'COLOR'}))
+wide = texels(bake('colour2', 'sRGB', cage=0.03, ray=0.09, margin=0, type='DIFFUSE', pass_filter={'COLOR'}))
+hit = near[:, :, 3] > 0.5
+fill = ~hit & (wide[:, :, 3] > 0.5)
+print('MESHY colour texels', int(hit.sum()), 'near', int(fill.sum()), 'from the long ray', int((~hit & ~fill).sum()), 'empty')
+small = near.copy()
+small[fill] = wide[fill]
+has = hit | fill
+rgb = small[:, :, :3]
+for _ in range(14):
+    acc = np.zeros_like(rgb)
+    cnt = np.zeros(has.shape, dtype=np.float32)
+    for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+        acc += np.roll(np.roll(rgb * has[:, :, None], dy, 0), dx, 1)
+        cnt += np.roll(np.roll(has.astype(np.float32), dy, 0), dx, 1)
+    grow = ~has & (cnt > 0)
+    rgb[grow] = acc[grow] / cnt[grow][:, None]
+    has = has | grow
 # Skin: warm and not dark (a white shirt, navy shorts and white shoes have R about B; dark hair is warm but low).
 r, g, b = small[:, :, 0], small[:, :, 1], small[:, :, 2]
 warm = (r - b) / np.maximum(r + b, 0.02)

@@ -35,6 +35,7 @@ HAND_K = np.array((0.074, -0.050, 0.996))
 TIPS = {'Thumb': (0.388, 0.785, 0.070), 'Index': (0.425, 0.720, 0.024), 'Middle': (0.427, 0.702, -0.003), 'Ring': (0.413, 0.706, -0.030), 'Pinky': (0.397, 0.731, -0.056)}
 TIP_IN = 0.007  # how far inside the tip the last joint stands
 RAISE = np.radians(24)  # the arms up to p1's angle
+ARMPIT_SMOOTH = 14
 PART_SOURCE_OUT = (4, 9, 10)  # p1's eyes, teeth and tongue give no weights
 
 # ---------- p1 ----------
@@ -217,11 +218,7 @@ for v, p in enumerate(V):
     W[v] = bary[0] * W_p[t[0]] + bary[1] * W_p[t[1]] + bary[2] * W_p[t[2]]
     dist[v] = d_
 print('RIG nearest p1 surface, cm: median', round(float(np.median(dist)) * 100, 2), 'p95', round(float(np.percentile(dist, 95)) * 100, 2), 'max', round(float(dist.max()) * 100, 2))
-# Parts for what reads them (the shader takes its look from the texture): p1's, for skin or cloth.
 fit_parts = np.zeros(len(V), dtype=np.uint8)
-for v, p in enumerate(V):
-    _, _, ti, _ = tree.find_nearest(Vector(p))
-    fit_parts[v] = PART_p[TRI_p[ti][0]]
 
 # ---------- a little smoothing over the mesh: nearest-surface weights jump across the medial lines (armpit, between fingers) ----------
 edges = np.unique(np.sort(np.concatenate((TRI[:, [0, 1]], TRI[:, [1, 2]], TRI[:, [2, 0]])), axis=1), axis=0)
@@ -231,6 +228,16 @@ for _ in range(3):
     np.add.at(acc, edges[:, 0], W[edges[:, 1]])
     np.add.at(acc, edges[:, 1], W[edges[:, 0]])
     W = 0.5 * W + 0.5 * acc / np.maximum(deg, 1)
+
+# The fused armpit: the sleeve's underside is one surface with the ribs, in a crease that unfolds when the arm lifts. Left at the nearest
+# surface's hard edge, all of that went into one thin strip; a wider blend spreads it over the crease's neighbours.
+for side_ in (1, -1):
+    zone = (V[:, 0] * side_ > 0.10) & (V[:, 0] * side_ < 0.31) & (V[:, 1] > 1.14) & (V[:, 1] < 1.44)
+    for _ in range(ARMPIT_SMOOTH):
+        acc = np.zeros_like(W)
+        np.add.at(acc, edges[:, 0], W[edges[:, 1]])
+        np.add.at(acc, edges[:, 1], W[edges[:, 0]])
+        W[zone] = 0.4 * W[zone] + 0.6 * (acc / np.maximum(deg, 1))[zone]
 
 # ---------- raised to p1's angle, and bound there ----------
 Xr = np.tile(np.eye(4), (nb, 1, 1))
@@ -339,9 +346,37 @@ for c_ in range(3):
     np.add.at(Nv, TRI[:, c_], fn)
 Nv /= np.maximum(np.linalg.norm(Nv, axis=1, keepdims=True), 1e-12)
 
+# ---------- occlusion per vertex (as modelled, arms down): the creases get no ambient light; without it a fold in a white shirt
+# opened by a lifted arm shone the blue of the court ----------
+fn0 = np.cross(V[TRI[:, 1]] - V[TRI[:, 0]], V[TRI[:, 2]] - V[TRI[:, 0]])
+Nm = np.zeros_like(V)
+for c_ in range(3):
+    np.add.at(Nm, TRI[:, c_], fn0)
+Nm /= np.maximum(np.linalg.norm(Nm, axis=1, keepdims=True), 1e-12)
+occ_tree = BVHTree.FromPolygons([Vector(p) for p in V], [tuple(int(x) for x in t) for t in TRI])
+rng = np.random.default_rng(1)
+AO_RAYS, AO_REACH = 48, 0.22
+dirs = rng.normal(size=(AO_RAYS, 3))
+dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+ao = np.ones(len(V), dtype=np.float32)
+for v in range(len(V)):
+    n_ = Nm[v]
+    o_ = Vector(V[v] + n_ * 0.002)
+    seen_, sum_ = 0.0, 0.0
+    for q in dirs:
+        c_ = float(q @ n_)
+        if c_ < 0:
+            q, c_ = -q, -c_
+        sum_ += c_
+        if occ_tree.ray_cast(o_, Vector(q), AO_REACH)[0] is None:
+            seen_ += c_
+    ao[v] = seen_ / max(sum_, 1e-6)
+print('RIG occlusion mean', round(float(ao.mean()), 3), 'p5', round(float(np.percentile(ao, 5)), 3))
+fit_parts[:] = 5  # (the part whose occlusion the file keeps per vertex: bodyX.x)
+
 # ---------- split at the UV seams, out ----------
 seen = {}
-pos, nrm, uv_o, si_o, sw_o, part, index = [], [], [], [], [], [], []
+pos, nrm, uv_o, si_o, sw_o, part, index, ao_o = [], [], [], [], [], [], [], []
 for t in range(len(TRI)):
     for c_ in range(3):
         v = int(TRI[t, c_])
@@ -355,6 +390,7 @@ for t in range(len(TRI)):
             si_o.append(si[v])
             sw_o.append(sw[v])
             part.append(fit_parts[v])
+            ao_o.append(ao[v])
         index.append(seen[key])
 print('RIG game vertices', len(seen), 'triangles', len(TRI), 'source vertices', len(V))
 
@@ -370,12 +406,15 @@ def put(arr, kind):
     return at
 
 
-def mesh(pos_, nrm_, uv_, si_, sw_, part_, index_):
-    return {'vertices': len(part_), 'indices': len(index_), 'pos': put(pos_, '<f4'), 'nrm': put(nrm_, '<f4'), 'uv': put(uv_, '<f4'),
-            'si': put(si_, 'u1'), 'sw': put(sw_, '<f4'), 'part': put(part_, 'u1'), 'index': put(index_, '<u4')}
+def mesh(pos_, nrm_, uv_, si_, sw_, part_, index_, ao_=None):
+    out = {'vertices': len(part_), 'indices': len(index_), 'pos': put(pos_, '<f4'), 'nrm': put(nrm_, '<f4'), 'uv': put(uv_, '<f4'),
+           'si': put(si_, 'u1'), 'sw': put(sw_, '<f4'), 'part': put(part_, 'u1'), 'index': put(index_, '<u4')}
+    if ao_ is not None:
+        out['ao'] = put(ao_, '<f4')
+    return out
 
 
-meshes = {'opaque': mesh(pos, nrm, uv_o, si_o, sw_o, part, index)}
+meshes = {'opaque': mesh(pos, nrm, uv_o, si_o, sw_o, part, index, ao_o)}
 # No hair cards: one speck inside the head, so that everything that expects a second mesh has one.
 hd = Ab[ix['Head']] + np.array((0, 0.09, 0))
 meshes['alpha'] = mesh([hd, hd + (0.001, 0, 0), hd + (0, 0.001, 0)], [(0, 1, 0)] * 3, [(0, 0)] * 3, [[ix['Head'], 0, 0, 0]] * 3, [[1, 0, 0, 0]] * 3, [6] * 3, [0, 1, 2])

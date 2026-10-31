@@ -610,6 +610,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   return { material: m, hair, state: { sweat: sweatU, lag, sway } };
 }
 
+const BAKED_CLOTH_AMBIENT = 0.8;
+
 /**
  * A person who is one fused surface with the look in its texture (the Meshy pilot, tools/assets/meshy/): the atlas's colour, its alpha
  * the skin (warm, lit by `PersonNodeMaterial` as the rest of the cast's skin), the rest matte cloth with a sheen; the tangent-space
@@ -623,8 +625,11 @@ function bakedMaterial(asset: PlayerAsset): { material: PersonNodeMaterial; hair
   const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
   // (0.25 at no skin: decimate-bake.py)
   const skin = tex.w.sub(0.25).div(0.75).clamp();
+  // Occlusion per vertex (rig.py, kept as the sock part's in bodyX.x): all of the ambient light, a little of the colour.
+  const ao = attribute<'vec4'>('bodyX', 'vec4').x;
   const m = new PersonNodeMaterial();
-  m.colorNode = tex.xyz;
+  m.colorNode = tex.xyz.mul(float(0.6).add(ao.mul(0.4)));
+  m.aoNode = ao;
   m.side = THREE.DoubleSide;
   m.shadowSide = THREE.BackSide;
   m.roughnessNode = mix(float(0.86), mix(float(0.5), float(0.33), sweat), skin);
@@ -633,9 +638,11 @@ function bakedMaterial(asset: PlayerAsset): { material: PersonNodeMaterial; hair
   m.clearcoatRoughnessNode = float(0.32);
   m.sheenNode = mix(tex.xyz, vec3(1, 1, 1), 0.3).mul(float(1).sub(skin).mul(0.6));
   m.sheenRoughnessNode = float(0.55);
-  if (body.clothNormal) m.normalNode = uvNormal(texture(body.clothNormal, uv()).xy.mul(2).sub(1), uv());
+  // (flat in the creases: the bake's normals on the walls of a fold are wild, and the fold opens when the arm lifts)
+  if (body.clothNormal) m.normalNode = uvNormal(texture(body.clothNormal, uv()).xy.mul(2).sub(1).mul(smoothstep(0.08, 0.4, ao)), uv());
   m.scatterNode = skin.mul(SKIN_SCATTER);
-  m.ambientFixNode = skin;
+  // (the white shirt too, most of the way: under a lifted arm it showed the court's blue as a gash)
+  m.ambientFixNode = mix(float(BAKED_CLOTH_AMBIENT), float(1), skin);
   m.toneBackNode = skin.mul(SKIN_TONE_BACK);
   return { material: m, hair: new PersonNodeMaterial(), state: { sweat: sweatU, lag: uniform(new THREE.Vector3()), sway: uniform(new THREE.Vector3()) } };
 }
