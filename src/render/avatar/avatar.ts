@@ -450,6 +450,8 @@ const WALK_SWAY = 0.02;
 const WALK_ARM = 0.13;
 const WALK_GAIT_V = 0.35;
 const WALK_TURN_RATE = 4.5;
+const WALK_TURN_GAIN = 9;
+const WALK_TURN_ACC = 28;
 const WALK_IN = 0.15;
 const WALK_NEAR0 = 0.5;
 const WALK_NEAR1 = 1.8;
@@ -774,6 +776,7 @@ export class Avatar {
   private walkUp = 0;
   /** Added to the stance to go where the walk goes, and the feet's gait (WALK_*): weight, the hips' eased weight. */
   private walkTurn = 0;
+  private walkTurnV = 0;
   private gaitW = 0;
   private gaitH = 0;
   private gaitOn = 0;
@@ -2002,8 +2005,11 @@ export class Avatar {
       const hx = sim.walkHomeX[idx]! - p.pos.x, hz = sim.walkHomeZ[idx]! - p.pos.z;
       const near = sim.walking === 2 ? smoothstep(WALK_NEAR0, WALK_NEAR1, Math.sqrt(hx * hx + hz * hz)) : 1;
       const to = !going ? 0 : sp > WALK_GAIT_V ? wrapAngle(Math.atan2(-this.vx, -this.vz) - this.yaw) * near : this.walkTurn * near;
-      const e = wrapAngle(to - this.walkTurn), lim = WALK_TURN_RATE * dt;
-      this.walkTurn = cut ? 0 : this.walkTurn + (e > lim ? lim : e < -lim ? -lim : e);
+      // (eased into the turn: from standing to 4.5 rad/s in a frame popped both arms)
+      const e = wrapAngle(to - this.walkTurn), wish = e * WALK_TURN_GAIN, lim = WALK_TURN_ACC * dt;
+      const dv = (wish > WALK_TURN_RATE ? WALK_TURN_RATE : wish < -WALK_TURN_RATE ? -WALK_TURN_RATE : wish) - this.walkTurnV;
+      this.walkTurnV = cut ? 0 : this.walkTurnV + (dv > lim ? lim : dv < -lim ? -lim : dv);
+      this.walkTurn = cut ? 0 : this.walkTurn + this.walkTurnV * dt;
       this.yaw += this.walkTurn;
       const gait = this.gaitW > 0 ? WALK_GAIT_V * 0.5 : WALK_GAIT_V;
       // Running in a rally, up to the last steps before a contact (a backswing is begun on the run).
@@ -2308,6 +2314,7 @@ export class Avatar {
     this.hipTiltX = 0;
     this.hipTiltZ = 0;
     this.walkTurn = 0;
+    this.walkTurnV = 0;
     this.gaitW = 0;
     this.gaitH = 0;
     this.gaitOn = 0;

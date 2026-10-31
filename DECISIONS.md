@@ -2874,3 +2874,6 @@ contrapared have none: their weight goes elsewhere. Hips against the feet at con
 
 **Hair.** Three people of ten have hair long enough to swing. `HAIR_CLUMP` breaks the one piece up, `sway` throws it with the stride. Not judged by eye: the hair in play is a few pixels from the broadcast camera, and it has been seen in no strip.
 
+**Tried and dropped: the follow-through planned by the hand.** An overhead's elbow goes 101, 63, 100, 30 in about 130 ms round the ball, and the keys being the racket's head looked like the cause. Interpolating the hand between the
+keys instead left the overhead the same (63, 89, 100, 34) and folded the forehand to 106 degrees at +0.2 s, the very fault C #12 reported. Not the cause; the rebend after the ball is still there.
+
