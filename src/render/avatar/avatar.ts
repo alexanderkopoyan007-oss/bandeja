@@ -377,6 +377,7 @@ const JUMP_SHORT = 1.0;
 const LAND_DROP = 0.06;
 const LAND_TIME = 0.2;
 const FOLLOW = 0.3;
+const FOLLOW_N = 3;
 /** How long a held pose after a point lasts (s). */
 const MOOD_TIME = 1.3;
 /** How far a long follow-through's curve rises (m): a drive's hand comes up to the shoulder with the arm still long. */
@@ -914,6 +915,9 @@ export class Avatar {
   private readonly freeSh = new THREE.Vector3();
   /** How far the key is along the forward swing this frame (0 at the backswing, 1 at the contact; see swingKey). */
   private keyS = 0;
+  /** How fast the key was going into the ball (m/s), and last frame's place. */
+  private swingV = 0;
+  private readonly kpWas = new THREE.Vector3();
   /** The racket's push out of the body last frame (world, m), let go over CLEAR_EASE. */
   private readonly clearOff = new THREE.Vector3();
   /** How much of the racket's push out of the body the arm's weight allows this frame (0 as the arms switch off). */
@@ -1603,16 +1607,21 @@ export class Avatar {
       if (t < this.tCon) {
         const g = clamp01((t - this.tRel) / (this.tCon - this.tRel));
         this.swingKey(this.relS + (1 - this.relS) * g);
+        if (this.dt > 0) this.swingV = this.kp.distanceTo(this.kpWas) / this.dt;
+        this.kpWas.copy(this.kp);
         if (this.relBlend) this.blendFrom(smoothstep(0, 0.7, g));
         this.w = this.relW + (1 - this.relW) * smoothstep(0, 0.06, t - this.tRel);
       } else if (t < this.tCon + (f.follow ?? FOLLOW) * this.manner.follow) {
         // Follow-through, slowing down, carrying on through the ball before wrapping round.
         const s = clamp01((t - this.tCon) / ((f.follow ?? FOLLOW) * this.manner.follow));
-        const e = 1 - (1 - s) * (1 - s);
         const k = this.contactKey();
         this.ctrl.copy(k.p).lerp(f.finish.p, 0.5);
         this.ctrl.z += f.through ?? 0.25;
         if (f.through) this.ctrl.y += THROUGH_UP;
+        // Leaving the ball at the speed it arrived: the racket fell to 60% of it in a frame, and the hit read as a stop
+        // (review round 8, the critic's #4).
+        const n = (this.swingV * (f.follow ?? FOLLOW) * this.manner.follow) / Math.max(0.05, 2 * k.p.distanceTo(this.ctrl));
+        const e = 1 - Math.pow(1 - s, n < 2 ? 2 : n > FOLLOW_N ? FOLLOW_N : n);
         bezier(k.p, this.ctrl, f.finish.p, e, this.kp);
         this.kq.copy(k.q).slerp(f.finish.q, e);
         this.kpole.copy(k.pole).lerp(f.finish.pole, e);
