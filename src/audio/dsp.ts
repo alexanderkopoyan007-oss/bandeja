@@ -62,14 +62,36 @@ export function modal(out: Float32Array, at: number, modes: Mode[], contact: num
 }
 
 /**
- * The pressure pulse of a body being stopped and thrown back over `contact` seconds: the derivative of the half-sine
- * force (one cycle, positive then negative). Its spectrum peaks near 1/contact: the dull "thud" of a soft contact,
- * the "tick" of a hard one.
+ * A bank of resonators over one excitation (added into `out`), in one pass per mode: a mode starts at amplitude `a` for
+ * a unit impulse. For a rattle, where hundreds of clicks drive the same modes.
+ */
+export function resonate(out: Float32Array, exc: Float32Array, modes: Mode[], sr = SR): void {
+  const n = Math.min(out.length, exc.length);
+  for (let mi = 0; mi < modes.length; mi++) {
+    const m = modes[mi]!;
+    if (m.f >= sr * 0.45 || m.a === 0) continue;
+    const r = poleR(m.t60, sr), w = (2 * Math.PI * m.f) / sr;
+    const c1 = 2 * r * Math.cos(w), c2 = -r * r, g = m.a * Math.sin(w);
+    let y1 = 0, y2 = 0;
+    for (let i = 0; i < n; i++) {
+      const y = exc[i]! * g + c1 * y1 + c2 * y2;
+      y2 = y1; y1 = y;
+      out[i] = out[i]! + y;
+    }
+  }
+}
+
+/**
+ * The pressure pulse of a body being stopped and thrown back over `contact` seconds: the rate of change of a force that
+ * rises and falls smoothly (sin^2, one sine cycle of pressure, positive then negative). Its spectrum peaks near
+ * 1/contact: the dull "thud" of a soft contact, the "tick" of a hard one. It starts and ends at zero: the derivative
+ * of a half-sine (a cosine) jumps by its whole amplitude at both ends, and those two steps put a click with a -6 dB per
+ * octave tail to 20 kHz under every impact (measured: every render flat at about -28 dB up to 16 kHz).
  */
 export function contactPulse(out: Float32Array, at: number, contact: number, amp: number, sr = SR): void {
   const np = Math.max(2, Math.round(contact * sr));
   const start = Math.round(at * sr);
-  for (let k = 0; k < np && start + k < out.length; k++) out[start + k] = out[start + k]! + amp * Math.cos((Math.PI * k) / np);
+  for (let k = 0; k < np && start + k < out.length; k++) out[start + k] = out[start + k]! + amp * Math.sin((2 * Math.PI * k) / np);
 }
 
 /**

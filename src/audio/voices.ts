@@ -4,7 +4,7 @@
 // voice as a glottal source through formants, applause as many clappers); every number with a source says so,
 // the rest is tuning by measurement (tests/audio) and by ear. DECISIONS.md (Phase 6) has the reasoning.
 import {
-  SR, Rng, Biquad, Formant, modal, contactPulse, grains, noiseBurst, removeDC, dcBlock, fadeTail, type Mode,
+  SR, Rng, Biquad, Formant, modal, resonate, contactPulse, grains, noiseBurst, removeDC, dcBlock, fadeTail, type Mode,
 } from './dsp.ts';
 
 export const LO_SR = 24000;
@@ -37,17 +37,22 @@ function ballRing(rng: Rng, out: Mode[], ring: number, a = 0.55): void {
 export const RK_DRIVE = 0, RK_VOLLEY = 1, RK_OVER = 2, RK_SLICE = 3, RK_TOUCH = 4;
 
 /**
- * A padel racket hit. A padel racket is a solid paddle (carbon or glass-fibre skins on an EVA foam core, perforated),
- * so a hit is a dry, sharp "pock" with no strings' ring (Piana et al.: carbon faces sound drier, fibreglass less
- * sharp; a faster impact sharper). The ball is on the face about 5 ms (racket sports' dwell, Zienowicz et al., IOA
- * 2008); the direct sound is over within about 30 ms (Piana et al.'s ambisonic recordings). Parts:
- *  - the contact's own pressure pulse and the ball's shell modes;
- *  - the face's modes: its first bending mode (about 200 Hz; a tennis frame's is 146 Hz, Russell, and a padel
- *    racket is shorter and stiffer) is barely excited at the sweet spot, which is near its node, and rings longer
- *    off-centre ("thock", a sting in the hand); a torsion mode for hits off the long axis; plate modes higher up;
- *  - the "crack": broadband noise of the impact, brighter for harder and cleaner hits;
- *  - a slice brushes the ball across the face (a scrape of felt on the gritty face before the impact);
- *  - a frame hit: the hard rim clacks, the face's low mode rings, the ball's pop is half there.
+ * A padel racket hit: a dry, hollow "pock", the ball a low-pressure felt shell on a solid foam-core face, no strings.
+ * Measured against one hit at 2 m in a cage (Wadman et al. 2021 Fig. 4.3.2, data/audio-reference.json): the spectrum
+ * is flat from 125 Hz to a top at about 700 Hz, 7 dB down at 1 kHz, 20 dB down at 2 kHz, 25 at 4 kHz, 43 at 8 kHz. A
+ * paddle on a ball measures the same way: 80% of the power under 750 Hz, nothing much above 2 kHz (TWU), 200-500 Hz
+ * under a top near 1 kHz (Crystal Instruments). Those two low resonances, 700 and 1000 Hz, are the back vowel of the
+ * word: consultants write it "bop" (Clarke Saunders 2023), against tennis's "thunk". The direct sound is over within
+ * about 30 ms (Piana et al.). Parts:
+ *  - the contact's own pressure pulse, 4-6 ms (Zienowicz et al.), and the ball's 250 Hz ring;
+ *  - the pock: the face and the ball's shell together at about 430, 690, 1020, 1450, 1900, 2750 and 3500 Hz, heavily
+ *    damped by the foam (Q about 8), struck by the contact's onset; the three lowest carry the hit (a game measured
+ *    whole holds its top to about 1.6 kHz, A-weighted, Piana et al. Fig. 6, which is why the upper ones stay);
+ *  - the face's first bending mode, about 205 Hz, near its node at the sweet spot, ringing off-centre (an estimate: a
+ *    tennis frame's is 146 Hz, Russell), and a torsion mode for hits off the long axis;
+ *  - the contact's crack: band-limited noise well under the pock, brighter the harder the hit (Piana et al.);
+ *  - a slice brushes felt across the gritty face before the impact;
+ *  - a frame hit: the hard rim clacks, the face's bending rings, the ball's pop is half there.
  * `power` 0..1 (soft touch .. full smash), `off` 0 sweet spot .. 1 well off-centre, `frame` on the rim.
  */
 export function racket(rng: Rng, kind: number, power: number, off: number, frame: boolean): Float32Array {
@@ -61,28 +66,39 @@ export function racket(rng: Rng, kind: number, power: number, off: number, frame
   const at = kind === RK_SLICE ? 0.006 : 0.001;
   if (kind === RK_SLICE) {
     // The brush: felt dragged across the face just before and through the hit.
-    noiseBurst(out, rng, 0, 0.004, 0.012, 0.07 + 0.08 * p, [Biquad.make('hp', 2200, 0.7), Biquad.make('lp', 7000, 0.7)]);
+    noiseBurst(out, rng, 0, 0.004, 0.012, 0.018 + 0.03 * p, [Biquad.make('hp', 1400, 0.7), Biquad.make('lp', 4200, 0.7)]);
   }
   const loud = 0.35 + 0.65 * p;
-  contactPulse(out, at, contact, 0.15 * loud);
+  contactPulse(out, at, contact, 0.3 * loud);
   // Slow: the ball's ring and the face's bending and torsion. Sweet spot: the first bending mode barely moves (its
   // node), more the further off.
   const low: Mode[] = [];
-  ballRing(rng, low, frame ? 0.5 : 1, 0.2);
+  ballRing(rng, low, frame ? 0.5 : 1, 0.3);
   // (on the frame the face hardly flexes: the rim takes the ball, and its clack, below, is the sound)
   const bend = 0.05 + 0.6 * q * (frame ? 0.35 : 1) + (kind === RK_OVER ? 0.1 * p : 0);
   low.push({ f: jit(rng, 205, 0.06), t60: 0.04 + 0.06 * q, a: bend });
-  low.push({ f: jit(rng, 480, 0.06), t60: 0.03 + 0.02 * q, a: 0.04 + 0.35 * q * rng.next() });
   for (const m of low) m.a *= loud;
-  modal(out, at, low, contact);
-  // Fast: the shell and the face's plate modes (the stiff skin on foam: the "pock"), duller off-centre and soft.
-  const high: Mode[] = [];
-  ballShell(rng, high, (0.6 + 0.4 * p) * (frame ? 0.5 : 1));
-  high.push({ f: jit(rng, 1050, 0.05), t60: 0.028, a: 0.55 * (1 - 0.45 * q) });
-  high.push({ f: jit(rng, 1520, 0.05), t60: 0.02, a: 0.4 * (1 - 0.5 * q) * (1 - 0.4 * soft) });
-  high.push({ f: jit(rng, 2650, 0.06), t60: 0.01, a: 0.25 * (1 - 0.6 * q) * (1 - 0.7 * soft) });
-  for (const m of high) m.a *= loud;
-  modal(out, at, high, contact * ONSET);
+  modal(out, at, low, contact * 0.6);
+  // Fast: the pock. Duller off-centre and soft; the top of it opens with the pace.
+  const bright = 0.7 + 0.3 * p;
+  const dull = 1 - 0.5 * q;
+  const pock: Mode[] = [
+    { f: jit(rng, 430, 0.05), t60: 0.03, a: 0.55 + 0.2 * soft },
+    { f: jit(rng, 690, 0.04), t60: 0.03, a: 0.8 * (1 - 0.3 * q) },
+    { f: jit(rng, 1020, 0.05), t60: 0.02, a: 0.6 * dull * (1 - 0.4 * soft) },
+    { f: jit(rng, 1450, 0.05), t60: 0.016, a: 0.62 * dull * bright * (1 - 0.5 * soft) },
+  ];
+  // (the onset's half-sine has its null at about 1.9 kHz: what lies past it rings from the very first of the contact)
+  const edge: Mode[] = [
+    { f: jit(rng, 1850, 0.06), t60: 0.013, a: 0.13 * dull * bright * (1 - 0.6 * soft) },
+    { f: jit(rng, 2750, 0.06), t60: 0.011, a: 0.12 * dull * bright * (1 - 0.7 * soft) },
+    { f: jit(rng, 3500, 0.06), t60: 0.008, a: 0.08 * dull * bright * (1 - 0.7 * soft) },
+  ];
+  if (frame) { pock[0]!.a *= 0.6; pock[1]!.a *= 0.5; }
+  for (const m of pock) m.a *= loud;
+  for (const m of edge) m.a *= loud;
+  modal(out, at, pock, contact * ONSET);
+  modal(out, at, edge, contact * 0.05);
   if (frame) {
     // The rim's clack: the felt meets a hollow carbon tube, not the foam, so the strike is far sharper (about
     // 0.2 ms: a contact that short reaches 5 kHz) and the tube's shell modes ring high and short.
@@ -95,10 +111,12 @@ export function racket(rng: Rng, kind: number, power: number, off: number, frame
     for (const m of rim) m.a *= loud;
     modal(out, at, rim, jit(rng, 2.2e-4, 0.1));
   }
-  // The crack: the impact's broadband noise; harder and cleaner is brighter, soft and off is dull.
-  const bright = (2600 + 4200 * p) * (1 - 0.45 * q) * (1 - 0.5 * soft);
-  noiseBurst(out, rng, at, 0.0003, jit(rng, 0.006 + 0.006 * q, 0.1), 0.3 * loud * (1 - 0.35 * q),
-    [Biquad.make('hp', 700, 0.7), Biquad.make('lp', bright, 0.7)]);
+  // The crack: the impact's broadband noise, far under the pock; harder and cleaner is brighter, soft and off dull.
+  // (the median hit in play is about a third of full power: it has to keep its edge, or a match goes dull. Whole games
+  // measure 4-7 dB down at 2-4 kHz, A-weighted: Piana et al. Fig. 6, the Abu Dhabi study's octaves.)
+  const top = (3700 + 1900 * p) * (1 - 0.45 * q) * (1 - 0.5 * soft);
+  noiseBurst(out, rng, at, 0.0004, jit(rng, 0.008 + 0.006 * q, 0.1), (0.42 + 0.3 * p) * loud * (1 - 0.35 * q),
+    [Biquad.make('hp', 1300, 0.7), Biquad.make('lp', top, 0.7), Biquad.make('lp', top, 0.7)]);
   dcBlock(out);
   return fadeTail(out, 0.02);
 }
@@ -110,8 +128,9 @@ export const FLOOR_NAMES = ['hard', 'turf', 'carpet', 'clay'] as const;
 /**
  * A bounce at normal impact speed `v` (m/s). Hard court: the ball's own ring, loud (resin "does not absorb
  * vibrations effectively", Piana et al.). Sand-filled turf: damped (the porous fibres absorb, the sand softens the
- * bounce, ibid.), with the sand's grains scattering: a short crisp crunch that grows with the impact. Carpet:
- * muffled, no grit. Clay (fantasy): soft and gritty, coarser grains.
+ * bounce, ibid.): a low "puh" with the ring of the ball in it, and only a trace of grit. No measurement of a ball on
+ * sand-filled turf was found, so the turf's balance is reasoned, not read: the ball is the source, the sand adds to it
+ * and doesn't replace it. Carpet: muffled. Clay (fantasy): soft and gritty, coarser grains.
  */
 export function bounce(rng: Rng, floor: number, v: number): Float32Array {
   const out = buf(0.14);
@@ -119,26 +138,27 @@ export function bounce(rng: Rng, floor: number, v: number): Float32Array {
   const base = [4.0, 5.0, 5.6, 6.0][floor]! * 1e-3;
   const contact = jit(rng, base * (1.15 - 0.3 * s), 0.06);
   const loud = 0.12 + 0.88 * s;
-  const ring = [1, 0.55, 0.4, 0.5][floor]!;
-  const hard = [1, 0.45, 0.25, 0.3][floor]!;
-  contactPulse(out, 0.001, contact, 0.25 * loud * (floor === FL_HARD ? 1 : 0.8));
+  const ring = [1, 0.7, 0.5, 0.6][floor]!;
+  const hard = [1, 0.75, 0.25, 0.3][floor]!;
+  contactPulse(out, 0.001, contact, 0.3 * loud * (floor === FL_HARD ? 1 : 0.8));
   const low: Mode[] = [], high: Mode[] = [];
   ballRing(rng, low, ring);
   ballShell(rng, high, hard);
   const g = loud * (floor === FL_HARD ? 1 : 0.7);
   for (const m of low) m.a *= g;
   for (const m of high) m.a *= g;
-  modal(out, 0.001, low, contact);
+  // (the whole contact has a null near the ring's 250 Hz: the ring starts from the contact's first half)
+  modal(out, 0.001, low, contact * 0.5);
   modal(out, 0.001, high, contact * ONSET);
   if (floor === FL_HARD) {
     // The acrylic's tick.
     noiseBurst(out, rng, 0.001, 0.0002, 0.003, 0.15 * loud, [Biquad.make('hp', 2000, 0.7)]);
   } else if (floor === FL_TURF || floor === FL_CLAY) {
     const turf = floor === FL_TURF;
-    grains(out, rng, 0.0015, Math.round((turf ? 12 : 20) + (turf ? 34 : 45) * s), turf ? 0.008 : 0.012,
-      turf ? 0.0005 : 0.0009, turf ? 2500 : 1100, turf ? 8000 : 4000, (turf ? 0.07 : 0.06) * (0.3 + 0.7 * s));
+    grains(out, rng, 0.0015, Math.round((turf ? 8 : 20) + (turf ? 16 : 45) * s), turf ? 0.008 : 0.012,
+      turf ? 0.0006 : 0.0009, turf ? 1400 : 1100, turf ? 4500 : 4000, (turf ? 0.02 : 0.06) * (0.3 + 0.7 * s));
     // Fibres brushed aside.
-    noiseBurst(out, rng, 0.001, 0.001, 0.02, 0.03 * loud, [Biquad.make('lp', 3000, 0.7)]);
+    noiseBurst(out, rng, 0.001, 0.001, 0.02, 0.03 * loud, [Biquad.make('lp', 1800, 0.7)]);
   } else {
     // Carpet fibres take the highs.
     const lp = Biquad.make('lp', 1700, 0.6);
@@ -150,15 +170,19 @@ export function bounce(rng: Rng, floor: number, v: number): Float32Array {
 
 // ---- glass ------------------------------------------------------------------------------------------------------
 /**
- * The ball on a tempered glass panel. Padel walls are 10-12 mm toughened glass (UNI EN 12150-1) about 2 m x 3 m,
- * bolted to the steel frame; a hit is a "low frequency bang" (Higgins via The Padel Paper; tempered glass "louder and
- * sharper" than laminated, thicker louder, Piana et al.). The panel's bending modes, simply supported, are
+ * The ball on a tempered glass panel: 10-12 mm toughened glass (UNI EN 12150-1) about 2 m x 3 m, bolted to the steel
+ * frame. Neighbours' reports call it a low-frequency "thump" against the bat's "crack" (Higgins, MW Acoustic
+ * Consultants), but one hit measured at 2 m in a cage (Wadman et al. 2021 Fig. 4.3.2) has as much in it at 1-1.4 kHz
+ * as 10 dB under its low end, a dip at 700 Hz, and the hit at full pace reads 2.9 dB over the racket on a level meter
+ * (95.4 against 92.5 dBA): a knock with a thump under it, not a boom. A boom alone (everything under 150 Hz, A-weighted
+ * to nothing) is what no laptop could play. The panel's bending modes, simply supported, are
  * f_mn = (pi/2) sqrt(D / rho h) ((m/a)^2 + (n/b)^2) with D = E h^3 / 12 (1 - nu^2): for 12 mm glass (E 70 GPa,
- * nu 0.22, rho 2500) sqrt(D / rho h) = 18.8 m^2/s, so f11 = 10.7 Hz and the modes crowd from about 50 Hz up: a
- * dense low boom, which the ball's 4 ms contact excites up to about 250 Hz. The mode shapes at the (random) impact
- * point set which ones sound; odd-odd modes radiate best (net volume flow), the others partly cancel. Loss factor
- * about 0.04 (glass in gaskets and clamps, an estimate): a 100 Hz mode rings about half a second. Above about 15 m/s
- * the panel clanks in its fixings, and the cage's steel hums.
+ * nu 0.22, rho 2500) sqrt(D / rho h) = 18.8 m^2/s, so f11 = 10.7 Hz and the modes crowd from about 50 Hz up. The mode
+ * shapes at the (random) impact point set which ones sound; odd-odd modes radiate best (net volume flow), the others
+ * partly cancel. They ring from the contact's onset (the ball's whole 4 ms has a null at 350 Hz), weighted by what
+ * the measured spectrum keeps of them. Loss factor about 0.04 (glass in gaskets and clamps, an estimate): a 250 Hz
+ * mode falls 20 dB in about 150 ms, as the measured waveform does. Above about 15 m/s the panel clanks in its fixings,
+ * and the cage's steel hums.
  */
 export function glass(rng: Rng, v: number): Float32Array {
   const out = buf(0.75);
@@ -168,33 +192,33 @@ export function glass(rng: Rng, v: number): Float32Array {
   const a = 2, b = 3, k = 29.5; // (pi/2) * 18.8
   const x0 = rng.range(0.25, 0.75) * a, y0 = rng.range(0.15, 0.6) * b;
   const modes: Mode[] = [];
-  for (let m = 1; m <= 9; m++) {
-    for (let n = 1; n <= 12; n++) {
+  for (let m = 1; m <= 18; m++) {
+    for (let n = 1; n <= 26; n++) {
       const f = k * ((m / a) ** 2 + (n / b) ** 2);
-      if (f < 35 || f > 900) continue;
+      if (f < 70 || f > 2600) continue;
       const shape = Math.sin((m * Math.PI * x0) / a) * Math.sin((n * Math.PI * y0) / b);
       const rad = m % 2 === 1 && n % 2 === 1 ? 1 : m % 2 === 1 || n % 2 === 1 ? 0.4 : 0.15;
-      const amp = shape * rad * (f < 60 ? f / 60 : 1);
-      if (Math.abs(amp) < 0.05) continue;
-      modes.push({ f: jit(rng, f, 0.015), t60: Math.min(0.9, 2.2 / (f * 0.04)), a: amp * 0.32 * loud });
+      // The measured balance: thin under 130 Hz, full to about 450 Hz, a hollow at 700, a shoulder at 1-1.4 kHz.
+      const w = glassWeight(f);
+      const amp = shape * rad * w;
+      if (Math.abs(amp) < 0.02) continue;
+      modes.push({ f: jit(rng, f, 0.015), t60: Math.min(0.9, 2.2 / (f * 0.04)), a: amp * 0.42 * loud });
     }
   }
-  modal(out, 0.001, modes, contact);
+  modal(out, 0.001, modes, contact * ONSET);
   // The ball itself on a rigid face: its pop.
-  contactPulse(out, 0.001, contact, 0.25 * loud);
+  contactPulse(out, 0.001, contact, 0.2 * loud);
   const ring: Mode[] = [], shell: Mode[] = [];
   ballRing(rng, ring, 0.8);
   ballShell(rng, shell, 1);
   for (const m of ring) m.a *= 0.8 * loud;
   for (const m of shell) m.a *= 1.1 * loud;
-  modal(out, 0.001, ring, contact);
+  modal(out, 0.001, ring, contact * 0.5);
   modal(out, 0.001, shell, contact * ONSET);
-  // The glass's own higher bending modes, struck by the onset: the "bang" has a hard edge.
-  const edge: Mode[] = [];
-  for (let i = 0; i < 6; i++) edge.push({ f: rng.range(900, 2600), t60: rng.range(0.03, 0.08), a: rng.range(0.05, 0.12) * loud });
-  modal(out, 0.001, edge, contact * ONSET);
-  // The frame's steel, struck through the clamps: a low hum.
-  modal(out, 0.002, [{ f: jit(rng, 72, 0.1), t60: 0.4, a: 0.18 * loud }, { f: jit(rng, 118, 0.1), t60: 0.3, a: 0.1 * loud }], contact);
+  // The felt's slap on a hard face: the measured hit holds up to 6 kHz, 30 dB down, far past the panel's modes.
+  noiseBurst(out, rng, 0.001, 0.0003, 0.018, 0.75 * loud, [Biquad.make('hp', 1400, 0.7), Biquad.make('lp', 4600, 0.7), Biquad.make('lp', 7000, 0.7)]);
+  // The frame's steel, struck through the clamps: a short low thud under the panel.
+  modal(out, 0.002, [{ f: jit(rng, 92, 0.1), t60: 0.22, a: 0.14 * loud }, { f: jit(rng, 151, 0.1), t60: 0.18, a: 0.1 * loud }], contact * 0.5);
   if (v > 14) {
     // A hard ball rattles the panel in its fixings: a few metallic clicks just after.
     const clicks = 1 + Math.floor(rng.next() * 3 + 2 * clamp01((v - 14) / 15));
@@ -213,49 +237,70 @@ export function glass(rng: Rng, v: number): Float32Array {
   return fadeTail(out, 0.12);
 }
 
+/** What the measured glass hit keeps of the panel's modes (Wadman et al. Fig. 4.3.2, data/audio-reference.json). */
+function glassWeight(f: number): number {
+  if (f < 130) return (f / 130) ** 2;
+  if (f < 450) return 1;
+  // Into the hollow at 700 Hz and out to the shoulder at 1-1.4 kHz.
+  if (f < 700) return 1 - 0.8 * ((f - 450) / 250);
+  if (f < 1050) return 0.2 + 0.5 * ((f - 700) / 350);
+  if (f < 1400) return 0.7;
+  return 0.7 * Math.max(0.15, 1 - (f - 1400) / 1300);
+}
+
 // ---- mesh -------------------------------------------------------------------------------------------------------
 /**
- * The ball into the wire mesh (electro-welded steel, about 50 mm squares, in steel frames): "a higher frequency
- * ringing" (Higgins via The Padel Paper). The mesh gives (a softer, longer contact than glass); its wires ring at
- * many inharmonic frequencies; the panel rattles against its frame for a while after.
+ * The ball into the wire mesh (electro-welded steel, about 50 mm squares, in steel frames). Measured on court (Wadman et
+ * al. 2021, Figs. 4.3.1-2): unlike everything else in the game it builds for about 50 ms, then falls slowly, 20 dB in
+ * about 0.85 s, the longest sound on the court, and the listening panel's most disturbing. Its spectrum holds up: tops
+ * at about 900 Hz and 2.5 kHz, only 13-16 dB down at 5-8 kHz, where a racket is 30-40 dB down. That is the panel
+ * whipping and rattling against its frame and neighbours: a stochastic rattle driving wires that each ring only
+ * briefly. The ball's own soft catch (8 ms) sits under it. The ball hits it less often than glass but at no less pace.
  */
 export function mesh(rng: Rng, v: number): Float32Array {
-  const out = buf(0.55);
+  const out = buf(1.7);
   const s = clamp01(v / 22);
   const loud = 0.15 + 0.85 * s;
   const contact = jit(rng, 8e-3, 0.1);
-  contactPulse(out, 0.001, contact, 0.2 * loud);
+  contactPulse(out, 0.001, contact, 0.1 * loud);
   const ring: Mode[] = [], shell: Mode[] = [];
   ballRing(rng, ring, 0.6);
   ballShell(rng, shell, 0.4);
-  for (const m of ring) m.a *= 0.5 * loud;
-  for (const m of shell) m.a *= 0.6 * loud;
-  modal(out, 0.001, ring, contact);
+  for (const m of ring) m.a *= 0.3 * loud;
+  for (const m of shell) m.a *= 0.4 * loud;
+  modal(out, 0.001, ring, contact * 0.5);
   modal(out, 0.001, shell, 0.0012);
-  // Wires: modes spread from 400 Hz to 7 kHz, struck through the ball's slow contact and by the rattle.
-  const wires: Mode[] = [];
-  for (let i = 0; i < 36; i++) {
-    const f = 400 * Math.pow(7000 / 400, rng.next());
-    wires.push({ f, t60: 0.3 * Math.pow(400 / f, 0.3) * rng.range(0.7, 1.3), a: rng.range(0.3, 1) * 0.1 * loud });
-  }
-  modal(out, 0.002, wires, 0.0015);
-  // The rattle in the frame: clicks, close together at first, spreading out and fading.
-  const n = Math.round(4 + 10 * s);
-  let t = 0.004;
-  for (let i = 0; i < n; i++) {
-    t += rng.range(0.004, 0.012) * (1 + i * 0.35);
-    if (t > 0.45) break;
-    const amp = 0.12 * loud * Math.exp(-t / 0.12) * rng.range(0.5, 1);
-    noiseBurst(out, rng, t, 0.0002, 0.004, amp, [Biquad.make('bp', rng.range(1800, 4800), 2)]);
-    const sub: Mode[] = [];
-    for (let j = 0; j < 4; j++) {
-      const w = wires[Math.floor(rng.next() * wires.length)]!;
-      sub.push({ f: w.f, t60: w.t60 * 0.6, a: w.a * 0.5 * Math.exp(-t / 0.12) });
+  // The rattle: clicks, thick as the panel whips (it peaks about 40 ms in) and thinning as it settles. A harder ball
+  // shakes it for longer: amplitude falls with time constant tau (about 0.37 s is 20 dB in 0.85 s).
+  const tau = 0.14 + 0.5 * s;
+  const n = out.length;
+  const exc = new Float32Array(n);
+  for (let i = Math.round(0.002 * SR); i < n; i++) {
+    const t = i / SR;
+    const rate = 900 * Math.exp(-t / 0.4) + 60;
+    if (rng.next() < rate / SR) {
+      const e = (1 - Math.exp(-t / 0.018)) * Math.exp(-t / tau);
+      exc[i] = (rng.next() < 0.5 ? -1 : 1) * rng.range(0.25, 1) * e * loud;
     }
-    modal(out, t, sub, 0.0006);
   }
+  // Wires and welds: inharmonic modes in the measured groups, each damped within a few tens of ms.
+  const wires: Mode[] = [];
+  const group = (cnt: number, lo: number, hi: number, a: number, t60: number): void => {
+    for (let i = 0; i < cnt; i++) {
+      const f = lo * Math.pow(hi / lo, rng.next());
+      wires.push({ f, t60: t60 * rng.range(0.7, 1.3), a: a * rng.range(0.5, 1) });
+    }
+  };
+  group(5, 420, 650, 0.22, 0.05);
+  group(12, 720, 1250, 0.3, 0.05);
+  group(5, 1300, 1700, 0.12, 0.04);
+  group(12, 2100, 3400, 0.26, 0.04);
+  group(10, 3600, 6500, 0.13, 0.03);
+  group(8, 6800, 9000, 0.14, 0.02);
+  group(6, 9500, 15000, 0.09, 0.014);
+  resonate(out, exc, wires);
   dcBlock(out);
-  return fadeTail(out, 0.08);
+  return fadeTail(out, 0.12);
 }
 
 // ---- steel: posts, frames ---------------------------------------------------------------------------------------
@@ -299,9 +344,12 @@ export function net(rng: Rng, cord: boolean, v: number): Float32Array {
   const s = clamp01(v / 25);
   const loud = 0.2 + 0.8 * s;
   if (!cord) {
-    contactPulse(out, 0.001, jit(rng, 0.016, 0.1), 0.35 * loud);
-    noiseBurst(out, rng, 0.001, 0.005, 0.07, 0.12 * loud, [Biquad.make('bp', 420, 0.8)]);
-    noiseBurst(out, rng, 0.003, 0.004, 0.05, 0.035 * loud, [Biquad.make('bp', 2600, 0.9)]);
+    // (a net is open weave: it can't push air at 60 Hz, where a 16 ms contact pulse would put its energy)
+    noiseBurst(out, rng, 0.001, 0.005, 0.07, 0.3 * loud, [Biquad.make('bp', 420, 0.8)]);
+    noiseBurst(out, rng, 0.003, 0.004, 0.05, 0.11 * loud, [Biquad.make('bp', 1900, 0.9)]);
+    const pop: Mode[] = [];
+    ballRing(rng, pop, 0.8, 0.5 * loud);
+    modal(out, 0.001, pop, 0.003);
   } else {
     const c = jit(rng, 3.2e-3, 0.08);
     contactPulse(out, 0.001, c, 0.35 * loud);
@@ -313,6 +361,20 @@ export function net(rng: Rng, cord: boolean, v: number): Float32Array {
   }
   dcBlock(out);
   return fadeTail(out, 0.05);
+}
+
+// ---- the ball on a player ---------------------------------------------------------------------------------------
+/** The ball into a body: a dull pat, the clothes and flesh taking the highs. */
+export function body(rng: Rng): Float32Array {
+  const out = buf(0.12);
+  const contact = jit(rng, 9e-3, 0.1);
+  contactPulse(out, 0.001, contact, 0.3);
+  const ring: Mode[] = [];
+  ballRing(rng, ring, 0.5, 0.5);
+  modal(out, 0.001, ring, 0.002);
+  noiseBurst(out, rng, 0.001, 0.001, 0.02, 0.1, [Biquad.make('bp', 700, 0.9)]);
+  dcBlock(out);
+  return fadeTail(out, 0.02);
 }
 
 // ---- feet -------------------------------------------------------------------------------------------------------
@@ -329,14 +391,14 @@ export function step(rng: Rng, floor: number, force: number): Float32Array {
   contactPulse(out, 0.001, jit(rng, 0.014, 0.15), 0.06 * loud);
   if (floor === FL_TURF || floor === FL_CLAY) {
     const turf = floor === FL_TURF;
-    grains(out, rng, 0.002, Math.round((turf ? 24 : 32) + 50 * f), turf ? 0.014 : 0.02, turf ? 0.0006 : 0.001,
-      turf ? 2200 : 900, turf ? 7500 : 3800, 0.2 * loud);
-    noiseBurst(out, rng, 0.001, 0.003, 0.03, 0.05 * loud, [Biquad.make('bp', 1500, 0.6)]);
+    grains(out, rng, 0.002, Math.round((turf ? 14 : 32) + 24 * f), turf ? 0.014 : 0.02, turf ? 0.0008 : 0.001,
+      turf ? 900 : 900, turf ? 3200 : 3800, 0.07 * loud);
+    noiseBurst(out, rng, 0.001, 0.003, 0.03, 0.05 * loud, [Biquad.make('bp', 500, 0.6)]);
   } else if (floor === FL_CARPET) {
     noiseBurst(out, rng, 0.001, 0.002, 0.03, 0.1 * loud, [Biquad.make('bp', 900, 0.7)]);
   } else {
     noiseBurst(out, rng, 0.001, 0.0003, 0.008, 0.14 * loud, [Biquad.make('bp', 1800, 0.9)]);
-    if (f > 0.5 && rng.next() < 0.45) chirp(out, rng, 0.008, rng.range(0.025, 0.045), 0.08 * f);
+    if (f > 0.5 && rng.next() < 0.45) chirp(out, rng, 0.008, rng.range(0.025, 0.045), 0.025 * f);
   }
   dcBlock(out);
   return fadeTail(out, 0.02);
@@ -367,21 +429,21 @@ export function scuff(rng: Rng, floor: number, slide: number): Float32Array {
   const out = buf(len + 0.05);
   const loud = 0.4 + 0.6 * clamp01(slide);
   if (floor === FL_HARD) {
-    chirp(out, rng, 0.002, len * rng.range(0.6, 1), 0.12 * loud);
+    chirp(out, rng, 0.002, len * rng.range(0.6, 1), 0.06 * loud);
   } else {
     const turf = floor === FL_TURF, clay = floor === FL_CLAY;
     const n = Math.round(len * SR);
-    const lp = Biquad.make('lp', clay ? 2500 : turf ? 3500 : 2000, 0.7), hp = Biquad.make('hp', 300, 0.7);
+    const lp = Biquad.make('lp', clay ? 2500 : turf ? 1800 : 1600, 0.7), hp = Biquad.make('hp', 300, 0.7);
     for (let i = 0; i < n; i++) {
       const u = i / n;
       const env = Math.min(1, u / 0.15) * Math.min(1, (1 - u) / 0.4) * (0.7 + 0.3 * Math.sin(2 * Math.PI * 9 * u + rng.next()));
       out[i] = out[i]! + lp.run(hp.run(rng.next() * 2 - 1)) * env * 0.08 * loud;
     }
     if (turf || clay) {
-      const count = Math.round(len * (turf ? 900 : 1300));
+      const count = Math.round(len * (turf ? 500 : 1300));
       for (let gi = 0; gi < count; gi++) {
         const t = rng.next() * len;
-        grains(out, rng, t, 1, 0.0001, turf ? 0.0005 : 0.0009, turf ? 2500 : 1000, turf ? 8000 : 4000, 0.06 * loud * Math.sin((Math.PI * t) / len));
+        grains(out, rng, t, 1, 0.0001, turf ? 0.0007 : 0.0009, turf ? 1000 : 1000, turf ? 3500 : 4000, 0.03 * loud * Math.sin((Math.PI * t) / len));
       }
     }
   }
@@ -392,8 +454,10 @@ export function scuff(rng: Rng, floor: number, slide: number): Float32Array {
 // ---- the swing --------------------------------------------------------------------------------------------------
 /**
  * A racket through the air (`speed` 0..1): turbulent noise off the frame and the holes, its band rising with the
- * racket's speed; aeolian sound pressure goes as about speed cubed, so a block volley is near silent and a smash
- * swishes. Peaks 60 ms in (the event is the release, about the contact).
+ * racket's speed (vortex shedding at a Strouhal number of 0.2: 25 m/s past a 38 mm frame or a 10 mm hole is 130-500 Hz,
+ * so this stays under about 1 kHz); aeolian sound pressure goes as about speed cubed, so a block volley is near silent
+ * and a smash swishes. Peaks 60 ms in (the event is the release, about the contact). A sound for the player beside it:
+ * from the broadcast camera it barely carries.
  */
 /** When a whoosh peaks after its start (s): the soundscape starts it so the peak lands just before the contact. */
 export const WHOOSH_PEAK = 0.025;
@@ -403,13 +467,13 @@ export function whoosh(rng: Rng, speed: number): Float32Array {
   const s = clamp01(speed);
   const amp = 0.05 + 0.2 * s * s * s;
   const n = out.length;
-  const bp = new Biquad(SR), hi = Biquad.make('bp', 3000, 1.1);
+  const bp = new Biquad(SR), lp = Biquad.make('lp', 1500, 0.7);
   for (let i = 0; i < n; i++) {
     const t = i / SR;
     const e = t < WHOOSH_PEAK ? (t / WHOOSH_PEAK) ** 2 : Math.exp(-(t - WHOOSH_PEAK) / 0.05);
-    if (i % 32 === 0) bp.set('bp', 250 + 1300 * s * e, 1.3);
+    if (i % 32 === 0) bp.set('bp', 220 + 750 * s * e, 1.3);
     const x = rng.next() * 2 - 1;
-    out[i] = (bp.run(x) + 0.25 * s * hi.run(x)) * e * amp;
+    out[i] = lp.run(bp.run(x)) * e * amp;
   }
   dcBlock(out);
   return fadeTail(out, 0.03);
@@ -800,8 +864,10 @@ export function birdCall(rng: Rng): Float32Array {
 // ---- rooms ------------------------------------------------------------------------------------------------------
 /** A room's reverberation (data/audio.json `rooms`). */
 export interface RoomSpec {
-  /** RT60 (s) in the low (< 400 Hz), mid and high (> 3 kHz) bands. */
+  /** RT60 (s) in the low, mid and high bands. */
   rt60: [number, number, number];
+  /** Where the bands meet (Hz); default 400 and 3000. */
+  xo?: [number, number];
   /** Delay of the diffuse tail after the direct sound (s). */
   preDelay: number;
   /** Early reflections: delay (s), level (linear), pan -1..1. */
@@ -816,7 +882,8 @@ export interface RoomSpec {
  * echo. Normalised to unit energy, so `wet` in the mix sets the reverb's level.
  */
 export function impulseResponse(rng: Rng, room: RoomSpec, sr = SR): Float32Array[] {
-  const len = Math.min(4, Math.max(0.3, room.rt60[0] * 1.3));
+  const len = Math.min(4, Math.max(0.3, Math.max(room.rt60[0], room.rt60[1], room.rt60[2]) * 1.3));
+  const [xLo, xHi] = room.xo ?? [400, 3000];
   const n = Math.round(len * sr);
   const chans: Float32Array[] = [];
   for (let c = 0; c < 2; c++) {
@@ -824,9 +891,9 @@ export function impulseResponse(rng: Rng, room: RoomSpec, sr = SR): Float32Array
     // Independent noise per band: one noise split by Butterworth filters cancels at each crossover (about 6 dB
     // dips at 400 Hz and 3 kHz); separate noises add in power, flat through the crossovers.
     for (let i = 0; i < n; i++) { lo[i] = rng.gauss(); mid[i] = rng.gauss(); hi[i] = rng.gauss(); }
-    Biquad.make('lp', 400, 0.7, 0, sr).process(lo);
-    Biquad.make('hp', 400, 0.7, 0, sr).process(mid); Biquad.make('lp', 3000, 0.7, 0, sr).process(mid);
-    Biquad.make('hp', 3000, 0.7, 0, sr).process(hi);
+    Biquad.make('lp', xLo, 0.7, 0, sr).process(lo);
+    Biquad.make('hp', xLo, 0.7, 0, sr).process(mid); Biquad.make('lp', xHi, 0.7, 0, sr).process(mid);
+    Biquad.make('hp', xHi, 0.7, 0, sr).process(hi);
     const out = new Float32Array(n);
     const pd = Math.round(room.preDelay * sr), build = Math.round(0.04 * sr);
     const k = room.rt60.map((t) => 6.9078 / (t * sr));

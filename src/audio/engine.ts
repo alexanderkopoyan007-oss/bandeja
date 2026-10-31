@@ -4,7 +4,7 @@
 // camera each frame. Browsers start audio only from a user gesture (`unlock`); until then, and until the bank's
 // family has arrived from the worker, plays are dropped.
 import * as THREE from 'three/webgpu';
-import { AUDIO, arenaAudio, families, renderFamily, renderRoom, type BankEnv, type Sample } from './bank.ts';
+import { AUDIO, AMB_SEND, BED_SEND, CROWD_SEND, arenaAudio, families, renderFamily, renderRoom, type BankEnv, type Sample } from './bank.ts';
 import { resample } from './dsp.ts';
 import { BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
 
@@ -270,7 +270,7 @@ export class AudioEngine implements AudioSink {
     const dx = x - this.lx, dy = y - this.ly, dz = z - this.lz;
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     v.air.frequency.setValueAtTime(Math.min(20000, AUDIO.distance.airHz / (1 + d / AUDIO.distance.airM)), t);
-    v.send.gain.setValueAtTime(0.5 + d / 40, t);
+    v.send.gain.setValueAtTime(bus === BUS_AMB ? AMB_SEND : 0.5 + d / 40, t);
     src.start(t, Math.max(0, offset));
     v.src = src;
     v.until = t + (buf.duration - Math.max(0, offset)) / src.playbackRate.value;
@@ -292,7 +292,7 @@ export class AudioEngine implements AudioSink {
     g.connect(this.buses[bus]!);
     // The crowd is in the room too.
     const s = ctx.createGain();
-    s.gain.value = 0.7;
+    s.gain.value = arenaAudio(this.env.arena).crowdSend ?? CROWD_SEND;
     g.connect(s).connect(this.wet!);
     src.start(t);
     src.onended = (): void => { g.disconnect(); s.disconnect(); };
@@ -310,7 +310,7 @@ export class AudioEngine implements AudioSink {
       g.gain.value = 0;
       g.connect(this.buses[name === 'murmur' ? BUS_CROWD : BUS_AMB]!);
       const s = this.ctx.createGain();
-      s.gain.value = 0.6;
+      s.gain.value = arenaAudio(this.env.arena).bedSend ?? BED_SEND;
       g.connect(s).connect(this.wet!);
       l = { src: null, gain: g, want: gain, tc };
       this.loops.set(name, l);
