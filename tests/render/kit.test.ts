@@ -6,7 +6,7 @@ import * as THREE from 'three/webgpu';
 import { mannequinWithPeople } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
 import { kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
-import type { PlayerAsset } from '../../src/render/avatar/asset.ts';
+import { PEOPLE, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
 
 const cast = JSON.parse(readFileSync(new URL('../../data/people.json', import.meta.url), 'utf8')) as { men: { name: string }[]; women: { name: string }[] };
@@ -326,4 +326,11 @@ describe('kit', () => {
     }
     expect(bad).toEqual([]);
   }, 300_000);
+
+  it('gives each person their own head of hair and their own shoes', () => {
+    const specs = PEOPLE.map((n) => JSON.parse(readFileSync(new URL(`../../data/players/${n}.json`, import.meta.url), 'utf8')) as { hair: string; hair_fit?: number; hair_trim?: number; kit: { shoes: string; sole: string } });
+    expect(new Set(specs.map((s) => `${s.hair} ${s.hair_fit ?? 1} ${s.hair_trim ?? ''}`)).size).toBe(10);
+    expect(new Set(specs.map((s) => s.kit.shoes)).size).toBe(10);
+    for (const p of base.people) expect(p.look!.kit.shoes).toMatch(/^#[0-9a-f]{6}$/);
+  });
 });

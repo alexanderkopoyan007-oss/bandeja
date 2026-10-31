@@ -28,6 +28,8 @@
   "shorts": 0.64,
   "height": 1.79,
   "kit": {
+    "shoes": "#22335c",
+    "sole": "#e6e3dc",
     "top": "tee",
     "bottom": "shorts",
     "mark": 3

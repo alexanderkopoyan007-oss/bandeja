@@ -21,6 +21,7 @@
   "eyebrows": "eyebrow012",
   "eyelashes": "eyelashes01",
   "hair": "short01",
+  "hair_fit": 0.6,
   "clothes": [
     "male_casualsuit06",
     "shoes05"
@@ -28,6 +29,8 @@
   "shorts": 0.63,
   "height": 1.76,
   "kit": {
+    "shoes": "#3a3d44",
+    "sole": "#d8d4ca",
     "top": "polo",
     "bottom": "shorts",
     "mark": 0

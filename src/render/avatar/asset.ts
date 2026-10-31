@@ -83,6 +83,9 @@ export interface KitCut {
   /** Which of the kit's small marks (kit.ts). */
   mark?: number;
   seam?: 'raglan';
+  /** Their own shoes' upper and sole (CSS hex): MakeHuman has one trainer, so a colour per person. */
+  shoes?: string;
+  sole?: string;
 }
 
 export interface BodyLook {

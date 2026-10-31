@@ -152,6 +152,41 @@ def finish(yb, spec, out, preview=False):
             o.data.update()
             print('FACE fringe faces out', len(dead))
 
+    # ---------- a closer cut of the same hair ----------
+    # There are too few haircuts for ten heads (MakeHuman has five a man can wear): "hair_fit" takes a head of hair in towards
+    # the scalp, each vertex to that share of its height over the skin, down to a little over it.
+    if spec.get('hair_fit'):
+        from mathutils.bvhtree import BVHTree
+        fit = spec['hair_fit']
+        scalp = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices],
+                                     [tuple(p.vertices) for p in body.data.polygons if max(p.vertices) < kit.N_BODY])
+        for o in meshes:
+            if kinds[o.name] != 'hair':
+                continue
+            for v in o.data.vertices:
+                q = scalp.find_nearest(v.co)[0]
+                if q is not None:
+                    d = v.co - q
+                    v.co = q + d * max(fit, min(1.0, 0.003 / max(d.length, 1e-6)))
+            o.data.update()
+            print('FACE hair fit', fit)
+    # "hair_trim": cut level with the back of the shirt's collar (metres over the Neck joint), a little lower in front. Long
+    # hair on these cards runs inside the shirt, and the shirt draws a ragged line across it.
+    if spec.get('hair_trim') is not None:
+        at = Vector((0, 0, rig.data.bones[P + 'Neck'].head_local.z + spec['hair_trim']))
+        tilt = Vector((0, -0.25, 1)).normalized()  # (the model faces -y)
+        for o in meshes:
+            if kinds[o.name] != 'hair':
+                continue
+            bm = bmesh.new()
+            bm.from_mesh(o.data)
+            bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=at, plane_no=tilt, clear_inner=True)
+            bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+            bm.to_mesh(o.data)
+            bm.free()
+            o.data.update()
+            print('FACE hair trim', spec['hair_trim'], 'vertices left', len(o.data.vertices))
+
     # ---------- the face's shape keys (before anything is scaled or deleted: the units index the whole basemesh) ----------
     units = face.expression_keys(body, meshes, kinds, spec)
     masks = face.region_masks(body, units, rig.data.bones[P + 'Head'].head_local.z)

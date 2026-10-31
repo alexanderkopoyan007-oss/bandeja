@@ -408,8 +408,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const lace = smoothstep(0.024, 0.02, footX.abs()).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top)
     .mul(smoothstep(0.34, 0.2, toe.mul(1 / 0.0135).fract().sub(0.5).abs()));
   const heel = smoothstep(-0.03, -0.045, toe).mul(0.8);
-  const upper = mix(mix(color(look.shoes).mul(float(1).add(knit)), color(look.shirt), stripe.mul(0.9).add(heel).min(1)), color(new THREE.Color(look.shoes).getHSL({ h: 0, s: 0, l: 0 }).l > 0.5 ? 0x8b9098 : 0xe8e8e8), lace);
-  const shoeC = mix(upper, color(0x8a8378), sole);
+  const shoe = new THREE.Color(body.kit.shoes ?? look.shoes);
+  const upper = mix(mix(color(shoe).mul(float(1).add(knit)), color(look.shirt), stripe.mul(0.9).add(heel).min(1)), color(shoe.getHSL({ h: 0, s: 0, l: 0 }).l > 0.5 ? 0x8b9098 : 0xe8e8e8), lace);
+  const shoeC = mix(upper, color(new THREE.Color(body.kit.sole ?? 0x8a8378)), sole);
   // Albedo: the skin a little darker in its deepest creases, the eyeball under the lids, the mouth's inside.
   // (dark skin lifted a little: under the same floodlights its faces read as masks beside the others', mean luminance
   // 23 of 255 against 68 and 99)

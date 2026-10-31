@@ -2589,3 +2589,98 @@ hips 0.55-0.57 H: the targets that widen the waist stop short and more would nee
 a lunge but have no cloth of their own. A skirt's normals don't follow the thighs' push. Collar points are rough from close to. p7 and p9 share a ponytail and p4 and p5 a
 short04, told apart by colour and by the visor. p10's braid is good from behind but her front hair is a swept cap. p4 hasn't had a clean look at
 6 m. Frame time on these meshes hasn't been measured.
+
+## The kit's holes, and ten heads and ten pairs of shoes (round 8, 2026-10-31)
+
+The verifier saw the court through p10's shoulders, red then blue as the backdrop changed. Round 7 had passed the neckline on three
+people, and p7 had the same holes, only fewer. A body here is a shell: the skin under the clothes is deleted, the torso is hollow, and
+back faces were culled. So any line of sight past an edge ended on the court. Three faults stacked up on the tanks:
+
+- **The teeth were the skin's edge.** `cut_tank` gave the skin back from 2 cm inside the cut, by vertex. A vertex lost takes all its
+  triangles, and those triangles are 2-3 cm across, so the skin stopped in teeth past the shirt's straight edge. It now keeps 6 cm
+  (`TANK_SKIN`), and `skinCut` draws the real edge per pixel, as it always meant to.
+- **The ring was the shirt standing off the shoulder.** The tee is cut, not made for this, and after `fit_suit` its edge was still up
+  to 1.9 cm off the skin. With the skin cut 5 mm in, there was a gap all round each armhole to look through, in at one and out of the
+  other or the neck. `hug_armholes` puts each edge vertex 2 mm off the skin, staying in the cut's plane so the binding still fits, gives
+  it the nearest skin vertex's weights so it stays there, and eases the shirt to it over 4 cm. Rejected: on the skin, or 1 mm under it.
+  The two surfaces crossed in a ragged line and the occlusion bake went black along it. `skinCut` is 1 cm in now and runs down to the
+  hem, because skin came through in patches in the armpit.
+- **Nothing was behind the gaps.** The body's material draws both sides now, with the back at 0.3 (`BODY_INSIDE`), and `shadowSide` is
+  `BackSide` so the shadow map comes from the same faces as before. Closed surfaces hide their own backs, so this shows only at edges,
+  as cloth in its own shadow. It also closed the view into every collar, up every sleeve and shorts leg, and between a skirt's lining
+  and its cloth. Rejected: both sides on cloth only. A ray could still get under the neckline's skin, inside the shell, and leave
+  through the culled back of the shoulder's skin. A skirt's hem band is on the front faces only, or it reads as a torn flap.
+  The cost is that back faces are rasterised.
+
+`underShirt` went from 12 mm to 5 mm under the neckline: on fitted shirts the skin in that band came through the collar band in jagged
+pieces, and what it used to hide is now the cloth's inside. Trap: a test or a mask that cuts by height needs bounding, again: `skinCut`
+stops 5 cm over the hem, or it would cut the legs.
+
+**The polo's sliver was a collar left behind.** The leaf was bound 95% to Spine2, the shirt under it to the shoulders as well, so as the
+shoulders came forward the shirt came up through the leaf in ragged wings at the back and the sides. The leaf now takes the shirt's
+own weights (inverse distance from its four nearest vertices) and the stand adds the neck's. The test that held a collar to the neck
+and chest allows the shoulders.
+
+**Two more from looking at all ten.** The back band was a level cut, and past the neck the shirt's top is the shoulder, so on the men it
+ran out along the shoulders in dark wings: it stops 8 cm out (`COLLAR_BACK`). And the chest in the collar was salmon on p1, p4, p5, p6
+and p7. `neckTone` sampled 5 cm over the neck joint, which is under the chin, and the blur took in the lip: p6 (212, 127, 108) against a
+cheek of (223, 176, 144). It samples the base of the throat now, (214, 170, 137).
+
+**The waist, which no test and no look had caught.** Probing late found p8's hips open to the court in WebGL: a band about 7 by 3 cm, in
+4 moments of 60, in views through the body's middle. WebGPU wasn't sampled on the old hem. A still frame can't show it, as the fault
+needs the body moving. `hemLag` took out the part of the hem's lag going into the body and kept the part along the surface, and on a back
+leaning over, that part runs 5 cm x sin(lean) up the spine. The hem slid off the top of what is under it, and the skin there is gone.
+`cut_shorts_under_shirt` leaves about 2-5 cm of shorts under a man's hem and 0-2 cm under p8's. All four hits had the lag near its 5 cm
+limit, and all four closed with the lag set to zero. A hem now moves only out along its own normal. No shirt or shorts has a split
+normal to tear (0 on all ten; the pleats do, and they skip `hemLag`), and a hem's outline still goes 4.2-4.8 cm on a 5 cm lag, down from
+5. Passed over without trying them: more shorts under the hem, which round 3's notes say comes through the shirt, and capping the lag,
+which loses the swing to fix something only the sliding part does. The new test has the old formula as its control: it fails with 76
+rays 1 mm off the body's axis, about 7 cm2. With a hem flared you can look up under a shirt at its dark inside, as you can with a real one.
+
+**Shoes.** `shoes02`, `05` and `06` are one mesh in three prints, `01` and `04` are dress shoes, `03` a boot. There is one trainer, so
+each person has a colour: `kit.shoes` and `kit.sole` in `data/players/*.json`, read in `personMaterial`. The stripe and heel stay the
+shirt's colour, so no team colour moved.
+
+**Hair.** Men can wear five of MakeHuman's haircuts and there are six men, so two heads are closer cuts of the same hair: `hair_fit`
+takes each vertex to that share of its height over the skin. p2 has a short afro (afro01, 0.62) against p8's full one with a band, and p6
+a crop (short01, 0.6) against p3's. p5 takes short03, unused till now, and darker. p9 takes long01 under the same visor. Left long it
+ran inside the shirt and the shirt drew a ragged line across it, so `hair_trim` cuts it level with the collar, a little lower in front.
+The `face` maps weren't touched.
+
+**The test.** `tests/render/kit.test.ts` holds a software renderer: rays 3 mm apart, the shader's cuts as `personCut` (keep it in step with
+the mask in `personMaterial`; the numbers are shared, the sums aren't), back faces on or off. From outside, no hole of 8 rays or more
+round a tank's armhole. With both sides drawn, none of 3 rays or more on anyone from a ring of views, modelled and in two played poses.
+On the old build the first finds 31 rays at p7's armhole and the second rays clean through. A ray that meets nothing counts only inside
+the shirt's outline, or the gaps between the limbs fail it. Rays along the arms in the T-pose do pass clean through both sleeves, on
+the men, but nobody plays in a T-pose, so that pose is left out of that test. The waist has a test of its own, as a slit between shirt
+and shorts is outside the shirt's outline: each person's two most bent moments of a rally, each hem swung to the lag's limit in four
+directions on the CPU (`hemPush`, `personSway`: keep them in step with `hemLag` and `personMaterial`), no hole shut in by the shirt and
+the bottoms together within 8 cm of the body's axis. Further out it's air: a hem hung off a bent body and a raised thigh shut in a little
+of it in front of the belly, 9 cm or more off the axis, and that isn't a hole in anybody.
+
+**In the real renderer.** Balls hung inside the torso and hips, every other object hidden, hair hidden, 18 views a person: a view that
+changes when the balls appear has a way in, and a third render on another backdrop says whether that way ends on the court or on the
+cloth's inside. Without that third render the two read the same, and a real hole in p8's hips sat among harmless seams until it was
+added. On the final geometry, three casts that cover all ten on each of WebGPU and WebGL, about 20 moments of play each, about 8,640 views:
+7 reach the court, all from the `top` view, 65 degrees above the player, down the collar and out under a hem. p10 9-23 px and p3 13-78 px
+at 1.4 mm a pixel, with the hair off. Anything of 8 px or less isn't listed. No other view reaches the court on anyone. The same scan on
+p8's cast over 60 moments in WebGL, hips only, found 4 on the old hem and none on the new. The old tanks score 65 and 258 px from the side.
+
+**Looking at them.** 13 contact sheets at low size, one over the brief's 12. The first 12 came before the hem changed, the last two of
+them all ten on WebGPU in five upper and four lower views. The 13th is p2, p8, p9 and p10 on WebGPU with the hem held at the lag's limit,
+after that change: no hole, tear or tent, though p2's front hem bulges a little and p8's front tile was framed on the shorts, so it
+doesn't show her hem. WebGL was checked by numbers only. That sheet showed dark streaks on p9's white skirt, and they were mine: a thigh
+pushes a skirt through itself, its back comes out in front, and drawing both sides put those faces at 0.3 where culling had shown the
+next pleat. Comparing the same frame with and without back faces: 2,209 px of cloth went from 122 to 63. A skirt's inside is 0.75 now
+(`SKIRT_INSIDE`), and pixels much darker than the culled frame fell from 379 at 0.62 to 28 from behind (the frames differ a little), with
+244 left from the side. It is colour only and came after the scan above, which it can't affect. Those are the grey chevrons seen earlier
+in a lunge. My software check had put them at under 0.1%, as it doesn't run `thighsPush`. The sheet wasn't taken again after this change.
+
+**What changed in size.** p7 +470 triangles, p10 +512 (the skin kept under the edge), p5 hair +822, p9 hair -3832, all ten together
+391,942 to 389,914. Atlases are the same size.
+
+**What's left.** One trainer in ten colours. p9's cut is blunt. A 2 mm gap stays round each armhole, so a side view can find a thin dark
+line of the shirt's inside. The `top` line above: the body is hollow, so from high enough a collar and a hem line up, and nothing closes
+that but something inside the torso. No camera in the game goes there, but a hem flared forward makes it wider. The waist test covers
+each person's two most bent moments and four lags, and the probe covers samples of play, so neither proves every frame. Frame time
+with both sides drawn was not measured.
