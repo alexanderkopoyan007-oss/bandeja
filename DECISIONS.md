@@ -2913,3 +2913,54 @@ Twelve review rounds had reported steady progress. The owner then played one mat
 **Between points they look up.** Avatar.gazeAt: with the players walking back, eyes and head go to the partner within 3.5 m, else level and ahead with a slow wander; they had no aim at all then. I first blamed the sleepy close-ups in the round 9 sheet on heads bowed to a dead ball, and that was wrong: measured, heads are about -4 degrees walking, and only the moment a point dies goes low (p10 -38). The sheet was the dev `?cam=face` close-up, not what a player sees; the real cut-away at the broadcast's distance, in the new light, reads as a TV shot of a pair. Its lens went from 34 to 26 degrees, closer on the pair. What keeps a face from holding up at the dev camera's distance is still open (form, lids, mouth); a real cut-away doesn't get that near.
 
 **A volley stops by the ball.** Head speed through a volley was 6/7/10/14/13 m/s at -33/-16/0/+16/+33 ms: the racket went on to a fixed finish from wherever the ball was met, so it left the ball faster than it came. The finish is now the family's step on from this contact (`Avatar.finishKey`): 6/7/9/10/5. This closes the review's "volley speed peaks after the ball".
+
+## The owner again: "the arms are going in places they shouldn't, the legs the same", and the gameplay (2026-10-31)
+
+Everything here was found from the human's seat, by a stand-in with a person's reaction and timing (`tools/out/limb-audit.ts`,
+`tools/out/owner-end.ts`), and no bound in any test moved.
+
+**Legs.** Measured per 1000 frames from the keyboard player's seat: the leg solver had no hip, foot-turn or ankle range at
+all. It has them now (`solveLegs`). Then the run itself: the swing foot stayed on its spot for the first third of the swing,
+and waited for the other foot to be 65% through its own, so it trailed 0.76 m behind the hips with the leg straight (back
+thigh 52 degrees behind vertical at p10, a person's about 20). `RUN_ALONG` 0.05, `RUN_TURNS` 0.35 and the heel coming up
+behind (`RUN_HEEL`) put it at 10-16. Backwards the foot rolls the other way, on the ball first, and the steps are quicker and
+shorter (`RUN_BACK_*`; ankle past 55 degrees 17 to 3). A run sits lower (`RUN_SINK`), which took the one-frame knee spikes
+out at the landing: a leg nearly straight swings its knee on any change of the hips.
+
+**Two wrong readings.** A foot's forward means nothing when it hangs toes down behind a run: taken as its turn it reported
+feet 180 degrees off the hips, and steered the solver at turns that weren't there. Read off the ankle's hinge, knee off its
+foot went 17 to 0.9 per 1000 and foot off the hips stopped being a finding. The knee's pole kept the clip's vertical part,
+which could lie along the leg, and a knee coming down to land swung 100 degrees off the hips: it is level now.
+
+**Arms.** The ready position is placed square to the stance, and a turned chest came through hands left where they were,
+forearms folded against the neck: it rides the chest now (`followChest`, eased, as a stride's turn stays out of the hands).
+A cancelled overhead went back to ready by the straight line, through the chest: still rare, the racket arm's deep frames
+are 0.3% of frames. The forearms are kept out of the guard capsules outside the forward swing (inside it, a fast arm's push
+came and went in a frame: serves popped 30 times a minute for 5).
+
+**The lunge.** One foot went out 0.46 m and the other stayed, a straight-legged A, feet 1.2 legs apart through a volley. The
+far foot makes at least half the lunge (`LUNGE_TRAIL`).
+
+**The human's seat.** The AI had three rules a human never got. `holdShort` (step off the ball's line and wait) moved to
+`positioning.ts` unchanged and the assist uses it: the assist ran the human down the ball's line to a contact off the glass,
+and the ball hit them. A held swing goes off by itself at the last moment it can meet the ball, or before the ball reaches
+the body: a late release was graded Late and swung through the air 1.6-2.4 m from a ball at 15 m/s. Real late hits are bad
+shots, not misses. Holding the key through a ball on 0132e5e: 31 hits, 21 air shots. Now 282 and 5
+(`tests/sim/humanSeat.test.ts`, which fails on 0132e5e).
+
+Points, human at sd 60 ms, Club, 6-8 matches, before / after: ball hit a body 10.1 / 3.9%, opponents' winners 18.3 / 10.0%,
+shots a point 6.9 / 8.3. Sample: 672-753 points, so about +-2 on each share.
+
+**Who plays whom.** A stand-in at sd 70 ms won 62% at Club, 60% at Advanced and 53% at Pro: a human has no motor error, so
+ordinary timing beats the top AI. The AI's skill model stays: Club's short rallies and 50% unforced errors are the
+recreational rung of the published ladder, not a bug. What changed is who you meet: the partner plays one level above the
+opponents (they gave away a fifth of the pair's points) and the default opponents are Advanced, with a once-only move for
+saves on Club. There: 8.0 shots, 17 s, the human 60% (sd 70) or 55% (sd 110).
+
+**sim-r9 stays unmerged.** The second skeptic's verdict was hold. It repaired what it set out to, but smash of winners went
+46.8 to 52.1 (published 43), volley 28.3 to 23.9 (28.4), Martillo against Muro's smash signature fell onto its test bound,
+and the merged tree fails six tests. The branch keeps the work and the findings (por tres by level, the side-glass test).
+
+**Not measured.** Nobody has played this with their hands. Stand-ins press one shot key; they never smash or go to the net
+on purpose, and their winners are about 1% of points, so how a human finishes points is unknown. Racket arm through the chest
+is still 20 per 1000 frames for the human, most of it touching rather than deep, y:serve and volleys.
