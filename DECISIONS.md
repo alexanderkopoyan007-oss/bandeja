@@ -2968,3 +2968,77 @@ and the merged tree fails six tests. The branch keeps the work and the findings 
 **Not measured.** Nobody has played this with their hands. Stand-ins press one shot key; they never smash or go to the net
 on purpose, and their winners are about 1% of points, so how a human finishes points is unknown. Racket arm through the chest
 is still 20-25 per 1000 frames for the human, most of it touching rather than deep, y:serve and volleys.
+
+## The people at the distance the game shows them (round 11, 2026-10-31)
+
+The owner: "the humans look like shit". What they see is the broadcast camera, about 1 cm a pixel on the near pair at 1080p and 1.5 on the far one, with a head 16-30 px tall. So all of this was judged there, from fixed moments of an AI match at 1080p, not from a close-up. The people are the same ten builds of MakeHuman; nothing new was downloaded.
+
+**Skin: most of the orange was the tone map.** SKIN_AMBIENT (1.55/1.34/1.2, set when the environment was 1.0) was the suspect, and taking it to neutral and halving the wrap's red (0.42 to 0.22, since the key went from 1.6 to 3.0) barely moved it: shadow R/G 1.84 to 1.77, on an atlas at 1.35. Khronos Neutral takes up to 0.04 off every channel, for the 4% specular a dielectric shows under a white furnace. In a dark hall that specular isn't there, so the offset comes out of the colour itself, nearly all of the blue in shadow. `PersonNodeMaterial.setupOutput` gives skin 65% of it back. All of it turned dark skin ashen.
+
+Measured on the near pair's legs at 1080p, three fixed moments of seed 4243, stadium: mean 152/90/58 and 150/96/65 to 147/97/73 and 144/100/77; the shadowed third's R/G 2.03 and 1.81 to 1.72 and 1.59 (atlas 1.35; a hue carried through a neutral light keeps its ratio in sRGB too, so this is the fairest figure); dark-to-lit in linear 0.24 and 0.27 to 0.12 and 0.21, so a leg has a dark side now and doesn't glow. The other three arenas, the same legs and constants: hall 1.56 to 1.30-1.35, club day 1.55 to 1.39-1.49, club night 1.65-1.76 to 1.45-1.49. The poses aren't identical between runs, even stepped to the same sim time, so small differences here are noise.
+
+**The kit hangs.** `fit_suit` pulled every shirt vertex to 35% of its gap past 6 mm, a shrink-wrap. Now only the yoke is drawn in (the neck hole and collar are cut to it); from under the arm down nothing is pulled in, and `hang_shirt` moves the cloth 60% of the way to a plumb line from the widest place above it, by height and bearing, as a skirt already did (35% on the women's closer tops), with soft folds of the mesh's own growing to the hem. The shorts' legs keep their gap and stand 1.4-1.6 cm further off towards the hem, less on the inside of the leg.
+
+| Girth, cm | chest | waist | hem | leg of shorts |
+|---|---|---|---|---|
+| p1 (body 100.6 / 77.3) | 106.9 to 112.9 | 93.0 to 109.6 | 105.3 to 114.3 | 54.2 to 63.1 |
+| p4, the narrowest man | 101.6 to 107.8 | 89.5 to 106.5 | 102.3 to 111.2 | 52.4 to 61.3 |
+| p8, a woman in shorts | 97.5 to 100.9 | 71.7 to 85.4 | 93.8 to 100.5 | 62.4 to 62.5 |
+| p7, a tank over a skirt | 92.6 to 92.6 | 71.1 to 75.1 | 93.8 to 96.0 | 58.2 to 58.6 |
+
+The men's waist goes from 0.85-0.92 of the chest to 0.96-1.0, the women's from 0.74-0.80 to 0.81-0.88. `tests/render/kit.test.ts`'s holes, armholes and waist tests pass unchanged, and the 60 s animation limits on all ten in `people.test.ts` pass with the capsules refitted to the looser cloth.
+
+What comes through is held by `tests/render/clothFit.test.ts`, a software render round each player from level to 45 degrees, on the deepest lunges (85-95 degrees at the hip) and highest overheads (a hand 10-20 cm over the head) of 24 s of play: the area of skin that no standing view shows, and of the shorts under the shirt. Hidden skin, worst view, old to new: lunge 9-49 to 9-46 cm2, overhead 4-40 to 4-38. Shorts are worse: lunge 0-9 to 1-15, overhead 0-1 to 0-11. At 1 cm a pixel that is at most 15 pixels, in the worst of 24 views of the deepest lunge; overhead it is the shirt lifting off them, which real shirts do, but in a lunge some of it is the thigh's shorts reaching the hem, and I didn't separate the two. From the close camera, p1 and p7, a lunge and an overhead each, I could see no skin through cloth. That is two people of ten by eye; the rest is the numbers.
+
+Traps. A first go at 80% with fold waves six round the body made a pot belly: the hem's vertices are weighted to the thighs too, so "weight on the spine" left them behind and the shirt tucked in like a sack; a vertex now takes the move by how little of its weight is on the arm. The shorts' normal took the hem down past the mid-thigh limit, so the ease is level. Folds in the hem scalloped it over a skirt, whose top is sized to the shirt's convex outline, so nobody in a skirt has them. `cut_shorts_under_shirt`'s 3 cm reach stopped finding the shirt once it hung further off: half the shorts stayed under it and came through in lunges (shown area 6-8 to 22-46 cm2 on the men) until `reach` went to 7.5 cm (11-15 now). A tank's hang starts lower, below the armhole's foot, or the foot stood off the ribs and failed the armhole test.
+
+**Hair.** The black ball wasn't the cards. Most sources' hair is near black (sRGB 14-35, linear 0.005-0.02), the same tone map's toe takes that to nothing, and the strand edge's darkening reads the alpha's average from afar and halves it. Hair now keeps its tone, has a floor of 0.018 made up in a warm dark (lifting by a factor kept a source's red or grey tint and made a felt helmet), and from about 3 mm a pixel the strand noise and tilt fade to big lumps with a broad highlight tinted by the hair, while cards seen edge on thin out into the background. No new asset. A first go with a floor of 0.04 and a strong sheen went grey.
+
+Inside the hair at 1080p, the near-black share (luma under 14) goes from 74% to 7% on the near man without a post behind him, and from 35% and 46% to 8% and 2% on the far pair; median luma from 7 to 32, and from 27 and 31 to 37 and 43. The other near player's mask catches a glass post, so his 43% to 27% says little. The edge width I tried to measure was too noisy to quote: that the edges are softer is by eye only.
+
+Size: 36,264-41,206 triangles a person to 36,266-41,172; `.bnz` 7.57 MB to 7.57 for the ten, opaque atlases 6.75 to 6.80 (the suit's AO rebaked), alpha 7.45 unchanged. No new vertex attribute, and nothing per frame: all of it is built once into the shaders or into the meshes.
+
+Cost, `tools/perf.mjs 10 standard`, each build run twice in turn on a shared machine: Medium at 4x CPU throttle p50 10.7 and 12.0 ms before, 10.5 and 12.1 after; High at 2x pixel ratio, unpaced, 4.7 and 4.3 before, 6.6 and 4.9 after; High paced at 120 Hz holds 8.3 ms on both, summed GPU pass time p50 55.7 and 61.4 before, 58.5 and 57.9 after. That is inside the noise: the 6.6 didn't repeat, and two runs each can't show a cost smaller than about half a millisecond. The hair's extra shader math covers few pixels. (Those runs include the prints.)
+
+Not done, in the report's order: GTAO or contact occlusion, bare skin's relief, and the cut-away's faces. Dark cloth takes the tone map's toe as skin and hair did, so near-black shorts and trim lose their folds; `toneBackNode` would fix that, but it moves every kit's look on screen, so that is the owner's call.
+
+**The prints did not go in.** A big print per `cut.mark` was built and judged against real broadcast frames, and dropped (c73ec6f on `people-r11`). Partners stopped wearing one shirt, shirt pixels in team colour fell 16-26%, so a far pair no longer read as one colour, and kit 3's blue yoke went into the court's blue on the near side after a change of ends. Words read as barcodes. At that distance real shirts are one colour with small logos. So is this one. The judge also measured what is left: near legs' R/G 1.38-1.44 against 1.14-1.18 on real frames, and a shirt hem 0.78-0.86 of the widest width against 0.61 on one real back view. Better, and still not broadcast.
+
+## The run was a squat (round 12, 2026-10-31)
+
+A fit test failed on the merged kit, skin 50.7 against 50, and the frame behind it was not a lunge: a player in an ordinary run, hips 0.66 m off the floor, the knee above them, thigh 107 degrees forward. The leg work earlier the same day had taken RUN_SINK from 0.02 + 0.018 a m/s to 0.03 + 0.03 to stop leg pops at landing, a flat 15 cm at 4 m/s whatever the player's height. That hid near-straight legs by folding them. Probably a large part of "the legs don't look real".
+
+A steady forward run, 3.5 m/s at the median, seeds 14601-2, players p1, p4, p7, p10:
+
+| | Shipped at 53add25 | Now | People |
+|---|---|---|---|
+| Hips, share of standing height, median | 0.80-0.82 | 0.90-0.91 | about 0.9 from the knee and bob below |
+| Thigh forward, the higher leg, median | 58-64 | 40-44 | |
+| Thigh forward, p90 / p99 / max | 78-88 / 92-102 / 105-113 | 53-59 / 71-81 / 87-97 | |
+| Knee on the straighter leg, median | 68-69 | 44-48 | about 14 at the landing, 40 down |
+| Same, p1 | 20-28 | 7-10 | |
+
+The sources give the knee ("about 14 at contact, 40 at midstance", a cross-country team), the bob (5-10 cm, [Runner's World](https://runnersworldonline.com.au/what-is-vertical-oscillation-and-how-can-it-affect-running-performance/), [Humboldt thesis](https://digitalcommons.humboldt.edu/etd/248)) and the stance share (38% at 3.5 m/s, 32% at 4.9, [Tsai](https://ojs.ub.uni-konstanz.de/cpa/article/view/1308)). No source I found gives a thigh figure for these speeds: the "40-50 at peak" I worked to is from memory of the gait literature, and they are road runners, not padel players. Nobody has measured a padel run off footage for this.
+
+**What changed, each for a measured reason.**
+
+- The hips come from the leg, as the walk's do: RUN_HIP0-1 of the standing height at the bottom, RUN_BOB up as a foot leaves, the bottom RUN_LOW through the stance. Eased (`gaitRunH`): tied to the gait, they jumped whenever a run tipped into a walk, a knee 10 degrees in a frame.
+- They rise no higher than the feet on the floor, and the one about to land, can reach (RUN_STRETCH of the leg), at RUN_HIP_RATE at most.
+- The swing was wrong in shape. A stride chart (`GAIT=1 limb-audit.ts`) had the ankle still 33 cm up as it passed under the hips, and a knee bent 100 degrees over the foot is a thigh 50 degrees up, whatever the speed. Worked back from real angles, the heel is high behind the hips and the ankle about 15-18 cm up by the time it passes under. So RUN_HEEL rises to 0.22 and falls by RUN_THROUGH 0.55, clearance drops to 0.04 + 0.01 a m/s held to RUN_FALL 0.8, the foot's pitch levels by RUN_LEVEL 0.8.
+- A swinging foot overshot its landing by 9 cm, 111 frames per 1000 with that leg straight: RUN_AHEAD 0.36 to 0.3, RUN_ALONG 0.05 to 0.02, and a soft last 3% of reach (RUN_SOFT), a run's swing only.
+- Two landing-frame bugs from the backward run: the toes unfolded only on touchdown, dropping the ankle 3.6 cm, and the roll was read from where the foot took off. 25 knee pops on one seed.
+- `gazeSettle`: the ball put back for the next point took the gaze across the court, all four heads turning 8-10 degrees in a frame.
+
+**Tried and dropped, the mannequin alone having hidden two.** Soft reach on every leg: 22-27 pops, but planted feet crept, and a foot on the floor must stay pinned. The reach cap on the walk as well: fine on the mannequin, legs 43 to 93 on p7, because a walk's heel strike is meant to be near straight. Soft reach on any gait: it was bending the walk's landings, 7 pops a minute on the worst seed. Racket hand riding the shoulder: arms 54 to 74. Run-specific checks need the real players as well as the mannequin; only `people.test.ts` showed these.
+
+| Pops a minute | Shipped | Now | Limit |
+|---|---|---|---|
+| Mannequin, seeds 1 / 3 / 5 | 28.8 / 27.8 / 29.3 | 24.8 / 22.8 / 21.5 | 30 |
+| Legs (count) | 47 / 46 / 56 | 45 / 27 / 30 | |
+| Head (count) | 12 / 15 / 13 | 4 / 2 / 3 | |
+| Arms (count) | 51 / 44 / 45 | 44 / 56 / 49 | |
+| p7, p3 on seed 1 | 25.3, 24.3 | 26.5, 25.3 | 30 |
+
+Arms are mixed, up on one seed: what's left are small steps from the chest's ramp into a turn and arms at their reach. Not fixed.
+
+**One bound moved, and it should be said.** `clothFit.test.ts` judged "the deepest frames so far", so whatever came first was held to a limit meant for the extreme, and the squat frames used to fill that slot; with them gone it judged a forehand slice at 74. Measured on the same frame on the old limbs, 75.4: not new, not clipping, 40 cm2 of chest at the collar as the body folds and a hem riding up a thigh. The test now takes the deepest of the rally by the end, and a new `anySkin` limit of 80 covers every frame it samples, which it never did. Then p2 read 50.7 on the deepest frames, chest at the collar again, and the old shrink-wrap on the same limbs and frames reads 50.9. 50 was the old kit's 49 on the poses before the run was raised, so `lungeSkin` goes to 52, and three limits that had room tighten: overSkin 42 to 24, lungeShorts 18 to 8, overShorts 14 to 5. The new kit does show more on p4 (21 against 6 in a lunge, 17 against 6 overhead): the shirt hangs.
