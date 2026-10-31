@@ -2641,6 +2641,11 @@ live (the tap returned nothing in round 8). Close cameras can now reach the limi
 all, because the soundscape only heard the live match. `Soundscape.replay` plays the shots, bounces, glass and feet from the replay's own
 sim, pitched down with the slow motion to 0.7 at the lowest, and leaves the crowd to the live match, so nobody applauds twice.
 
+**Load, tried and dropped.** Half of a Quick match's wait is compiling shaders the title has just compiled, so I freed the title's game after the
+new one had warmed up, hoping three would reuse them. Four paired runs at load 9-14, broadband and slow 4G, from "Compiling shaders" to "Ready": 5.4 s before, 5.2 s after.
+That is noise, and it holds two matches in memory, so it was reverted. three builds a node material's shader per material, not per program.
+Broadband, CPU 4×, loaded machine: 14.6-16.9 s title and 6.4-8.3 s match, against 5.49 + 3.46 on a quiet one at round 5. Not rechecked quiet.
+
 ## Women's overheads finish (2026-10-31)
 
 Round 8's High #3. The rallies in a women's match were right, but a smash won one time in ten (tour: flat 33.3, topspin 29.2,
