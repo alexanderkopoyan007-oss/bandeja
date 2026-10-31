@@ -3042,3 +3042,25 @@ The sources give the knee ("about 14 at contact, 40 at midstance", a cross-count
 Arms are mixed, up on one seed: what's left are small steps from the chest's ramp into a turn and arms at their reach. Not fixed.
 
 **One bound moved, and it should be said.** `clothFit.test.ts` judged "the deepest frames so far", so whatever came first was held to a limit meant for the extreme, and the squat frames used to fill that slot; with them gone it judged a forehand slice at 74. Measured on the same frame on the old limbs, 75.4: not new, not clipping, 40 cm2 of chest at the collar as the body folds and a hem riding up a thigh. The test now takes the deepest of the rally by the end, and a new `anySkin` limit of 80 covers every frame it samples, which it never did. Then p2 read 50.7 on the deepest frames, chest at the collar again, and the old shrink-wrap on the same limbs and frames reads 50.9. 50 was the old kit's 49 on the poses before the run was raised, so `lungeSkin` goes to 52, and three limits that had room tighten: overSkin 42 to 24, lungeShorts 18 to 8, overShorts 14 to 5. The new kit does show more on p4 (21 against 6 in a lunge, 17 against 6 overhead): the shirt hangs.
+
+Cost of round 12, `tools/perf.mjs 30 standard`, each build twice in turn on a shared machine: no measurable change. Medium at 4x CPU throttle 95.4 and 97.5 fps before, 90.5 and 118.7 after, the machine's load going down between them; High at 2x 176 and 205 before, 173 and 206 after; High paced at 120 Hz 120.5 on all four, 1% low 120.
+
+## A person from Meshy, as a guest (2026-10-31)
+
+The owner: "what about a person, try to make a realistic person with it", then "just do one to see what it would look like and be in the game", then "ship it". One invented man, 9 credits for the image and 35 for the model on the owner's Meshy Pro plan, which owns its output. Named nobody, modelled on nobody. He is a guest: `data/people.json` `guests`, reached with `?people=meshy,p2,meshy,p4`, not in the default cast, because he has no team colours and two of him are white-shirt twins beside a pair in one kit.
+
+The GLB (354k tris, one fused surface, no skeleton) stays out of git at `~/bandeja-people-src/meshy-pilot/`. `tools/assets/meshy/` makes the game's files: decimate to 40k, a new unwrap of 81 islands, colour and normals baked from the full mesh (decimating Meshy's UVs gave a camouflage shirt, and WebP blacked out blocks with zero alpha). He has longer arms and shorter legs than p1, and his arms sit 14 degrees off the body, not 45, so p1's skeleton would not lie over him: he has his own joints, measured from slices through the mesh and set by hand, weights from p1's body moved onto them, arms raised 24 degrees before binding so an overhead has the same range.
+
+| Per person | Meshy | p1 |
+|---|---|---|
+| Triangles | 40,001 | 39,532 |
+| Download | 1.95 MB | 2.05 MB and the shared suit normals |
+| Draw calls, near pair swapped | 86 | 90 |
+
+Beside p1 at the same frames: clearly more like a person close up, face, skin and shirt; much the same at broadcast size. Shoulders don't collapse overhead, elbows don't pinch, feet on the floor by eye.
+
+What is wrong, in order. With the arm high the sleeve, fused to the ribs, opens into a dark fold on the side of the chest, reduced from a blue gash by occlusion and a wider weight blend and still there. A beige wedge beside the neck when the head tilts back. Specks along UV seams, a ragged shirt hem. Dead cloth: hems don't swing, wrinkles are fixed in every pose. A dead face: no blink, no expression, no mouth to open. Feet set 12.5 degrees out in the mesh.
+
+Structural to a fused AI mesh: the armpit, fingers fused to the middle knuckle, solid hair, no mouth interior. Fixable: automating the joint fit, the collar and armpit weights, seam specks, team colours with a shirt mask. So not ten of these yet: the face and cloth would need rebuilding on top, and the current ten have what he lacks.
+
+Frame time reads the same but isn't settled: both of his paced runs in `tools/perf.mjs` hitched (p99 18 and 41 ms) and p1's didn't; three alternating pairs of 1,448 frames in a separate probe did not repeat it (p99 9.5-9.6 against 9.3-9.5). The machine was busy throughout. He has only been played by bots.

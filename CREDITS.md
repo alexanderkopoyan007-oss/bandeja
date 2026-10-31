@@ -24,6 +24,7 @@ Every third-party asset and library used by BANDEJA, with its source and licence
 | Base mesh, skins (young, middle-aged and old caucasian, african and asian men and women), low-poly eyes, eyebrows, eyelashes01, hair short01-04, afro01, bob01, long01, ponytail01, braid01, the casual, elegant, sport and work suits and shoes01/02 (their meshes only), fedora01 | [MakeHuman](http://www.makehumancommunity.org) system assets and asset packs | CC0 (as above) | The stadium's twelve spectators, `public/assets/crowd/`, rendered by `tools/assets/crowd/` from `data/crowd.json` (plain materials on the clothes; their textures are never used) |
 | Skirts (pleated and A-line), headband, visor, polo collar | Generated from each body by `tools/assets/mpfb/person_kit.py` | Our own work, CC0 | The people, `public/assets/people/`, as above |
 | Kit marks (the small marks and word blocks on shirts and shorts), seams, side panels | Drawn in the shader, `src/render/avatar/kit.ts` `kitDetail` | Our own work, CC0; invented, no real brand | Every person's kit |
+| The guest player `meshy` (mesh, colour and normal bakes) | Generated with [Meshy](https://www.meshy.ai) on the owner's Pro plan, which owns the output; decimated, re-unwrapped and rigged by `tools/assets/meshy/`. An invented person. The source GLB is not in the repo. |
 
 Tools used to build assets (not shipped): [Blender](https://www.blender.org) 5.2 (GPL), [MPFB 2](https://static.makehumancommunity.org/mpfb.html) 2.0.18, MakeHuman's Blender add-on (GPL-3.0; its output, made from the CC0 assets, carries no GPL terms).
 
