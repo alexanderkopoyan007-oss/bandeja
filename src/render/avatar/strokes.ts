@@ -184,7 +184,7 @@ export const OVERHEAD: Family = {
   // critic's #1, the pro's #4).
   lead: 0.32,
   over: {
-    knots: [0, 0.4, 0.7, 0.88, 1],
+    knots: [0, 0.34, 0.6, 0.8, 1],
     hand: [0.22, 0.25, 0, 0.26, 0.2, -0.1, 0.28, 0.14, -0.12, 0.33, 0.24, 0, 0.38, 0.32, 0.12],
     elbow: [0.29, 0, 0.08, 0.29, 0.03, 0.1, 0.29, 0.06, 0.12, 0.28, 0.1, 0.16, 0.25, 0.14, 0.2],
     back: [deg(37), deg(70), deg(105), deg(60), deg(20)],
@@ -213,7 +213,7 @@ export const VIBORA: Family = {
   bodyTurn: 0.7,
   lead: 0.32,
   over: {
-    knots: [0, 0.4, 0.7, 0.88, 1],
+    knots: [0, 0.34, 0.6, 0.8, 1],
     hand: [0.22, 0.24, 0, 0.27, 0.18, -0.12, 0.29, 0.1, -0.16, 0.36, 0.16, 0.02, 0.42, 0.2, 0.16],
     elbow: [0.29, 0, 0.08, 0.29, 0.03, 0.1, 0.29, 0.05, 0.12, 0.28, 0.08, 0.18, 0.25, 0.1, 0.22],
     back: [deg(37), deg(75), deg(120), deg(70), deg(10)],
@@ -236,7 +236,7 @@ export const SMASH: Family = {
   loop: 0.38,
   lead: 0.32,
   over: {
-    knots: [0, 0.4, 0.7, 0.88, 1],
+    knots: [0, 0.34, 0.6, 0.8, 1],
     hand: [0.22, 0.27, 0, 0.25, 0.22, -0.14, 0.24, 0.03, -0.22, 0.27, 0.22, -0.12, 0.3, 0.36, -0.02],
     elbow: [0.29, 0.02, 0.06, 0.29, 0.05, 0.05, 0.28, 0.1, 0.07, 0.26, 0.16, 0.1, 0.22, 0.22, 0.1],
     back: [deg(37), deg(85), deg(145), deg(90), deg(30)],
@@ -276,7 +276,7 @@ export const SERVE: Family = {
   // Off a coach's serve, frame by frame: the racket hand held out at the shoulder's height until about 0.2 s before the ball,
   // then down across the body to it, the elbow 44-52 all the way.
   over: {
-    knots: [0, 0.4, 0.7, 0.88, 1],
+    knots: [0, 0.34, 0.6, 0.8, 1],
     hand: [0.42, 0.02, 0.28, 0.45, -0.02, 0.26, 0.44, -0.05, 0.27, 0.3, -0.2, 0.3, 0.02, -0.41, 0.34],
     elbow: [0.22, -0.14, 0.1, 0.22, -0.15, 0.1, 0.22, -0.15, 0.1, 0.16, -0.22, 0.1, 0.08, -0.25, 0.1],
     back: [deg(20), deg(25), deg(30), deg(50), deg(80)],
@@ -293,7 +293,7 @@ export const SERVE: Family = {
   sit: 0.05,
   punch: 1,
   bodyTurn: SERVE_TURN,
-  lead: 0.3,
+  lead: 0.42,
   follow: 0.45,
   weight: 0.2,
 };

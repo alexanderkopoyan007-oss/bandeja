@@ -38,6 +38,7 @@ const v3 = new THREE.Vector3();
 const q1 = new THREE.Quaternion();
 const q2 = new THREE.Quaternion();
 const q3 = new THREE.Quaternion();
+const QUAT_ID = new THREE.Quaternion();
 /** How far a raised arm goes behind the chest's plane (rad), the extra it has hanging low, and between what elevations. */
 const ARM_BEHIND = 0.6;
 const ARM_BEHIND_LOW = 1.1;
@@ -64,6 +65,8 @@ const OVER_ON = 0.38;
 const OVER_AFTER0 = 0.06, OVER_AFTER1 = 0.3;
 const OVER_ARM = 0.56;
 const OVER_TO_BALL = 0.72;
+/** Where the racket's turn starts going over to the contact's (of the swing). */
+const OVER_TURN_FROM = 0.3;
 const OVER_TILT_EASE = 0.05;
 /** How much of the cartwheel the neck takes back: the eyes stay on the ball. */
 const OVER_NECK = 0.6;
@@ -999,6 +1002,8 @@ export class Avatar {
   /** The overhead's elbow in the chest's frame (out, up, fwd; m), how much of the swing is the chest's, and how far it's in. */
   private readonly overE = new THREE.Vector3();
   private readonly overQ = new THREE.Quaternion();
+  private readonly overEnd = new THREE.Quaternion();
+  private readonly overTurn = new THREE.Quaternion();
   private readonly overHead = new THREE.Vector3();
   private overU = 0;
   private overIn = 1;
@@ -3457,38 +3462,53 @@ export class Avatar {
   }
 
   /**
-   * The overhead's way to the ball (see OverArm): the key (v2, q2, the contact) from the chest's curves until they give
-   * way to it, over the last of the swing, from OVER_TO_BALL. That handover isn't eased at its end, so the hand and the
-   * racket are at speed as they get there. Let go late, there's less time to go round (lagK).
+   * The overhead's way to the ball (see OverArm): the key (v2, q2, the contact) from the chest's curves, the whole curve
+   * sliding onto the ball over the last of the swing, from OVER_TO_BALL. Blending from the curve to the ball instead put
+   * the hand at the curve's end with nothing left of its speed: the racket head lost half of it in the last 30 ms and
+   * was at its fastest before the ball, not at it. Let go late, there's less time to go round (lagK).
    */
   private overKey(o: OverArm, ua: THREE.Bone): void {
-    const s = this.keyS, g0 = (s - OVER_TO_BALL) / (1 - OVER_TO_BALL), left = (1 - (g0 > 0 ? g0 * g0 : 0)) * this.lagK * this.overIn;
+    const s = this.keyS, g0 = (s - OVER_TO_BALL) / (1 - OVER_TO_BALL), a = this.lagK * this.overIn, left = (1 - (g0 > 0 ? g0 * g0 : 0)) * a;
     if (left <= 0) return;
     this.overU = left;
+    // The racket's turn onto the contact's starts far sooner: 100-140 degrees of it in that last stretch was most of the
+    // head's speed.
+    const g1 = (s - OVER_TURN_FROM) / (1 - OVER_TURN_FROM), turn = (1 - (g1 > 0 ? g1 * g1 : 0)) * a;
     this.chestAxes(this.armFree[0]!, ua);
-    const O = this.chestOut, U = this.chestUp, F = this.chestFwd, m = ua.matrixWorld.elements, k = this.armLen / OVER_ARM;
+    const O = this.chestOut, U = this.chestUp, F = this.chestFwd, m = ua.matrixWorld.elements, k = this.armLen / OVER_ARM, n = o.knots.length - 1;
     curve(o.knots, o.hand, 3, s);
-    const ho = CURVE[0]! * k, hu = CURVE[1]! * k, hf = CURVE[2]! * k;
-    const hx = m[12]! - O.x * ho + U.x * hu + F.x * hf, hy = m[13]! - O.y * ho + U.y * hu + F.y * hf, hz = m[14]! - O.z * ho + U.z * hu + F.z * hf;
+    const ho = (CURVE[0]! - o.hand[n * 3]!) * k, hu = (CURVE[1]! - o.hand[n * 3 + 1]!) * k, hf = (CURVE[2]! - o.hand[n * 3 + 2]!) * k;
+    const eo = o.hand[n * 3]! * k, eu = o.hand[n * 3 + 1]! * k, ef = o.hand[n * 3 + 2]! * k;
+    // (what is left of the curve from here to its end, and where its end is)
+    const lx = -O.x * ho + U.x * hu + F.x * hf, ly = -O.y * ho + U.y * hu + F.y * hf, lz = -O.z * ho + U.z * hu + F.z * hf;
+    const hx = m[12]! - O.x * eo + U.x * eu + F.x * ef, hy = m[13]! - O.y * eo + U.y * eu + F.y * ef, hz = m[14]! - O.z * eo + U.z * eu + F.z * ef;
     curve(o.knots, o.elbow, 3, s);
     const E = this.overE;
     E.x = CURVE[0]! * k; E.y = CURVE[1]! * k; E.z = CURVE[2]! * k;
     curve(o.knots, o.back, 1, s);
     // The shaft laid back from up the trunk about the shoulder line, its face out along that line.
-    const cp = Math.cos(CURVE[0]!), sp = Math.sin(CURVE[0]!);
-    const ax = U.x * cp - F.x * sp, ay = U.y * cp - F.y * sp, az = U.z * cp - F.z * sp;
-    const nx = -O.x, ny = -O.y, nz = -O.z;
-    basisQuat(ay * nz - az * ny, az * nx - ax * nz, ax * ny - ay * nx, ax, ay, az, nx, ny, nz, this.overQ);
-    const off = this.grip.off, h = this.hand0, g = 1 - left;
+    this.laidBack(CURVE[0]!, this.overQ);
+    this.laidBack(o.back[n]!, this.overEnd);
+    const off = this.grip.off, h = this.hand0, W = this.overTurn;
     h.copy(off).applyQuaternion(q2);
     const kx = v2.x - h.x, ky = v2.y - h.y, kz = v2.z - h.z;
-    q2.slerp(this.overQ, left);
+    W.copy(this.overEnd).conjugate().premultiply(this.overQ);
+    if (a < 1) W.slerp(QUAT_ID, 1 - a);
+    q2.slerp(this.overEnd, turn).premultiply(W);
     h.copy(off).applyQuaternion(q2);
-    v2.x = hx + (kx - hx) * g + h.x;
-    v2.y = hy + (ky - hy) * g + h.y;
-    v2.z = hz + (kz - hz) * g + h.z;
+    v2.x = kx + (hx - kx) * left + lx * a + h.x;
+    v2.y = ky + (hy - ky) * left + ly * a + h.y;
+    v2.z = kz + (hz - kz) * left + lz * a + h.z;
     if (this.dt > 0 && this.st === ST_SWING) this.swingV = v2.distanceTo(this.overHead) / this.dt;
     this.overHead.copy(v2);
+  }
+
+  /** The racket laid back by `back` from up the trunk, about the shoulder line (chestAxes), its face out along that line. */
+  private laidBack(back: number, out: THREE.Quaternion): void {
+    const O = this.chestOut, U = this.chestUp, F = this.chestFwd, cp = Math.cos(back), sp = Math.sin(back);
+    const ax = U.x * cp - F.x * sp, ay = U.y * cp - F.y * sp, az = U.z * cp - F.z * sp;
+    const nx = -O.x, ny = -O.y, nz = -O.z;
+    basisQuat(ay * nz - az * ny, az * nx - ax * nz, ax * ny - ay * nx, ax, ay, az, nx, ny, nz, out);
   }
 
   /** After the ball, the hand going to its place in the chest's frame (OverArm.under), the racket as the key has it. */
