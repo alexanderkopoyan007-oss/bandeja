@@ -9,7 +9,7 @@ import { abs, clamp, floor, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import { PF_FLOOR, type Prediction } from '../ball/predict.ts';
 import { findWindows, makeWindows, OH_ANY, OH_BANDEJA, OH_SMASH, OH_VIBORA } from '../contact/windows.ts';
-import { makeStandPlan, offGlassHigh, planStand, BAJADA_ABOVE, BAJADA_DEPTH, type StandPlan } from '../player/positioning.ts';
+import { holdShort, makeStandPlan, offGlassHigh, planStand, BAJADA_ABOVE, BAJADA_DEPTH, DODGE, type Hold, type StandPlan } from '../player/positioning.ts';
 import { smashLanding } from '../contact/smashAim.ts';
 import { formationSpot, type Spot } from '../player/formation.ts';
 import { styleOf, type AiStyle } from './styles.ts';
@@ -128,10 +128,8 @@ export class SimpleAi {
   contra = false;
   /** Singles: our last shot was one to follow in (the net-intent decision doubles keeps in MatchSim.intentUp). */
   approach = false;
-  /** Waiting at (holdX, holdZ) for the ball to cross the way to the plan's spot, until holdT (holdShort). */
-  private holdT = -0;
-  private holdX = -0;
-  private holdZ = -0;
+  /** Waiting there for the ball to cross the way to the plan's spot (holdShort). */
+  private readonly hold: Hold = { x: -0, z: -0, t: -0 };
   private readonly wins = makeWindows();
   private readonly st = makeStandPlan();
   /** The contact this AI is set up for (the renderer times the swing to it). */
@@ -377,10 +375,10 @@ export class SimpleAi {
       }
       // Be there, feet set, a little before the contact.
       this.goBy = this.idealT - 0.15;
-      if (t0 < this.holdT) {
-        this.goX = this.holdX;
-        this.goZ = this.holdZ;
-        this.goBy = this.holdT;
+      if (t0 < this.hold.t) {
+        this.goX = this.hold.x;
+        this.goZ = this.hold.z;
+        this.goBy = this.hold.t;
       }
       this.chasing = true;
       this.drift(f, p, s);
@@ -682,10 +680,10 @@ export class SimpleAi {
     // Blocked from where they stood, defenders volleyed 58% of bandejas at their shins from 7 m (REVIEW.md round 3
     // #1), having planned to play them off the glass.
     if (hit >= 0 && st.inTime && hit < st.t + 0.09 && !overhead && this.hitOnTheWay(m, s, st.x, st.z) < 0) hit = -1;
-    this.holdT = -0;
+    this.hold.t = -0;
     if (!overhead && !st.volley) {
-      this.holdShort(m, s, st.x, st.z, st.t);
-      if (this.holdT > 0) hit = -1;
+      holdShort(pr, p, s, m.time, st.x, st.z, st.t, this.hold);
+      if (this.hold.t > 0) hit = -1;
     }
     if ((!st.inTime || (hit >= 0 && hit < st.t + 0.09)) && !overhead) {
       // No comfortable contact in time, or the ball comes at us before the planned one (a fast ball at the
@@ -770,62 +768,6 @@ export class SimpleAi {
       if (ex * ex + ez * ez < r * r) return k;
     }
     return -1;
-  }
-
-  /**
-   * The contact is after the ball has gone by us (off the glass, usually) and the ball's line runs through us or
-   * between us and the spot: step DODGE off the line, on the spot's side if there is time and our own if not, and
-   * wait for it to pass. A player doesn't run through a ball they mean to play later: run straight at the spot,
-   * defenders crossed the line of a bandeja as it arrived, stopped to block it and half-volleyed it at their shins
-   * (89 of 94 such volleys were planned off the glass: review round 4, the pro's #4). Time enough to cross first, or
-   * too little left after the wait, leaves the plan as it is.
-   */
-  private holdShort(m: MatchSim, s: number, tx: number, tz: number, contact: number): void {
-    const p = m.players[this.index]!;
-    const pr = m.pred;
-    const px = p.pos.x;
-    const pz = p.pos.z;
-    const h = p.tune.height;
-    const now = m.time;
-    // Where the ball passes nearest, below the top of the body.
-    let near = HOLD_NEAR * HOLD_NEAR;
-    let k = -1;
-    for (let j = 0; j < pr.n; j++) {
-      const ti = pr.t[j]!;
-      if (ti < now || pr.z[j]! * s <= 0) continue;
-      if (pr.bounces[j]! > 1 || ti > contact - HOLD_GAP) break;
-      if (pr.y[j]! > h) continue;
-      const ex = px - pr.x[j]!;
-      const ez = pz - pr.z[j]!;
-      const d2 = ex * ex + ez * ez;
-      if (d2 < near) { near = d2; k = j; }
-    }
-    if (k < 0) return;
-    const vx = pr.vx[k]!;
-    const vz = pr.vz[k]!;
-    const v = sqrt(vx * vx + vz * vz);
-    if (v < 1) return;
-    const nx = -vz / v;
-    const nz = vx / v;
-    const bx = pr.x[k]!;
-    const bz = pr.z[k]!;
-    const dp = (px - bx) * nx + (pz - bz) * nz; // the player and the spot, off the ball's line
-    const ds = (tx - bx) * nx + (tz - bz) * nz;
-    const left = pr.t[k]! - now;
-    if (abs(dp) >= DODGE && abs(ds) >= DODGE && dp * ds > 0) return;
-    if (dp * ds < 0 && (abs(dp) + DODGE) / HOLD_RUN + HOLD_START < left - HOLD_GAP) return;
-    const toSpot = ds >= 0 ? 1 : -1;
-    const own = dp >= 0 ? 1 : -1;
-    const side = abs(dp) < DODGE && (DODGE + abs(dp)) / HOLD_RUN + HOLD_START < left ? toSpot : own;
-    const go = side * DODGE - dp;
-    if (abs(go) / HOLD_RUN + HOLD_START * 0.5 > left) return;
-    const hx = clamp(px + nx * go, p.minX, p.maxX);
-    const hz = clamp(pz + nz * go, p.minZ, p.maxZ);
-    const rest = sqrt((tx - hx) * (tx - hx) + (tz - hz) * (tz - hz));
-    if (rest / HOLD_RUN + HOLD_START > contact - pr.t[k]!) return;
-    this.holdX = hx;
-    this.holdZ = hz;
-    this.holdT = pr.t[k]! + HOLD_AFTER;
   }
 
   /**
@@ -1324,15 +1266,6 @@ const FEET_SIDE = 0.6;
 const ESCAPE_LAG = 0.1;
 const ESCAPE_ACCEL = 0.8;
 const ESCAPE_TOP = 4.3;
-/** How far (m) from the ball's line a player not taking it keeps (body 0.22 + ball 0.033 + a margin). */
-const DODGE = 0.55;
-/** holdShort: how near the player's the ball must pass (m), the run it reckons with (m/s), the start-up (s), how far
- * ahead of the ball a crossing must be (s), how long after the ball's passing the wait ends (s). */
-const HOLD_NEAR = 2.5;
-const HOLD_RUN = 4.5;
-const HOLD_START = 0.2;
-const HOLD_GAP = 0.2;
-const HOLD_AFTER = 0.05;
 
 /**
  * A smash's landing depth (m from the net): the shortest at which a full-pace smash from the contact (`back` m from

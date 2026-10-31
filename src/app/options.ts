@@ -10,7 +10,7 @@ import type { GameOptions } from '../game/game.ts';
 import { resolveKeys } from '../game/input/bindings.ts';
 import { qualityPreset } from '../render/quality.ts';
 import type { CameraPreset } from '../render/views.ts';
-import { type MatchSetup, type Settings, LEVEL_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
+import { type MatchSetup, type Settings, LEVEL_AI, PARTNER_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
 
 /**
  * URL parameters that name a game (what optionsFromUrl and main.ts read to set one up): any of them launches it
@@ -162,7 +162,7 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
       },
       doubles,
       human: Array.from({ length: n }, (_, i) => !attract && i === 0),
-      aiLevel: [level, level],
+      aiLevel: [attract ? level : PARTNER_AI[setup.level], level],
       aiStyle: styles,
       lefty: Array.from({ length: n }, (_, i) => !attract && i === 0 && setup.hand === 'left'),
       timingScale: TIMING_SCALE[s.timing],

@@ -19,7 +19,7 @@ import {
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, BEHIND_MAX, makeWindows, OH_ANY, reachAt, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
-import { makeStandPlan, planStand, type StandPlan } from './player/positioning.ts';
+import { holdShort, makeStandPlan, planStand, type Hold, type StandPlan } from './player/positioning.ts';
 import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
@@ -64,6 +64,9 @@ export const CALL_YOURS = 1;
 export const CALL_SWITCH = 2;
 /** The ball touched a player's body (not the racket): the point ends on it (player = who was hit). */
 export const E_BODY = 18;
+/** A held swing goes this long before the ball leaves its window (s), and before it would hit the body (s). */
+const LAST_SWING = 0.02;
+const BODY_LEAD = 0.03;
 /** E_WHIFF's y: the swing missed a ball in reach (timing) / there was no ball to hit (none in reach at the release,
  * or not legal to play) / the ball was out of reach (too far or too high or low) at the contact. */
 export const WHIFF_TIMING = 0;
@@ -872,9 +875,15 @@ export class MatchSim {
             st.volleyKey = true;
           }
         }
+        // The way to a contact off the glass doesn't run through the ball (holdShort, as an AI's: 6% of the points of a
+        // human playing on the assist ended with it running into the ball on the way).
+        const H = this.hold[i]!;
+        H.t = -0;
+        if (st.valid && !overhead && !st.volley) holdShort(this.pred, p, s, t0, st.x, st.z, st.t, H);
       }
     } else {
       st.valid = false;
+      this.hold[i]!.t = -0;
     }
 
     // While a shot is charged for an incoming ball (and while setting up a serve) the movement keys steer the
@@ -938,6 +947,17 @@ export class MatchSim {
       const gone = !this.focusContra && k >= 0 && s * (this.pred.z[k]! - p.pos.z) > BEHIND_MAX;
       if (ideal >= 0 && ideal - early < t0 + DT && !gone) this.releaseSwing(i, max(t0, ideal - early), f);
     }
+    // Held to the last moment the swing can meet the ball, or until the ball is about to hit the body, it goes off by
+    // itself, a late hit and not an air shot ("Late" on the screen, and the racket through nothing, 1.6-2.4 m from a
+    // ball at 15 m/s). Nobody waits for a ball to reach their chest: an AI's swing has always gone in time.
+    if (human && p.swing === SW_CHARGE && this.phase === PH_RALLY && this.rally.hitter !== team) {
+      const focus = this.focusIdeal(i);
+      if (focus >= 0 && this.focusInReach && this.focusGo < t0 + DT) this.releaseSwing(i, t0, f);
+      else if (this.focusInReach) {
+        const k = this.bodyHitIdx(i, this.side(team));
+        if (k >= 0 && this.pred.t[k]! - BODY_LEAD < t0 + DT) this.releaseSwing(i, t0, f);
+      }
+    }
     // Safety: a swing held far too long releases itself, unless the ball it waits for is still on its way (a
     // lob pressed for at the opponent's strike can hang over 3 s before the overhead: those used to go off by
     // themselves, graded against nothing). Past the contact by a margin, or held 8 s, it goes.
@@ -957,6 +977,8 @@ export class MatchSim {
   }
 
   private readonly focusWins = makeWindows();
+  /** Each player's wait for the ball to go by (holdShort; humans: an AI keeps its own). */
+  private readonly hold: Hold[] = [{ x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }];
   /** Walls the ball has touched since its last bounce or strike (carried into re-predictions). */
   private wallsSinceBounce = 0;
   private assistX = 0;
@@ -1208,8 +1230,9 @@ export class MatchSim {
     const st = this.stand[p.index]!;
     if (k <= 0 || !st.valid) return;
     const pushing = !full && abs(f.moveX) + abs(f.moveY) > 0.1 ? 0.55 : 1;
-    this.form.x = st.x;
-    this.form.z = st.z;
+    const H = this.hold[p.index]!, waits = this.time < H.t;
+    this.form.x = waits ? H.x : st.x;
+    this.form.z = waits ? H.z : st.z;
     this.arriveK = k * pushing;
     this.arrive(p);
   }
@@ -1448,19 +1471,22 @@ export class MatchSim {
     this.focusHeight = st.valid ? st.by : 1;
     this.focusVolley = st.valid && st.volley;
     this.focusContra = st.valid && st.contra;
+    this.focusGo = 1e9;
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) return this.tossIdeal;
     // Doubles: no cue for a ball the partner is taking (holding a shot key claims it, and then it is ours).
     if (this.doubles && this.taker[this.players[i]!.team] !== i) return -1;
     const n = this.windowsFor(i, this.focusWins);
     let best = -1;
     let bestGap = 1e9;
+    this.focusGo = 1e9;
     for (let k = 0; k < n; k++) {
       const w = this.focusWins[k]!;
       if (st.valid) {
         const gap = st.t < w.start ? w.start - st.t : st.t > w.end ? st.t - w.end : 0;
-        if (gap < bestGap) { bestGap = gap; best = w.ideal; this.focusHeight = w.height; this.focusVolley = w.volley; this.focusContra = w.contra; }
+        if (gap < bestGap) { bestGap = gap; best = w.ideal; this.focusGo = w.end - LAST_SWING; this.focusHeight = w.height; this.focusVolley = w.volley; this.focusContra = w.contra; }
       } else if (w.ideal >= this.time - 0.05 && (best < 0 || w.ideal < best)) {
         best = w.ideal;
+        this.focusGo = w.end - LAST_SWING;
         this.focusHeight = w.height;
         this.focusVolley = w.volley;
         this.focusContra = w.contra;
@@ -1472,6 +1498,8 @@ export class MatchSim {
     return best;
   }
 
+  /** Set by focusIdeal: the last moment a swing can go and still meet the focused contact. */
+  private focusGo = 1e9;
   /** Set by focusIdeal: false while the planned contact is still out of reach from where the player is. */
   focusInReach = true;
   /** Set by focusIdeal: the height of the focused contact and whether it is in the air. */

@@ -395,3 +395,73 @@ function write(
   o.afterWall = afterWall;
   o.volley = volley;
 }
+
+/** How far (m) from the ball's line a player not taking it keeps (body 0.22 + ball 0.033 + a margin). */
+export const DODGE = 0.55;
+/** holdShort: how near the player's the ball must pass (m), the run it reckons with (m/s), the start-up (s), how far
+ * ahead of the ball a crossing must be (s), how long after the ball's passing the wait ends (s). */
+const HOLD_NEAR = 2.5;
+const HOLD_RUN = 4.5;
+const HOLD_START = 0.2;
+const HOLD_GAP = 0.2;
+const HOLD_AFTER = 0.05;
+
+/** Where to wait for the ball to go by, and until when (t 0: no need). */
+export interface Hold {
+  x: number;
+  z: number;
+  t: number;
+}
+
+/**
+ * The contact is after the ball has gone by us (off the glass, usually) and the ball's line runs through us or
+ * between us and the spot: step DODGE off the line, on the spot's side if there is time and our own if not, and
+ * wait for it to pass. A player doesn't run through a ball they mean to play later: run straight at the spot,
+ * defenders crossed the line of a bandeja as it arrived, stopped to block it and half-volleyed it at their shins
+ * (89 of 94 such volleys were planned off the glass: review round 4, the pro's #4). Time enough to cross first, or
+ * too little left after the wait, leaves the plan as it is. Sets `out` only when there is something to wait for.
+ */
+export function holdShort(pr: Prediction, p: Player, s: number, now: number, tx: number, tz: number, contact: number, out: Hold): void {
+  const px = p.pos.x;
+  const pz = p.pos.z;
+  const h = p.tune.height;
+  // Where the ball passes nearest, below the top of the body.
+  let near = HOLD_NEAR * HOLD_NEAR;
+  let k = -1;
+  for (let j = 0; j < pr.n; j++) {
+    const ti = pr.t[j]!;
+    if (ti < now || pr.z[j]! * s <= 0) continue;
+    if (pr.bounces[j]! > 1 || ti > contact - HOLD_GAP) break;
+    if (pr.y[j]! > h) continue;
+    const ex = px - pr.x[j]!;
+    const ez = pz - pr.z[j]!;
+    const d2 = ex * ex + ez * ez;
+    if (d2 < near) { near = d2; k = j; }
+  }
+  if (k < 0) return;
+  const vx = pr.vx[k]!;
+  const vz = pr.vz[k]!;
+  const v = sqrt(vx * vx + vz * vz);
+  if (v < 1) return;
+  const nx = -vz / v;
+  const nz = vx / v;
+  const bx = pr.x[k]!;
+  const bz = pr.z[k]!;
+  const dp = (px - bx) * nx + (pz - bz) * nz; // the player and the spot, off the ball's line
+  const ds = (tx - bx) * nx + (tz - bz) * nz;
+  const left = pr.t[k]! - now;
+  if (abs(dp) >= DODGE && abs(ds) >= DODGE && dp * ds > 0) return;
+  if (dp * ds < 0 && (abs(dp) + DODGE) / HOLD_RUN + HOLD_START < left - HOLD_GAP) return;
+  const toSpot = ds >= 0 ? 1 : -1;
+  const own = dp >= 0 ? 1 : -1;
+  const side = abs(dp) < DODGE && (DODGE + abs(dp)) / HOLD_RUN + HOLD_START < left ? toSpot : own;
+  const go = side * DODGE - dp;
+  if (abs(go) / HOLD_RUN + HOLD_START * 0.5 > left) return;
+  const hx = clamp(px + nx * go, p.minX, p.maxX);
+  const hz = clamp(pz + nz * go, p.minZ, p.maxZ);
+  const rest = sqrt((tx - hx) * (tx - hx) + (tz - hz) * (tz - hz));
+  if (rest / HOLD_RUN + HOLD_START > contact - pr.t[k]!) return;
+  out.x = hx;
+  out.z = hz;
+  out.t = pr.t[k]! + HOLD_AFTER;
+}

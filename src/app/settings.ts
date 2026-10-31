@@ -61,10 +61,12 @@ export interface Settings {
   rumble: boolean;
   /** Keyboard bindings: action id (input/bindings.ts ACTIONS: drive, lob, up...) -> key codes. */
   keys: Record<string, string[]>;
+  /** Which change of a default this save has been through (loadSettings). */
+  defaultsV: number;
 }
 
 export const DEFAULT_SETUP: MatchSetup = {
-  mode: 'doubles', level: 'club', partner: 'random', opponents: 'random', arena: 'stadium', court: 'standard',
+  mode: 'doubles', level: 'advanced', partner: 'random', opponents: 'random', arena: 'stadium', court: 'standard',
   scoring: 'star', length: 'set', hand: 'right',
 };
 
@@ -76,6 +78,7 @@ export function defaultSettings(): Settings {
     volume: 0.8, crowd: 1,
     motion: 'system', safeColours: false, contrast: false, textSize: 1, announce: true, rumble: true,
     keys: {},
+    defaultsV: 1,
   };
 }
 
@@ -124,6 +127,11 @@ export function loadSettings(): Settings {
   } catch {
     // No storage (or unreadable): the defaults.
   }
+  // The default opponents went from Club to Advanced: a save from before that moves once, and Club chosen since stays.
+  if (s.defaultsV < 2) {
+    if (s.setup.level === 'club') s.setup.level = 'advanced';
+    s.defaultsV = 2;
+  }
   // Narrow singles only exists for singles.
   if (s.setup.court === 'singles-narrow' && s.setup.mode === 'doubles') s.setup.court = 'standard';
   return s;
@@ -145,6 +153,9 @@ export function settingsFrom(stored: unknown): Settings {
 }
 
 export const LEVEL_AI: Record<MatchSetup['level'], number> = { novice: 0.2, club: 0.55, advanced: 0.8, pro: 1 };
+/** A human's partner, a level above the opponents: at the same level they gave away a fifth of the pair's points, and
+ * the human, who has no motor error, carried them. */
+export const PARTNER_AI: Record<MatchSetup['level'], number> = { novice: 0.55, club: 0.8, advanced: 1, pro: 1 };
 export const TIMING_SCALE: Record<Settings['timing'], number> = { forgiving: 1.5, standard: 1.25, strict: 1 };
 export const ASSIST_LEVEL: Record<Settings['assist'], number> = { off: 0, light: 0.25, normal: 0.45, strong: 0.7 };
 
