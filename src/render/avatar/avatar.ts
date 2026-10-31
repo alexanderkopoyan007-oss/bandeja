@@ -328,6 +328,8 @@ const RACKET_TOP = 0.17;
 const HAND_OVER = 0.1;
 const HAND_UNDER = 0.3;
 const VOLLEY_ARM = 0.84;
+const VOLLEY_BEND = 0.86;
+const VOLLEY_BEND_RATE = 9;
 const BACK_FOLLOW = 1;
 /** The ball this far below the volley's own contact height (m): the take-back's racket starts to drop, and has dropped. */
 const BACK_DROP0 = 0, BACK_DROP1 = -0.3;
@@ -3131,7 +3133,8 @@ export class Avatar {
     // Out of the arm's reach: bend the upper body towards it (up to SPINE_REACH), pivoting at the spine's base.
     const mu = ua.matrixWorld.elements;
     const sx = mu[12]! - this.tgt.x, sy = mu[13]! - this.tgt.y, sz = mu[14]! - this.tgt.z;
-    const excess = Math.sqrt(sx * sx + sy * sy + sz * sz) - this.armLen * 0.98;
+    // (a volley bends over the ball before it straightens the arm: elbow 63 on video, 30 at every ball under 0.85 m)
+    const excess = Math.sqrt(sx * sx + sy * sy + sz * sz) - this.armLen * (0.98 - (this.fam.wrist ? (0.98 - VOLLEY_BEND) * w * w : 0));
     const base = this.spine[0]!;
     this.leanT.identity();
     if (excess > 0) {
@@ -3154,7 +3157,7 @@ export class Avatar {
     const LN = this.lean, LT = this.leanT;
     if (this.leanOk && this.dt > 0) {
       const d = Math.min(1, Math.abs(LN.x * LT.x + LN.y * LT.y + LN.z * LT.z + LN.w * LT.w));
-      const ang = 2 * Math.acos(d), lim = SPINE_REACH_RATE * this.dt;
+      const ang = 2 * Math.acos(d), lim = (this.fam.wrist ? VOLLEY_BEND_RATE : SPINE_REACH_RATE) * this.dt;
       if (ang > lim) LN.slerp(LT, lim / ang);
       else LN.copy(LT);
     } else LN.copy(LT);
