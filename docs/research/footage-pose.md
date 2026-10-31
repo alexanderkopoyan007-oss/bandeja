@@ -7,6 +7,11 @@ flexion (0 straight), wrist height in trunk lengths above (+) or below (-) the s
 Limits. Slowed clips dilate time, so times below are scaled by estimate. A coach's demonstration has a higher, closer ball than a
 match. Depth from one camera is poor, so stance width reads narrow and is only compared within a clip.
 
+Checked for mistake demonstrations after the serve was found copied from one (2026-10-31): clip 1 is a pros' reel; clips 2 and 3 are
+wordless slow motion of pro strokes; clip 4's window is correct demonstrations (transcript read); clip 6's forehand windows were re-read
+with the transcript. Clip 5 (`jRkQB25IGPw`) and clip 7 (`5MH8RDf4qfg`) and `YawHc7Cv8us` have no captions: clip 7 shows no overlay at 30 s
+or 37 s, but what its coach says in that window is unknown, so the backhand rows are not proven to be the right way.
+
 | Stroke | Measure | Video | Game | Clip |
 |---|---|---|---|---|
 | Bandeja | Racket elbow at contact | 54-65 | median 61, spread 34-93 | [1](https://www.youtube.com/watch?v=ze0PoGPd22k) (7 strokes, 25 fps) |
@@ -39,8 +44,8 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 | Backhand | Wrist across, height at +0.24 s | +0.3-0.4 to the racket side, about -0.12 | +0.3, -0.23 | 7 |
 | Backhand | Free elbow, -0.48 s to +0.32 s | 12-24: long all through (5 strokes, 25 fps) | 30-44 (was 114-118 before the ball, 50-66 after) | 7 |
 | Backhand | Free hand from its shoulder, in arm's lengths: out, up the trunk, forward | backswing 0.3, -0.75, 0.1; ball 0.34, -0.5, -0.24; +0.16 s 0.92, -0.3, -0.28: the two arms part | keyed on these | 7 |
-| Forehand volley | Free elbow, -0.48 s to +0.4 s | 81, 68, 71, 64, 65, 45, 55, 54, 71, 74, 85 (9 strokes, 25 fps) | | 4 |
-| Forehand volley | Free hand from its shoulder, in arm's lengths: out, up the trunk, forward | -0.1, -0.38, 0.62; 0.07, -0.62, 0.58; 0.18, -0.6, 0.5: it stays in front of the body | | 4 |
+| Forehand volley | Free elbow, -0.48 s to +0.4 s | 81, 68, 71, 64, 65, 45, 55, 54, 71, 74, 85 (9 strokes, 25 fps) | 69, 71, 63, 65, 63, 64, 63, 63, 64, 74 from -0.32 s | 4 |
+| Forehand volley | Free hand from its shoulder, in arm's lengths: out, up the trunk, forward | -0.1, -0.38, 0.62; 0.07, -0.62, 0.58; 0.18, -0.6, 0.5: it stays in front of the body | keyed on these | 4 |
 | Backhand volley | Wrist in front of the racket shoulder | 0.42 m | 0.42 | [5](https://www.youtube.com/watch?v=jRkQB25IGPw) (held poses of a coach's breakdown) |
 | Backhand volley | Wrist below the shoulder | 0.37 m | 0.35 | 5 |
 | Backhand volley | Chest turned from the net | 60 | 60 | 5 |
