@@ -2589,3 +2589,65 @@ hips 0.55-0.57 H: the targets that widen the waist stop short and more would nee
 a lunge but have no cloth of their own. A skirt's normals don't follow the thighs' push. Collar points are rough from close to. p7 and p9 share a ponytail and p4 and p5 a
 short04, told apart by colour and by the visor. p10's braid is good from behind but her front hair is a swept cap. p4 hasn't had a clean look at
 6 m. Frame time on these meshes hasn't been measured.
+
+## Women's overheads finish (2026-10-31)
+
+Round 8's High #3. The rallies in a women's match were right, but a smash won one time in ten (tour: flat 33.3, topspin 29.2,
+Sánchez-Alcaraz et al. 2020), the volley took over as the finisher, and points ran long.
+
+**What was wrong was the speed.** `women.smashEffort` 0.73 gave a median of 104 km/h in play. Girls of 12-16 hit 103.6 ± 5.2 from 2 m
+off the net, unopposed (Sánchez-Alcaraz et al. 2025). The value was fitted at round 5 to how points ended then, the comment's "73 / 17 / 4",
+and nobody measured it again: round 7 read 82 / 9 / 1 and round 8 84 / 5 / 1. I didn't trace which commit moved it.
+
+A smash wins here by what it does off the glass. Defenders wait at 8.0 m, the ball meets the back glass at about 1.5 m and carries past
+them to a second bounce 1.3-1.5 s later, inside 3.5 m of the net or beyond it. Slower, it falls short of that and they play it.
+Share of smashes that reached the back glass and won, by speed, 3000 points, seeds 7101+:
+
+| km/h | 95-105 | 105-112 | 112-118 | 118-124 | 124-130 |
+|---|---|---|---|---|---|
+| 0.73 | 4 (n 307) | 16 (267) | 26 (58) | 40 (10) | too few |
+| 0.85 | 9 (35) | 14 (127) | 27 (210) | 46 (226) | 64 (77) |
+
+The two rows agree where they overlap, so at the same speed the same ball wins: nothing else separates them. How often they go for it
+was already right: 16.9% of overheads (flat 17.0), and in 24.2% of points (flat 22, por tres 4; Martín-Miguel et al. 2024).
+
+**The change is one value, `women.smashEffort` 0.85:** a median of 117 km/h, 0.89 of the men's 131. It is a fit to the smash's W. No tour
+woman's smash speed is in our sources. The only published ratio is those juniors', 103.6 / 112.2 = 0.92, and that value gave W 43.
+The comment in `ai-skill.json` now says this and its stale "73 / 17 / 4" is gone. `tests/sim/women.test.ts` holds the speed and the W,
+because nothing did and that's how the fit went stale.
+
+| Unseen seeds, 6000 points from 7001 | 0.73 | 0.85 | Real |
+|---|---|---|---|
+| Smash W | 10.5 | 30.7 | flat 33.3, topspin 29.2 |
+| Smash, median km/h * | 104 | 117 | none published |
+| Smashes that come back * | 85.8 | 65.3 | 63.1, 62.5 |
+| Seconds, shots per point | 17.0, 12.0 | 16.1, 11.4 | 14.4-16.2, about 12 |
+| Endings W / FE / UE | 27.7 / 30.7 / 41.5 | 33.0 / 28.8 / 38.2 | 30-36 / 28-32 / 35-37 |
+| Winners: double bounce / came back / out | 89.3 / 3.7 / 0.7 | 77.8 / 14.2 / 2.0 | 76.9 / 11.8 / 11.3 |
+| Winners off a body (no published figure) | 6.3 | 6.0 | |
+| Smash, volley, share of winners | 11.1, 57.3 | 25.6, 48.1 | 43, 28.4 (men and women pooled) |
+| Rally over 11 s | 55.6 | 52.8 | 26 (men) |
+| Serving pair wins | 58.8 | 61.0 | 48.5 |
+
+\* From a dump of 3000 points, seeds 7101+.
+
+Men, same seeds: identical to the digit, as no code or men's value changed (10.0 shots, 13.4 s, W / FE / UE 39.9 / 26.4 / 33.8, smash W
+50.4). Women at level 0.5, seeds 7301+: smash W 9.0 to 24.9, W 19.1 to 20.9, 7.2 to 7.0 shots.
+
+**Reached:** smash W, smashes coming back, seconds per point, W, FE, double-bounce winners. **Close:** UE, 1.2 over; came-back winners, 2.4 over.
+**Not reached:** out of the court, 2.0 against 11.3, the same shortfall as the men's and round 8's Medium #6. Volleys still take 48% of
+winners. **Went the wrong way:** the serving pair, 58.8 to 61.0 (48.5), probably because a stronger smash helps the pair at the net; I didn't measure why. The UE left over
+isn't a women's problem: per shot it matches the men's (double wall 17.6 and 18.2, back wall 9.6 and 10.9), which is round 8's Medium #7.
+
+**Tried and rejected** (seeds 5001+, 6000 points):
+- **Other efforts.** Smash W 27.4 at 0.84, 29.9 at 0.85 (seeds 5601+), 32.3 and 33.3 at 0.86, 37.4 at 0.88, 43.0 at 0.92, 52.6 at 1.0. Came-back
+  winners 12.5, 12.9, 14.9 and 16.9, 17.8, 21.5, 27.8. 0.85 sits at about 30 with came-back winners near 12.
+- **Contact height.** The sim's bodies are all 1.80 m, so a woman meets a smash at 2.49 m though the cast's women are 1.66-1.74 m (`Avatar.jumpMore`
+  covers it on screen; no tour stature is in our sources). Every body length scaled by 1.70 / 1.80, as `docs/research/serve-and-strokes-motion.md`
+  says to, met it at 2.34 m. At effort 0.92 smash W barely moved (47.5 against 43.0), so height isn't the cause, but smashes fell from 15.9 to 7.9%
+  of overheads, because the kill-depth check reads a lower contact as a longer landing. UE went from 37.1 to 41.3 and points from 15.7 to 17.8 s.
+  Getting the share back would mean an unsourced `KILL_DEPTH` for women.
+- **Direction.** Women's flat smashes go down the line 67.9% (men 77.7). At 0.68 against the code's 0.75: smash W 32.0 and 32.3, n about 1600, and
+  nothing else moved, so a new value wasn't worth adding.
+- **Topspin.** `spinRpm` 1500 at effort 0.80: smash W 31.9, out 3.6, came back 13.3. 3000 at 0.76: 38.7, 3.2, 19.4. Against flat at 0.85, out gains
+  about a point, well short of 11.3, for a slower smash, and flat smashes are three in four of a woman's (17.0 and 4.9% of overheads).
