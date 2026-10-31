@@ -180,7 +180,8 @@ describe('kit', () => {
           expect(sw[v * 4]).toBeCloseTo(1, 2);
           band++;
         } else {
-          for (let k = 0; k < 2; k++) if (sw[v * 4 + k]! > 0) expect([neck, chest]).toContain(si[v * 4 + k]);
+          // (a collar's leaf rides on the shirt: the neck's weight and the shirt's own, on the chest and the shoulders)
+          for (let k = 0; k < 2; k++) if (sw[v * 4 + k]! > 0) expect([neck, chest, p.bone('LeftShoulder'), p.bone('RightShoulder')]).toContain(si[v * 4 + k]);
         }
       }
       if (p.look!.kit.head) expect(band).toBeGreaterThan(60);

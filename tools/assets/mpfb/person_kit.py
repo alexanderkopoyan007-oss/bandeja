@@ -652,15 +652,39 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5):
     o = bpy.data.objects.new('Collar', me)
     for coll in body.users_collection:
         coll.objects.link(o)
-    gn = o.vertex_groups.new(name=P + 'Neck')
-    gs = o.vertex_groups.new(name=P + 'Spine2')
-    for k, wn in ((0, 0.5), (1, 0.4), (2, 0.2), (3, 0.05)):
+    # The stand goes with the neck, the leaf with the shirt it lies on: bound to the chest alone, it stayed behind as the
+    # shoulders came forward and the shirt came up through it in ragged wings (round 8). The shirt's weights by inverse
+    # distance from its nearest vertices, as a vertex alone jumps between the shirt's big triangles.
+    from mathutils.kdtree import KDTree
+    names = {g.index: g.name for g in suit.vertex_groups}
+    kd = KDTree(len(top))
+    for i in top:
+        kd.insert(sm.vertices[i].co, i)
+    kd.balance()
+
+    def on_cloth(p):
+        out = {}
+        total = 0.0
+        for _, i, d in kd.find_n(Vector(p), 4):
+            s = 1 / max(d, 0.002) ** 2
+            total += s
+            for e in sm.vertices[i].groups:
+                n = names.get(e.group, '')
+                if n.startswith(P):
+                    out[n] = out.get(n, 0.0) + e.weight * s
+        return {n: w / total for n, w in out.items()}
+
+    def bind(i, wn):
+        w = {n: x * (1 - wn) for n, x in on_cloth(verts[i]).items()}
+        w[P + 'Neck'] = w.get(P + 'Neck', 0.0) + wn
+        for n, x in w.items():
+            (o.vertex_groups.get(n) or o.vertex_groups.new(name=n)).add([i], x, 'REPLACE')
+
+    for k, wn in ((0, 0.5), (1, 0.4), (2, 0.15), (3, 0.0)):
         for i in rows[k]:
-            gn.add([i], wn, 'REPLACE')
-            gs.add([i], 1 - wn, 'REPLACE')
+            bind(i, wn)
     for i in under:
-        gn.add([i], 0.1, 'REPLACE')
-        gs.add([i], 0.9, 'REPLACE')
+        bind(i, 0.0)
     m = o.modifiers.new('Armature', 'ARMATURE')
     m.object = rig
     print('COLLAR faces', len(faces))
