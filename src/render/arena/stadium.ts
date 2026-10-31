@@ -61,16 +61,12 @@ function boardTexture(base: string): THREE.CanvasTexture {
 
 /** The umpire sits in the court's light, not the stands'. */
 const UMPIRE_LIGHT = 1;
-/** The stands are lit far less than the court (arena-wide-2: dark stands round a bright court and roof); their
- * albedo is scaled down to stand in for that rather than lighting them separately. */
-const STAND_LIGHT = 0.55;
-
-/** The crowd sprites' brightness (their light is baked in the renders; see STAND_LIGHT). */
-const CROWD_LIGHT = 0.48;
-
 export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): ArenaPart {
   void court;
   const b = def.boards!, st = def.stands!, h = def.hall!;
+  // The stands are lit far less than the court; their albedo is scaled down to stand in for that rather than lighting
+  // them separately. The crowd's sprites have their light baked in.
+  const STAND_LIGHT = st.light, CROWD_LIGHT = st.crowdLight;
   // Boards round the surround (with gaps at the corners for the players' way in).
   const boardMat = new THREE.MeshStandardMaterial({ map: boardTexture(b.color), roughness: 0.55 });
   const boards = new THREE.Group();
@@ -164,12 +160,12 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     hall.box(s * h.x, h.height / 2, 0, 0.4, h.height, h.z * 2, wallC);
     hall.box(0, h.height / 2, s * h.z, h.x * 2, h.height, 0.4, wallC);
   }
-  for (let x = -h.x; x <= h.x + 0.01; x += 6) hall.box(x, h.height - 0.5, 0, 0.18, 0.9, h.z * 2, '#9aa0a8');
-  for (let z = -h.z; z <= h.z + 0.01; z += 8) hall.box(0, h.height - 1.2, z, h.x * 2, 0.15, 0.15, '#8d939b');
+  for (let x = -h.x; x <= h.x + 0.01; x += 6) hall.box(x, h.height - 0.5, 0, 0.18, 0.9, h.z * 2, h.steel!);
+  for (let z = -h.z; z <= h.z + 0.01; z += 8) hall.box(0, h.height - 1.2, z, h.x * 2, 0.15, 0.15, h.steel!);
   const hallMesh = hall.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
   root.add(hallMesh);
   // The roof: a white membrane under the skylights, lit from above (arena-wide-2's bright ceiling): mostly emissive.
-  const roof = new THREE.Mesh(new THREE.PlaneGeometry(h.x * 2, h.z * 2), new THREE.MeshStandardMaterial({ color: h.roof, roughness: 0.9, side: THREE.DoubleSide, emissive: new THREE.Color(h.roof), emissiveIntensity: 0.85 }));
+  const roof = new THREE.Mesh(new THREE.PlaneGeometry(h.x * 2, h.z * 2), new THREE.MeshStandardMaterial({ color: h.roof, roughness: 0.9, side: THREE.DoubleSide, emissive: new THREE.Color(h.roof), emissiveIntensity: h.roofGlow! }));
   roof.rotation.x = Math.PI / 2;
   roof.position.y = h.height;
   root.add(roof);
@@ -180,10 +176,10 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     for (let z = -h.z + 4; z < h.z; z += 8) panels.box(x, h.height - 0.05, z, 1.6, 0.06, 2.4, '#ffffff');
   }
   // The light panels are far brighter than white (HDR): they bloom (render/post.ts) and light the env map.
-  root.add(panels.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1, 1, 1).multiplyScalar(4) })));
+  root.add(panels.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1, 1, 1).multiplyScalar(h.lamps!) })));
   for (const s of [1, -1]) {
-    glow.box(s * (h.x - 0.25), h.height - 3.2, 0, 0.05, 2.2, h.z * 1.8, '#dfe8f2');
-    glow.box(0, h.height - 3.2, s * (h.z - 0.25), h.x * 1.8, 2.2, 0.05, '#dfe8f2');
+    glow.box(s * (h.x - 0.25), h.height - 3.2, 0, 0.05, 2.2, h.z * 1.8, h.windows!);
+    glow.box(0, h.height - 3.2, s * (h.z - 0.25), h.x * 1.8, 2.2, 0.05, h.windows!);
   }
   const glowMesh = glow.mesh(new THREE.MeshBasicMaterial({ vertexColors: true }));
   root.add(glowMesh);

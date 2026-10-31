@@ -33,8 +33,12 @@ export interface ArenaDef {
   frame: string;
   base: string;
   boards?: { x: number; z: number; height: number; color: string };
-  stands?: { rows: number; rise: number; depth: number; from: number; fill: number; seat: string; riser: string };
-  hall?: { x: number; z: number; height: number; wall: string; roof: string; open?: boolean };
+  stands?: { rows: number; rise: number; depth: number; from: number; fill: number; seat: string; riser: string; light: number; crowdLight: number };
+  hall?: {
+    x: number; z: number; height: number; wall: string; roof: string; open?: boolean;
+    /** The stadium's: the roof's own light, the lamps' brightness (over white), the high band and the trusses' colours. */
+    roofGlow?: number; lamps?: number; windows?: string; steel?: string;
+  };
   sky?: { zenith: string; horizon: string; ground: string; sunDir: number[]; sun: string };
   trees?: { count: number; inner: number; outer: number; height: number[] };
   poles?: { height: number; heads: number; color: string; lit?: boolean; color2?: string };

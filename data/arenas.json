@@ -5,7 +5,7 @@
     "kind": "stadium",
     "//kind": "Pro events are played in sports halls and arenas: tiered stands on four sides, a coloured surround, boards, a high lit roof (arena-wide, arena-wide-2, arena-glass).",
     "exposure": 1.0,
-    "background": "#20242b",
+    "background": "#0b0c10",
     "floor": { "kind": "turf", "color": "#2546c8", "sand": "#7d86b8", "sandAmount": 0.12, "line": "#f4f6f8", "roll": 4, "roughness": 0.92 },
     "//floor": "Tournament courts are blue sand-filled turf; little sand shows on a new tournament carpet. Blue matched under the arena's light against arena-wide-2.",
     "surround": { "kind": "turf", "color": "#c23a2c", "sand": "#b07a66", "sandAmount": 0.08, "line": null, "roll": 4, "roughness": 0.92, "x": 9.5, "z": 16.5 },
@@ -16,17 +16,17 @@
     "base": "#aeb3b8",
     "//base": "The light grey steel the glass panels stand on, visible as a pale line round the court in every panoramic reference.",
     "boards": { "x": 11.2, "z": 18.5, "height": 1.0, "color": "#1b2a63" },
-    "stands": { "rows": 16, "rise": 0.42, "depth": 0.82, "from": 1.6, "fill": 0.86, "seat": "#e4e6e8", "riser": "#5a5e66" },
-    "hall": { "x": 34, "z": 44, "height": 19, "wall": "#c9ccd1", "roof": "#e9ebee" },
+    "stands": { "rows": 16, "rise": 0.42, "depth": 0.82, "from": 1.6, "fill": 0.86, "seat": "#e4e6e8", "riser": "#5a5e66", "light": 0.2, "crowdLight": 0.14 },
+    "hall": { "x": 34, "z": 44, "height": 19, "wall": "#1a1c21", "roof": "#101216", "roofGlow": 0.3, "lamps": 3.5, "windows": "#20242b", "steel": "#2a2d33" },
     "light": {
-      "env": 1.0,
-      "key": { "color": "#fff6ec", "intensity": 1.6, "dir": [0.25, 1, 0.35], "shadow": true, "radius": 6 },
-      "hemi": { "sky": "#eef1f6", "ground": "#5a3a34", "intensity": 0.55 }
+      "env": 0.35,
+      "key": { "color": "#fff6ec", "intensity": 3.0, "dir": [0.2, 1, 0.5], "shadow": true, "radius": 2 },
+      "hemi": { "sky": "#eef1f6", "ground": "#5a3a34", "intensity": 0.45 }
     },
     "post": { "bloom": { "strength": 0.3, "radius": 0.5, "threshold": 3 } },
     "camera": { "swingRise": 2.5 },
     "//camera": "The change-of-ends swing climbs 2.5 m at its middle to pass over the side stands' back rows (on the end's 25.5 m circle at 7.6 m the lens went through them). Only here: in the hall it would go through the roof.",
-    "//light": "The roof's skylights and the event floodlights: bright, nearly shadowless from above (soft, faint shadows under the players in arena-wide-2). The key light gives the soft shadow; the reflections and most of the fill come from the arena itself (environment map rendered from the court)."
+    "//light": "A pro event on TV (the 2026 final's broadcast frame): a lit court in a dark hall. This was a bright roof whose baked environment gave over half the light and, at the camera's low angle, a grey specular veil on the floor: the lit floor came out 1.7 times its own colour and every shadow was filled in. Now the key gives most of the light from high and a little behind the camera, so shadows fall up the screen and the camera-side of a player is lit, the environment is 0.35 and the floor renders about at its hex (authored B 200, shown 181; was R 75 against 37). Dark hall, dim lamps: the stands fall away."
   },
   "hall": {
     "name": "Club hall (covered)",
