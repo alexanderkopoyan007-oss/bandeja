@@ -245,6 +245,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const popsBy: Record<string, number> = {};
   const popsDoing: Record<string, number> = {};
   const sv = { frames: 0, racketBody: 0, handTorso: 0, legs: 0, pops: 0 };
+  let walkAt = -1;
   let pops = 0;
   const popWorst: QaEvent[] = [];
   const repeatEvery = opts.repeatEvery ?? 0;
@@ -336,8 +337,9 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
       prevRoot[i]!.copy(a.root.position);
       const motion = k > 1 && !jump;
       const ai = a as unknown as { fam: { name: string }; w: number };
-      // (not the walk back to the place first, MatchSim.walking: it counts with the rest of play)
-      const serving = ((m.phase === PH_SETUP || m.phase === PH_TOSS) && m.walking === 0 && m.score.serverPlayer() === i)
+      // (not the walk back to the place first, MatchSim.walking, nor its last steps: they count with the rest of play)
+      if (m.walking > 0) walkAt = m.time;
+      const serving = ((m.phase === PH_SETUP || m.phase === PH_TOSS) && m.time > walkAt + 0.3 && m.score.serverPlayer() === i)
         || (ai.fam.name.startsWith('serve') && ai.w > 0.01);
       if (serving && motion) sv.frames++;
       playerFrames++;

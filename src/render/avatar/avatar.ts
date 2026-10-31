@@ -343,6 +343,10 @@ const SHIN_TWIST_RATE = (2400 * Math.PI) / 180;
 /** limitShins' turn back about the shin (a double passed to a call V8 doesn't inline is boxed). */
 const QS = new Float64Array(4);
 const qFoot = new THREE.Quaternion();
+const qWalk = new THREE.Quaternion();
+const qWalk2 = new THREE.Quaternion();
+const qWalk3 = new THREE.Quaternion();
+const vWalk = new THREE.Vector3();
 /** Most the hips drop for a low or wide ball (crouch, lunge and reach together; m). */
 const DROP_MAX = 0.55;
 /**
@@ -411,6 +415,38 @@ const TAP_TURN = 0.8;
  */
 const WALK_UP = 0.8;
 const WALK_CADENCE = 0.4;
+/**
+ * The walk's feet. A slowed jog keeps its flight phase (both feet off 21% of frames, 5 steps a second, 83% of the way
+ * sideways or backwards with the chest on the net: review round 8, the critic's #3 and #8), so walkFeet draws them: each
+ * put down WALK_AHEAD of half the way a stance covers ahead of the body and held there, heel first (WALK_HEEL rad, toes
+ * up) and off the ball of the foot (WALK_ROLL rad) when the body has gone past it, for WALK_STANCE of the stride. A step
+ * is WALK_STEP legs long at WALK_HZ0 to WALK_HZ1 strides a second, the ankle lifted WALK_CLEAR through a swing, the feet
+ * WALK_WIDTH of the hips' width off the line and turned out WALK_TOE. A foot further than WALK_REACH legs from the body
+ * goes whatever the other is doing. The hips are highest over a stance foot (WALK_HIP of the leg), WALK_BOB lower with
+ * both feet down and WALK_SWAY over the foot that is down, and each arm swings WALK_ARM against its leg. Below
+ * WALK_GAIT_V (m/s) it stands. They turn at up to WALK_TURN_RATE (rad/s) to where they are going (the sim's facing stays
+ * on the net), back to the net from WALK_NEAR1 m off their place to WALK_NEAR0, and it fades in and out over WALK_IN s.
+ */
+const WALK_STANCE = 0.6;
+const WALK_AHEAD = 0.85;
+const WALK_REACH = 0.62;
+const WALK_HEEL = 0.3;
+const WALK_ROLL = 0.62;
+const WALK_STEP = 0.74;
+const WALK_HZ0 = 0.6;
+const WALK_HZ1 = 1.25;
+const WALK_CLEAR = 0.03;
+const WALK_WIDTH = 0.95;
+const WALK_TOE = 0.1;
+const WALK_HIP = 0.96;
+const WALK_BOB = 0.04;
+const WALK_SWAY = 0.02;
+const WALK_ARM = 0.13;
+const WALK_GAIT_V = 0.35;
+const WALK_TURN_RATE = 4.5;
+const WALK_IN = 0.15;
+const WALK_NEAR0 = 0.5;
+const WALK_NEAR1 = 1.8;
 /** How far towards the carry key (CARRY) the racket goes while walking back. */
 const CARRY_W = 0.9;
 const STAND_EASE = 0.4;
@@ -540,7 +576,7 @@ const LEAN_MAX = 0.36;
 const LEAN_W = 13;
 const LEAN_Z = 0.62;
 const LEAN_TRUNK = 1;
-const LEAN_STROKE = 0.7;
+const LEAN_STROKE = 0.85;
 const LEAN_HAND = 0.25;
 const LEAN_SIDE = 0.4;
 /** How fast the chest turns with the hips into a side-on run and back out of it (rad/s): switched at once, the
@@ -670,6 +706,33 @@ export class Avatar {
   private standW = 0;
   /** Between points: how far the jog is drawn towards the upright stand (WALK_UP, eased). */
   private walkUp = 0;
+  /** Added to the stance to go where the walk goes, and the feet's gait (WALK_*): weight, the hips' eased weight. */
+  private walkTurn = 0;
+  private gaitW = 0;
+  private gaitH = 0;
+  private gaitOn = 0;
+  private gaitPhase = 0;
+  private gaitSince = 0;
+  private gaitLast = 0;
+  /** Each foot: how far through its swing (-1: down), seconds down, its pitch at lift-off and now. */
+  private readonly gaitSwing = new Float64Array(2);
+  private readonly gaitDown = new Float64Array(2);
+  private readonly gaitPitch = new Float64Array(2);
+  private readonly gaitPitchNow = new Float64Array(2);
+  private readonly gaitPlant = [new THREE.Vector3(), new THREE.Vector3()];
+  private readonly gaitFrom = [new THREE.Vector3(), new THREE.Vector3()];
+  private readonly gaitTo = [new THREE.Vector3(), new THREE.Vector3()];
+  /** Each foot's yaw down, at the start of its swing, and where it will land. */
+  private readonly gaitYaw = new Float64Array(2);
+  private readonly gaitYawFrom = new Float64Array(2);
+  private readonly gaitYawTo = new Float64Array(2);
+  /** Rest pose (model space): feet and toes flat on the floor, toes in their feet, the ankle's height, hips' half-width. */
+  private readonly footRestQ = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private readonly toeRestQ = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private readonly toeRestLocal = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private readonly ankleY: number;
+  private readonly hipW: number;
+  private readonly ballLen: number;
   /** How much of the pose is the idle clip (not running): set by locomote. */
   private idleW = 1;
   private cutPending = false;
@@ -1051,6 +1114,15 @@ export class Avatar {
     v2.setFromMatrixPosition(asset.restWorld[asset.bone('LeftLeg')]!);
     v3.setFromMatrixPosition(asset.restWorld[asset.bone('LeftFoot')]!);
     this.legLen = v1.distanceTo(v2) + v2.distanceTo(v3);
+    this.hipW = Math.abs(v1.x);
+    this.ankleY = v3.y;
+    this.ballLen = Math.abs(v3.z - v1.setFromMatrixPosition(asset.restWorld[asset.bone('LeftToeBase')]!).z);
+    for (let f = 0; f < 2; f++) {
+      const n = f === 0 ? 'Left' : 'Right';
+      asset.restWorld[asset.bone(n + 'Foot')]!.decompose(v1, this.footRestQ[f]!, v2);
+      asset.restWorld[asset.bone(n + 'ToeBase')]!.decompose(v1, this.toeRestQ[f]!, v2);
+      this.toeRestLocal[f]!.copy(this.footRestQ[f]!).invert().multiply(this.toeRestQ[f]!);
+    }
     this.clips = {
       idle: asset.clip('idle'),
       cycle: [asset.clip('jog'), asset.clip('run'), asset.clip('strafeLeft'), asset.clip('runBack'), asset.clip('strafeRight')],
@@ -1800,6 +1872,23 @@ export class Avatar {
       if (this.retreat < 0.001) this.retreat = 0;
       this.yaw -= this.handed * RETREAT_TURN * this.retreat * (1 - this.w);
     }
+    {
+      // Walking back: turned to where they are going (the sim's facing stays on the net).
+      const sp = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
+      const going = sim.walking > 0 || (sim.phase === PH_OVER && sim.overStage === 2);
+      // The last of the way with the net back in front of them: the serve is half a second after they get there.
+      const hx = sim.walkHomeX[idx]! - p.pos.x, hz = sim.walkHomeZ[idx]! - p.pos.z;
+      const near = sim.walking === 2 ? smoothstep(WALK_NEAR0, WALK_NEAR1, Math.sqrt(hx * hx + hz * hz)) : 1;
+      const to = !going ? 0 : sp > WALK_GAIT_V ? wrapAngle(Math.atan2(-this.vx, -this.vz) - this.yaw) * near : this.walkTurn * near;
+      const e = wrapAngle(to - this.walkTurn), lim = WALK_TURN_RATE * dt;
+      this.walkTurn = cut ? 0 : this.walkTurn + (e > lim ? lim : e < -lim ? -lim : e);
+      this.yaw += this.walkTurn;
+      const gait = this.gaitW > 0 ? WALK_GAIT_V * 0.5 : WALK_GAIT_V;
+      const ramp = dt > 0 ? dt / WALK_IN : 0;
+      this.gaitW = cut || this.w >= 0.02 ? 0 : going && sp > gait ? Math.min(1, this.gaitW + ramp) : Math.max(0, this.gaitW - ramp);
+      this.gaitH += ((this.gaitW > 0 ? 1 : 0) - this.gaitH) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / WALK_IN) : 0);
+      if (this.gaitH < 0.001) this.gaitH = 0;
+    }
     // Turned towards the partner for the racket tap.
     if (this.tapW > 0.001) this.yaw += wrapAngle(this.tapYaw - this.yaw) * this.tapW * TAP_TURN;
     // The body turns no faster than a person turns (the sim faces the ball at once, even one that has just passed).
@@ -2088,6 +2177,10 @@ export class Avatar {
     this.tiltZ = 0;
     this.hipTiltX = 0;
     this.hipTiltZ = 0;
+    this.walkTurn = 0;
+    this.gaitW = 0;
+    this.gaitH = 0;
+    this.gaitOn = 0;
     this.tiltVX = 0;
     this.tiltVZ = 0;
     this.retreat = 0;
@@ -2417,9 +2510,19 @@ export class Avatar {
     this.dropShown = drop;
     // The weight from the ankles: the hips over the driving foot, behind a braking one.
     const tk = this.legLen * (1 - LEAN_STROKE * this.w);
-    const hipX = this.reachX + this.hipTiltX * tk, hipZ = this.reachZ + this.hipTiltZ * tk;
+    let hipX = this.reachX + this.hipTiltX * tk, hipZ = this.reachZ + this.hipTiltZ * tk;
     const tilt2 = this.hipTiltX * this.hipTiltX + this.hipTiltZ * this.hipTiltZ;
     drop += 0.5 * tilt2 * tk;
+    if (this.gaitH > 0) {
+      // The walk's hips: over the foot that is down, lowest with both down.
+      const ph = this.gaitPhase, h = this.gaitH;
+      const y = (this.legL[0]!.matrixWorld.elements[13]! + this.legR[0]!.matrixWorld.elements[13]!) * 0.5;
+      const want = this.legLen * WALK_HIP + this.ankleY - WALK_BOB * 0.5 * (1 + Math.cos(4 * Math.PI * (ph - (WALK_STANCE - 0.5) / 2)));
+      drop += (y - want) * h;
+      const sway = WALK_SWAY * h * Math.cos(2 * Math.PI * (ph - WALK_STANCE / 2));
+      hipX += this.stanceC * sway;
+      hipZ -= this.stanceS * sway;
+    }
     const plant = this.plantW >= 0.01;
     const pushed = Math.abs(hipX) + Math.abs(hipZ);
 
@@ -2429,7 +2532,10 @@ export class Avatar {
     worldQuat(this.legR[2]!, this.footQR);
     this.measureSoles();
     const fx0 = this.footL.x, fz0 = this.footL.z, gx0 = this.footR.x, gz0 = this.footR.z;
-    if ((Avatar.feetMask & 1) !== 0) this.lockFeet();
+    if ((Avatar.feetMask & 1) !== 0) {
+      this.lockFeet();
+      this.walkFeet();
+    }
     // No sole below the floor (a blend of two directions' strides can put one 6 cm under), measured as the foot
     // will be: at its target, turned as the locks hold it, the toes as they are.
     let lifted = false;
@@ -2443,7 +2549,7 @@ export class Avatar {
     }
     this.scissor();
     const moved = Math.abs(this.footL.x - fx0) + Math.abs(this.footL.z - fz0) + Math.abs(this.footR.x - gx0) + Math.abs(this.footR.z - gz0);
-    if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant && !lifted && moved < 1e-4 && this.lockOn[0] === 0 && this.lockOn[1] === 0) {
+    if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant && !lifted && moved < 1e-4 && this.lockOn[0] === 0 && this.lockOn[1] === 0 && this.gaitW === 0) {
       // The clip's knees as they are: no side to carry on from next time.
       this.kneeSideL.set(0, 0, 0);
       this.kneeSideR.set(0, 0, 0);
@@ -2723,6 +2829,148 @@ export class Avatar {
   }
 
   /**
+   * The walk (WALK_*) over what the locks made of the feet, which it leaves in the locks' own state: when it stops they
+   * carry on from here, the stance foot held and the other finishing its step. A foot goes when the body has gone past
+   * it, not on a clock: walkers slow, stop for a partner and turn back, and a stride timed from the phase left a foot
+   * planted a leg's length behind.
+   */
+  private walkFeet(): void {
+    const w = this.gaitW;
+    if (w <= 0) {
+      this.gaitOn = 0;
+      return;
+    }
+    const vx = this.vx, vz = this.vz, sp = Math.sqrt(vx * vx + vz * vz), dt = this.dt;
+    const rx = this.root.position.x, rz = this.root.position.z;
+    const yaw = this.yRoot, c = Math.cos(yaw), s = Math.sin(yaw);
+    if (this.gaitOn === 0) {
+      this.gaitOn = 1;
+      this.gaitSince = 1;
+      for (let f = 0; f < 2; f++) {
+        const A = f === 0 ? this.footL : this.footR;
+        this.gaitPlant[f]!.set(A.x, 0, A.z);
+        this.gaitSwing[f] = -1;
+        this.gaitDown[f] = 1;
+        this.gaitYaw[f] = yaw;
+      }
+    }
+    const step = WALK_STEP * this.legLen, hz0 = (0.5 * sp) / step;
+    const hz = hz0 < WALK_HZ0 ? WALK_HZ0 : hz0 > WALK_HZ1 ? WALK_HZ1 : hz0;
+    const ux = sp > 1e-3 ? vx / sp : s, uz = sp > 1e-3 ? vz / sp : c;
+    const stay = (sp * WALK_STANCE) / hz, ahead = stay * WALK_AHEAD * 0.5, back = stay - ahead;
+    const G = this.gaitSwing, P = this.gaitPlant;
+    this.gaitSince += dt;
+    // How far ahead of the body each foot is, along the way it is going.
+    const rel0 = (P[0]!.x - rx) * ux + (P[0]!.z - rz) * uz, rel1 = (P[1]!.x - rx) * ux + (P[1]!.z - rz) * uz;
+    const d0x = P[0]!.x - rx, d0z = P[0]!.z - rz, d1x = P[1]!.x - rx, d1z = P[1]!.z - rz;
+    const far0 = d0x * d0x + d0z * d0z, far1 = d1x * d1x + d1z * d1z;
+    const reach = this.legLen * WALK_REACH, r2 = reach * reach;
+    // Left behind by a turn back: it goes whatever the other foot is doing.
+    const hard = G[0]! < 0 && far0 > r2 ? 0 : G[1]! < 0 && far1 > r2 ? 1 : -1;
+    let go = hard;
+    if (go < 0 && G[0]! < 0 && G[1]! < 0 && this.gaitSince >= 0.1 / hz) {
+      // The one further behind, or the one further away when the walk has changed direction under them.
+      const f = far0 > far1 + 0.05 ? 0 : far1 > far0 + 0.05 ? 1 : rel0 < rel1 ? 0 : 1, rel = f === 0 ? rel0 : rel1;
+      const turned = wrapAngle(yaw - this.gaitYaw[f]!);
+      if (rel < -back || this.gaitSince > 0.35 / hz || turned > 0.9 || turned < -0.9) go = f;
+    }
+    if (go >= 0) {
+      G[go] = 0;
+      this.gaitFrom[go]!.copy(P[go]!);
+      this.gaitYawFrom[go] = this.gaitYaw[go]!;
+      this.gaitPitch[go] = this.gaitPitchNow[go]!;
+    }
+    // The phase for the hips and the arms: on at the stride's rate, pulled towards where the last landing puts it.
+    const last = this.gaitLast === 0 ? 0 : 0.5, at = this.gaitSince * hz;
+    const was = wrapAngle(2 * Math.PI * (last + (at < 0.49 ? at : 0.49) - this.gaitPhase)) / (2 * Math.PI);
+    this.gaitPhase = (this.gaitPhase + (hz + 4 * was) * dt + 1) % 1;
+    const swingT = (1 - WALK_STANCE) / hz, h = this.ankleY, b = this.ballLen, hl = b * 0.45;
+    for (let f = 0; f < 2; f++) {
+      const sign = f === 0 ? 1 : -1;
+      const A = f === 0 ? this.footL : this.footR, Q = f === 0 ? this.footQL : this.footQR, toe = this.toes[f]!;
+      const Pf = P[f]!, To = this.gaitTo[f]!, YT = this.gaitYawTo;
+      let u = G[f]!;
+      if (u >= 0) {
+        u += dt / swingT;
+        if (u >= 1) {
+          u = -1;
+          Pf.copy(To);
+          this.gaitYaw[f] = YT[f]!;
+          this.gaitDown[f] = 0;
+          this.gaitSince = 0;
+          this.gaitLast = f;
+        }
+        G[f] = u;
+      }
+      let pitch: number, x: number, z: number, y = h, fy: number, bend = 1;
+      if (u < 0) {
+        const tl = this.gaitDown[f] = this.gaitDown[f]! + dt;
+        const rel = (Pf.x - rx) * ux + (Pf.z - rz) * uz, sg = stay > 1e-3 ? (ahead - rel) / stay : 0;
+        pitch = WALK_ROLL * smoothstep(0.5, 1, sg) - WALK_HEEL * (1 - smoothstep(0, 0.1 / hz, tl));
+        x = Pf.x;
+        z = Pf.z;
+        fy = this.gaitYaw[f]!;
+      } else {
+        // Where the body will be when it lands, the step ahead of that, on its own side of the line.
+        const left = (1 - u) * swingT;
+        const wd = sign * this.hipW * WALK_WIDTH;
+        To.set(rx + vx * left + ux * ahead + c * wd, 0, rz + vz * left + uz * ahead - s * wd);
+        YT[f] = yaw + sign * WALK_TOE;
+        const e = smoothstep(0, 1, u), F = this.gaitFrom[f]!;
+        x = F.x + (To.x - F.x) * e;
+        z = F.z + (To.z - F.z) * e;
+        // (from where it is, not from where it took off: half way round, the short way flips)
+        const YN = this.gaitYawFrom;
+        YN[f] = YN[f]! + (wrapAngle(YT[f]! - YN[f]!) * dt) / (left > dt ? left : dt);
+        fy = YN[f]!;
+        pitch = this.gaitPitch[f]! * (1 - smoothstep(0, 0.45, u)) - WALK_HEEL * smoothstep(0.45, 1, u);
+        y += WALK_CLEAR * Math.sin(Math.PI * u);
+        bend = 1 - smoothstep(0, 0.35, u);
+      }
+      this.gaitPitchNow[f] = pitch;
+      // Rolling over the ball of the foot (heel up) or the heel (toes up): where that takes the ankle.
+      const up = pitch < 0 ? -pitch : pitch, sn = Math.sin(up), cs = Math.cos(up);
+      const fw = pitch >= 0 ? b * (1 - cs) + h * sn : hl * (cs - 1) - h * sn;
+      y += (pitch >= 0 ? b : hl) * sn + h * (cs - 1);
+      const sf = Math.sin(fy), cf = Math.cos(fy);
+      vWalk.set(x + sf * fw, y, z + cf * fw);
+      A.lerp(vWalk, w);
+      qWalk.setFromAxisAngle(AXIS_Y, fy);
+      qWalk2.setFromAxisAngle(AXIS_X, pitch);
+      qWalk3.multiplyQuaternions(qWalk, qWalk2).multiply(this.footRestQ[f]!);
+      sideOf(Q, qWalk3);
+      Q.slerp(qWalk3, w);
+      // The toes flat on the floor as the heel comes up, straight again through the swing.
+      qWalk.multiply(this.toeRestQ[f]!);
+      qWalk2.copy(Q).invert().multiply(qWalk);
+      qWalk3.copy(this.toeRestLocal[f]!).slerp(qWalk2, bend);
+      toe.quaternion.slerp(qWalk3, w);
+      // The sole on the floor, not over it, coming down onto it through the end of the swing.
+      this.soleLow(f, A, Q);
+      A.y -= this.low1 * w * (u < 0 ? 1 : smoothstep(0.55, 1, u));
+      if (w < 1) continue;
+      // (the heel still up: it steps when the walk stops, not left held on its toes)
+      if (u < 0 && pitch < 0.12) {
+        this.lockOn[f] = 1;
+        this.lockPos[f]!.copy(A);
+        this.lockYaw[f] = yaw;
+        this.lockQ[f]!.copy(Q);
+        this.lockToe[f]!.copy(toe.quaternion);
+        this.relT[f] = -1;
+      } else {
+        this.lockOn[f] = 0;
+        this.relT[f] = 0;
+        this.relFrom[f]!.copy(A);
+        this.relQ[f]!.copy(Q);
+        this.relToe[f]!.copy(toe.quaternion);
+        this.relLift[f] = 1;
+        this.relDur[f] = STEP_TIME;
+        this.relTOk[f] = 0;
+      }
+    }
+  }
+
+  /**
    * A hand target no nearer its shoulder than ARM_MIN of the arm's length. A key blend can pass the hand through the
    * shoulder (a left-hander's slice put the free hand 2 cm from it, a backhand's recovery the racket hand), and
    * there the line from the shoulder to the hand turns over in a frame, the whole arm with it. So the way from the
@@ -2843,6 +3091,10 @@ export class Avatar {
       const reach = this.legLen * (1 - LEAN_STROKE * w);
       v2.x += this.hipTiltX * reach + this.tiltX * LEAN_HAND;
       v2.z += this.hipTiltZ * reach + this.tiltZ * LEAN_HAND;
+      // The walk's arm swing, smaller with the racket in it.
+      const sw = this.handed * WALK_ARM * 0.4 * this.gaitH * Math.cos(2 * Math.PI * this.gaitPhase);
+      v2.x += this.stanceS * sw;
+      v2.z += this.stanceC * sw;
       this.quatToWorld(ready.q, q2);
       alignQ(q2, this.prevReadyQ);
       BL.u = this.ready;
@@ -2963,6 +3215,9 @@ export class Avatar {
     if (this.ready > 0) {
       this.toWorld(ready.off, v2);
       v2.x += fx; v2.y += fy; v2.z += fz;
+      const sw = -this.handed * WALK_ARM * this.gaitH * Math.cos(2 * Math.PI * this.gaitPhase);
+      v2.x += this.stanceS * sw;
+      v2.z += this.stanceC * sw;
       BL.u = this.ready;
       lerpV(v1, v2);
     }

@@ -44,7 +44,7 @@ describe('animation QA thresholds', () => {
       expect(r.pops.perMinute).toBeLessThan(30);
       expect(r.clip.racketBody).toBeLessThan(0.01);
       expect(r.clip.handTorso).toBeLessThan(0.035);
-      expect(r.clip.legs).toBeLessThan(0.05);
+      expect(r.clip.legs).toBeLessThan(0.07);
       // The serve.
       expect(r.serve.handTorso).toBeLessThan(0.005);
       expect(r.serve.racketBody).toBeLessThan(0.015);

@@ -218,9 +218,9 @@ describe('people', () => {
       expect(r.pops.perMinute).toBeLessThan(30);
       expect(r.clip.racketBody).toBeLessThan(0.01);
       expect(r.clip.handTorso).toBeLessThan(0.035);
-      // (seed 1: p7 6.3, p10 6.8, men about 1.3. Six seeds before the weight in the legs: 3.6-5.6. It is the thighs of a
-      // narrow run passing inside two wide capsules: 0.5% of frames go past 12 cm.)
-      expect(r.clip.legs).toBeLessThan(0.08);
+      // (seed 1: p7 10.8, p10 11.6, men about 1.5. The thighs of a narrow walk and run pass inside two wide capsules, a
+      // walk's every step; 3.6-5.6 over six seeds before the walk and the weight. Past 12 cm: 0.5% of frames.)
+      expect(r.clip.legs).toBeLessThan(0.13);
       expect(r.serve.handTorso).toBeLessThan(0.005);
       expect(r.serve.racketBody).toBeLessThan(0.015);
       // (12 s of serving: one pop more is 5 a minute. The mannequin keeps its 25 in animQa.test.ts; p10 at 25.9 here was
