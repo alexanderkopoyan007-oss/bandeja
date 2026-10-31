@@ -68,6 +68,8 @@ interface ModSpec { netClear: number; speed: number; error: number }
 
 /** Swing error parameters (data/shots.json `swing`): [base, bad, moving, stretch] spreads. */
 interface SwingSpec {
+  /** Furthest the errors turn the face from the one the shot needs (degrees). */
+  faceMax: number;
   pathYaw: number[];
   pathPitch: number[];
   faceOpen: number[];
@@ -89,6 +91,9 @@ interface SwingSpec {
 
 const data = shotData as unknown as Record<string, ShotShape> & { modifiers: { power: ModSpec; precision: ModSpec }; swing: SwingSpec };
 const SW = data.swing;
+/** Furthest the errors turn the face from the one the shot needs (rad): a block sends the ball off by twice this. */
+const FACE_MAX = (SW.faceMax * PI) / 180;
+const FACE_MAX_COS = cos(FACE_MAX);
 export const SHAPES: ShotShape[] = SHOT_KEYS.map((k) => data[k]!);
 const MODS: ModSpec[] = [{ netClear: 1, speed: 1, error: 1 }, data.modifiers.power, data.modifiers.precision];
 
@@ -645,6 +650,7 @@ const win = new V3();
 const wantV = new V3();
 const wantW = new V3();
 const faceN = new V3();
+const faceN0 = new V3();
 const faceV = new V3();
 const gotV = new V3();
 const gotW = new V3();
@@ -744,6 +750,7 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   out.idealZ = req.targetZ;
 
   // Swing errors.
+  faceN0.copy(faceN);
   const deg = (PI / 180) * err;
   const mot = req.motor;
   const MO = SW.motor;
@@ -764,6 +771,17 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
     rotateAbout(faceN, hor, rng.normal() * (spread(SW.faceOpen) + mot * MO.faceOpen) * deg);
   }
   rotateYaw(faceN, rng.normal() * spread(SW.faceYaw) * deg);
+  // However badly it's met, the face is still about where the player meant it. Unbounded, a badly timed block of a hard
+  // ball turned the face past it, and the ball glanced on backwards at 20-30 m/s into the hitter's own fence: 1 volley in
+  // 80 at Club left over 60 degrees off its aim. A real miss goes into the net, long or wide.
+  const cn = faceN.x * faceN0.x + faceN.y * faceN0.y + faceN.z * faceN0.z;
+  if (cn < FACE_MAX_COS) {
+    const cx = faceN.y * faceN0.z - faceN.z * faceN0.y, cy = faceN.z * faceN0.x - faceN.x * faceN0.z, cz = faceN.x * faceN0.y - faceN.y * faceN0.x;
+    const a = atan2(sqrt(cx * cx + cy * cy + cz * cz), cn), sa = sin(a), a0 = sin(a - FACE_MAX) / sa, a1 = sin(FACE_MAX) / sa;
+    faceN.x = faceN0.x * a0 + faceN.x * a1;
+    faceN.y = faceN0.y * a0 + faceN.y * a1;
+    faceN.z = faceN0.z * a0 + faceN.z * a1;
+  }
   faceV.scale(max(0.3, 1 + rng.normal() * (SW.speed[0]! + SW.speed[1]! * bad + mot * MO.speed) * err));
 
   // Where on the face: early meets the ball nearer the tip; too early / too late at the edge or the frame.
