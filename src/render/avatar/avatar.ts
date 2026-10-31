@@ -20,7 +20,7 @@ import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import MANNERS from '../../../data/manners.json' with { type: 'json' };
-import {
+import { type OverArm,
   BACKHAND, TRIUMPH, TRIUMPH_LEFT, FIST, FIST_LEFT, HIP, HIP_LEFT, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
   leftFamily,
   rightFamily,
@@ -38,7 +38,33 @@ const v3 = new THREE.Vector3();
 const q1 = new THREE.Quaternion();
 const q2 = new THREE.Quaternion();
 const q3 = new THREE.Quaternion();
-const LAG_AXIS = new THREE.Vector3(1, 0, 0);
+/** How far a raised arm goes behind the chest's plane (rad), the extra it has hanging low, and between what elevations. */
+const ARM_BEHIND = 0.6;
+const ARM_BEHIND_LOW = 1.1;
+const ARM_LOW0 = 0.25;
+const ARM_LOW1 = 0.6;
+/** The soft edge of that limit (rad). */
+const ARM_EDGE = 0.2;
+/** The same limit on the racket arm's elbow (rad), which stays further forward. */
+const ELBOW_BEHIND = 0.45;
+/** How far the wrist goes off the forearm's line (rad), its soft edge, and how long (s) after the ball the limit comes back. */
+const WRIST_MAX = 1.48;
+const WRIST_EDGE = 0.3;
+const WRIST_AFTER = 0.08;
+/** How fast that limit moves the racket on the hand (rad/s). */
+const WRIST_RATE = (720 * Math.PI) / 180;
+/** How strongly the racket's line picks the elbow's side against the key's pole (see elbowBehindRacket). */
+const ELBOW_SHAFT = 3;
+/** Where an overhead's follow-through goes on the way (m along each): through the ball, then down. */
+const OVER_WAY = new THREE.Vector3(0, 0.12, 1).normalize();
+const OVER_DOWN = new THREE.Vector3(0, -1, 0.1).normalize();
+const OVER_ON = 0.38;
+/** The arm OverArm's curves are drawn for (m), when the chest's curves start giving way to the ball (progress), the trunk's ease (s). */
+const OVER_ARM = 0.56;
+const OVER_TO_BALL = 0.72;
+const OVER_TILT_EASE = 0.05;
+/** How much of the cartwheel the neck takes back: the eyes stay on the ball. */
+const OVER_NECK = 0.6;
 
 function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
@@ -54,6 +80,7 @@ function wrapAngle(a: number): number {
 }
 
 /** Quadratic Bézier a -> b with the control point c. */
+
 function bezier(a: THREE.Vector3, c: THREE.Vector3, b: THREE.Vector3, t: number, out: THREE.Vector3): THREE.Vector3 {
   const u = 1 - t;
   return out.set(
@@ -149,6 +176,41 @@ function slerpAs(a: THREE.Quaternion, b: THREE.Quaternion, u: number, out: THREE
 
 /** nlerpQ's result on its way into the quaternion (a double passed to a call V8 doesn't inline is boxed). */
 const QN = new Float64Array(4);
+/** Out of `curve`, one value a dimension. */
+const CURVE = new Float64Array(3);
+
+/** Through `vals` (`dim` values a knot) at the knots, smooth at each of them (Catmull-Rom on uneven knots), into CURVE. */
+function curve(knots: number[], vals: number[], dim: number, s: number): void {
+  const n = knots.length;
+  let i = 0;
+  while (i < n - 2 && s > knots[i + 1]!) i++;
+  const t0 = knots[i]!, t1 = knots[i + 1]!, h = t1 - t0, u = s <= t0 ? 0 : s >= t1 ? 1 : (s - t0) / h;
+  const ip = i > 0 ? i - 1 : i, iq = i + 2 < n ? i + 2 : i + 1, tp = knots[ip]!, tq = knots[iq]!;
+  const u2 = u * u, u3 = u2 * u, h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = 3 * u2 - 2 * u3, h11 = u3 - u2;
+  for (let d = 0; d < dim; d++) {
+    const a = vals[i * dim + d]!, b = vals[(i + 1) * dim + d]!, p = vals[ip * dim + d]!, q = vals[iq * dim + d]!;
+    CURVE[d] = h00 * a + (h10 * (b - p) * h) / (t1 - tp) + h01 * b + (h11 * (q - a) * h) / (tq - t0);
+  }
+}
+
+/** The rotation with these axes as its columns, by hand (see hingeIK). */
+function basisQuat(xx: number, xy: number, xz: number, yx: number, yy: number, yz: number, zx: number, zy: number, zz: number, out: THREE.Quaternion): void {
+  const tr = xx + yy + zz;
+  if (tr > 0) {
+    const k = 0.5 / Math.sqrt(tr + 1);
+    out.w = 0.25 / k; out.x = (yz - zy) * k; out.y = (zx - xz) * k; out.z = (xy - yx) * k;
+  } else if (xx > yy && xx > zz) {
+    const k = 2 * Math.sqrt(1 + xx - yy - zz);
+    out.w = (yz - zy) / k; out.x = 0.25 * k; out.y = (xy + yx) / k; out.z = (xz + zx) / k;
+  } else if (yy > zz) {
+    const k = 2 * Math.sqrt(1 + yy - xx - zz);
+    out.w = (zx - xz) / k; out.x = (xy + yx) / k; out.y = 0.25 * k; out.z = (yz + zy) / k;
+  } else {
+    const k = 2 * Math.sqrt(1 + zz - xx - yy);
+    out.w = (xy - yx) / k; out.x = (xz + zx) / k; out.y = (yz + zy) / k; out.z = 0.25 * k;
+  }
+}
+
 function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion): void {
   const u = BL.u, v = 1 - u;
   const x1 = a.x * v + b.x * u, y1 = a.y * v + b.y * u, z1 = a.z * v + b.z * u, w1 = a.w * v + b.w * u;
@@ -321,6 +383,8 @@ const ANKLE_MIN = 0.08;
 const RACKET_TURN_RATE = (3600 * Math.PI) / 180;
 /** Most the racket tips about the ball when the arm can't reach it (rad, tipRacket): past this the face no longer looks at the target. */
 const TIP_MAX = 1;
+/** How fast that tip's turn moves (rad/s): on top of the racket's own turn. */
+const TIP_RATE = (1200 * Math.PI) / 180;
 /** Fastest the body's turn away from a wall changes (rad/s). */
 const WALL_YAW_RATE = 8;
 /** Face centre to the top of the frame (m), and how close the frame comes to the floor when it tips. */
@@ -672,6 +736,8 @@ interface Grip {
   hand: THREE.Bone;
   /** The racket's origin (face centre) and rotation in the hand's frame. */
   pos: THREE.Vector3;
+  /** From the wrist to the racket's origin, in the racket's frame. */
+  off: THREE.Vector3;
   q: THREE.Quaternion;
   qInv: THREE.Quaternion;
   /** Gripping fingers: bone index and the local rotation (x, y, z, w) that curls it round the handle. */
@@ -922,6 +988,23 @@ export class Avatar {
   private readonly kp = new THREE.Vector3();
   private readonly kq = new THREE.Quaternion();
   private readonly kpole = new THREE.Vector3();
+  private readonly hand0 = new THREE.Vector3();
+  /** The overhead's elbow in the chest's frame (out, up, fwd; m), how much of the swing is the chest's, and how far it's in. */
+  private readonly overE = new THREE.Vector3();
+  private readonly overQ = new THREE.Quaternion();
+  private readonly overHead = new THREE.Vector3();
+  private overU = 0;
+  private overIn = 1;
+  /** The shoulders' cartwheel and the trunk's bow, eased. */
+  private overTilt = 0;
+  private overBow = 0;
+  private readonly wristWant = new THREE.Quaternion();
+  private readonly tipWant = new THREE.Quaternion();
+  private readonly tipOff = new THREE.Quaternion();
+  private readonly wristQ = new THREE.Quaternion();
+  private readonly chestOut = new THREE.Vector3(1, 0, 0);
+  private readonly chestUp = new THREE.Vector3(0, 1, 0);
+  private readonly chestFwd = new THREE.Vector3(0, 0, 1);
   private readonly koff = new THREE.Vector3();
   private kyaw = 0;
   private crouch = 0;
@@ -1260,7 +1343,7 @@ export class Avatar {
     const s = solveGrip(asset, side);
     return {
       hand: this.bones[asset.bone(side + 'Hand')]!,
-      pos: s.pos, q: s.q, qInv: s.q.clone().invert(), bones: s.bones, quats: s.quats, cord: makeWristCord(s.wrist, s.forearm, s.wristR),
+      pos: s.pos, off: s.wrist.clone().negate(), q: s.q, qInv: s.q.clone().invert(), bones: s.bones, quats: s.quats, cord: makeWristCord(s.wrist, s.forearm, s.wristR),
     };
   }
 
@@ -1508,27 +1591,31 @@ export class Avatar {
     this.keyS = s;
     const f = this.fam;
     const k = this.contactKey();
-    const bp = this.backPoint();
-    // Accelerating into the ball along a curve below (groundstrokes) or behind the head (overheads).
+    // Accelerating into the ball along a curve below (groundstrokes). An overhead has the ball here, and overKey draws
+    // the way to it.
     const e = Math.pow(s, 1.7);
-    if (f.via) {
-      // The control point that puts the curve through `via` at its moment: B(ev) = via.
-      const ev = Math.pow(f.viaS ?? 0.5, 1.7), u = 1 - ev, c = 1 / (2 * ev * u);
-      this.ctrl.copy(f.via).addScaledVector(bp, -u * u).addScaledVector(k.p, -ev * ev).multiplyScalar(c);
-      // Let go with no swing begun, straighter: no time to go round.
-      if (this.st === ST_SWING && this.relS === 0) this.ctrl.lerp(this.mid.copy(bp).lerp(k.p, 0.5), 1 - this.lagK);
+    if (f.over) {
+      this.kp.copy(k.p);
+      this.kq.copy(k.q);
     } else {
-      this.ctrl.copy(bp).lerp(k.p, 0.5);
-      this.ctrl.y -= f.dip;
-      this.ctrl.z -= f.loop;
+      const bp = this.backPoint();
+      if (f.via) {
+        // The control point that puts the curve through `via` at its moment: B(ev) = via.
+        const ev = Math.pow(f.viaS ?? 0.5, 1.7), u = 1 - ev, c = 1 / (2 * ev * u);
+        this.ctrl.copy(f.via).addScaledVector(bp, -u * u).addScaledVector(k.p, -ev * ev).multiplyScalar(c);
+        // Let go with no swing begun, straighter: no time to go round.
+        if (this.st === ST_SWING && this.relS === 0) this.ctrl.lerp(this.mid.copy(bp).lerp(k.p, 0.5), 1 - this.lagK);
+      } else {
+        this.ctrl.copy(bp).lerp(k.p, 0.5);
+        this.ctrl.y -= f.dip;
+        this.ctrl.z -= f.loop;
+      }
+      bezier(bp, this.ctrl, k.p, e, this.kp);
+      this.kq.copy(this.backTurn(k)).slerp(k.q, e);
     }
-    bezier(bp, this.ctrl, k.p, e, this.kp);
-    this.kq.copy(this.backTurn(k)).slerp(k.q, e);
-    // Rotated about the shoulder line (a mirror leaves it): blending through a pose behind the back, opposite the
-    // contact's, turned the hand 138 degrees in a frame.
-    if (f.lag) this.kq.premultiply(q1.setFromAxisAngle(LAG_AXIS, -f.lag * this.lagK * 4 * e * (1 - e)));
     this.kpole.copy(f.back.pole).lerp(k.pole, e);
-    this.koff.copy(f.back.off).lerp(k.off, e);
+    // (an overhead's free arm comes in as the chest comes round, ahead of the racket, by the swing's time)
+    this.koff.copy(f.back.off).lerp(k.off, f.over ? smoothstep(0.1, 0.8, s) : e);
     this.kyaw = f.back.yaw + (k.yaw - f.back.yaw) * e;
   }
 
@@ -1704,6 +1791,7 @@ export class Avatar {
       }
       if (this.prepFromW > 0 && u < 1) this.blendFrom(u);
       this.w = this.prepFromW + (1 - this.prepFromW) * u;
+      this.overIn = u;
     } else if (this.st === ST_SWING) {
       if (t < this.tCon) {
         const g = clamp01((t - this.tRel) / (this.tCon - this.tRel));
@@ -1715,14 +1803,19 @@ export class Avatar {
         if (this.dt > 0) this.swingV = this.kp.distanceTo(this.kpWas) / this.dt;
         this.kpWas.copy(this.kp);
         if (this.relBlend) this.blendFrom(smoothstep(0, 0.7, g));
+        this.overIn = this.relBlend ? smoothstep(0, 0.7, g) : 1;
         this.w = this.relW + (1 - this.relW) * smoothstep(0, 0.06, t - this.tRel);
       } else if (t < this.tCon + (f.follow ?? FOLLOW) * this.manner.follow) {
         // Follow-through, slowing down, carrying on through the ball before wrapping round.
         const s = clamp01((t - this.tCon) / ((f.follow ?? FOLLOW) * this.manner.follow));
         const k = this.contactKey();
-        this.ctrl.copy(k.p).lerp(f.finish.p, 0.5);
-        this.ctrl.z += f.through ?? 0.25;
-        if (f.through) this.ctrl.y += THROUGH_UP;
+        // (an overhead goes on the way it came, over the top, before it wraps down)
+        if (f.over) this.ctrl.copy(k.p).addScaledVector(OVER_WAY, OVER_ON).addScaledVector(OVER_DOWN, OVER_ON);
+        else {
+          this.ctrl.copy(k.p).lerp(f.finish.p, 0.5);
+          this.ctrl.z += f.through ?? 0.25;
+          if (f.through) this.ctrl.y += THROUGH_UP;
+        }
         // Leaving the ball at the speed it arrived: the racket fell to 60% of it in a frame, and the hit read as a stop
         // (review round 8, the critic's #4).
         const n = (this.swingV * (f.follow ?? FOLLOW) * this.manner.follow) / Math.max(0.05, 2 * k.p.distanceTo(this.ctrl));
@@ -2136,6 +2229,28 @@ export class Avatar {
         for (let j = 0; j < 3; j++) this.spine[j]!.quaternion.multiply(q2).multiply(q1);
         q2.setFromAxisAngle(AXIS_X, -fw * 0.6);
         this.neck.quaternion.multiply(q2);
+      }
+    }
+    // An overhead's shoulders go over like a cartwheel, the free one up at the trophy, the racket one up at the ball, and
+    // the trunk bows after it.
+    {
+      const o = this.fam.over, swing = this.st === ST_SWING && t < this.tCon;
+      let tilt = 0, bow = 0;
+      if (o && this.w > 0 && (this.st === ST_PREP || this.st === ST_SWING)) {
+        const up0 = smoothstep(0.3, 1, this.keyS), fin = swing || this.st === ST_PREP ? 0 : this.finishTo;
+        tilt = (o.tilt[0]! + (o.tilt[1]! - o.tilt[0]!) * up0 + (o.tilt[2]! - o.tilt[1]!) * fin) * this.w;
+        bow = o.pitch * fin * this.w;
+      }
+      const dt = this.dt, ease = dt > 0 ? 1 - Math.exp(-dt / OVER_TILT_EASE) : 1;
+      this.overTilt += (tilt - this.overTilt) * ease;
+      this.overBow += (bow - this.overBow) * ease;
+      if (this.overTilt * this.overTilt + this.overBow * this.overBow > 1e-6) {
+        q2.setFromAxisAngle(AXIS_X, this.overBow / 3);
+        q1.setFromAxisAngle(AXIS_Z, (this.overTilt * this.handed) / 3);
+        for (let j = 0; j < 3; j++) this.spine[j]!.quaternion.multiply(q2).multiply(q1);
+        q1.setFromAxisAngle(AXIS_Z, -this.overTilt * this.handed * OVER_NECK);
+        q2.setFromAxisAngle(AXIS_X, -this.overBow * OVER_NECK);
+        this.neck.quaternion.multiply(q2).multiply(q1);
       }
     }
     // Up out of the idle clip's tennis crouch, the head kept level.
@@ -3271,6 +3386,174 @@ export class Avatar {
     hand.updateMatrixWorld(true);
   }
 
+  /**
+   * A wrist goes about 85 degrees off the forearm's line and stops. With the hand low and the racket stood up over it the
+   * shaft points back at the shoulder, and no elbow makes that good (the wrist 14-30 degrees from folded flat as a
+   * backswing began): the racket tips out on the hand instead, softly, by `k` (nothing at the ball: the head is on it).
+   */
+  private wristLimit(fa: THREE.Bone, hand: THREE.Bone, k: number): void {
+    const D = this.wristWant, W = this.wristQ;
+    D.x = 0; D.y = 0; D.z = 0; D.w = 1;
+    const me = fa.matrixWorld.elements, mh = hand.matrixWorld.elements;
+    let fx = mh[12]! - me[12]!, fy = mh[13]! - me[13]!, fz = mh[14]! - me[14]!;
+    const fl = Math.sqrt(fx * fx + fy * fy + fz * fz);
+    q2.multiplyQuaternions(q3, this.grip.q);
+    const S = this.hand0.copy(this.grip.off).applyQuaternion(q2);
+    const sl = Math.sqrt(S.x * S.x + S.y * S.y + S.z * S.z);
+    if (k > 0 && fl > 1e-6 && sl > 1e-6) {
+      fx /= fl; fy /= fl; fz /= fl;
+      const sx = S.x / sl, sy = S.y / sl, sz = S.z / sl;
+      const cs = fx * sx + fy * sy + fz * sz, dev = Math.acos(cs < -1 ? -1 : cs > 1 ? 1 : cs), from = WRIST_MAX - WRIST_EDGE;
+      // Axis s x f, turning the shaft towards the forearm's line.
+      const ax = sy * fz - sz * fy, ay = sz * fx - sx * fz, az = sx * fy - sy * fx, al = Math.sqrt(ax * ax + ay * ay + az * az);
+      if (dev > from && al > 1e-6) {
+        v3.x = ax / al; v3.y = ay / al; v3.z = az / al;
+        D.setFromAxisAngle(v3, (dev - from - WRIST_EDGE * (1 - Math.exp((from - dev) / WRIST_EDGE))) * k);
+      }
+    }
+    // Followed at a wrist's speed: with the shaft dead against the forearm the axis has no way to go, and taken as it
+    // is the racket turned over in a frame (166-178 degrees).
+    const d = Math.min(1, Math.abs(W.x * D.x + W.y * D.y + W.z * D.z + W.w * D.w));
+    const ang = 2 * Math.acos(d), lim = WRIST_RATE * this.dt;
+    if (this.dt > 0 && ang > lim) W.slerp(D, lim / ang);
+    else W.copy(D);
+    if (W.w < 0.99999985) q3.premultiply(W);
+  }
+
+  /**
+   * The racket's point and turn (v1, q1) towards another's (v2, q2) by BL.u: the hand goes straight and the racket turns
+   * on it. Blending the racket's point instead dragged the hand round it as the racket turned (20 cm off at the middle
+   * of a 150-degree turn), and the wrist folded to 30-50 degrees at the start of every backswing.
+   */
+  private blendRacket(out: THREE.Quaternion): void {
+    const off = this.grip.off, h = this.hand0;
+    h.copy(off).applyQuaternion(q1); v1.sub(h);
+    h.copy(off).applyQuaternion(q2); v2.sub(h);
+    lerpV(v1, v2);
+    nlerpQ(q1, q2, out);
+    h.copy(off).applyQuaternion(q1); v1.add(h);
+  }
+
+  /**
+   * The overhead's way to the ball (see OverArm): the key (v2, q2, the contact) from the chest's curves until they give
+   * way to it, over the last of the swing, from OVER_TO_BALL. That handover isn't eased at its end, so the hand and the
+   * racket are at speed as they get there. Let go late, there's less time to go round (lagK).
+   */
+  private overKey(o: OverArm, ua: THREE.Bone): void {
+    const s = this.keyS, g0 = (s - OVER_TO_BALL) / (1 - OVER_TO_BALL), left = (1 - (g0 > 0 ? g0 * g0 : 0)) * this.lagK * this.overIn;
+    if (left <= 0) return;
+    this.overU = left;
+    this.chestAxes(this.armFree[0]!, ua);
+    const O = this.chestOut, U = this.chestUp, F = this.chestFwd, m = ua.matrixWorld.elements, k = this.armLen / OVER_ARM;
+    curve(o.knots, o.hand, 3, s);
+    const ho = CURVE[0]! * k, hu = CURVE[1]! * k, hf = CURVE[2]! * k;
+    const hx = m[12]! - O.x * ho + U.x * hu + F.x * hf, hy = m[13]! - O.y * ho + U.y * hu + F.y * hf, hz = m[14]! - O.z * ho + U.z * hu + F.z * hf;
+    curve(o.knots, o.elbow, 3, s);
+    const E = this.overE;
+    E.x = CURVE[0]! * k; E.y = CURVE[1]! * k; E.z = CURVE[2]! * k;
+    curve(o.knots, o.back, 1, s);
+    // The shaft laid back from up the trunk about the shoulder line, its face out along that line.
+    const cp = Math.cos(CURVE[0]!), sp = Math.sin(CURVE[0]!);
+    const ax = U.x * cp - F.x * sp, ay = U.y * cp - F.y * sp, az = U.z * cp - F.z * sp;
+    const nx = -O.x, ny = -O.y, nz = -O.z;
+    basisQuat(ay * nz - az * ny, az * nx - ax * nz, ax * ny - ay * nx, ax, ay, az, nx, ny, nz, this.overQ);
+    const off = this.grip.off, h = this.hand0, g = 1 - left;
+    h.copy(off).applyQuaternion(q2);
+    const kx = v2.x - h.x, ky = v2.y - h.y, kz = v2.z - h.z;
+    q2.slerp(this.overQ, left);
+    h.copy(off).applyQuaternion(q2);
+    v2.x = hx + (kx - hx) * g + h.x;
+    v2.y = hy + (ky - hy) * g + h.y;
+    v2.z = hz + (kz - hz) * g + h.z;
+    if (this.dt > 0 && this.st === ST_SWING) this.swingV = v2.distanceTo(this.overHead) / this.dt;
+    this.overHead.copy(v2);
+  }
+
+  /** The trunk's axes from the shoulders: out towards `arm`, up the spine, forward out of the chest (world). */
+  private chestAxes(arm: THREE.Bone, other: THREE.Bone): void {
+    const a = arm.matrixWorld.elements, o = other.matrixWorld.elements, H = this.hips.matrixWorld.elements;
+    const O = this.chestOut, U = this.chestUp, F = this.chestFwd;
+    let ox = a[12]! - o[12]!, oy = a[13]! - o[13]!, oz = a[14]! - o[14]!;
+    let nl = Math.sqrt(ox * ox + oy * oy + oz * oz);
+    if (nl < 1e-6) return;
+    ox /= nl; oy /= nl; oz /= nl;
+    let ux = (a[12]! + o[12]!) / 2 - H[12]!, uy = (a[13]! + o[13]!) / 2 - H[13]!, uz = (a[14]! + o[14]!) / 2 - H[14]!;
+    const ud = ux * ox + uy * oy + uz * oz;
+    ux -= ox * ud; uy -= oy * ud; uz -= oz * ud;
+    nl = Math.sqrt(ux * ux + uy * uy + uz * uz);
+    if (nl < 1e-6) return;
+    ux /= nl; uy /= nl; uz /= nl;
+    const sgn = this.handed > 0 ? 1 : -1;
+    O.x = ox; O.y = oy; O.z = oz;
+    U.x = ux; U.y = uy; U.z = uz;
+    F.x = (oy * uz - oz * uy) * sgn; F.y = (oz * ux - ox * uz) * sgn; F.z = (ox * uy - oy * ux) * sgn;
+  }
+
+  /**
+   * A raised arm doesn't go behind the chest's plane: a shoulder runs out about 40 degrees behind it level, a little
+   * less above that, and only hanging does the arm swing back past it. A point on the arm is turned forward round
+   * the spine to stay inside, softly. `way` is 1 on the free side, -1 on the racket side.
+   * (The keys are in the stance's frame, and the chest turns under them: a free hand placed for a body that had already
+   * come round was 55-60 degrees behind it at 125 degrees of elevation.)
+   */
+  private shoulderLimit(arm: THREE.Bone, target: THREE.Vector3, way: number, behind: number): void {
+    const a = arm.matrixWorld.elements, U = this.chestUp, F = this.chestFwd;
+    const Ox = this.chestOut.x * way, Oy = this.chestOut.y * way, Oz = this.chestOut.z * way;
+    const sx = a[12]!, sy = a[13]!, sz = a[14]!;
+    const dx = target.x - sx, dy = target.y - sy, dz = target.z - sz;
+    const co = dx * Ox + dy * Oy + dz * Oz, cu = dx * U.x + dy * U.y + dz * U.z, cf = dx * F.x + dy * F.y + dz * F.z;
+    const r = Math.sqrt(co * co + cf * cf);
+    if (r < 1e-4) return;
+    const elev = Math.atan2(r, -cu), lim = -behind - ARM_BEHIND_LOW * (1 - smoothstep(ARM_LOW0, ARM_LOW1, elev));
+    const hz = Math.atan2(cf, co);
+    if (hz >= lim + ARM_EDGE) return;
+    const h = lim + ARM_EDGE * Math.exp((hz - lim - ARM_EDGE) / ARM_EDGE);
+    const c2 = r * Math.cos(h), f2 = r * Math.sin(h);
+    target.x = sx + Ox * c2 + U.x * cu + F.x * f2;
+    target.y = sy + Oy * c2 + U.y * cu + F.y * f2;
+    target.z = sz + Oz * c2 + U.z * cu + F.z * f2;
+  }
+
+  /**
+   * The elbow is on the far side of the hand from the racket: a wrist goes only so far, so the forearm carries on the
+   * shaft's line. The pole alone chose the side whatever the racket was doing, and the wrist folded to 42-57 degrees
+   * in the volleys, the serve and the racket's drop (a person has about 95). With the head hanging behind the back
+   * this also puts the elbow up, which is where it is in a real overhead. A racket along the arm says nothing about
+   * the side, and the key's pole carries on.
+   */
+  private elbowBehindRacket(ua: THREE.Bone, q: THREE.Quaternion): void {
+    const e = ua.matrixWorld.elements, P = this.pole, T = this.tgt;
+    const sx = e[12]!, sy = e[13]!, sz = e[14]!;
+    let lx = T.x - sx, ly = T.y - sy, lz = T.z - sz;
+    const ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
+    if (ll < 1e-6) return;
+    lx /= ll; ly /= ll; lz /= ll;
+    // Back along the shaft, off the shoulder-to-hand line.
+    const bx = -2 * (q.x * q.y - q.w * q.z), by = 2 * (q.x * q.x + q.z * q.z) - 1, bz = -2 * (q.y * q.z + q.w * q.x);
+    const bd = bx * lx + by * ly + bz * lz;
+    // The key's pole off the line, a unit long.
+    let px = P.x - sx, py = P.y - sy, pz = P.z - sz;
+    const pd = px * lx + py * ly + pz * lz;
+    px -= lx * pd; py -= ly * pd; pz -= lz * pd;
+    const pl = Math.sqrt(px * px + py * py + pz * pz);
+    if (pl > 1e-6) { px /= pl; py /= pl; pz /= pl; }
+    px = lx * 0.3 + px + (bx - lx * bd) * ELBOW_SHAFT;
+    py = ly * 0.3 + py + (by - ly * bd) * ELBOW_SHAFT;
+    pz = lz * 0.3 + pz + (bz - lz * bd) * ELBOW_SHAFT;
+    // Where that puts the elbow, and the shoulder's limit on it: the upper arm stays about on the line of the shoulders
+    // and the forearm goes back, with the hand behind the chest (the rule above had the elbow as far behind as the hand).
+    const E = this.armRacket[1]!.position, H = this.armRacket[2]!.position;
+    const a2 = E.x * E.x + E.y * E.y + E.z * E.z, b2 = H.x * H.x + H.y * H.y + H.z * H.z, a = Math.sqrt(a2), full = a + Math.sqrt(b2);
+    const c = ll < full ? ll : full, d = (a2 - b2 + c * c) / (2 * c), h2 = a2 - d * d;
+    const pd2 = px * lx + py * ly + pz * lz;
+    px -= lx * pd2; py -= ly * pd2; pz -= lz * pd2;
+    const pl2 = Math.sqrt(px * px + py * py + pz * pz);
+    if (pl2 < 1e-6) return;
+    const k = (h2 > 0 ? Math.sqrt(h2) : 0) / pl2;
+    P.x = sx + lx * d + px * k; P.y = sy + ly * d + py * k; P.z = sz + lz * d + pz * k;
+    this.shoulderLimit(ua, P, -1, ELBOW_BEHIND);
+  }
+
   /** Racket arm to the key (blended with the animation by the stroke weight), free hand to its key. */
   private solveArms(): void {
     const w = this.w;
@@ -3300,8 +3583,7 @@ export class Avatar {
       this.quatToWorld(ready.q, q2);
       alignQ(q2, this.prevReadyQ);
       BL.u = this.ready;
-      lerpV(v1, v2);
-      nlerpQ(q1, q2, this.outReady);
+      this.blendRacket(this.outReady);
     }
     this.toWorld(this.kp, v2);
     if (this.finishU > 0) {
@@ -3311,10 +3593,12 @@ export class Avatar {
       v2.x += (mr[12]! - this.racketSh.x) * u; v2.y += (mr[13]! - this.racketSh.y) * u; v2.z += (mr[14]! - this.racketSh.z) * u;
     }
     this.quatToWorld(this.kq, q2);
+    this.overU = 0;
+    const over = this.fam.over;
+    if (over && (this.st === ST_PREP || (this.st === ST_SWING && this.lastT < this.tCon))) this.overKey(over, ua);
     alignQ(q2, this.prevKeyQ);
     BL.u = w;
-    lerpV(v1, v2);
-    nlerpQ(q1, q2, this.outKey);
+    this.blendRacket(this.outKey);
     // The racket turns no faster than RACKET_TURN_RATE (the racket centre still goes where the key puts it; the hand
     // follows from the rotation): a reflex volley released 46 ms before the contact, the stroke 18% in, blended the
     // hand from the ready grip to the volley's in three frames, 117° in one.
@@ -3344,7 +3628,9 @@ export class Avatar {
       const al = Math.sqrt(ax * ax + ay * ay + az * az), bl = Math.sqrt(bx * bx + by * by + bz * bz);
       const cs = (ax * bx + ay * by + az * bz) / Math.max(al * bl, 1e-9);
       const ang = Math.acos(cs < -1 ? -1 : cs > 1 ? 1 : cs);
-      const phi = Math.min(ang, excess / Math.max(al, 0.1), SPINE_REACH) * smoothstep(SPINE_REACH_BACK1, SPINE_REACH_BACK0, ang);
+      // Only to reach the ball: a finish out of the arm's reach bent the trunk 38-53 degrees after it, a body folded in half.
+      const done = this.st === ST_FADE || (this.st === ST_SWING && this.lastT >= this.tCon);
+      const phi = done ? 0 : Math.min(ang, excess / Math.max(al, 0.1), SPINE_REACH) * smoothstep(SPINE_REACH_BACK1, SPINE_REACH_BACK0, ang);
       // Axis a x b.
       const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
       const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
@@ -3371,6 +3657,16 @@ export class Avatar {
     BL.u = w;
     lerpV(v3, this.kpole);
     this.toWorld(v3, this.pole);
+    this.chestAxes(this.armFree[0]!, ua);
+    this.elbowBehindRacket(ua, q1);
+    if (this.overU > 0) {
+      const O = this.chestOut, U = this.chestUp, F = this.chestFwd, E = this.overE, m = ua.matrixWorld.elements;
+      v3.x = m[12]! - O.x * E.x + U.x * E.y + F.x * E.z;
+      v3.y = m[13]! - O.y * E.x + U.y * E.y + F.y * E.z;
+      v3.z = m[14]! - O.z * E.x + U.z * E.y + F.z * E.z;
+      BL.u = this.overU;
+      lerpV(this.pole, v3);
+    }
     // As the stroke and the ready position let go, the elbow goes back to where the clip bends it.
     const ik = Math.max(this.ready, w);
     if (ik < 1) {
@@ -3414,6 +3710,7 @@ export class Avatar {
     const t0x = this.tgt.x, t0y = this.tgt.y, t0z = this.tgt.z;
     this.tgt.x += co.x; this.tgt.y += co.y; this.tgt.z += co.z;
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
+    this.wristLimit(fa, hand, before ? Math.min(1, sLeft) : smoothstep(0, WRIST_AFTER, this.lastT - this.tCon));
     setWorldQuat(hand, q3);
     hand.updateMatrixWorld(true);
     this.racketClear(ua, fa, hand);
@@ -3440,7 +3737,8 @@ export class Avatar {
     }
     this.toWorld(this.koff, v2);
     v2.x += fx; v2.y += fy; v2.z += fz;
-    BL.u = w * 0.85;
+    // (all the way for an overhead: the free arm points at the ball, straight)
+    BL.u = this.fam.over ? w : w * 0.85;
     lerpV(v1, v2);
     // The free elbow hangs down and back from the chest, which has turned with the stroke (in the stance frame a
     // pole fixed square to the net comes into line with the arm when the body is side-on, and the elbow flips).
@@ -3454,6 +3752,7 @@ export class Avatar {
       BL.u = 1 - ikF;
       lerpV(this.pole, v2);
     }
+    this.shoulderLimit(ul, v1, 1, ARM_BEHIND);
     this.keepOff(ul, v1, this.elbowFree.dir);
     hingeIK(ul, fl, hl, v1, this.pole, this.elbowFree);
     // Fade into the clip's arms below ARM_FADE of weight: the hinge solve has its own elbow side and upper-arm roll,
@@ -3473,14 +3772,17 @@ export class Avatar {
     const dx = v1.x - mu[12]!, dy = v1.y - mu[13]!, dz = v1.z - mu[14]!;
     const gx = v1.x - T.x, gy = v1.y - T.y, gz = v1.z - T.z;
     const D = Math.sqrt(dx * dx + dy * dy + dz * dz), g = Math.sqrt(gx * gx + gy * gy + gz * gz);
-    if (D < 1e-3 || g < 1e-3) { this.tip = 0; return; }
-    const tx = T.x - mu[12]!, ty = T.y - mu[13]!, tz = T.z - mu[14]!;
-    const R = this.armLen * 0.98;
+    const W = this.tipWant;
+    W.x = 0; W.y = 0; W.z = 0; W.w = 1;
     let want = 0;
-    if (tx * tx + ty * ty + tz * tz > R * R) {
-      const now = Math.acos(Math.min(1, Math.max(-1, (dx * gx + dy * gy + dz * gz) / (D * g))));
-      const c = (D * D + g * g - R * R) / (2 * D * g);
-      want = Math.min(TIP_MAX, Math.max(0, now - (c >= 1 ? 0 : Math.acos(Math.max(-1, c))))) * w;
+    if (D >= 1e-3 && g >= 1e-3) {
+      const tx = T.x - mu[12]!, ty = T.y - mu[13]!, tz = T.z - mu[14]!;
+      const R = this.armLen * 0.98;
+      if (tx * tx + ty * ty + tz * tz > R * R) {
+        const now = Math.acos(Math.min(1, Math.max(-1, (dx * gx + dy * gy + dz * gz) / (D * g))));
+        const c = (D * D + g * g - R * R) / (2 * D * g);
+        want = Math.min(TIP_MAX, Math.max(0, now - (c >= 1 ? 0 : Math.acos(Math.max(-1, c))))) * w;
+      }
     }
     if (this.dt > 0) {
       const lim = RACKET_TURN_RATE * this.dt;
@@ -3490,18 +3792,30 @@ export class Avatar {
     // Axis g x d, turning the racket's way from the ball to the hand towards the way from the ball to the shoulder.
     const cx = gy * dz - gz * dy, cy = gz * dx - gx * dz, cz = gx * dy - gy * dx;
     const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
-    if (want < 1e-3 || cl < 1e-6) return;
-    v3.x = cx / cl; v3.y = cy / cl; v3.z = cz / cl;
-    this.tipQ.setFromAxisAngle(v3, want);
-    q2.multiplyQuaternions(this.tipQ, q1);
+    if (want >= 1e-3 && cl >= 1e-6) {
+      v3.x = cx / cl; v3.y = cy / cl; v3.z = cz / cl;
+      W.setFromAxisAngle(v3, want);
+    }
+    // Followed as a turn, not just as an amount: with the ball, hand and shoulder nearly in line that axis comes round
+    // fast, and the hand went 90 degrees in a frame.
+    const TQ = this.tipQ;
+    if (this.dt > 0) {
+      const d = Math.min(1, Math.abs(TQ.x * W.x + TQ.y * W.y + TQ.z * W.z + TQ.w * W.w));
+      const ang = 2 * Math.acos(d), lim = TIP_RATE * this.dt;
+      if (ang > lim) TQ.slerp(W, lim / ang);
+      else TQ.copy(W);
+    } else TQ.copy(W);
+    if (TQ.w > 0.99999985) return;
+    q2.multiplyQuaternions(TQ, q1);
     q3.multiplyQuaternions(q2, this.grip.qInv);
     v2.copy(this.grip.pos).applyQuaternion(q3);
     // The frame stays off the floor, the tip given back in proportion: the head of a ball taken off the ground.
     const y0 = v1.y + (gy / g) * RACKET_TOP, y1 = v1.y + (v2.y / g) * RACKET_TOP;
     if (y1 < RACKET_FLOOR && y1 < y0) {
-      this.tip = want *= Math.max(0, (y0 - RACKET_FLOOR) / (y0 - y1));
-      this.tipQ.setFromAxisAngle(v3, want);
-      q2.multiplyQuaternions(this.tipQ, q1);
+      const back = Math.max(0, (y0 - RACKET_FLOOR) / (y0 - y1));
+      this.tip = want * back;
+      TQ.slerp(this.tipOff, 1 - back);
+      q2.multiplyQuaternions(TQ, q1);
       q3.multiplyQuaternions(q2, this.grip.qInv);
       v2.copy(this.grip.pos).applyQuaternion(q3);
     }

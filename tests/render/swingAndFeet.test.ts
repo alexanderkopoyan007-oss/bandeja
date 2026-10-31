@@ -30,6 +30,22 @@ describe('swings and feet', () => {
   const down: number[] = [], slid: number[] = [];
   /** Hips against the feet towards the net at a forehand's contact (m). */
   const into: number[] = [];
+  /** Frames with a stroke holding the arm; of those, the wrist folded, and either arm raised and behind the chest. */
+  let held = 0, folded = 0, freeBack = 0, racketBack = 0;
+  /** An overhead's forward swing: frames, the hand or the elbow fallen under the shoulder; shoulders' tilt at the ball (degrees), trunk's lean after it. */
+  let thrown = 0, handLow = 0, elbowLow = 0;
+  const tilts: number[] = [], after: number[] = [];
+  const P = (o: THREE.Object3D): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+  /** How far behind the chest's plane an arm's point is (degrees, by elevation), from the shoulders and the hips. */
+  const behind = (S: THREE.Vector3, other: THREE.Vector3, hips: THREE.Vector3, to: THREE.Vector3, side: number): number => {
+    const out = S.clone().sub(other).normalize();
+    const up = S.clone().add(other).multiplyScalar(0.5).sub(hips);
+    up.addScaledVector(out, -up.dot(out)).normalize();
+    const fwd = out.clone().multiplyScalar(side).cross(up);
+    const u = to.clone().sub(S).normalize();
+    const elev = Math.acos(Math.max(-1, Math.min(1, -u.dot(up)))) * 57.3;
+    return elev < 92 ? 0 : -Math.atan2(u.dot(fwd), u.dot(out)) * 57.3;
+  };
 
   it('plays', () => {
     const a = asset();
@@ -55,6 +71,31 @@ describe('swings and feet', () => {
             const r = rings[i]!;
             r.push([v.x, v.y, v.z]);
             if (r.length > FRAMES + 12) r.shift();
+            // The arms against a person's joints, the racket's point being the hand's line on.
+            const arm = av[i] as unknown as { w: number; armRacket: THREE.Object3D[]; armFree: THREE.Object3D[]; hips: THREE.Object3D };
+            if (arm.w > 0.5) {
+              held++;
+              const S = P(arm.armRacket[0]!), E = P(arm.armRacket[1]!), W = P(arm.armRacket[2]!), Sf = P(arm.armFree[0]!), Ef = P(arm.armFree[1]!);
+              const ang = 180 - W.clone().sub(E).angleTo(v.clone().sub(W)) * 57.3;
+              if (ang < 90) folded++;
+              const hips = P(arm.hips), lefty = (av[i] as unknown as { handed: number }).handed < 0 ? -1 : 1;
+              if (behind(Sf, S, hips, Ef, lefty) > 50) freeBack++;
+              if (behind(S, Sf, hips, E, -lefty) > 50) racketBack++;
+            }
+            // An overhead is a throw, not a windmill.
+            const o = av[i] as unknown as { st: number; keyS: number; tCon: number; fam?: { name: string; over?: unknown }; handed: number; armRacket: THREE.Object3D[]; armFree: THREE.Object3D[]; hips: THREE.Object3D };
+            if (o.fam?.over && o.handed > 0) {
+              const S = P(o.armRacket[0]!), E = P(o.armRacket[1]!), W = P(o.armRacket[2]!), Sf = P(o.armFree[0]!), H = P(o.hips);
+              if ((o.st === 1 || (o.st === 2 && m.time < o.tCon)) && o.keyS > 0.3 && o.keyS < 0.8) {
+                thrown++;
+                if (W.y - S.y < -0.12) handLow++;
+                if (E.y - S.y < -0.1) elbowLow++;
+              }
+              if (o.st === 2 && m.time > o.tCon + 0.1) {
+                const mid = S.clone().add(Sf).multiplyScalar(0.5).sub(H);
+                after.push(Math.atan2(Math.hypot(mid.x, mid.z), mid.y) * 57.3);
+              }
+            }
             // Standing between points: a foot up off the floor, and down again.
             const pl = m.players[i]!;
             still[i] = Math.hypot(pl.vel.x, pl.vel.z) < 0.3 ? still[i]! + 1 / 120 : 0;
@@ -90,7 +131,11 @@ describe('swings and feet', () => {
             seen++;
             if (e.kind !== E_HIT) continue;
             open.push({ pl: e.player, shot: e.a, at: frame });
-            const x = av[e.player] as unknown as { bones: THREE.Object3D[]; fam: { name: string } };
+            const x = av[e.player] as unknown as { bones: THREE.Object3D[]; fam: { name: string }; armRacket: THREE.Object3D[]; armFree: THREE.Object3D[]; handed: number };
+            if (x.fam.name === 'smash') {
+              const S = P(x.armRacket[0]!), Sf = P(x.armFree[0]!);
+              tilts.push(Math.atan2(S.y - Sf.y, Math.hypot(S.x - Sf.x, S.z - Sf.z)) * 57.3);
+            }
             if (x.fam.name.startsWith('forehand') && !x.fam.name.endsWith('contra')) {
               const z = (k: number): number => v.setFromMatrixPosition(x.bones[legs[k]!]!.matrixWorld).z;
               into.push((z(0) + z(1) - z(2) - z(3)) * 0.5 * (m.players[e.player]!.pos.z > 0 ? -1 : 1));
@@ -129,7 +174,8 @@ describe('swings and feet', () => {
       if (!speed[s]) continue;
       // 40 ms out it was 3-4 m/s and it reached 15 only after the ball.
       expect(at(s, -5)).toBeGreaterThan(s === SHOT_SMASH ? 9 : 6);
-      expect(at(s, 0)).toBeGreaterThan(0.7 * at(s, 2));
+      // And it's at its fastest at the ball, not after it: the swing used to come in going straight up, and turn round.
+      expect(at(s, 0)).toBeGreaterThan(0.95 * at(s, 2));
     }
   });
 
@@ -143,6 +189,26 @@ describe('swings and feet', () => {
     expect(into.length).toBeGreaterThan(20);
     // It was 13 cm behind them.
     expect(med(into)).toBeGreaterThan(-0.06);
+  });
+
+  it('keeps its arms inside a person\'s joints', () => {
+    expect(held).toBeGreaterThan(5000);
+        // The wrist goes back about 95 degrees from the forearm's line: the keys had it at 42-57 in the volleys, the serve and
+    // the overheads' drop, and the free arm 55-60 degrees behind the chest at 125 degrees of elevation.
+    expect(folded / held).toBeLessThan(0.03);
+    expect(freeBack / held).toBeLessThan(0.01);
+    expect(racketBack / held).toBeLessThan(0.01);
+  });
+
+  it('throws an overhead, it doesn\'t windmill it', () => {
+    expect(thrown).toBeGreaterThan(100);
+    // Drawn in the court's frame the arm went round the shoulder at full length: the hand 18 cm under the shoulder on the
+    // way down, the upper arm at 25 degrees, the shoulders level at the ball, and the trunk 38-53 degrees over after it.
+    expect(handLow / thrown).toBeLessThan(0.05);
+    expect(elbowLow / thrown).toBeLessThan(0.05);
+    expect(tilts.length).toBeGreaterThan(2);
+    expect(med(tilts)).toBeGreaterThan(12);
+    expect(after.slice().sort((x, y) => x - y)[(after.length * 0.95) | 0]!).toBeLessThan(35);
   });
 
   it('runs on the ground, not over it', () => {

@@ -690,6 +690,10 @@ The rally run is drawn now instead of played from the clips, and a side-on strip
 - **Side steps.** Quicker and shorter, and the legs no longer pass through each other: legs clipping .064-.098 to .047-.054.
 - **Weight.** Sideways and in a hard stop, feet to head: forwards 30 / 19 / 11 to 28 / 10 / 0, sideways 12 / 11 / 10 to 19 / 8 / -2. The trunk at a steady run 20 to 15 degrees.
 - **The walk back.** 2.6 steps a second at 0.58 m to 2.13 at 0.71 (real 2.0, 0.75).
+- **Overheads.** Redrawn as a throw in the chest's frame: the trunk carries the arm, the elbow stays high and bent, the racket falls behind the back, and the shoulders go over like a cartwheel. The windmill and the fold after the ball are gone.
+- **Arms inside a person's joints.** The owner caught it: the free arm sat behind the chest and the wrist folded flat. The elbow now follows the racket's line, and both shoulders and the wrist have limits. Wrist at its worst 5% of frames 66-74 to 95-106 degrees.
+- **Into the ball.** Hips 6-14 cm behind the feet at contact to about level or ahead.
+- **Around them.** A singles winner throws both arms up, and there is an umpire on the chair.
 
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
