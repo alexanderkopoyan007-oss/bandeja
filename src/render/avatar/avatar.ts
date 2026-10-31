@@ -364,8 +364,6 @@ const SPINE_REACH = 0.75;
 const SPINE_REACH_RATE = 20;
 /** The bend fades out as the target goes round behind the spine's base, where its way is undefined (rad). */
 const SPINE_REACH_BACK0 = (140 * Math.PI) / 180, SPINE_REACH_BACK1 = (165 * Math.PI) / 180;
-/** The share of Family.bend's bend there at the backswing, the rest coming in through the swing. */
-const BEND_FROM = 0.55;
 /** The share of the bend let go after the ball, over BEND_UP_T s. */
 const BEND_UP = 0.7;
 const BEND_UP_T = 0.3;
@@ -1873,7 +1871,6 @@ export class Avatar {
     const cy = this.hasCon ? this.conW.y : 1;
     this.crouch = (f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) + (f.sit ?? 0)) * this.w;
     this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w : 0;
-    if (f.bend !== undefined) this.bendW *= f.bend * (BEND_FROM + (1 - BEND_FROM) * smoothstep(0.3, 1, this.keyS));
     // Up out of it after the ball: with the whole body tipping into the run the trunk was at 42 degrees at +0.24 s.
     if (this.st === ST_SWING || this.st === ST_FADE) this.bendW *= 1 - BEND_UP * smoothstep(0, BEND_UP_T, t - this.tCon);
   }

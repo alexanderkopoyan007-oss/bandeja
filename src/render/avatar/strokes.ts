@@ -30,8 +30,6 @@ export interface Family {
   crouch: number;
   /** Shortest forward swing, as a share of the avatar's MIN_SWING (a volley is a quick punch). */
   punch: number;
-  /** How much the trunk bends for its height of ball, of the usual, coming in through the swing (default 1, at once). */
-  bend?: number;
   /** The hips' share of the shoulder turn (default the avatar's BODY_TURN). */
   bodyTurn?: number;
   /** How long before the planned contact the forward swing starts (s; default the avatar's LEAD). */
@@ -327,6 +325,7 @@ export const VOLLEY_FH: Family = {
   punch: 0.5,
   bodyTurn: 0.45,
   wrist: v(-0.1, 1.14, 0.36),
+  free: [-0.12, -0.44, 0.72, 0.07, -0.62, 0.58, 0.19, -0.64, 0.53],
 };
 
 /** The same on the other side: side-on, the hand crossing to the free side of the chest, the free arm opening behind. */
@@ -342,6 +341,7 @@ export const VOLLEY_BH: Family = {
   punch: 0.5,
   bodyTurn: 0.6,
   wrist: v(0.14, 1.12, 0.3),
+  free: [0.2, -0.15, 0.78, 0.35, -0.4, 0.6, 0.5, -0.4, 0.5],
 };
 
 /**
