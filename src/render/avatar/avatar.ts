@@ -584,6 +584,8 @@ const WALL_EASE = 0.2;
 const LOOK_YAW = 1.25;
 /** Eyes off a dead ball (Avatar.gazeAt): how fast (s), the partner's eyes from within GAZE_MATE m, else level and GAZE_FAR m
  * ahead, wandering GAZE_WANDER rad at GAZE_DRIFT rad/s. */
+/** How far the thing looked at may move in a frame before it counts as a jump (m), and how fast the head comes round to it then (s). */
+const GAZE_JUMP = 0.8, GAZE_SETTLE = 0.12;
 const GAZE_UP_T = 0.35, GAZE_MATE = 3.5, GAZE_MATE_Y = 1.6, GAZE_FAR = 6, GAZE_WANDER = 0.3, GAZE_DRIFT = 0.45;
 const NECK_SHARE = 0.4;
 /**
@@ -615,18 +617,42 @@ const RUN_V0 = 1;
 const RUN_V1 = 3.5;
 const RUN_DUTY0 = 0.52;
 const RUN_DUTY1 = 0.37;
-const RUN_AHEAD = 0.36;
+const RUN_AHEAD = 0.3;
 const RUN_WIDTH = 1.2;
 const RUN_WIDE = 1.4;
-const RUN_CLEAR = 0.05;
-const RUN_CLEAR_V = 0.035;
+const RUN_CLEAR = 0.04;
+const RUN_CLEAR_V = 0.01;
 const RUN_KICK = 0.9;
 const RUN_ROLL = 0.75;
 const RUN_REACH = 0.58;
 const RUN_STILL = 0.06;
-/** How far the hips sit lower in a run (m), and more a m/s. */
-const RUN_SINK = 0.03;
-const RUN_SINK_V = 0.03;
+/**
+ * A run's hips, from the leg and not from the clip, as the walk's are: at the bottom RUN_HIP0 of the hip's standing height
+ * at RUN_V0, RUN_HIP1 at RUN_V1, up RUN_BOB (m) as a foot leaves, the bottom RUN_LOW through its time down, ahead of the
+ * middle of it, the leg still taking the landing. The hips had been sunk a flat 15 cm at 4 m/s to take near-straight legs
+ * off the landing, which sat the short players in a squat: 0.80 of the height, the thigh 60 degrees forward at the median,
+ * the knee 69 on the straighter leg. Runners: knee about 14 at the landing, 40 down, 5-10 cm of bob.
+ */
+const RUN_HIP0 = 0.93;
+const RUN_HIP1 = 0.9;
+const RUN_BOB = 0.05;
+const RUN_LOW = 0.3;
+/** Into and out of those hips (s): on with the gait they jumped with every run tipping into a walk, a knee 10 degrees in a frame. */
+const RUN_HIP_IN = 0.12;
+/**
+ * The last share of a leg's reach, given up gently by a foot in the air: near straight a knee's angle runs away with the
+ * distance (1% of the reach is 16 degrees, 3% is 28), and a foot swinging into reach took a knee from 2 to 29 degrees in a
+ * frame. A foot on the floor stays exactly where it was put.
+ */
+const RUN_SOFT = 0.03;
+/**
+ * The most of a leg's reach a foot on the floor is asked for; how far through its swing a foot starts to count, and how
+ * much room it is left then (m); how fast the hips may go up or down for all that (m/s).
+ */
+const RUN_STRETCH = 0.975;
+const RUN_LANDS = 0.6;
+const RUN_LOOSE = 0.3;
+const RUN_HIP_RATE = 1.2;
 /** How fast the hips follow a stroke's `weight` (s). */
 const INTO_EASE = 0.05;
 /** How far a stride throws long hair at speed, to the side and up (m). */
@@ -639,8 +665,10 @@ const RUN_UP = 0.22;
 const RUN_ARM = 0.2;
 /** Where in the swing the foot is highest, and how fast a planted foot rolls (rad/s). */
 const RUN_PEAK = 0.3;
-const RUN_FALL = 0.66;
-const RUN_ALONG = 0.05;
+const RUN_FALL = 0.8;
+const RUN_ALONG = 0.02;
+const RUN_THROUGH = 0.55;
+const RUN_LEVEL = 0.8;
 const RUN_ROLL_RATE = 9;
 /** The least a foot is down, as a share of its time in a steady run. */
 const RUN_DOWN = 0.75;
@@ -654,7 +682,7 @@ const RUN_BACK_HZ = 0.4;
 const RUN_BACK_ROLL = 0.4;
 /** How far the heel comes up behind a run, over the clearance, as a share of the leg: a person's lands about 0.33 m up at
  * 4 m/s, and this one's was 0.19, the back leg trailing long and straight, the thigh 52 degrees behind at p10. */
-const RUN_HEEL = 0.17;
+const RUN_HEEL = 0.22;
 /** The nearest a foot lands to the middle of the hips, as a share of where it lands going straight. */
 const RUN_CLOSE = 0.7;
 /** How far through its swing the other foot must be before a foot left behind may go. */
@@ -890,6 +918,8 @@ export class Avatar {
   private walkTurnV = 0;
   private gaitW = 0;
   private gaitH = 0;
+  private gaitRunH = 0;
+  private runHipY = -1;
   private gaitOn = 0;
   /** 1: walkFeet is drawing a rally's run, not the walk back; which foot goes next, and how long since one went (s). */
   private gaitRun = 0;
@@ -1051,6 +1081,8 @@ export class Avatar {
   private readonly finKey: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   /** What the player looks at (world), and how far their eyes are off a dead ball. */
   private readonly gaze = new THREE.Vector3();
+  private readonly gazeWas = new THREE.Vector3();
+  private readonly gazeFrom = new THREE.Vector3();
   private gazeUp = 0;
   private readonly overEnd = new THREE.Quaternion();
   private readonly overTurn = new THREE.Quaternion();
@@ -2223,6 +2255,8 @@ export class Avatar {
       this.gaitW = cut || (going && this.w >= 0.02) ? 0 : running || (going && sp > gait) ? Math.min(1, this.gaitW + ramp) : Math.max(0, this.gaitW - ramp);
       this.gaitH += ((this.gaitW > 0 && this.gaitRun === 0 ? 1 : 0) - this.gaitH) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / WALK_IN) : 0);
       if (this.gaitH < 0.001) this.gaitH = 0;
+      this.gaitRunH += ((this.gaitW > 0 && this.gaitRun > 0 ? 1 : 0) - this.gaitRunH) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / RUN_HIP_IN) : 0);
+      if (this.gaitRunH < 0.001) this.gaitRunH = 0;
     }
     // Turned towards the partner for the racket tap.
     if (this.tapW > 0.001) this.yaw += wrapAngle(this.tapYaw - this.yaw) * this.tapW * TAP_TURN;
@@ -2386,6 +2420,7 @@ export class Avatar {
     const watch = on || (this.addr && sim.phase === PH_TOSS) || sim.walking > 0;
     this.look += ((watch ? 1 : 0) - this.look) * (dt > 0 ? 1 - Math.exp(-dt / 0.25) : 0);
     this.gazeAt(sim, idx, t, dt);
+    this.gazeSettle(dt);
     if (this.look >= 0.01) this.watchBall();
 
     this.plantW += (1 - smoothstep(0.25, 0.7, this.sp) - this.plantW) * (dt > 0 ? 1 - Math.exp(-dt / 0.08) : 0);
@@ -2546,6 +2581,8 @@ export class Avatar {
     this.walkTurnV = 0;
     this.gaitW = 0;
     this.gaitH = 0;
+    this.gaitRunH = 0;
+    this.runHipY = -1;
     this.gaitOn = 0;
     this.tiltVX = 0;
     this.tiltVZ = 0;
@@ -2664,6 +2701,22 @@ export class Avatar {
     }
     const u = this.gazeUp;
     G.x = b.x + (x - b.x) * u; G.y = b.y + (y - b.y) * u; G.z = b.z + (z - b.z) * u;
+  }
+
+  /**
+   * What they look at never jumps: the ball put back for the next point took it across the court in a frame, and all four
+   * heads turned 8-10 degrees with it. In play it is left alone, the ball's fastest frame being well under GAZE_JUMP.
+   */
+  private gazeSettle(dt: number): void {
+    const G = this.gaze, W = this.gazeWas, F = this.gazeFrom;
+    const ox = W.x - G.x, oy = W.y - G.y, oz = W.z - G.z;
+    if (ox * ox + oy * oy + oz * oz > GAZE_JUMP * GAZE_JUMP) {
+      F.x += ox; F.y += oy; F.z += oz;
+    }
+    W.copy(G);
+    const k = dt > 0 ? Math.exp(-dt / GAZE_SETTLE) : 1;
+    F.x *= k; F.y *= k; F.z *= k;
+    G.x += F.x; G.y += F.y; G.z += F.z;
   }
 
   /**
@@ -2921,8 +2974,28 @@ export class Avatar {
       hipX += this.stanceC * sway;
       hipZ -= this.stanceS * sway;
     }
-    // A run sits lower than a stand: the back leg has to reach its foot (hips at 0.96 m, 7-15% past it, the foot left the floor).
-    if (this.gaitRun > 0 && this.gaitW > 0) drop += this.gaitW * (RUN_SINK + RUN_SINK_V * Math.min(this.sp, 4));
+    if (this.gaitRunH > 0) {
+      const y = (this.legL[0]!.matrixWorld.elements[13]! + this.legR[0]!.matrixWorld.elements[13]!) * 0.5;
+      const fast = smoothstep(RUN_V0, RUN_V1, this.sp), stance = RUN_DUTY0 + (RUN_DUTY1 - RUN_DUTY0) * fast;
+      const low = (this.legLen + this.ankleY) * (RUN_HIP0 + (RUN_HIP1 - RUN_HIP0) * fast);
+      let want = low + RUN_BOB * 0.5 * (1 - Math.cos(4 * Math.PI * (this.gaitPhase - RUN_LOW * stance)));
+      // No higher than the feet on the floor can reach, and the one about to be: a leg at full stretch is where a knee pops.
+      const r2 = this.legLen * this.legLen * RUN_STRETCH * RUN_STRETCH, ox = this.root.position.x + hipX, oz = this.root.position.z + hipZ;
+      for (let f = 0; f < 2; f++) {
+        const u = this.gaitSwing[f]!;
+        if (u >= 0 && u < RUN_LANDS) continue;
+        const P = u < 0 ? (f === 0 ? this.footL : this.footR) : this.gaitTo[f]!;
+        const gx = P.x - ox, gz = P.z - oz, room = r2 - gx * gx - gz * gz;
+        if (room > 0) {
+          const top = (u < 0 ? P.y : this.ankleY + RUN_LOOSE * (1 - smoothstep(RUN_LANDS, 1, u))) + Math.sqrt(room);
+          if (top < want) want = top;
+        }
+      }
+      if (this.runHipY < 0) this.runHipY = want;
+      const lim = RUN_HIP_RATE * this.dt;
+      this.runHipY += want > this.runHipY + lim ? lim : want < this.runHipY - lim ? -lim : want - this.runHipY;
+      drop += (y - this.runHipY) * this.gaitRunH;
+    } else this.runHipY = -1;
     this.hipOutX = hipX;
     this.hipOutZ = hipZ;
     const plant = this.plantW >= 0.01;
@@ -3025,6 +3098,17 @@ export class Avatar {
           this.soleLow(side, A, side === 0 ? this.footQL : this.footQR);
           const low = this.low1;
           if (low < 0) A.y -= low;
+        }
+      }
+      const u = this.gaitRun > 0 && this.gaitW > 0 ? this.gaitSwing[side]! : -1;
+      if (u > 0) {
+        const room = this.legLen * RUN_SOFT * smoothstep(0, 0.15, u) * (1 - smoothstep(0.85, 1, u)), far = this.legLen - room;
+        const gx = A.x - mh[12]!, gy = A.y - mh[13]!, gz = A.z - mh[14]!, d = Math.sqrt(gx * gx + gy * gy + gz * gz);
+        if (room > 1e-4 && d > far) {
+          const k = (far + room * (1 - Math.exp((far - d) / room))) / d;
+          A.x = mh[12]! + gx * k;
+          A.y = mh[13]! + gy * k;
+          A.z = mh[14]! + gz * k;
         }
       }
       twoBoneIK(leg[0]!, leg[1]!, leg[2]!, A, this.pole, side === 0 ? this.kneeL : this.kneeR, side === 0 ? this.kneeSideL : this.kneeSideR);
@@ -3399,7 +3483,8 @@ export class Avatar {
       let pitch: number, x: number, z: number, y = h, fy: number, bend = 1;
       if (u < 0) {
         const tl = this.gaitDown[f] = this.gaitDown[f]! + dt;
-        const rel = f === 0 ? rel0 : rel1, sg = stay > 1e-3 ? (ahead - rel) / stay : 0;
+        // (from where it is now: on the frame it lands, rel0 and rel1 still have it where it took off, and the roll stepped)
+        const dx = Pf.x - rx - sign * c * off, dz = Pf.z - rz + sign * s * off, rel = dx * ux + dz * uz, sg = stay > 1e-3 ? (ahead - rel) / stay : 0;
         pitch = run ? RUN_ROLL * smoothstep(0.45, 1, sg) * (1 - backW) + RUN_BACK_ROLL * backW * (1 - smoothstep(0, 0.6, sg)) : WALK_ROLL * smoothstep(0.5, 1, sg) - WALK_HEEL * (1 - smoothstep(0, 0.1 / hz, tl));
         x = Pf.x;
         z = Pf.z;
@@ -3431,15 +3516,23 @@ export class Avatar {
         if (run) {
           // The heel comes up behind and the knee through: highest early in the swing.
           const up = u < RUN_PEAK ? smoothstep(0, RUN_PEAK, u) : 1 - smoothstep(RUN_PEAK, 1, u);
-          pitch += RUN_KICK * fast * up * (1 - backW) + RUN_BACK_ROLL * backW * smoothstep(0.5, 1, u);
+          pitch += RUN_KICK * fast * (u < RUN_PEAK ? up : 1 - smoothstep(RUN_PEAK, RUN_LEVEL, u)) * (1 - backW) + RUN_BACK_ROLL * backW * smoothstep(0.5, 1, u);
           // (held up late and put down: lowered all the way it skimmed the floor for the last third, and read as a slide)
           y += (RUN_CLEAR + RUN_CLEAR_V * sp) * (u < RUN_PEAK ? up : 1 - smoothstep(RUN_FALL, 1, u));
-          y += RUN_HEEL * this.legLen * fast * (1 - backW) * (u < RUN_PEAK ? up : 1 - smoothstep(RUN_PEAK, 0.7, u));
+          // (and it is the heel that goes high, behind the hips: down again before it passes under them, or a knee bent 100
+          // degrees over the foot is a thigh 50 degrees up, then 65 as it reached forward)
+          y += RUN_HEEL * this.legLen * fast * (1 - backW) * (u < RUN_PEAK ? up : 1 - smoothstep(RUN_PEAK, RUN_THROUGH, u));
         } else {
           pitch -= WALK_HEEL * smoothstep(0.45, 1, u);
           y += WALK_CLEAR * Math.sin(Math.PI * u);
         }
         bend = 1 - smoothstep(0, 0.35, u);
+        // (going back it lands on the ball, the toes turned up for it already: straight until it landed, they lifted the ankle
+        // 3.6 cm off the floor and dropped it in a frame, the knee 11 degrees)
+        if (run) {
+          const toes = Math.min(1, 3 * backW) * smoothstep(0.5, 1, u);
+          if (toes > bend) bend = toes;
+        }
       }
       // (no faster than an ankle turns: a foot landing short of its place began the roll in a frame)
       if (run && this.gaitOn === 2) {
