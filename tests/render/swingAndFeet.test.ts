@@ -28,9 +28,12 @@ describe('swings and feet', () => {
   const FRAMES = 24;
   /** Each planted foot in a run: seconds down, and how far its toe went (m). */
   const down: number[] = [], slid: number[] = [];
+  /** Hips against the feet towards the net at a forehand's contact (m). */
+  const into: number[] = [];
 
   it('plays', () => {
     const a = asset();
+    const legs = [a.bone('LeftUpLeg'), a.bone('RightUpLeg'), a.bone('LeftFoot'), a.bone('RightFoot')];
     for (const seed of [301, 302, 303]) {
       const rings: number[][][] = [[], [], [], []];
       const open: Array<{ pl: number; shot: number; at: number }> = [];
@@ -45,7 +48,7 @@ describe('swings and feet', () => {
             const x = av[i] as unknown as {
               racket: THREE.Object3D; root: THREE.Object3D; feet: Float64Array; lockOn: Uint8Array;
               vx: number; vz: number; gaitRun: number; gaitW: number; gaitSwing: Float64Array; toes: THREE.Object3D[];
-              lowY: Float64Array; measureSoles(): void;
+              lowY: Float64Array; measureSoles(): void; bones: THREE.Object3D[];
             };
             x.root.updateMatrixWorld(true);
             v.set(0, 0, 0).applyMatrix4(x.racket.matrixWorld);
@@ -85,7 +88,13 @@ describe('swings and feet', () => {
           while (seen < m.eventSeq) {
             const e = m.events[seen % m.events.length]!;
             seen++;
-            if (e.kind === E_HIT) open.push({ pl: e.player, shot: e.a, at: frame });
+            if (e.kind !== E_HIT) continue;
+            open.push({ pl: e.player, shot: e.a, at: frame });
+            const x = av[e.player] as unknown as { bones: THREE.Object3D[]; fam: { name: string } };
+            if (x.fam.name.startsWith('forehand') && !x.fam.name.endsWith('contra')) {
+              const z = (k: number): number => v.setFromMatrixPosition(x.bones[legs[k]!]!.matrixWorld).z;
+              into.push((z(0) + z(1) - z(2) - z(3)) * 0.5 * (m.players[e.player]!.pos.z > 0 ? -1 : 1));
+            }
           }
           for (let q = open.length - 1; q >= 0; q--) {
             const h = open[q]!;
@@ -128,6 +137,12 @@ describe('swings and feet', () => {
     expect(standing).toBeGreaterThan(30);
     // Each of a player's real steps; it was 6.2 lifts a second.
     expect(lifts / standing).toBeLessThan(2.5);
+  });
+
+  it('hits into the ball, not from behind the feet', () => {
+    expect(into.length).toBeGreaterThan(20);
+    // It was 13 cm behind them.
+    expect(med(into)).toBeGreaterThan(-0.06);
   });
 
   it('runs on the ground, not over it', () => {

@@ -2869,3 +2869,8 @@ LEAN_BRAKE 1.5 has a stop go past upright, and RUN_UP takes the clips' lean from
 **Dropped.** The forehand's folding finish, C #12: on the drawn stroke, not the shot key, the elbow is 54 / 60 / 65 (p1) and 54 / 43 / 51 (p7), in the video's 47-64 / 38-60 / 43-64.
 Round 9's swing fixes took it there, so the proposed change to the finish key is not made.
 
+**Into the ball.** `Family.weight`, eased in through the swing with the arm's weight (`intoBall`), towards the net rather than along the stance so a side-on backhand gets it too. Overheads and the
+contrapared have none: their weight goes elsewhere. Hips against the feet at contact were -0.14 to -0.05 m on ground strokes and volleys (the pro's #5) and are -0.03 to +0.07, the forehand drive +0.20. Those are n 9-26 on one set of seeds.
+
+**Hair.** Three people of ten have hair long enough to swing. `HAIR_CLUMP` breaks the one piece up, `sway` throws it with the stride. Not judged by eye: the hair in play is a few pixels from the broadcast camera, and it has been seen in no strip.
+

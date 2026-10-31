@@ -352,7 +352,6 @@ const qFoot = new THREE.Quaternion();
 const qWalk = new THREE.Quaternion();
 const qWalk2 = new THREE.Quaternion();
 const qWalk3 = new THREE.Quaternion();
-const vWalk = new THREE.Vector3();
 /** Most the hips drop for a low or wide ball (crouch, lunge and reach together; m). */
 const DROP_MAX = 0.55;
 /**
@@ -529,6 +528,11 @@ const RUN_STILL = 0.06;
 /** How far the hips sit lower in a run (m), and more a m/s. */
 const RUN_SINK = 0.02;
 const RUN_SINK_V = 0.018;
+/** How fast the hips follow a stroke's `weight` (s). */
+const INTO_EASE = 0.05;
+/** How far a stride throws long hair at speed, to the side and up (m). */
+const HAIR_THROW = 0.05;
+const HAIR_BOB = 0.02;
 /** How much of the forward clips' lean goes from the trunk in a drawn run (rad): they lean 20 degrees at a steady 3 m/s, a
  * person about 10. */
 const RUN_UP = 0.22;
@@ -945,6 +949,9 @@ export class Avatar {
   /** The weight's tilt (rad, towards world x and z) and its rate; last frame's filtered velocity. */
   private tiltX = 0;
   private tiltZ = 0;
+  /** How far the hips have gone into the ball (m), and which way the net is along z. */
+  private intoBall = 0;
+  private netZ = 1;
   private hipTiltX = 0;
   private hipTiltZ = 0;
   private tiltVX = 0;
@@ -1298,6 +1305,11 @@ export class Avatar {
     lag.x = ox * c - oz * s;
     lag.y = oy;
     lag.z = ox * s + oz * c;
+    if (k.sway) {
+      const a = this.gaitW * smoothstep(RUN_V0, RUN_V1, this.sp), ph = 2 * Math.PI * this.gaitPhase, w = k.sway.value;
+      w.x = HAIR_THROW * a * Math.sin(ph);
+      w.y = HAIR_BOB * a * Math.cos(2 * ph);
+    }
     k.sweat.value.x = Avatar.sweatAt >= 0 ? Avatar.sweatAt : Math.min(1, sim.time / SWEAT_T + this.ran / SWEAT_M);
   }
 
@@ -2048,6 +2060,8 @@ export class Avatar {
     const standTo = sim.phase === PH_OVER ? 1 : this.addr ? SERVE_STAND : sim.walking > 0 ? WALK_UP : ohStand;
     this.standW += (standTo - this.standW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / (ohStand > 0 ? OVERHEAD_STAND_EASE : STAND_EASE)) : 0);
     if (this.standW < 0.001) this.standW = 0;
+    this.netZ = p.pos.z > 0 ? -1 : 1;
+    if (cut) this.intoBall = 0;
     this.locomote(p);
     this.reaction(sim, idx, t);
     this.splitStep(p, t);
@@ -2555,6 +2569,11 @@ export class Avatar {
     // the reach, onto the toes or off the ground). Before the contact, the contact's key: the same at the ball, and
     // steady before it (the swinging key moves at racket speed, and the hips followed it, up to 29 cm in a frame).
     const before = (this.st === ST_PREP && this.hasCon) || (this.st === ST_SWING && this.lastT < this.tCon);
+    {
+      // Into the ball: the hips over the front of the feet by the contact (they were 6-14 cm behind them).
+      const go = this.st === ST_PREP ? this.swingS : this.st === ST_SWING || this.st === ST_FADE ? 1 : 0;
+      this.intoBall += ((this.fam.weight ?? 0) * go * this.w - this.intoBall) * (this.dt > 0 ? 1 - Math.exp(-this.dt / INTO_EASE) : 0);
+    }
     if (before) {
       const k = this.contactKey();
       this.toWorld(k.p, v1);
@@ -2625,7 +2644,7 @@ export class Avatar {
     this.dropShown = drop;
     // The weight from the ankles: the hips over the driving foot, behind a braking one.
     const tk = this.legLen * (1 - LEAN_STROKE * this.w);
-    let hipX = this.reachX + this.hipTiltX * tk, hipZ = this.reachZ + this.hipTiltZ * tk;
+    let hipX = this.reachX + this.hipTiltX * tk, hipZ = this.reachZ + this.hipTiltZ * tk + this.intoBall * this.netZ;
     const tilt2 = this.hipTiltX * this.hipTiltX + this.hipTiltZ * this.hipTiltZ;
     drop += 0.5 * tilt2 * tk;
     if (this.gaitH > 0) {
@@ -3059,7 +3078,9 @@ export class Avatar {
         // Where the body will be when it lands, the step ahead of that, on its own side of the line.
         const left = (1 - u) * swingT;
         const wd = sign * this.hipW * wide;
-        To.set(rx + vx * left + ux * ahead + c * wd, 0, rz + vz * left + uz * ahead - s * wd);
+        To.x = rx + vx * left + ux * ahead + c * wd;
+        To.y = 0;
+        To.z = rz + vz * left + uz * ahead - s * wd;
         // Going sideways the trailing foot closes up to the hips, and no further: a side step, not one leg through the
         // other (over SIDE_RUN_ON the legs have turned onto the way, and it never comes to this).
         const lat = sign * across * ahead + this.hipW * wide, least = this.hipW * wide * RUN_CLOSE;
@@ -3100,8 +3121,9 @@ export class Avatar {
       const fw = pitch >= 0 ? b * (1 - cs) + h * sn : hl * (cs - 1) - h * sn;
       y += (pitch >= 0 ? b : hl) * sn + h * (cs - 1);
       const sf = Math.sin(fy), cf = Math.cos(fy);
-      vWalk.set(x + sf * fw, y, z + cf * fw);
-      A.lerp(vWalk, w);
+      A.x += (x + sf * fw - A.x) * w;
+      A.y += (y - A.y) * w;
+      A.z += (z + cf * fw - A.z) * w;
       qWalk.setFromAxisAngle(AXIS_Y, fy);
       qWalk2.setFromAxisAngle(AXIS_X, pitch);
       qWalk3.multiplyQuaternions(qWalk, qWalk2).multiply(this.footRestQ[f]!);

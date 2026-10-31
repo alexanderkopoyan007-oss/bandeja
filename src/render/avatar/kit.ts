@@ -158,6 +158,8 @@ export interface KitState {
   sweat: { value: THREE.Vector2 };
   /** How far the hems lag the body (m, model space). */
   lag: { value: THREE.Vector3 };
+  /** How far a stride throws long hair (m, model space): the mannequin has none. */
+  sway?: { value: THREE.Vector3 };
 }
 
 export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THREE.MeshStandardNodeMaterial; state: KitState } {
@@ -328,6 +330,7 @@ const HEM_STITCH = 0.018;
 const WRIST_IN = 0.06;
 const WRIST_W = 0.034;
 const HAIR_SWING = 3;
+const HAIR_CLUMP = 0.5;
 /** How far a strand's normal leans across its card. */
 const HAIR_TILT = 0.5;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
@@ -531,7 +534,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // Long hair swings: below the nape it trails with the hems' spring, further (round 7, the critic: it moved as one piece
   // with the head).
   const neckY = frame.neck?.y ?? frame.chest.y + 0.2;
-  hair.positionNode = positionLocal.add(lag.mul(smoothstep(neckY + 0.04, neckY - 0.22, p.y).mul(HAIR_SWING)));
+  // Clumps go their own way a little, and every stride throws it from side to side and up, more towards the tips.
+  const sway = uniform(new THREE.Vector3());
+  const below = smoothstep(neckY + 0.04, neckY - 0.22, p.y);
+  const clump = mx_noise_float(vec3(uv().x.mul(22), uv().y.mul(3), float(0))).mul(HAIR_CLUMP).add(1);
+  hair.positionNode = positionLocal.add(lag.mul(below.mul(HAIR_SWING).mul(clump))).add(sway.mul(below.mul(below).mul(clump)));
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
   const hAO = body.alphaGeometry.hasAttribute('bodyAO') ? attribute<'float'>('bodyAO', 'float') : float(1);
   // Strands, not a cap: brightness varies across the cards (fine) and along them (slowly); pale texels at the edge of a
@@ -559,7 +566,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   hair.specularColorNode = mix(vec3(1, 1, 1), ht.xyz.mul(2.2), 0.6);
   hair.sheenNode = ht.xyz.mul(0.5).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);
-  return { material: m, hair, state: { sweat: sweatU, lag } };
+  return { material: m, hair, state: { sweat: sweatU, lag, sway } };
 }
 
 /**

@@ -365,7 +365,9 @@ at High, so the loop goes on. The verifier lowered two of the five Highs to Medi
 | 10 | Medium | C #10: feet slide in runs | | **Better** in the run, `skate` 20-22 to 16-18, planted toe travel p50 1-2 cm, p90 10 at 1.5-3 m/s. Strokes' stances not touched |
 | 11 | Medium | C #11: the walk back is quick and short | | **Fixed** on step: 2.60 steps a second and 0.58 m to 2.13 and 0.71 (real 2.0, 0.75). p1's lean 14 degrees stands |
 | 12 | Medium | C #12: the forehand's finish folds | | **Doesn't reproduce.** By the stroke drawn: 54 / 60 / 65 p1, 54 / 43 / 51 p7, video 47-64 / 38-60 / 43-64. Nothing changed for it |
-| 13 | Medium | P #3, #5-22, C #9, #13-29 | | Open |
+| 13 | Medium | P #5: weight behind the feet at contact | | **Better.** A stroke's `weight` moves the hips towards the net through the swing: FH slice -0.14 to -0.03 m, FH lob -0.13 to 0, volleys -0.12 and -0.06 to about 0, BH 0 to 0.07 |
+| 14 | Medium | C #17: hair moves as one piece | | **Better**, as a shader: clumps differ and a stride throws long hair side to side. Three of ten people have long hair; no one has judged it by eye |
+| 15 | Medium | P #3, #6-22, C #9, #13-16, #18-29 | | Open |
 | 30+ | Low | P #23-31, C #30-40 | | Open |
 
 Earlier statuses corrected by round 9 (verifier):
