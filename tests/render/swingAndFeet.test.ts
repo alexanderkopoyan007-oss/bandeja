@@ -45,6 +45,7 @@ describe('swings and feet', () => {
             const x = av[i] as unknown as {
               racket: THREE.Object3D; root: THREE.Object3D; feet: Float64Array; lockOn: Uint8Array;
               vx: number; vz: number; gaitRun: number; gaitW: number; gaitSwing: Float64Array; toes: THREE.Object3D[];
+              lowY: Float64Array; measureSoles(): void;
             };
             x.root.updateMatrixWorld(true);
             v.set(0, 0, 0).applyMatrix4(x.racket.matrixWorld);
@@ -65,7 +66,8 @@ describe('swings and feet', () => {
             const inRun = x.gaitRun > 0 && x.gaitW >= 1 && m.walking === 0;
             if (inRun && sp > 1.5 && sp < 4) {
               running += 1 / 120;
-              if (x.gaitSwing[0]! >= 0 && x.gaitSwing[1]! >= 0) bothOff += 1 / 120;
+              x.measureSoles();
+              if (x.lowY[0]! > 0.02 && x.lowY[1]! > 0.02) bothOff += 1 / 120;
             }
             for (let f = 0; f < 2; f++) {
               const p = plant[i * 2 + f]!;

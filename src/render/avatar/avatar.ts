@@ -436,10 +436,10 @@ const WALK_CADENCE = 0.4;
  */
 const WALK_STANCE = 0.6;
 const WALK_AHEAD = 0.85;
-const WALK_REACH = 0.62;
+const WALK_REACH = 0.75;
 const WALK_HEEL = 0.3;
 const WALK_ROLL = 0.62;
-const WALK_STEP = 0.74;
+const WALK_STEP = 1;
 const WALK_HZ0 = 0.6;
 const WALK_HZ1 = 1.25;
 const WALK_CLEAR = 0.03;
@@ -518,8 +518,8 @@ const RUN_V1 = 3.5;
 const RUN_DUTY0 = 0.52;
 const RUN_DUTY1 = 0.31;
 const RUN_AHEAD = 0.36;
-const RUN_WIDTH = 1.1;
-const RUN_WIDE = 1.3;
+const RUN_WIDTH = 1.2;
+const RUN_WIDE = 1.4;
 const RUN_CLEAR = 0.05;
 const RUN_CLEAR_V = 0.035;
 const RUN_KICK = 0.9;
@@ -539,6 +539,11 @@ const RUN_ROLL_RATE = 9;
 const RUN_DOWN = 0.75;
 /** A foot this far behind its stance's end goes before its turn. */
 const RUN_BEHIND = 1.4;
+const RUN_SIDE_HZ = 0.5;
+/** The nearest a foot lands to the middle of the hips, as a share of where it lands going straight. */
+const RUN_CLOSE = 0.7;
+/** How far through its swing the other foot must be before a foot left behind may go. */
+const RUN_TURNS = 0.65;
 /** A step for reach moves the foot at least this far (m). */
 const STEP_MIN = 0.04;
 /** A planted foot whose heading is this far (rad) from the body's steps even while the other foot is stepping: held
@@ -630,7 +635,8 @@ const LEAN_Z = 0.62;
 const LEAN_TRUNK = 1;
 const LEAN_STROKE = 0.85;
 const LEAN_HAND = 0.25;
-const LEAN_SIDE = 0.4;
+/** Slowing down, the body goes past upright behind its feet: the run's own forward lean has to go first. */
+const LEAN_BRAKE = 1.5;
 /** How fast the chest turns with the hips into a side-on run and back out of it (rad/s): switched at once, the
  * chest, arms and head jumped up to 45 degrees in a frame. */
 const WARP_CHEST_RATE = 3.5;
@@ -1885,9 +1891,10 @@ export class Avatar {
     const ax = (this.vx - this.lastVX) / dt, az = (this.vz - this.lastVZ) / dt;
     this.lastVX = this.vx;
     this.lastVZ = this.vz;
-    let tx = ax * LEAN_GAIN, tz = az * LEAN_GAIN;
-    const t = Math.sqrt(tx * tx + tz * tz);
-    if (t > LEAN_MAX) { tx *= LEAN_MAX / t; tz *= LEAN_MAX / t; }
+    const brake = ax * this.vx + az * this.vz < 0 ? LEAN_BRAKE : 1;
+    let tx = ax * LEAN_GAIN * brake, tz = az * LEAN_GAIN * brake;
+    const t = Math.sqrt(tx * tx + tz * tz), most = LEAN_MAX * brake;
+    if (t > most) { tx *= most / t; tz *= most / t; }
     const h = dt < 0.02 ? dt : 0.02;
     const w2 = LEAN_W * LEAN_W, d = 2 * LEAN_Z * LEAN_W;
     for (let left = dt; left > 1e-6; left -= h) {
@@ -2093,11 +2100,11 @@ export class Avatar {
     // The weight in the trunk: forwards about its x, sideways about its z (+z tips it to -x). The neck keeps the head
     // near level.
     {
-      const k = LEAN_TRUNK * (1 - LEAN_STROKE * this.w), c = Math.cos(yRoot), s = Math.sin(yRoot);
+      // (as the chest faces: past WARP_SPINE_MAX it turns with the hips, and a side-on run leaned across its way)
+      const y = yRoot + this.chestWarp, k = LEAN_TRUNK * (1 - LEAN_STROKE * this.w), c = Math.cos(y), s = Math.sin(y);
       const fw = (this.tiltX * s + this.tiltZ * c) * k, lf = (this.tiltX * c - this.tiltZ * s) * k;
-      // The hips take the sideways part less (LEAN_SIDE): a crossover's thighs are already passing each other.
-      this.hipTiltX = this.tiltX - (1 - LEAN_SIDE) * (this.tiltX * c - this.tiltZ * s) * c;
-      this.hipTiltZ = this.tiltZ + (1 - LEAN_SIDE) * (this.tiltX * c - this.tiltZ * s) * s;
+      this.hipTiltX = this.tiltX;
+      this.hipTiltZ = this.tiltZ;
       if (fw * fw + lf * lf > 1e-6) {
         q2.setFromAxisAngle(AXIS_X, fw / 3);
         q1.setFromAxisAngle(AXIS_Z, -lf / 3);
@@ -2968,13 +2975,14 @@ export class Avatar {
       }
     }
     const step = WALK_STEP * this.legLen, hz0 = (0.5 * sp) / step;
-    const hz = run ? Math.min(RUN_HZ_MAX, RUN_HZ0 + RUN_HZ_V * sp) : hz0 < WALK_HZ0 ? WALK_HZ0 : hz0 > WALK_HZ1 ? WALK_HZ1 : hz0;
+    const ux = sp > 1e-3 ? vx / sp : s, uz = sp > 1e-3 ? vz / sp : c, across = ux * c - uz * s, side = across * across;
+    // (quicker and shorter going sideways: a long step has the hips past the leading foot, and that leg under the other)
+    const hz = run ? Math.min(RUN_HZ_MAX, RUN_HZ0 + RUN_HZ_V * sp) * (1 + RUN_SIDE_HZ * side) : hz0 < WALK_HZ0 ? WALK_HZ0 : hz0 > WALK_HZ1 ? WALK_HZ1 : hz0;
     const fast = run ? smoothstep(RUN_V0, RUN_V1, sp) : 0;
     const stance = run ? RUN_DUTY0 + (RUN_DUTY1 - RUN_DUTY0) * fast : WALK_STANCE;
-    const ux = sp > 1e-3 ? vx / sp : s, uz = sp > 1e-3 ? vz / sp : c;
     const stay = (sp * stance) / hz, ahead = stay * (run ? RUN_AHEAD : WALK_AHEAD * 0.5), back = stay - ahead;
     // Each foot on its own side of the body, along it (a shuffle's feet never cross, and a walk's body is along the way).
-    const across = ux * c - uz * s, wide = run ? RUN_WIDTH + (RUN_WIDE - RUN_WIDTH) * across * across : WALK_WIDTH;
+    const wide = run ? RUN_WIDTH + (RUN_WIDE - RUN_WIDTH) * side : WALK_WIDTH;
     const G = this.gaitSwing, P = this.gaitPlant;
     this.gaitSince += dt;
     this.gaitUp += dt;
@@ -2985,7 +2993,9 @@ export class Avatar {
     const far0 = d0x * d0x + d0z * d0z, far1 = d1x * d1x + d1z * d1z;
     const reach = this.legLen * (run ? RUN_REACH : WALK_REACH), r2 = reach * reach;
     // Left behind by a turn back: it goes whatever the other foot is doing.
-    const hard = G[0]! < 0 && far0 > r2 ? 0 : G[1]! < 0 && far1 > r2 ? 1 : -1;
+    let hard = G[0]! < 0 && far0 > r2 ? 0 : G[1]! < 0 && far1 > r2 ? 1 : -1;
+    // (a run's feet go by turns even so: two in the middle of a swing together is a hop, feet side by side)
+    if (hard >= 0 && run && G[1 - hard]! >= 0 && G[1 - hard]! < RUN_TURNS) hard = -1;
     let go = hard;
     if (go < 0 && run) {
       // By turns, half a stride apart, sooner if the foot has fallen behind: a foot goes while the other is in the air,
@@ -3045,6 +3055,13 @@ export class Avatar {
         const left = (1 - u) * swingT;
         const wd = sign * this.hipW * wide;
         To.set(rx + vx * left + ux * ahead + c * wd, 0, rz + vz * left + uz * ahead - s * wd);
+        // Going sideways the trailing foot closes up to the hips, and no further: a side step, not one leg through the
+        // other (over SIDE_RUN_ON the legs have turned onto the way, and it never comes to this).
+        const lat = sign * across * ahead + this.hipW * wide, least = this.hipW * wide * RUN_CLOSE;
+        if (lat < least) {
+          To.x += sign * c * (least - lat);
+          To.z -= sign * s * (least - lat);
+        }
         YT[f] = yaw + sign * WALK_TOE;
         // (a run's foot goes up before it goes along, and comes down onto its place: it skated the floor both ways)
         const e = run ? smoothstep(RUN_ALONG, 1 - RUN_ALONG, u) : smoothstep(0, 1, u), F = this.gaitFrom[f]!;

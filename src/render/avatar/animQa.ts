@@ -39,6 +39,8 @@ export interface QaOptions {
   onPop?: (e: QaEvent) => void;
   /** Called each frame once the avatars are drawn (diagnosis tools). */
   onFrame?: (m: MatchSim, av: Avatar[]) => void;
+  /** Each frame with the legs through each other: who, which two capsules, how deep (m). */
+  onLegs?: (player: number, where: string, deep: number) => void;
 }
 
 /** A distribution: count, mean and quantiles. */
@@ -460,6 +462,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         }
         if (deep > 0.01) {
           clip.legs++;
+          opts.onLegs?.(i, where, deep);
           (clipBy[doing(i)] ??= { racketBody: 0, handTorso: 0, legs: 0 }).legs++;
           if (serving && motion) sv.legs++;
           if (deep > clip.legsMax) clip.legsMax = deep;
