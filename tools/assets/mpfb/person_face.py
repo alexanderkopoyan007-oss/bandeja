@@ -422,12 +422,26 @@ def shape_deltas(o, nv_basis_normals=True):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# The kit fitted closer (MakeHuman's casual suit is a loose tee and trousers; padel players wear fitted technical
-# shirts and shorts): every suit vertex further than FIT_GAP from the skin keeps only part of the extra (folds stay,
-# smaller), the shirt's hem hangs free below the hips, and the shorts' waistband is pulled in under the shirt (it
-# poked through the shirt at the small of the back as the player bent). The moves are smoothed over the mesh so no
-# crease appears where the fit changes.
+# The kit's fit. MakeHuman's casual suit is a loose tee and trousers; rounds 1-3 pulled it in to a fitted technical shirt, every vertex
+# keeping 35% of its gap past FIT_GAP, and from a broadcast camera that read as paint on a shell: a padel shirt rests on the shoulders and
+# hangs from the chest and the shoulder blades. So only the top is still drawn in (the yoke and the neck hole, which the collar and the
+# game's neckline are cut to); from under the arm down nothing is pulled in, the shirt falls towards a plumb line from the widest place
+# above it (`hang_shirt`), and the shorts' legs keep their gap. The shirt's hem hangs free below the hips, and the shorts' waistband
+# is pulled in under the shirt (it poked through the shirt at the small of the back as the player bent). The moves are smoothed over
+# the mesh so no crease appears where the fit changes.
 FIT_GAP = 0.006
+# How much of the gap the yoke keeps, and from how far above the shoulder joint down to where (m) that eases to all of it.
+YOKE_KEEP = 0.35
+YOKE_TOP = 0.02
+YOKE_FALL = 0.10
+# How far a shirt falls towards the plumb line (0 follows the body, 1 is a straight drop); how much narrower the line is by the hem; from how
+# far under the shoulder joint it starts (m). The women's tops are cut closer.
+HANG = {False: 0.6, True: 0.35}
+HANG_TAPER = {False: 0.01, True: 0.03}
+HANG_FROM = 0.05
+HANG_FROM_TANK = 0.17  # (a tank's armhole lies on the skin down to here: hung from higher, its foot stood off the ribs and opened a gap)
+# Soft folds in the cloth below the chest (m): a shirt hanging free is never a smooth tube, and at TV size a fold of the mesh's own is what shades.
+FOLD = {False: 0.0035, True: 0.0025}
 
 
 def highest_piece(me):
@@ -454,7 +468,7 @@ def shirt_polygons(sm, women):
     return [sum(uvl[li].uv.y for li in p.loop_indices) / p.loop_total > 0.57 for p in sm.polygons]
 
 
-def fit_suit(body, suit, hips_z, women=False, n_body=13380):
+def fit_suit(body, suit, hips_z, arm_z, women=False, n_body=13380, seed=0, folds=True, hang_from=None):
     me = body.data
     verts = [v.co.copy() for v in me.vertices]
     polys = [tuple(p.vertices) for p in me.polygons if max(p.vertices) < n_body]
@@ -478,14 +492,13 @@ def fit_suit(body, suit, hips_z, women=False, n_body=13380):
             continue
         z = co[i, 2]
         if shirt[i]:
-            # Fitted over the chest, back and sides; over the waistband it keeps 14 mm clear of the skin so it stays
-            # outside the shorts (fitted to 6-9 mm there); the last few cm above the hem hang a little freer.
-            g0 = FIT_GAP + 0.008 * min(1.0, max(0.0, (hips_z + 0.14 - z) / 0.04))
-            keep = 0.35 + 0.35 * min(1.0, max(0.0, (hips_z + 0.02 - z) / 0.05))
-        else:
-            # The shorts' legs a little closer; the waistband (under the shirt) right in.
+            # Over the shoulders and round the neck it lies on the body; from there on it keeps all it has.
             g0 = FIT_GAP
-            keep = 0.6 if z < hips_z - 0.04 else 0.25
+            keep = YOKE_KEEP + (1 - YOKE_KEEP) * min(1.0, max(0.0, (arm_z + YOKE_TOP - z) / YOKE_FALL))
+        else:
+            # The shorts' legs as they are; the waistband (under the shirt) right in.
+            g0 = FIT_GAP
+            keep = 1.0 if z < hips_z - 0.04 else 0.25
         if gap <= g0:
             continue
         want = g0 + (gap - g0) * keep
@@ -508,13 +521,95 @@ def fit_suit(body, suit, hips_z, women=False, n_body=13380):
     d = np.linalg.norm(move, axis=1)
     print('FIT suit moved median', round(float(np.median(d)) * 1000, 1), 'mm, max', round(float(d.max()) * 1000, 1), 'mm;',
           int(shirt.sum()), 'shirt vertices')
+    hang_shirt(suit, shirt, arm_z, women, nb, seed, folds, HANG_FROM if hang_from is None else hang_from)
 
-def cut_shorts_under_shirt(suit, women=False, reach=0.03, band=0.02, sink=0.01, tuck=0.05):
+
+def hang_shirt(suit, shirt, arm_z, women, nb, seed, folds, hang_from):
+    """
+    The shirt falls from the widest place above it. By height and bearing round the waist's middle, the furthest out the shirt has been on
+    the way down from under the arm (cloth hangs from there, as a skirt does: person_kit `_skirt_shape`); each vertex below goes `HANG`
+    of the way out to that line, which narrows by `HANG_TAPER`, plus a few soft folds that grow towards the hem. Sleeves stay out of it: a
+    vertex takes the move by its weight on the trunk. No folds over a skirt: its top is sized to the shirt's outline, so it came through
+    every fold's valley, and the hem ran in scallops.
+    """
+    sm = suit.data
+    co = _co(suit)
+    n = len(co)
+    names = {g.index: g.name for g in suit.vertex_groups}
+    trunk = np.zeros(n)
+    for v in sm.vertices:
+        total = limb = 0.0
+        for e in v.groups:
+            nm = names.get(e.group, '')
+            if nm.startswith('mixamorig:'):
+                total += e.weight
+                if 'Arm' in nm or 'Hand' in nm:
+                    limb += e.weight
+        trunk[v.index] = 1 - limb / total if total > 0 else 0.0
+    z0 = arm_z - hang_from
+    body_v = shirt & (co[:, 2] <= z0) & (trunk > 0.9)
+    hem_z = co[shirt, 2].min()
+    mid = co[body_v & (co[:, 2] < hem_z + (z0 - hem_z) * 0.4)][:, :2]
+    cx, cy = (mid[:, 0].min() + mid[:, 0].max()) / 2, (mid[:, 1].min() + mid[:, 1].max()) / 2
+    NT, DZ = 48, 0.015
+    NZ = int((z0 - hem_z) / DZ) + 2
+    def polar(a):
+        dx, dy = a[:, 0] - cx, a[:, 1] - cy
+        return np.hypot(dx, dy), (np.arctan2(dy, dx) + np.pi) / (2 * np.pi) * NT
+    r, th = polar(co)
+    tab = np.zeros((NZ, NT))
+    iz = np.clip(((z0 - co[:, 2]) / DZ).astype(int), 0, NZ - 1)
+    it = np.minimum(th.astype(int), NT - 1)
+    for i in np.nonzero(body_v)[0]:
+        tab[iz[i], it[i]] = max(tab[iz[i], it[i]], r[i])
+    line = np.maximum.accumulate(tab, axis=0)
+    # The empty bearings filled and the line smoothed round the body.
+    for _ in range(4):
+        line = np.maximum(line, 0.999 * np.maximum(np.roll(line, 1, axis=1), np.roll(line, -1, axis=1)))
+    for _ in range(3):
+        line = (line + 0.5 * (np.roll(line, 1, axis=1) + np.roll(line, -1, axis=1))) / 2
+    rng = np.random.default_rng(seed)
+    p1, p2 = rng.uniform(0, 2 * np.pi, 2)
+    move = np.zeros_like(co)
+    span = max(1e-6, z0 - hem_z)
+    for i in np.nonzero(shirt & (trunk > 0.5))[0]:
+        down = z0 - co[i, 2]
+        if down <= 0:
+            continue
+        u = min(1.0, down / 0.07)
+        u = u * u * (3 - 2 * u)
+        t = min(1.0, down / span)
+        f = (down / DZ, th[i])
+        a = min(NZ - 2, int(f[0]))
+        b = int(f[1]) % NT
+        fz, ft = min(1.0, f[0] - a), f[1] - int(f[1])
+        at = (line[a, b] * (1 - ft) + line[a, (b + 1) % NT] * ft) * (1 - fz) + (line[a + 1, b] * (1 - ft) + line[a + 1, (b + 1) % NT] * ft) * fz
+        want = at * (1 - HANG_TAPER[women] * t)
+        ang = th[i] / NT * 2 * np.pi
+        k = min(1.0, max(0.0, (t - 0.1) / 0.7))
+        fold = (FOLD[women] if folds else 0.0) * k * (1 + 0.6 * np.sin(9 * ang + p1 + 1.2 * t) + 0.4 * np.sin(14 * ang + p2 - 0.8 * t))
+        dr = (HANG[women] * max(0.0, want - r[i]) * u + fold) * trunk[i] ** 2
+        move[i, 0] = (co[i, 0] - cx) / max(r[i], 1e-6) * dr
+        move[i, 1] = (co[i, 1] - cy) / max(r[i], 1e-6) * dr
+    for _ in range(2):
+        nxt = move.copy()
+        for i in range(n):
+            if nb[i]:
+                nxt[i] = 0.6 * move[i] + 0.4 * move[nb[i]].mean(axis=0)
+        move = nxt
+    co += move
+    sm.vertices.foreach_set('co', co.ravel())
+    sm.update()
+    d = np.linalg.norm(move[shirt], axis=1)
+    print('FIT shirt hung: moved median', round(float(np.median(d)) * 1000, 1), 'mm, max', round(float(d.max()) * 1000, 1), 'mm; from', round(z0, 3), 'to', round(hem_z, 3))
+
+def cut_shorts_under_shirt(suit, women=False, reach=0.075, band=0.02, sink=0.01, tuck=0.05):
     """
     The shorts' waistband out from under the shirt (REVIEW.md round 2 #12, round 3): the two layers sit a few mm
     apart, so a bend or a twist pushed the shorts through the shirt's back as a ragged black notch. As for the skin
     under the clothes (finish-player.py): shorts that see the shirt within `reach` straight out along their normal are
-    removed, except a `band` next to the shorts that show, so the shirt's hem always has shorts under it. What stays
+    removed, except a `band` next to the shorts that show, so the shirt's hem always has shorts under it. (`reach` is the shirt's
+    hang: at 3 cm the shorts under a shirt hanging 5 cm off them stayed, and came through its front in every lunge.) What stays
     under the shirt is pulled in towards the body, from nothing where the shorts show to `sink` a band's width up (the
     skin under it is removed later): kept where it was, a 2.5 cm band still came through the hem's back as the shirt
     pulled in over the seat.

@@ -49,7 +49,8 @@ SIDES = ('Left', 'Right')
 SKIN_UP = 0.06
 HEM_FLARE = 0.004
 HEM_UP = 0.04
-SHORTS_EASE = 0.012
+SHORTS_EASE = {False: 0.016, True: 0.014}
+SHORTS_INNER = 0.8
 FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky')
 
 
@@ -241,7 +242,9 @@ def finish(yb, spec, out, preview=False):
     if suit is not None:
         if outfit.get('top') == 'tank':
             armholes = kit.cut_tank(suit, body, rig, women, face.shirt_polygons(suit.data, women))
-        face.fit_suit(body, suit, rig.data.bones[P + 'Hips'].head_local.z, women)
+        face.fit_suit(body, suit, rig.data.bones[P + 'Hips'].head_local.z, rig.data.bones[P + 'LeftArm'].head_local.z, women,
+                      seed=sum(ord(c) for c in spec['name']), folds=outfit.get('bottom', 'shorts') == 'shorts',
+                      hang_from=face.HANG_FROM_TANK if outfit.get('top') == 'tank' else None)
         face.cut_shorts_under_shirt(suit, women)
         if hem is not None:
             sm = suit.data
@@ -251,13 +254,21 @@ def finish(yb, spec, out, preview=False):
                 if u < 1:
                     v.co += v.normal * HEM_FLARE * (1 - max(0.0, u))
                     n_flare += 1
-            if women and outfit.get('bottom', 'shorts') == 'shorts':
-                # The women's suit's legs are jeans-tight: a pair of shorts stands off the leg, more towards the hem.
-                top = face.highest_piece(sm)
+            if outfit.get('bottom', 'shorts') == 'shorts':
+                # Shorts stand off the leg, more towards the hem, hanging from the seat and the thigh's front: the men's suit is a pair of
+                # trousers cut off, the women's legs are jeans-tight. Less on the inside of the leg, where two legs of shorts would
+                # go through each other.
+                top = set()
+                for p, s in zip(sm.polygons, face.shirt_polygons(sm, women)):
+                    if s:
+                        top.update(p.vertices)
                 z0 = rig.data.bones[P + 'Hips'].head_local.z - 0.04
+                ease = SHORTS_EASE[women]
                 for v in sm.vertices:
                     if v.index not in top and v.co.z < z0:
-                        v.co += v.normal * SHORTS_EASE * min(1.0, (z0 - v.co.z) / (z0 - hem))
+                        inner = max(0.0, -v.normal.x * (1 if v.co.x > 0 else -1))
+                        level = Vector((v.normal.x, v.normal.y, 0))  # (along the normal itself it took the hem down with it)
+                        v.co += level * ease * min(1.0, (z0 - v.co.z) / (z0 - hem)) * (1 - SHORTS_INNER * inner)
             sm.update()
             print('HEM flared', n_flare, 'vertices')
 
