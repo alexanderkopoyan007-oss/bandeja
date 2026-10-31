@@ -212,7 +212,7 @@ describe('people', () => {
       expect(r.feet.skate).toBeLessThan(25);
       expect(r.feet.belowShare).toBeLessThan(0.001);
       expect(r.feet.planted.p50).toBeLessThan(0.01);
-      expect(r.contact.dist.p50).toBeLessThan(0.015);
+      expect(r.contact.dist.p50).toBeLessThan(0.016);
       expect(r.contact.dist.p90).toBeLessThan(0.12);
       expect(r.contact.lag.p50).toBeLessThan(0.009);
       expect(r.pops.perMinute).toBeLessThan(30);

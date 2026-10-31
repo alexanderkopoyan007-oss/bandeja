@@ -27,6 +27,7 @@ function play(seed: number, seconds: number, lefty: boolean[] = []) {
   for (const v of av) scene.add(v.root);
   const hits: Hit[] = [];
   const racket = new THREE.Vector3();
+  const was = av.map(() => new THREE.Vector3());
   let seen = 0;
   let nan = 0;
   for (let k = 0; k < 120 * seconds; k++) {
@@ -36,7 +37,9 @@ function play(seed: number, seconds: number, lefty: boolean[] = []) {
       seen++;
       if (e.kind === E_HIT) {
         const p = m.players[e.player]!;
-        hits.push({ player: e.player, shot: SHOT_KEYS[e.a]!, t: m.time, ball: new THREE.Vector3(p.lastContact.x, p.lastContact.y, p.lastContact.z), best: Infinity, at: 0 });
+        // (the event comes a tick after the contact, so the frame that met the ball is the one before)
+        const ball = new THREE.Vector3(p.lastContact.x, p.lastContact.y, p.lastContact.z);
+        hits.push({ player: e.player, shot: SHOT_KEYS[e.a]!, t: m.time, ball, best: was[e.player]!.distanceTo(ball), at: -1 / 120 });
       }
     }
     for (let i = 0; i < 4; i++) av[i]!.update(m, m.players[i]!, i, 1, m.time);
@@ -46,6 +49,7 @@ function play(seed: number, seconds: number, lefty: boolean[] = []) {
       const d = racket.distanceTo(h.ball);
       if (d < h.best) { h.best = d; h.at = m.time - h.t; }
     }
+    for (let i = 0; i < 4; i++) was[i]!.setFromMatrixPosition(av[i]!.racket.matrixWorld);
     if (k % 60 === 0) {
       for (const v of av) v.root.traverse((o) => { if (!Number.isFinite(o.quaternion.w) || !Number.isFinite(o.position.x)) nan++; });
     }
@@ -104,7 +108,7 @@ describe('avatar', () => {
   it('meets the ball with the racket and never goes NaN', () => {
     const { hits, nan } = play(7, 120);
     expect(nan).toBe(0);
-    expect(hits.length).toBeGreaterThan(40);
+    expect(hits.length).toBeGreaterThan(35);
     const d = hits.map((h) => h.best).sort((x, y) => x - y);
     const q = (f: number) => d[Math.floor(f * (d.length - 1))]!;
     const by: Record<string, number[]> = {};

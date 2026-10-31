@@ -3,7 +3,7 @@
 // be told from how it plays.
 import { describe, expect, it } from 'vitest';
 import { MatchSim, E_HIT, E_POINT, E_FAULT, E_WHIFF } from '../../src/sim/match.ts';
-import { SHOT_KEYS } from '../../src/sim/contact/shots.ts';
+import { SHOT_BANDEJA, SHOT_KEYS, SHOT_VIBORA } from '../../src/sim/contact/shots.ts';
 import { STYLE_KEYS } from '../../src/sim/ai/styles.ts';
 
 const NONE = [null, null, null, null];
@@ -104,4 +104,27 @@ describe('AI personalities', () => {
     expect(r.errors('martillo')).toBeGreaterThan(1.15 * r.errors('muro'));
     expect(r.pace('martillo')).toBeGreaterThan(r.pace('muro'));
   }, 300_000);
+
+  // Review round 9, the pro's #2: drawn for every ball, defenders in time lost plain volleys off the glass.
+  it('misreads pace and spin off the glass, not a plain ball', () => {
+    const m = new MatchSim({ seed: 5, doubles: true, human: [false, false, false, false], aiLevel: [1, 1] });
+    let seen = 0, plain = 0, plainOff = 0, hard = 0, hardOff = 0;
+    for (let k = 0; k < 120 * 900; k++) {
+      m.step([null, null, null, null]);
+      while (seen < m.eventSeq) {
+        const e = m.events[seen % m.events.length]!;
+        seen++;
+        if (e.kind !== E_HIT) continue;
+        const v = Math.hypot(m.ball.vel.x, m.ball.vel.y, m.ball.vel.z), w = Math.hypot(m.ball.spin.x, m.ball.spin.y, m.ball.spin.z);
+        const ai = m.ai[(e.team ^ 1)]! as unknown as { readX: number; readZ: number };
+        const off = Math.hypot(ai.readX, ai.readZ) > 0;
+        if (v < 13 || w < 90) { plain++; if (off) plainOff++; }
+        else if (e.a === SHOT_BANDEJA || e.a === SHOT_VIBORA) { hard++; if (off) hardOff++; }
+      }
+    }
+    expect(plain).toBeGreaterThan(100);
+    expect(plainOff).toBe(0);
+    expect(hard).toBeGreaterThan(10);
+    expect(hardOff / hard).toBeGreaterThan(0.9);
+  });
 });

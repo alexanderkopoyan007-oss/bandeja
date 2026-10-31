@@ -38,6 +38,7 @@ const v3 = new THREE.Vector3();
 const q1 = new THREE.Quaternion();
 const q2 = new THREE.Quaternion();
 const q3 = new THREE.Quaternion();
+const LAG_AXIS = new THREE.Vector3(1, 0, 0);
 
 function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
@@ -495,6 +496,8 @@ const NECK_SHARE = 0.4;
 const STEP_DIST = 0.13;
 const STEP_YAW = 0.55;
 const STEP_TIME = 0.15;
+/** A step for reach moves the foot at least this far (m). */
+const STEP_MIN = 0.04;
 /** A planted foot whose heading is this far (rad) from the body's steps even while the other foot is stepping: held
  * longer, a body turning on the spot (a left-hander's stroke squaring up from a ball behind) left it 180° behind. */
 const WAIT_TURN_MAX = 1.6;
@@ -868,6 +871,11 @@ export class Avatar {
   /** Turned side-on to the glass while the ball goes past it (0..1), towards which side, and whether to. */
   private wall = 0;
   private wallWant = 0;
+  private readonly mid = new THREE.Vector3();
+  /** The share of the family's racket drop this swing has time for. */
+  private lagK = 1;
+  /** The sim was going for a contrapared at the last held frame. */
+  private contraHeld = false;
   private hand = 1;
   /** Weight of watching the ball with the head. */
   private look = 0;
@@ -1432,6 +1440,8 @@ export class Avatar {
       // The control point that puts the curve through `via` at its moment: B(ev) = via.
       const ev = Math.pow(f.viaS ?? 0.5, 1.7), u = 1 - ev, c = 1 / (2 * ev * u);
       this.ctrl.copy(f.via).addScaledVector(bp, -u * u).addScaledVector(k.p, -ev * ev).multiplyScalar(c);
+      // Let go with no swing begun, straighter: no time to go round.
+      if (this.st === ST_SWING && this.relS === 0) this.ctrl.lerp(this.mid.copy(bp).lerp(k.p, 0.5), 1 - this.lagK);
     } else {
       this.ctrl.copy(bp).lerp(k.p, 0.5);
       this.ctrl.y -= f.dip;
@@ -1439,6 +1449,9 @@ export class Avatar {
     }
     bezier(bp, this.ctrl, k.p, e, this.kp);
     this.kq.copy(this.backTurn(k)).slerp(k.q, e);
+    // Rotated about the shoulder line (a mirror leaves it): blending through a pose behind the back, opposite the
+    // contact's, turned the hand 138 degrees in a frame.
+    if (f.lag) this.kq.premultiply(q1.setFromAxisAngle(LAG_AXIS, -f.lag * this.lagK * 4 * e * (1 - e)));
     this.kpole.copy(f.back.pole).lerp(k.pole, e);
     this.koff.copy(f.back.off).lerp(k.off, e);
     this.kyaw = f.back.yaw + (k.yaw - f.back.yaw) * e;
@@ -1512,14 +1525,19 @@ export class Avatar {
       this.tPlan = tp;
       // Off the back glass: side-on to the racket side while the ball, on this side, still goes towards it.
       const side = sim.side(p.team);
-      if (st.valid) this.hand = st.hand;
-      this.wallWant = st.valid && st.afterWall && !st.contra && sim.phase === PH_RALLY && sim.ball.pos.z * side > 0 ? 1 : 0;
+      // The sim's own word on it, not the plan's: an AI that gives up a contrapared to block what comes at it leaves
+      // the plan saying contrapared, and the body played that with its back to the net (review round 9, the pro's #1).
+      const contra = sim.contraGlass(idx) > 0;
+      const planned = st.valid && st.contra === contra;
+      this.contraHeld = contra;
+      if (planned) this.hand = st.hand;
+      this.wallWant = st.valid && st.afterWall && !contra && sim.phase === PH_RALLY && sim.ball.pos.z * side > 0 ? 1 : 0;
       if (this.swingS === 0) {
         // Re-aimed while the plan changes (the ball may cross to the other side); a change of stroke blends
         // over from wherever the racket is rather than jumping.
         if (!this.hasCon) this.conW.set(sim.ball.pos.x, sim.ball.pos.y, sim.ball.pos.z);
-        const hand = st.valid ? st.hand : this.handOf(sim, p, this.conW);
-        const fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand, st.valid && st.contra);
+        const hand = planned ? st.hand : this.handOf(sim, p, this.conW) * (contra ? -1 : 1);
+        const fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand, contra);
         if (fam !== this.fam && t - this.prepStart > 0.03) {
           this.snapshot();
           this.prepStart = t;
@@ -1559,19 +1577,22 @@ export class Avatar {
       // A forward swing already under way keeps its stroke. Otherwise the stroke is picked for the contact the
       // sim is actually taking, which can be far from the plan (an AI turns a planned groundstroke into a reflex
       // volley at the body), and a backswing built for another stroke blends over into it.
-      if (this.hasCon && (this.st !== ST_PREP || this.swingS === 0)) {
-        const fresh = !st.valid || Math.abs(st.t - (hit ? p.lastContactTime : p.contactTime)) > 0.12;
+      // (a strike clears p.contra: released and struck in one tick, what was held is what was struck)
+      const contra = sw === SW_COMMITTED ? p.contra : this.contraHeld;
+      if (this.hasCon && (this.st !== ST_PREP || this.swingS === 0 || (this.fam.glass ?? false) !== contra)) {
+        const fresh = !st.valid || st.contra !== contra || Math.abs(st.t - (hit ? p.lastContactTime : p.contactTime)) > 0.12;
         const vol = fresh
           ? (hit ? this.prevBounces : sim.rally.bounces) === 0 && (p.shot === SHOT_DRIVE || p.shot === SHOT_SLICE)
           : st.volley;
-        // (a contrapared is only struck from a contrapared plan; facing the glass the forehand is the other side)
-        const contra = fresh ? p.contra : st.contra;
+        // (facing the glass the forehand is the other side)
         const hand = fresh ? this.handOf(sim, p, this.conW) * (contra ? -1 : 1) : st.hand;
         const fam = this.pickFamily(sim, p, idx, this.conW, !fresh && st.overhead, vol && !contra, hand, contra);
         if (this.st === ST_PREP && fam !== this.fam) { this.snapshot(); this.relBlend = true; }
         this.fam = fam;
       }
-      this.tCon = Math.max(hit ? p.lastContactTime : this.hasCon ? p.contactTime : t, t + (1 - this.relS) * MIN_SWING * this.fam.punch);
+      // (from tRel, the moment relS is: counted from this frame the last of the swing took a frame longer than it had,
+      // and the racket fell by a quarter just at the ball; review round 9, the critic's #8)
+      this.tCon = Math.max(hit ? p.lastContactTime : this.hasCon ? p.contactTime : t, this.tRel + (1 - this.relS) * MIN_SWING * this.fam.punch);
       this.st = ST_SWING;
     } else if (this.st === ST_SWING && sw === SW_COMMITTED) {
       this.predAt(sim, p.contactTime, this.conW);
@@ -1589,6 +1610,7 @@ export class Avatar {
 
     const f = this.fam;
     if (this.st === ST_PREP) {
+      this.lagK = 1;
       const left = this.hasCon ? this.tPlan - this.prepStart : PREP;
       const prep = (f.prep ?? PREP) * this.manner.tempo;
       const u = smoothstep(0, left * PREP_SHARE < prep ? Math.max(PREP_MIN, left * PREP_SHARE) : prep, t - this.prepStart);
@@ -1610,6 +1632,10 @@ export class Avatar {
     } else if (this.st === ST_SWING) {
       if (t < this.tCon) {
         const g = clamp01((t - this.tRel) / (this.tCon - this.tRel));
+        // A late release runs the rest of the swing in less time: less of a racket drop, or the hand turns 107 degrees in
+        // a frame.
+        const lead = (this.tCon - this.tRel) / ((1 - this.relS) * (f.lead ?? LEAD));
+        this.lagK += ((lead < 1 ? lead : 1) - this.lagK) * 0.5;
         this.swingKey(this.relS + (1 - this.relS) * g);
         if (this.dt > 0) this.swingV = this.kp.distanceTo(this.kpWas) / this.dt;
         this.kpWas.copy(this.kp);
@@ -1648,7 +1674,10 @@ export class Avatar {
     } else if (this.st === ST_NONE) {
       this.w = 0;
     }
-    this.keepCon = this.st === ST_SWING && t < this.tCon ? (this.tCon - t) / (this.tCon - t + this.dt) : 1;
+    // (the swing's way in while the key is still held too: an AI lets go at the ball, and its one frame of ST_SWING is
+    // the contact's, so the smoothing's offset was still there at the ball)
+    const end = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.swingS > 0 && this.hasCon ? this.tPlan : -1;
+    this.keepCon = end >= t ? (end - t) / (end - t + this.dt) : 1;
     if (this.inertial && (Avatar.inertMask & 24) !== 0) { this.keyT = t; this.smoothKey(); }
     // Low balls: bend the knees (contact or plan height), scaled by the stroke's weight.
     const cy = this.hasCon ? this.conW.y : 1;
@@ -2243,10 +2272,9 @@ export class Avatar {
   private keyT = 0;
   private smoothKey(): void {
     const t = this.keyT;
-    const dt = this.dt;
     // The forward swing (it starts during the charge, timed to the plan) moves fast by design.
     const fast = (this.st === ST_SWING && t < this.tCon + 0.03) || (this.st === ST_PREP && this.swingS > 0);
-    const keep = this.st === ST_SWING && t < this.tCon ? (this.tCon - t) / (this.tCon - t + dt) : 1;
+    const keep = this.keepCon;
     if ((Avatar.inertMask & 8) === 0) { this.wI.keep = keep; this.smoothW(); return; }
     const P = this.kpI;
     P.limit = fast ? 45 : 10;
@@ -2790,7 +2818,9 @@ export class Avatar {
         const reach = this.legLen * 0.985;
         const lifted = low > LOCK_OFF;
         const turned = Math.abs(wrapAngle(yaw - this.lockYaw[f]!));
-        const forced = far > drift * drift || turned > turnMax || d2 > reach * reach;
+        // (out of reach is no reason to step to where the foot already is: a player standing tall has the leg at 0.986
+        // of its length, and tapped on the spot six times a second; review round 9, the critic's #2)
+        const forced = far > drift * drift || turned > turnMax || (d2 > reach * reach && far > STEP_MIN * STEP_MIN);
         // Standing, one foot steps at a time (the other waits, still held), unless it is being left far behind.
         const o = 1 - f;
         const waits = !lifted && s > 0.5 && this.relLift[o] === 1 && this.relT[o]! >= 0 && turned < WAIT_TURN_MAX;

@@ -323,11 +323,16 @@ const TILT_LAG = 0.2;
  * The cut-away between points (BroadcastCamera.cutaways): while the players walk back (MatchSim.walking) a camera at
  * the net post on the side of the pair that won the point, CUT_HEIGHT up, CUT_POST in from the side glass and
  * CUT_NET onto their half, frames them (CUT_FOV, following their middle with CUT_LAG); the broadcast angle comes back
- * for the serve, as TV coverage cuts to a close shot of a pair after a point.
+ * for the serve, as TV coverage cuts to a close shot of a pair after a point. A pair walking back from the net has
+ * its back to that post: the camera is in the corner by their back glass instead (CUT_BACK in from it), in front of
+ * them (those shots were half backs: review round 9, the critic's #6).
  */
 const CUT_HEIGHT = 1.7;
 const CUT_POST = 0.7;
 const CUT_NET = 0.8;
+const CUT_BACK = 0.8;
+/** How far (m) the pair has to go back, on average, for that. */
+const CUT_GOING_BACK = 1;
 const CUT_FOV = 34;
 const CUT_LAG = 0.35;
 /**
@@ -351,6 +356,8 @@ export class BroadcastCamera {
   private cutX = 0;
   private cutZ = 0;
   private cutSide = 1;
+  /** The cut-away looks from the pair's back glass (CUT_BACK), not the net post. */
+  private cutBack = false;
   private netShot = false;
   private angle = 0;
   private from = 0;
@@ -416,7 +423,8 @@ export class BroadcastCamera {
   /** The cut-away's pose for this frame (see CUT_*); returns its field of view. A cut, not a move, when it starts. */
   private cutaway(sim: MatchSim, dt: number): number {
     const court = sim.world.court;
-    const net = sim.phase === PH_OVER && sim.overStage >= 3;
+    const over = sim.phase === PH_OVER;
+    const net = over && sim.overStage >= 3;
     // (a team's players are every second number, in singles too: stepping by 1 took both players, and team 0's points
     // cut to the empty court between them)
     const ti = net ? 1 : 2;
@@ -435,6 +443,9 @@ export class BroadcastCamera {
       this.cutZ = mz;
       // The post on the side away from the pair's middle (so the shot looks across them, not along the glass).
       this.cutSide = mx > 0 ? -1 : 1;
+      let back = 0;
+      for (let i = this.cutTeam; i < sim.players.length; i += 2) back += (sim.walkHomeZ[i]! - sim.players[i]!.pos.z) * side;
+      this.cutBack = !over && back / (sim.doubles ? 2 : 1) > CUT_GOING_BACK;
     } else if (dt > 0) {
       const a = 1 - Math.exp(-dt / CUT_LAG);
       this.cutX += (mx - this.cutX) * a;
@@ -445,7 +456,7 @@ export class BroadcastCamera {
       this.camera.lookAt(this.cutX, 1.2, this.cutZ);
       return NET_SHOT_FOV;
     }
-    this.camera.position.set(this.cutSide * (court.halfW - CUT_POST), CUT_HEIGHT, side * CUT_NET);
+    this.camera.position.set(this.cutSide * (court.halfW - CUT_POST), CUT_HEIGHT, side * (this.cutBack ? court.halfL - CUT_BACK : CUT_NET));
     this.camera.lookAt(this.cutX, 1.15, this.cutZ);
     return CUT_FOV;
   }

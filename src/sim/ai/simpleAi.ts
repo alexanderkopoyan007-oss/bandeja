@@ -219,7 +219,12 @@ export class SimpleAi {
     }
     this.reactAt = m.time + this.reaction() * (0.8 + 0.4 * m.aiRng.next());
     this.correctAt = -1;
-    const read = m.rally.isServe ? 0 : READ_ERR * (2 - this.level);
+    // What is hard to read off the glass is pace and spin together. The same error on every ball had defenders who were
+    // in time losing plain volleys off the wall (review round 9, the pro's #2).
+    const b = m.ball;
+    const pace = linstep(READ_V0, READ_V1, sqrt(b.vel.x * b.vel.x + b.vel.y * b.vel.y + b.vel.z * b.vel.z));
+    const spin = linstep(READ_SPIN0, READ_SPIN1, sqrt(b.spin.x * b.spin.x + b.spin.y * b.spin.y + b.spin.z * b.spin.z));
+    const read = m.rally.isServe ? 0 : READ_ERR * pace * pace * (3 - 2 * pace) * spin * spin * (3 - 2 * spin) * (2 - this.level);
     this.readX = m.aiRng.normal() * read;
     this.readZ = m.aiRng.normal() * read;
     this.planVersion = -1;
@@ -1245,8 +1250,20 @@ export class SimpleAi {
 /** A ball off the glass: how far (m, sigma, at the top level) a player's set-up is off the true spot, and how long after
  * the ball reaches the glass (s) they go on with it. Read exactly, nothing that went through the glass ever beat a
  * defender: bandeja + víbora 1.6% of winners (12.7), smash 55 (43), 11.6 shots (10-11). */
-const READ_ERR = 0.4;
+const READ_ERR = 0.65;
 const READ_LAG = 0.12;
+/** The ball's speed (m/s) and spin (rad/s) between which that error comes in: 50-70 km/h, 900-1300 rpm. Volleys (45 km/h,
+ * 660 rpm) and slow slices are read; a bandeja (70, 1300) or a víbora (79, 2150) isn't. A smash carries too little spin
+ * to be misread, and comes off the wall as it went in. */
+const READ_V0 = 13.9;
+const READ_V1 = 19.4;
+const READ_SPIN0 = 94;
+const READ_SPIN1 = 136;
+
+/** 0 up to a, 1 from b. */
+function linstep(a: number, b: number, x: number): number {
+  return clamp((x - a) / (b - a), 0, 1);
+}
 
 /** A ball against two back: shares going cross-court and down the line; the rest is through the middle. */
 const BACK_CROSS = 0.6;

@@ -40,6 +40,8 @@ export interface Family {
    */
   via?: THREE.Vector3;
   viaS?: number;
+  /** How far (rad) the racket falls back, head down behind the hand, on the way: an overhead's racket drop. */
+  lag?: number;
   /** Played facing the player's own back glass (the contrapared): the stance turns round to it. */
   glass?: boolean;
   /** How long the backswing takes (s; default the avatar's PREP). */
@@ -133,6 +135,13 @@ export const OVERHEAD: Family = {
   sit: 0.04,
   prep: 0.55,
   bodyTurn: 0.7,
+  // The forward swing: the racket's head falls behind the back, then comes up through the ball. Up from the trophy it
+  // had 0.5 m to travel and was still at 1 m/s 0.1 s out, and the ball left before the swing (review round 9, the
+  // critic's #1, the pro's #4).
+  lead: 0.32,
+  via: v(-0.38, 1.45, -0.6),
+  viaS: 0.55,
+  lag: 1.4,
 };
 
 /**
@@ -153,6 +162,10 @@ export const VIBORA: Family = {
   sit: 0.04,
   prep: 0.55,
   bodyTurn: 0.7,
+  lead: 0.32,
+  via: v(-0.55, 1.4, -0.58),
+  viaS: 0.55,
+  lag: 1.4,
 };
 
 /**
@@ -167,6 +180,9 @@ export const SMASH: Family = {
   contact: key(v(-0.28, 2.45, 0.42), v(-0.15, 0.95, 0.27), v(0.02, 0.08, 1), v(-0.7, 1.7, 0.25), 0.05, v(0.45, 0.95, 0.2)),
   finish: key(v(0.55, 0.62, 0.35), v(0.6, -0.65, -0.3), v(0.2, -0.3, 0.9), v(-0.1, 1.0, 0.4), 0.75, v(0.22, 1.0, 0.24)),
   loop: 0.38,
+  lead: 0.32,
+  via: v(-0.42, 1.2, -0.72),
+  lag: 1.9,
 };
 
 /**
