@@ -45,9 +45,9 @@ export const RK_DRIVE = 0, RK_VOLLEY = 1, RK_OVER = 2, RK_SLICE = 3, RK_TOUCH = 
  * word: consultants write it "bop" (Clarke Saunders 2023), against tennis's "thunk". The direct sound is over within
  * about 30 ms (Piana et al.). Parts:
  *  - the contact's own pressure pulse, 4-6 ms (Zienowicz et al.), and the ball's 250 Hz ring;
- *  - the pock: the face and the ball's shell together at about 430, 690, 1020, 1450, 1900 and 2750 Hz, heavily damped by
- *    the foam (Q about 8), struck by the contact's onset; the three lowest carry the hit (a game measured whole holds
- *    its top to about 1.6 kHz, A-weighted, Piana et al. Fig. 6, which is why the upper ones stay);
+ *  - the pock: the face and the ball's shell together at about 430, 690, 1020, 1450, 1900, 2750 and 3500 Hz, heavily
+ *    damped by the foam (Q about 8), struck by the contact's onset; the three lowest carry the hit (a game measured
+ *    whole holds its top to about 1.6 kHz, A-weighted, Piana et al. Fig. 6, which is why the upper ones stay);
  *  - the face's first bending mode, about 205 Hz, near its node at the sweet spot, ringing off-centre (an estimate: a
  *    tennis frame's is 146 Hz, Russell), and a torsion mode for hits off the long axis;
  *  - the contact's crack: band-limited noise well under the pock, brighter the harder the hit (Piana et al.);
@@ -80,19 +80,25 @@ export function racket(rng: Rng, kind: number, power: number, off: number, frame
   for (const m of low) m.a *= loud;
   modal(out, at, low, contact * 0.6);
   // Fast: the pock. Duller off-centre and soft; the top of it opens with the pace.
-  const bright = 0.45 + 0.55 * p;
+  const bright = 0.7 + 0.3 * p;
   const dull = 1 - 0.5 * q;
   const pock: Mode[] = [
     { f: jit(rng, 430, 0.05), t60: 0.03, a: 0.55 + 0.2 * soft },
     { f: jit(rng, 690, 0.04), t60: 0.03, a: 0.8 * (1 - 0.3 * q) },
     { f: jit(rng, 1020, 0.05), t60: 0.02, a: 0.6 * dull * (1 - 0.4 * soft) },
-    { f: jit(rng, 1450, 0.05), t60: 0.014, a: 0.5 * dull * bright * (1 - 0.5 * soft) },
-    { f: jit(rng, 1900, 0.06), t60: 0.011, a: 0.34 * dull * bright * (1 - 0.6 * soft) },
-    { f: jit(rng, 2750, 0.06), t60: 0.009, a: 0.3 * dull * bright * (1 - 0.7 * soft) },
+    { f: jit(rng, 1450, 0.05), t60: 0.016, a: 0.62 * dull * bright * (1 - 0.5 * soft) },
+  ];
+  // (the onset's half-sine has its null at about 1.9 kHz: what lies past it rings from the very first of the contact)
+  const edge: Mode[] = [
+    { f: jit(rng, 1850, 0.06), t60: 0.013, a: 0.13 * dull * bright * (1 - 0.6 * soft) },
+    { f: jit(rng, 2750, 0.06), t60: 0.011, a: 0.12 * dull * bright * (1 - 0.7 * soft) },
+    { f: jit(rng, 3500, 0.06), t60: 0.008, a: 0.08 * dull * bright * (1 - 0.7 * soft) },
   ];
   if (frame) { pock[0]!.a *= 0.6; pock[1]!.a *= 0.5; }
   for (const m of pock) m.a *= loud;
+  for (const m of edge) m.a *= loud;
   modal(out, at, pock, contact * ONSET);
+  modal(out, at, edge, contact * 0.05);
   if (frame) {
     // The rim's clack: the felt meets a hollow carbon tube, not the foam, so the strike is far sharper (about
     // 0.2 ms: a contact that short reaches 5 kHz) and the tube's shell modes ring high and short.
@@ -106,9 +112,11 @@ export function racket(rng: Rng, kind: number, power: number, off: number, frame
     modal(out, at, rim, jit(rng, 2.2e-4, 0.1));
   }
   // The crack: the impact's broadband noise, far under the pock; harder and cleaner is brighter, soft and off dull.
-  const top = (2600 + 2900 * p) * (1 - 0.45 * q) * (1 - 0.5 * soft);
-  noiseBurst(out, rng, at, 0.0004, jit(rng, 0.008 + 0.006 * q, 0.1), (0.2 + 0.5 * p) * loud * (1 - 0.35 * q),
-    [Biquad.make('hp', 1500, 0.7), Biquad.make('lp', top, 0.7), Biquad.make('lp', top, 0.7)]);
+  // (the median hit in play is about a third of full power: it has to keep its edge, or a match goes dull. Whole games
+  // measure 4-7 dB down at 2-4 kHz, A-weighted: Piana et al. Fig. 6, the Abu Dhabi study's octaves.)
+  const top = (3700 + 1900 * p) * (1 - 0.45 * q) * (1 - 0.5 * soft);
+  noiseBurst(out, rng, at, 0.0004, jit(rng, 0.008 + 0.006 * q, 0.1), (0.42 + 0.3 * p) * loud * (1 - 0.35 * q),
+    [Biquad.make('hp', 1300, 0.7), Biquad.make('lp', top, 0.7), Biquad.make('lp', top, 0.7)]);
   dcBlock(out);
   return fadeTail(out, 0.02);
 }
@@ -184,10 +192,10 @@ export function glass(rng: Rng, v: number): Float32Array {
   const a = 2, b = 3, k = 29.5; // (pi/2) * 18.8
   const x0 = rng.range(0.25, 0.75) * a, y0 = rng.range(0.15, 0.6) * b;
   const modes: Mode[] = [];
-  for (let m = 1; m <= 15; m++) {
-    for (let n = 1; n <= 22; n++) {
+  for (let m = 1; m <= 18; m++) {
+    for (let n = 1; n <= 26; n++) {
       const f = k * ((m / a) ** 2 + (n / b) ** 2);
-      if (f < 70 || f > 1800) continue;
+      if (f < 70 || f > 2600) continue;
       const shape = Math.sin((m * Math.PI * x0) / a) * Math.sin((n * Math.PI * y0) / b);
       const rad = m % 2 === 1 && n % 2 === 1 ? 1 : m % 2 === 1 || n % 2 === 1 ? 0.4 : 0.15;
       // The measured balance: thin under 130 Hz, full to about 450 Hz, a hollow at 700, a shoulder at 1-1.4 kHz.
@@ -208,7 +216,7 @@ export function glass(rng: Rng, v: number): Float32Array {
   modal(out, 0.001, ring, contact * 0.5);
   modal(out, 0.001, shell, contact * ONSET);
   // The felt's slap on a hard face: the measured hit holds up to 6 kHz, 30 dB down, far past the panel's modes.
-  noiseBurst(out, rng, 0.001, 0.0003, 0.012, 0.42 * loud, [Biquad.make('hp', 1300, 0.7), Biquad.make('lp', 6500, 0.7)]);
+  noiseBurst(out, rng, 0.001, 0.0003, 0.018, 0.75 * loud, [Biquad.make('hp', 1400, 0.7), Biquad.make('lp', 4600, 0.7), Biquad.make('lp', 7000, 0.7)]);
   // The frame's steel, struck through the clamps: a short low thud under the panel.
   modal(out, 0.002, [{ f: jit(rng, 92, 0.1), t60: 0.22, a: 0.14 * loud }, { f: jit(rng, 151, 0.1), t60: 0.18, a: 0.1 * loud }], contact * 0.5);
   if (v > 14) {
@@ -237,7 +245,7 @@ function glassWeight(f: number): number {
   if (f < 700) return 1 - 0.8 * ((f - 450) / 250);
   if (f < 1050) return 0.2 + 0.5 * ((f - 700) / 350);
   if (f < 1400) return 0.7;
-  return 0.7 * Math.max(0.1, 1 - (f - 1400) / 700);
+  return 0.7 * Math.max(0.15, 1 - (f - 1400) / 1300);
 }
 
 // ---- mesh -------------------------------------------------------------------------------------------------------

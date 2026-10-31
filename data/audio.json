@@ -15,12 +15,12 @@
   "arenas": {
     "stadium": {
       "room": { "rt60": [2.4, 2.0, 1.3], "preDelay": 0.03, "early": [[0.012, 0.35, -0.5], [0.024, 0.3, 0.5], [0.066, 0.3, 0], [0.108, 0.25, 0.1], [0.19, 0.15, -0.8], [0.2, 0.15, 0.8]] },
-      "//room": "A big indoor arena: RT60 about 2 s in the mids (an estimate for a full hall; BB93 caps school sports halls at 1.5 s, arenas run longer), longer in the lows, shorter in the highs (air and seats). Early reflections: the court's own glass (12-24 ms), the roof (19 m up: 66 ms), the end wall (108 ms), the side walls.",
+      "//room": "A big indoor arena: RT60 about 2 s in the mids (an estimate for a full hall; BB93 caps school sports halls at 1.5 s, arenas run longer), longer in the lows, shorter in the highs (air and seats). Early reflections: the court's own glass (12-24 ms), the roof (19 m up: 66 ms), the end wall (108 ms), the side walls. `wet` is higher than a dry broadcast would want because the court is the same ringing cage indoors (Wadman et al. measured an outdoor one: a hit's tail 14 dB under it after 100 ms); this leaves it about 20 dB under, and from 20 m in a hall this size the reverberant field is level with the direct sound (critical distance about 13 m), so it is not generous.",
       "wet": -4, "crowd": 4600, "talkers": 24, "ambience": ["hall"], "neighbours": 0
     },
     "hall": {
       "room": { "rt60": [1.6, 1.25, 0.8], "preDelay": 0.02, "early": [[0.012, 0.35, -0.5], [0.024, 0.3, 0.5], [0.052, 0.3, 0]], "flutter": [0.052, 0.18] },
-      "//room": "A covered club: a steel shed with open or half-open sides. RT60 about 1.25 s (BB93's 1.5 s ceiling for sports halls; the open sides let sound out). The bare roof about 9 m over a hard floor gives a flutter echo every 52 ms.",
+      "//room": "A covered club: a steel shed with open or half-open sides. RT60 about 1.25 s (BB93's 1.5 s ceiling for sports halls; the open sides let sound out). The bare roof about 9 m over a hard floor gives a flutter echo every 52 ms. An untreated padel hall can be far longer: a Finnish one was estimated at about 12 s bare and treated to under 3 s (Ruukki, a vendor's figures).",
       "wet": -3, "crowd": 14, "talkers": 8, "ambience": ["hall"], "neighbours": 1
     },
     "club-day": {

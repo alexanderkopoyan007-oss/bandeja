@@ -244,6 +244,18 @@ function refCompare(): void {
   const pk = (t0: number, t1: number): number => { let p = 0; for (let i = Math.round(t0 * SR); i < t1 * SR; i++) p = Math.max(p, Math.abs(x[i]!)); return p; };
   const top = pk(0, 0.02);
   console.log(`hit's tail in ${arena}, peak in 10 ms against the hit (dB): ` + REF.hitTail.map(([t, d]) => `+${t! * 1000}ms real ${d} ours ${dbl(pk(t!, t! + 0.01) / top).toFixed(1)}`).join('  '));
+  // The glass's 20 dB fall read the same way as Fig. 4.3.1 (about 0.2-0.4 s, in a cage), dry and through the room.
+  const gl = at48(bk.get('glass')![3]![0]!)[0]!;
+  const gx = new Float32Array(Math.round(1.2 * SR)); gx.set(gl);
+  const gdry = gx.slice();
+  const gw = convolve(gx, room.ch[0]!, gx.length);
+  for (let i = 0; i < gx.length; i++) gx[i] = gx[i]! + gw[i]! * wg;
+  const fall = (b: Float32Array): number => {
+    let top20 = 0; for (let i = 0; i < b.length; i++) top20 = Math.max(top20, Math.abs(b[i]!));
+    for (let i = b.length - 1; i >= 0; i--) if (Math.abs(b[i]!) >= top20 * 0.1) return i / SR;
+    return 0;
+  };
+  console.log(`glass: last peak within 20 dB of the top, dry ${fall(gdry).toFixed(2)} s, through ${arena} ${fall(gx).toFixed(2)} s (real about 0.2-0.4)`);
   const mt = times(mono(at48(bk.get('mesh')![2]![0]!)));
   console.log(`mesh: attack ${(mt.attack * 1000).toFixed(0)} ms, t-20 ${mt.t20.toFixed(2)} s (real about 0.85), t-40 ${mt.t40.toFixed(2)}`);
 }

@@ -1,6 +1,6 @@
 // Phase 6: what the soundscape asks for over an AI match, recorded instead of played.
 import { describe, expect, it } from 'vitest';
-import { MatchSim, E_HIT, E_FLOOR, E_WALL, E_POINT, E_WHIFF, PH_TOSS } from '../../src/sim/match.ts';
+import { MatchSim, E_HIT, E_FLOOR, E_WALL, E_POINT, E_WHIFF, E_BODY, E_ROOF, PH_TOSS } from '../../src/sim/match.ts';
 import { SHOT_SERVE } from '../../src/sim/contact/shots.ts';
 import { SURF_GLASS } from '../../src/sim/court/court.ts';
 import { Soundscape, type FeetSource } from '../../src/audio/soundscape.ts';
@@ -194,5 +194,17 @@ describe('soundscape', () => {
     const before = rec.plays.length;
     ss.update(live, 0, feet, 0);
     expect(rec.plays.length).toBe(before);
+  });
+});
+
+describe('events that used to play nothing', () => {
+  it('the ball on a player and on a roof are heard', () => {
+    const m = new MatchSim({ seed: 1, doubles: true, human: [false, false, false, false], aiLevel: [1, 1] });
+    const rec = new Recorder();
+    const ss = new Soundscape(rec, 'hall', []);
+    const fire = (ss as unknown as { event(s: MatchSim, k: number, team: number, player: number, a: number, b: number, c: number, x: number, y: number, z: number, d: number, q: number, delay: number, now: number): void }).event.bind(ss);
+    fire(m, E_BODY, 0, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0);
+    fire(m, E_ROOF, 0, -1, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0);
+    expect(rec.plays.map((p) => p.fam)).toEqual(['body', 'metal']);
   });
 });
