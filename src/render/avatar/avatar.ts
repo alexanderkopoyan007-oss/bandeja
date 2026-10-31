@@ -453,6 +453,8 @@ const LAND_DROP = 0.06;
 const LAND_TIME = 0.2;
 const FOLLOW = 0.3;
 const FOLLOW_N = 3;
+/** How far (m) a volley's way out bows on through the ball. */
+const PUNCH_THROUGH = 0.08;
 /** How long a held pose after a point lasts (s). */
 const MOOD_TIME = 1.3;
 /** How far a long follow-through's curve rises (m): a drive's hand comes up to the shoulder with the arm still long. */
@@ -1005,6 +1007,7 @@ export class Avatar {
   /** The overhead's elbow in the chest's frame (out, up, fwd; m), how much of the swing is the chest's, and how far it's in. */
   private readonly overE = new THREE.Vector3();
   private readonly overQ = new THREE.Quaternion();
+  private readonly finKey: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   /** What the player looks at (world), and how far their eyes are off a dead ball. */
   private readonly gaze = new THREE.Vector3();
   private gazeUp = 0;
@@ -1647,6 +1650,22 @@ export class Avatar {
     this.kyaw = f.back.yaw + (k.yaw - f.back.yaw) * e;
   }
 
+  /**
+   * Where the follow-through ends. A volley's finish is the family's step on from wherever this ball was met: going on to
+   * a fixed place, the racket took 6 m/s into the ball and left it at 14, the ball meeting a still racket that then
+   * lurched off. A volley stops short by the ball.
+   */
+  private finishKey(f: Family, k: Key): Key {
+    if (!f.wrist) return f.finish;
+    const c = f.contact, e = f.finish, K = this.finKey;
+    K.p.copy(k.p).add(e.p).sub(c.p);
+    K.q.copy(c.q).conjugate().premultiply(e.q).multiply(k.q);
+    K.pole.copy(e.pole);
+    K.off.copy(e.off);
+    K.yaw = e.yaw;
+    return K;
+  }
+
   /** The contact this player is set up for (world, into conW) and when; -1 if none. */
   private planned(sim: MatchSim, idx: number): number {
     if (sim.phase === PH_TOSS && sim.score.serverPlayer() === idx && sim.rally.hitter < 0) {
@@ -1838,19 +1857,20 @@ export class Avatar {
         // Follow-through, slowing down, carrying on through the ball before wrapping round.
         const s = clamp01((t - this.tCon) / ((f.follow ?? FOLLOW) * this.manner.follow));
         const k = this.contactKey();
+        const fin = this.finishKey(f, k);
         // (an overhead goes on the way it came, over the top, before it wraps down)
         if (f.over && !f.over.under) this.ctrl.copy(k.p).addScaledVector(OVER_WAY, OVER_ON).addScaledVector(OVER_DOWN, OVER_ON);
         else {
-          this.ctrl.copy(k.p).lerp(f.finish.p, 0.5);
-          this.ctrl.z += f.through ?? 0.25;
+          this.ctrl.copy(k.p).lerp(fin.p, 0.5);
+          this.ctrl.z += f.through ?? (f.wrist ? PUNCH_THROUGH : 0.25);
           if (f.through) this.ctrl.y += THROUGH_UP;
         }
         // Leaving the ball at the speed it arrived: the racket fell to 60% of it in a frame, and the hit read as a stop
         // (review round 8, the critic's #4).
         const n = (this.swingV * (f.follow ?? FOLLOW) * this.manner.follow) / Math.max(0.05, 2 * k.p.distanceTo(this.ctrl));
         const e = 1 - Math.pow(1 - s, n < 2 ? 2 : n > FOLLOW_N ? FOLLOW_N : n);
-        bezier(k.p, this.ctrl, f.finish.p, e, this.kp);
-        this.kq.copy(k.q).slerp(f.finish.q, e);
+        bezier(k.p, this.ctrl, fin.p, e, this.kp);
+        this.kq.copy(k.q).slerp(fin.q, e);
         this.kpole.copy(k.pole).lerp(f.finish.pole, e);
         this.koff.copy(k.off).lerp(f.finish.off, e);
         if (f.free) this.freeKey(f.free, 3, e);
@@ -1858,7 +1878,8 @@ export class Avatar {
         this.w = 1;
         this.finishTo = e;
       } else {
-        this.setKey(f.finish, f.finish, 1);
+        const fin = this.finishKey(f, this.contactKey());
+        this.setKey(fin, fin, 1);
         if (f.free) this.freeKey(f.free, 3, 1);
         this.fadeOut(this.tCon + (f.follow ?? FOLLOW) * this.manner.follow, 1);
         this.finishTo = 1;
