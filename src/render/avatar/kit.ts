@@ -6,7 +6,7 @@
 // turns shinier as it sweats. Shirt and shorts hems lag the body when it accelerates.
 import * as THREE from 'three/webgpu';
 import {
-  vec2, step, sin,
+  vec2, step, sin, select,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
   mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor, frontFacing, faceDirection,
 } from 'three/tsl';
@@ -272,7 +272,9 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   }
 
   /** Skin and eyes take the ambient's brightness, not its colour: the court's probe is lit by a blue and a red floor,
-   * which pooled violet in the eye sockets and turned the whites lavender (review round 4, the critic's #1). */
+   * which pooled violet in the eye sockets and turned the whites lavender (review round 4, the critic's #1). No more than
+   * its brightness: this was 1.55/1.34/1.2 times it from when the environment was 1.0, and under the lit court's key the
+   * extra filled every leg's shadow side with orange. */
   override indirectDiffuse(builder: THREE.NodeBuilder): void {
     const c = builder.context as unknown as { irradiance: THREE.Node<'vec3'> };
     const irradiance = c.irradiance;
@@ -297,7 +299,7 @@ class SkinLighting extends THREE.PhysicalLightingModel {
 
   private ambient(light: THREE.Node<'vec3'>): THREE.Node<'vec3'> {
     const luma = light.dot(vec3(0.2126, 0.7152, 0.0722));
-    return mix(light, vec3(luma, luma, luma).mul(SKIN_AMBIENT), this.ambientFix);
+    return mix(light, vec3(luma, luma, luma), this.ambientFix);
   }
 
   override direct(input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder): void {
@@ -309,6 +311,8 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   }
 }
 const SKIN_WRAP = 0.55;
+/** How much of that bleed skin takes. It goes with the key's strength: 0.42 was set under a key of 1.6, and at 3.0 the red alone was a lit tube's shadow side. */
+const SKIN_SCATTER = 0.22;
 /** How dark the inside of the cloth is: it sits in the body's shadow, and no bake covers it. */
 const BODY_INSIDE = 0.3;
 /** The same for a skirt, a fold's own shade: a thigh pushes a skirt through itself, its back comes out in front, and at 0.3 that was a dark slash on white cloth. */
@@ -337,9 +341,6 @@ const HAIR_TILT = 0.5;
 const LID_MIP = 6;
 const LID_PLAIN = 1;
 const CATCHLIGHT = vec3(-0.29, 0.41, 0.864);
-/** The ambient on skin: warmer than neutral (light that has been through skin and bounced off a body) and stronger (the
- * sockets' baked occlusion is a shadow of the whole sky, which a floodlit court isn't). */
-const SKIN_AMBIENT = vec3(1.55, 1.34, 1.2);
 
 /** A person's body: MeshPhysicalNodeMaterial with the skin's lighting model (clearcoat for oil, sweat and the wet
  * eyes, mouth; sheen for the fabric). */
@@ -347,8 +348,22 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
   static override get type(): string { return 'PersonNodeMaterial'; }
   scatterNode: THREE.Node<'float'> = float(0);
   ambientFixNode: THREE.Node<'float'> = float(0);
+  toneBackNode: THREE.Node<'float'> = float(0);
   override setupLightingModel(): THREE.PhysicalLightingModel {
     return new SkinLighting(this.scatterNode, this.ambientFixNode, this.useClearcoat, this.useSheen);
+  }
+
+  /**
+   * Skin keeps its hue through the tone map. Khronos Neutral takes up to 0.04 off every channel, the 4% a dielectric's specular adds
+   * under a white furnace; in a dark hall that specular isn't there, so the offset came out of the skin's own colour, nearly all of its
+   * blue in shadow: an atlas at R/G 1.35 rendered 1.6 lit and 1.85 in shadow, and that orange is what read as glowing tubes. This is the
+   * offset's exact inverse on the lowest channel (three's neutralToneMapping), weighted by `toneBackNode`.
+   */
+  override setupOutput(builder: THREE.NodeBuilder, outputNode: THREE.Node<'vec4'>): THREE.Node<'vec4'> {
+    const rgb = outputNode.xyz;
+    const x = min(rgb.x, min(rgb.y, rgb.z));
+    const y = select(x.lessThan(0.04), x.max(0).div(6.25).sqrt(), x.add(0.04));
+    return super.setupOutput(builder, vec4(rgb.add(y.sub(x).mul(this.toneBackNode)), outputNode.w)) as THREE.Node<'vec4'>;
   }
 }
 
@@ -503,9 +518,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   m.sheenNode = mix(col, vec3(1, 1, 1), mix(float(0.35), float(0.12), shortsW)).mul(fabric.mul(0.6)).mul(ao);
   m.sheenRoughnessNode = float(0.55);
   // (little on the lids: the red at their terminator drew an orange band over each eye)
-  m.scatterNode = skinW.mul(float(0.42).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85)));
+  m.scatterNode = skinW.mul(float(SKIN_SCATTER).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85)));
   // (the mouth too: the sky's blue on teeth turned them blue-black with the head bowed)
   m.ambientFixNode = skinW.add(eyeW).add(mouthW);
+  m.toneBackNode = skinW;
   // The catchlight: a floodlit cornea always holds a bright point, and a face without one reads as dead. The light it
   // would mirror isn't in the probe, so it is drawn: fixed in view space, where the eyeball's normal meets it.
   m.emissiveNode = vec3(1, 0.98, 0.94).mul(normalView.dot(CATCHLIGHT).clamp().pow(1100)).mul(eyeW).mul(1.5);
