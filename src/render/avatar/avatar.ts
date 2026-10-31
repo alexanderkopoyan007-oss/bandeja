@@ -562,6 +562,9 @@ const OVERHEAD_STAND_EASE = 0.15;
 const WALL_EASE = 0.2;
 /** How far the head turns from the chest to watch the ball (rad), and the neck's share of it. */
 const LOOK_YAW = 1.25;
+/** Eyes off a dead ball (Avatar.gazeAt): how fast (s), the partner's eyes from within GAZE_MATE m, else level and GAZE_FAR m
+ * ahead, wandering GAZE_WANDER rad at GAZE_DRIFT rad/s. */
+const GAZE_UP_T = 0.35, GAZE_MATE = 3.5, GAZE_MATE_Y = 1.6, GAZE_FAR = 6, GAZE_WANDER = 0.3, GAZE_DRIFT = 0.45;
 const NECK_SHARE = 0.4;
 /**
  * Standing or shuffling slowly the feet stay planted while the body turns and drifts over them, and a foot steps
@@ -1002,6 +1005,9 @@ export class Avatar {
   /** The overhead's elbow in the chest's frame (out, up, fwd; m), how much of the swing is the chest's, and how far it's in. */
   private readonly overE = new THREE.Vector3();
   private readonly overQ = new THREE.Quaternion();
+  /** What the player looks at (world), and how far their eyes are off a dead ball. */
+  private readonly gaze = new THREE.Vector3();
+  private gazeUp = 0;
   private readonly overEnd = new THREE.Quaternion();
   private readonly overTurn = new THREE.Quaternion();
   private readonly overHead = new THREE.Vector3();
@@ -2301,9 +2307,10 @@ export class Avatar {
       if (this.inHand) { v1.set(b.pos.x, b.pos.y, b.pos.z); this.toModel(v1, this.addrKey.off); }
     }
 
-    const watch = on || (this.addr && sim.phase === PH_TOSS);
+    const watch = on || (this.addr && sim.phase === PH_TOSS) || sim.walking > 0;
     this.look += ((watch ? 1 : 0) - this.look) * (dt > 0 ? 1 - Math.exp(-dt / 0.25) : 0);
-    if (this.look >= 0.01) this.watchBall(sim);
+    this.gazeAt(sim, idx, t, dt);
+    if (this.look >= 0.01) this.watchBall();
 
     this.plantW += (1 - smoothstep(0.25, 0.7, this.sp) - this.plantW) * (dt > 0 ? 1 - Math.exp(-dt / 0.08) : 0);
     this.freeSh.setFromMatrixPosition(this.armFree[0]!.matrixWorld);
@@ -2344,10 +2351,10 @@ export class Avatar {
     f.puff = sim.phase === PH_RALLY ? this.puff * 0.4 : this.puff;
     f.mood = this.react === this.clips.celebrate ? 1 : this.react === this.clips.dejected ? -1 : this.moodKey ? this.moodSign : 0;
     f.moodT = t - this.reactStart;
-    // The ball from between the eyes, in the head's own frame (+z ahead, +x its left, +y up).
+    // What they look at from between the eyes, in the head's own frame (+z ahead, +x its left, +y up).
     const hm = this.head.matrixWorld;
     v1.copy(this.eyeInHead).applyMatrix4(hm);
-    const b = sim.ball.pos;
+    const b = this.gaze;
     v2.x = b.x - v1.x; v2.y = b.y - v1.y; v2.z = b.z - v1.z;
     worldQuat(this.head, q1).multiply(this.headRestInv).invert();
     v2.applyQuaternion(q1);
@@ -2556,11 +2563,39 @@ export class Avatar {
   }
 
   /**
-   * Turn the neck and head to watch the ball, as far as a neck turns from the chest. Facings are read off the
+   * What the player looks at (gaze): the ball, until it is dead. Then a person looks up: at their partner as they meet,
+   * else level, the way they are going, with the head wandering a little. They all stared at a dead ball on the floor,
+   * and looking down brings the lids down: every close-up between points was a player with their head bowed and their
+   * eyes shut, whoever had won.
+   */
+  private gazeAt(sim: MatchSim, idx: number, t: number, dt: number): void {
+    const away = sim.walking > 0 || sim.phase === PH_OVER;
+    this.gazeUp += ((away ? 1 : 0) - this.gazeUp) * (dt > 0 ? 1 - Math.exp(-dt / GAZE_UP_T) : 1);
+    const b = sim.ball.pos, G = this.gaze;
+    if (this.gazeUp < 0.001) { G.copy(b); return; }
+    const hm = this.head.matrixWorld.elements, hy = hm[13]!;
+    let x: number, z: number, y = hy;
+    const mate = sim.doubles && sim.walking === 1 ? sim.players[(idx + 2) & 3]! : null;
+    const mx = mate ? mate.pos.x - hm[12]! : 0, mz = mate ? mate.pos.z - hm[14]! : 0;
+    if (mate && mx * mx + mz * mz < GAZE_MATE * GAZE_MATE) {
+      x = mate.pos.x; z = mate.pos.z; y = GAZE_MATE_Y;
+    } else {
+      worldQuat(this.spine[2]!, q1).multiply(this.chestRestInv);
+      v1.x = 0; v1.y = 0; v1.z = 1;
+      v1.applyQuaternion(q1);
+      const a = Math.atan2(v1.x, v1.z) + Math.sin(t * GAZE_DRIFT + idx * 1.7) * GAZE_WANDER;
+      x = hm[12]! + Math.sin(a) * GAZE_FAR; z = hm[14]! + Math.cos(a) * GAZE_FAR;
+    }
+    const u = this.gazeUp;
+    G.x = b.x + (x - b.x) * u; G.y = b.y + (y - b.y) * u; G.z = b.z + (z - b.z) * u;
+  }
+
+  /**
+   * Turn the neck and head to what they look at (gaze), as far as a neck turns from the chest. Facings are read off the
    * bones themselves (the clip may already have the head turned), so this only adds what is missing.
    */
-  private watchBall(sim: MatchSim): void {
-    const b = sim.ball.pos;
+  private watchBall(): void {
+    const b = this.gaze;
     const hm = this.head.matrixWorld.elements;
     const dx = b.x - hm[12]!, dy = b.y - hm[13]!, dz = b.z - hm[14]!;
     const want = Math.atan2(dx, dz);

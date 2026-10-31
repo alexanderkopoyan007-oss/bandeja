@@ -333,7 +333,7 @@ const CUT_NET = 0.8;
 const CUT_BACK = 0.8;
 /** How far (m) the pair has to go back, on average, for that. */
 const CUT_GOING_BACK = 1;
-const CUT_FOV = 34;
+const CUT_FOV = 26;
 const CUT_LAG = 0.35;
 /**
  * After match point the cut-away frames the winners as they react and walk to the net (MatchSim.overStage 1-2), then
