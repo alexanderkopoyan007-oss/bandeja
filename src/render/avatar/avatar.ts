@@ -60,6 +60,8 @@ const OVER_WAY = new THREE.Vector3(0, 0.12, 1).normalize();
 const OVER_DOWN = new THREE.Vector3(0, -1, 0.1).normalize();
 const OVER_ON = 0.38;
 /** The arm OverArm's curves are drawn for (m), when the chest's curves start giving way to the ball (progress), the trunk's ease (s). */
+/** The hand goes through the ball first, then to its chest-frame place (OverArm.under) over these times after it (s). */
+const OVER_AFTER0 = 0.06, OVER_AFTER1 = 0.3;
 const OVER_ARM = 0.56;
 const OVER_TO_BALL = 0.72;
 const OVER_TILT_EASE = 0.05;
@@ -533,6 +535,8 @@ const STAND_EASE = 0.4;
  * 45 degrees forward and the knees near 90).
  */
 const SERVE_STAND = 0.8;
+/** The height (m) the server's hand lets the dropped ball go. */
+const SERVE_LET_GO = 1.2;
 /**
  * How far the trunk comes up from the idle clip's lean, standing (rad). The clip is a tennis ready crouch, trunk 47
  * degrees forward through every shot played standing; padel players wait and hit far more upright (MediaPipe on WPT
@@ -1826,7 +1830,7 @@ export class Avatar {
         const s = clamp01((t - this.tCon) / ((f.follow ?? FOLLOW) * this.manner.follow));
         const k = this.contactKey();
         // (an overhead goes on the way it came, over the top, before it wraps down)
-        if (f.over) this.ctrl.copy(k.p).addScaledVector(OVER_WAY, OVER_ON).addScaledVector(OVER_DOWN, OVER_ON);
+        if (f.over && !f.over.under) this.ctrl.copy(k.p).addScaledVector(OVER_WAY, OVER_ON).addScaledVector(OVER_DOWN, OVER_ON);
         else {
           this.ctrl.copy(k.p).lerp(f.finish.p, 0.5);
           this.ctrl.z += f.through ?? 0.25;
@@ -2291,7 +2295,7 @@ export class Avatar {
     if (this.addr) {
       const b = sim.ball;
       if (sim.phase === PH_SETUP) this.inHand = true;
-      else if (b.pos.y < 0.75 || b.vel.y >= 0) this.inHand = false;
+      else if (b.pos.y < SERVE_LET_GO || b.vel.y >= 0) this.inHand = false;
       if (this.inHand) { v1.set(b.pos.x, b.pos.y, b.pos.z); this.toModel(v1, this.addrKey.off); }
     }
 
@@ -3490,6 +3494,23 @@ export class Avatar {
     this.overHead.copy(v2);
   }
 
+  /** After the ball, the hand going to its place in the chest's frame (OverArm.under), the racket as the key has it. */
+  private overAfter(o: number[], ua: THREE.Bone): void {
+    const u = this.st === ST_FADE ? 1 : smoothstep(OVER_AFTER0, OVER_AFTER1, this.lastT - this.tCon);
+    if (u <= 0) return;
+    this.overU = u;
+    this.chestAxes(this.armFree[0]!, ua);
+    const O = this.chestOut, U = this.chestUp, F = this.chestFwd, m = ua.matrixWorld.elements, k = this.armLen / OVER_ARM;
+    const ho = o[0]! * k, hu = o[1]! * k, hf = o[2]! * k;
+    const E = this.overE;
+    E.x = o[3]! * k; E.y = o[4]! * k; E.z = o[5]! * k;
+    const h = this.hand0;
+    h.copy(this.grip.off).applyQuaternion(q2);
+    v2.x += (m[12]! - O.x * ho + U.x * hu + F.x * hf + h.x - v2.x) * u;
+    v2.y += (m[13]! - O.y * ho + U.y * hu + F.y * hf + h.y - v2.y) * u;
+    v2.z += (m[14]! - O.z * ho + U.z * hu + F.z * hf + h.z - v2.z) * u;
+  }
+
   /** The trunk's axes from the shoulders: out towards `arm`, up the spine, forward out of the chest (world). */
   private chestAxes(arm: THREE.Bone, other: THREE.Bone): void {
     const a = arm.matrixWorld.elements, o = other.matrixWorld.elements, H = this.hips.matrixWorld.elements;
@@ -3617,6 +3638,7 @@ export class Avatar {
     this.overU = 0;
     const over = this.fam.over;
     if (over && (this.st === ST_PREP || (this.st === ST_SWING && this.lastT < this.tCon))) this.overKey(over, ua);
+    else if (over?.under && (this.st === ST_SWING || this.st === ST_FADE)) this.overAfter(over.under, ua);
     alignQ(q2, this.prevKeyQ);
     BL.u = w;
     this.blendRacket(this.outKey);

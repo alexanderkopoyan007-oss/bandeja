@@ -107,6 +107,11 @@ export interface OverArm {
   back: number[];
   tilt: number[];
   pitch: number;
+  /**
+   * Struck below the shoulder (the serve): after the ball it goes on as a groundstroke does, not over the top, the hand then
+   * the elbow ending here, each out to the racket side, up the trunk and forward from the racket shoulder (m, for that arm).
+   */
+  under?: number[];
 }
 
 const deg = (d: number): number => (d * Math.PI) / 180;
@@ -115,7 +120,7 @@ export const FOREHAND: Family = {
   name: 'forehand',
   weight: 0.16,
   // In front and across the body at the backswing, dropping to the ball, out to the free side as the racket comes through.
-  free: [-0.25, -0.5, 0.73, 0.14, -0.72, 0.55, 0.65, -0.3, 0.56],
+  free: [-0.29, -0.5, 0.71, 0.03, -0.7, 0.59, 0.6, 0, 0.7],
   back: key(v(-0.75, 1.06, -0.35), v(-0.25, 0.6, -0.75), v(-1, 0.05, -0.1), v(-0.55, 0.75, -0.55), -1.05, v(0.12, 1.25, 0.4)),
   contact: key(v(-0.75, 1.0, 0.45), v(-0.85, 0.12, 0.5), v(0.05, 0.08, 1), v(-0.45, 0.8, -0.15), 0.15, v(0.42, 1.12, 0.36)),
   finish: key(v(0.27, 1.66, 0.36), v(0.35, 0.7, -0.6), v(0.85, 0.1, 0.4), v(-0.3, 1.2, 0.6), 0.95, v(0.5, 1.1, -0.2)),
@@ -259,34 +264,48 @@ function courtKey(p: number[], a: number[], n: number[], pole: number[], yaw: nu
  * it (the weight on the rear leg), so the backswing is that much further back. The free hand points at the bounce
  * during the backswing, then comes down by the free hip (keys placed from the measured free shoulder, so the arm
  * is never folded flat). Side-on: the hips take most of the shoulder turn.
- * Backswing: the racket goes back and up while the ball bounces, head above the grip, shoulders about 100 degrees
- * turned (the tennis forehand's coil, 106 degrees at -231 ms). Forward swing high to low, starting about 300 ms out.
- * Contact at the top of the bounce out to the racket side, face about 25 degrees open, the shaft out to the side
- * with the head a little below the hand; the free hand folds in. Finish low and forward towards the target.
+ * Backswing: the racket all the way back and above the contact, head up, while the ball bounces. Forward swing high to
+ * low, down onto a ball at the waist out to the racket side, face about 25 degrees open, brushing down and through it.
+ * Finish across the body, the elbow folded, the racket up by the far shoulder, the body weight going on towards the net
+ * (a pro's five, ThePadelSchool: https://www.youtube.com/watch?v=gvxuqyt_hn0).
  */
 const SERVE_TURN = 0.82;
 export const SERVE: Family = {
   name: 'serve',
-  back: courtKey([-0.52, 0.4, 1.42], [-0.1, 0.15, 1], [0.85, 0.5, 0.15], [-0.55, 0.55, 0.85], -1.75, [0.37, 0.47, 1.0]),
-  contact: courtKey([0.5, 0.55, 0.9], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.5, 0.75], -0.8, [0.49, 0.09, 0.82]),
-  finish: courtKey([0.75, 0.15, 1.25], [0.7, 0.1, 0.7], [-0.3, 0, 0.95], [0.4, 0.4, 1.0], -0.3, [0.33, -0.19, 0.87]),
+  back: courtKey([-0.76, 0.26, 1.67], [-0.5, 0, 0.85], [0.85, 0.5, 0.15], [-0.6, 0.3, 0.85], -1.6, [0.37, 0.47, 1.0]),
+  contact: courtKey([0.5, 0.55, 0.92], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.5, 0.75], -0.8, [0.49, 0.09, 0.82]),
+  finish: courtKey([0.12, -0.22, 1.67], [-0.3, -0.3, 0.85], [0.9, 0.2, 0.3], [0.3, 0.35, 1.0], -0.3, [0.33, -0.19, 0.87]),
+  // Off a coach's serve, frame by frame: the racket hand held out at the shoulder's height until about 0.2 s before the ball,
+  // then down across the body to it, the elbow 44-52 all the way.
+  over: {
+    knots: [0, 0.4, 0.7, 0.88, 1],
+    hand: [0.42, 0.02, 0.28, 0.45, -0.02, 0.26, 0.44, -0.05, 0.27, 0.3, -0.2, 0.3, 0.02, -0.41, 0.34],
+    elbow: [0.22, -0.14, 0.1, 0.22, -0.15, 0.1, 0.22, -0.15, 0.1, 0.16, -0.22, 0.1, 0.08, -0.25, 0.1],
+    back: [deg(20), deg(25), deg(30), deg(50), deg(80)],
+    tilt: [0.03, 0.2, 0],
+    pitch: 0,
+    // Folded, the hand before the racket shoulder and the racket up by the far one: elbow 123-125 at +0.24 s.
+    under: [-0.05, -0.02, 0.27, 0.12, -0.24, 0.1],
+  },
+  // Long and out to its side once the ball is gone, then coming round in front as the body does.
+  free: [0.85, -0.45, 0.05, 0.66, -0.4, 0.2, 0.55, -0.05, 0.75],
   dip: 0.1,
   loop: 0,
   crouch: 1.5,
-  bend: 1.6,
+  sit: 0.05,
   punch: 1,
   bodyTurn: SERVE_TURN,
   lead: 0.3,
-  // K4, mid forward swing (-120 ms of 300): out to the racket side and dropping, high to low.
-  via: v(-0.72, 1.0, -0.22),
-  viaS: 0.6,
+  follow: 0.45,
+  weight: 0.2,
 };
 
 /**
- * The server's address before the toss (§4.1 K0): side-on, the racket in front at the waist, face up, the free hand
- * out where it lets the ball go (the avatar puts it on the ball itself).
+ * The server's address before the drop: side-on, the arms wide and both hands at the shoulder's height, the racket's head up
+ * at the back and the ball out towards the net (the avatar puts the free hand on the ball itself): from there the ball
+ * drops to bounce to the waist, and the racket is already above it.
  */
-export const SERVE_ADDRESS: Key = courtKey([0.1, 0.35, 0.95], [0.95, 0.3, 0.1], [0, 0, 1], [-0.2, 0.45, 0.8], -1.45, [0.5, 0.5, 0.95]);
+export const SERVE_ADDRESS: Key = courtKey([-0.63, 0.29, 1.57], [-0.3, 0, 0.95], [0.95, 0, 0.3], [-0.6, 0.3, 0.85], -1.45, [0.5, 0.5, 1.2]);
 export const SERVE_TURN_SHARE = SERVE_TURN;
 
 /**

@@ -35,6 +35,8 @@ describe('swings and feet', () => {
   /** An overhead's forward swing: frames, the hand or the elbow fallen under the shoulder; shoulders' tilt at the ball (degrees), trunk's lean after it. */
   let thrown = 0, handLow = 0, elbowLow = 0;
   const tilts: number[] = [], after: number[] = [];
+  /** The free elbow through a groundstroke (degrees); the serve: hand against the shoulder at the backswing (m), racket elbow after the ball (degrees). */
+  const freeEl: number[] = [], serveBack: number[] = [], serveFold: number[] = [];
   const P = (o: THREE.Object3D): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
   /** How far behind the chest's plane an arm's point is (degrees, by elevation), from the shoulders and the hips. */
   const behind = (S: THREE.Vector3, other: THREE.Vector3, hips: THREE.Vector3, to: THREE.Vector3, side: number): number => {
@@ -83,8 +85,15 @@ describe('swings and feet', () => {
               if (behind(S, Sf, hips, E, -lefty) > 50) racketBack++;
             }
             // An overhead is a throw, not a windmill.
-            const o = av[i] as unknown as { st: number; keyS: number; tCon: number; fam?: { name: string; over?: unknown }; handed: number; armRacket: THREE.Object3D[]; armFree: THREE.Object3D[]; hips: THREE.Object3D };
-            if (o.fam?.over && o.handed > 0) {
+            const o = av[i] as unknown as { st: number; keyS: number; tCon: number; fam?: { name: string; over?: { under?: number[] }; free?: number[] }; handed: number; armRacket: THREE.Object3D[]; armFree: THREE.Object3D[]; hips: THREE.Object3D };
+            const flex = (A: THREE.Vector3, B: THREE.Vector3, C: THREE.Vector3): number => 180 - A.clone().sub(B).angleTo(C.clone().sub(B)) * 57.3;
+            if (o.fam?.free && !o.fam.over && o.st === 2 && Math.abs(m.time - o.tCon) < 0.2) freeEl.push(flex(P(o.armFree[0]!), P(o.armFree[1]!), P(o.armFree[2]!)));
+            if (o.fam?.name === 'serve' && o.handed > 0) {
+              const S = P(o.armRacket[0]!), E = P(o.armRacket[1]!), W = P(o.armRacket[2]!);
+              if (o.st === 1 && o.keyS < 0.5) serveBack.push(W.y - S.y);
+              if (o.st === 2 && m.time > o.tCon + 0.28 && m.time < o.tCon + 0.4) serveFold.push(flex(S, E, W));
+            }
+            if (o.fam?.over && !o.fam.over.under && o.handed > 0) {
               const S = P(o.armRacket[0]!), E = P(o.armRacket[1]!), W = P(o.armRacket[2]!), Sf = P(o.armFree[0]!), H = P(o.hips);
               if ((o.st === 1 || (o.st === 2 && m.time < o.tCon)) && o.keyS > 0.3 && o.keyS < 0.8) {
                 thrown++;
@@ -209,6 +218,21 @@ describe('swings and feet', () => {
     expect(tilts.length).toBeGreaterThan(2);
     expect(med(tilts)).toBeGreaterThan(12);
     expect(after.slice().sort((x, y) => x - y)[(after.length * 0.95) | 0]!).toBeLessThan(35);
+  });
+
+  it('keeps the free arm long through a groundstroke', () => {
+    expect(freeEl.length).toBeGreaterThan(1000);
+    // 34-52 on video; keyed square to the net it folded to 139 before the ball.
+    expect(med(freeEl)).toBeLessThan(70);
+  });
+
+  it('serves from the shoulder down to the waist, and finishes folded across the body', () => {
+    expect(serveBack.length).toBeGreaterThan(100);
+    // Above the contact, all the way back: it swung up from the waist like a pendulum.
+    expect(med(serveBack)).toBeGreaterThan(-0.2);
+    expect(serveFold.length).toBeGreaterThan(50);
+    // 123-125 on video at about +0.3 s; it stayed out straight at the hip, elbow 30, for half a second.
+    expect(med(serveFold)).toBeGreaterThan(85);
   });
 
   it('runs on the ground, not over it', () => {

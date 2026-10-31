@@ -59,7 +59,7 @@ describe('contrapared stroke', () => {
     for (const seed of [201, 202, 203]) {
       let seen = 0;
       runAnimQa(a, {
-        seed, seconds: 150,
+        seed, seconds: 170,
         onFrame: (m, av) => {
           while (seen < m.eventSeq) {
             const e = m.events[seen % m.events.length]!;

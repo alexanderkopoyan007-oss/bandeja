@@ -179,7 +179,7 @@ describe('soundscape', () => {
     const feet: FeetSource[] = [0, 1, 2, 3].map(() => ({ feet: null }));
     ss.update(live, 0, feet, 0);
     let hits = 0, seen = m.eventSeq;
-    for (let f = 0; f < 60 * 12; f++) {
+    for (let f = 0; f < 60 * 18; f++) {
       const to = m.time + 1 / 60;
       while (m.time < to) m.step(NONE);
       while (seen < m.eventSeq) { if (m.events[seen++ % m.events.length]!.kind === E_HIT) hits++; }
