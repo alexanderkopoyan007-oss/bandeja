@@ -9,6 +9,7 @@
   "distance": { "ref": 16, "rolloff": 0.85, "max": 120, "airHz": 18000, "airM": 30 },
   "//distance": "From the broadcast camera (the listener): ref is the near baseline's distance, where a sound plays at its family level; the inverse law with this rolloff makes the far baseline (36 m) about 6 dB quieter. Air and distance take the highs: lowpass at airHz / (1 + d / airM).",
   "master": -1,
+  "lift": 12,
   "limiter": { "threshold": -2, "ratio": 20 },
   "//master": "dB before the safety limiter (a compressor at -2 dBFS, hard knee, 20:1, its automatic make-up gain taken back out, so it is unity below -2 dBFS) and a clip that passes everything under 0.8 unchanged and rounds off above: the mix tests (tests/audio/bank.test.ts) hold the busiest moments of every arena and floor under the limiter's threshold.",
   "arenas": {

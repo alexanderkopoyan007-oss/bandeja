@@ -743,7 +743,8 @@ export class Game {
     // every play and the frame's assists, HUD and draw were skipped.
     try {
       this.audio.setListener(this.cam.camera);
-      this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
+      if (showing) this.soundscape.replay(rp.sim, rp.clock, this.feetSrc, frameDt, rp.speed);
+      else this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
       if (this.ball.routineBounce) this.soundscape.routineBounce(this.ball.mesh.position.x, this.ball.mesh.position.z);
     } catch (e) {
       if (!this.audioFailed) { this.audioFailed = true; console.warn('audio', e); }

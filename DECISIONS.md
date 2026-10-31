@@ -2634,6 +2634,13 @@ starts from the swing's speed, capped so a fast swing doesn't overshoot (smash a
 **Back to ready.** The hand's way from the finish to the ready key passed further from the turning shoulder than the arm is long, so
 the elbow bent, straightened and bent again. The arm is held to 0.8 of its length while the stroke fades.
 
+**Sound.** The mix sat 13 dB under a console's -24 (rally -45.4, all -39.7, peak -15.6 at the default volume, round 7's tap) because the
+sounds are capped so that none reaches the limiter from the reference distance, and the broadcast camera is never that near. `audio.json`
+`lift` puts 12 dB on the master after those checks, which by the same tap's arithmetic is rally -33, all -28, peak -4: not measured again
+live (the tap returned nothing in round 8). Close cameras can now reach the limiter, which is what it is for. Replays had no sound at
+all, because the soundscape only heard the live match. `Soundscape.replay` plays the shots, bounces, glass and feet from the replay's own
+sim, pitched down with the slow motion to 0.7 at the lowest, and leaves the crowd to the live match, so nobody applauds twice.
+
 ## Women's overheads finish (2026-10-31)
 
 Round 8's High #3. The rallies in a women's match were right, but a smash won one time in ten (tour: flat 33.3, topspin 29.2,

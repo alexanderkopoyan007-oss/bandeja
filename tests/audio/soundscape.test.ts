@@ -167,4 +167,32 @@ describe('soundscape', () => {
     expect(birds.length).toBeLessThan(200);
     expect(r.rec.plays.some((p) => p.fam === 'bird')).toBe(false);
   });
+
+  it('a replay plays the point again, slowed and pitched down, and the crowd does not react a second time', () => {
+    const m = new MatchSim({ seed: 4242, doubles: true, human: [false, false, false, false], aiLevel: [1, 1] });
+    const rec = new Recorder();
+    const rates: number[] = [];
+    const play = rec.play.bind(rec);
+    rec.play = (fam, bin, x, y, z, gain, rate, delay, bus, offset) => { if (fam === 'racket') rates.push(rate); play(fam, bin, x, y, z, gain, rate, delay, bus, offset); };
+    const ss = new Soundscape(rec, 'stadium', []);
+    const live = new MatchSim({ seed: 1, doubles: true, human: [false, false, false, false], aiLevel: [1, 1] });
+    const feet: FeetSource[] = [0, 1, 2, 3].map(() => ({ feet: null }));
+    ss.update(live, 0, feet, 0);
+    let hits = 0, seen = m.eventSeq;
+    for (let f = 0; f < 60 * 12; f++) {
+      const to = m.time + 1 / 60;
+      while (m.time < to) m.step(NONE);
+      while (seen < m.eventSeq) { if (m.events[seen++ % m.events.length]!.kind === E_HIT) hits++; }
+      ss.replay(m, m.time, feet, 1 / 60, 0.25);
+    }
+    expect(hits).toBeGreaterThan(4);
+    expect(rec.plays.filter((p) => p.fam === 'racket').length).toBe(hits);
+    expect(rec.plays.some((p) => p.fam === 'bounce')).toBe(true);
+    expect(Math.max(...rates)).toBeCloseTo(0.7, 5);
+    expect(rec.flats.filter((f) => f.fam === 'ooh' || f.fam === 'applause' || f.fam === 'cheer')).toEqual([]);
+    // Back to the live match, at the live match's place: nothing of the replay is played again.
+    const before = rec.plays.length;
+    ss.update(live, 0, feet, 0);
+    expect(rec.plays.length).toBe(before);
+  });
 });

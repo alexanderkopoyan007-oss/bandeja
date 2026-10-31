@@ -22,6 +22,8 @@ import { BUS_BALL, BUS_PLAYERS, BUS_CROWD, BUS_AMB, type AudioSink } from './sin
 /** A routine bounce before the serve hits the floor at about this speed (m/s: pushed down from 0.95 m). */
 const ROUTINE_SPEED = 5;
 const OFF_CENTRE = 0.55;
+/** Lowest pitch of a replay's sounds (the square root of its speed down to this). */
+const REPLAY_PITCH = 0.7;
 /** The whoosh peaks this long before the contact (the racket's fastest just before it meets the ball). */
 const WHOOSH_LEAD = 0.02;
 /** Scuffs are judged over this much sim time (a frame's difference is frame-rate dependent). */
@@ -67,6 +69,10 @@ export class Soundscape {
   private readonly neighbours: number[];
   private sim: MatchSim | null = null;
   private seen = 0;
+  /** In a replay: its own place in its sim's events, and the pitch of what it plays. */
+  private replaying = false;
+  private seenReplay = 0;
+  private rate = 1;
   private seed = 987654;
   private readonly zone: ZoneHit = { kind: 0, seamDist: 0, joinDist: 0 };
   // Feet: per foot, on the floor or not, last height, last step time; per player, the stride clock (capsules), the
@@ -130,6 +136,7 @@ export class Soundscape {
   }
 
   update(sim: MatchSim, renderTime: number, feet: readonly FeetSource[], dt: number): void {
+    this.replaying = false;
     if (sim !== this.sim) {
       this.sim = sim;
       this.seen = sim.eventSeq;
@@ -150,6 +157,33 @@ export class Soundscape {
     this.neighbourCourts(renderTime);
   }
 
+  /**
+   * A replay's frame, in place of update: the shots, the bounces, the glass and the feet of the point again, pitched down
+   * with the slow motion (REPLAY_PITCH), under the live crowd. `speed`: the replay's speed (1 = real time).
+   */
+  replay(sim: MatchSim, renderTime: number, feet: readonly FeetSource[], dt: number, speed: number): void {
+    if (!this.replaying) {
+      this.replaying = true;
+      this.seenReplay = sim.eventSeq;
+    }
+    const rate = Math.sqrt(speed);
+    this.rate = rate < REPLAY_PITCH ? REPLAY_PITCH : rate;
+    if (sim.eventSeq - this.seenReplay > sim.events.length) this.seenReplay = sim.eventSeq - sim.events.length;
+    while (this.seenReplay < sim.eventSeq) {
+      const e = sim.events[this.seenReplay % sim.events.length]!;
+      this.seenReplay++;
+      if (e.kind !== E_SWING && e.kind !== E_WHIFF && e.kind !== E_HIT && e.kind !== E_FLOOR && e.kind !== E_WALL && e.kind !== E_NET) continue;
+      const delay = Math.min(0.05, Math.max(0, e.time - renderTime));
+      this.event(sim, e.kind, e.team, e.player, e.a, e.b, e.c, e.x, e.y, e.z, e.d, e.q, delay, renderTime);
+    }
+    this.rate = 1;
+    if (this.celebrate > 0) this.celebration(renderTime);
+    if (this.sim) this.crowdBed(this.sim, dt);
+    if (dt > 0) {
+      for (let i = 0; i < sim.players.length; i++) this.feetOf(sim, i, feet[i]?.feet ?? null, renderTime, dt);
+    }
+  }
+
   private event(sim: MatchSim, kind: number, team: number, player: number, a: number, b: number, c: number,
     x: number, y: number, z: number, d: number, q: number, delay: number, now: number): void {
     const out = this.out;
@@ -162,7 +196,7 @@ export class Soundscape {
         // Peak just before the contact the swing is going for (a whiff: as it swings); started late, from inside.
         let at = delay - WHOOSH_PEAK;
         if (kind === E_SWING && p.contactTime > now) at = p.contactTime - WHOOSH_LEAD - WHOOSH_PEAK - now;
-        out.play('whoosh', s.bin, p.pos.x, 1.3, p.pos.z, s.gain, 1, Math.max(0, at), BUS_PLAYERS, Math.max(0, -at));
+        out.play('whoosh', s.bin, p.pos.x, 1.3, p.pos.z, s.gain, this.rate, Math.max(0, at), BUS_PLAYERS, Math.max(0, -at));
         break;
       }
       case E_HIT: {
@@ -171,7 +205,7 @@ export class Soundscape {
         const power = d > 0 ? clamp01((d - 4) / 36) : clamp01((c - 5) / 35);
         const pb = binFor(RACKET_POWER, Math.max(0.12, power), this.rand());
         const rq = q >= 2 ? RQ_FRAME : q > OFF_CENTRE ? RQ_OFF : RQ_CLEAN;
-        out.play('racket', racketBin(rk, pb.bin, rq), x, y, z, pb.gain, 1, delay, BUS_BALL);
+        out.play('racket', racketBin(rk, pb.bin, rq), x, y, z, pb.gain, this.rate, delay, BUS_BALL);
         // A grunt with the effort: overheads and hard drives; the odd breath on a lighter shot.
         const effort = a === SHOT_SMASH ? 0.6 + 0.4 * clamp01((c - 25) / 15)
           : a === SHOT_VIBORA || a === SHOT_BANDEJA ? 0.55
@@ -180,10 +214,10 @@ export class Soundscape {
         if (player >= 0 && this.rand() < (GRUNTER[player] ?? 0.5) * effort) {
           const p = sim.players[player]!;
           const eb = binFor(GRUNT_E, effort, this.rand());
-          out.play('grunt', (player + (sim.cfg.women ? 4 : 0)) * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, 1, delay + 0.015, BUS_PLAYERS);
+          out.play('grunt', (player + (sim.cfg.women ? 4 : 0)) * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, this.rate, delay + 0.015, BUS_PLAYERS);
         }
         // The crowd gasps at a great get: a smash or a ball off two walls sent back (never at a serve).
-        if (this.big && a !== SHOT_SERVE && sim.phase === PH_RALLY && this.lastHitTeam >= 0 && team !== this.lastHitTeam) {
+        if (this.big && !this.replaying && a !== SHOT_SERVE && sim.phase === PH_RALLY && this.lastHitTeam >= 0 && team !== this.lastHitTeam) {
           const smashBack = (this.lastHitShot === SHOT_SMASH || this.lastHitShot === SHOT_VIBORA) && this.lastHitSpeed > 25;
           const pr = smashBack ? 0.6 : this.wallsSinceHit >= 2 ? 0.4 : 0;
           if (pr > 0 && sim.time - this.lastOoh > 3 && this.rand() < pr * (0.5 + 0.5 * this.tension)) {
@@ -200,7 +234,7 @@ export class Soundscape {
       case E_FLOOR:
         if (c > 0.3) {
           const s = binFor(BOUNCE_V, c, this.rand());
-          out.play('bounce', s.bin, x, y, z, s.gain, 1, delay, BUS_BALL);
+          out.play('bounce', s.bin, x, y, z, s.gain, this.rate, delay, BUS_BALL);
         }
         break;
       case E_WALL: {
@@ -211,25 +245,25 @@ export class Soundscape {
         let panel = 1;
         if (zn.seamDist < 0.04) {
           const s = binFor(METAL_V, c, this.rand());
-          out.play('metal', s.bin, x, y, z, s.gain, 1, delay, BUS_BALL);
+          out.play('metal', s.bin, x, y, z, s.gain, this.rate, delay, BUS_BALL);
           panel = 0.5;
         }
         if (a === SURF_GLASS) {
           const s = binFor(GLASS_V, c, this.rand());
-          out.play('glass', s.bin, x, y, z, s.gain * panel, 1, delay, BUS_BALL);
+          out.play('glass', s.bin, x, y, z, s.gain * panel, this.rate, delay, BUS_BALL);
         } else if (a === SURF_MESH) {
           const s = binFor(MESH_V, c, this.rand());
-          out.play('mesh', s.bin, x, y, z, s.gain * panel, 1, delay, BUS_BALL);
+          out.play('mesh', s.bin, x, y, z, s.gain * panel, this.rate, delay, BUS_BALL);
         }
         break;
       }
       case E_NET: {
         if (a === 2) {
           const s = binFor(METAL_V, c, this.rand());
-          out.play('metal', 2 + s.bin, x, y, z, s.gain, 1, delay, BUS_BALL);
+          out.play('metal', 2 + s.bin, x, y, z, s.gain, this.rate, delay, BUS_BALL);
         } else {
           const s = binFor(NET_V, c, this.rand());
-          out.play('net', (a === 1 ? 2 : 0) + s.bin, x, y, z, s.gain, 1, delay, BUS_BALL);
+          out.play('net', (a === 1 ? 2 : 0) + s.bin, x, y, z, s.gain, this.rate, delay, BUS_BALL);
         }
         break;
       }

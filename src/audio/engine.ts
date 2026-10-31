@@ -378,7 +378,7 @@ export class AudioEngine implements AudioSink {
   private applyLevels(): void {
     if (!this.master || !this.ctx) return;
     const t = this.ctx.currentTime;
-    this.master.gain.setTargetAtTime(db(AUDIO.master) * this.volume * this.volume, t, 0.02);
+    this.master.gain.setTargetAtTime(db(AUDIO.master + AUDIO.lift) * this.volume * this.volume, t, 0.02);
     this.buses[BUS_CROWD]?.gain.setTargetAtTime(this.crowdLevel * this.crowdLevel, t, 0.02);
   }
 
