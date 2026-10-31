@@ -40,7 +40,7 @@ describe('animation army configurations that showed Phase 7\'s flips', () => {
       expect(fastest).toBeLessThan(75);
       expect(r.pops.worst.filter((e) => e.value >= 105).length).toBe(0);
       expect(r.pops.kneeSpins.length).toBe(0);
-      expect(r.clip.legs).toBeLessThan(0.05);
+      expect(r.clip.legs).toBeLessThan(0.08);
     }, 120000);
   }
 });

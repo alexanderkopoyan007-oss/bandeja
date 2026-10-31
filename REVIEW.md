@@ -308,3 +308,37 @@ Earlier statuses corrected by round 7 (verifier):
 - R6 #5 "Better": the chest and hand held, the racket head got worse. Fixed here as #4.
 - R6 #7 "contact 50": 57-64. Inside the video's 54-65, so the status stands.
 - R6 #10 "worst 19": 40.8 cm on a low volley. The rate holds at 1.1%, so Medium stands.
+
+## Round 8
+
+Two reviews written blind on c660d41, and a third pass that checked both on seeds neither had used. The reports are
+`docs/review/round8-pro.md`, `round8-critic.md` and `round8-verify.md`. Two new Highs, two repeats at High and one proven Medium
+regression, so the loop goes on. Numbers after the fixes are from the probes named in `DECISIONS.md`, on the verifier's seeds where they
+exist, and 6000 points on unseen seeds for the sim.
+
+| # | Rank | Finding | Mark | Status |
+|---|---|---|---|---|
+| 1 | High | P: the lobbed net player backpedals square to the net | NEW | **Fixed.** Going back over 2 m/s, chest under 40 degrees from square 70.2 to 9.5% (men), 8.0 (women); side-on 28 to 66 |
+| 2 | High | C: the bodies carry no weight | NEW | **Fixed.** Feet to head starting / steady / braking 18.0 / 17.3 / 16.6 to 30.5 / 19.3 / 11.2. A hard stop still doesn't lean back |
+| 3 | High | P: women's overheads don't finish | REPEAT, not a regression | **Fixed.** `women.smashEffort` 0.85. Seeds 9101+, 6000 points: smash W 9.6 to 30.0 (29-33), seconds 17.0 to 16.0, W / FE / UE 28.2 / 32.5 / 39.3 to 31.7 / 31.0 / 37.3 (30-36 / 28-32 / 35-37). Volleys still take 43% of winners; the serving pair 61 (48.5) |
+| 4 | High | C: the people don't look human close up | REPEAT | Open. The kit, hair and shoes pass is under way; faces past 312 texels need MetaHuman (`OPEN_QUESTIONS.md`) |
+| 5 | Medium | P #2: only a lob moves a net pair (verifier lowered it from High) | | Open |
+| 6 | Medium | C #7: pops of 15 degrees or more doubled | REGRESSION, proven | **Fixed.** 4.83 to 2.1 a player-minute (2.28 before the movement pass), all pops 24.8 to 13. Direction weights eased, warp rate-limited |
+| 7 | Medium | C #8: the walk back is a retimed jog | | **Fixed.** Drawn feet, turned to where they are going: forwards 13 to 67%, both feet off 21 to 4.3%, footsteps 5.25 to about 2 a second. No pelvis twist yet |
+| 8 | Medium | C #3: feet slide | | **Better** on the walk (held by construction, the toes roll 3 cm). Running stances are unchanged |
+| 9 | Medium | C #4: the racket slows at the ball | | **Fixed.** Drive 11.8 then 9.3-9.9 m/s (7.2-7.6), slice 12.6 then 10.8, smash 11.9 then 14.5 |
+| 10 | Medium | C #5, P #10: low volleys on a locked arm, the arm snaps | REPEAT R7 #4 | **Fixed.** Elbow under 0.6 m 30 to 50, under 0.85 m 30 to 56 (63), opening 94 to 53 over the last 0.13 s |
+| 11 | Medium | C #6: the arm flicks straight on the way back | | **Better.** Flicks of 25 degrees: serve 69 to 45%, volley 71 to 49, slice 57 to 38; the measure's window also catches the next stroke |
+| 12 | Medium | C #11, #12: quiet mix, silent replays | REPEAT | **Better.** 12 dB lift (calculated: rally -33, all -28, peak -4; not retapped). Replays play the point, pitched down. No voice on court |
+| 13 | Medium | P #9, #11, C #9, #10: forehand coil late, víbora body, smash arc | | Open |
+| 14 | Medium | P #4-7, #12, #13, #17; C #13-25 | | Open, except the kit's below |
+| 15 | Medium | C: p10's tank holes, p3's polo sliver (verifier) | NEW | In the kit pass |
+| 40+ | Low | P #19-30, C #26-30 | | Open |
+
+Earlier statuses corrected by round 8 (verifier):
+- R7 #18 was a measuring bug in `q10.mjs` line 20, so it is closed.
+- R7 #4 "Fixed" was Better: low volleys, 70% of volleys, sat at the elbow's limit. Fixed now, row 10.
+- R7 C8 "Fixed" didn't hold for all ten: p10's and p3's necklines, row 15.
+- R7 #25 and R4 #9 / R5 #18, the banner over a replay: still there.
+- R4 #2, the drop volley: 0.123 a point, W 54. The rate fell, and it still wins half.
+- `docs/research/footage-pose.md`'s game column was stale in four rows, and `docs/ai.md`'s net depth is a setting, not what is measured. Both corrected.
