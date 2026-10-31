@@ -2934,9 +2934,13 @@ which could lie along the leg, and a knee coming down to land swung 100 degrees 
 
 **Arms.** The ready position is placed square to the stance, and a turned chest came through hands left where they were,
 forearms folded against the neck: it rides the chest now (`followChest`, eased, as a stride's turn stays out of the hands).
-A cancelled overhead went back to ready by the straight line, through the chest: still rare, the racket arm's deep frames
-are 0.3% of frames. The forearms are kept out of the guard capsules outside the forward swing (inside it, a fast arm's push
+A cancelled overhead went back to ready by the straight line, through the chest: not fixed, the racket arm's deep frames
+are 0.3-0.7% of frames. The forearms are kept out of the guard capsules outside the forward swing (inside it, a fast arm's push
 came and went in a frame: serves popped 30 times a minute for 5).
+
+**The twist.** Running back with the chest turned into a backhand, the legs were 94 degrees one way and the chest 83 the
+other: 128 degrees off the hips. The legs stay within `TWIST_MAX` of the chest (worst 136 to 126, frames past 70 degrees
+27 to 20 per 1000, what is left is mostly the clips' own run).
 
 **The lunge.** One foot went out 0.46 m and the other stayed, a straight-legged A, feet 1.2 legs apart through a volley. The
 far foot makes at least half the lunge (`LUNGE_TRAIL`).
@@ -2963,4 +2967,4 @@ and the merged tree fails six tests. The branch keeps the work and the findings 
 
 **Not measured.** Nobody has played this with their hands. Stand-ins press one shot key; they never smash or go to the net
 on purpose, and their winners are about 1% of points, so how a human finishes points is unknown. Racket arm through the chest
-is still 20 per 1000 frames for the human, most of it touching rather than deep, y:serve and volleys.
+is still 20-25 per 1000 frames for the human, most of it touching rather than deep, y:serve and volleys.

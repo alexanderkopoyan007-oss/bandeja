@@ -726,6 +726,8 @@ const SIDE_RUN_MAX = 1.35;
 const CYCLE_EASE = 0.06;
 /** Most the spine turns back against the legs' warp (rad); past it the chest turns with the hips. */
 const WARP_SPINE_MAX = Math.PI / 4;
+/** Most the chest turns off the hips (rad). */
+const TWIST_MAX = Math.PI / 3;
 /**
  * The run back for a ball going over or past: side-on, shoulder to the net, not backpedalling square. Turns the
  * stance RETREAT_TURN (the overhead's own take-back) as the player goes back between RETREAT_V0 and RETREAT_V1 (m/s). The
@@ -2033,6 +2035,10 @@ export class Avatar {
       const lim = WARP_SWITCH_RATE * this.dt, o = this.warpOff;
       this.warpOff = o > lim ? o - lim : o < -lim ? o + lim : 0;
       this.warp -= this.warpOff;
+      // The legs no further round from the chest than a spine turns: running one way with the chest turned into a stroke
+      // the other, the shoulders were up to 135 degrees off the hips.
+      const ch = this.chestTurn * (1 - this.bt) + this.chestWarp;
+      this.warp = this.warp > ch + TWIST_MAX ? ch + TWIST_MAX : this.warp < ch - TWIST_MAX ? ch - TWIST_MAX : this.warp;
       // Nor anywhere else: a clip's edge at a shuffle stepped it 20 degrees in a frame.
       const d = this.warp - this.warpShown;
       if (this.warpShownOk && lim > 0) this.warp = this.warpShown + (d > lim ? lim : d < -lim ? -lim : d);
