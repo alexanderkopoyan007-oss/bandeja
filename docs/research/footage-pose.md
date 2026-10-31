@@ -9,7 +9,7 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 
 | Stroke | Measure | Video | Game | Clip |
 |---|---|---|---|---|
-| Bandeja | Racket elbow at contact | 54-65 | 57-63 | [1](https://www.youtube.com/watch?v=ze0PoGPd22k) (7 strokes, 25 fps) |
+| Bandeja | Racket elbow at contact | 54-65 | median 61, spread 34-93 | [1](https://www.youtube.com/watch?v=ze0PoGPd22k) (7 strokes, 25 fps) |
 | Bandeja | Free hand | -0.4 at -1.2 s, 0.5 at -0.3, -0.5 at +0.1 | 0.82 at -0.2, 0.2 at contact | 1 |
 | Bandeja | Hips, stance | 0.87-0.92, 0.5-0.9 | 0.88, 0.9 | 1, 3 |
 | Bandeja | Elbow after contact | 31-62, free arm stays long (6-31) | | 1 |
@@ -30,11 +30,11 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 | Ready (two hands) | Wrist below, in front of the shoulder | 0.69-0.75 trunks, 0.27-0.30 m | 0.63, 0.3 m | 5, 6, 7 |
 | Forehand | Elbow at -0.22 / -0.08 / contact | 30-31 / 39 / 48 (the first read 49 here until round 8 measured it) | 49 / 39 / 48 | 6 |
 | Forehand | Elbow, wrist at +0.08 s | 47-64, -0.47 | 56, -0.48 | 6 |
-| Forehand | Elbow, wrist at +0.16 s | 38-60, -0.12 | 75, -0.32 (was 114, -0.47) | 6 |
-| Forehand | Elbow, wrist at +0.24 s | 43-64, +0.1 | 113, -0.18 | 6 |
+| Forehand | Elbow, wrist at +0.16 s | 38-60, -0.12 | 90 and 71 (p1, p7), -0.32 | 6 |
+| Forehand | Elbow, wrist at +0.24 s | 43-64, +0.1 | 101 and 86, -0.18 | 6 |
 | Forehand | Freeze frames of a coach's contact | elbow 50-74, hand 0.22-0.43 in front | | 5 |
 | Backhand | Elbow from -0.16 to +0.24 s | 18-37: the arm stays long | 30-41 (fell to 91 at +0.24 before) | 7 |
-| Backhand | Wrist across, height at +0.24 s | +0.3-0.4 to the racket side, about -0.12 | +0.3, -0.47 | 7 |
+| Backhand | Wrist across, height at +0.24 s | +0.3-0.4 to the racket side, about -0.12 | +0.3, -0.23 | 7 |
 | Backhand volley | Wrist in front of the racket shoulder | 0.42 m | 0.42 | [5](https://www.youtube.com/watch?v=jRkQB25IGPw) (held poses of a coach's breakdown) |
 | Backhand volley | Wrist below the shoulder | 0.37 m | 0.35 | 5 |
 | Backhand volley | Chest turned from the net | 60 | 60 | 5 |

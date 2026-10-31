@@ -398,3 +398,10 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **The walk in motion.** Measured foot by foot, not watched on a screen in full speed. Settled by: a minute of watching between points.
 - **WebGL's kit.** The hole scans ran on both backends, but only WebGPU frames were looked at. Settled by: one shot of each person on WebGL.
 - **The women's smash speed.** 117 km/h is a fit to how it ends points: no tour woman's speed is in our sources. Settled by: radar figures from a women's tour match.
+
+## Phase 9 (expert review: round 9)
+- **Women's bandeja and víbora.** Now 27.9% of winners, twice the men's 13.3. The men's figure is published, the women's isn't in our sources. Settled by: shot-by-shot
+  counts of the last shot of winners in a women's tour match.
+- **The overhead's racket drop.** 1.4 rad and 1.9 are by eye from the coaching clips, with the speeds under the sim's. Settled by: one slow-motion clip of a pro's bandeja from
+  the side, measured for how far the head falls below the hand.
+- **The cut-away's back corner.** The lens sits inside the court, as the net post's does. Settled by: watching a few points; a corner camera outside the glass would need the glass drawn in front of it.

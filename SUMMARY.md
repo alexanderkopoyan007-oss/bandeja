@@ -673,6 +673,17 @@ The owner named four worst parts. This is the third, how they move. Before | aft
 Still short: a jog is in the air 64-68% of the time (real 30-40), hard stops don't lean back, the walk has no pelvis twist, and the
 thighs of the four women overlap in 11% of frames, which is the test's wide capsules more than anything you'd see.
 
+### Review round 9 (`REVIEW.md`)
+One new High (strokes drawn with the back to the net) and one proven High regression (the misread on easy balls), both fixed. The faces repeat at High, waiting on Epic's Install.
+- **Back to the net.** 36 of 3,047 hits to 0 of 3,165. An AI that gave up a contrapared for a block left its plan saying contrapared, and the body believed the plan.
+- **The misread.** Now needs pace and spin together. Bandeja + víbora 6.2-7.0 to 13.3% of winners (12.7), volleys 33-34 to 27.5 (28.4), serving pair 62.9 (62), plain double-bounce
+  winners 10.6 to 7.5% of points.
+- **Overheads.** A real racket drop: bandeja 33 ms out 4.7 to 9.6 m/s, smash at the ball 9.0 to 17.6.
+- **The dip at the ball.** Gone from every stroke: a sum that ran the swing's end a frame long. Drive at the ball 7.7 to 11.8 m/s.
+- **Feet tapping.** 6.2 lifts a second to 1.5, and those are real steps.
+- **Cut-aways.** A pair going back is filmed from their back glass: backs 30 to 21%, faces 56 to 62.
+- **Performance.** With the kit's double-sided draw in, load 8-13: medium p99 16.5 ms, high 21.7, high paced at 120 Hz 8.3 with no frame missed and CPU p99 2.8 ms. Quick match to its first frame 6.4-7.0 s on broadband at CPU 4×.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

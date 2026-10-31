@@ -2802,3 +2802,42 @@ line of the shirt's inside. The `top` line above: the body is hollow, so from hi
 that but something inside the torso. No camera in the game goes there, but a hem flared forward makes it wider. The waist test covers
 each person's two most bent moments and four lags, and the probe covers samples of play, so neither proves every frame. Frame time
 with both sides drawn was not measured.
+
+## Round 9: what the sim strikes, what is hard to read, and swings that come first (2026-10-31)
+
+**The body takes a contrapared from the sim.** The avatar read `standPlan.contra`. `plan()` in `simpleAi.ts` gives up a contrapared for a block by
+clearing `this.contra` and leaves the stand plan as it was, so the body turned its back on the net for a ball struck plain. The sim's own answer
+already existed: `contraGlass(i)` is what `findWindows` uses. The avatar now reads that while the key is held and `p.contra` from the release; a strike
+clears `p.contra`, so `contraHeld` keeps what was held for a release and a hit in one tick. A family with the wrong `glass` changes even in a swing
+under way. The reports' other fix, clearing the plan at the point's start, wasn't needed: `reset()` already clears `contra`. On the verifier's seeds
+36 of 3,047 hits to 0 of 3,165, and 27 true contraparedes against 31.
+
+**The misread needs pace and spin together.** `READ_ERR` was blind to the ball. The double-bounce winners it cost came from 55 km/h, 700 rpm volleys,
+179 of 333. Two knobs were tested on seeds 31001, 33001 and 35001, then the one chosen on 39001 and 41001, which it hadn't seen.
+- Spin or pace, either one: bandeja + víbora 11.6%, but the slow slices stayed and smashes were misread.
+- Spin alone: 10.6-11.2%, slices stayed.
+- Spin and pace together, 0.55 m: 10.3%, plain winners 6.9% of points. At 0.75 m: 16.9%, too many, smash 45.2.
+- 0.65 m chosen, between them, on those two alone. It wasn't tuned further on the unseen seeds.
+
+Seed 39001, 6000 points: 10.5 shots, 14.1 s, W / FE / UE 41.3 / 25.3 / 33.5, winners by bounce / back / out 53.8 / 36.3 / 5.3, smash 48.1, volley 27.5, bandeja
++ víbora 13.3, serving pair 62.9. FE stays under 29-33 and smash over 43.
+
+Women on 37001 went 13.5 to 27.9% bandeja + víbora, with W / FE / UE 32.6 / 29.5 / 37.8 inside the tour's range. No published women's figure says if
+that's right, and it is twice the men's share, so it goes in `OPEN_QUESTIONS.md` rather than a fit. Level 0.5 is 7.3 shots against about 7.3, from 6.8.
+
+**Overheads swing before the ball.** The racket went from the trophy to the ball up a 0.4 m line in 0.16 s, so the ball left before the swing did. Keys
+now pass a `via` behind the back at 0.55 of the swing, `lead` 0.32 s, with the racket head dropped behind the hand by `lag` (1.4 rad, smash 1.9). Blending
+through a pose behind the back was tried first: at nearly opposite turns a double slerp flips, 138 degrees in a frame. A rotation about the shoulder line
+has no such point. `lagK` shrinks the drop when a late release has less time than `lead`, and a release with no swing begun straightens the path.
+
+**The dip at the ball was a sum.** `tCon` was taken from this frame, but `relS` is last frame's, so the last of every swing ran a frame long at half speed.
+Taken from `tRel`, an AI's contact is on the frame it was planned for. `keepCon` now runs through the held swing too, and `tests/render/avatar.test.ts` had to
+look at the frame before the event, because the event comes a tick after the contact (its median was reading 1 frame past the ball).
+
+**A step for reach has to go somewhere.** Standing tall, hip to foot is 0.986 of the leg against `0.985`, so `forced` fired, the foot let go and stepped back
+to where it was. `STEP_MIN` 4 cm. The critic named `gaitSince`, the verifier refuted that, and the release counter found this: 491 of 560 releases.
+
+**A pair going back is filmed from behind them, in front.** Walking forwards is right, and it was the camera at the net post that turned it into backs.
+`cutBack` puts the lens CUT_BACK from their back glass when they are going back over a metre on average. Faces 56 to 62 and 46 to 60, backs 30 to 21 and 24 to 17.
+
+**Tried and dropped.** `FOOT_LOW`, low feet in a run: flight 54 to 53%, skate over its bound. The flight is in the clip: a foot-height tweak can't reach it.

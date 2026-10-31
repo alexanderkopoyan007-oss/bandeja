@@ -311,7 +311,7 @@ Earlier statuses corrected by round 7 (verifier):
 
 ## Round 8
 
-Two reviews written blind on c660d41, and a third pass that checked both on seeds neither had used. The reports are
+Two reviews written blind on 8fd6459 (230adaa, the glass misread, came after them, so round 9 was its first review), and a third pass that checked both on seeds neither had used. The reports are
 `docs/review/round8-pro.md`, `round8-critic.md` and `round8-verify.md`. Two new Highs, two repeats at High and one proven Medium
 regression, so the loop goes on. Numbers after the fixes are from the probes named in `DECISIONS.md`, on the verifier's seeds where they
 exist, and 6000 points on unseen seeds for the sim.
@@ -343,3 +343,34 @@ Earlier statuses corrected by round 8 (verifier):
 - R7 #25 and R4 #9 / R5 #18, the banner over a replay: still there.
 - R4 #2, the drop volley: 0.123 a point, W 54. The rate fell, and it still wins half.
 - `docs/research/footage-pose.md`'s game column was stale in four rows, and `docs/ai.md`'s net depth is a setting, not what is measured. Both corrected.
+
+## Round 9
+
+Two reviews written blind on 57fb7e1, the live build, and a third pass that checked both on seeds neither had used. The reports are
+`docs/review/round9-pro.md`, `round9-critic.md` and `round9-verify.md`. One new High, one proven High regression and the faces repeating
+at High, so the loop goes on. The verifier lowered two of the five Highs to Medium. Numbers after the fixes are from the probes named in
+`DECISIONS.md`, on the verifier's seeds where they exist, and 6000 points on unseen seeds for the sim.
+
+| # | Rank | Finding | Mark | Status |
+|---|---|---|---|---|
+| 1 | High | P #1: strokes and serves drawn with the back to the net, chest 140-176 degrees from it | NEW | **Fixed.** 36 of 3,047 hits to 0 of 3,165, verifier's seeds, serves 1.0% to 0. The body takes a contrapared from the sim, not the plan. The reports' first fix would have caught a fifth: 17 of 21 rally cases were a plan given up for a block |
+| 2 | High | P #2: the glass misread takes balls defenders were in time for | REGRESSION, proven | **Fixed** on what the verifier ranked. Plain double-bounce winners 10.6 to 7.5% of points, in time for them 5.2 to 2.2 (2500 points, seed 41001). The misread now needs pace and spin together. The whole line stays 12.8%, because 5.3% of points are now bandejas and víboras dying off the glass, as they should: 13.3% of winners (12.7), volleys 27.5 (28.4). Back-wall UE 9.4 is still over 5.4-6.3 |
+| 3 | High | C #3: faces close up | REPEAT | Open, waiting on Install in the Epic launcher (`OPEN_QUESTIONS.md`) |
+| 4 | Medium | C #1, #7, P #4: overheads hit before the swing (verifier lowered it from High) | REPEAT R6 C5, R7 C4 | **Better.** A racket drop through a point behind the back. Bandeja 33 ms out 4.7 to 9.6 m/s, at the ball 7.5 to 11.1, path before the ball 0.28 to 0.72 m by this probe. Smash at the ball 9.0 to 17.6, peak 0.04 s after to on it. Still under the sim's 15-16 and 25 |
+| 5 | Medium | C #2: feet tap on the spot (verifier lowered it from High) | NEW | **Fixed.** 6.2 lifts a second, travel 0.2 cm, to 1.5, travel 13-17 cm: real steps. It wasn't `gaitSince`: standing tall the leg is at 0.986 of its length against a limit of 0.985 |
+| 6 | Medium | C #6: cut-aways show backs | REGRESSION of the walk fix | **Better.** A pair going back from the net is filmed from their back glass: doubles faces / backs 56 / 30 to 62 / 21, singles 46 / 24 to 60 / 17, same probe through the game's camera. Round 8's 80 / 9 came from walking backwards |
+| 7 | Medium | C #8: the racket dips on the ball | R8 #9 | **Fixed.** A sum: the end of the swing was counted from the wrong frame. Drive 11.0 / 7.7 / 9.0 to 11.1 / 11.8 / 10.9 m/s, slice 12.9 / 11.2 / 8.3 to 13.0 / 12.5 / 11.6 |
+| 8 | Medium | P #3, #5-22, C #4, #5, #9-29 | | Open |
+| 30+ | Low | P #23-31, C #30-40 | | Open |
+
+Earlier statuses corrected by round 9 (verifier):
+- R8's opening said its reviews were on c660d41. They were on 8fd6459: corrected above.
+- R8 row 2 "Fixed" was Better: facing the run 30.5 / 19.6 / 10.7 holds, sideways is flat at 12.6 / 12.1 / 10.0.
+- R8 row 6 "Fixed, 2.1" was Better: 3.2 and 2.6 a player-minute on the verifier's seeds. 2.97 now, all pops 12.4.
+- R8 row 7 "Fixed" was Better: the moving part holds, the tap and the cut-aways were left. Both handled above.
+- R8 row 9 "Fixed" was Better, and is Fixed now, row 7 above.
+- R8 row 15 holds from the game's cameras only: slivers at p7's and p10's necklines and hair through p8's band and p9's visor at the face camera (Low).
+- R8 P#24 / R7 #26, serve places by side, was a measuring bug (the side came from the team number, and ends change). Closed.
+- R6 #3 "Better" went back over its line with the misread, 12.7-12.9, and is row 2 above.
+- R5 #3 "Fixed, 1.5-2.7%" holds for the side fence, 2.1%. Lobs out altogether are 4.5% of points.
+- `docs/ai.md`'s ladder was stale; `docs/research/footage-pose.md`'s forehand finish, bandeja elbow and backhand wrist rows too. All corrected.
