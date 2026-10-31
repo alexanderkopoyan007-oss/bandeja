@@ -30,11 +30,17 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 | Ready (two hands) | Wrist below, in front of the shoulder | 0.69-0.75 trunks, 0.27-0.30 m | 0.63, 0.3 m | 5, 6, 7 |
 | Forehand | Elbow at -0.22 / -0.08 / contact | 30-31 / 39 / 48 (the first read 49 here until round 8 measured it) | 49 / 39 / 48 | 6 |
 | Forehand | Elbow, wrist at +0.08 s | 47-64, -0.47 | 56, -0.48 | 6 |
-| Forehand | Elbow, wrist at +0.16 s | 38-60, -0.12 | 90 and 71 (p1, p7), -0.32 | 6 |
-| Forehand | Elbow, wrist at +0.24 s | 43-64, +0.1 | 101 and 86, -0.18 | 6 |
+| Forehand | Elbow, wrist at +0.16 s | 38-60, -0.12 | 30 (was 90 and 71), -0.32 | 6 |
+| Forehand | Elbow, wrist at +0.24 s | 43-64, +0.1 | 45 (was 101 and 86), -0.18 | 6 |
+| Forehand | Free elbow, -0.48 s to +0.4 s | 46, 42, 47, 47, 40, 34, 52, 41, 42, 36, 27 (16 strokes, 25 fps) | 65-46, 48 at the ball, 50-63 after (was 103-139 before it, 83 at it) | 6 |
+| Forehand | Free hand from its shoulder, in arm's lengths: out, up the trunk, forward | backswing -0.22, -0.45, 0.65; ball 0.14, -0.71, 0.54; finish 0.54, -0.27, 0.45 | keyed on these (Family.free) | 6 |
 | Forehand | Freeze frames of a coach's contact | elbow 50-74, hand 0.22-0.43 in front | | 5 |
 | Backhand | Elbow from -0.16 to +0.24 s | 18-37: the arm stays long | 30-41 (fell to 91 at +0.24 before) | 7 |
 | Backhand | Wrist across, height at +0.24 s | +0.3-0.4 to the racket side, about -0.12 | +0.3, -0.23 | 7 |
+| Backhand | Free elbow, -0.48 s to +0.32 s | 12-24: long all through (5 strokes, 25 fps) | 30-44 (was 114-118 before the ball, 50-66 after) | 7 |
+| Backhand | Free hand from its shoulder, in arm's lengths: out, up the trunk, forward | backswing 0.3, -0.75, 0.1; ball 0.34, -0.5, -0.24; +0.16 s 0.92, -0.3, -0.28: the two arms part | keyed on these | 7 |
+| Forehand volley | Free elbow, -0.48 s to +0.4 s | 81, 68, 71, 64, 65, 45, 55, 54, 71, 74, 85 (9 strokes, 25 fps) | | 4 |
+| Forehand volley | Free hand from its shoulder, in arm's lengths: out, up the trunk, forward | -0.1, -0.38, 0.62; 0.07, -0.62, 0.58; 0.18, -0.6, 0.5: it stays in front of the body | | 4 |
 | Backhand volley | Wrist in front of the racket shoulder | 0.42 m | 0.42 | [5](https://www.youtube.com/watch?v=jRkQB25IGPw) (held poses of a coach's breakdown) |
 | Backhand volley | Wrist below the shoulder | 0.37 m | 0.35 | 5 |
 | Backhand volley | Chest turned from the net | 60 | 60 | 5 |
@@ -42,7 +48,7 @@ match. Depth from one camera is poor, so stance width reads narrow and is only c
 | Backhand volley | Free hand at contact | 0.27 in front, 0.23 below, elbow 62 | 0.23, 0.26, elbow 100 | 5 |
 | Backhand volley | Take-back | wrist at shoulder height, across the chest, elbow 59-68, both hands up | keyed the same | 5 |
 | Serve | Wrist against the hip at contact | 0.12-0.3 m below (3 serves, 25 fps) | at the hip (was 0.10 above) | [6](https://www.youtube.com/watch?v=-e0uxZZOePQ), [7](https://www.youtube.com/watch?v=gvxuqyt_hn0) |
-| Serve | Trunk forward at contact | 33-41 | 27 (was 19) | 6, 7 |
+| Serve | Trunk forward at contact | 33-41 | 30 (was 19), and rising after it (it was 36-42 at +0.2 s) | 6, 7 |
 | Serve | Racket elbow at contact | 13-21 | 30 | 6, 7 |
 | Serve | Chest, backswing to finish | -35 to +60 by the camera | | 6 |
 | Serve | Free arm through the swing | nearly straight, 10-28 | 18 | 6, 7 |

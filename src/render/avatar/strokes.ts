@@ -30,6 +30,8 @@ export interface Family {
   crouch: number;
   /** Shortest forward swing, as a share of the avatar's MIN_SWING (a volley is a quick punch). */
   punch: number;
+  /** How much the trunk bends for its height of ball, of the usual, coming in through the swing (default 1, at once). */
+  bend?: number;
   /** The hips' share of the shoulder turn (default the avatar's BODY_TURN). */
   bodyTurn?: number;
   /** How long before the planned contact the forward swing starts (s; default the avatar's LEAD). */
@@ -42,6 +44,12 @@ export interface Family {
   viaS?: number;
   /** An overhead: its forward swing is drawn in the chest's frame, not the stance's (see OverArm). */
   over?: OverArm;
+  /**
+   * Where the free hand goes, in the chest's frame: at the backswing, the ball and the finish, each out to the free side,
+   * up the trunk and forward out of the chest from its shoulder, in arm's lengths. Keyed in the stance's frame it was
+   * left behind as the chest turned, the elbow folded to 139 degrees (34-52 on video).
+   */
+  free?: number[];
   /** How far (m) the hips move towards the net through the swing: into the ball, not behind the feet. */
   weight?: number;
   /** Played facing the player's own back glass (the contrapared): the stance turns round to it. */
@@ -106,9 +114,11 @@ const deg = (d: number): number => (d * Math.PI) / 180;
 export const FOREHAND: Family = {
   name: 'forehand',
   weight: 0.16,
+  // In front and across the body at the backswing, dropping to the ball, out to the free side as the racket comes through.
+  free: [-0.25, -0.5, 0.73, 0.14, -0.72, 0.55, 0.65, -0.3, 0.56],
   back: key(v(-0.75, 1.06, -0.35), v(-0.25, 0.6, -0.75), v(-1, 0.05, -0.1), v(-0.55, 0.75, -0.55), -1.05, v(0.12, 1.25, 0.4)),
   contact: key(v(-0.75, 1.0, 0.45), v(-0.85, 0.12, 0.5), v(0.05, 0.08, 1), v(-0.45, 0.8, -0.15), 0.15, v(0.42, 1.12, 0.36)),
-  finish: key(v(0.2, 1.68, 0.2), v(0.35, 0.7, -0.6), v(0.85, 0.1, 0.4), v(-0.3, 1.2, 0.6), 0.95, v(0.5, 1.1, -0.2)),
+  finish: key(v(0.27, 1.66, 0.36), v(0.35, 0.7, -0.6), v(0.85, 0.1, 0.4), v(-0.3, 1.2, 0.6), 0.95, v(0.5, 1.1, -0.2)),
   low: racketQuat(v(-0.6, -0.74, 0.32), v(0.05, 0.3, 1)),
   dip: 0.28,
   loop: 0.1,
@@ -129,6 +139,8 @@ export const FOREHAND: Family = {
 export const BACKHAND: Family = {
   name: 'backhand',
   weight: 0.1,
+  // Long, down by the side, then opening out and behind as the racket goes the other way: the two arms part.
+  free: [0.3, -0.9, 0.12, 0.59, -0.71, -0.3, 0.91, -0.21, -0.3],
   back: key(v(0.55, 1.12, -0.38), v(0.3, 0.6, -0.72), v(1, 0.05, -0.15), v(0.25, 1.05, 0.45), 1.55, v(0.42, 1.12, -0.12)),
   contact: key(v(0.72, 0.98, 0.42), v(0.85, 0.12, 0.5), v(-0.05, 0.08, 1), v(0.35, 0.95, 0.35), 1.25, v(0.55, 1.05, -0.35)),
   finish: key(v(-0.52, 1.46, 0.34), v(-0.55, 0.8, -0.1), v(-0.6, 0.3, 0.75), v(-0.2, 1.5, 0.45), 0.5, v(0.6, 1.1, -0.42)),
@@ -261,6 +273,7 @@ export const SERVE: Family = {
   dip: 0.1,
   loop: 0,
   crouch: 1.5,
+  bend: 1.6,
   punch: 1,
   bodyTurn: SERVE_TURN,
   lead: 0.3,

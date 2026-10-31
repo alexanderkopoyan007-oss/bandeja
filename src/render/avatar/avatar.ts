@@ -362,6 +362,11 @@ const SPINE_REACH = 0.75;
 const SPINE_REACH_RATE = 20;
 /** The bend fades out as the target goes round behind the spine's base, where its way is undefined (rad). */
 const SPINE_REACH_BACK0 = (140 * Math.PI) / 180, SPINE_REACH_BACK1 = (165 * Math.PI) / 180;
+/** The share of Family.bend's bend there at the backswing, the rest coming in through the swing. */
+const BEND_FROM = 0.55;
+/** The share of the bend let go after the ball, over BEND_UP_T s. */
+const BEND_UP = 0.7;
+const BEND_UP_T = 0.3;
 /** Fastest the hips come back up from a drop (m/s): standing up out of a lunge. */
 const HIP_RISE = 1.5;
 /** Fastest the hips drop (m/s): into a lunge, about 0.3 m in 0.15 s. */
@@ -1006,6 +1011,7 @@ export class Avatar {
   private readonly chestUp = new THREE.Vector3(0, 1, 0);
   private readonly chestFwd = new THREE.Vector3(0, 0, 1);
   private readonly koff = new THREE.Vector3();
+  private readonly kfree = new THREE.Vector3();
   private kyaw = 0;
   private crouch = 0;
   private bendW = 0;
@@ -1515,6 +1521,14 @@ export class Avatar {
     this.from.yaw = this.kyaw;
   }
 
+  /** The family's free hand from its place at `i` (of Family.free) towards the next, by u. */
+  private freeKey(a: number[], i: number, u: number): void {
+    const K = this.kfree;
+    K.x = a[i]! + (a[i + 3]! - a[i]!) * u;
+    K.y = a[i + 1]! + (a[i + 4]! - a[i + 1]!) * u;
+    K.z = a[i + 2]! + (a[i + 5]! - a[i + 2]!) * u;
+  }
+
   private setKey(a: Key, b: Key, u: number): void {
     this.kp.copy(a.p).lerp(b.p, u);
     this.kq.copy(a.q).slerp(b.q, u);
@@ -1616,6 +1630,7 @@ export class Avatar {
     this.kpole.copy(f.back.pole).lerp(k.pole, e);
     // (an overhead's free arm comes in as the chest comes round, ahead of the racket, by the swing's time)
     this.koff.copy(f.back.off).lerp(k.off, f.over ? smoothstep(0.1, 0.8, s) : e);
+    if (f.free) this.freeKey(f.free, 0, e);
     this.kyaw = f.back.yaw + (k.yaw - f.back.yaw) * e;
   }
 
@@ -1782,6 +1797,7 @@ export class Avatar {
         // last stroke's 0.99 left over here cancelled its carried push on almost every backswing frame).
         this.keyS = 0;
         this.setKey(f.back, f.back, 1);
+        if (f.free) this.freeKey(f.free, 0, 0);
         if (!f.wrist) this.kp.copy(this.backPoint());
         else if (this.hasCon) {
           this.contactKey();
@@ -1824,11 +1840,13 @@ export class Avatar {
         this.kq.copy(k.q).slerp(f.finish.q, e);
         this.kpole.copy(k.pole).lerp(f.finish.pole, e);
         this.koff.copy(k.off).lerp(f.finish.off, e);
+        if (f.free) this.freeKey(f.free, 3, e);
         this.kyaw = k.yaw + (f.finish.yaw - k.yaw) * e;
         this.w = 1;
         this.finishTo = e;
       } else {
         this.setKey(f.finish, f.finish, 1);
+        if (f.free) this.freeKey(f.free, 3, 1);
         this.fadeOut(this.tCon + (f.follow ?? FOLLOW) * this.manner.follow, 1);
         this.finishTo = 1;
       }
@@ -1851,6 +1869,9 @@ export class Avatar {
     const cy = this.hasCon ? this.conW.y : 1;
     this.crouch = (f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) + (f.sit ?? 0)) * this.w;
     this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w : 0;
+    if (f.bend !== undefined) this.bendW *= f.bend * (BEND_FROM + (1 - BEND_FROM) * smoothstep(0.3, 1, this.keyS));
+    // Up out of it after the ball: with the whole body tipping into the run the trunk was at 42 degrees at +0.24 s.
+    if (this.st === ST_SWING || this.st === ST_FADE) this.bendW *= 1 - BEND_UP * smoothstep(0, BEND_UP_T, t - this.tCon);
   }
 
   /** Pull the blended key back towards the snapshot: u = 0 is the snapshot, 1 the key as it is. */
@@ -3735,10 +3756,19 @@ export class Avatar {
       BL.u = this.ready;
       lerpV(v1, v2);
     }
-    this.toWorld(this.koff, v2);
-    v2.x += fx; v2.y += fy; v2.z += fz;
+    const fr = this.fam.free;
+    if (fr) {
+      const K = this.kfree, O = this.chestOut, U = this.chestUp, F = this.chestFwd, a = this.armLen;
+      this.chestAxes(ul, ua);
+      v2.x = mf[12]! + (O.x * K.x + U.x * K.y + F.x * K.z) * a;
+      v2.y = mf[13]! + (O.y * K.x + U.y * K.y + F.y * K.z) * a;
+      v2.z = mf[14]! + (O.z * K.x + U.z * K.y + F.z * K.z) * a;
+    } else {
+      this.toWorld(this.koff, v2);
+      v2.x += fx; v2.y += fy; v2.z += fz;
+    }
     // (all the way for an overhead: the free arm points at the ball, straight)
-    BL.u = this.fam.over ? w : w * 0.85;
+    BL.u = this.fam.over || fr ? w : w * 0.85;
     lerpV(v1, v2);
     // The free elbow hangs down and back from the chest, which has turned with the stroke (in the stance frame a
     // pole fixed square to the net comes into line with the arm when the body is side-on, and the elbow flips).
