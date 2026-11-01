@@ -551,7 +551,7 @@ Three reviewers on the shipped build, this time with a body-mechanics reviewer i
 | 14 | Medium | The smash arm brakes into the ball | Open. Same as #7 |
 | 15 | Medium | The near fence rail sits on the default aim, the other cameras are worse | Open |
 | 16 | Medium | The first match is a long loss by default | The owner's call |
-| 17 | Medium | The serve's wrist is past its limit all the way, the elbow folds and opens, the hips jolt at the ball | Open |
+| 17 | Medium | The serve's wrist is past its limit all the way, the elbow folds and opens, the hips jolt at the ball | Half. The hand goes round the shoulder: elbow peak 90 to 77. The release no longer jumps the arm's way, which also closes most of Round 14's #17: racket 5 to 28 m/s in a frame, now 5 to 16 and building to 21 at the ball. Wrist and hips open |
 | 18 | Medium | A jump smash's hips swim in the air | **Fixed.** The reach and the weight hold in flight. Hip path 0.11-0.20 m (was 0.56), up to 0.09 off the line (was 0.37), 0-1 reversals (was 2-4) |
 | 19 | Medium | No lunge: a wider ball gets a lean, not a long step | Open. Raising the lunge's own numbers changed nothing: the leg's reach from the hip is what stops the foot, so the hips would have to drop first |
 | 20 | Medium | The backhand's forearm kicks the wrong way before the ball | Open |

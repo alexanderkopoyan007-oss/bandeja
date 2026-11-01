@@ -69,6 +69,8 @@ const BY_HAND_OUT = 0.14;
 /** The hand goes through the ball first, then to its chest-frame place (OverArm.under) over these times after it (s). */
 const OVER_AFTER0 = 0.06, OVER_AFTER1 = 0.3;
 const OVER_ARM = 0.56;
+/** How fast a late release shortens an overhead's way to the ball (s). */
+const LAG_EASE = 0.11;
 const OVER_TO_BALL = 0.72;
 /** Where the racket's turn starts going over to the contact's (of the swing). */
 const OVER_TURN_FROM = 0.3;
@@ -2073,9 +2075,10 @@ export class Avatar {
       if (t < this.tCon) {
         const g = clamp01((t - this.tRel) / (this.tCon - this.tRel));
         // A late release runs the rest of the swing in less time: less of a racket drop, or the hand turns 107 degrees in
-        // a frame.
+        // a frame. Eased in: at half a step a frame it moved the whole of the arm's way at the release, the racket from 5 m/s to
+        // 28 in a frame and slowing into the ball.
         const lead = (this.tCon - this.tRel) / ((1 - this.relS) * (f.lead ?? LEAD));
-        this.lagK += ((lead < 1 ? lead : 1) - this.lagK) * 0.5;
+        this.lagK += ((lead < 1 ? lead : 1) - this.lagK) * (1 - Math.exp(-this.dt / LAG_EASE));
         this.swingKey(this.relS + (1 - this.relS) * g);
         if (this.dt > 0) this.swingV = this.kp.distanceTo(this.kpWas) / this.dt;
         this.kpWas.copy(this.kp);

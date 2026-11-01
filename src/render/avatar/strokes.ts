@@ -329,7 +329,8 @@ export const SERVE: Family = {
   // then down across the body to it, the elbow 44-52 all the way.
   over: {
     knots: [0, 0.34, 0.6, 0.8, 1],
-    hand: [0.42, 0.02, 0.28, 0.45, -0.02, 0.26, 0.44, -0.05, 0.27, 0.3, -0.2, 0.3, 0.02, -0.41, 0.34],
+    // (round the shoulder, not a chord past it: the elbow folded to 90 at -50 ms and snapped back to 49 at the ball)
+    hand: [0.42, 0.02, 0.28, 0.45, -0.02, 0.26, 0.44, -0.05, 0.29, 0.32, -0.2, 0.36, 0.02, -0.41, 0.38],
     elbow: [0.22, -0.14, 0.1, 0.22, -0.15, 0.1, 0.22, -0.15, 0.1, 0.16, -0.22, 0.1, 0.08, -0.25, 0.1],
     back: [deg(20), deg(25), deg(30), deg(50), deg(80)],
     tilt: [0.03, 0.2, 0],
