@@ -1674,7 +1674,9 @@ export class MatchSim {
       this.readX[i]! += dx * READ_RATE;
       this.readZ[i]! += dz * READ_RATE;
     }
-    r.control = ai ? ai.control(b.pos.y) : shot === SHOT_VOLLEY ? volleyControl(b.pos.y, abs(b.pos.z)) : 1;
+    // (a human's low volley hurts as an AI's does. Not the sitter's bonus: control divides all of a shot's error, and most of a
+    // human's is their timing, so with it 950 chest-high volleys in a row went in, however badly timed)
+    r.control = ai ? ai.control(b.pos.y) : shot === SHOT_VOLLEY ? min(1, volleyControl(b.pos.y, abs(b.pos.z))) : 1;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
 

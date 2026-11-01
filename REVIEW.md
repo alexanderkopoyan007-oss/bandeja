@@ -436,3 +436,35 @@ Before and after below: 12 unseen matches (seeds 1020001-12, sd 60 ms) on the sh
 Stand-ins, one key / a plan, sets of 40 (points won): sharp hand at Pro 3-37 (42.0) / 21-19 (50.6); normal at Pro 3-37 (42.0) / 8-32 (45.8); normal at Advanced 21-19 (50.3) / 36-4 (56.0); loose at Advanced 9-31 (44.3) / 14-26 (49.5). Round 10's were 19-21 / 30-10, 7-33 / 22-18, 30-10 / 36-4, 16-24 / 26-14. A plan is now worth 4-9 points in every cell. Pro is harder than it was, on purpose: it no longer gives points away at the net.
 
 Sound was not reviewed. Nothing here was played by a person.
+
+## Round 12 (2026-11-01, on 3116927; "review round 16" in the code's comments)
+
+Same panel on the shipped build. Eight findings reached the sceptic: two stayed High, six went to Medium. The plan asks only for the Highs. The arm Mediums were fixed as well because they are the owner's own complaint and play on most points.
+
+Before and after: unseen seeds, 40 sets a cell for the stand-ins; 12 matches for the arms (seeds 1350001-12, sd 60 ms).
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | High | **One aim beat every level:** a low slice cross-court past the net pair, no other key needed. Overturns Round 11 #13, whose script aimed the wrong way. | **Fixed.** A settled net pair slid 1.3 m towards a hitter in the corner, which left the far lane open. `UP_FOLLOW` 0.4 to 0.2; at the return, the server still running in, it stays 0.4. Pro 39-1 (63.4%) to 10-30 (46.1), Advanced 40-0 (65.9) to 31-9 (54.8), the deeper aim at Pro 38-2 (58.8) to 3-37 (43.0), down the line 0-40 to 1-39. The ordinary plan went 9-31 to 12-28, 30-10 to 36-4. A faster chase was tried first and made it worse (58.8 to 67.6): those late volleys do connect. Cost: serving pair 64.4 to 65.7 |
+| 2 | High | **The bandeja's arm darted to the ball and recoiled.** Elbow 36 at the ball, 125 at +110 ms; video 31-62. The free arm stayed folded at 105-115; video 6-31. | **Fixed.** The follow-through drew the racket's centre while the racket turned over, so the handle pulled the hand into the shoulder. It is now drawn by the hand; the finish key was also pushed out and left half side-on, as its comment always said. Elbow 36, 74 peak, 31 by +160. Fold 72 to 27 degrees, hand back 23 to 6 cm. Free elbow 56 at the ball, 33 by +300, a new `free` path. The peak of 74 is still over the video's 62 |
+| 3 | Medium (was High) | **On a slice the arm collapsed against the shoulder, then shot out at the ball.** | **Fixed.** The same cause on the way in: `Family.byHand`. Forehand 55, 122, 120, 50 to 46, 53, 54, 43; backhand 40, 101, 103, 31 to 36, 34, 32, 31 |
+| 4 | Medium (was High) | **Your volley was a long stuttering swing.** | **Better, not equal.** Your planned moment moved with your feet, and 20 ms of it is 40 cm of ball. Smoothed: stutter 39, 26% to 6, 9% (AI 18-20), total turn 357, 330 to 266, 281 degrees. The path is still 1.2 m against the AI's 0.55; a near-perfect hand reads 1.0-1.5 m, so it is not timing. What is left is take-back and body travel, and I stopped there |
+| 5 | Medium (was High) | **A tap on the opening serve was a fault, two a double fault, seven seconds in.** | **Fixed.** A key let go before the ball has reached the floor is no swing: the ball is dropped again and TOO EARLY still shows. A real swing that misses after the bounce is still a fault (FIP 7.1.b) |
+| 6 | Medium | **Your chest-high volleys missed at ten times the AI's rate,** and your shoe-top volleys were safer than the AI's. | **Fixed.** Chest 5.9 / 10.9 / 29.3% by pressure to 1.2 / 0.5 / 3.7 (AI partner 0 / 1.0 / 4.3); shoe tops 1.9 / 3.2 / 44 to 10.8 / 24 / 75. All your net volleys 5.7 to 4.1%, published 3.4-4.8. The AI's sitter bonus was tried and made 950 in a row go in, because control divides timing error as well |
+| 7 | Medium | **K was a trap at the net:** it alone swung at a ball in the air. 3-37 where J went 21-19. | **Fixed.** K volleys in the air like J and L; precision still makes the chiquita. K 4-36 (43.1), J 8-32 (47.2), L 13-27 (46.7). Still the weakest of the three, no longer by a mystery |
+| 8 | Medium | **The partner gave up the net as you went back for a bandeja.** | **Fixed for a human's partner.** They hold it, and an overhead's reply reads as keeping the net. Not for AI pairs: there it put a point on the serving pair and cut rallies by half a shot |
+| 9 | Medium | **After your forehand drop the hand ended tucked on the shoulder,** elbow 139. | **Fixed.** A short carry through the ball on a long arm, elbow 13-16 |
+| 10 | Medium | **A human's contrapared could be aimed where it flew on to their glass on the full.** | **Fixed.** Held to the AI's limits. Its error share against the published figure is unchanged, and I did not re-measure it |
+| 11 | Medium (was High) | **The serve meets the ball with the arm across the chest.** | **Open.** The reading rests on one serve at 25 fps with contact inferred, and much of it is the chest being closed: a hand ahead of the body reads as across in that frame. Not changed on that evidence |
+| 12 | Medium (was High) | **On a chest-high volley near the body the arm goes inside the chest.** | **Open.** Moving the elbow's pole a long way changed it by 2 cm: the arm is nearly straight by then, so the elbow lies on the line to the hand. It reads as a cramped block. An ellipse, not the mesh |
+| 13 | Medium (was High) | **The ball leaves a racket that isn't there:** over 35 cm on 4% of hits, over 60 cm on 1.8%, on a swept closest approach. | **Open.** At the TV camera it is about two frames of ball |
+| 14 | Medium | Your pair retrieves smashes twice as well as an AI pair; the AI nets balls off the glass about one in seven | Open. Its cause was not separated |
+| 15 | Medium | The read taxes steady padel and lets a coin flip off; aiming at the open court pays no more than the flip | Open |
+| 16 | Medium | Watching the ring and the aim mark takes two places on screen; second key ignored; between-point skip not shown; Assist Off hides the marks | Open: HUD, the owner's call |
+
+Stand-ins, one key / a plan, sets of 40 (points won): sharp hand at Pro 1-39 (39.3) / 23-17 (51.1); normal at Pro 0-40 (37.5) / 14-26 (48.1); normal at Advanced 8-32 (46.1) / 33-7 (56.2); loose at Advanced 2-38 (40.3) / 11-29 (48.1). Round 11's were 3-37 / 21-19, 3-37 / 8-32, 21-19 / 36-4, 9-31 / 14-26. A plan is now worth 8-12 points in every cell.
+
+AI against AI, men, level 1: W/FE/UE 43.7/22.7/33.6 (real 34-42/29-33/29-33), serving pair 66.1 (62), 10.8 shots (10-11), 14.4 s, last shot of winners smash 47.7, volley 27.7. Winners and the serving pair moved further from the real figures this round. Women: 37.4/23.9/38.7, serving pair 61.7 against a real 48.5, which no review has picked up.
+
+Pops rose from 17.3 to 20.0 a minute. The same rallies on the old render read 19.8, so the animation added 0.2 and the rest is the sample. Sound was not reviewed. Nothing here was played by a person.
+
