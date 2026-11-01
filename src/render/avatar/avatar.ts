@@ -423,6 +423,11 @@ const RECOVER_EASE = 0.06;
 const VOLLEY_BEND = 0.86;
 const VOLLEY_BEND_RATE = 9;
 const BACK_FOLLOW = 1;
+/** A volley's take-back: this far back from the ball away from the net (m), and at least this far to the racket's side
+ * of the feet and in front of them (m). */
+const PUNCH_BACK = 0.3;
+const PUNCH_SIDE = 0.22;
+const PUNCH_FRONT = -0.05;
 /** The ball this far below the volley's own contact height (m): the take-back's racket starts to drop, and has dropped. */
 const BACK_DROP0 = 0, BACK_DROP1 = -0.3;
 const BACK_LOW = -0.7;
@@ -463,6 +468,8 @@ const SCISSOR_FULL = 0.15;
 const SCISSOR_BACK = 0.3;
 const SCISSOR_UP = 0.3;
 const SCISSOR_FRONT = 0.22;
+/** ...and comes up this far, or that leg sits at its full length, a peg to the hip (2 degrees, 37 on video). */
+const SCISSOR_FRONT_UP = 0.06;
 const JUMP_HEIGHT = 1.8;
 const JUMP_SHORT = 1.0;
 const LAND_DROP = 0.06;
@@ -1705,9 +1712,16 @@ export class Avatar {
       if (big === 1) return f.back.p;
       return this.backP.copy(f.contact.p).lerp(f.back.p, big);
     }
-    const d = this.con.p.y - f.contact.p.y;
+    const c = this.con.p, d = c.y - f.contact.p.y;
     const p = this.backP.copy(f.back.p);
     p.y += BACK_FOLLOW * (d < BACK_LOW ? BACK_LOW : d > BACK_HIGH ? BACK_HIGH : d);
+    // Back from this ball, the way it will leave: put by the stance, the take-back stood wherever the feet happened to
+    // point, and the last 100 ms went sideways and down with nothing towards the net (review round 15). In front of the
+    // chest and on its own side whatever comes: a ball at the body is a short punch.
+    const side = f.contact.p.x < 0 ? -1 : 1;
+    const x = c.x + this.netZ * this.stanceS * PUNCH_BACK, z = c.z - this.netZ * this.stanceC * PUNCH_BACK;
+    p.x = side * Math.max(PUNCH_SIDE, x * side);
+    p.z = Math.max(PUNCH_FRONT, z);
     return p;
   }
 
@@ -1810,6 +1824,13 @@ export class Avatar {
       const at = ai.releaseAt > ai.releaseIdeal ? ai.releaseAt : ai.releaseIdeal;
       this.predAt(sim, at, this.conW);
       return at;
+    }
+    // A human is shown the ring's moment and will let go on it, so that is what the swing is timed to: the plan's own was
+    // up to 50 ms sooner on a volley, a racket sent 0.8 m up the ball's line that then came back with it (review round 15).
+    const ring = ai ? -1 : sim.focusIdeal(idx);
+    if (ring >= 0) {
+      this.predAt(sim, ring, this.conW);
+      return ring;
     }
     this.conW.set(st.bx, st.by, st.bz);
     return st.t;
@@ -2267,8 +2288,12 @@ export class Avatar {
     this.ready += (want - this.ready) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
     this.addrW += ((this.addr ? 1 : 0) - this.addrW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.1) : 0);
     this.mixReady();
+    // (a blend not under way has no last frame to stay on the side of: the first frame of a racket tap, at 7% of the way,
+    // took the last tap's side, the long way, and every hand on court jumped 35 degrees in a frame; review round 15)
     if (this.carryW > 0.001) this.mixKey(this.carryMix, this.handed > 0 ? CARRY : CARRY_LEFT, this.carryW, this.outCarry);
+    else this.outCarry.set(0, 0, 0, 0);
     if (this.tapW > 0.001) this.mixKey(this.tapMix, this.tapKey ?? (this.handed > 0 ? TAP : TAP_LEFT), this.tapW, this.outTap);
+    else this.outTap.set(0, 0, 0, 0);
     const sq = Math.max(this.w, this.ready * this.addrW);
     // (a contrapared is played facing the player's own back glass)
     const face = this.fam.glass ? net + Math.PI : net;
@@ -2544,8 +2569,8 @@ export class Avatar {
   private mixReady(): void {
     const rk = this.readyFit;
     const a = this.addrW;
-    if (a >= 0.999) { this.readyKey = this.addrKey; return; }
-    if (a <= 0.001) { this.readyKey = rk; return; }
+    if (a >= 0.999) { this.readyKey = this.addrKey; this.outAddr.set(0, 0, 0, 0); return; }
+    if (a <= 0.001) { this.readyKey = rk; this.outAddr.set(0, 0, 0, 0); return; }
     const m = this.readyMix, k = this.addrKey;
     BL.u = a;
     m.p.copy(rk.p); lerpV(m.p, k.p);
@@ -2929,6 +2954,7 @@ export class Avatar {
     back.x -= fx * SCISSOR_BACK * k; back.z -= fz * SCISSOR_BACK * k;
     back.y += SCISSOR_UP * k;
     front.x += fx * SCISSOR_FRONT * k; front.z += fz * SCISSOR_FRONT * k;
+    front.y += SCISSOR_FRONT_UP * k;
   }
 
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */

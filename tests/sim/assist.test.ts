@@ -209,7 +209,8 @@ describe('overheads', () => {
           } else if (e.kind === E_HIT && e.team === 0) {
             if (lob === 1 && (e.a === SHOT_SMASH || e.a === SHOT_BANDEJA || e.a === SHOT_VIBORA)) {
               res.overheads++;
-              if (e.y >= 2.0) res.high++;
+              // (a bandeja's own height, 1.85-2.05 m, not a ball let drop)
+              if (e.y >= 1.75) res.high++;
               if (e.a === SHOT_SMASH) { res.smashes++; res.speeds.push(e.c); }
               if (e.a === SHOT_BANDEJA) res.bandejaSpeeds.push(e.c);
               if (e.a === SHOT_VIBORA) {
