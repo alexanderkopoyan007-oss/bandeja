@@ -76,6 +76,8 @@ interface Counts {
   pressureErrBins: number[];
   /** Per stroke class: shots in pressure bins <0.5 / <1 / <1.5 / <2 / 2+, then the errors made in each. */
   clsPress: Record<string, number[]>;
+  /** How each stroke's failures went: into the net, past the back or side, or anything else. */
+  clsHow: Record<string, Record<string, number>>;
   matches: number;
   matchWins: [number, number];
   simSeconds: number;
@@ -94,7 +96,7 @@ function emptyCounts(): Counts {
     firstServes: 0, firstFaults: 0, secondServes: 0, doubleFaults: 0,
     srvLen: [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]], srvWon: 0,
     playerTicks: 0, netTicks: 0, formation: { up: 0, back: 0, split: 0 }, pairs: { allUp: 0, upBack: 0, allBack: 0, mixed: 0 }, mateDist: [0, 0],
-    lastWin: {}, lastErr: {}, inPoints: {}, perStyle: {}, perLevel: {}, pressureBins: new Array(16).fill(0), pressureErrBins: new Array(16).fill(0), clsPress: {},
+    lastWin: {}, lastErr: {}, inPoints: {}, perStyle: {}, perLevel: {}, pressureBins: new Array(16).fill(0), pressureErrBins: new Array(16).fill(0), clsPress: {}, clsHow: {},
     matches: 0, matchWins: [0, 0], simSeconds: 0,
   };
 }
@@ -278,11 +280,9 @@ function runJob(job: Job): Counts {
               c.pressureErrBins[Math.min(15, Math.floor(pr / 0.25))]!++;
               if (last.cls !== 'serve') (c.clsPress[last.cls] ??= new Array(10).fill(0))[5 + Math.min(4, Math.floor(pr / 0.5))]!++;
             } else c.lastErr.whiff = (c.lastErr.whiff ?? 0) + 1;
-            if (whiffed) c.errHow.other++;
-            else if (e.a === R.WHY_OWN_SIDE && netTouch) c.errHow.net++;
-            else if (e.a === R.WHY_WALL_BEFORE_BOUNCE) { if (wallOnFull === 1) c.errHow.back++; else c.errHow.side++; }
-            else if (e.a === R.WHY_OWN_SIDE) c.errHow.net++;
-            else c.errHow.other++;
+            const how = whiffed ? 'other' : e.a === R.WHY_OWN_SIDE ? 'net' : e.a === R.WHY_WALL_BEFORE_BOUNCE ? (wallOnFull === 1 ? 'back' : 'side') : 'other';
+            c.errHow[how]++;
+            if (!whiffed) { const o = (c.clsHow[last.cls] ??= { net: 0, back: 0, side: 0, other: 0 }); o[how]++; }
           }
           // Every shot's outcome, as in Mellado-Arbelo et al. (Table 1a): the last shot W, or the failing shot's own UE or
           // FE (the paper's FE is low on a smash and highest on a back-wall exit: the stroke failing under pressure, not one
@@ -327,6 +327,7 @@ function merge(a: Counts, b: Counts): Counts {
   for (const [k, v] of Object.entries(b.perLevel)) add((out.perLevel[k] ??= { W: 0, FE: 0, UE: 0, points: 0, won: 0 }), v);
   for (let i = 0; i < 16; i++) { out.pressureBins[i]! += b.pressureBins[i]!; out.pressureErrBins[i]! += b.pressureErrBins[i]!; }
   for (const [k, v] of Object.entries(b.clsPress)) { const o = (out.clsPress[k] ??= new Array(10).fill(0)); for (let i = 0; i < 10; i++) o[i]! += v[i]!; }
+  for (const [k, v] of Object.entries(b.clsHow)) add((out.clsHow[k] ??= { net: 0, back: 0, side: 0, other: 0 }), v);
   out.matches += b.matches; out.matchWins[0] += b.matchWins[0]; out.matchWins[1] += b.matchWins[1];
   out.simSeconds += b.simSeconds;
   return out;
@@ -487,6 +488,8 @@ if (!isMainThread) {
     for (const [k, v] of Object.entries(counts.clsPress).sort((a, b) => b[1].slice(0, 5).reduce((x, y) => x + y, 0) - a[1].slice(0, 5).reduce((x, y) => x + y, 0))) {
       console.log(`  ${k.padEnd(13)} ` + [0, 1, 2, 3, 4].map((i) => `${String(v[i]).padStart(6)} ${(100 * v[5 + i]! / Math.max(1, v[i]!)).toFixed(1).padStart(5)}%`).join(' |'));
     }
+    console.log('how each stroke fails:');
+    for (const [k, v] of Object.entries(counts.clsHow)) console.log(`  ${k.padEnd(13)} ` + Object.entries(v).map(([h, n]) => `${h} ${n}`).join(', '));
   }
   console.log(`(${((performance.now() - t0) / 1000).toFixed(1)} s)`);
   const out = arg('json');
