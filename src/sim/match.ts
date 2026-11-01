@@ -188,6 +188,15 @@ const COPY_SEEN = new Map<object, object>();
 const POINT_DEAD_WALK = 1.2;
 /** After a change of ends, the extra dead time for the picture to dip before the cut (s). */
 const ENDS_CUT = 0.35;
+/**
+ * A human's balls going to the same place again and again are read: a ball a player has seen coming five times is no
+ * pressure, whatever its pace. How far apart two targets still count as one place (m), how much of the running figure
+ * each shot is, and the most of an AI's swing spread a read ball takes off, at the top level. One key and no aim won
+ * as many sets as a plan (20-20 and 22-18 at Pro): the AI played a patsy as it played anyone.
+ */
+const READ_WIDE = 1.5;
+const READ_RATE = 0.2;
+const READ_CUT = 0.42;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
@@ -977,6 +986,10 @@ export class MatchSim {
     p.faceTowards(b);
   }
 
+  /** How much a human's balls have been going to one place (0..1; READ_WIDE), and that place, on their own side's terms. */
+  private readonly readOn = [-0, -0, -0, -0];
+  private readonly readX = [-0, -0, -0, -0];
+  private readonly readZ = [-0, -0, -0, -0];
   private readonly focusWins = makeWindows();
   /** Each player's wait for the ball to go by (holdShort; humans: an AI keeps its own). */
   private readonly hold: Hold[] = [{ x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }];
@@ -1623,8 +1636,16 @@ export class MatchSim {
     const v = b.vel;
     const walls = !serving && this.rally.bounces > 0 ? this.wallsSinceBounce : 0;
     this.lastPressure = serving ? 0 : pressureOf(sqrt(v.x * v.x + v.y * v.y + v.z * v.z), this.time - this.lastStrikeTime, d, p.speed(), b.pos.y, walls > 0, walls > 1);
-    const ai = this.ai[i];
-    r.motor = ai ? ai.motor(this.lastPressure) : humanMotor(p.grade, this.lastPressure);
+    const ai = this.ai[i], by = this.lastStrikePlayer;
+    const read = ai && by >= 0 && !this.ai[by] && this.players[by]!.team !== team ? this.readOn[by]! * ai.level : 0;
+    r.motor = ai ? ai.motor(this.lastPressure) * (1 - READ_CUT * read) : humanMotor(p.grade, this.lastPressure);
+    if (!ai && !serving && !feed) {
+      // (each side's own way round: ends change)
+      const dx = r.targetX * s - this.readX[i]!, dz = abs(r.targetZ) - this.readZ[i]!;
+      this.readOn[i]! += (1 / (1 + (dx * dx + dz * dz) / (READ_WIDE * READ_WIDE)) - this.readOn[i]!) * READ_RATE;
+      this.readX[i]! += dx * READ_RATE;
+      this.readZ[i]! += dz * READ_RATE;
+    }
     r.control = ai ? ai.control(b.pos.y) : 1;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
