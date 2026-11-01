@@ -57,9 +57,18 @@ const NET_BACK = 0.5;
 /** Chance a net-loving style comes in behind a low ball from the back, per unit of its net trait over 1 (Martillo, 1.6:
  * 36%). A style that lobs little has no other way forward: Martillo sat back at 32.6% net time against Muro's 40.6%. */
 const NET_PRESS = 0.6;
-const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; ohArrive: number; bajada: number[]; women: { speed: number; smashEffort: number; smash: number; lob: number; serveGlass: number; serveT: number; serveEdge: number; serveEffort: number } };
+const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; human: { motor: number; grade: number[] }; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; ohArrive: number; bajada: number[]; women: { speed: number; smashEffort: number; smash: number; lob: number; serveGlass: number; serveT: number; serveEdge: number; serveEffort: number } };
 export const WOMENS_SPEED = SKILL.women.speed;
 /** A value by level: v holds it at evenly spaced levels from 0 to 1 (two or more), interpolated linearly between. */
+/**
+ * A human's swing-to-swing spread (ShotRequest.motor). The timing grades were a human's only error, so a ball on time
+ * could not go wrong: the human lost 0.3-1% of their hits, the partner beside them 7%, and one key beat the top level.
+ * The ball's pressure counts as it does for the AI; how well the swing was timed sets how steady it is.
+ */
+export function humanMotor(grade: number, pressure: number): number {
+  return SKILL.human.motor * SKILL.human.grade[grade]! * (1 + SKILL.pressure * pressure * pressure);
+}
+
 function byLevel(v: number[], level: number): number {
   const n = v.length - 1;
   const x = level * n;

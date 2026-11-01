@@ -24,7 +24,7 @@ import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/format
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
 import { smashLanding } from './contact/smashAim.ts';
-import { SimpleAi, WOMENS_SPEED } from './ai/simpleAi.ts';
+import { SimpleAi, WOMENS_SPEED, humanMotor } from './ai/simpleAi.ts';
 import { makeWorld, makeNetCloth, type WorldOptions } from './setup.ts';
 import type { NetCloth } from './court/netCloth.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
@@ -1623,7 +1623,7 @@ export class MatchSim {
     const walls = !serving && this.rally.bounces > 0 ? this.wallsSinceBounce : 0;
     this.lastPressure = serving ? 0 : pressureOf(sqrt(v.x * v.x + v.y * v.y + v.z * v.z), this.time - this.lastStrikeTime, d, p.speed(), b.pos.y, walls > 0, walls > 1);
     const ai = this.ai[i];
-    r.motor = ai ? ai.motor(this.lastPressure) : 0;
+    r.motor = ai ? ai.motor(this.lastPressure) : humanMotor(p.grade, this.lastPressure);
     r.control = ai ? ai.control(b.pos.y) : 1;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
