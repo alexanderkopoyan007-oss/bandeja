@@ -52,7 +52,7 @@ describe('the generated people', () => {
   });
 
   // Modelled with the arms down, the sleeve fuses to the ribs: lifted, the arm comes out of a hole and half the sleeve stays behind, which the owner
-  // read as an arm on backwards (804 cm2 stretched on the first woman). Joint numbers can't see it: this measures the skin. Modelled in a T: 33, and 16.
+  // read as an arm on backwards (804 cm2 stretched on the first woman). Joint numbers can't see it: this measures the skin. Modelled in a T: 42, and 13.
   it.each(['meshy2', 'meshy3'])('the skin of %s stays on the arm when the arm goes overhead', (name) => {
     const a = guests[GUESTS.indexOf(name)]!;
     const arm = a.bone('RightArm'), S = new THREE.Vector3().setFromMatrixPosition(a.restWorld[arm]!);

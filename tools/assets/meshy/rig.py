@@ -30,6 +30,7 @@ HAND_F = np.array(M['handF'])
 HAND_K = np.array(M['handK'])
 TIPS = {n: tuple(p) for n, p in M['tips'].items()}
 TIP_IN = 0.007  # how far inside the tip the last joint stands
+THUMB_SMOOTH = 10
 RAISE = np.radians(M['raise'])  # the arms up to p1's angle
 ARMPIT_SMOOTH = M.get('armpit', 14)  # (arms held out have no fused armpit to spread)
 PART_SOURCE_OUT = (4, 9, 10)  # p1's eyes, teeth and tongue give no weights
@@ -158,10 +159,12 @@ for f in FINGERS:
     a = np.array(TIPS[f])
     j1 = tf(Xh, A_p[ix[f'LeftHand{f}1']])
     j4 = tf(Xh, A_p[ix[f'LeftHand{f}4']])
-    goal = a - unit(a - j1) * TIP_IN
-    R = rot_between(j4 - j1, goal - j1)
-    k = float(np.linalg.norm(goal - j1) / np.linalg.norm(j4 - j1))
-    Xf = sim(j1, j1, R, k) @ Xh
+    # (the finger's own knuckle, where fit.py could follow the finger in)
+    to = np.array(M['knuckles'][f]) if f in M.get('knuckles', {}) else j1
+    goal = a - unit(a - to) * TIP_IN
+    R = rot_between(j4 - j1, goal - to)
+    k = float(np.linalg.norm(goal - to) / np.linalg.norm(j4 - j1))
+    Xf = sim(j1, to, R, k) @ Xh
     print('RIG finger', f, 'aim', round(float(np.degrees(np.arccos(np.clip(unit(j4 - j1) @ unit(goal - j1), -1, 1)))), 1), 'deg, length x', round(k, 3))
     for q in (1, 2, 3, 4):
         n = f'LeftHand{f}{q}'
@@ -232,6 +235,21 @@ big = M['height'] / 1.80
 for side_ in (1, -1):
     zone = (V[:, 0] * side_ > ax_ - 0.10 * big) & (V[:, 0] * side_ < ax_ + 0.11 * big) & (V[:, 1] > ay_ - 0.275 * big) & (V[:, 1] < ay_ + 0.025 * big)
     for _ in range(ARMPIT_SMOOTH):
+        acc = np.zeros_like(W)
+        np.add.at(acc, edges[:, 0], W[edges[:, 1]])
+        np.add.at(acc, edges[:, 1], W[edges[:, 0]])
+        W[zone] = 0.4 * W[zone] + 0.6 * (acc / np.maximum(deg, 1))[zone]
+
+# The thumb: a person modelled with it lying along the fingers swings it further into the grip than p1's, and all of that went into the first row of skin off the palm, a thin
+# ridge to the wrist and a sheet across the web. Blended over the base of the thumb it spreads out.
+for s_ in ('Left', 'Right'):
+    zone = W[:, ix[s_ + 'HandThumb1']] > 0.004
+    for _ in range(3):
+        grown = np.zeros(len(V), dtype=bool)
+        grown[edges[zone[edges[:, 0]], 1]] = True
+        grown[edges[zone[edges[:, 1]], 0]] = True
+        zone |= grown
+    for _ in range(THUMB_SMOOTH):
         acc = np.zeros_like(W)
         np.add.at(acc, edges[:, 0], W[edges[:, 1]])
         np.add.at(acc, edges[:, 1], W[edges[:, 0]])

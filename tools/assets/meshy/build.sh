@@ -13,7 +13,7 @@ OUT=assets-src/people/$NAME
 node tools/assets/meshy/read-person.mjs p1 "$WORK/p1"
 [ -n "$SKIP_BAKE" ] || "$BLENDER" -b --python tools/assets/meshy/decimate-bake.py -- "$GLB" "$WORK/low" 40000 "$HEIGHT" 2>&1 | grep -E "^MESHY|Error|Traceback|line [0-9]+"
 MARKS=tools/assets/meshy/marks/$NAME.json
-[ -f "$MARKS" ] || "$BPY" -I tools/assets/meshy/fit.py "$WORK/low" "$MARKS" | grep -E "^FIT (tip|upper|elbow|side|reach|arms)"
+[ -f "$MARKS" ] || "$BPY" -I tools/assets/meshy/fit.py "$WORK/low" "$MARKS" | grep -E "^FIT (tip|upper|elbow|side|reach|arms|finger|thumb)"
 mkdir -p "$OUT"
 "$BLENDER" -b --python tools/assets/meshy/rig.py -- "$WORK/low" "$WORK/p1" "$OUT" "$MARKS" "$NAME" 2>&1 | grep -E "^RIG|Error|Traceback|line [0-9]+"
 cp "$WORK/low/opaque.webp" "$OUT/opaque.webp"

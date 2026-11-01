@@ -1,13 +1,13 @@
 // How a hand holds the racket, solved once per hand from the player's own mesh and skeleton (so a new body grips
-// as well as this one): where the handle lies in the palm, how the racket turns about it, and the finger curls that
-// wrap the handle.
+// as well as this one): where the handle lies in the hand, how the racket turns about it, and the curls that close the
+// hand on it.
 //
-// A padel grip is the continental (Sánchez-Alcaraz & Courel-Ibáñez's coaching texts; tennis: the "hammer" grip): the
-// handle lies diagonally across the palm, from the heel pad on the little-finger side to the base of the index
-// finger, the fingers wrap round it and the thumb closes over it from the other side, and the hand sits at the end
-// of the handle with the heel pad just over the butt cap (padel players hold the whole hand on the grip and wear the
-// wrist cord). The face turns `GRIP_BEVEL` from square to the palm (an eastern grip, palm parallel to the strings)
-// towards the thumb side: one bevel of the octagonal handle is 45 degrees.
+// A padel grip is the tennis continental, the hammer grip (photos of the hold: Tennis Companion's grip guide; padel: Padelshop's
+// and Decathlon's guides). The handle lies across the base of the fingers and runs out under the heel of the hand, which is on the
+// butt. The middle, ring and little fingers close right round it, tips towards the base of the thumb, touching each other; the index stays
+// up the handle and closes less; the thumb crosses the front between it and the middle finger. The V between thumb and
+// index lies on the narrow top edge of the frame, which is `GRIP_BEVEL` from an eastern grip's palm parallel to the strings:
+// one bevel of the octagonal handle is 45 degrees.
 //
 // Frame (model space, the rest pose): F along the fingers (wrist to the middle finger's base), K across the knuckles
 // towards the index finger, N out of the palm (the side the thumb is on).
@@ -16,17 +16,34 @@ import type { PlayerAsset } from './asset.ts';
 import { HANDLE_R, RACKET_BUTT } from './racket.ts';
 
 /** The face's turn about the handle from square to the palm (rad). */
-export const GRIP_BEVEL = (35 * Math.PI) / 180;
-/** The heel pad sits this far up the handle from its end (m). */
-const BUTT_PAST = 0.012;
+export const GRIP_BEVEL = (45 * Math.PI) / 180;
+/** The handle's angle off the knuckle line (rad): 59 degrees off the fingers, so about 120 to the forearm with the wrist straight. A photo of a tennis hold reads 128, on a
+ * palm that cups round the handle; a rigid palm can lie only so far across. */
+const HANDLE_TILT = (31 * Math.PI) / 180;
+/** The handle's axis at the index finger: this far back from its knuckle (m on a hand with a 113 mm palm): in the crease at the finger's base. */
+const AXIS_BACK = -0.005;
+/** How far the handle presses into the palm's surface (m), at the index finger and at the far edge of the hand. The real palm cups: the ring and little fingers' knuckles
+ * come down round the handle, and the heel pad gives. This skeleton has no bones in the palm, so the handle goes down to them instead. */
+const PALM_SINK = 0.007;
+const PALM_SINK_FAR = 0.014;
+/** The butt's end past the hand's edge (m): the heel of the hand is on the bottom of the handle, and the little finger against the cap. */
+const BUTT_PAST = 0.002;
 /** How far a finger presses into the grip (share of its radius: soft tissue and the tape give). */
 const PRESS = 0.85;
-/** Joint limits for the curl (rad): knuckle, middle, end joint; the thumb's base, knuckle and end joint. */
-const FINGER_MAX = [1.5, 1.75, 1.3];
-const THUMB_MAX = [0.8, 1.0, 1.25];
-/** How the joints share a closing hand (knuckle : middle : end joint; a power grip's proportions). */
-const FINGER_RATIO = [0.75, 1, 0.65];
-const THUMB_RATIO = [0.5, 0.8, 1];
+/** Joint limits for the curl (rad): knuckle, middle, end joint. */
+const FINGER_MAX = [1.65, 1.75, 1.3];
+/** Each finger's flexion turned onto the handle: a closing finger goes round it, not along it (the real ones converge on the base of the thumb). */
+const FINGER_TURN = 1;
+/** And turned a little more towards the others, index to little finger (rad): at rest the knuckles stand 21-29 mm apart, and the fingers are 16 wide, and a closed hand has
+ * no gaps. Not the index: it stays up the handle, and the thumb crosses between it and the middle finger. */
+const FINGER_CONVERGE = [-0.04, 0.12, 0, -0.15];
+/** The index finger closes less than the others (the joints' limits, rad), as in any cylinder grip. */
+const INDEX_MAX = [1.45, 1.1, 0.75];
+/** Where the thumb's tip lies: between the index and middle fingers' tips up the handle (share of the way from the middle's), and round the handle short of the middle's (rad). */
+const THUMB_UP = 0.45;
+const THUMB_ROUND = -0.15;
+/** The thumb's end joint closes this share of its middle joint. */
+const THUMB_IP = 0.8;
 
 export interface GripSolve {
   /** The racket's origin (face centre) and rotation in the hand bone's frame. */
@@ -42,6 +59,10 @@ export interface GripSolve {
   wristR: number;
   /** Each finger joint's distance from the handle's axis after the curl, minus the handle radius (m; QA). */
   gaps: number[];
+  /** How far round the handle each finger goes, knuckle to tip, index first (rad; QA). */
+  wrap: number[];
+  /** How far past the middle finger's tip the thumb's tip reaches round the handle (rad; QA). */
+  thumbPast: number;
 }
 
 const FINGERS = ['Index', 'Middle', 'Ring', 'Pinky'];
@@ -110,24 +131,22 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
     return m < 0 ? 0.02 : m;
   };
 
-  // The handle's axis: across the palm from the heel pad under the little finger (halfway up from the wrist to its
-  // knuckle) to the base of the index finger, a handle's radius off the palm all along.
-  const [fp, kp] = coord(at('HandPinky1'));
+  // The handle's axis lies at the base of the fingers, from behind the index finger's knuckle to the hand's far edge, a handle's radius off the palm less
+  // what it presses in. On the palm itself the knuckles stood 4-5 cm off the axis, the fingers could only reach it with their tips, and it was a stick on
+  // an open hand.
   const [fi, ki] = coord(at('HandIndex1'));
-  const f0 = 0.5 * fp, k0 = kp, f1 = 0.92 * fi, k1 = ki;
-  let n0 = surf(f0, k0) + HANDLE_R, n1 = surf(f1, k1) + HANDLE_R;
-  let lift = 0;
-  for (let s = 0; s <= 10; s++) {
-    const u = s / 10;
-    lift = Math.max(lift, surf(f0 + (f1 - f0) * u, k0 + (k1 - k0) * u) + HANDLE_R - (n0 + (n1 - n0) * u));
-  }
-  n0 += lift;
-  n1 += lift;
+  const [, kp] = coord(at('HandPinky1'));
+  const scale = at('HandMiddle1').distanceTo(wrist) / 0.113;
+  const tilt = Math.tan(HANDLE_TILT);
+  const f1 = fi - AXIS_BACK * scale, k1 = ki, k0 = kp, f0 = f1 - (k1 - k0) * tilt;
+  let n0 = 0;
+  for (let u = 0; u <= 10; u++) n0 = Math.max(n0, surf(f0 + (f1 - f0) * u / 10, k0 + (k1 - k0) * u / 10));
+  const n1 = n0 + HANDLE_R - PALM_SINK;
+  n0 += HANDLE_R - PALM_SINK_FAR;
   const pt = (f: number, k: number, n: number): THREE.Vector3 =>
     wrist.clone().addScaledVector(F, f).addScaledVector(K, k).addScaledVector(N, n);
   const A = pt(f1, k1, n1).sub(pt(f0, k0, n0)).normalize();
-  // The heel pad's end: the hand's edge past the little finger's line (its finger's thickness), where the handle leaves
-  // the hand.
+  // Where the handle leaves the hand: its edge past the little finger's line, by that finger's thickness.
   const H0 = pt(f0, k0, n0).addScaledVector(A, -radius(idx('HandPinky1')) / Math.max(0.3, A.dot(K)));
   // The face: square to the palm, turned GRIP_BEVEL about the handle towards the thumb side.
   const N0 = N.clone().addScaledVector(A, -N.dot(A)).normalize();
@@ -148,13 +167,37 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
     return d.addScaledVector(A, -d.dot(A)).length();
   };
 
+  const cyl = (p: THREE.Vector3): [number, number] => {
+    const d = p.clone().sub(H0);
+    const s = d.dot(A);
+    d.addScaledVector(A, -s);
+    return [s, Math.atan2(d.dot(S), d.dot(N0))];
+  };
   // Finger curls, joint by joint from the knuckle: each turns (about its own flexion axis) until the next joint, or
   // any point of the segment, touches the grip, or until the joint's limit.
   const out: GripSolve = {
-    pos, q, bones: [], quats: new Float32Array(0), wrist: new THREE.Vector3(), forearm: new THREE.Vector3(), wristR: 0.035, gaps: [],
+    pos, q, bones: [], quats: new Float32Array(0), wrist: new THREE.Vector3(), forearm: new THREE.Vector3(), wristR: 0.035, gaps: [], wrap: [], thumbPast: 0,
   };
   const qs: number[] = [];
-  const chain = (names: string[], max: number[], thumb: boolean, target?: THREE.Vector3): THREE.Matrix4[] => {
+  const finish = (ids: number[], curl: THREE.Quaternion[], w: THREE.Matrix4[]): THREE.Matrix4[] => {
+    if (out.wrap.length < 4) {
+      let round = 0, last = NaN;
+      for (const m of w) {
+        const [, ph] = cyl(new THREE.Vector3().setFromMatrixPosition(m));
+        if (!Number.isNaN(last)) { let d = ph - last; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; round += Math.abs(d); }
+        last = ph;
+      }
+      out.wrap.push(round);
+    }
+    for (let j = 1; j < w.length; j++) out.gaps.push(offAxis(new THREE.Vector3().setFromMatrixPosition(w[j]!)) - HANDLE_R);
+    for (let j = 0; j < ids.length; j++) {
+      out.bones.push(ids[j]!);
+      const lq = new THREE.Quaternion().fromArray(asset.bones[ids[j]!]!.quat).multiply(curl[j]!);
+      qs.push(lq.x, lq.y, lq.z, lq.w);
+    }
+    return w;
+  };
+  const chain = (names: string[], max: number[], converge: number): THREE.Matrix4[] => {
     const ids = names.map((n) => idx(n));
     const tip = asset.bones.findIndex((b) => b.parent === ids[ids.length - 1]);
     const all = tip >= 0 ? [...ids, tip] : ids;
@@ -173,144 +216,143 @@ export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
       }
       return w;
     };
-    // Each joint's flexion axis in its own frame, from the rest pose: the fingers about their own axis (towards the
-    // palm), the thumb straight towards the handle.
+    // Each joint's flexion axis in its own frame, from the rest pose.
     const w0 = worldAt();
+    // A finger's flexion, turned about the palm's normal from where it lies at rest onto the handle.
+    const turn = new THREE.Quaternion();
+    const hinge = new THREE.Vector3();
+    {
+      const a0 = new THREE.Vector3().setFromMatrixPosition(w0[0]!), b0 = new THREE.Vector3().setFromMatrixPosition(w0[1]!);
+      hinge.crossVectors(b0.clone().sub(a0).normalize(), N).normalize();
+      const along = A.clone().addScaledVector(N, -A.dot(N)).normalize();
+      const across = new THREE.Vector3().crossVectors(along, N);
+      if (along.dot(hinge) < 0) along.negate();
+      const qw = new THREE.Quaternion().setFromUnitVectors(hinge, hinge.clone().lerp(along, FINGER_TURN).normalize());
+      // (about the line across the handle through the knuckle: a turn about the palm's normal tips the plane the finger closes in, so it leaves its line one way
+      // at the middle joint and comes back at the tip)
+      qw.premultiply(new THREE.Quaternion().setFromAxisAngle(across, converge));
+      const r0q = new THREE.Quaternion();
+      w0[0]!.decompose(v, r0q, sc);
+      turn.copy(r0q).invert().multiply(qw).multiply(r0q);
+    }
     const axes = ids.map((_, j) => {
       const a = new THREE.Vector3().setFromMatrixPosition(w0[j]!);
       const b = new THREE.Vector3().setFromMatrixPosition(w0[j + 1] ?? w0[j]!);
-      const dir = b.clone().sub(a).normalize();
-      let axisW: THREE.Vector3;
-      if (thumb) {
-        const d = a.clone().sub(H0);
-        const to = H0.clone().addScaledVector(A, d.dot(A)).sub(a);
-        to.addScaledVector(dir, -to.dot(dir)).normalize();
-        axisW = new THREE.Vector3().crossVectors(dir, to).normalize();
-      } else axisW = new THREE.Vector3().crossVectors(dir, N).normalize();
+      const axisW = new THREE.Vector3().crossVectors(b.sub(a).normalize(), N).normalize();
       const rq = new THREE.Quaternion();
       w0[j]!.decompose(v, rq, sc);
       return axisW.applyQuaternion(rq.invert());
     });
-    // How far each segment's bone line keeps from the handle's axis: a finger pressed in a little (PRESS of its
-    // radius); the thumb's two outer segments by their pad's full thickness less 1.5 mm (the bone runs near the
-    // thumb's back, so the pad, thicker than its typical radius, went 4-6.5 mm into the grip on the MPFB hands). Not
-    // the thumb's base: its skin is the ball of the thumb, which does press on the handle.
-    const R = ids.map((b, j) => HANDLE_R + (thumb && j === ids.length - 1 ? padR(b) : PRESS * radius(b)));
+    // How far each segment's bone line keeps from the handle's axis: a finger pressed in a little (PRESS of its radius).
+    const R = ids.map((b) => HANDLE_R + PRESS * radius(b));
     const ang = ids.map(() => 0);
-    const ratio = thumb ? THUMB_RATIO : FINGER_RATIO;
-    // The whole finger closes (the joints in a power grip's proportions) until a segment touches the grip; the joints
-    // behind that segment stop, the ones beyond it go on closing round the handle, until each touches or is at its
-    // limit.
-    let free = target ? ids.length : 0;
-    const set = (): void => { for (let j = 0; j < ids.length; j++) curl[j]!.setFromAxisAngle(axes[j]!, ang[j]!); };
-    const touches = (wm: THREE.Matrix4[], j: number): boolean => {
-      const p0 = new THREE.Vector3().setFromMatrixPosition(wm[j]!);
-      const p1 = new THREE.Vector3().setFromMatrixPosition(wm[j + 1] ?? wm[j]!);
-      for (let u = 0; u <= 4; u++) if (offAxis(p0.clone().lerp(p1, u / 4)) <= R[j]!) return true;
-      return false;
-    };
-    for (let step = 0; step < 400 && free < ids.length; step++) {
-      let moved = false;
-      for (let j = free; j < ids.length; j++) {
-        const nv = Math.min(max[j]!, ang[j]! + 0.01 * ratio[j]!);
-        if (nv > ang[j]!) { ang[j] = nv; moved = true; }
-      }
-      if (!moved) break;
-      set();
-      const wm = worldAt();
-      for (let j = ids.length - 1; j >= free; j--) {
-        if (touches(wm, j)) {
-          // Back off this step for the joints that carry the touching segment, and hold them.
-          for (let i = free; i <= j; i++) ang[i] = Math.max(0, ang[i]! - 0.01 * ratio[i]!);
-          free = j + 1;
-          set();
-          break;
-        }
-      }
-    }
-    if (!target) set();
-    else {
-      // The thumb closes over the handle onto the fingers (CCD towards `target`, each joint within its limit); if a
-      // segment ends up in the grip, the target moves out and it solves again.
-      const goal = target.clone();
-      const qd = new THREE.Quaternion(), r0 = new THREE.Quaternion(), r0i = new THREE.Quaternion(), lim = new THREE.Quaternion();
-      const pj = new THREE.Vector3(), pt = new THREE.Vector3(), d1 = new THREE.Vector3(), d2 = new THREE.Vector3();
-      for (let tries = 0; tries < 5; tries++) {
-        for (let it = 0; it < 30; it++) {
-          for (let j = ids.length - 1; j >= 0; j--) {
-            const wm = worldAt();
-            pj.setFromMatrixPosition(wm[j]!);
-            pt.setFromMatrixPosition(wm[all.length - 1]!);
-            d1.subVectors(pt, pj).normalize();
-            d2.subVectors(goal, pj).normalize();
-            qd.setFromUnitVectors(d1, d2);
-            // In the joint's own frame (its rotation without this joint's curl).
-            wm[j]!.decompose(v, r0, sc);
-            r0.multiply(r0i.copy(curl[j]!).invert());
-            r0i.copy(r0).invert();
-            curl[j]!.premultiply(r0i.multiply(qd).multiply(r0)).normalize();
-            if (!(Math.abs(curl[j]!.w) <= 1)) curl[j]!.identity();
-            const a = 2 * Math.acos(Math.min(1, Math.abs(curl[j]!.w)));
-            // (slerpQuaternions(identity, curl[j]) would copy the identity over curl[j] first)
-            if (a > max[j]!) { lim.copy(curl[j]!); curl[j]!.identity().slerp(lim, max[j]! / a); }
-          }
-        }
+    const set = (): void => { for (let j = 0; j < ids.length; j++) { curl[j]!.setFromAxisAngle(axes[j]!, ang[j]!); if (j === 0) curl[j]!.premultiply(turn); } };
+    {
+      // From the knuckle out, each joint closes until its segment is on the grip. A straight segment can only touch at one place, so the joint between two
+      // stands proud of the surface by what half the next segment's chord leaves: closed until the joint itself touched, the next segment had nowhere to go
+      // but away, and the finger was a claw.
+      const seg = ids.map((_, j) => {
         const wm = worldAt();
-        let deficit = 0;
-        for (let j = 0; j < ids.length; j++) {
-          const p0 = new THREE.Vector3().setFromMatrixPosition(wm[j]!);
-          const p1 = new THREE.Vector3().setFromMatrixPosition(wm[j + 1] ?? wm[j]!);
-          for (let u = 1; u <= 4; u++) deficit = Math.max(deficit, R[j]! - offAxis(p0.clone().lerp(p1, u / 4)));
+        return new THREE.Vector3().setFromMatrixPosition(wm[j]!).distanceTo(new THREE.Vector3().setFromMatrixPosition(wm[j + 1] ?? wm[j]!));
+      });
+      for (let j = 0; j < ids.length; j++) {
+        const stand = j + 1 < ids.length ? Math.hypot(R[j + 1]!, 0.5 * seg[j + 1]!) : 0;
+        for (let step = 0; step < 240 && ang[j]! < max[j]!; step++) {
+          ang[j] = Math.min(max[j]!, ang[j]! + 0.01);
+          set();
+          const wm = worldAt();
+          const p0 = new THREE.Vector3().setFromMatrixPosition(wm[j]!), p1 = new THREE.Vector3().setFromMatrixPosition(wm[j + 1] ?? wm[j]!);
+          let near = Infinity;
+          for (let u = 1; u <= 4; u++) near = Math.min(near, offAxis(p0.clone().lerp(p1, u / 4)));
+          if (near <= R[j]! || (stand > 0 && offAxis(p1) <= stand)) break;
         }
-        if (deficit <= 0.002) break;
-        if (tries < 3) {
-          // A short thumb reaching round goes through the grip: its tip goes less far round the handle first (back
-          // towards where the thumb starts, a quarter radian a try), still on the grip's surface; only then out.
-          const base = new THREE.Vector3().setFromMatrixPosition(wm[0]!);
-          const fwd = goal.clone().sub(H0).applyAxisAngle(A, 0.25).add(H0);
-          const back = goal.clone().sub(H0).applyAxisAngle(A, -0.25).add(H0);
-          goal.copy(fwd.distanceTo(base) < back.distanceTo(base) ? fwd : back);
-          continue;
-        }
-        const dd = goal.clone().sub(H0);
-        const radial = dd.addScaledVector(A, -dd.dot(A)).normalize();
-        goal.addScaledVector(radial, deficit);
       }
+      set();
     }
-    const w = worldAt();
-    for (let j = 1; j < all.length; j++) out.gaps.push(offAxis(new THREE.Vector3().setFromMatrixPosition(w[j]!)) - HANDLE_R);
-    for (let j = 0; j < ids.length; j++) {
-      out.bones.push(ids[j]!);
-      const lq = new THREE.Quaternion().fromArray(asset.bones[ids[j]!]!.quat).multiply(curl[j]!);
-      qs.push(lq.x, lq.y, lq.z, lq.w);
-    }
-    return w;
+    return finish(ids, curl, worldAt());
   };
-  let middle: THREE.Matrix4[] = [];
-  for (const f of FINGERS) {
-    const w = chain([`Hand${f}1`, `Hand${f}2`, `Hand${f}3`], FINGER_MAX, false);
+  let index: THREE.Matrix4[] = [], middle: THREE.Matrix4[] = [];
+  FINGERS.forEach((f, i) => {
+    const w = chain([`Hand${f}1`, `Hand${f}2`, `Hand${f}3`], i === 0 ? INDEX_MAX : FINGER_MAX, FINGER_CONVERGE[i]!);
+    if (f === 'Index') index = w;
     if (f === 'Middle') middle = w;
-  }
+  });
   // The thumb closes over the side of the handle, part of the way round towards the fingers (the continental grip's
   // thumb on the bevel beside the index finger) and up the handle: its tip goes to a point on the grip's surface
   // round from where the thumb starts, never across the handle (a straight reach went through it).
-  const cyl = (p: THREE.Vector3): [number, number] => {
-    const d = p.clone().sub(H0);
-    const s = d.dot(A);
-    d.addScaledVector(A, -s);
-    return [s, Math.atan2(d.dot(S), d.dot(N0))];
-  };
-  const tb = at('HandThumb2'), tt = new THREE.Vector3().setFromMatrixPosition(rw[asset.bones.findIndex((b) => b.parent === idx('HandThumb3'))]!);
-  const [sb, pb] = cyl(tb);
-  const [, pm] = cyl(new THREE.Vector3().setFromMatrixPosition(middle[2]!));
-  let dphi = pm - pb;
-  while (dphi > Math.PI) dphi -= 2 * Math.PI;
-  while (dphi < -Math.PI) dphi += 2 * Math.PI;
-  const phiG = pb + Math.max(-1.2, Math.min(1.2, 0.5 * dphi));
+  // It crosses the front of the handle between the index and middle fingers, to meet the middle finger's tip.
+  const [si] = cyl(new THREE.Vector3().setFromMatrixPosition(index[3]!));
+  const [sm, pm] = cyl(new THREE.Vector3().setFromMatrixPosition(middle[3]!));
+  const phiG = pm + THUMB_ROUND;
   const rG = HANDLE_R + padR(idx('HandThumb3')) + 0.002;
-  const sG = sb + 0.7 * tb.distanceTo(tt);
-  const goal = H0.clone().addScaledVector(A, sG).addScaledVector(N0, rG * Math.cos(phiG)).addScaledVector(S, rG * Math.sin(phiG));
-  chain(['HandThumb1', 'HandThumb2', 'HandThumb3'], THUMB_MAX, true, goal);
+  const sG = sm + (si - sm) * THUMB_UP;
+  const goalAt = (phi: number): THREE.Vector3 => H0.clone().addScaledVector(A, sG).addScaledVector(N0, rG * Math.cos(phi)).addScaledVector(S, rG * Math.sin(phi));
+
+  // The thumb is laid out rather than searched for: a chain from its base, which turns freely, over the handle to that point, its two outer joints hinges, with the pad
+  // turned to the handle. (By descent on the joints it snaked, or stood off the handle, and each tip reached was a different thumb.)
+  {
+    const ids = ['HandThumb1', 'HandThumb2', 'HandThumb3'].map(idx);
+    const tipB = asset.bones.findIndex((b) => b.parent === ids[2]);
+    const P = [...ids, tipB].map((b) => new THREE.Vector3().setFromMatrixPosition(rw[b]!));
+    const L = [0, 1, 2].map((j) => P[j]!.distanceTo(P[j + 1]!));
+    const u = P[3]!.clone().sub(P[0]!).normalize();
+    // The pad: where the end joint's skin lies from its bone (the bone runs near the thumb's back).
+    const pad = new THREE.Vector3();
+    for (let i = 0; i < rest.length / 3; i++) {
+      let best = -1, bw = 0;
+      for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; best = SI.getComponent(i, k); } }
+      if (best !== ids[2]) continue;
+      v.fromArray(rest, i * 3).sub(P[2]!);
+      pad.add(v.addScaledVector(u, -v.dot(u)));
+    }
+    if (pad.lengthSq() < 1e-8) pad.copy(N);
+    const p = pad.addScaledVector(u, -pad.dot(u)).normalize();
+    const hinge = new THREE.Vector3().crossVectors(u, p);
+    const layout = (G: THREE.Vector3): { dir: THREE.Vector3[]; bend: THREE.Vector3; h: THREE.Vector3; th: number; clear: number } => {
+      const chord = G.clone().sub(P[0]!), D = chord.length();
+      const x = chord.clone().normalize();
+      const mid = P[0]!.clone().add(G).multiplyScalar(0.5).sub(H0);
+      const y = mid.addScaledVector(A, -mid.dot(A));
+      y.addScaledVector(x, -y.dot(x)).normalize();
+      const shape = (t: number): [number, number] => [L[0]! + L[1]! * Math.cos(t) + L[2]! * Math.cos(t * (1 + THUMB_IP)), -L[1]! * Math.sin(t) - L[2]! * Math.sin(t * (1 + THUMB_IP))];
+      let lo = 0, hi = 1.5;
+      for (let k = 0; k < 24; k++) { const t = 0.5 * (lo + hi), [a, b] = shape(t); if (Math.hypot(a, b) > D) lo = t; else hi = t; }
+      const th = 0.5 * (lo + hi);
+      const [sx, sy] = shape(th), al = -Math.atan2(sy, sx);
+      const at = (a: number): THREE.Vector3 => x.clone().multiplyScalar(Math.cos(a)).addScaledVector(y, Math.sin(a));
+      const dir = [at(al), at(al - th), at(al - th * (1 + THUMB_IP))];
+      let q = P[0]!.clone(), clear = Infinity;
+      for (let j = 0; j < 3; j++) {
+        const e = q.clone().addScaledVector(dir[j]!, L[j]!);
+        if (j > 0) for (let k = 1; k <= 4; k++) clear = Math.min(clear, offAxis(q.clone().lerp(e, k / 4)) - HANDLE_R - padR(ids[j]!));
+        q = e;
+      }
+      const bend = at(al - Math.PI / 2);
+      return { dir, bend, h: new THREE.Vector3().crossVectors(dir[0]!, bend), th, clear };
+    };
+    // Its tip goes as far round as it can without the thumb going into the grip.
+    let lay = layout(goalAt(phiG));
+    for (let k = 1; k <= 8 && lay.clear < -0.001; k++) lay = layout(goalAt(phiG + k * 0.07));
+    const qw = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(lay.dir[0]!, lay.bend, lay.h).multiply(new THREE.Matrix4().makeBasis(u, p, hinge).transpose()));
+    const rq = (b: number): THREE.Quaternion => new THREE.Quaternion().setFromRotationMatrix(rw[b]!);
+    const curl = [
+      rq(ids[0]!).invert().multiply(qw).multiply(rq(ids[0]!)),
+      new THREE.Quaternion().setFromAxisAngle(hinge.clone().applyQuaternion(rq(ids[1]!).invert()), lay.th),
+      new THREE.Quaternion().setFromAxisAngle(hinge.clone().applyQuaternion(rq(ids[2]!).invert()), lay.th * THUMB_IP),
+    ];
+    const w: THREE.Matrix4[] = [];
+    let m = rw[asset.bones[ids[0]!]!.parent]!.clone();
+    [...ids, tipB].forEach((b, j) => {
+      m = m.clone().multiply(new THREE.Matrix4().compose(new THREE.Vector3().fromArray(asset.bones[b]!.pos), new THREE.Quaternion().fromArray(asset.bones[b]!.quat), new THREE.Vector3(1, 1, 1)));
+      if (j < 3) m.multiply(new THREE.Matrix4().makeRotationFromQuaternion(curl[j]!));
+      w.push(m);
+    });
+    finish(ids, curl, w);
+    let past = cyl(new THREE.Vector3().setFromMatrixPosition(w[3]!))[1] - pm;
+    while (past > Math.PI) past -= 2 * Math.PI;
+    while (past < -Math.PI) past += 2 * Math.PI;
+    out.thumbPast = -past;
+  }
   out.quats = Float32Array.from(qs);
 
   // The wrist's thickness: forearm skin within 4 cm of the wrist joint, its furthest from the forearm's axis.

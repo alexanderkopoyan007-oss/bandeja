@@ -172,7 +172,7 @@ describe('people', () => {
     }
   });
 
-  it('holds the racket: fingers closed onto the handle, the posed hand out of it', () => {
+  it('holds the racket: fingers round the handle, the hand pressed on it and no deeper than a palm gives', () => {
     interface GV { hand: THREE.Bone; pos: THREE.Vector3; q: THREE.Quaternion; bones: number[]; quats: Float32Array }
     for (const p of base.people) {
       const r = solveGrip(p, 'Right'), l = solveGrip(p, 'Left');
@@ -181,7 +181,11 @@ describe('people', () => {
         expect(Math.abs(r.gaps[k]! - l.gaps[k]!)).toBeLessThan(0.004);
       }
       for (const k of [2, 5, 8, 11, 14]) expect(r.gaps[k]!).toBeLessThan(0.025);
-      expect(r.wrist.y).toBeLessThan(-0.25);
+      expect(r.wrist.y).toBeLessThan(-0.29);
+      // The handle is one size and hands aren't: a small hand goes less far round it and the thumb stops short of the
+      // middle fingertip, by the width of a finger at most.
+      for (const w of r.wrap.slice(1, 3)) expect(w).toBeGreaterThan(Math.PI * 0.78);
+      expect(r.thumbPast).toBeGreaterThan(-0.42);
       const av = new Avatar(p, 0xffffff) as unknown as { root: THREE.Object3D; bones: THREE.Bone[]; grips: GV[]; mesh: THREE.SkinnedMesh };
       for (const g of av.grips) for (let k = 0; k < g.bones.length; k++) av.bones[g.bones[k]!]!.quaternion.fromArray(g.quats, k * 4);
       av.root.updateMatrixWorld(true);
@@ -197,10 +201,9 @@ describe('people', () => {
           const d = HANDLE_R - Math.hypot(v.x, v.z);
           if (d > 0) { inside++; deepest = Math.max(deepest, d); }
         }
-        // The mannequin's limit, with 1.5 mm more for the ball of the thumb: MPFB's thumb is short and soft, and its
-        // proximal pad presses 4.5-4.8 mm into the grip where it wraps (the mannequin's deepest is 2.1 mm).
-        expect(inside).toBeLessThan(32);
-        expect(deepest).toBeLessThan(0.0055);
+        // (The palm has no bones to cup with, so the handle goes down into it: 7-14 mm by design, under the handle where it doesn't show.)
+        expect(inside).toBeLessThan(160);
+        expect(deepest).toBeLessThan(0.0135);
       }
     }
   });

@@ -321,6 +321,147 @@ for n, t in TIPS_FIRST.items():
     TIPS[n] = near.round(4).tolist()
     print('FIT tip', n, 'expected', want.round(3), 'on the hand', near.round(3), 'moved', round(float(np.linalg.norm(near - want)), 3))
 
+# Modelled with the arms out the fingers are clear of each other, and each can be followed in from its tip, cut by cut, to the web where it meets the next. The knuckle
+# lies further in than the web shows, by about a fifth of the finger's length.
+KNUCKLES = {}
+WEB_SHARE = 0.78
+FINGER_SHARE = {'Index': 0.41, 'Middle': 0.44, 'Ring': 0.40, 'Pinky': 0.30}
+
+
+def exact_loops(x0):
+    """The closed loops an upright plane x = x0 cuts through the mesh, each triangle's chord joined to the next across their shared edge: (y, z) points. The outlines'
+    grid is coarser than the gaps between the fingers, and joins them."""
+    lo_, hi_ = SPAN[0]
+    tr = T[(lo_ <= x0) & (hi_ >= x0)]
+    up = {}
+
+    def find(a_):
+        while up.get(a_, a_) != a_:
+            up[a_] = up.get(up[a_], up[a_])
+            a_ = up[a_]
+        return a_
+
+    side = V[tr, 0] > x0
+    where = {}
+    for t_, s_ in zip(tr, side):
+        cross = []
+        for i_ in (0, 1, 2):
+            j_ = (i_ + 1) % 3
+            if s_[i_] != s_[j_]:
+                u_, v_ = int(t_[i_]), int(t_[j_])
+                e_ = (u_, v_) if u_ < v_ else (v_, u_)
+                cross.append(e_)
+                if e_ not in where:
+                    k_ = (x0 - V[u_, 0]) / (V[v_, 0] - V[u_, 0])
+                    where[e_] = V[u_, 1:] + k_ * (V[v_, 1:] - V[u_, 1:])
+        if len(cross) == 2:
+            up[find(cross[0])] = find(cross[1])
+    groups = {}
+    for e_, p_ in where.items():
+        groups.setdefault(find(e_), []).append(p_)
+    return [np.array(g_) for g_ in groups.values() if len(g_) >= 6]
+
+
+def finger_tracks(g):
+    tracks = []
+    top = (V[:, 0].max() if g > 0 else -V[:, 0].min()) - g * cx * (1 if g > 0 else 1)
+    for d_ in np.arange(float(top) - 0.003, wrist_d + 0.05 * K, -0.003):
+        loops = [stats(p) for p in exact_loops(cx + g * d_)]
+        taken = {}
+        for t in tracks:
+            if t['end'] is not None:
+                continue
+            near = [i for i, (c, w) in enumerate(loops) if np.hypot(*(c - t['rows'][-1][1:3])) < 0.016 * K]
+            if not near:
+                t['end'] = d_
+                continue
+            i = min(near, key=lambda q: np.hypot(*(loops[q][0] - t['rows'][-1][1:3])))
+            taken.setdefault(i, []).append(t)
+        for i, ts in taken.items():
+            c, w = loops[i]
+            for t in ts:
+                # (two fingers in one outline, or the outline suddenly much wider: the web)
+                if len(ts) > 1 or max(w) > 1.7 * np.median([max(r[3:5]) for r in t['rows']] or [max(w)]):
+                    t['end'] = d_
+                else:
+                    t['rows'].append(np.array((d_, c[0], c[1], w[0], w[1])))
+        for i, (c, w) in enumerate(loops):
+            if i not in taken and max(w) < 0.045 * K:
+                tracks.append({'rows': [np.array((d_, c[0], c[1], w[0], w[1]))], 'end': None})
+    out_ = []
+    for t in tracks:
+        rows = np.array(t['rows'])
+        if len(rows) < 12:
+            continue
+        pts_ = rows[:, :3]
+        m_ = pts_.mean(0)
+        u = np.linalg.svd(pts_ - m_)[2][0]
+        if u[0] < 0:
+            u = -u
+        out_.append({'m': m_, 'u': u, 'tip': pts_[0] + u * (0.5 * float(rows[:6, 3:5].mean())), 'web': float(rows[-1, 0]), 'width': float(np.median(rows[:, 3:5]))})
+    return out_
+
+
+if OUT_ARMS:
+    found = {}
+    for g in (1, -1):
+        tr = finger_tracks(g)
+        print('FIT finger tracks', g, [(round(float(t['tip'][0]), 3), round(float(t['web']), 3), round(float((t['tip'] - W) @ F_K), 3), round(t['width'], 3)) for t in tr])
+        if len(tr) != 5:
+            continue
+        tr.sort(key=lambda t: float((t['tip'] - W) @ F_K))
+        if float((tr[0]['tip'] - W) @ F) > float((tr[-1]['tip'] - W) @ F):
+            tr = tr[::-1]  # (the thumb, the shortest reach, comes first)
+        for n, t in zip(('Pinky', 'Ring', 'Middle', 'Index', 'Thumb') if float((tr[0]['tip'] - W) @ F_K) < 0 else ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky'), tr):
+            found.setdefault(n, []).append(t)
+    if len(found) < 5:
+        # Fingers modelled touching can't be cut apart, but their tips show: the reach, across the hand, has one peak each. Their direction is the hand's, and each
+        # finger's length a share of the hand's (the first man's and p1's).
+        for g in (1, -1):
+            h_ = V[(V[:, 0] - cx) * g > wrist_d - 0.01].copy()
+            h_[:, 0] = (h_[:, 0] - cx) * g
+            f_, k_ = (h_ - W) @ F, (h_ - W) @ F_K
+            b_ = np.floor((k_ - k_.min()) / 0.002).astype(int)
+            prof = np.array([f_[b_ == q].max() if (b_ == q).any() else 0.0 for q in range(b_.max() + 1)])
+            cand = [q for q in range(len(prof)) if prof[q] > 0 and prof[q] >= prof[max(0, q - 4):q + 5].max() - 1e-9]
+            peaks_ = []
+            for q in cand:  # (a flat top counts once)
+                if peaks_ and q - peaks_[-1][-1] <= 2:
+                    peaks_[-1].append(q)
+                else:
+                    peaks_.append([q])
+            peaks_ = [int(np.mean(q)) for q in peaks_]
+            peaks_ = [q for i_, q in enumerate(peaks_) if (i_ == 0 or prof[q] - prof[peaks_[i_ - 1]:q].min() > 0.005 or prof[peaks_[i_ - 1]] - prof[peaks_[i_ - 1]:q].min() > 0.005)]
+            tips_ = [h_[np.argmax(np.where(b_ == q, f_, -9))] for q in peaks_]
+            print('FIT tips from the reach', g, [(round(float((t_ - W) @ F), 3), round(float((t_ - W) @ F_K), 3)) for t_ in tips_])
+            if len(tips_) == 5:
+                tips_.sort(key=lambda t_: float((t_ - W) @ F_K))
+                names = ('Pinky', 'Ring', 'Middle', 'Index', 'Thumb') if float((tips_[0] - W) @ F) > float((tips_[-1] - W) @ F) else ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky')
+                for n, t_ in zip(names, tips_):
+                    found.setdefault('reach ' + n, []).append(t_)
+        got = {n[6:]: np.mean(v, 0) for n, v in found.items() if n.startswith('reach ')}
+        if len(got) == 5:
+            hl = float((got['Middle'] - W) @ F)
+            for n, t_ in got.items():
+                TIPS[n] = t_.round(4).tolist()
+                if n != 'Thumb':
+                    KNUCKLES[n] = (t_ - F * (FINGER_SHARE[n] * hl)).round(4).tolist()
+                    print('FIT finger', n, 'tip', t_.round(3), 'knuckle', KNUCKLES[n])
+                else:
+                    print('FIT thumb tip', t_.round(3))
+    else:
+        for n, ts in found.items():
+            tip_ = np.mean([t['tip'] for t in ts], 0)
+            u = np.mean([t['u'] for t in ts], 0)
+            u /= np.linalg.norm(u)
+            TIPS[n] = tip_.round(4).tolist()
+            if n != 'Thumb':
+                length = float(np.mean([(t['tip'][0] - t['web']) / t['u'][0] for t in ts])) / WEB_SHARE
+                KNUCKLES[n] = (tip_ - u * length).round(4).tolist()
+                print('FIT finger', n, 'tip', tip_.round(3), 'knuckle', KNUCKLES[n], 'length', round(length, 3), 'wide', round(float(np.mean([t['width'] for t in ts])), 4))
+            else:
+                print('FIT thumb tip', tip_.round(3))
+
 # Hanging arms are raised to p1's angle before binding (rig.py), or an overhead asks linear skinning for 165 degrees; arms held out are bound
 # where they are, with the rest of the range either side.
 P1_BIND = 38.0
@@ -329,7 +470,7 @@ angle = float(np.degrees(np.arccos(-sa[1] / np.linalg.norm(sa))))
 raised = 0.0 if OUT_ARMS else P1_BIND - angle
 print('FIT upper arm as modelled', round(angle, 1), 'raise', round(raised, 1))
 out = {'cx': cx, 'height': round(H - TOP_OFF, 3), 'raise': round(raised, 1), 'armpit': 4 if OUT_ARMS else 14, 'handF': [round(float(x), 3) for x in F], 'handK': [round(float(x), 3) for x in F_K],
-       'joints': {n: [round(float(x), 4) for x in p] for n, p in LM.items()}, 'tips': TIPS}
+       'joints': {n: [round(float(x), 4) for x in p] for n, p in LM.items()}, 'tips': TIPS, 'knuckles': KNUCKLES}
 json.dump(out, open(OUT, 'w'), indent=1)
 for n, p in out['joints'].items():
     print('FIT', n.ljust(14), p)

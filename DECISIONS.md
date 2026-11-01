@@ -3104,11 +3104,33 @@ The owner on the same frame: "Her arm is literally backwards". They were right, 
 
 The test passes under 80 and reads 834.7 on the first man, so it fails on the fault it was written for.
 
-**Modelled in a T-pose,** same people, same clothes, 35 credits each. `fit.py` follows arms held out in from the fingertips with upright cuts, so wrist, forearm bulge and elbow are read from the arm itself. The rig's stretch into the T fell from p99 2.14, max 16.2 to 1.15, 4.7 on her, and to 1.08, 2.09 on him. Seen from four sides of the frozen moment, not one: shoulder, sleeve and arm all read right.
+**Modelled in a T-pose,** same people, same clothes, 35 credits each. `fit.py` follows arms held out in from the fingertips with upright cuts, so wrist, forearm bulge and elbow are read from the arm itself. The rig's stretch into the T fell from p99 2.14, max 16.2 to 1.14, 6.28 on her, and to 1.09, 3.24 on him (after the hand rebuild below). Seen from four sides of the frozen moment, not one: shoulder, sleeve and arm all read right.
 
 **Dealt again, flagged `dealt`.** The first man stays a guest: he is still the A-pose model, and redoing him costs 35 credits nobody asked for.
 
 Lost on the way: her bun, and her hair is flatter from behind; a new generation, not the same model re-posed. Generated people still wear their own clothes, so there are no team colours on them. Frame rate, four of the new man against four regulars, alternating, 30 s a run: Medium 4x 121.9, 126.8 fps against 109.9, 109.1; High 204.0, 198.9 against 187.4, 200.2; paced 120.5 on all.
+
+## The grip, redone from photos of a real hold (2026-11-01)
+
+The owner: "fix the grip, its not real at all", and "you can use a tennis continental grip as well, its the same thing". They were right, and a passing test was why I had not seen it. `tests/render/grip.test.ts` held the skin out of the handle and asked that fingertips reached it, and the answer it got was a stick lying on an open hand. Six views of one hand on a bare handle showed it in a minute: on p1 the knuckles stood 40-55 mm off the handle's axis and the middle joints 35-53 mm, on a 17 mm handle, so only the fingertips touched. The fingers fanned out with light between them, the thumb ran up the handle past the collar, and 6 cm of handle stuck out under the little finger.
+
+The references: [Tennis Companion's grip guide](https://tenniscompanion.org/tennis-grips/), whose photos show the hold from the butt and from the palm side, [Padelshop](https://padelshop.com/blogs/padel-tips/how-to-hold-a-padel-racket) and [The Padel School](https://thepadelschool.com/post/find-your-padel-grip). Looked at in the browser; nothing saved. What they show: the butt flush with the heel of the hand; the handle at about 128 degrees to the forearm; middle, ring and little fingers right round and touching; the index up the handle and more open; the thumb across the front between index and middle; the V on the narrow edge.
+
+`solveGrip` is rewritten to that.
+
+- **The handle lies at the base of the fingers,** not on the palm, 31 degrees off the knuckle line. 120 degrees to the forearm with the wrist straight, not the photo's 128: that palm cups, and ours can't.
+- **It presses into the palm** 7 mm at the index and 14 at the far edge. The skeleton has no bones in the palm, and on a real hand the ring and little fingers' knuckles come down round the handle. The test that forbade this now allows it, with that reason, and the skin that goes in is under the handle.
+- **Each finger closes in a plane square to the handle,** which is what real fingers do by converging on the base of the thumb. In the palm's own plane they went along the handle, not round it.
+- **Joint by joint, with a joint allowed to stand proud of the surface.** Closed until the joint itself touched, the next segment had nowhere to go but away, and the finger was a claw.
+- **The fingers are turned together** about the line across the handle. About the palm's normal it does nothing: the finger leaves its line at the middle joint and comes back at the tip.
+- **The thumb is laid out, not searched for.** Reaching for its tip by descent it hooked, then snaked; with hinges it stuck standing off the handle. Now it is a planar chain from its base over the handle, pad turned to the handle.
+- **`GRIP_BEVEL` 35 to 45:** the textbook bevel, and the V on the edge.
+
+Measured on every body. Knuckle to fingertip round the handle, middle finger: 123 degrees before, now 166-172 on the men and 143-149 on the women, whose hands are smaller on the same handle. Middle joints off the axis on p1: 47-53 mm to 29-40. Handle under the little finger: 6 cm to under 2. `solveGrip`'s thumb costs no more at load, and the sim is untouched. The arm tests did not move: the racket keys rule, and the hand follows them.
+
+**The generated people's hands were the worst, and that was fixable at the source.** Modelled in a T-pose their fingers are clean. Their finger bones had come from a template snapped onto the nearest skin, because the A-pose models' fingers were half fused, so the man's index stuck out. `fit.py` now cuts exact loops through the mesh and follows each finger in from its tip to the web; the woman's fingers touch, so hers come from the five peaks of the hand's reach. Each finger's own knuckle goes to `rig.py`. The hands now get 1800 vertices each, where the even budget left 650: any vertex group weight stops a collapse dead, so it takes two passes, the body with the hands held, then the hands. Her thumb lies along her fingers, so it swings further than the template's and drew a sheet of skin across the web; the thumb's weights are now blended over its base. Moving the thumb's base bone first made it worse, 28 to 54 cm2 stretched, and came out.
+
+Still not real: the palm doesn't cup, the wrist is 8 degrees off the photo, and the first man's hands are still the old fused ones.
 
 ## Round 14: what the fifth review from the owner's seat found (2026-11-01)
 

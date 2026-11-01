@@ -1,7 +1,6 @@
-// The racket as drawn and the hand on it (render/avatar/racket.ts, grip.ts): FIP's size limits, a continental grip
-// that wraps the handle without the skin going through it, the same for either hand. Measured 2026-10-28 on the Y Bot:
-// the old grip (handle along the fingers, 3.5 mm off the palm's bone line) had 84 skin vertices up to 4.5 mm inside the
-// handle and finger joints 0.9 cm from its axis (inside it); now 9, at most 2.1 mm, and every finger closes onto it.
+// The racket as drawn and the hand on it (render/avatar/racket.ts, grip.ts): FIP's size limits, a continental grip whose fingers go
+// round the handle, the same for either hand. The owner, 2026-11-01: "fix the grip, its not real at all". A test here had held the
+// skin out of the handle, and the grip that passed it was a stick lying on an open hand: every joint but the fingertips 2-3 cm off it.
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -39,19 +38,29 @@ describe('racket and grip', () => {
     const r = solveGrip(a, 'Right'), l = solveGrip(a, 'Left');
     expect(r.gaps.length).toBe(15);
     for (let k = 0; k < r.gaps.length; k++) {
-      // A joint centre is never inside the handle, and the hand is closed on it (fingertips within 2.5 cm of it).
+      // A joint centre is never inside the handle.
       expect(r.gaps[k]!).toBeGreaterThan(0);
       expect(Math.abs(r.gaps[k]! - l.gaps[k]!)).toBeLessThan(0.002);
     }
-    for (const k of [2, 5, 8, 11, 14]) expect(r.gaps[k]!).toBeLessThan(0.025);
+    // Closed on it from the middle joint out, not only at the tip (the index stays a little more open).
+    for (const k of [0, 1, 2]) expect(r.gaps[k]!).toBeLessThan(0.034);
+    for (const k of [3, 4, 5, 6, 7, 8, 9, 10, 11]) expect(r.gaps[k]!).toBeLessThan(0.024);
     // The racket in the hand: mirrored across the hand's frame.
     expect(r.wrist.x).toBeCloseTo(-l.wrist.x, 2);
     expect(r.wrist.y).toBeCloseTo(l.wrist.y, 2);
-    // The hand at the butt end (the wrist just past the handle's end, 31 cm below the face centre).
-    expect(r.wrist.y).toBeLessThan(-0.25);
+    // The heel of the hand on the butt, as a photo of the hold shows, not a third of the way up the handle.
+    expect(r.wrist.y).toBeLessThan(-0.29);
   });
 
-  it('the posed hand stays out of the handle', () => {
+  it('the fingers go round the handle, and the thumb crosses the front to meet them', () => {
+    const r = solveGrip(a, 'Right') as ReturnType<typeof solveGrip>;
+    // Round the handle from the knuckle to the fingertip: over half a turn each (the stick on an open hand: 123 degrees).
+    for (const w of r.wrap.slice(1, 3)) expect(w).toBeGreaterThan(Math.PI * 0.95);
+    // The thumb's tip is across the front, past the fingers' tips.
+    expect(r.thumbPast).toBeGreaterThan(0);
+  });
+
+  it('the posed hand presses on the handle and no deeper than a palm gives', () => {
     interface GV { hand: THREE.Bone; pos: THREE.Vector3; q: THREE.Quaternion; bones: number[]; quats: Float32Array }
     const av = new Avatar(a, 0xffffff) as unknown as { root: THREE.Object3D; bones: THREE.Bone[]; grips: GV[]; mesh: THREE.SkinnedMesh };
     for (const g of av.grips) {
@@ -71,8 +80,9 @@ describe('racket and grip', () => {
         const d = HANDLE_R - Math.hypot(v.x, v.z);
         if (d > 0) { inside++; deepest = Math.max(deepest, d); }
       }
-      expect(inside).toBeLessThan(25);
-      expect(deepest).toBeLessThan(0.004);
+      // (The palm has no bones to cup with, so the handle goes down into it: 7-14 mm by design, under the handle where it doesn't show.)
+      expect(inside).toBeLessThan(140);
+      expect(deepest).toBeLessThan(0.0135);
     }
   });
 });

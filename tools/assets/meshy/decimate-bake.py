@@ -50,10 +50,32 @@ for o in bpy.data.objects:
     o.select_set(o == low)
 bpy.context.view_layer.objects.active = low
 t0 = time.time()
-m = low.modifiers.new('dec', 'DECIMATE')
-m.decimate_type = 'COLLAPSE'
-m.ratio = TRIS / len(hi.data.polygons)
-bpy.ops.object.modifier_apply(modifier=m.name)
+# The hands of a person modelled with the arms out are clean and are what a close look goes to: as many vertices as the regular cast's, 1800 each. Left to the even
+# budget they got 650, and curled fingers went to facets. Any vertex group weight stops a collapse dead, so it goes in two passes: the body with the hands held, then the hands.
+co_ = np.array([v.co for v in low.data.vertices])
+HAND_VERTS = 1800
+if float(np.abs(co_[:, 0]).max()) > 0.40 * HEIGHT:
+    is_hand = np.abs(co_[:, 0]) > 0.375 * HEIGHT
+    g_ = low.vertex_groups.new(name='body')
+    g_.add(np.nonzero(~is_hand)[0].tolist(), 1.0, 'REPLACE')
+    g_.add(np.nonzero(is_hand)[0].tolist(), 0.0, 'REPLACE')
+    hand_tris = 2 * int(is_hand.sum())
+    keep_tris = TRIS - 4 * HAND_VERTS + hand_tris
+    for invert_, ratio_ in ((False, keep_tris / len(hi.data.polygons)), (True, TRIS / keep_tris)):
+        m = low.modifiers.new('dec', 'DECIMATE')
+        m.decimate_type = 'COLLAPSE'
+        m.ratio = ratio_
+        m.vertex_group = 'body'
+        m.vertex_group_factor = 1.0
+        m.invert_vertex_group = invert_
+        bpy.ops.object.modifier_apply(modifier=m.name)
+    low.vertex_groups.clear()
+    print('MESHY hands kept', sum(1 for v in low.data.vertices if abs(v.co.x) > 0.375 * HEIGHT), 'verts')
+else:
+    m = low.modifiers.new('dec', 'DECIMATE')
+    m.decimate_type = 'COLLAPSE'
+    m.ratio = TRIS / len(hi.data.polygons)
+    bpy.ops.object.modifier_apply(modifier=m.name)
 if 'custom_normal' in low.data.attributes:
     low.data.attributes.remove(low.data.attributes['custom_normal'])
 low.data.shade_smooth()
