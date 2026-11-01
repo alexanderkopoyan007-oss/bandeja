@@ -43,6 +43,8 @@ export const MOD_PRECISION = 2;
 export interface ShotShape {
   name: string;
   netClear: number;
+  /** The share of netClear a shot struck at the net needs. */
+  nearClear?: number;
   spinRpm: number;
   depth: number;
   /** Face speed at the impact point (m/s) on a perfect, full swing. */
@@ -63,6 +65,9 @@ export interface ShotShape {
   /** Contrapared: the height on the hitter's own glass the ball is aimed at (m); higher tries follow if it fails. */
   glassHeight?: number;
 }
+
+/** Where a lob's clearance is the shot's own (m from the net), and where it is only `nearClear` of it. */
+const NEAR_CLEAR_FROM = 2, NEAR_CLEAR_TO = 7;
 
 interface ModSpec { netClear: number; speed: number; error: number }
 
@@ -702,7 +707,10 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   const ea0 = rk.acor(vCap + along, shape.impact, 0);
   let cap = ea0 * along + (1 + ea0) * vCap;
 
-  const clear = shape.netClear * mod.netClear;
+  // A lob from the net needn't clear what one from the back does: at the same height over the tape it went nearly straight up to 10 m,
+  // and one in six from 3 m left the court.
+  const nearNet = shape.nearClear !== undefined ? clamp((abs(ball.pos.z) - NEAR_CLEAR_FROM) / (NEAR_CLEAR_TO - NEAR_CLEAR_FROM), 0, 1) : 1;
+  const clear = shape.netClear * mod.netClear * (nearNet >= 1 ? 1 : shape.nearClear! + (1 - shape.nearClear!) * nearNet);
   let rpm = shape.spinRpm * req.spinScale * (0.7 + 0.3 * q);
   // Pace shots keep a safer margin over the tape: full pace when that clears it, else as fast as clears it.
   const paceClear = clear + 0.25;

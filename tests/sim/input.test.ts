@@ -4,7 +4,7 @@ import { MatchSim, PH_RALLY, PH_SETUP, PH_TOSS, PH_OVER, E_HIT, E_FAULT } from '
 import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
-import { SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
+import { SHOT_BANDEJA, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
 
 describe('modifiers at the release', () => {
   it('Space let go a few ms after the overhead key, in the same tick, still makes the smash', () => {
@@ -103,5 +103,47 @@ describe('the keys in the air', () => {
     m.shotMod = MOD_PRECISION;
     expect(m.shotFor(p, true)).toBe(SHOT_CHIQUITA);
     m.shotMod = MOD_NONE;
+  });
+});
+
+describe('a second shot key on a held swing', () => {
+  // The game's hint says to press O on a lob, and that press was dropped: the old key's release whiffed the ball.
+  function intoRally(): { m: MatchSim; f: InputFrame } {
+    const m = new MatchSim({ seed: 11, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame();
+    for (let i = 0; i < 120 * 30 && m.phase !== PH_RALLY; i++) { f.clear(); m.step([f, null]); }
+    expect(m.phase).toBe(PH_RALLY);
+    return { m, f };
+  }
+  function tick(m: MatchSim, f: InputFrame, press: boolean, key: number, held: number): void {
+    f.clear();
+    f.push(press, key, m.time);
+    f.held = held;
+    m.step([f, null]);
+  }
+
+  it('takes over, and only its own release counts', () => {
+    const { m, f } = intoRally();
+    const p = m.players[0]!;
+    tick(m, f, true, BTN_DRIVE, BTN_DRIVE);
+    expect(p.swing).toBe(SW_CHARGE);
+    tick(m, f, true, BTN_OVERHEAD, BTN_DRIVE | BTN_OVERHEAD);
+    expect(p.shot).toBe(SHOT_BANDEJA);
+    expect(p.swing).toBe(SW_CHARGE);
+    tick(m, f, false, BTN_DRIVE, BTN_OVERHEAD);
+    expect(p.swing).toBe(SW_CHARGE);
+    tick(m, f, false, BTN_OVERHEAD, 0);
+    expect(p.swing).not.toBe(SW_CHARGE);
+  });
+
+  it('the same key again changes nothing', () => {
+    const { m, f } = intoRally();
+    const p = m.players[0]!;
+    tick(m, f, true, BTN_DRIVE, BTN_DRIVE);
+    const start = p.chargeStart;
+    tick(m, f, true, BTN_DRIVE, BTN_DRIVE);
+    expect(p.swing).toBe(SW_CHARGE);
+    expect(p.chargeStart).toBe(start);
+    expect(p.shot).toBe(SHOT_DRIVE);
   });
 });

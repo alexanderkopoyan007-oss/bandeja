@@ -212,6 +212,11 @@ const CONTRA_SIDE = 1.4;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
+/** Most of the sitter's control a human's drop volley gets: the same ball from the same grade went in the net 8 times as often as the AI's. */
+const DROP_VOLLEY_CONTROL = 1.6;
+/** A serve's aim (m/s) and how near the box's edge it goes (m): at the rally's speed a fifth of a second on A crossed the box to the stop by the fence, two thirds of those serves faults. */
+const SERVE_AIM_SPEED = 4.5;
+const SERVE_AIM_EDGE = 0.55;
 /** Default aim depth (fraction of the half) for the overhead key: deep for a bandeja, mid-court for a smash. */
 const OVERHEAD_AIM_DEPTH = 0.8;
 /** Untouched víbora target: cross-court, this deep (fraction of the half), into the side glass. */
@@ -1361,12 +1366,12 @@ export class MatchSim {
       p.aimX = f.aimTX;
       p.aimZ = f.aimTZ;
     } else {
-      p.aimX += s * f.moveX * AIM_SPEED_X * DT;
-      p.aimZ += -s * f.moveY * AIM_SPEED_Z * DT;
+      p.aimX += s * f.moveX * (serve ? SERVE_AIM_SPEED : AIM_SPEED_X) * DT;
+      p.aimZ += -s * f.moveY * (serve ? SERVE_AIM_SPEED : AIM_SPEED_Z) * DT;
     }
     if (serve) {
       const bx = this.box;
-      p.aimX = clamp(p.aimX, min(bx.x0, bx.x1) + 0.3, max(bx.x0, bx.x1) - 0.3);
+      p.aimX = clamp(p.aimX, min(bx.x0, bx.x1) + SERVE_AIM_EDGE, max(bx.x0, bx.x1) - SERVE_AIM_EDGE);
       p.aimZ = -s * clamp(-s * p.aimZ, 1.4, c.def.serviceLineFromNet - 0.3);
     } else {
       p.aimX = clamp(p.aimX, -c.halfW + 0.45, c.halfW - 0.45);
@@ -1377,6 +1382,13 @@ export class MatchSim {
   private press(i: number, shot: number, t: number): void {
     const p = this.players[i]!;
     const team = p.team;
+    // Another shot key while one is held takes over, and the release that counts is its own: the game's own hint says to press O on a
+    // lob, and the press was dropped, the old key's release whiffed and the point went (291 of 302 lobs; review round 21).
+    if (p.swing === SW_CHARGE && !p.reflex && !this.ai[i] && this.phase === PH_RALLY && shot !== p.shot) {
+      p.shot = shot;
+      if (!p.aimTouched) p.aimZ = -this.side(team) * (shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot)) * this.world.court.halfL;
+      return;
+    }
     if (p.swing !== SW_IDLE && !p.reflex) return;
     if (this.phase === PH_SETUP) {
       // A human's key skips the walk back.
@@ -1725,7 +1737,7 @@ export class MatchSim {
     }
     // (a human's low volley hurts as an AI's does. Not the sitter's bonus: control divides all of a shot's error, and most of a
     // human's is their timing, so with it 950 chest-high volleys in a row went in, however badly timed)
-    r.control = ai ? ai.control(b.pos.y) : shot === SHOT_VOLLEY ? min(1, volleyControl(b.pos.y, abs(b.pos.z))) : 1;
+    r.control = ai ? ai.control(b.pos.y) : shot === SHOT_VOLLEY ? min(1, volleyControl(b.pos.y, abs(b.pos.z))) : shot === SHOT_DROP && this.rally.bounces === 0 ? min(DROP_VOLLEY_CONTROL, volleyControl(b.pos.y, abs(b.pos.z))) : 1;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
 
