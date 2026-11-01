@@ -14,7 +14,7 @@ import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } fro
 import { hingeIK, IK_BEND, IK_SOFT, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import { fitCapsules, RACKET_PTS } from './capsules.ts';
 import { makeRacketModel, makeWristCord } from './racket.ts';
-import { solveGrip } from './grip.ts';
+import { solveGrip, cupPalms } from './grip.ts';
 import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
@@ -1395,6 +1395,7 @@ export class Avatar {
     const skeleton = new THREE.Skeleton(this.bones, asset.boneInverses);
     // A dressed person is drawn as body + face (the face alone carries the morph targets); after the material, which
     // adds attributes the face copies.
+    cupPalms(asset);
     const pm = asset.look && typeof look !== 'number' ? personMeshes(asset) : null;
     this.mesh = new THREE.SkinnedMesh(pm ? pm.body : asset.geometry, mat);
     this.mesh.add(this.bones[0]!);

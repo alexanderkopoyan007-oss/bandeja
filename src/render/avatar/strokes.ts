@@ -216,7 +216,7 @@ export const OVERHEAD: Family = {
   // Trophy position: side-on, racket up behind the head, the free hand pointing at the ball.
   back: rolled(key(v(-0.11, 1.8, -0.56), v(-0.02, 0.8, -0.6), v(-1, 0, 0.1), v(-0.1, 1.2, -0.8), -1.25, v(-0.18, 1.8, 0.48)), 180),
   contact: key(v(-0.35, 2.0, 0.1), v(0.55, 0.78, 0.28), v(0, 0.42, 0.91), v(-0.85, 1.5, -0.1), -0.95, v(0.1, 1.3, 0.5)),
-  finish: rolled(key(v(0.08, 1.12, 0.84), v(0.35, -0.15, 0.9), v(0.05, -0.55, 0.85), v(-0.45, 1.2, 0.25), -0.55, v(0.4, 1.1, 0.3)), 45),
+  finish: tipped(rolled(key(v(0.08, 1.12, 0.84), v(0.35, -0.15, 0.9), v(0.05, -0.55, 0.85), v(-0.45, 1.2, 0.25), -0.55, v(0.4, 1.1, 0.3)), 45), 20),
   dip: -0.05,
   loop: 0.32,
   crouch: 0,
@@ -250,7 +250,7 @@ export const VIBORA: Family = {
   name: 'vibora',
   back: rolled(key(v(-0.14, 1.78, -0.56), v(-0.05, 0.8, -0.6), v(-1, 0.05, 0.15), v(-0.12, 1.2, -0.8), -1.3, v(-0.18, 1.75, 0.48)), 180),
   contact: key(v(-0.5, 1.7, 0.2), v(0.6, 0.72, 0.3), v(0.3, 0.2, 0.93), v(-0.9, 1.3, -0.05), -0.7, v(0.12, 1.25, 0.5)),
-  finish: rolled(key(v(0.42, 0.82, 0.5), v(0.55, -0.55, 0.45), v(0.3, -0.45, 0.85), v(-0.15, 1.05, 0.4), 0.6, v(0.4, 1.05, 0.15)), 140),
+  finish: tipped(rolled(key(v(0.42, 0.82, 0.5), v(0.55, -0.55, 0.45), v(0.3, -0.45, 0.85), v(-0.15, 1.05, 0.4), 0.6, v(0.4, 1.05, 0.15)), 140), 30),
   dip: 0.08,
   loop: 0.28,
   crouch: 0,
@@ -275,7 +275,7 @@ export const VIBORA: Family = {
  * square to the net at contact at full reach, the face flat, and the racket comes right down past the free hip.
  */
 export const SMASH: Family = {
-  tip: tipQ(15),
+  tip: tipQ(25),
   ...OVERHEAD,
   name: 'smash',
   sit: 0,
@@ -320,7 +320,7 @@ const SERVE_TURN = 0.82;
 export const SERVE: Family = {
   name: 'serve',
   back: rolled(courtKey([-0.76, 0.26, 1.67], [-0.5, 0, 0.85], [0.85, 0.5, 0.15], [-0.6, 0.3, 0.85], -1.6, [0.37, 0.47, 1.0]), 100),
-  contact: courtKey([0.5, 0.55, 0.92], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.5, 0.75], -0.8, [0.49, 0.09, 0.82]),
+  contact: courtKey([0.5, 0.55, 0.92], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.7, 1.1], -0.8, [0.49, 0.09, 0.82]),
   finish: rolled(courtKey([0.12, -0.22, 1.67], [-0.3, -0.3, 0.85], [0.9, 0.2, 0.3], [0.3, 0.35, 1.0], -0.3, [0.33, -0.19, 0.87]), 110),
   // Off a coach's serve, frame by frame: the racket hand held out at the shoulder's height until about 0.2 s before the ball,
   // then down across the body to it, the elbow 44-52 all the way.
@@ -370,7 +370,7 @@ export const VOLLEY_FH: Family = {
   weight: 0.08,
   back: tipped(rolled(key(v(-0.46, 1.4, 0.3), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.55, v(0.26, 1.2, 0.42)), 120), 25),
   contact: key(v(-0.5, 1.15, 0.65), v(-0.6, 0.3, 0.72), v(0.1, 0.25, 1), v(-0.42, 0.9, 0.0), -0.42, v(0.42, 1.06, 0.54)),
-  finish: key(v(-0.36, 1.08, 0.64), v(-0.5, 0.25, 0.82), v(0.1, 0.35, 1), v(-0.42, 0.9, 0.1), -0.3, v(0.46, 1.05, 0.4)),
+  finish: tipped(key(v(-0.36, 1.08, 0.64), v(-0.5, 0.25, 0.82), v(0.1, 0.35, 1), v(-0.42, 0.9, 0.1), -0.3, v(0.46, 1.05, 0.4)), 20),
   dip: 0.04,
   loop: 0,
   crouch: 1.6,
@@ -387,7 +387,7 @@ const VBH: Family = {
   weight: 0.06,
   back: key(v(0.42, 1.4, 0.26), v(0.3, 0.9, 0.15), v(0.7, 0.05, 0.7), v(0.2, 1.0, 0.3), 1.45, v(0.28, 1.2, 0.3)),
   contact: key(v(0.5, 1.12, 0.6), v(0.6, 0.3, 0.72), v(-0.1, 0.25, 1), v(0.3, 1.0, 0.3), 1.1, v(0.5, 1.08, -0.2)),
-  finish: key(v(0.34, 1.08, 0.5), v(0.5, 0.25, 0.82), v(-0.1, 0.35, 1), v(0.3, 1.0, 0.35), 0.9, v(0.58, 1.08, -0.3)),
+  finish: tipped(key(v(0.34, 1.08, 0.5), v(0.5, 0.25, 0.82), v(-0.1, 0.35, 1), v(0.3, 1.0, 0.35), 0.9, v(0.58, 1.08, -0.3)), -20),
   dip: 0.04,
   loop: 0,
   crouch: 1.6,
@@ -463,7 +463,7 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
   if (kind === 'chiquita') {
     const back = shrink(f.back, 0.35);
     back.p.y -= 0.15;
-    return { ...f, name: `${f.name}-chiquita`, back: rolled(back, side < 0 ? 45 : 60), finish: rolled(shrink(f.finish, 0.3), side < 0 ? 15 : -30), dip: 0.3, loop: 0.05 };
+    return { ...f, name: `${f.name}-chiquita`, back: tipped(rolled(back, side < 0 ? 45 : 60), side * 15), finish: tipped(rolled(shrink(f.finish, 0.3), side < 0 ? 15 : -30), side * 20), dip: 0.3, loop: 0.05 };
   }
   return {
     ...f, name: `${f.name}-drop`,

@@ -67,6 +67,56 @@ export interface GripSolve {
 
 const FINGERS = ['Index', 'Middle', 'Ring', 'Pinky'];
 
+/** How far the heel of the hand and the thumb's pad rise round the handle (m, for a 113 mm palm), and how much of that comes in towards it. */
+const CUP = 0.016;
+const CUP_IN = 0.5;
+const cupped = new WeakSet<PlayerAsset>();
+
+/**
+ * A palm closes round what it holds, and this one has no bones to do it with: a flat hand with a stick against it, seen from
+ * the palm's side. The skin behind the handle, the heel of the hand and the thumb's pad, is modelled risen round where the
+ * handle lies, once, before anything is drawn. The skin on the handle's line stays put, so the grip's solve doesn't move, and
+ * a hand with nothing in it is a hand at rest, a little cupped.
+ */
+export function cupPalms(asset: PlayerAsset): void {
+  if (cupped.has(asset)) return;
+  cupped.add(asset);
+  const geo = asset.geometry, pos = geo.getAttribute('position') as THREE.BufferAttribute;
+  const SI = geo.getAttribute('skinIndex'), SW = geo.getAttribute('skinWeight'), rest = asset.restPos, nv = rest.length / 3;
+  const v = new THREE.Vector3(), d = new THREE.Vector3(), toBind = new THREE.Quaternion(), mat = new THREE.Matrix4(), sc = new THREE.Vector3(), tr = new THREE.Vector3();
+  for (const side of ['Right', 'Left']) {
+    const hand = asset.bone(side + 'Hand');
+    const at = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(asset.restWorld[asset.bone(side + n)]!);
+    const wrist = at('Hand'), scale = at('HandMiddle1').distanceTo(wrist) / 0.113;
+    const F = at('HandMiddle1').sub(wrist).normalize();
+    const K = at('HandIndex1').sub(at('HandPinky1'));
+    K.addScaledVector(F, -K.dot(F)).normalize();
+    const N = new THREE.Vector3().crossVectors(F, K).normalize();
+    if (N.dot(at('HandThumb2').sub(wrist)) < 0) N.negate();
+    const dI = at('HandIndex1').sub(wrist), fi = dI.dot(F), ki = dI.dot(K);
+    // Across the handle's line in the palm's plane, towards the wrist.
+    const t = Math.tan(HANDLE_TILT), l = Math.hypot(1, t), acrossF = -1 / l, acrossK = t / l;
+    mat.copy(asset.restWorld[hand]!).multiply(asset.boneInverses[hand]!).decompose(tr, toBind, sc);
+    toBind.invert();
+    const sm = (a: number, b: number, x: number): number => { const u = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
+    for (let i = 0; i < nv; i++) {
+      let w = 0;
+      for (let k = 0; k < 4; k++) if (SI.getComponent(i, k) === hand) w = SW.getComponent(i, k);
+      if (w < 0.05) continue;
+      d.fromArray(rest, i * 3).sub(wrist);
+      const f = d.dot(F), k = d.dot(K), n = d.dot(N);
+      const out = ((f - fi) * acrossF + (k - ki) * acrossK) / scale;
+      const rise = CUP * scale * w * sm(0.01, 0.055, out) * sm(0.11, 0.06, out) * sm(-0.004, 0.012, n / scale);
+      if (rise <= 0) continue;
+      d.copy(N).multiplyScalar(rise).addScaledVector(F, -acrossF * rise * CUP_IN).addScaledVector(K, -acrossK * rise * CUP_IN);
+      rest[i * 3] = rest[i * 3]! + d.x; rest[i * 3 + 1] = rest[i * 3 + 1]! + d.y; rest[i * 3 + 2] = rest[i * 3 + 2]! + d.z;
+      d.applyQuaternion(toBind);
+      v.fromBufferAttribute(pos, i).add(d);
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+  }
+}
+
 export function solveGrip(asset: PlayerAsset, side: string): GripSolve {
   const rw = asset.restWorld;
   const idx = (n: string): number => asset.bone(side + n);
