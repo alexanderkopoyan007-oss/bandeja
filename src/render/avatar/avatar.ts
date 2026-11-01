@@ -2939,6 +2939,9 @@ export class Avatar {
     q3.multiplyQuaternions(q2, this.grip.qInv);
     v3.copy(this.grip.pos).applyQuaternion(q3);
     v2.setFromMatrixPosition(this.armRacket[0]!.matrixWorld);
+    // (with the weight going in as well: the two together took the hips 20 cm too near the ball, 37 cm on at a serve, and
+    // the arm hit it folded at 96 degrees)
+    v2.z += (before ? this.fam.weight ?? 0 : this.intoBall) * this.netZ;
     // Measured from where the shoulder will be at the contact: a player still running to the ball gets there on
     // their feet, not by lunging the hips out (that put the hips 0.33 m off the floor at a sprint, the knees folded
     // through). The run left: towards the plan's spot, as far as the present speed covers in the time left.
