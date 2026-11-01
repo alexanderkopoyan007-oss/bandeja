@@ -3084,6 +3084,8 @@ The owner, having seen the first: "Generate 2 more characters in meshy, they loo
 | Edge stretch into the T-pose, p99 | 1.76 | 2.14 | 1.46 | | |
 | Pops per minute, seeds 1, 2, 3 | 21.3, 15.5, 19.8 | 18.5, 16.5, 21.3 | 22.0, 20.8, 14.5 | 22.5, 16.3, 18.5 | 18.8, 14.0, 14.3 |
 
+Frame rate, four of them against four of the regular cast, alternating, 30 s a run: Medium at 4x throttle 139.3, 145.2 fps against 148.2, 150.2; High 207.3, 212.1 against 212.8, 197.7; paced at 120 Hz 120.5 on all four, with no frame over 20 ms. The hitch left open when the first man went in did not come back. Unpaced at High more of their frames run past 9.33 ms (18-20% against 3-4%) with the same mean; paced, none miss.
+
 Guests had no tests at all, because `PEOPLE` lists only the ten. `tests/render/guests.test.ts` checks build, shared texels and pops; `tests/app/cast.test.ts` checks the deal.
 
 Still wrong: no blink or mouth, cloth and face are dead, hair is solid, fingers fused. The woman's arms sit closest to her body, so hers is the worst armpit by the numbers, though her smash looks right from the side and behind. No team colours: a shirt mask in the normal map's unused blue channel would allow them, not done.
