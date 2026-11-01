@@ -3,7 +3,7 @@
 // changes, so the HUD costs next to nothing per frame.
 import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import {
-  E_HIT, E_SWING, E_WHIFF, E_CALL, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_ENDS, E_EXIT, PH_TOSS, PH_RALLY, PH_SETUP,
+  E_HIT, E_SWING, E_WHIFF, WHIFF_NOTHING, E_CALL, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_ENDS, E_EXIT, PH_TOSS, PH_RALLY, PH_SETUP,
 } from '../sim/match.ts';
 import { REASON_TEXT, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/contact/timing.ts';
@@ -434,13 +434,15 @@ export class Hud {
       case E_SWING:
       case E_WHIFF:
         if (human >= 0 && e.player === human && !this.pro && e.b >= 0) {
-          const outOfReach = e.kind === E_WHIFF && e.x > 0;
+          // (a swing at nothing had no timing to grade: it showed the last shot's, "Too late" and its milliseconds)
+          const nothing = e.kind === E_WHIFF && e.y === WHIFF_NOTHING;
+          const outOfReach = (e.kind === E_WHIFF && e.x > 0) || nothing;
           this.set(this.grade, outOfReach ? 'Out of reach'
             : e.kind === E_WHIFF && e.b !== G_TOO_EARLY && e.b !== G_TOO_LATE ? `${GRADE_TEXT[e.b]} · miss` : GRADE_TEXT[e.b]!);
           this.grade.style.color = hex(outOfReach ? PAL.textOff : gradeColour(e.b, true));
           this.grade.style.opacity = '1';
           const ms = Math.round(Math.abs(e.c) * 1000);
-          this.set(this.ms, outOfReach ? `${e.x.toFixed(1)} m away: get to the spot first` : ms === 0 ? 'spot on' : `${ms} ms ${e.c < 0 ? 'early' : 'late'}`);
+          this.set(this.ms, nothing ? 'get to the spot first' : outOfReach ? `${e.x.toFixed(1)} m away: get to the spot first` : ms === 0 ? 'spot on' : `${ms} ms ${e.c < 0 ? 'early' : 'late'}`);
           this.ms.style.opacity = '1';
           this.gradeUntil = now + 0.9;
         }

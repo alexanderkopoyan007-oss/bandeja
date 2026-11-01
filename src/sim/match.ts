@@ -953,7 +953,8 @@ export class MatchSim {
     if (human && p.swing === SW_CHARGE && this.phase === PH_RALLY && this.rally.hitter !== team) {
       const focus = this.focusIdeal(i);
       if (focus >= 0 && this.focusInReach && this.focusGo < t0 + DT) this.releaseSwing(i, t0, f);
-      else if (this.focusInReach) {
+      else {
+        // (whatever the plan: most balls that hit a human holding a key had a contact planned off the glass, out of reach)
         const k = this.bodyHitIdx(i, this.side(team));
         if (k >= 0 && this.pred.t[k]! - BODY_LEAD < t0 + DT) this.releaseSwing(i, t0, f);
       }

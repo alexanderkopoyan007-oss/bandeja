@@ -3064,3 +3064,25 @@ What is wrong, in order. With the arm high the sleeve, fused to the ribs, opens 
 Structural to a fused AI mesh: the armpit, fingers fused to the middle knuckle, solid hair, no mouth interior. Fixable: automating the joint fit, the collar and armpit weights, seam specks, team colours with a shirt mask. So not ten of these yet: the face and cloth would need rebuilding on top, and the current ten have what he lacks.
 
 Frame time reads the same but isn't settled: both of his paced runs in `tools/perf.mjs` hitched (p99 18 and 41 ms) and p1's didn't; three alternating pairs of 1,448 frames in a separate probe did not repeat it (p99 9.5-9.6 against 9.3-9.5). The machine was busy throughout. He has only been played by bots.
+
+## Round 10: what the review found from the owner's seat (2026-11-01)
+
+The review kept five Highs out of twelve (`REVIEW.md`, round 10). Every number here is on its seeds, old build against new. Three of the five causes turned out to be bugs rather than tuning, and two of the reviewers' guesses were wrong, so the rule that held is the usual one: trace it before changing it.
+
+**The swing doesn't park.** `HOVER` stopped a held swing at 85%. It is gone: `hover()` closes on the ball, slowing, and past the plan's moment the racket follows the predicted ball (`predAt` at the swing's own lead). So a late release finds the racket beside the ball wherever it has got to.
+
+**The short way, both ends.** `nlerpQ` picked the short way only at `u < 0.02`, and a fade runs u down from 1, where both ways start out alike. A third of recoveries went the long way round. A racket that turned 250 degrees for a turn of 110 is what "the racket whips back" was. It now holds at `u > 0.98` as well. The weighting is slerp's at every angle: nlerp bunches a big turn in the middle, and a threshold on it (0.7) added about 10 arm pops as two rotations crossed it. `fadeLen` stretches FADE to 0.6 s for a big turn; it is worth a forehand volley's 8.3 to 7.1 m/s.
+
+Tried and dropped: limiting the racket's turn in recovery (RECOVER_TURN_RATE). It made things worse, hand 5 to 11 m/s, because the racket's centre goes where the key puts it and the wrist follows from the rotation. Don't limit the racket's rotation on its own. The review's pointer (FADE_TURN_RATE and the wrist limit) was wrong too.
+
+**The reach counts the weight.** `intoBall` and the reach both took the hips towards the ball; `hipZ` adds them and neither knew of the other. The reach is now measured from where the shoulder will be with the weight in. That is the serve's 96-degree elbow gone. The serve's `arm` is 0.93, not the default 0.96: elbow 44-52 on the coach, and full stretch is where a small move is a large elbow (a forearm pop at one serve).
+
+**The run's beat.** `hard`, the rule for a foot left behind, fired on half of all run steps, since an ordinary stride reaches `RUN_REACH`. It now waits for RUN_EARLY of a stride unless the foot is past 1.5 reaches (RUN_STRANDED, a square), but **only with no stroke under way**: with one, a foot stuck behind as the feet locked and legs went 43 to 70 pops on p7. So this is better, not gone: short/long pairs 35 to 13%. It trades directly against legs at full stretch. RUN_LIFT and RUN_FALL 0.86 show the flight (13% by foot height; 27% by the gait's own state, the true one, the sceptic's point).
+
+**A human's swing has an error.** `humanMotor`: `human.motor` 0.3 x the grade's share x the pressure term the AI has. 0.5 was too far: planned play fell to 44-45% against one key's 47-52, because a plan aims near the lines. 0.3 is the most that keeps planning ahead at Pro. It does not close the finding. At Advanced a sharp hand still wins 11-1 or 12-0 at sd 70, even at sd 110, and a real hand's sd on this ring has never been measured. The AI still makes as many errors against a harmless ball as a dangerous one (replies to the one-key drive 10.5% errors against 4.4% for the partner's). I left that alone: it is the AI's model, tuned to the published figures. The sceptic's view was that the AI is about right and the human was the outlier.
+
+**Two bounds moved.** `overSkin` 24 to 44 and `lungeShorts` 8 to 9 in `clothFit.test.ts`. The test judges the frame with the hand highest, and these swings moved that frame onto a backhand lob's finish. The same frame read 31 on the old build, 41 now: a sleeve riding up with the arm up and across. No other bound moved. Everything else, pops under 30 on all ten and the mannequin, was met by fixing the cause.
+
+**Also:** the "ball about to hit the body" release ran only with a contact in reach, so a plan off the glass switched it off in the very case it was written for. A swing at nothing reads "Out of reach", not the last shot's "Too late" and milliseconds.
+
+**Not done.** The Mediums are open (`REVIEW.md`), the human's víbora at 2.3 m among them. P and M with no message is a HUD change, so it waits for the owner. Sound wasn't reviewed. Nobody has played this by hand, so everything here about the human's swing is a stand-in's.
