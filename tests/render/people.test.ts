@@ -212,7 +212,21 @@ describe('people', () => {
   for (const name of PEOPLE) {
     it(`animates inside the mannequin's limits: ${name}`, () => {
       const p = base.people.find((x) => x.look!.name === name)!;
-      const r = runAnimQa(p, { seed: 1, seconds: 60, lefty: [], repeatEvery: 7 });
+      const elbows: number[] = [], sh = new THREE.Vector3(), el = new THREE.Vector3(), wr = new THREE.Vector3(), up = new THREE.Vector3(), fore = new THREE.Vector3();
+      const r = runAnimQa(p, { seed: 1, seconds: 60, lefty: [], repeatEvery: 7, onFrame: (_m, av) => {
+        for (const raw of av) {
+          const a = raw as unknown as { st: number; ready: number; addrW: number; carryW: number; tapW: number; armRacket: THREE.Bone[] };
+          if (a.st !== 0 || a.ready < 0.9 || a.addrW + a.carryW + a.tapW > 0.01) continue;
+          a.armRacket[0]!.getWorldPosition(sh); a.armRacket[1]!.getWorldPosition(el); a.armRacket[2]!.getWorldPosition(wr);
+          elbows.push(up.subVectors(el, sh).angleTo(fore.subVectors(wr, el)) * 180 / Math.PI);
+        }
+      } });
+      // The ready position's elbow, standing and on the move: footage 46-66. Before the arm's reach was held, five people of ten stood on 22-45 and the worst frames were 15-20.
+      elbows.sort((x, y) => x - y);
+      expect(elbows.length).toBeGreaterThan(2000);
+      expect(elbows[elbows.length >> 1]).toBeGreaterThan(46);
+      expect(elbows[elbows.length >> 1]).toBeLessThan(75);
+      expect(elbows[elbows.length >> 4]).toBeGreaterThan(44);
       expect(r.feet.skate).toBeLessThan(25);
       expect(r.feet.belowShare).toBeLessThan(0.001);
       expect(r.feet.planted.p50).toBeLessThan(0.01);

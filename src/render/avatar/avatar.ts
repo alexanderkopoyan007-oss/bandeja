@@ -630,6 +630,12 @@ const SERVE_LET_GO = 1.2;
  */
 /** How far the ready position takes over from the clip in play (the serve's address and a tap take all of it). */
 const READY_HOLD = 0.97;
+/**
+ * The most of its length the arm is out in the ready position: an elbow of 52, footage 46-66. Near straight a few centimetres are tens of degrees: the fit left five
+ * people of ten on 22-45 standing still and everybody on 18-20 at times on the move, the lean that reached for the hand came off in a stroke's first frame, and a straight arm
+ * has no side for its elbow, which found one again in a frame. Those were half the pops, read as "ready" though each was a backswing starting.
+ */
+const READY_REACH = 0.89;
 const READY_UP = 1.1;
 /** The shoulder height (m, standing) READY's numbers are for. */
 const READY_SHOULDER = 1.355;
@@ -723,7 +729,7 @@ const RUN_LANDS = 0.6;
 const RUN_LOOSE = 0.3;
 const RUN_HIP_RATE = 1.2;
 /** The most a run's hips sink for a foot (m): they followed one left behind, hips 0.68 m at 2 m/s, feet over a metre apart. */
-const RUN_SINK = 0.1;
+const RUN_SINK = 0.13;
 /** How far down the hips are taken as being when a planted foot is judged out of reach and steps at once, whatever the other foot is doing (m). Less has both feet off the floor 43% of a run and cuts the stance short, more slides the foot and leaves the thigh out; real running is about 30, a foot down 0.2 s. */
 const RUN_STEP_SINK = 0.07;
 /** How much of the way to under the hips a run's foot goes in the middle of a swing: from a foot left out to the side the straight line to its landing held the thigh out 55 degrees in the air. */
@@ -1004,6 +1010,8 @@ export class Avatar {
   private gaitW = 0;
   private gaitH = 0;
   private gaitRunH = 0;
+  /** Last frame's turn on an overhead's way to its curve, for keeping the way round (nlerpQ); zero when there is none. */
+  private readonly overPrev = new THREE.Quaternion(0, 0, 0, 0);
   private runHipY = -1;
   private gaitOn = 0;
   /** 1: walkFeet is drawing a rally's run, not the walk back; which foot goes next, and how long since one went (s). */
@@ -1962,6 +1970,7 @@ export class Avatar {
         this.prepStart = t;
         this.prepFromW = this.w;
         this.st = ST_PREP;
+        this.overPrev.set(0, 0, 0, 0);
         this.swingS = 0;
         this.holdW = -1;
         if (this.w === 0) this.nearW = 0;
@@ -3648,11 +3657,14 @@ export class Avatar {
     // (a run's feet go by turns even so: two in the middle of a swing together is a hop, feet side by side)
     if (hard >= 0 && run && G[1 - hard]! >= 0 && (G[1 - hard]! < RUN_TURNS || (this.st === ST_NONE && this.gaitUp < RUN_EARLY / hz && (hard === 0 ? far0 : far1) < r2 * RUN_STRANDED))) hard = -1;
     if (run) {
-      // Further than the leg reaches with the hips a little down: it goes now, whatever the other foot is doing.
+      // Further than the leg reaches with the hips a little down: it goes as the other comes down, half a stride behind it.
       const fast = smoothstep(RUN_V0, RUN_V1, sp), low = (this.legLen + this.ankleY) * (RUN_HIP0 + (RUN_HIP1 - RUN_HIP0) * fast) - RUN_STEP_SINK - this.ankleY;
-      const stretch = this.legLen * RUN_STRETCH, most = stretch * stretch - low * low;
+      const stretch = this.legLen * RUN_STRETCH, reachIt = stretch * stretch - low * low, stride = back * RUN_BEHIND;
+      // (and past where a stride's own foot gets to: at a run's pace that is further than a straight leg, the heel coming up for it, and
+      // judged on reach alone every foot left early, landed beside the other and the run galloped)
+      const most = reachIt > stride * stride ? reachIt : stride * stride;
       for (let f = 0; f < 2; f++) {
-        if (G[f]! >= 0) continue;
+        if (G[f]! >= 0 || (G[1 - f]! >= 0 && G[1 - f]! < RUN_LANDS)) continue;
         const gx = P[f]!.x - rx, gz = P[f]!.z - rz;
         if (gx * gx + gz * gz > most) { hard = f; break; }
       }
@@ -4013,7 +4025,10 @@ export class Avatar {
    */
   private overKey(o: OverArm, ua: THREE.Bone): void {
     const s = this.keyS, g0 = (s - OVER_TO_BALL) / (1 - OVER_TO_BALL), a = this.lagK * this.overIn, left = (1 - (g0 > 0 ? g0 * g0 : 0)) * a;
-    if (left <= 0) return;
+    if (left <= 0) {
+      this.overPrev.set(0, 0, 0, 0);
+      return;
+    }
     this.overU = left;
     // The racket's turn onto the contact's starts far sooner: 100-140 degrees of it in that last stretch was most of the
     // head's speed.
@@ -4038,7 +4053,11 @@ export class Avatar {
     const kx = v2.x - h.x, ky = v2.y - h.y, kz = v2.z - h.z;
     W.copy(this.overEnd).conjugate().premultiply(this.overQ);
     if (a < 1) W.slerp(QUAT_ID, 1 - a);
-    q2.slerp(this.overEnd, turn).premultiply(W);
+    // (the way round holds from frame to frame: the two can sit half a turn apart, and taken the short way each time the racket went round
+    // the other side the frame the gap passed half a turn, 25 degrees at once, on nearly every left-hander's serve)
+    BL.u = turn;
+    nlerpQ(q2, this.overEnd, this.overPrev);
+    q2.premultiply(W);
     h.copy(off).applyQuaternion(q2);
     v2.x = kx + (hx - kx) * left + lx * a + h.x;
     v2.y = ky + (hy - ky) * left + ly * a + h.y;
@@ -4236,6 +4255,18 @@ export class Avatar {
       this.quatToWorld(ready.q, q2);
       q2.premultiply(this.chestQ);
       alignQ(q2, this.prevReadyQ);
+      // (the serve's address, a tap and a carried racket are arms of their own, which it lets go to)
+      const held = (1 - this.addrW) * (1 - this.carryW) * (1 - this.tapW);
+      if (held > 0) {
+        q3.multiplyQuaternions(q2, this.grip.qInv);
+        v3.copy(this.grip.pos).applyQuaternion(q3);
+        const mh = ua.matrixWorld.elements, hx = v2.x - v3.x - mh[12]!, hy = v2.y - v3.y - mh[13]!, hz = v2.z - v3.z - mh[14]!;
+        const hd = Math.sqrt(hx * hx + hy * hy + hz * hz), hl = this.armLen * (READY_REACH + (1.1 - READY_REACH) * (1 - held));
+        if (hd > hl) {
+          const r = 1 - hl / hd;
+          v2.x -= hx * r; v2.y -= hy * r; v2.z -= hz * r;
+        }
+      }
       // (the hold is the key itself: at 0.97 the clip's racket stayed in the blend, nlerpQ's way never came back to the
       // short one, and the racket hung 10 degrees off the key and snapped back, a pop a rally)
       BL.u = this.ready >= READY_HOLD ? 1 : this.ready / READY_HOLD;
