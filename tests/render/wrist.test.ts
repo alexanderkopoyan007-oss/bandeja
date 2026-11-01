@@ -20,13 +20,14 @@ describe('the wrist', () => {
     const iE = bone('RightForeArm'), iW = bone('RightHand'), iM = bone('RightHandMiddle1'), iI = bone('RightHandIndex1'), iP = bone('RightHandPinky1'), iS = bone('RightArm');
     const S = new THREE.Vector3(), E = new THREE.Vector3(), W = new THREE.Vector3(), M = new THREE.Vector3(), I = new THREE.Vector3(), L = new THREE.Vector3();
     const A = new THREE.Vector3(), F = new THREE.Vector3(), K = new THREE.Vector3(), N = new THREE.Vector3(), U = new THREE.Vector3(), H = new THREE.Vector3(), T = new THREE.Vector3(), Up = new THREE.Vector3();
-    interface Av { armRacket: unknown; armR: unknown; root: THREE.Object3D; bones: THREE.Bone[]; w: number; ready: number; st: number; lastT: number; tCon: number; fam: { name: string } }
+    interface Av { addr: boolean; carryW: number; tapW: number; armRacket: unknown; armR: unknown; root: THREE.Object3D; bones: THREE.Bone[]; w: number; ready: number; st: number; lastT: number; tCon: number; fam: { name: string } }
     for (const seed of [2350001, 2350002, 2350003, 2350004]) {
       runAnimQa(P, { seed, seconds: 60, onFrame: (_m: unknown, av: unknown[]) => {
         for (const x of av as Av[]) {
           if (x.armRacket !== x.armR) continue;
           const fam = x.w > 0.3 ? x.fam.name : 'ready', c = x.lastT - x.tCon;
-          const stage = fam === 'ready' ? (x.ready > 0.8 ? 'ready' : '') : x.st === 1 ? `${fam} back` : x.st === 2 && Math.abs(c) < 0.02 ? `${fam} contact` : '';
+          const between = fam !== 'ready' ? '' : x.addr ? 'address' : x.carryW > 0.5 ? 'carry' : x.tapW > 0.5 ? 'tap' : '';
+          const stage = between || (fam === 'ready' ? (x.ready > 0.8 ? 'ready' : '') : x.st === 1 ? `${fam} back` : x.st === 2 && Math.abs(c) < 0.02 ? `${fam} contact` : '');
           if (!stage) continue;
           x.root.updateMatrixWorld(true);
           const b = x.bones;
@@ -49,6 +50,12 @@ describe('the wrist', () => {
 
   it('stays in a wrist\'s range in the ready position (2.27 times past it)', () => {
     expect(med('ready')).toBeLessThan(1.2);
+  });
+
+  it('stays in range between the points as well: walking back, tapping rackets, at the address (2.28, 2.02 and 2.14)', () => {
+    expect(med('carry')).toBeLessThan(0.7);
+    expect(med('tap')).toBeLessThan(1);
+    expect(med('address')).toBeLessThan(1);
   });
 
   it('is back and ready at the serve\'s backswing (3.46 times past it, the hand folded 124 degrees)', () => {

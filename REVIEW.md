@@ -529,3 +529,37 @@ Same panel on the shipped build: 20 findings, five reached the sceptic, two stay
 
 **Outside the panel: the owner.** "Her arm is literally backwards" on a generated woman: a sleeve fused to her ribs, which no joint number can see. Fixed by remodelling with the arms out and measuring stretched skin. See DECISIONS.md.
 
+## Round 15 (2026-11-01, on c2a374c; "review round 20" in the code's comments)
+
+Three reviewers on the shipped build, this time with a body-mechanics reviewer in place of the second opponent: 27 findings, eight reached the sceptic, one stayed High. Numbers are from the review's own reproductions, rerun on the fix. Nobody has played by hand: every "you" is a scripted stand-in.
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | High | **The automatic block at your body plays no swing:** the ball bounces off a racket that never moves, 1 hit in 8-14. | **Fixed.** The reflex now reaches 0.2 s ahead and strikes through the held-key path. Hits with no stroke on 8 seeds: 0 of 86 |
+| 2 | Medium (was High) | **The bandeja has no tray:** level at the ball, then rolled over like a smash. | **Fixed.** The face looks up 13 at the ball and 10-20 after it (was -6 and -39). The key can't open with the racket leaning forward: `racketQuat` squares the normal to the axis |
+| 3 | Medium (was High) | **Hints never stop,** and sit on your own players. | Half. Each hint retires after six showings, kept in the browser. The position is unchanged, and no cue is restyled without the owner seeing it |
+| 4 | Medium (was High) | **Steer a smash and it loses its kill depth.** | **Fixed.** A and D no longer freeze depth, a key held from the run in isn't a steer. Winners by contact depth 42/41/30 (was 25/27/23; untouched 50/43/36). Space pressed late stays deep: the stance was the bandeja's, so it can't be a true smash |
+| 5 | Medium (was High) | **The wrist fix missed the between-point poses,** one frame in five bent about 100 degrees. | **Fixed.** Carry 2.28 to 0.34, address 2.14 to 0.50, tap 2.02 to 0.54-0.81, and now in the wrist test |
+| 6 | Medium (was High) | **The ready pose held both arms out nearly straight.** | **Fixed.** Free elbow 15 to 44-52 (footage 45-47), racket elbow 61 |
+| 7 | Medium (was High) | **The hit is not the racket's fastest moment.** | Open. Smash 14 m/s three frames before, 10 at the ball |
+| 8 | Low (was High) | **After every serve the racket goes into the server's face.** | **Fixed.** It stood up in front of the nose, 5 cm off. Now past the far shoulder, 13-20 cm from the skull's centre, elbow 103 |
+| 9 | Medium | The forehand arm sat at its stop from the take-back to the ball. | **Fixed.** The key had the hand 0.8 m from the shoulder of a 0.58 m arm. Elbow 96, 66, 35, 53, 69 through the swing (was 30 all the way), wrist 0.73 at the ball |
+| 10 | Medium | The menu misdescribes the partner, and the TV camera. | **Fixed.** Copy only |
+| 11 | Medium | The AI lob-volleys chest-high balls from the net. | **Fixed.** Not above 1 m. Six thousand points, unseen seeds: shots 10.75 to 10.66, serving pair 66.3 to 66.5, within noise |
+| 12 | Medium | Perfect barely beats Good, and a held key is graded Perfect | Open |
+| 13 | Medium | Your volley meets the ball moving sideways at walking pace | Open |
+| 14 | Medium | The smash arm brakes into the ball | Open. Same as #7 |
+| 15 | Medium | The near fence rail sits on the default aim, the other cameras are worse | Open |
+| 16 | Medium | The first match is a long loss by default | The owner's call |
+| 17 | Medium | The serve's wrist is past its limit all the way, the elbow folds and opens, the hips jolt at the ball | Open |
+| 18 | Medium | A jump smash's hips swim in the air | Open |
+| 19 | Medium | No lunge: a wider ball gets a lean, not a long step | Open |
+| 20 | Medium | The backhand's forearm kicks the wrong way before the ball | Open |
+| 21 | Medium | The hips sag on the second stride of a long start | Open |
+| 22 | Medium | Por tres is rare and can't be played on purpose | Open |
+| 23 | Medium | Key aim can't reach a put-away volley in time | Open |
+| 24 | Medium | Forehand volleys drop the racket level beside the hip | Open |
+| 25 | Low | The handle sits in the thigh on low volleys | Open |
+| 26 | Low | The split step comes after the strike | Open |
+
+Frame rate on the fix: 120.5 fps paced, 8.3 ms, none over 20 ms, 82 draw calls, 471k triangles. Alloc 9 against a budget of 10.

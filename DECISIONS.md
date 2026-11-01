@@ -3261,3 +3261,17 @@ Your drive at 79 km/h against the AI's 62-64 is not a bug: you aim 7.2 m deep by
 **Left alone.** `UP_HALF_GAP` 1.7 was the reviewers' tested fix for the aim hole. Round 7 rejected that width for opening the middle, and the read closes the hole without it. The first-match cliff and a big-point mark are the owner's menu and HUD to decide.
 
 **Numbers.** AI against AI and FPS are in REVIEW.md Round 13. Alloc: 8 and 9 collections against a budget of 10.
+
+## Round 15: the block, the tray and the arms that sat at their stops (2026-11-01)
+
+**A key that reaches past the arm.** The forehand's and backhand's take-backs had the hand 0.75-0.8 m from the shoulder of a 0.58 m arm, so the elbow sat at its stop from the backswing to the ball and no wrist number could say so. I moved the hand in and lowered `arm`, so the body goes to the ball. Lowering `tip` as well cost the wrist almost nothing: 0.73 at the ball at 20 degrees against 0.77 at 25. Check a key's reach with arithmetic before scanning its angles.
+
+**The block goes through the held-key path.** A reflex reaches 0.2 s ahead and presses like a key, so it gets the swing, the stroke and the timing of a normal volley. A new `p.reflex` lets a real press take over, and the swing is dropped if the ball stops coming.
+
+**Depth keys own depth.** A and D no longer count as touching an overhead's aim. A key already down at the press is the run's until let go (`steerFrom`). With Space pressed late the landing is still deep, and I left that: the plan's contact is the bandeja's, 1.9 m and not 2.4 m, so the flat path the smash needs isn't there. The player didn't jump for it.
+
+**A tray needs the racket leaning back.** `racketQuat` squares the normal to the long axis, so a racket leaning forward can't have an open face. Contact axis z from 0.42 to -0.1, and the finish across the body rather than over the top.
+
+**Hints retire, they don't move.** Six showings each, in localStorage. Their position is a cue, and cues don't change without the owner seeing them.
+
+**Numbers.** REVIEW.md Round 15. The wrist test now covers carry, tap and address: `med('ready')` had hidden them.
