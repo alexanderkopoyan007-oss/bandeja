@@ -686,7 +686,7 @@ const STEP_TIME = 0.15;
  * RUN_V_OFF; handed to the foot locks RUN_PLANT s before a contact. Strides a second, RUN_HZ0 + RUN_HZ_V a m/s up to
  * RUN_HZ_MAX; the share of a stride a foot is down, RUN_DUTY0 at RUN_V0 to RUN_DUTY1 at RUN_V1; RUN_AHEAD of that ahead of
  * the hips (nearer the half a walk puts down, and the knee lands straight); feet RUN_WIDTH of the hip's width off the
- * middle, RUN_WIDE going sideways, or they pass through each other; RUN_CLEAR + RUN_CLEAR_V a m/s of clearance and
+ * middle, in under the body (at 1.2 two rails 26 cm apart, a wide-legged trot from behind), RUN_WIDE going sideways, or they pass through each other; RUN_CLEAR + RUN_CLEAR_V a m/s of clearance and
  * RUN_KICK rad of heel at speed; RUN_ROLL rad of heel up as a foot leaves. RUN_REACH of the leg from the hips, a planted
  * foot goes. RUN_STILL: nearer its place than this (m), a foot isn't due a step.
  */
@@ -704,7 +704,7 @@ const RUN_LIFT = 0.12;
 const RUN_DUTY0 = 0.52;
 const RUN_DUTY1 = 0.41;
 const RUN_AHEAD = 0.3;
-const RUN_WIDTH = 1.2;
+const RUN_WIDTH = 0.7;
 const RUN_WIDE = 1.4;
 const RUN_CLEAR = 0.04;
 const RUN_CLEAR_V = 0.01;

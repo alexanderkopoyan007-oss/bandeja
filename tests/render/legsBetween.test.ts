@@ -24,6 +24,7 @@ describe('the legs between strokes', () => {
     R.setFromMatrixPosition(P.restWorld[iL]!);
     const stand = H.y, leg = L.distanceTo(R);
     let frames = 0, sunk = 0, wide = 0, landings = 0, paired = 0;
+    const widths: number[] = [], FL = new THREE.Vector3(), FR = new THREE.Vector3();
     const was = [[-1, -1], [-1, -1], [-1, -1], [-1, -1]], lastLand = [-9, -9, -9, -9];
     runAnimQa(P, { seed: 2350003, seconds: 60, onFrame: (m: { time: number }, av: unknown[]) => {
       (av as { gaitSwing: number[]; gaitRun: number; sp: number }[]).forEach((x, i) => {
@@ -33,6 +34,12 @@ describe('the legs between strokes', () => {
             landings++;
             if (m.time - lastLand[i]! < PAIRED) paired++;
             lastLand[i] = m.time;
+            // Across the way it is going, with the hips facing that way.
+            const a = x as unknown as { bones: THREE.Bone[]; vx: number; vz: number; yRoot: number }, v = Math.hypot(a.vx, a.vz), ux = a.vx / v, uz = a.vz / v;
+            if (Math.sin(a.yRoot) * ux + Math.cos(a.yRoot) * uz > 0.8) {
+              FL.setFromMatrixPosition(a.bones[iL]!.matrixWorld); FR.setFromMatrixPosition(a.bones[iR]!.matrixWorld);
+              widths.push(Math.abs((FL.x - FR.x) * uz - (FL.z - FR.z) * ux));
+            }
           }
           was[i]![f] = u;
         }
@@ -54,5 +61,8 @@ describe('the legs between strokes', () => {
     // A run alternates: the forced step that cured the straddle landed one foot beside the other, a gallop, 14% of landings at first.
     expect(landings).toBeGreaterThan(60);
     expect(paired / landings).toBeLessThan(0.03);
+    // Nearer a line under the body than two rails a hip's width apart (0.26 m at 1.2 hip's widths a side, a wide-legged trot from behind).
+    expect(widths.length).toBeGreaterThan(20);
+    expect(widths.sort((a, b) => a - b)[widths.length >> 1]!).toBeLessThan(0.21);
   });
 });

@@ -614,9 +614,9 @@ Three reviewers and a sceptic on the shipped build, seeds from 2421000. Two find
 | 9 | Medium | On volleys the forearm sinks into the trunk, on every body. | **Fixed for the elbow, which was the cause.** Nothing looked at it. Over 5 cm in, all frames: p1 1.65 to 0.66%, generated body 5.73 to 3.14%. Forehand volley after the ball 30% to 0, deepest 11.5 to 4.6 cm. Backhand volley and a generated body's forehand volley are still 11-24% and stay Open. |
 | 10 | Medium | The forehand's finish stays low with the arm at its stop; on generated people it never bends. | **Fixed.** p1 31, 39, 47, 44, 48, 49 at -.22, -.08, 0, +.08, +.16, +.24 s (video 30-31, 39, 48, 47-64, 38-60, 43-64). Generated body 38-49 after the ball, was 32 flat. Hand -.38, -.25, -.24 trunks (video -.47, -.12, +.1): closer, still late. |
 | 11 | Medium | Overhead arms are straighter than the footage at the ball and locked after it. | **Better.** Bandeja p1 50 at the ball (video 54-65), 46, 42, 43 after (31-62), was 45, 30, 27, 17. Víbora 57 (53). Generated bodies 39 at the ball (n 3): short of it. Smash 36-43 on p1 (53). |
-| 12 | Medium | Partners go through each other. | Open, next. |
-| 13 | Medium | In a run the feet travel on two rails a hip's width apart. | Open, next. |
-| 14 | Medium | A return through the gap beats the serving pair clean: the call sits on the net player, who can't reach it. | Open, next. |
+| 12 | Medium | Partners go through each other. | Open. Under 0.25 m: none in 6.7 team-minutes on Round 17's build (0.35 a court-minute in review). The sim's gap is unchanged, since widening it moves play for something this rare. |
+| 13 | Medium | In a run the feet travel on two rails a hip's width apart. | **Fixed.** Forward stride width 0.27 to 0.17 m, gate in `legsBetween.test.ts` (the old build fails at 0.26). Pairs 3%, limp 6%, straddle 0. The real figure is from memory, so RUN_WIDTH .7 is a judgement. |
+| 14 | Medium | A return through the gap beats the serving pair clean: the call sits on the net player, who can't reach it. | Open, re-read. 29 in 3000 points, 0.97 per 100. It isn't one fault: 17 had a late change of taker, mostly with neither player in time, and in about ten the player with the call was already within 1 m of the ball. The claim logic stays as it is. |
 | 15 | Medium | The net is barely worth taking: stay back all match and you still win. | Open. |
 | 16 | Low | From the back the AI half-volleys balls at its shins. | Open. |
 | 17 | Low | Rackets and hands go through the glass in the corners. | Open. |
