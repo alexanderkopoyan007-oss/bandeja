@@ -325,6 +325,8 @@ const ST_FADE = 3;
 /** How long the racket takes from the end of the backswing to the ball at least (s). A release closer to the
  * contact than this still shows a whole swing, arriving a little after the real contact. */
 const MIN_SWING = 0.11;
+/** How far past the ideal moment a human's serve is timed (s). With SERVE_STRIKE (sim) the rest of the swing fits in. */
+const SERVE_LATE = 0.05;
 /** The forward swing starts this long before the planned contact while the key is still held (s)... */
 const LEAD = 0.16;
 /** ...and, the release being anyone's guess, runs this share of the swing behind it at full speed... */
@@ -843,9 +845,10 @@ const LEAN_BRAKE = 1.5;
 /** How fast the chest turns with the hips into a side-on run and back out of it (rad/s): switched at once, the
  * chest, arms and head jumped up to 45 degrees in a frame. */
 const WARP_CHEST_RATE = 7;
-/** How fast the legs turn into a side-on run and back out of it (rad/s): a quarter turn in 0.2 s. Switched at once,
- * the hips and the spine's turn back jumped together and their inertialization undid the cancelling (pops tripled). */
-const WARP_SWITCH_RATE = 8;
+/** How fast the legs turn into a side-on run and back out of it (rad/s): a quarter turn in 0.3 s. Switched at once,
+ * the hips and the spine's turn back jumped together and their inertialization undid the cancelling (pops tripled); at 8,
+ * on top of the body's own turn, the hips went 70 degrees in 80 ms every three seconds (review round 17, the biomechanist's #6). */
+const WARP_SWITCH_RATE = 5.5;
 
 /**
  * How fast each joint can turn (deg/s), for inertialization: a target moving faster than 1.25x this in a frame is a
@@ -1171,6 +1174,8 @@ export class Avatar {
   private nearW = 0.5;
   /** The arm kept bent under a carried racket, 0 to 1. */
   private heldBent = 0;
+  /** Frames left of a cut (placed for the next point), the next as well: the clip's pose lands a frame after the feet are placed. */
+  private cutNow = 0;
   private readonly from: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   private readonly con: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   private readonly ctrl = new THREE.Vector3();
@@ -1847,7 +1852,9 @@ export class Avatar {
     if (sim.phase === PH_TOSS && sim.score.serverPlayer() === idx && sim.rally.hitter < 0) {
       // An AI server lets go at its own moment, and one after the ideal is the contact (an early one waits for it).
       const ai = sim.ai[idx];
-      const at = ai && ai.pressed && !ai.released && ai.releaseAt > sim.tossIdeal ? ai.releaseAt : sim.tossIdeal;
+      // A human's a little late, where most Good releases fall: a racket timed to the ideal itself got there, the ball
+      // near its top and all but still, stood by it and snapped (a third of serves; review round 17, the biomechanist's #5).
+      const at = ai ? (ai.pressed && !ai.released && ai.releaseAt > sim.tossIdeal ? ai.releaseAt : sim.tossIdeal) : sim.tossIdeal + SERVE_LATE;
       this.known = ai !== null && ai !== undefined;
       // (not the last rally's: a serve held as beaten waited at the backswing and swung 0.1 s late)
       this.beaten = false;
@@ -2350,6 +2357,7 @@ export class Avatar {
     this.lastRootX = this.root.position.x;
     this.lastRootZ = this.root.position.z;
     const cut = rx * rx + rz * rz > 0.25 || this.cutPending;
+    this.cutNow = cut ? 2 : this.cutNow > 0 ? this.cutNow - 1 : 0;
     this.cutPending = false;
     if (cut) this.resetInertia();
     // Serving: from the point's setup to the contact the address is the ready pose (side-on, the ball in hand).
@@ -3230,7 +3238,7 @@ export class Avatar {
       const wasOff = this.footOff[side]!;
       let off = wasOff + wrapAngle(wrapAngle(Math.atan2(-v1.z, v1.x) - pelvis) - wasOff);
       // (over to the other side when the body has gone round it, no faster than a foot turns: in a frame it is that pop)
-      const footLim = FOOT_TURN_RATE * this.dt;
+      const footLim = this.cutNow > 0 ? Infinity : FOOT_TURN_RATE * this.dt;
       let footTo = off > FOOT_OFF_HIPS ? FOOT_OFF_HIPS : off < -FOOT_OFF_HIPS ? -FOOT_OFF_HIPS : off;
       if (footTo - wasOff > footLim) footTo = wasOff + footLim;
       else if (wasOff - footTo > footLim) footTo = wasOff - footLim;

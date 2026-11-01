@@ -148,6 +148,9 @@ const SERVE_HAND_OUT = 0.55;
 const SERVE_PUSH = 1.7;
 /** Ideal contact this long before the bounce's apex (within 80 ms of it the height changes by 3 cm or less). */
 const SERVE_BEFORE_APEX = 0.02;
+/** A human's serve meets the ball this long after the release (s): the swing's last moment, seen. On the release itself the
+ * ball left on a one-tick jump of 17 cm (review round 17, the biomechanist's #5). The grade is still the release's. */
+const SERVE_STRIKE = 0.05;
 /** After a drop nobody swung at, the server picks the ball up: this long before they can drop it again. */
 const RETOSS_PAUSE = 0.6;
 /**
@@ -1444,7 +1447,7 @@ export class MatchSim {
         this.whiff(i, t);
         return;
       }
-      p.contactTime = clamp(max(t, this.tossIdeal), t, this.tossEnd - 0.02);
+      p.contactTime = clamp(max(t + (this.ai[i] ? 0 : SERVE_STRIKE), this.tossIdeal), t, this.tossEnd - 0.02);
       p.swing = SW_COMMITTED;
       this.emitP(E_SWING, i, p.shot, p.grade, delta);
       return;
