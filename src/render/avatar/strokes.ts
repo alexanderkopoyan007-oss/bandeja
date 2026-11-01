@@ -170,7 +170,7 @@ export const OVERHEAD: Family = {
   // Trophy position: side-on, racket up behind the head, the free hand pointing at the ball.
   back: key(v(-0.11, 1.8, -0.56), v(-0.02, 0.8, -0.6), v(-1, 0, 0.1), v(-0.1, 1.2, -0.8), -1.25, v(-0.18, 1.8, 0.48)),
   contact: key(v(-0.35, 2.0, 0.1), v(0.55, 0.78, 0.28), v(0, 0.42, 0.91), v(-0.85, 1.5, -0.1), -0.95, v(0.1, 1.3, 0.5)),
-  finish: key(v(0.1, 1.08, 0.62), v(0.35, -0.15, 0.9), v(0.05, -0.55, 0.85), v(-0.45, 1.2, 0.25), -0.15, v(0.4, 1.1, 0.3)),
+  finish: key(v(0.08, 1.12, 0.84), v(0.35, -0.15, 0.9), v(0.05, -0.55, 0.85), v(-0.45, 1.2, 0.25), -0.55, v(0.4, 1.1, 0.3)),
   dip: -0.05,
   loop: 0.32,
   crouch: 0,
@@ -179,6 +179,8 @@ export const OVERHEAD: Family = {
   sit: 0.04,
   prep: 0.55,
   bodyTurn: 0.7,
+  // (the free arm stays long, 6-31 on video: on the `off` keys it folded at the chest, 105-115, through the ball)
+  free: [0.12, 0.6, 0.72, 0.6, -0.25, 0.6, 0.75, -0.6, 0.15],
   // The forward swing: the racket's head falls behind the back, then comes up through the ball. Up from the trophy it
   // had 0.5 m to travel and was still at 1 m/s 0.1 s out, and the ball left before the swing (review round 9, the
   // critic's #1, the pro's #4).

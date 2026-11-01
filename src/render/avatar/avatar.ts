@@ -1122,6 +1122,10 @@ export class Avatar {
   private readonly overEnd = new THREE.Quaternion();
   private readonly overTurn = new THREE.Quaternion();
   private readonly overHead = new THREE.Vector3();
+  /** An overhead's follow-through, by the hand: from the ball to the finish, and the racket's centre from the hand. */
+  private readonly overA = new THREE.Vector3();
+  private readonly overB = new THREE.Vector3();
+  private readonly overC = new THREE.Vector3();
   private overU = 0;
   private overIn = 1;
   /** The shoulders' cartwheel and the trunk's bow, eased. */
@@ -2010,8 +2014,9 @@ export class Avatar {
         const s = clamp01((t - this.tCon) / ((f.follow ?? FOLLOW) * this.manner.follow));
         const k = this.contactKey();
         const fin = this.finishKey(f, k);
+        const hand = f.over && !f.over.under;
         // (an overhead goes on the way it came, over the top, before it wraps down)
-        if (f.over && !f.over.under) this.ctrl.copy(k.p).addScaledVector(OVER_WAY, OVER_ON).addScaledVector(OVER_DOWN, OVER_ON);
+        if (hand) this.overPath(k, fin);
         else {
           this.ctrl.copy(k.p).lerp(fin.p, 0.5);
           this.ctrl.z += f.through ?? (f.wrist ? PUNCH_THROUGH : 0.25);
@@ -2019,10 +2024,14 @@ export class Avatar {
         }
         // Leaving the ball at the speed it arrived: the racket fell to 60% of it in a frame, and the hit read as a stop
         // (review round 8, the critic's #4).
-        const n = (this.swingV * (f.follow ?? FOLLOW) * this.manner.follow) / Math.max(0.05, 2 * k.p.distanceTo(this.ctrl));
+        const away = hand ? this.overAt(k, fin, 0.1) * 10 : 2 * k.p.distanceTo(this.ctrl);
+        const n = (this.swingV * (f.follow ?? FOLLOW) * this.manner.follow) / Math.max(0.05, away);
         const e = 1 - Math.pow(1 - s, n < 2 ? 2 : n > FOLLOW_N ? FOLLOW_N : n);
-        bezier(k.p, this.ctrl, fin.p, e, this.kp);
-        this.kq.copy(k.q).slerp(fin.q, e);
+        if (hand) this.overAt(k, fin, e);
+        else {
+          bezier(k.p, this.ctrl, fin.p, e, this.kp);
+          this.kq.copy(k.q).slerp(fin.q, e);
+        }
         this.kpole.copy(k.pole).lerp(f.finish.pole, e);
         this.koff.copy(k.off).lerp(f.finish.off, e);
         if (f.free) this.freeKey(f.free, 3, e);
@@ -2057,6 +2066,25 @@ export class Avatar {
     this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w : 0;
     // Up out of it after the ball: with the whole body tipping into the run the trunk was at 42 degrees at +0.24 s.
     if (this.st === ST_SWING || this.st === ST_FADE) this.bendW *= 1 - BEND_UP * smoothstep(0, BEND_UP_T, t - this.tCon);
+  }
+
+  /**
+   * An overhead's way on from the ball is drawn by the hand. Drawn by the racket's centre, the racket turning over to
+   * point at the net pulled the hand back along the handle, into the shoulder, while the centre went on: the elbow went
+   * from 36 at the ball to 125 at +110 ms and out again, a jab (31-62 on video; review round 16, the coach's #4).
+   */
+  private overPath(k: Key, fin: Key): void {
+    this.overA.copy(this.grip.off).applyQuaternion(k.q).negate().add(k.p);
+    this.overB.copy(this.grip.off).applyQuaternion(fin.q).negate().add(fin.p);
+    this.ctrl.copy(this.overA).addScaledVector(OVER_WAY, OVER_ON).addScaledVector(OVER_DOWN, OVER_ON);
+  }
+
+  /** The key at `e` of an overhead's follow-through (overPath); returns how far its racket centre is from the ball's key. */
+  private overAt(k: Key, fin: Key, e: number): number {
+    bezier(this.overA, this.ctrl, this.overB, e, this.kp);
+    this.kq.copy(k.q).slerp(fin.q, e);
+    this.kp.add(this.overC.copy(this.grip.off).applyQuaternion(this.kq));
+    return this.kp.distanceTo(k.p);
   }
 
   /** Pull the blended key back towards the snapshot: u = 0 is the snapshot, 1 the key as it is. */

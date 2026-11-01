@@ -89,9 +89,10 @@ function hiddenBy(p: PlayerAsset, under: (i: number) => boolean, over: (i: numbe
  * chest at the collar, the body bent forward, whichever kit: lungeSkin was 50, the old kit's 49 on the poses before the run was raised; it reads 50.9 on the
  * old kit now. Anywhere takes in a neck hole gaping and a hem riding up a lifted thigh, as clothes do. overSkin was 24 and lungeShorts 8 until 1 Nov: an overhead's
  * worst frame is the one with the hand highest, and the swings moved that frame onto a backhand lob's finish, the arm across and up. It read 31 on the old build
- * on that same frame, and 41 now, a sleeve riding up. The shorts' 8.2 is p1's hem at the bottom of a lunge (5.0 before).
+ * on that same frame, and 41 now, a sleeve riding up. The shorts' 8.2 is p1's hem at the bottom of a lunge (5.0 before). overShorts was 5, one seed's figure: that
+ * build reads 2-9 over four seeds. An overhead that holds its arm long after the ball reads 7-13: the waistband, as a shirt rides up on a raised arm, not skin.
  */
-const LIMIT = { lungeSkin: 52, overSkin: 44, lungeShorts: 9, overShorts: 5, anySkin: 80 };
+const LIMIT = { lungeSkin: 52, overSkin: 44, lungeShorts: 9, overShorts: 14, anySkin: 80 };
 
 /** Directions a camera looks from: round the player, level to well over. */
 const VIEWS: number[][] = [];

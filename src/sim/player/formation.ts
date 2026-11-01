@@ -12,7 +12,12 @@ export const BACK_Z = 8.0;
  * passed 1.7 m from both, and flat balls that far off got past 30% of the time (round 7, the pro's #1). */
 const UP_HALF_GAP = 1.45;
 const BACK_HALF_GAP = 2.3;
-const UP_FOLLOW = 0.4;
+// A hitter in the corner (x 3.3, 8 m back) can put a low ball anywhere from 4.8 m one way to 4.1 m the other at the depth
+// of the net pair, so a settled pair stays near the middle: at 0.4 it slid 1.3 m to the hitter's side, one low slice past
+// the far player won 63% of points at the top level, and the ball down the line 34% (review round 16, the pro's #1).
+// The return is another thing: the server is still running in and the partner holds the line.
+const UP_FOLLOW = 0.2;
+const UP_FOLLOW_RETURN = 0.4;
 const BACK_FOLLOW = 0.3;
 
 /**
@@ -101,7 +106,7 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   const ai = m.ai[i];
   const weak = ai ? 1 - ai.level : 0;
   const close = ai ? NET_CLOSE * (ai.style.net - 1) : 0;
-  out.x = clamp(lane * s * half + (up ? UP_FOLLOW : BACK_FOLLOW) * (1 - 0.6 * weak) * m.ball.pos.x, p.minX + 0.3, p.maxX - 0.3);
+  out.x = clamp(lane * s * half + (up ? (m.rally.shots === 1 ? UP_FOLLOW_RETURN : UP_FOLLOW) : BACK_FOLLOW) * (1 - 0.6 * weak) * m.ball.pos.x, p.minX + 0.3, p.maxX - 0.3);
   // Our low ball at a pair at the net: the volley has to be lifted, soft and maybe short, so a back player steps in
   // to read it (from 8 m a drop volley landed 6.6 m from the nearest defender: review round 4, the pro's #2).
   const read = !up && !mid && m.lastStrikeTeam === team && m.ball.pos.z * s < 0 && m.ball.pos.y < READ_LOW && m.ball.vel.y <= 0;
