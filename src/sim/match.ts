@@ -69,6 +69,8 @@ const LAST_SWING = 0.02;
 const BODY_LEAD = 0.03;
 /** Lowest a ball at the body is met by a reflex (m): under this it is a ball at the feet, too low to get a racket to. */
 const REFLEX_ABOVE = 0.3;
+/** How long before a ball at the body a reflex starts (s): a person's reaction, and time for the arm to go to it. */
+const REFLEX_SEE = 0.2;
 /** How much further than their partner a human's key can claim a ball from (claimCost's units). */
 const CLAIM_KEY_MARGIN = 1.5;
 /** E_WHIFF's y: the swing missed a ball in reach (timing) / there was no ball to hit (none in reach at the release,
@@ -943,7 +945,10 @@ export class MatchSim {
         : SHOT_BUTTONS.indexOf(e.button as never);
       if (shot < 0) continue;
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
-      if (e.press) this.press(i, shot, max(e.t, t0));
+      if (e.press) {
+        this.press(i, shot, max(e.t, t0));
+        p.steerFrom = f.moveY;
+      }
       else if (p.swing === SW_CHARGE && p.shot === shot && !(human && this.cfg.tapSwing && this.cfg.autoTiming)) {
         // The modifiers as they were at this release: f.held is the tick's end; undo this tick's later changes.
         let h = f.held;
@@ -984,13 +989,19 @@ export class MatchSim {
       }
     }
     // With no key down it is a reflex block, above the shins: a racket is up at the net, and the AI has always had this. A ball at
-    // the body arrives inside a person's reaction time, and a hit ends the point (review round 18).
+    // the body arrives inside a person's reaction time, and a hit ends the point (review round 18). It goes for the ball a moment
+    // before and is struck as a held key is, above: pressed and struck in one tick the ball bounced off a racket that hadn't moved,
+    // up to 1.26 m from it, on one point in ten (review round 20). A key pressed meanwhile takes it over.
     if (human && p.swing === SW_IDLE && this.phase === PH_RALLY && this.rally.hitter >= 0 && this.rally.hitter !== team) {
       const k = this.bodyHitIdx(i, this.side(team));
-      if (k >= 0 && this.pred.t[k]! - BODY_LEAD < t0 + DT && this.pred.y[k]! > REFLEX_ABOVE) {
+      if (k >= 0 && this.pred.t[k]! - REFLEX_SEE < t0 + DT && this.pred.y[k]! > REFLEX_ABOVE) {
         this.press(i, SHOT_VOLLEY, t0);
-        this.releaseSwing(i, t0, f);
+        p.reflex = true;
       }
+    } else if (p.reflex && p.swing === SW_CHARGE && (this.phase !== PH_RALLY || this.rally.hitter === team || (this.bodyHitIdx(i, this.side(team)) < 0 && this.focusIdeal(i) < 0))) {
+      // The ball it went for has gone (a partner took it, it died on the net).
+      p.swing = SW_IDLE;
+      p.reflex = false;
     }
     // Safety: a swing held far too long releases itself, unless the ball it waits for is still on its way (a
     // lob pressed for at the opponent's strike can hang over 3 s before the overhead: those used to go off by
@@ -1322,8 +1333,14 @@ export class MatchSim {
   /** Move the aim target with the keys (or put it under the mouse), kept inside a sensible landing area. */
   private steerAim(p: Player, f: InputFrame, s: number, serve: boolean): void {
     const c = this.world.court;
-    if (f.aimAbs || abs(f.moveX) + abs(f.moveY) > 0.1) p.aimTouched = true;
-    else if (!p.aimTouched && !serve && p.shot === SHOT_BANDEJA) {
+    // An overhead's depth is the shot's until the depth keys are touched: placing a smash left or right took away its kill depth, and
+    // a key still held from the run in was a steer on the first tick (smash winners halved; review round 20). What was down at the press
+    // stays the run's until let go.
+    if (abs(f.moveY) < 0.1) p.steerFrom = 0;
+    const ahead = abs(f.moveY - p.steerFrom) > 0.1;
+    const overhead = !serve && p.shot === SHOT_BANDEJA;
+    if (f.aimAbs || (overhead && (f.held & BTN_PRECISION) === 0 ? ahead : ahead || abs(f.moveX) > 0.1)) p.aimTouched = true;
+    if (!f.aimAbs && !p.aimTouched && overhead) {
       // An overhead target nobody has steered follows the shot: deep for a bandeja; for a smash (Space) the
       // shortest landing at which a full-pace smash from the planned contact clears the net with margin.
       // Near the net that is mid-court, and the steep bounce can leave the court; from deep it lands deeper.
@@ -1360,7 +1377,7 @@ export class MatchSim {
   private press(i: number, shot: number, t: number): void {
     const p = this.players[i]!;
     const team = p.team;
-    if (p.swing !== SW_IDLE) return;
+    if (p.swing !== SW_IDLE && !p.reflex) return;
     if (this.phase === PH_SETUP) {
       // A human's key skips the walk back.
       if (this.walking > 0) { if (!this.ai[i]) this.endWalk(); return; }
@@ -1379,6 +1396,7 @@ export class MatchSim {
     }
     p.swing = SW_CHARGE;
     p.shot = shot;
+    p.reflex = false;
     p.chargeStart = t;
     p.grade = -1;
     if (this.phase === PH_RALLY && !this.ai[i]) {
@@ -1917,7 +1935,7 @@ export class MatchSim {
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
-        .num(p.aimTouched ? 1 : 0).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
+        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);

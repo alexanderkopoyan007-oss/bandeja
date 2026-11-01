@@ -21,6 +21,9 @@ const TIMING = tuning.timing;
 /** How long the hint that H brings the folded key help back stays up (s). */
 const HELP_HINT_SECS = 4;
 const HELP_KEY = 'bandeja.help.v1';
+/** How many times a hint shows, across visits, before it counts as read. */
+const HINT_TIMES = 6;
+const HINTS_KEY = 'bandeja.hints.v1';
 
 /** The key help's last state ('open' | 'folded'), kept between visits; storage can be missing or throw. */
 function readHelp(): string | null {
@@ -36,6 +39,25 @@ function writeHelp(v: string): void {
   } catch {
     // (not kept: the next match shows it again until its first point)
   }
+}
+
+/** One more showing of a hint, and how many it has had; without storage they stop for this visit only. */
+const hintsSeen: Record<string, number> = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(HINTS_KEY) ?? '{}') as Record<string, number>;
+  } catch {
+    return {};
+  }
+})();
+function seenHint(hint: string): number {
+  const n = (hintsSeen[hint] ?? 0) + 1;
+  hintsSeen[hint] = n;
+  try {
+    localStorage.setItem(HINTS_KEY, JSON.stringify(hintsSeen));
+  } catch {
+    // (kept for this visit)
+  }
+  return n;
 }
 
 export const HUD_CSS = `
@@ -168,6 +190,8 @@ export class Hud {
   private gradeUntil = 0;
   private callUntil = 0;
   private hintOn = false;
+  private hintLast = '';
+  private hintSeen = 0;
   pro = false;
   // Where the ball last left the court (for por tres / por cuatro).
   private exitX = 0;
@@ -401,6 +425,12 @@ export class Hud {
       else if (st.valid && st.afterWall) hint = 'Let it come off the glass';
     }
     if (!hint && now < this.helpHintUntil && sim.phase !== PH_RALLY) hint = this.hintHelp;
+    // Read often enough, a hint stops: they were up for 42% of a rally, for good, and only pro mode stopped them, which takes the ring too.
+    if (hint !== this.hintLast) {
+      this.hintLast = hint;
+      if (hint) this.hintSeen = seenHint(hint);
+    }
+    if (hint && this.hintSeen > HINT_TIMES) hint = '';
     // (HTML of our own strings and key names escaped by cap())
     if (hint) this.set(this.hint, hint, true);
     if (!!hint !== this.hintOn) { this.hintOn = !!hint; this.toggle(this.hint, 'on', this.hintOn); }

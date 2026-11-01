@@ -55,6 +55,10 @@ export class Player {
   aiming = false;
   /** The player has steered the aim since pressing (until then an overhead's target follows Space). */
   aimTouched = false;
+  /** The swing under way is a reflex at a ball at the body, no key down (match.ts). */
+  reflex = false;
+  /** The forward key as it was at the press: a run's, no steer of an overhead's depth, until it is let go. */
+  steerFrom = -0;
 
   /** Split-step: take-off time, and the end of it (hop and landing; the avatar draws it). */
   splitAt = -10;
@@ -340,7 +344,7 @@ export class Player {
     out.push(this.pos.x, this.pos.z, this.vel.x, this.vel.z, this.facing, this.swing, this.shot, this.mod,
       this.chargeStart, this.release, this.contactTime, this.timingDelta, this.grade, this.recoverUntil,
       this.handSide, this.splitUntil, this.lastContactTime, this.lastContact.x, this.lastContact.y, this.lastContact.z,
-      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.heldMod, this.splitAt, this.pushFrom,
+      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.reflex ? 1 : 0, this.steerFrom, this.heldMod, this.splitAt, this.pushFrom,
       this.contra ? 1 : 0);
   }
 
@@ -350,7 +354,7 @@ export class Player {
     this.chargeStart = s[i++]!; this.release = s[i++]!; this.contactTime = s[i++]!; this.timingDelta = s[i++]!;
     this.grade = s[i++]!; this.recoverUntil = s[i++]!; this.handSide = s[i++]!; this.splitUntil = s[i++]!;
     this.lastContactTime = s[i++]!; this.lastContact.x = s[i++]!; this.lastContact.y = s[i++]!; this.lastContact.z = s[i++]!;
-    this.aimX = s[i++]!; this.aimZ = s[i++]!; this.aiming = s[i++]! === 1; this.aimTouched = s[i++]! === 1;
+    this.aimX = s[i++]!; this.aimZ = s[i++]!; this.aiming = s[i++]! === 1; this.aimTouched = s[i++]! === 1; this.reflex = s[i++]! === 1; this.steerFrom = s[i++]!;
     this.heldMod = s[i++]!;
     this.splitAt = s[i++]!;
     this.pushFrom = s[i++]!;

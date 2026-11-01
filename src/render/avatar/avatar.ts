@@ -1991,7 +1991,8 @@ export class Avatar {
     // holds through the forward swing to the contact.
     if ((sw !== SW_CHARGE && sw !== SW_COMMITTED) || hit) this.wallWant = 0;
     const released = (sw === SW_COMMITTED && this.lastSwing !== SW_COMMITTED)
-      || (sw === SW_RECOVER && this.lastSwing === SW_CHARGE);
+      || (sw === SW_RECOVER && this.lastSwing === SW_CHARGE)
+      || (hit && this.st === ST_NONE);
     if (released) {
       if (this.st !== ST_PREP) { this.snapshot(); this.swingS = 0; }
       // The swing's progress (relS) is last frame's: carry on from then, so this frame already moves (starting the

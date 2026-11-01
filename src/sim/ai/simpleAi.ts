@@ -37,6 +37,8 @@ const BAJADA_NET = 0.4;
 const CHIQ_NET = 0.35;
 /** Chance a net-shy style stays back behind its lob, per unit of its net trait under 1 (Muro, 0.6: 80%). */
 const LOB_STAY = 2.0;
+/** Highest ball the AI lob-volleys from the net (m). */
+const LOB_VOLLEY_TOP = 1.0;
 /** Singles: comes in behind a ball met within APPROACH_DEPTH (m) of the net with chance APPROACH_SHORT, behind any low
  * ball with the opponent deep APPROACH_DEEP, behind a serve SERVE_VOLLEY (each by the style's net and the level). */
 const APPROACH_DEPTH = 6.8;
@@ -1044,9 +1046,10 @@ export class SimpleAi {
     let go = 0;
     if (volley || depth < 5) {
       const near = depth < 4.2;
-      if (up === 2 && r < min(0.6, 0.3 * st.lob)) {
+      if (up === 2 && height < LOB_VOLLEY_TOP && r < min(0.6, 0.3 * st.lob)) {
         // Both pairs at the net: a lob volley sends them back (net duels are short in real play; they had become
-        // 60% of the AI's volleys, ending on bodies and through the middle).
+        // 60% of the AI's volleys, ending on bodies and through the middle). Off a ball you can only lift: one at your chest is
+        // punched down, and lobbed it won 1% against a volley's 8% (review round 20).
         this.shot = SHOT_LOB;
         go = 1;
       } else {
