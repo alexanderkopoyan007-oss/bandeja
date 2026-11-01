@@ -10,6 +10,7 @@ import practiceData from '../../data/practice.json';
 import { LoadingScreen } from '../ui/loading.ts';
 import { Menu, type Item, type Screen, type Choice } from '../ui/menu/menu.ts';
 import { setSafeColours } from '../ui/palette.ts';
+import { resetHints } from '../ui/hud.ts';
 import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '../game/input/bindings.ts';
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
@@ -395,12 +396,13 @@ export class App {
           s.keys = k;
         },
         desc: (a.move ? 'Movement. While a shot key is held it steers the aim instead.'
-          : a.id === 'power' ? 'Held with a shot key as it is let go: a harder ball (with Overhead a smash, with Volley a punch volley).'
-          : a.id === 'precision' ? 'Held with a shot key as it is let go: a placed ball (with Overhead a víbora, with Topspin a chiquita).'
+          : a.id === 'power' ? 'Held with a shot key as it is let go: a harder ball (with Volley a punch volley). With Overhead a smash: hold it before the ball drops, the jump is taken by then.'
+          : a.id === 'precision' ? 'Held with a shot key as it is let go: a placed ball (with Topspin a chiquita). With Overhead a víbora: hold it before the ball drops.'
           : 'Hold as the ball comes, release to hit.') + ' Keys kept by the game: Esc (pause), F3, H, P, M, Tab, Enter.',
       });
     }
     items.push(
+      { kind: 'button', label: 'Show hints again', desc: 'Each hint retires after six points. This brings them all back.', action: () => { resetHints(); } },
       { kind: 'button', label: 'Reset keys', desc: 'Back to J K L I U O N, Space and Shift, with WASD and the arrows.', action: () => { s.keys = { ...DEFAULT_KEYS }; saveSettings(s); this.menu.refresh(); this.game?.applyPrefs(this.prefs()); } },
       { kind: 'button', label: 'Back', desc: 'Keys are saved as they change.', action: () => this.menu.back() },
     );

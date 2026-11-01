@@ -358,8 +358,14 @@ export class Game {
     if (code === 'Escape') this.onMenu?.();
     else if (code === 'F3') this.debug.toggle();
     else if (code === 'KeyH') this.hud.toggleHelp();
-    else if (code === 'KeyP') this.setPro(!this.hud.pro);
-    else if (code === 'KeyM') this.mouseAim = !this.mouseAim;
+    else if (code === 'KeyP') {
+      this.setPro(!this.hud.pro);
+      this.hud.announce(this.hud.pro ? 'Pro mode on' : 'Pro mode off', this.hud.pro ? 'no ring, no meter · [P] to bring them back' : 'the ring and the meter are back', performance.now() / 1000, 1.6);
+    } else if (code === 'KeyM') {
+      // (one slip, next to N: the pointer's resting place became the target of every shot, 34% of points and nothing to say why)
+      this.mouseAim = !this.mouseAim;
+      this.hud.announce(this.mouseAim ? 'Aiming with the mouse' : 'Aiming with the keys', this.mouseAim ? 'the pointer is your target · [M] for keys' : '', performance.now() / 1000, 1.6);
+    }
     // (not at once: a key pressed for the last shot is not a skip)
     else if ((code === 'Enter' || code === 'Space') && this.replays.state !== RP_IDLE) this.replays.stop();
     else if ((code === 'Enter' || code === 'Space') && this.overAt >= 0 && performance.now() - this.overAt > OVER_SKIP_AFTER_MS) this.overSkip = true;

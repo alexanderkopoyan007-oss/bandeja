@@ -105,7 +105,7 @@ function merge(dst: Record<string, unknown>, src: unknown): void {
     if (v === undefined) continue;
     if (CHOICES[k]) { if (CHOICES[k]!.includes(v)) dst[k] = v; }
     else if (typeof d === 'boolean') { if (typeof v === 'boolean') dst[k] = v; }
-    else if (typeof d === 'number') { if (typeof v === 'number' && Number.isFinite(v)) dst[k] = Math.max(0, Math.min(1, v)); }
+    else if (typeof d === 'number') { if (typeof v === 'number' && Number.isFinite(v)) dst[k] = k === 'defaultsV' ? v : Math.max(0, Math.min(1, v)); }
     else if (typeof d === 'string') { if (typeof v === 'string' && /^[a-z-]{1,24}$/.test(v)) dst[k] = v; }
     else if (k === 'keys') {
       if (v && typeof v === 'object') {

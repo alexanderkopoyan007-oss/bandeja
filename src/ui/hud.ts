@@ -5,7 +5,7 @@ import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import {
   E_HIT, E_SWING, E_WHIFF, WHIFF_NOTHING, E_CALL, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_ENDS, E_EXIT, PH_TOSS, PH_RALLY, PH_SETUP,
 } from '../sim/match.ts';
-import { REASON_TEXT, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
+import { REASON_TEXT, WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE } from '../sim/rules/rally.ts';
 import { GRADE_TEXT, G_TOO_EARLY, G_TOO_LATE, G_PERFECT, G_GOOD } from '../sim/contact/timing.ts';
 import { SW_CHARGE } from '../sim/player/player.ts';
 import { offGlassHigh, BAJADA_ABOVE, BAJADA_DEPTH } from '../sim/player/positioning.ts';
@@ -23,6 +23,8 @@ const HELP_HINT_SECS = 4;
 const HELP_KEY = 'bandeja.help.v1';
 /** How many times a hint shows, across visits, before it counts as read. */
 const HINT_TIMES = 6;
+/** How long a hint must be up to count as read (s). Half of them flicker for under a quarter of a second. */
+const HINT_READ = 1;
 const HINTS_KEY = 'bandeja.hints.v1';
 
 /** The key help's last state ('open' | 'folded'), kept between visits; storage can be missing or throw. */
@@ -49,15 +51,23 @@ const hintsSeen: Record<string, number> = (() => {
     return {};
   }
 })();
-function seenHint(hint: string): number {
-  const n = (hintsSeen[hint] ?? 0) + 1;
-  hintsSeen[hint] = n;
+function seenHint(hint: string): void {
+  hintsSeen[hint] = (hintsSeen[hint] ?? 0) + 1;
   try {
     localStorage.setItem(HINTS_KEY, JSON.stringify(hintsSeen));
   } catch {
     // (kept for this visit)
   }
-  return n;
+}
+
+/** Every hint back, for someone who wants the coaching again. */
+export function resetHints(): void {
+  for (const k of Object.keys(hintsSeen)) delete hintsSeen[k];
+  try {
+    localStorage.removeItem(HINTS_KEY);
+  } catch {
+    // (kept for this visit)
+  }
 }
 
 export const HUD_CSS = `
@@ -191,7 +201,9 @@ export class Hud {
   private callUntil = 0;
   private hintOn = false;
   private hintLast = '';
-  private hintSeen = 0;
+  private hintSince = 0;
+  /** What has counted as read this point: a showing is a point's, not a flicker's (the lob's six went in two minutes). */
+  private readonly hintRead = new Set<string>();
   pro = false;
   // Where the ball last left the court (for por tres / por cuatro).
   private exitX = 0;
@@ -428,9 +440,13 @@ export class Hud {
     // Read often enough, a hint stops: they were up for 42% of a rally, for good, and only pro mode stopped them, which takes the ring too.
     if (hint !== this.hintLast) {
       this.hintLast = hint;
-      if (hint) this.hintSeen = seenHint(hint);
+      this.hintSince = now;
     }
-    if (hint && this.hintSeen > HINT_TIMES) hint = '';
+    if (hint && now - this.hintSince >= HINT_READ && !this.hintRead.has(hint)) {
+      this.hintRead.add(hint);
+      seenHint(hint);
+    }
+    if (hint && (hintsSeen[hint] ?? 0) >= HINT_TIMES && !this.hintRead.has(hint)) hint = '';
     // (HTML of our own strings and key names escaped by cap())
     if (hint) this.set(this.hint, hint, true);
     if (!!hint !== this.hintOn) { this.hintOn = !!hint; this.toggle(this.hint, 'on', this.hintOn); }
@@ -463,7 +479,8 @@ export class Hud {
     switch (e.kind) {
       case E_SWING:
       case E_WHIFF:
-        if (human >= 0 && e.player === human && !this.pro && e.b >= 0) {
+        // (a block the game played for you is nobody's timing: 39 of 45 of them flashed Perfect)
+        if (human >= 0 && e.player === human && !this.pro && e.b >= 0 && !sim.players[human]!.reflex) {
           // (a swing at nothing had no timing to grade: it showed the last shot's, "Too late" and its milliseconds)
           const nothing = e.kind === E_WHIFF && e.y === WHIFF_NOTHING;
           const outOfReach = (e.kind === E_WHIFF && e.x > 0) || nothing;
@@ -501,13 +518,14 @@ export class Hud {
         if (!this.helpFolded) this.foldHelp(now);
         const who = team < 0 ? (e.team === 0 ? 'Near side' : 'Far side') : e.team === team ? 'Your point' : 'Their point';
         const accent = team < 0 ? '#ffffff' : hex(e.team === team ? PAL.good : PAL.textBad);
+        this.hintRead.clear();
         if (e.a === WHY_EXIT_AFTER_BOUNCE) {
           // Out of the court after a good bounce: over the back fence is "por cuatro", over the side or out
           // through a door "por tres".
           const c = sim.world.court;
           const back = !this.exitDoor && Math.abs(this.exitZ) >= c.halfL - 0.05 && Math.abs(this.exitX) < c.halfW - 0.05;
           this.showCall(back ? 'Por cuatro' : 'Por tres', who, accent, now, 2.2, true);
-        } else this.showCall(REASON_TEXT[e.a]!, who, accent, now, 1.6);
+        } else this.showCall(e.a === WHY_DOUBLE_BOUNCE ? 'Winner' : REASON_TEXT[e.a]!, who, accent, now, 1.6);
         break;
       }
       case E_FAULT:

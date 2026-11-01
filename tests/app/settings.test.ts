@@ -24,6 +24,12 @@ describe('settings store', () => {
     expect(s.setup.partner).toBe('muro');
     expect(s.keys).toEqual({ drive: ['KeyZ'] });
   });
+  it('a Club picked by hand survives a reload (review round 21): the version number is not a 0-1 slider', () => {
+    // Clamped to 1, a save at version 2 read back as version 1, and the move from Club to Advanced ran on every load.
+    const s = settingsFrom({ defaultsV: 2, setup: { level: 'club' } });
+    expect(s.defaultsV).toBe(2);
+    expect(s.setup.level).toBe('club');
+  });
   it('a partner or opponents style must be one that exists', () => {
     expect(settingsFrom({ setup: { partner: 'nonsense', opponents: 'muro' } }).setup).toMatchObject({ partner: 'random', opponents: 'muro' });
   });
