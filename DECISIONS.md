@@ -3110,6 +3110,28 @@ The test passes under 80 and reads 834.7 on the first man, so it fails on the fa
 
 Lost on the way: her bun, and her hair is flatter from behind; a new generation, not the same model re-posed. Generated people still wear their own clothes, so there are no team colours on them. Frame rate, four of the new man against four regulars, alternating, 30 s a run: Medium 4x 121.9, 126.8 fps against 109.9, 109.1; High 204.0, 198.9 against 187.4, 200.2; paced 120.5 on all.
 
+## The wrist: a racket can't turn in the hand (2026-11-01)
+
+Looking at the new grip in strokes, the skin creased hard at the wrist from the back of the hand. No check could see why: `limb-audit.ts` has no wrist row, and `wristLimit` and the "folded" test measure the shaft against the forearm, which has no idea where the hand is on the handle. Measured from the joints alone (hand line against forearm line, with a person's range of 75 flexion, 70 extension, 20 radial, 35 ulnar, as an ellipse where 1.0 is the edge): the ready position sat at 2.27, 105-124 degrees off the forearm; the serve's address 3.46, the hand folded 124 degrees; a backhand's backswing 2.64 and its contact 2.25. The old grip read the same: this had been wrong all along, and it is a good part of "that is not a human position" and of "the serve motion is wrong".
+
+The racket is fixed in the hand, so a key's roll about the handle IS the wrist and the forearm. `key()` writes the racket's +z to the ball, and `grip.ts` puts +z on the palm's side. Right for a forehand. **A backhand is struck with the back of the hand to the ball**, and every backhand key had the palm to it.
+
+The fix was solved, not reasoned, though each answer turned out to be the textbook one. `flip.ts`: for each stroke and stage, turn the hand through every roll about the handle and score the wrist and the forearm's turn.
+
+- **Backhands: half a turn**, all of them (`backhanded`). Contact 2.25 to 0.91.
+- **Forehand backswing: 120**, which leaves the face looking up and forward: the open-faced padel takeback. The hand now pronates into the ball, where it used to supinate.
+- **Overheads: the palm's side to the free arm** at the trophy (`laidBack`), so pronation turns it to the ball; that was -154 degrees of pronation, which no forearm has.
+- **Serve: 100** at the address and backswing. The solver's best was 180, but anything from 90 to 255 was in range, and 180 meant a half turn of the racket in a fraction of a second.
+- **Ready: 250**, the backhand's face turned towards the net like a shield, the wrist about straight (1.07).
+
+That left the contacts, all at 50-60 degrees of ulnar deviation, wanting the same roll: not a roll at all, but a racket lying along the forearm (the wrist-straight angle is 59 degrees off it). At contact the ball fixes the racket's centre and its face and nothing else, so `Family.tip` turns it in its own plane, head towards the thumb's edge: 25 on groundstrokes, 20 on volleys, 15 on the smash. Forehand contact is now 33 degrees of extension and 9 of ulnar, which is a real laid-back continental forehand.
+
+Three traps. `rolled` first turned the racket about its own centre, and the hand sits 9 cm off the handle's line: a half turn moved it 18 cm, the serve's hand went out of the arm's reach, and the spine's reach logic stepped 7 degrees in a frame at every serve. It now holds the hand still, so the positions measured from footage stand. And rolls of 160 and more between neighbouring keys popped, and near 180 the way round is ambiguous: they are kept under about 150, in range but not at the best roll. And the ready hold rests at 0.97, where `nlerpQ` could stay on the long way round for seconds, the racket 10 degrees off its key, then snap back when a run took the blend past its 0.98 reset: 7 degrees in a frame, ready's hand pops 30 before this work and 68 at its worst. The hold is now the key itself. The reset moved to 0.995 fixed the pops and brought back the long way on recoveries, 324 degrees of racket travel at p90, which is the bug that reset was there for. So the rule itself changed: the short way, unless the long way is nearer last frame's by more than a jump anyone would see. A fade's start is a tie and goes short, a wrap mid-blend keeps its way, and at the ends the two ways have met. Hand pops 28, recovery travel 161 at p90 against 205.
+
+Across 66 stage rows the mean went from about 1.9 to 1.07. `tests/render/wrist.test.ts` holds it, from the joints. 
+
+Still past a wrist: the serve's contact at 81 degrees of extension (1.24), the víbora's finish (1.9), chiquitas (1.5-1.9, few frames). `wristLimit` still measures the shaft; it's a safety net now, and should be rewritten on the real wrist.
+
 ## The grip, redone from photos of a real hold (2026-11-01)
 
 The owner: "fix the grip, its not real at all", and "you can use a tennis continental grip as well, its the same thing". They were right, and a passing test was why I had not seen it. `tests/render/grip.test.ts` held the skin out of the handle and asked that fingertips reached it, and the answer it got was a stick lying on an open hand. Six views of one hand on a bare handle showed it in a minute: on p1 the knuckles stood 40-55 mm off the handle's axis and the middle joints 35-53 mm, on a 17 mm handle, so only the fingertips touched. The fingers fanned out with light between them, the thumb ran up the handle past the collar, and 6 cm of handle stuck out under the little finger.

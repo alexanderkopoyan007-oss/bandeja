@@ -156,12 +156,13 @@ function alignQ(q: THREE.Quaternion, prev: THREE.Quaternion): void {
 }
 
 /**
- * a = nlerp(a, b, BL.u) (for blending poses, close enough to slerp). Two rotations can be blended either way round;
- * the way is the one whose result is nearer last frame's (`prev`, the blend's own output, zero when there is none),
- * and the short way only at the blend's start, whichever end that is (a fade runs u down from 1: there both ways
- * start out alike, and a third of the volleys' recoveries took the long way, 250 degrees for a turn of 110). Re-picking
- * the short way mid-blend whenever b swung far (the old rule) turned the racket over in a frame, and the wrist with
- * it (60 cm at a left-hander's overhead). Both inputs should be continuous from frame to frame (alignQ).
+ * a = nlerp(a, b, BL.u) (for blending poses, close enough to slerp). Two rotations can be blended either way round. The
+ * way is the short one, unless the other is nearer last frame's (`prev`, the blend's own output, zero when there is none)
+ * by more than a jump anyone would see. A fade runs u down from 1, where both ways start out alike: picked by nearness
+ * alone, a third of the volleys' recoveries took the long way, 250 degrees for a turn of 110. Re-picked the short way
+ * whenever b swung far, mid-blend, the racket turned over in a frame, and the wrist with it (60 cm at a left-hander's
+ * overhead). Reset to the short way at fixed ends, a blend on the long way snapped back 7 degrees as it passed them.
+ * Both inputs should be continuous from frame to frame (alignQ).
  */
 /** q negated if that puts it nearer `ref` (the same rotation, kept on one side from frame to frame). */
 function sideOf(q: THREE.Quaternion, ref: THREE.Quaternion): void {
@@ -187,6 +188,8 @@ function slerpAs(a: THREE.Quaternion, b: THREE.Quaternion, u: number, out: THREE
 
 /** nlerpQ's result on its way into the quaternion (a double passed to a call V8 doesn't inline is boxed). */
 const QN = new Float64Array(4);
+/** How much nearer last frame the long way must be for a blend to stay on it (half-angle, rad: 4 degrees of the result). */
+const WAY_JUMP = 0.035;
 /** Out of `curve`, one value a dimension. */
 const CURVE = new Float64Array(3);
 
@@ -227,14 +230,15 @@ function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion
   const x1 = a.x * v + b.x * u, y1 = a.y * v + b.y * u, z1 = a.z * v + b.z * u, w1 = a.w * v + b.w * u;
   const x2 = a.x * v - b.x * u, y2 = a.y * v - b.y * u, z2 = a.z * v - b.z * u, w2 = a.w * v - b.w * u;
   const l1 = Math.sqrt(x1 * x1 + y1 * y1 + z1 * z1 + w1 * w1), l2 = Math.sqrt(x2 * x2 + y2 * y2 + z2 * z2 + w2 * w2);
+  const dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
   let plus: boolean;
   if (l1 < 1e-6 || l2 < 1e-6) plus = l1 >= l2;
-  else if (u < 0.02 || u > 0.98 || prev.x * prev.x + prev.y * prev.y + prev.z * prev.z + prev.w * prev.w < 0.5) {
-    plus = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w >= 0;
-  } else {
+  else if (prev.x * prev.x + prev.y * prev.y + prev.z * prev.z + prev.w * prev.w < 0.5) plus = dot >= 0;
+  else {
     const c1 = Math.abs(x1 * prev.x + y1 * prev.y + z1 * prev.z + w1 * prev.w) / l1;
     const c2 = Math.abs(x2 * prev.x + y2 * prev.y + z2 * prev.z + w2 * prev.w) / l2;
-    plus = c1 >= c2;
+    const t1 = Math.acos(c1 > 1 ? 1 : c1), t2 = Math.acos(c2 > 1 ? 1 : c2);
+    plus = dot >= 0 ? t1 - t2 <= WAY_JUMP : t2 - t1 > WAY_JUMP;
   }
   // Two rotations far apart: the plain blend does most of the turn at the middle of the way, and the racket spun round
   // the wrist, 135 degrees in a tenth of a second after every backhand volley. This weighting turns it evenly.
@@ -613,6 +617,8 @@ const SERVE_LET_GO = 1.2;
  * degrees forward through every shot played standing; padel players wait and hit far more upright (MediaPipe on WPT
  * photos: 5-19 ready, 6 at the volley, 30 at a groundstroke; the knees and hips were already theirs).
  */
+/** How far the ready position takes over from the clip in play (the serve's address and a tap take all of it). */
+const READY_HOLD = 0.97;
 const READY_UP = 1.1;
 /** The shoulder height (m, standing) READY's numbers are for. */
 const READY_SHOULDER = 1.355;
@@ -1737,6 +1743,7 @@ export class Avatar {
     k.q.copy(f.contact.q);
     if (f.wrist) this.reachFrom(k, f.wrist);
     else if (f.low) k.q.slerp(f.low, smoothstep(0.95, 0.4, k.p.y));
+    if (f.tip) k.q.multiply(f.tip);
     k.pole.copy(f.contact.pole);
     k.yaw = f.contact.yaw;
     k.off.copy(f.contact.off);
@@ -2370,7 +2377,7 @@ export class Avatar {
     // the new point's pose, not on the way to it.
     this.on = sim.phase === PH_RALLY || (placed && (sim.phase === PH_SETUP || sim.phase === PH_TOSS) && sim.score.serverPlayer() !== idx);
     this.racketTap(sim, idx, p, dt);
-    let want = this.addr ? 1 : this.on ? 0.97 * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
+    let want = this.addr ? 1 : this.on ? READY_HOLD * (1 - smoothstep(3.6, 5.2, Math.sqrt(this.vx * this.vx + this.vz * this.vz))) : 0;
     if (want < this.tapW) want = this.tapW;
     // Walking back (and to the net after match point): the racket carried (CARRY), not swung with the arms; eased in
     // and out (carryW).
@@ -3983,8 +3990,8 @@ export class Avatar {
     E.x = CURVE[0]! * k; E.y = CURVE[1]! * k; E.z = CURVE[2]! * k;
     curve(o.knots, o.back, 1, s);
     // The shaft laid back from up the trunk about the shoulder line, its face out along that line.
-    this.laidBack(CURVE[0]!, this.overQ);
-    this.laidBack(o.back[n]!, this.overEnd);
+    this.laidBack(CURVE[0]!, o.roll ?? Math.PI, this.overQ);
+    this.laidBack(o.back[n]!, o.roll ?? Math.PI, this.overEnd);
     const off = this.grip.off, h = this.hand0, W = this.overTurn;
     h.copy(off).applyQuaternion(q2);
     const kx = v2.x - h.x, ky = v2.y - h.y, kz = v2.z - h.z;
@@ -3999,11 +4006,16 @@ export class Avatar {
     this.overHead.copy(v2);
   }
 
-  /** The racket laid back by `back` from up the trunk, about the shoulder line (chestAxes), its face out along that line. */
-  private laidBack(back: number, out: THREE.Quaternion): void {
+  /**
+   * The racket laid back by `back` from up the trunk, about the shoulder line (chestAxes), `roll` round its long axis from
+   * its palm's side out along that line to the racket side (half a turn has that side to the free arm, and pronation turns it to the ball).
+   */
+  private laidBack(back: number, roll: number, out: THREE.Quaternion): void {
     const O = this.chestOut, U = this.chestUp, F = this.chestFwd, cp = Math.cos(back), sp = Math.sin(back);
     const ax = U.x * cp - F.x * sp, ay = U.y * cp - F.y * sp, az = U.z * cp - F.z * sp;
-    const nx = -O.x, ny = -O.y, nz = -O.z;
+    // (the side away from the racket side, turned by what's left of a half turn about the shaft)
+    const c = Math.cos(roll), s = Math.sin(roll), n0x = -O.x, n0y = -O.y, n0z = -O.z;
+    const nx = n0x * c + (ay * n0z - az * n0y) * s, ny = n0y * c + (az * n0x - ax * n0z) * s, nz = n0z * c + (ax * n0y - ay * n0x) * s;
     basisQuat(ay * nz - az * ny, az * nx - ax * nz, ax * ny - ay * nx, ax, ay, az, nx, ny, nz, out);
   }
 
@@ -4183,7 +4195,9 @@ export class Avatar {
       this.quatToWorld(ready.q, q2);
       q2.premultiply(this.chestQ);
       alignQ(q2, this.prevReadyQ);
-      BL.u = this.ready;
+      // (the hold is the key itself: at 0.97 the clip's racket stayed in the blend, nlerpQ's way never came back to the
+      // short one, and the racket hung 10 degrees off the key and snapped back, a pop a rally)
+      BL.u = this.ready >= READY_HOLD ? 1 : this.ready / READY_HOLD;
       this.blendRacket(this.outReady);
     }
     this.toWorld(this.kp, v2);

@@ -184,7 +184,8 @@ describe('swings and feet', () => {
       // 40 ms out it was 3-4 m/s and it reached 15 only after the ball.
       expect(at(s, -5)).toBeGreaterThan(s === SHOT_SMASH ? 9 : 6);
       // And it's at its fastest at the ball, not after it: the swing used to come in going straight up, and turn round.
-      expect(at(s, 0)).toBeGreaterThan(0.95 * at(s, 2));
+      // (either side of the contact, which falls between frames)
+      expect(Math.max(at(s, -1), at(s, 0))).toBeGreaterThan(0.95 * at(s, 2));
     }
   });
 

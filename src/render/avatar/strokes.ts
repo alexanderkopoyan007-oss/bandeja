@@ -68,6 +68,8 @@ export interface Family {
    * arm stays bent in front of the chest wherever the ball comes. Its height follows the ball (avatar's reachFrom).
    */
   wrist?: THREE.Vector3;
+  /** The contact's racket tipped in its own plane (see tipped), after `low` and `wrist`: the face and the ball stay, the wrist comes back in range. */
+  tip?: THREE.Quaternion;
   /** How much of the arm's length the shoulder-to-wrist line takes at the contact (default the avatar's ARM_TO): under it the elbow stays bent and the body goes to the ball. */
   arm?: number;
   /** How long the follow-through takes (s; default the avatar's FOLLOW), and how far it goes on through the ball (m; default 0.25). */
@@ -87,6 +89,41 @@ export function racketQuat(a: THREE.Vector3, n: THREE.Vector3, out = new THREE.Q
 
 function key(p: THREE.Vector3, a: THREE.Vector3, n: THREE.Vector3, pole: THREE.Vector3, yaw: number, off: THREE.Vector3): Key {
   return { p, q: racketQuat(a, n), pole, yaw, off };
+}
+
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
+
+/** Where the hand holds the racket (m, the racket's frame; 7-9 cm off the handle's line on every body). */
+const WRIST_IN_RACKET = new THREE.Vector3(0.08, -0.3, 0.04);
+
+/**
+ * A key with its racket turned about the handle's line, the hand staying where the key had it (degrees; half a turn taken about
+ * the racket's own centre moved it 18 cm, past the arm's reach at the serve's address). The hand can't let go of the racket, so
+ * a key's roll is the wrist's and the forearm's: see the wrist audit in DECISIONS.md. The racket's +z is the palm's side (grip.ts).
+ */
+function rolled(k: Key, deg: number): Key {
+  const q = k.q.clone().multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Y, (deg * Math.PI) / 180));
+  return { ...k, q, p: k.p.clone().add(WRIST_IN_RACKET.clone().applyQuaternion(k.q)).sub(WRIST_IN_RACKET.clone().applyQuaternion(q)) };
+}
+
+/**
+ * A backhand is struck with the back of the hand to the ball: the racket's palm side, +z, away from it. Written with +z to
+ * the ball like a forehand's, the hand came round the wrong side of the handle: the wrist 80-125 degrees off the forearm, at
+ * every stage of every backhand.
+ */
+/**
+ * A key's racket turned in its own plane, the head towards the thumb's edge (degrees), about its centre. A racket lying along
+ * the forearm has the wrist at 50-60 degrees of ulnar deviation (a real one stops at about 35): it sits 59 off the forearm with
+ * the wrist straight. The ball fixes the racket's centre and its face and nothing else.
+ */
+const tipQ = (deg: number): THREE.Quaternion => new THREE.Quaternion().setFromAxisAngle(AXIS_Z, (-deg * Math.PI) / 180);
+function tipped(k: Key, deg: number): Key {
+  return { ...k, q: k.q.clone().multiply(tipQ(deg)) };
+}
+
+function backhanded(f: Family): Family {
+  return { ...f, back: rolled(f.back, 180), contact: rolled(f.contact, 180), finish: rolled(f.finish, 180), low: f.low && rolled({ ...f.contact, q: f.low }, 180).q };
 }
 
 /**
@@ -115,6 +152,8 @@ export interface OverArm {
    * the elbow ending here, each out to the racket side, up the trunk and forward from the racket shoulder (m, for that arm).
    */
   under?: number[];
+  /** The hand's way round the handle from the racket's face out along the shoulders to the racket side (rad, default half a turn: the palm's side to the free arm). */
+  roll?: number;
 }
 
 const deg = (d: number): number => (d * Math.PI) / 180;
@@ -124,10 +163,11 @@ export const FOREHAND: Family = {
   weight: 0.16,
   // In front and across the body at the backswing, dropping to the ball, out to the free side as the racket comes through.
   free: [-0.29, -0.5, 0.71, 0.03, -0.7, 0.59, 0.6, 0, 0.7],
-  back: key(v(-0.75, 1.06, -0.35), v(-0.25, 0.6, -0.75), v(-1, 0.05, -0.1), v(-0.55, 0.75, -0.55), -1.05, v(0.12, 1.25, 0.4)),
+  back: rolled(key(v(-0.75, 1.06, -0.35), v(-0.25, 0.6, -0.75), v(-1, 0.05, -0.1), v(-0.55, 0.75, -0.55), -1.05, v(0.12, 1.25, 0.4)), 120),
   contact: key(v(-0.75, 1.0, 0.45), v(-0.85, 0.12, 0.5), v(0.05, 0.08, 1), v(-0.45, 0.8, -0.15), 0.15, v(0.42, 1.12, 0.36)),
-  finish: key(v(0.27, 1.66, 0.36), v(0.35, 0.7, -0.6), v(0.85, 0.1, 0.4), v(-0.3, 1.2, 0.6), 0.95, v(0.5, 1.1, -0.2)),
+  finish: rolled(key(v(0.27, 1.66, 0.36), v(0.35, 0.7, -0.6), v(0.85, 0.1, 0.4), v(-0.3, 1.2, 0.6), 0.95, v(0.5, 1.1, -0.2)), 55),
   low: racketQuat(v(-0.6, -0.74, 0.32), v(0.05, 0.3, 1)),
+  tip: tipQ(25),
   dip: 0.28,
   loop: 0.1,
   crouch: 1,
@@ -144,7 +184,7 @@ export const FOREHAND: Family = {
  * stand across. The old contact key had the shoulders 20 degrees turned, and the chest measured 13 degrees off
  * square at the hit: a push.
  */
-export const BACKHAND: Family = {
+const BH: Family = {
   name: 'backhand',
   weight: 0.1,
   // Long, down by the side, then opening out and behind as the racket goes the other way: the two arms part.
@@ -154,6 +194,7 @@ export const BACKHAND: Family = {
   finish: key(v(-0.52, 1.46, 0.34), v(-0.55, 0.8, -0.1), v(-0.6, 0.3, 0.75), v(-0.2, 1.5, 0.45), 0.5, v(0.6, 1.1, -0.42)),
   bodyTurn: 0.6,
   low: racketQuat(v(0.6, -0.74, 0.32), v(-0.05, 0.3, 1)),
+  tip: tipQ(25),
   dip: 0.22,
   loop: 0.05,
   crouch: 1,
@@ -173,9 +214,9 @@ export const BACKHAND: Family = {
 export const OVERHEAD: Family = {
   name: 'overhead',
   // Trophy position: side-on, racket up behind the head, the free hand pointing at the ball.
-  back: key(v(-0.11, 1.8, -0.56), v(-0.02, 0.8, -0.6), v(-1, 0, 0.1), v(-0.1, 1.2, -0.8), -1.25, v(-0.18, 1.8, 0.48)),
+  back: rolled(key(v(-0.11, 1.8, -0.56), v(-0.02, 0.8, -0.6), v(-1, 0, 0.1), v(-0.1, 1.2, -0.8), -1.25, v(-0.18, 1.8, 0.48)), 180),
   contact: key(v(-0.35, 2.0, 0.1), v(0.55, 0.78, 0.28), v(0, 0.42, 0.91), v(-0.85, 1.5, -0.1), -0.95, v(0.1, 1.3, 0.5)),
-  finish: key(v(0.08, 1.12, 0.84), v(0.35, -0.15, 0.9), v(0.05, -0.55, 0.85), v(-0.45, 1.2, 0.25), -0.55, v(0.4, 1.1, 0.3)),
+  finish: rolled(key(v(0.08, 1.12, 0.84), v(0.35, -0.15, 0.9), v(0.05, -0.55, 0.85), v(-0.45, 1.2, 0.25), -0.55, v(0.4, 1.1, 0.3)), 45),
   dip: -0.05,
   loop: 0.32,
   crouch: 0,
@@ -207,9 +248,9 @@ export const OVERHEAD: Family = {
  */
 export const VIBORA: Family = {
   name: 'vibora',
-  back: key(v(-0.14, 1.78, -0.56), v(-0.05, 0.8, -0.6), v(-1, 0.05, 0.15), v(-0.12, 1.2, -0.8), -1.3, v(-0.18, 1.75, 0.48)),
+  back: rolled(key(v(-0.14, 1.78, -0.56), v(-0.05, 0.8, -0.6), v(-1, 0.05, 0.15), v(-0.12, 1.2, -0.8), -1.3, v(-0.18, 1.75, 0.48)), 180),
   contact: key(v(-0.5, 1.7, 0.2), v(0.6, 0.72, 0.3), v(0.3, 0.2, 0.93), v(-0.9, 1.3, -0.05), -0.7, v(0.12, 1.25, 0.5)),
-  finish: key(v(0.42, 0.82, 0.5), v(0.55, -0.55, 0.45), v(0.3, -0.45, 0.85), v(-0.15, 1.05, 0.4), 0.6, v(0.4, 1.05, 0.15)),
+  finish: rolled(key(v(0.42, 0.82, 0.5), v(0.55, -0.55, 0.45), v(0.3, -0.45, 0.85), v(-0.15, 1.05, 0.4), 0.6, v(0.4, 1.05, 0.15)), 140),
   dip: 0.08,
   loop: 0.28,
   crouch: 0,
@@ -234,12 +275,13 @@ export const VIBORA: Family = {
  * square to the net at contact at full reach, the face flat, and the racket comes right down past the free hip.
  */
 export const SMASH: Family = {
+  tip: tipQ(15),
   ...OVERHEAD,
   name: 'smash',
   sit: 0,
-  back: key(v(-0.1, 1.84, -0.56), v(-0.02, 0.78, -0.62), v(-1, 0, 0.12), v(-0.1, 1.2, -0.8), -1.4, v(-0.2, 1.85, 0.5)),
+  back: rolled(key(v(-0.1, 1.84, -0.56), v(-0.02, 0.78, -0.62), v(-1, 0, 0.12), v(-0.1, 1.2, -0.8), -1.4, v(-0.2, 1.85, 0.5)), 180),
   contact: key(v(-0.28, 2.45, 0.42), v(-0.15, 0.95, 0.27), v(0.02, 0.08, 1), v(-0.7, 1.7, 0.25), 0.05, v(0.45, 0.95, 0.2)),
-  finish: key(v(0.48, 0.92, 0.34), v(0.6, -0.65, -0.3), v(0.2, -0.3, 0.9), v(-0.1, 1.0, 0.4), 0.75, v(0.22, 1.0, 0.24)),
+  finish: rolled(key(v(0.48, 0.92, 0.34), v(0.6, -0.65, -0.3), v(0.2, -0.3, 0.9), v(-0.1, 1.0, 0.4), 0.75, v(0.22, 1.0, 0.24)), 70),
   loop: 0.38,
   lead: 0.32,
   over: {
@@ -277,9 +319,9 @@ function courtKey(p: number[], a: number[], n: number[], pole: number[], yaw: nu
 const SERVE_TURN = 0.82;
 export const SERVE: Family = {
   name: 'serve',
-  back: courtKey([-0.76, 0.26, 1.67], [-0.5, 0, 0.85], [0.85, 0.5, 0.15], [-0.6, 0.3, 0.85], -1.6, [0.37, 0.47, 1.0]),
+  back: rolled(courtKey([-0.76, 0.26, 1.67], [-0.5, 0, 0.85], [0.85, 0.5, 0.15], [-0.6, 0.3, 0.85], -1.6, [0.37, 0.47, 1.0]), 100),
   contact: courtKey([0.5, 0.55, 0.92], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.5, 0.75], -0.8, [0.49, 0.09, 0.82]),
-  finish: courtKey([0.12, -0.22, 1.67], [-0.3, -0.3, 0.85], [0.9, 0.2, 0.3], [0.3, 0.35, 1.0], -0.3, [0.33, -0.19, 0.87]),
+  finish: rolled(courtKey([0.12, -0.22, 1.67], [-0.3, -0.3, 0.85], [0.9, 0.2, 0.3], [0.3, 0.35, 1.0], -0.3, [0.33, -0.19, 0.87]), 110),
   // Off a coach's serve, frame by frame: the racket hand held out at the shoulder's height until about 0.2 s before the ball,
   // then down across the body to it, the elbow 44-52 all the way.
   over: {
@@ -291,6 +333,7 @@ export const SERVE: Family = {
     pitch: 0,
     // Folded, the hand before the racket shoulder and the racket up by the far one: elbow 123-125 at +0.24 s.
     under: [-0.05, -0.02, 0.27, 0.12, -0.24, 0.1],
+    roll: deg(100),
   },
   // Long and out to its side once the ball is gone, then coming round in front as the body does.
   free: [0.85, -0.45, 0.05, 0.66, -0.4, 0.2, 0.55, -0.05, 0.75],
@@ -312,7 +355,7 @@ export const SERVE: Family = {
  * at the back and the ball out towards the net (the avatar puts the free hand on the ball itself): from there the ball
  * drops to bounce to the waist, and the racket is already above it.
  */
-export const SERVE_ADDRESS: Key = courtKey([-0.63, 0.29, 1.57], [-0.3, 0, 0.95], [0.95, 0, 0.3], [-0.6, 0.3, 0.85], -1.45, [0.5, 0.5, 1.2]);
+export const SERVE_ADDRESS: Key = rolled(courtKey([-0.63, 0.29, 1.57], [-0.3, 0, 0.95], [0.95, 0, 0.3], [-0.6, 0.3, 0.85], -1.45, [0.5, 0.5, 1.2]), 100);
 export const SERVE_TURN_SHARE = SERVE_TURN;
 
 /**
@@ -325,7 +368,7 @@ export const SERVE_TURN_SHARE = SERVE_TURN;
 export const VOLLEY_FH: Family = {
   name: 'volley-fh',
   weight: 0.08,
-  back: key(v(-0.46, 1.4, 0.3), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.55, v(0.26, 1.2, 0.42)),
+  back: tipped(rolled(key(v(-0.46, 1.4, 0.3), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.55, v(0.26, 1.2, 0.42)), 120), 25),
   contact: key(v(-0.5, 1.15, 0.65), v(-0.6, 0.3, 0.72), v(0.1, 0.25, 1), v(-0.42, 0.9, 0.0), -0.42, v(0.42, 1.06, 0.54)),
   finish: key(v(-0.36, 1.08, 0.64), v(-0.5, 0.25, 0.82), v(0.1, 0.35, 1), v(-0.42, 0.9, 0.1), -0.3, v(0.46, 1.05, 0.4)),
   dip: 0.04,
@@ -334,11 +377,12 @@ export const VOLLEY_FH: Family = {
   punch: 0.5,
   bodyTurn: 0.45,
   wrist: v(-0.1, 1.14, 0.36),
+  tip: tipQ(20),
   free: [-0.12, -0.44, 0.72, 0.07, -0.62, 0.58, 0.19, -0.64, 0.53],
 };
 
 /** The same on the other side: side-on, the hand crossing to the free side of the chest, the free arm opening behind. */
-export const VOLLEY_BH: Family = {
+const VBH: Family = {
   name: 'volley-bh',
   weight: 0.06,
   back: key(v(0.42, 1.4, 0.26), v(0.3, 0.9, 0.15), v(0.7, 0.05, 0.7), v(0.2, 1.0, 0.3), 1.45, v(0.28, 1.2, 0.3)),
@@ -350,6 +394,7 @@ export const VOLLEY_BH: Family = {
   punch: 0.5,
   bodyTurn: 0.6,
   wrist: v(0.14, 1.12, 0.3),
+  tip: tipQ(20),
   free: [0.2, -0.15, 0.78, 0.35, -0.4, 0.6, 0.5, -0.4, 0.5],
 };
 
@@ -377,10 +422,10 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
   if (kind === 'slice') {
     return {
       ...f, name: `${f.name}-slice`,
-      back: { ...f.back, p: f.back.p.clone().add(v(0, 0.28, 0)) },
+      back: { ...tipped(f.back, side > 0 ? -25 : 0), p: f.back.p.clone().add(v(0, 0.28, 0)) },
       contact: open(f.contact, 0.45),
       low: f.low && open({ ...f.contact, q: f.low }, 0.45).q,
-      finish: key(v(side * -0.05, 1.0, 0.68), v(side * 0.55, -0.25, 0.8), v(0, 0.55, 0.85), v(side * 0.3, 1.0, 0.4), f.contact.yaw - side * 0.35, f.finish.off),
+      finish: rolled(key(v(side * -0.05, 1.0, 0.68), v(side * 0.55, -0.25, 0.8), v(0, 0.55, 0.85), v(side * 0.3, 1.0, 0.4), f.contact.yaw - side * 0.35, f.finish.off), side < 0 ? 60 : 0),
       dip: 0.1,
       loop: 0.05,
       byHand: true,
@@ -392,7 +437,7 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
       back: { ...f.back, p: f.back.p.clone().add(v(0, -0.18, 0)) },
       contact: open(f.contact, 0.6),
       low: f.low && open({ ...f.contact, q: f.low }, 0.6).q,
-      finish: key(v(side * 0.15, 1.9, 0.5), v(side * -0.1, 0.9, 0.4), v(0, 0.2, 1), v(side * 0.5, 1.5, 0.3), f.contact.yaw - side * 0.2, f.finish.off),
+      finish: tipped(rolled(key(v(side * 0.15, 1.9, 0.5), v(side * -0.1, 0.9, 0.4), v(0, 0.2, 1), v(side * 0.5, 1.5, 0.3), f.contact.yaw - side * 0.2, f.finish.off), side < 0 ? 190 : -30), side * -30),
       dip: 0.38,
       loop: 0.1,
     };
@@ -410,7 +455,7 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
       back: { ...back, yaw: side > 0 ? CONTRA_BH_BACK_YAW : back.yaw },
       contact: { ...open(f.contact, 0.75), yaw: cy },
       low: f.low && open({ ...f.contact, q: f.low }, 0.75).q,
-      finish: key(v(side * 0.1, 2.0, 0.42), v(side * -0.05, 0.95, 0.3), v(0, 0.35, 1), v(side * 0.5, 1.55, 0.3), cy - side * 0.15, f.finish.off),
+      finish: tipped(rolled(key(v(side * 0.1, 2.0, 0.42), v(side * -0.05, 0.95, 0.3), v(0, 0.35, 1), v(side * 0.5, 1.55, 0.3), cy - side * 0.15, f.finish.off), side < 0 ? 210 : 0), side * -30),
       dip: 0.42,
       loop: 0.06,
     };
@@ -418,7 +463,7 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
   if (kind === 'chiquita') {
     const back = shrink(f.back, 0.35);
     back.p.y -= 0.15;
-    return { ...f, name: `${f.name}-chiquita`, back, finish: shrink(f.finish, 0.3), dip: 0.3, loop: 0.05 };
+    return { ...f, name: `${f.name}-chiquita`, back: rolled(back, side < 0 ? 45 : 60), finish: rolled(shrink(f.finish, 0.3), side < 0 ? 15 : -30), dip: 0.3, loop: 0.05 };
   }
   return {
     ...f, name: `${f.name}-drop`,
@@ -433,16 +478,18 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
   };
 }
 
+export const BACKHAND = backhanded(BH);
+export const VOLLEY_BH = backhanded(VBH);
 export const FH_SLICE = variant(FOREHAND, -1, 'slice');
 export const FH_LOB = variant(FOREHAND, -1, 'lob');
 export const FH_DROP = variant(FOREHAND, -1, 'drop');
-export const BH_SLICE = variant(BACKHAND, 1, 'slice');
-export const BH_LOB = variant(BACKHAND, 1, 'lob');
-export const BH_DROP = variant(BACKHAND, 1, 'drop');
+export const BH_SLICE = backhanded(variant(BH, 1, 'slice'));
+export const BH_LOB = backhanded(variant(BH, 1, 'lob'));
+export const BH_DROP = backhanded(variant(BH, 1, 'drop'));
 export const FH_CHIQUITA = variant(FOREHAND, -1, 'chiquita');
-export const BH_CHIQUITA = variant(BACKHAND, 1, 'chiquita');
+export const BH_CHIQUITA = backhanded(variant(BH, 1, 'chiquita'));
 export const FH_CONTRA = variant(FOREHAND, -1, 'contra');
-export const BH_CONTRA = variant(BACKHAND, 1, 'contra');
+export const BH_CONTRA = backhanded(variant(BH, 1, 'contra'));
 
 /**
  * Ready position between shots: the racket up in front of the chest, head up, edge towards the net, the free
@@ -450,7 +497,11 @@ export const BH_CONTRA = variant(BACKHAND, 1, 'contra');
  * 0.3 m below them, elbows 46-66 and 45-47 (284 two-handed frames off three clips, docs/research/footage-pose.md).
  * Numbers for shoulders at READY_SHOULDER and an arm of READY_ARM: the avatar fits them to the body.
  */
-export const READY: Key = key(v(-0.1, 1.24, 0.43), v(0.15, 0.78, 0.5), v(-1, 0, 0.15), v(-0.5, 0.85, -0.15), 0, v(-0.08, 1.08, 0.42));
+const READY_RAW = key(v(-0.14, 1.24, 0.47), v(0.15, 0.78, 0.5), v(-1, 0, 0.15), v(-0.5, 0.85, -0.15), 0, v(-0.12, 1.08, 0.46));
+const THROAT = new THREE.Vector3(0, -0.16, 0);
+export const READY: Key = rolled(READY_RAW, 250);
+// (the free hand stays on the throat, which the roll carried round the hand)
+READY.off.add(READY.p).add(THROAT.clone().applyQuaternion(READY.q)).sub(READY_RAW.p).sub(THROAT.clone().applyQuaternion(READY_RAW.q));
 
 /**
  * The racket tap after a point (avatar.ts racketTap): the racket raised in front at shoulder height, head up and a
@@ -501,6 +552,7 @@ function mirrorFamily(f: Family): Family {
     contact: mirrorKey(f.contact),
     finish: mirrorKey(f.finish),
     low: f.low && new THREE.Quaternion(f.low.x, -f.low.y, -f.low.z, f.low.w),
+    tip: f.tip && new THREE.Quaternion(f.tip.x, -f.tip.y, -f.tip.z, f.tip.w),
     via: f.via && v(-f.via.x, f.via.y, f.via.z),
     wrist: f.wrist && v(-f.wrist.x, f.wrist.y, f.wrist.z),
   };
