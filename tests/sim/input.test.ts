@@ -1,7 +1,7 @@
 // Input edge cases at the sim's boundary: what a release reads from the keys around it.
 import { describe, it, expect } from 'vitest';
 import { MatchSim, PH_RALLY, PH_SETUP, PH_TOSS, PH_OVER, E_HIT, E_FAULT } from '../../src/sim/match.ts';
-import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER } from '../../src/sim/input.ts';
+import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER, BTN_SLICE } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
 import { SHOT_BANDEJA, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
@@ -145,5 +145,63 @@ describe('a second shot key on a held swing', () => {
     expect(p.swing).toBe(SW_CHARGE);
     expect(p.chargeStart).toBe(start);
     expect(p.shot).toBe(SHOT_DRIVE);
+  });
+
+  it('a neighbouring key brushed in a hold does not fire it: the swing goes when the last key comes up', () => {
+    const { m, f } = intoRally();
+    const p = m.players[0]!;
+    tick(m, f, true, BTN_DRIVE, BTN_DRIVE);
+    tick(m, f, true, BTN_SLICE, BTN_DRIVE | BTN_SLICE);
+    tick(m, f, false, BTN_SLICE, BTN_DRIVE);
+    expect(p.swing).toBe(SW_CHARGE);
+    expect(p.shot).toBe(SHOT_DRIVE);
+    tick(m, f, false, BTN_DRIVE, 0);
+    expect(p.swing).not.toBe(SW_CHARGE);
+  });
+});
+
+describe('a movement key and the aim', () => {
+  // A key left down from the run in went on as aim: at 11 m/s a held swing took the target to the stop, and every sixth drive with it.
+  function holding(moveAtPress: number): { m: MatchSim; f: InputFrame; x0: number } {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame();
+    const p = m.players[0]!;
+    for (let i = 0; i < 120 * 40; i++) {
+      f.clear();
+      f.moveX = moveAtPress;
+      if (m.phase === PH_RALLY && m.rally.hitter === 1 && m.stand[0]!.valid && p.swing === SW_IDLE) {
+        f.push(true, BTN_DRIVE, m.time);
+        f.held = BTN_DRIVE;
+        m.step([f, null]);
+        f.clear();
+        f.held = BTN_DRIVE;
+        f.moveX = moveAtPress;
+        m.step([f, null]);
+        if ((p.swing as number) === SW_CHARGE && p.aiming) return { m, f, x0: p.aimX };
+        continue;
+      }
+      m.step([f, null]);
+    }
+    throw new Error('no ball to hold for');
+  }
+  const run = (m: MatchSim, f: InputFrame, moveX: number, ticks: number): void => {
+    for (let i = 0; i < ticks; i++) { f.clear(); f.held = BTN_DRIVE; f.moveX = moveX; m.step([f, null]); }
+  };
+
+  it('stays the run\'s while it stays down', () => {
+    const { m, f, x0 } = holding(1);
+    run(m, f, 1, 30);
+    expect(m.players[0]!.aimX).toBeCloseTo(x0, 5);
+  });
+  it('aims once it has been let go and pressed again', () => {
+    const { m, f, x0 } = holding(1);
+    run(m, f, 0, 2);
+    run(m, f, 1, 12);
+    expect(Math.abs(m.players[0]!.aimX - x0)).toBeGreaterThan(0.5);
+  });
+  it('aims when it goes down after the shot key', () => {
+    const { m, f, x0 } = holding(0);
+    run(m, f, 1, 12);
+    expect(Math.abs(m.players[0]!.aimX - x0)).toBeGreaterThan(0.5);
   });
 });

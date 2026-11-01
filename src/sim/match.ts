@@ -71,6 +71,12 @@ const BODY_LEAD = 0.03;
 const REFLEX_ABOVE = 0.3;
 /** How long before a ball at the body a reflex starts (s): a person's reaction, and time for the arm to go to it. */
 const REFLEX_SEE = 0.2;
+/** The keys that are a shot. */
+const SHOT_KEYS_MASK = SHOT_BUTTONS.reduce((a: number, b) => a | b, BTN_OVERHEAD | BTN_VOLLEY);
+/** The shot a key holds, or -1. The overhead key is held as a bandeja; it becomes a smash at contact if power is held. */
+function shotOfButton(button: number): number {
+  return button === BTN_OVERHEAD ? SHOT_BANDEJA : button === BTN_VOLLEY ? SHOT_VOLLEY : SHOT_BUTTONS.indexOf(button as never);
+}
 /** How much further than their partner a human's key can claim a ball from (claimCost's units). */
 const CLAIM_KEY_MARGIN = 1.5;
 /** E_WHIFF's y: the swing missed a ball in reach (timing) / there was no ball to hit (none in reach at the release,
@@ -922,6 +928,11 @@ export class MatchSim {
     // With the assist off (?assist=0) the keys always move and aim comes from the keys held at release.
     const assistOn = (this.cfg.assist ?? p.tune.positioningAssist) > 0;
     p.aiming = human && assistOn && (isServerSetup || (p.swing === SW_CHARGE && st.valid));
+    if (!p.aiming) {
+      // What the keys are doing as they stop moving the player is the run's: see steerAim.
+      p.steerFrom = f.moveY;
+      p.steerFromX = f.moveX;
+    }
     const keysAim = p.aiming && !f.aimAbs;
     this.keysMove[i] = human && !keysAim && abs(f.moveX) + abs(f.moveY) > 0.1 ? 1 : 0;
     let dx = keysAim || isServerSetup ? 0 : f.moveX * s;
@@ -945,21 +956,27 @@ export class MatchSim {
     // Button events in time order.
     for (let k = 0; k < f.evCount; k++) {
       const e = f.ev[k]!;
-      // The overhead key is held as a bandeja; it becomes a smash at contact if power is held.
-      const shot = e.button === BTN_OVERHEAD ? SHOT_BANDEJA : e.button === BTN_VOLLEY ? SHOT_VOLLEY
-        : SHOT_BUTTONS.indexOf(e.button as never);
+      const shot = shotOfButton(e.button);
       if (shot < 0) continue;
       // Presses act from this tick; releases keep their exact time so a late-delivered event is still graded fairly.
       if (e.press) {
         this.press(i, shot, max(e.t, t0));
         p.steerFrom = f.moveY;
+        p.steerFromX = f.moveX;
       }
       else if (p.swing === SW_CHARGE && p.shot === shot && !(human && this.cfg.tapSwing && this.cfg.autoTiming)) {
-        // The modifiers as they were at this release: f.held is the tick's end; undo this tick's later changes.
+        // The keys as they were at this release: f.held is the tick's end; undo this tick's later changes.
         let h = f.held;
         for (let j = f.evCount - 1; j > k; j--) {
           const l = f.ev[j]!;
-          if (l.button === BTN_POWER || l.button === BTN_PRECISION) h = l.press ? h & ~l.button : h | l.button;
+          h = l.press ? h & ~l.button : h | l.button;
+        }
+        // Another shot key still down: the swing is that key's. A neighbouring key brushed in a hold fired it on its way up, 0.8 s before
+        // the ball (review round 22). It goes when the last of them comes up.
+        const others = human ? h & SHOT_KEYS_MASK & ~e.button : 0;
+        if (others !== 0) {
+          this.takeOver(p, shotOfButton(others & -others));
+          continue;
         }
         this.relHeld = h;
         this.releaseSwing(i, e.t, f);
@@ -1338,13 +1355,15 @@ export class MatchSim {
   /** Move the aim target with the keys (or put it under the mouse), kept inside a sensible landing area. */
   private steerAim(p: Player, f: InputFrame, s: number, serve: boolean): void {
     const c = this.world.court;
-    // An overhead's depth is the shot's until the depth keys are touched: placing a smash left or right took away its kill depth, and
-    // a key still held from the run in was a steer on the first tick (smash winners halved; review round 20). What was down at the press
-    // stays the run's until let go.
+    // What was down at the press stays the run's until let go: the game takes over the running, so a key left down from the run in took
+    // the target to the stop in a held swing, 45 cm off the side glass, and every sixth drive or slice with it (review round 22). And
+    // an overhead's depth is the shot's until the depth keys are touched: placing a smash left or right took away its kill depth
+    // (smash winners halved; review round 20).
     if (abs(f.moveY) < 0.1) p.steerFrom = 0;
-    const ahead = abs(f.moveY - p.steerFrom) > 0.1;
+    if (abs(f.moveX) < 0.1) p.steerFromX = 0;
+    const ahead = abs(f.moveY - p.steerFrom) > 0.1, across = abs(f.moveX - p.steerFromX) > 0.1;
     const overhead = !serve && p.shot === SHOT_BANDEJA;
-    if (f.aimAbs || (overhead && (f.held & BTN_PRECISION) === 0 ? ahead : ahead || abs(f.moveX) > 0.1)) p.aimTouched = true;
+    if (f.aimAbs || (overhead && (f.held & BTN_PRECISION) === 0 ? ahead : ahead || across)) p.aimTouched = true;
     if (!f.aimAbs && !p.aimTouched && overhead) {
       // An overhead target nobody has steered follows the shot: deep for a bandeja; for a smash (Space) the
       // shortest landing at which a full-pace smash from the planned contact clears the net with margin.
@@ -1366,8 +1385,8 @@ export class MatchSim {
       p.aimX = f.aimTX;
       p.aimZ = f.aimTZ;
     } else {
-      p.aimX += s * f.moveX * (serve ? SERVE_AIM_SPEED : AIM_SPEED_X) * DT;
-      p.aimZ += -s * f.moveY * (serve ? SERVE_AIM_SPEED : AIM_SPEED_Z) * DT;
+      if (serve || across) p.aimX += s * f.moveX * (serve ? SERVE_AIM_SPEED : AIM_SPEED_X) * DT;
+      if (serve || ahead) p.aimZ += -s * f.moveY * (serve ? SERVE_AIM_SPEED : AIM_SPEED_Z) * DT;
     }
     if (serve) {
       const bx = this.box;
@@ -1379,14 +1398,19 @@ export class MatchSim {
     }
   }
 
+  /** The held swing goes on as this shot. */
+  private takeOver(p: Player, shot: number): void {
+    p.shot = shot;
+    if (!p.aimTouched) p.aimZ = -this.side(p.team) * (shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot)) * this.world.court.halfL;
+  }
+
   private press(i: number, shot: number, t: number): void {
     const p = this.players[i]!;
     const team = p.team;
-    // Another shot key while one is held takes over, and the release that counts is its own: the game's own hint says to press O on a
-    // lob, and the press was dropped, the old key's release whiffed and the point went (291 of 302 lobs; review round 21).
+    // Another shot key while one is held takes over: the game's own hint says to press O on a lob, and the press was dropped, the old
+    // key's release whiffed and the point went (291 of 302 lobs; review round 21).
     if (p.swing === SW_CHARGE && !p.reflex && !this.ai[i] && this.phase === PH_RALLY && shot !== p.shot) {
-      p.shot = shot;
-      if (!p.aimTouched) p.aimZ = -this.side(team) * (shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot)) * this.world.court.halfL;
+      this.takeOver(p, shot);
       return;
     }
     if (p.swing !== SW_IDLE && !p.reflex) return;
@@ -1947,7 +1971,7 @@ export class MatchSim {
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
-        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
+        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);
