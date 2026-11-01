@@ -553,13 +553,13 @@ Three reviewers on the shipped build, this time with a body-mechanics reviewer i
 | 16 | Medium | The first match is a long loss by default | The owner's call |
 | 17 | Medium | The serve's wrist is past its limit all the way, the elbow folds and opens, the hips jolt at the ball | Open |
 | 18 | Medium | A jump smash's hips swim in the air | **Fixed.** The reach and the weight hold in flight. Hip path 0.11-0.20 m (was 0.56), up to 0.09 off the line (was 0.37), 0-1 reversals (was 2-4) |
-| 19 | Medium | No lunge: a wider ball gets a lean, not a long step | Open |
+| 19 | Medium | No lunge: a wider ball gets a lean, not a long step | Open. Raising the lunge's own numbers changed nothing: the leg's reach from the hip is what stops the foot, so the hips would have to drop first |
 | 20 | Medium | The backhand's forearm kicks the wrong way before the ball | Open |
 | 21 | Medium | The hips sag on the second stride of a long start | Open |
 | 22 | Medium | Por tres is rare and can't be played on purpose | Open |
 | 23 | Medium | Key aim can't reach a put-away volley in time | Open |
 | 24 | Medium | Forehand volleys drop the racket level beside the hip | **Fixed.** The hand no longer sits above the ball, the body goes further to it. Head level to 2 cm over the hand at the ball (was 6 cm under), elbow 94 down to 43, wrist 0.94. The balls in the review's band were in fact 0.68-0.78 m at contact: the plan's height is read before they fall |
-| 25 | Low | The handle sits in the thigh on low volleys | Open |
+| 25 | Low | The handle sits in the thigh on low volleys | **Fixed.** The thighs joined the racket's guard: racket in a body 0.6% of frames to 0.1-0.2% |
 | 26 | Low | The split step comes after the strike | Open |
 
 Frame rate on the fix: 120.5 fps paced, 8.3 ms, none over 20 ms, 82 draw calls, 471k triangles. Alloc 9 against a budget of 10.

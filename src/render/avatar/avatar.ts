@@ -368,7 +368,7 @@ const GUARD = new WeakMap<PlayerAsset, { bones: Int32Array; r: Float64Array }>()
 function guardCaps(asset: PlayerAsset): { bones: Int32Array; r: Float64Array } {
   let g = GUARD.get(asset);
   if (!g) {
-    const caps = fitCapsules(asset).filter((c) => c.name === 'pelvis' || c.name === 'chest' || c.name === 'head');
+    const caps = fitCapsules(asset).filter((c) => c.name === 'pelvis' || c.name === 'chest' || c.name === 'head' || c.name === 'thighL' || c.name === 'thighR');
     g = { bones: Int32Array.from(caps.flatMap((c) => [c.ia, c.ib])), r: Float64Array.from(caps.map((c) => c.r)) };
     GUARD.set(asset, g);
   }
