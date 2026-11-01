@@ -12,25 +12,26 @@ B = d['hico'].astype(np.float64)
 V = np.stack([B[:, 0], B[:, 2], -B[:, 1]], 1)
 T = d['hitri'].astype(np.int64)
 H = float(V[:, 1].max())
-TY = V[T, 1]
-TLO, THI = TY.min(1), TY.max(1)
+SPAN = {axis: (V[T, axis].min(1), V[T, axis].max(1)) for axis in (0, 1)}
 GRID = 0.005
-NX, NZ = 260, 140  # x -0.65..0.65, z -0.35..0.35
 print('FIT verts', len(V), 'tris', len(T), 'height', round(H, 4), 'x', V[:, 0].min().round(3), V[:, 0].max().round(3), 'z', V[:, 2].min().round(3), V[:, 2].max().round(3))
 
 
-def outlines(y0):
-    """The separate outlines cut by the plane y = y0: a list of Nx2 arrays (x, z) of points on each."""
-    tr = T[(TLO <= y0) & (THI >= y0)]
+def outlines(y0, axis=1):
+    """The separate outlines cut by the level plane y = y0 (axis 1), or the upright plane x = y0 (axis 0): a list of Nx2 arrays of points on
+    each, (x, z) or (y, z)."""
+    lo_, hi_ = SPAN[axis]
+    tr = T[(lo_ <= y0) & (hi_ >= y0)]
     if len(tr) == 0:
         return []
-    y = V[tr, 1]  # (a corner exactly on the plane is nudged off it)
+    y = V[tr, axis]  # (a corner exactly on the plane is nudged off it)
     side = y > y0
+    keep_ = [1 - axis, 2]
     two = []
     for p, q in ((0, 1), (1, 2), (2, 0)):
         m = side[:, p] != side[:, q]
         t = ((y0 - y[:, p]) / np.where(m, y[:, q] - y[:, p], 1))[:, None]
-        two.append((V[tr[:, p]] + (V[tr[:, q]] - V[tr[:, p]]) * t)[:, [0, 2]] * m[:, None])
+        two.append((V[tr[:, p]] + (V[tr[:, q]] - V[tr[:, p]]) * t)[:, keep_] * m[:, None])
     # Each cut triangle crosses two edges: its chord, walked in steps, so that big triangles leave no holes in the outline.
     has = np.stack([(side[:, p] != side[:, q]) for p, q in ((0, 1), (1, 2), (2, 0))], 1)
     keep = has.sum(1) == 2
@@ -40,8 +41,11 @@ def outlines(y0):
     r = np.arange(len(e))
     p0, p1 = e[r, first], e[r, second]
     pts = np.concatenate([p0 + (p1 - p0) * f for f in np.linspace(0, 1, 9)])
-    ix = np.clip(((pts[:, 0] + 0.65) / GRID).astype(int), 0, NX - 1)
-    iz = np.clip(((pts[:, 1] + 0.35) / GRID).astype(int), 0, NZ - 1)
+    if len(pts) == 0:
+        return []
+    ix = ((pts[:, 0] - pts[:, 0].min()) / GRID).astype(int)
+    iz = ((pts[:, 1] - pts[:, 1].min()) / GRID).astype(int)
+    NX, NZ = ix.max() + 1, iz.max() + 1
     occ = np.zeros((NX, NZ), dtype=bool)
     occ[ix, iz] = True
     lab = np.full((NX, NZ), -1, dtype=int)
@@ -106,10 +110,38 @@ def outermost(sg):
     return pick
 
 
+# Generated with its arms out, or hanging?
+OUT_ARMS = float(np.abs(V[:, 0] - cx).max()) > 0.40 * H
+print('FIT arms', 'out' if OUT_ARMS else 'hanging')
+
+
+def track_out(sg):
+    """An arm held out, followed in from the fingertips: rows of x, y, z, width in y, width in z."""
+    rows, last = [], None
+    x = (V[:, 0].max() if sg > 0 else V[:, 0].min()) - sg * 0.003  # (each side's own tip: a body off centre has one arm short of the other's)
+    while abs(x - cx) > 0.05:
+        o = outlines(x, 0)
+        near = o if last is None else [q for q in o if np.hypot(*(stats(q)[0] - last)) < 0.06]
+        if not near:
+            break
+        p = max(near, key=len)
+        c, w = stats(p)
+        if w[0] > 0.17:  # (into the trunk)
+            break
+        last = c
+        rows.append((x, c[0], c[1], w[0], w[1]))
+        x -= sg * 0.005
+    return np.array(rows)
+
+
 arms, legs = {}, {}
 for sg in (1, -1):
     # From below the hand, up until the outline swells where it meets the trunk.
-    arms[sg] = track(0.30 * H, 0.005, outermost(sg), lambda c, w: w[0] > 0.17 or w[1] > 0.24)
+    arms[sg] = track_out(sg) if OUT_ARMS else track(0.30 * H, 0.005, outermost(sg), lambda c, w: w[0] > 0.17 or w[1] > 0.24)
+    if OUT_ARMS:
+        print('FIT arm', sg)
+        for q in arms[sg][::8]:
+            print('   x', round(q[0], 3), 'c', q[1:3].round(3), 'wy', round(q[3], 3), 'wz', round(q[4], 3))
     # From the sock up, until the two legs join.
     legs[sg] = track(0.13, 0.005, lambda o: next((p for p in o if (stats(p)[0][0] - cx) * sg > 0.03), None), lambda c, w: abs(c[0] - cx) < 0.02 or w[0] > 0.26)
 
@@ -142,7 +174,8 @@ def both(f):
 
 
 def outline_at(y):
-    near = [p for p in outlines(y) if abs(stats(p)[0][0] - cx) < 0.06]
+    # (the one round the middle: held out, one arm can join it at a height where the other doesn't, and take its centre aside)
+    near = [p for p in outlines(y) if p[:, 0].min() < cx < p[:, 0].max()]
     return max(near, key=len)
 
 
@@ -172,47 +205,72 @@ print('FIT knee', round(knee, 3), 'ankle', round(ankle, 3), 'hip', round(hip, 3)
 pelvis = stats(outline_at(hip))[1][0] / 2
 hip_x = 0.58 * pelvis
 # ---------- the arms ----------
-tip, _ = both(lambda g: float(arms[g][0, 0]))
-wrist, gap = both(lambda g: narrowest(arms[g], tip + 0.14 * K, tip + 0.28 * K))
 sh = base - SHOULDER_DOWN
-half = stats(outline_at(sh))[1][0] / 2
-sh_x = half - 0.047 * K
+if OUT_ARMS:
+    # Arms out, so the outlines run across the arm. Wrist and elbow are its narrow places, either side of the forearm's bulge, and the
+    # shoulder stands just outside where the arm runs into the trunk.
+    def along(g, a_, b_, widest=False):
+        r = arms[g]
+        d = np.abs(r[:, 0] - cx)
+        m = (d >= a_) & (d <= b_)
+        t = r[m, 3] + r[m, 4]
+        return float(np.mean(d[m][(t >= t.max() - 0.004) if widest else (t <= t.min() + 0.004)]))
+
+    reach = float(np.abs(V[:, 0] - cx).max())
+    wrist_d, gap = both(lambda g: along(g, reach - 0.28 * K, reach - 0.14 * K))
+    bulge, _ = both(lambda g: along(g, wrist_d - 0.26 * K, wrist_d - 0.10 * K, True))
+    elbow_d, elbow_gap = both(lambda g: along(g, bulge - 0.12 * K, bulge - 0.015 * K))
+    sh_x, _ = both(lambda g: float(np.abs(arms[g][-1, 0] - cx)) + 0.012 * K)
+    print('FIT reach', round(reach, 3), 'wrist', round(wrist_d, 3), 'bulge', round(bulge, 3), 'elbow', round(elbow_d, 3), 'shoulder', round(sh_x, 3), 'side gaps', round(gap, 3), round(elbow_gap, 3))
+
+    def at_d(d_, col):
+        return both(lambda g: on(arms[g], cx + g * d_, col))[0]
+
+    wrist, elbow, tip = at_d(wrist_d, 1), at_d(elbow_d, 1), reach
+    wx, wz, ex, ez = wrist_d, at_d(wrist_d, 2), elbow_d, at_d(elbow_d, 2)
+    sh_y, sh_z = at_d(sh_x, 1), at_d(sh_x, 2)
+else:
+    tip, _ = both(lambda g: float(arms[g][0, 0]))
+    wrist, gap = both(lambda g: narrowest(arms[g], tip + 0.14 * K, tip + 0.28 * K))
+    half = stats(outline_at(sh))[1][0] / 2
+    sh_x = half - 0.047 * K
+    sh_y, sh_z = sh, along_z(sh, 0.44)
 
 
-def rearmost(g):
-    # A hanging arm is a little flexed, and the elbow is its rearmost point; where the sleeve runs into the trunk first, by proportion.
-    r = arms[g][(arms[g][:, 0] > wrist + 0.12 * K)]
-    z = np.convolve(r[:, 2], np.ones(9) / 9, mode='same')[4:-4]
-    y = r[4:-4, 0]
-    i = int(np.argmin(z))
-    return float(y[i]) if i < len(y) - 3 else wrist + 0.5146 * (sh - wrist)
+    def rearmost(g):
+        # A hanging arm is a little flexed, and the elbow is its rearmost point; where the sleeve runs into the trunk first, by proportion.
+        r = arms[g][(arms[g][:, 0] > wrist + 0.12 * K)]
+        z = np.convolve(r[:, 2], np.ones(9) / 9, mode='same')[4:-4]
+        y = r[4:-4, 0]
+        i = int(np.argmin(z))
+        return float(y[i]) if i < len(y) - 3 else wrist + 0.5146 * (sh - wrist)
 
 
-elbow, elbow_gap = both(rearmost)
-print('FIT elbow from the rearmost point', round(elbow, 3), 'side gap', round(elbow_gap, 3), 'by proportion', round(wrist + 0.5146 * (sh - wrist), 3))
-print('FIT tip', round(tip, 3), 'wrist', round(wrist, 3), 'side gap', round(gap, 3), 'elbow', round(elbow, 3), 'shoulder', round(sh, 3), 'half width', round(half, 3))
+    elbow, elbow_gap = both(rearmost)
+    print('FIT tip', round(tip, 3), 'wrist', round(wrist, 3), 'side gap', round(gap, 3), 'elbow', round(elbow, 3), 'side gap', round(elbow_gap, 3), 'shoulder', round(sh, 3))
 
 
 def limb(rows, y, g):
     return (on(rows, y, 1) - cx) * g, on(rows, y, 2)
 
 
-wx, wx_gap = both(lambda g: limb(arms[g], wrist, g)[0])
-wz, wz_gap = both(lambda g: limb(arms[g], wrist, g)[1])
-ex, _ = both(lambda g: limb(arms[g], elbow, g)[0])
-ez, _ = both(lambda g: limb(arms[g], elbow, g)[1])
+if not OUT_ARMS:
+    wx, wx_gap = both(lambda g: limb(arms[g], wrist, g)[0])
+    wz, wz_gap = both(lambda g: limb(arms[g], wrist, g)[1])
+    ex, _ = both(lambda g: limb(arms[g], elbow, g)[0])
+    ez, _ = both(lambda g: limb(arms[g], elbow, g)[1])
 kx, kx_gap = both(lambda g: limb(legs[g], knee, g)[0])
 kz, _ = both(lambda g: limb(legs[g], knee, g)[1])
 ax, ax_gap = both(lambda g: (lean(legs[g], 0.13, 0.17, ankle, 1) - cx) * g)
 az, _ = both(lambda g: lean(legs[g], 0.13, 0.17, ankle, 2))
-print('FIT side gaps, m: wrist', round(wx_gap, 3), round(wz_gap, 3), 'knee', round(kx_gap, 3), 'ankle', round(ax_gap, 3))
+print('FIT side gaps, m: knee', round(kx_gap, 3), 'ankle', round(ax_gap, 3))
 span = hips, base
 sp = lambda f: span[0] + (span[1] - span[0]) * f
 LM = {
     'Hips': (0, hips, along_z(hips, 0.43)), 'Spine': (0, sp(0.178), along_z(sp(0.178), 0.485)), 'Spine1': (0, sp(0.355), along_z(sp(0.355), 0.427)),
     'Spine2': (0, sp(0.599), along_z(sp(0.599), 0.25)), 'Neck': (0, base, along_z(base, 0.55)), 'Head': (0, base + HEAD_UP, along_z(base + HEAD_UP, 0.306)),
     'HeadTop_End': (0, H - TOP_OFF, along_z(H - TOP_OFF - 0.006, 0.37)),
-    'LeftShoulder': (0.335 * sh_x, base - 0.037 * K, along_z(base, 0.55) - 0.007 * K), 'LeftArm': (sh_x, sh, along_z(sh, 0.44)),
+    'LeftShoulder': (0.335 * sh_x, base - 0.037 * K, along_z(base, 0.55) - 0.007 * K), 'LeftArm': (sh_x, sh_y, sh_z),
     'LeftForeArm': (ex, elbow, ez), 'LeftHand': (wx, wrist, wz),
     'LeftUpLeg': (hip_x, hip, along_z(hips, 0.43) + 0.004), 'LeftLeg': (kx, knee, kz), 'LeftFoot': (ax, ankle, az),
 }
@@ -221,14 +279,21 @@ LM = {
 W = np.array(LM['LeftHand'])
 pts = []
 for g in (1, -1):
-    for y in np.arange(wrist, tip - 0.01, -0.002):
-        c = np.array((on(arms[g], y, 1), on(arms[g], y, 2)))
-        o = [p for p in outlines(y) if (stats(p)[0][0] - cx) * g > 0.12 * H and np.hypot(*(stats(p)[0] - c)) < 0.05]
-        for p in o:
-            pts.append(np.stack(((p[:, 0] - cx) * g, np.full(len(p), y), p[:, 1]), 1))
+    if OUT_ARMS:
+        for d_ in np.arange(wrist_d, tip + 0.002, 0.002):
+            c = np.array((on(arms[g], cx + g * d_, 1), on(arms[g], cx + g * d_, 2)))
+            for p in outlines(cx + g * d_, 0):
+                if np.hypot(*(stats(p)[0] - c)) < 0.05:
+                    pts.append(np.stack((np.full(len(p), d_), p[:, 0], p[:, 1]), 1))
+    else:
+        for y in np.arange(wrist, tip - 0.01, -0.002):
+            c = np.array((on(arms[g], y, 1), on(arms[g], y, 2)))
+            o = [p for p in outlines(y) if (stats(p)[0][0] - cx) * g > 0.12 * H and np.hypot(*(stats(p)[0] - c)) < 0.05]
+            for p in o:
+                pts.append(np.stack(((p[:, 0] - cx) * g, np.full(len(p), y), p[:, 1]), 1))
 hand = np.concatenate(pts)
 u, sv, vt = np.linalg.svd(hand - hand.mean(0), full_matrices=False)
-F = vt[0] * (-np.sign(vt[0][1]))
+F = vt[0] * (np.sign(vt[0][0]) if OUT_ARMS else -np.sign(vt[0][1]))
 F_K = vt[1] - F * (vt[1] @ F)
 F_K /= np.linalg.norm(F_K)
 if F_K[2] < 0:
@@ -256,12 +321,14 @@ for n, t in TIPS_FIRST.items():
     TIPS[n] = near.round(4).tolist()
     print('FIT tip', n, 'expected', want.round(3), 'on the hand', near.round(3), 'moved', round(float(np.linalg.norm(near - want)), 3))
 
-P1_BIND = 38.0  # p1's upper arm off the body at its bind, near enough: the person's arms are raised to it
+# Hanging arms are raised to p1's angle before binding (rig.py), or an overhead asks linear skinning for 165 degrees; arms held out are bound
+# where they are, with the rest of the range either side.
+P1_BIND = 38.0
 sa = np.array(LM['LeftForeArm']) - np.array(LM['LeftArm'])
 angle = float(np.degrees(np.arccos(-sa[1] / np.linalg.norm(sa))))
-raised = P1_BIND - angle
+raised = 0.0 if OUT_ARMS else P1_BIND - angle
 print('FIT upper arm as modelled', round(angle, 1), 'raise', round(raised, 1))
-out = {'cx': cx, 'height': round(H - TOP_OFF, 3), 'raise': round(raised, 1), 'handF': [round(float(x), 3) for x in F], 'handK': [round(float(x), 3) for x in F_K],
+out = {'cx': cx, 'height': round(H - TOP_OFF, 3), 'raise': round(raised, 1), 'armpit': 4 if OUT_ARMS else 14, 'handF': [round(float(x), 3) for x in F], 'handK': [round(float(x), 3) for x in F_K],
        'joints': {n: [round(float(x), 4) for x in p] for n, p in LM.items()}, 'tips': TIPS}
 json.dump(out, open(OUT, 'w'), indent=1)
 for n, p in out['joints'].items():

@@ -51,6 +51,35 @@ describe('the generated people', () => {
     expect(shared / covered).toBeLessThan(0.0005);
   });
 
+  // Modelled with the arms down, the sleeve fuses to the ribs: lifted, the arm comes out of a hole and half the sleeve stays behind, which the owner
+  // read as an arm on backwards (804 cm2 stretched on the first woman). Joint numbers can't see it: this measures the skin. Modelled in a T: 33, and 16.
+  it.each(['meshy2', 'meshy3'])('the skin of %s stays on the arm when the arm goes overhead', (name) => {
+    const a = guests[GUESTS.indexOf(name)]!;
+    const arm = a.bone('RightArm'), S = new THREE.Vector3().setFromMatrixPosition(a.restWorld[arm]!);
+    const raised = new Set([arm]);
+    for (let grew = true; grew;) { grew = false; a.bones.forEach((b, i) => { if (b.parent >= 0 && raised.has(b.parent) && !raised.has(i)) { raised.add(i); grew = true; } }); }
+    const about = new THREE.Matrix4().makeTranslation(S.x, S.y, S.z).multiply(new THREE.Matrix4().makeRotationZ(-Math.PI / 3)).multiply(new THREE.Matrix4().makeTranslation(-S.x, -S.y, -S.z));
+    const Ms = a.restWorld.map((m, i) => (raised.has(i) ? about.clone().multiply(m) : m.clone()).multiply(a.boneInverses[i]!));
+    const geo = a.geometry, P = geo.getAttribute('position'), I = geo.getAttribute('skinIndex'), W = geo.getAttribute('skinWeight'), idx = geo.index!;
+    const moved = new Float32Array(P.count * 3), v = new THREE.Vector3(), o = new THREE.Vector3();
+    for (let i = 0; i < P.count; i++) {
+      o.set(0, 0, 0);
+      for (let k = 0; k < 4; k++) { const w = W.getComponent(i, k); if (w > 0) o.addScaledVector(v.fromBufferAttribute(P, i).applyMatrix4(Ms[I.getComponent(i, k)]!), w); }
+      o.toArray(moved, i * 3);
+    }
+    const r = [0, 1, 2].map(() => new THREE.Vector3()), q = [0, 1, 2].map(() => new THREE.Vector3());
+    const area = (t: THREE.Vector3[]): number => new THREE.Vector3().subVectors(t[1]!, t[0]!).cross(new THREE.Vector3().subVectors(t[2]!, t[0]!)).length() / 2;
+    let stretched = 0;
+    for (let t = 0; t < idx.count; t += 3) {
+      for (let k = 0; k < 3; k++) { const i = idx.getX(t + k); r[k]!.fromBufferAttribute(P, i); q[k]!.fromArray(moved, i * 3); }
+      if (q[0]!.x * S.x < 0 && Math.abs(q[0]!.y - S.y) > 0.5) continue; // (the other side of the body, away from the arm)
+      let st = 0;
+      for (let k = 0; k < 3; k++) { const e = (k + 1) % 3; st = Math.max(st, q[k]!.distanceTo(q[e]!) / Math.max(r[k]!.distanceTo(r[e]!), 1e-4)); }
+      if (st > 1.8 && area(q) > area(r)) stretched += area(q) - area(r);
+    }
+    expect(stretched * 1e4).toBeLessThan(80);
+  });
+
   it.each(GUESTS)('%s moves as cleanly as the regular cast', (name) => {
     const r = runAnimQa(guests[GUESTS.indexOf(name)]!, { seed: 14601, seconds: 30, repeatEvery: 7 } as never);
     expect(r.pops.perMinute).toBeLessThan(32);

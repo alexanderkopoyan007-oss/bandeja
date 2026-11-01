@@ -151,7 +151,7 @@ islands = bmesh_linked_uv_islands(bm, uvl)
 for faces in islands:
     z = sum(f.calc_center_median().z for f in faces) / len(faces)
     x = abs(sum(f.calc_center_median().x for f in faces) / len(faces))
-    k_ = HEAD_TEXELS if z > 0.826 * HEIGHT else HAND_TEXELS if (z < 0.55 * HEIGHT and x > 0.165 * HEIGHT) else 1.0
+    k_ = HEAD_TEXELS if z > 0.826 * HEIGHT and x < 0.2 * HEIGHT else HAND_TEXELS if (z < 0.55 * HEIGHT and x > 0.165 * HEIGHT) or x > 0.37 * HEIGHT else 1.0
     if k_ != 1.0:
         loops = [l for f in faces for l in f.loops]
         cu = sum(l[uvl].uv.x for l in loops) / len(loops)

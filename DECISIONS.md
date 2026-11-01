@@ -3092,6 +3092,38 @@ Guests had no tests at all, because `PEOPLE` lists only the ten. `tests/render/g
 
 Still wrong: no blink or mouth, cloth and face are dead, hair is solid, fingers fused. The woman's arms sit closest to her body, so hers is the worst armpit by the numbers, though her smash looks right from the side and behind. No team colours: a shirt mask in the normal map's unused blue channel would allow them, not done.
 
+## The woman and the new man remodelled with their arms out, and dealt again (2026-11-01)
+
+The owner on the same frame: "Her arm is literally backwards". They were right, and the skeleton could not have shown it. Meshy had modelled her in an A-pose, arms 11 degrees off her sides, and the sleeve had fused to her ribs. Lifted, half the sleeve stayed behind on the ribs and the arm came out of a hole in the shirt, so the shape on screen had no shoulder. Joint numbers were perfect throughout: upper arm level, forearm up, 76 degrees at the elbow.
+
+**A measure that can see it.** `tests/render/guests.test.ts` raises the arm 60 degrees past the T and adds up the skin stretched past 1.8 times its rest length. Square centimetres, overhead:
+
+| first man (A-pose) | first woman (A-pose) | old new man (A-pose) | p1 | p7 | woman, T-pose | new man, T-pose |
+|---|---|---|---|---|---|---|
+| 835 | 804 | 626 | 522 | 156 | 33 | 16 |
+
+The test passes under 80 and reads 834.7 on the first man, so it fails on the fault it was written for.
+
+**Modelled in a T-pose,** same people, same clothes, 35 credits each. `fit.py` follows arms held out in from the fingertips with upright cuts, so wrist, forearm bulge and elbow are read from the arm itself. The rig's stretch into the T fell from p99 2.14, max 16.2 to 1.15, 4.7 on her, and to 1.08, 2.09 on him. Seen from four sides of the frozen moment, not one: shoulder, sleeve and arm all read right.
+
+**Dealt again, flagged `dealt`.** The first man stays a guest: he is still the A-pose model, and redoing him costs 35 credits nobody asked for.
+
+Lost on the way: her bun, and her hair is flatter from behind; a new generation, not the same model re-posed. Generated people still wear their own clothes, so there are no team colours on them. Frame rate, four of the new man against four regulars, alternating, 30 s a run: Medium 4x 121.9, 126.8 fps against 109.9, 109.1; High 204.0, 198.9 against 187.4, 200.2; paced 120.5 on all.
+
+## Round 14: what the fifth review from the owner's seat found (2026-11-01)
+
+**The arm behind the back when a run stopped.** The chest's turn is applied about the shoulders, and the hand's key was still at the feet's place when it swung, up to 60 cm round them. The lean's correction now comes before the turn. Wrist 12 cm or more behind the chest: 1.11 a player-minute for you and 0.48 for the AI, to 0.00. Hand moves over 4 m/s with no stroke on: 6.39 a minute to 0.33. The reviewer's second part, a hand stuck behind for over a second, did not reproduce on the sceptic's run.
+
+**A ball at you with no key.** The AI has always had a reflex block and you had none: the point ended. Now a ball about to hit you above 30 cm, with no key down, is met by a volley. Below that it is at your feet, and a racket doesn't get there. Net stand-in, points lost to a ball on the body: 118 to 46 and 75 to 28 in two cells; per 100 points, run by hand 12.9 to 5.7, on the assist 2.1 to 0.8. Sets 22-18 to 25-15 and 35-5 to 38-2.
+
+**A key held no longer calls your partner off a ball you can't reach,** and a key only takes a ball you reach within 1.5 m of their run. I also added a hand-back: a claim whose plan went out of time returned to the partner. `tests/sim/volley.test.ts` caught it: the volley key's own plan can be late with the ball still there to hit, so 27 hits in 179 went, and misses went from 4 to 11. Asking whether any contact was in time changed nothing. I removed it. The eager stand-in's points, 41.3 to 47.4, on different seeds, so read that as the direction.
+
+**Your partner comes to the net with you.** A human inside 5.2 m has made the pair's decision. Same seeds, Pro: one up and one back 13.6 to 8.5% of opponent strikes, and those points won 45.6 to 53.3%; both up 56.1 to 60.4%.
+
+**Your partner aims round you.** Only the one not striking used to look, by dodging, and a human doesn't dodge. The AI now checks the line at the release and sends the ball 55 cm wide of a partner in front of it. The first version changed nothing: 37 balls into you against 34. It measured from the striker's feet to where you stood, and the ball starts an arm's length off the body, 30-40 cm from that line, while you go on moving. From the planned contact to where you will be: 1.44 per 100 points to 0.36. Together with the formation, the stand-in's points 52.2 to 57.4%, 40 sets, same seeds. What it cost: the partner's balls out 1.6 to 2.1 per 100 points; on the full into the wall 4.1 to 4.0.
+
+**Not done.** The AI's take-back on the backhand, about 280 ms before the ball, the sceptic's Medium. The other Mediums are listed in REVIEW.md.
+
 ## Round 10: what the review found from the owner's seat (2026-11-01)
 
 The review kept five Highs out of twelve (`REVIEW.md`, round 10). Every number here is on its seeds, old build against new. Three of the five causes turned out to be bugs rather than tuning, and two of the reviewers' guesses were wrong, so the rule that held is the usual one: trace it before changing it.

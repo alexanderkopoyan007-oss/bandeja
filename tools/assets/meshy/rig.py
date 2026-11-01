@@ -4,7 +4,7 @@
 # The person is not in p1's pose (arms about 18 degrees off the body, not 42; longer arms, shorter legs), so p1's skeleton can't
 # just be laid over it. What happens instead:
 # - Its joints in its own pose are marks/<name>.json, from slices through the mesh (fit.py; the first person's were set by hand, and fit.py is
-#   calibrated on them; mirrored: these bodies are symmetric to about a centimetre). Hands: p1's fitted by the palm's frame, each finger's chain
+#   calibrated on them; mirrored: these bodies are symmetric to about a centimetre). A person made with its arms out is bound as it stands. Hands: p1's fitted by the palm's frame, each finger's chain
 #   then aimed at that fingertip.
 # - p1's body is moved onto those joints, bone by bone, and each vertex here takes the weights of the nearest point on it.
 # - The arms are then raised to p1's angle with those weights and the mesh is bound there: a bind with the arms down has
@@ -31,7 +31,7 @@ HAND_K = np.array(M['handK'])
 TIPS = {n: tuple(p) for n, p in M['tips'].items()}
 TIP_IN = 0.007  # how far inside the tip the last joint stands
 RAISE = np.radians(M['raise'])  # the arms up to p1's angle
-ARMPIT_SMOOTH = 14
+ARMPIT_SMOOTH = M.get('armpit', 14)  # (arms held out have no fused armpit to spread)
 PART_SOURCE_OUT = (4, 9, 10)  # p1's eyes, teeth and tongue give no weights
 
 # ---------- p1 ----------

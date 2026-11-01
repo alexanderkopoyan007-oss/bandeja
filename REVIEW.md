@@ -500,3 +500,32 @@ AI against AI, men, level 1: W/FE/UE 42.9/23.1/34.0 (real 34-42/29-33/29-33), se
 FPS, alternating runs, shipped against this build: Medium 4x throttled 108.6, 108.2 against 107.4, 126.6; High 194.3, 216.5 against 187.0, 219.5; paced 120.5 in all. No cost I can see. Alloc 8 and 9 against a budget of 10.
 
 Pops 19.7 and 20.3 a minute on p7 and p10 over six seeds to 19.1 and 20.4. Sound was not reviewed. Nothing here was played by a person. The carried pose has been seen in numbers and not yet in the real render.
+
+## Round 14 (2026-11-01, on de22943; "review round 18" in the code's comments)
+
+Same panel on the shipped build: 20 findings, five reached the sceptic, two stayed High. Numbers are unseen seeds, 40 sets a cell, unless marked. The plan asks only for the Highs; the owner's own complaints among the Mediums are done too.
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | High | **Stopping or reversing a run swung the racket arm behind the back,** past what a shoulder can do, with no stroke on. | **Fixed.** The lean's correction came after the chest's turn, so the hand's key swung up to 60 cm round the shoulders. Wrist 12 cm behind the chest: 1.11 a player-minute to 0.00; hand over 4 m/s with no stroke 6.39 to 0.33 |
+| 2 | High | **A ball at you with no key just hit you,** while the AI has a block. | **Fixed.** Above 30 cm, a reflex volley. Points lost on the body at the net: 118 to 46 and 75 to 28 |
+| 3 | Medium (was High) | **Your partner stayed on the back glass when you took the net.** | **Fixed.** One up and one back 13.6 to 8.5%; those points 45.6 to 53.3% |
+| 4 | Medium (was High) | **Press for a ball you can't reach and your partner stopped and watched it go.** | **Fixed.** A key takes only a ball it can reach. Eager stand-in 41.3 to 47.4, different seeds |
+| 5 | Medium (was High) | **The AI's take-back is faster than its swing on backhands,** a snap about 280 ms before the ball. | Open |
+| 6 | Medium | **Your partner hit you in the back with a víbora.** | **Fixed.** Aims 55 cm round you from the planned contact: 1.44 per 100 points to 0.36 |
+| 7 | Medium | One aim past the net pair is level with a plan again; Round 13 measured it on a stand-in glued to the glass | Open |
+| 8 | Medium | A lob on every ground ball still matches a plan | Open. Same as Round 13's #13 |
+| 9 | Medium | The two textbook returns are the worst returns | Open |
+| 10 | Medium | Women's serving pair wins 14 points too many | Open |
+| 11 | Medium | The first press on your serve does nothing, nor does a quick second | Open |
+| 12 | Medium | At the net a Perfect volley is no safer than an Early one | Open |
+| 13 | Medium | The ring jumps inside your last reaction time on one shot in ten | Open |
+| 14 | Medium | Big-point replays fire on ordinary points | Open |
+| 15 | Medium | Pad players are told keyboard keys | Open |
+| 16 | Medium | Off the glass a body whirls the long way round | Open |
+| 17 | Medium | A Perfect serve bursts, then slows into the ball | Open |
+| 18 | Medium | The run turns at the shoulders, not the hips | Open |
+| 19 | Low | The hint pill lies across your feet at the back | Open |
+
+**Outside the panel: the owner.** "Her arm is literally backwards" on a generated woman: a sleeve fused to her ribs, which no joint number can see. Fixed by remodelling with the arms out and measuring stretched skin. See DECISIONS.md.
+
