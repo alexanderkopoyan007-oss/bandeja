@@ -691,6 +691,13 @@ const RUN_ROLL_RATE = 9;
 /** The least a foot is down, as a share of its time in a steady run. */
 const RUN_DOWN = 0.75;
 /** A foot this far behind its stance's end goes before its turn. */
+/**
+ * The soonest a run's next foot may go, as a share of a stride. A run's steps are all but even: at 0.2 a foot that had
+ * fallen behind left early, the next waited, and the whole run went short, long, short, long (0.12 s then 0.35 s).
+ */
+const RUN_EARLY = 0.42;
+/** Past this share of its reach, squared, a foot goes even before its turn: it is the one thing a run can't hold. */
+const RUN_STRANDED = 2.25;
 const RUN_BEHIND = 1.4;
 const RUN_SIDE_HZ = 0.5;
 /** Running backwards: quicker and shorter again (steps of over a metre at 3.5 m/s), on the ball of the foot, which lands
@@ -3473,14 +3480,14 @@ export class Avatar {
     // Left behind by a turn back: it goes whatever the other foot is doing.
     let hard = G[0]! < 0 && far0 > r2 ? 0 : G[1]! < 0 && far1 > r2 ? 1 : -1;
     // (a run's feet go by turns even so: two in the middle of a swing together is a hop, feet side by side)
-    if (hard >= 0 && run && G[1 - hard]! >= 0 && G[1 - hard]! < RUN_TURNS) hard = -1;
+    if (hard >= 0 && run && G[1 - hard]! >= 0 && (G[1 - hard]! < RUN_TURNS || (this.gaitUp < RUN_EARLY / hz && (hard === 0 ? far0 : far1) < r2 * RUN_STRANDED))) hard = -1;
     let go = hard;
     if (go < 0 && run) {
       // By turns, half a stride apart, sooner if the foot has fallen behind: a foot goes while the other is in the air,
       // and that is what a run's flight is.
       const f = this.gaitNext;
       // (and only once it has pushed: a run's first strides took off 20 ms after they landed)
-      if (G[f]! < 0 && this.gaitUp >= 0.2 / hz && this.gaitDown[f]! >= (RUN_DOWN * stance) / hz) {
+      if (G[f]! < 0 && this.gaitUp >= RUN_EARLY / hz && this.gaitDown[f]! >= (RUN_DOWN * stance) / hz) {
         const rel = f === 0 ? rel0 : rel1, far = f === 0 ? far0 : far1;
         if ((rel < -back * RUN_BEHIND && G[1 - f]! < 0) || (this.gaitUp >= 0.5 / hz && far > RUN_STILL * RUN_STILL)) go = f;
       }
