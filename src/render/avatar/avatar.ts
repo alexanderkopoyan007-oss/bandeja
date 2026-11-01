@@ -4168,12 +4168,13 @@ export class Avatar {
     this.followChest(ua);
     if (this.ready > 0) {
       this.toWorld(ready.p, v2);
-      this.onChest(v2, ua);
       // The key is placed for a body over its feet: the weight takes the hips and the chest forward of them, and they
-      // came through the racket it left behind (3% of frames).
+      // came through the racket it left behind (3% of frames). First, because the chest's turn is about the shoulders,
+      // and a key still at the feet's place swung up to 60 cm round them: the hand went behind the back when a run stopped.
       const reach = this.legLen * (1 - LEAN_STROKE * w);
       v2.x += this.hipTiltX * reach + this.tiltX * LEAN_HAND;
       v2.z += this.hipTiltZ * reach + this.tiltZ * LEAN_HAND;
+      this.onChest(v2, ua);
       // The walk's or the run's arm swing, smaller with the racket in it.
       const pump = WALK_ARM * this.gaitH + (this.gaitRun > 0 ? RUN_ARM * this.gaitW * smoothstep(RUN_V0, RUN_V1, this.sp) : 0);
       const sw = this.handed * pump * 0.4 * Math.cos(2 * Math.PI * this.gaitPhase);

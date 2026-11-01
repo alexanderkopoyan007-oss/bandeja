@@ -67,6 +67,10 @@ export const E_BODY = 18;
 /** A held swing goes this long before the ball leaves its window (s), and before it would hit the body (s). */
 const LAST_SWING = 0.02;
 const BODY_LEAD = 0.03;
+/** Lowest a ball at the body is met by a reflex (m): under this it is a ball at the feet, too low to get a racket to. */
+const REFLEX_ABOVE = 0.3;
+/** How much further than their partner a human's key can claim a ball from (claimCost's units). */
+const CLAIM_KEY_MARGIN = 1.5;
 /** E_WHIFF's y: the swing missed a ball in reach (timing) / there was no ball to hit (none in reach at the release,
  * or not legal to play) / the ball was out of reach (too far or too high or low) at the contact. */
 export const WHIFF_TIMING = 0;
@@ -979,6 +983,15 @@ export class MatchSim {
         if (k >= 0 && this.pred.t[k]! - BODY_LEAD < t0 + DT) this.releaseSwing(i, t0, f);
       }
     }
+    // With no key down it is a reflex block, above the shins: a racket is up at the net, and the AI has always had this. A ball at
+    // the body arrives inside a person's reaction time, and a hit ends the point (review round 18).
+    if (human && p.swing === SW_IDLE && this.phase === PH_RALLY && this.rally.hitter >= 0 && this.rally.hitter !== team) {
+      const k = this.bodyHitIdx(i, this.side(team));
+      if (k >= 0 && this.pred.t[k]! - BODY_LEAD < t0 + DT && this.pred.y[k]! > REFLEX_ABOVE) {
+        this.press(i, SHOT_VOLLEY, t0);
+        this.releaseSwing(i, t0, f);
+      }
+    }
     // Safety: a swing held far too long releases itself, unless the ball it waits for is still on its way (a
     // lob pressed for at the opponent's strike can hang over 3 s before the overhead: those used to go off by
     // themselves, graded against nothing). Past the contact by a margin, or held 8 s, it goes.
@@ -1045,7 +1058,12 @@ export class MatchSim {
       const ha = !this.ai[a] && this.players[a]!.swing === SW_CHARGE;
       const hb = !this.ai[b] && this.players[b]!.swing === SW_CHARGE;
       if (ha || hb) {
-        this.setTaker(team, ha ? a : b);
+        // A key down claims the ball, if the ball can be reached: claimed from out of reach, the partner was called off, stood and
+        // watched it go (review round 18).
+        const h = ha ? a : b, o = h ^ 2, sd = this.side(team);
+        if (cur === h) continue;
+        const ch = this.claimCost(h, sd, t0);
+        if (ch < CLAIM_OUT && ch < this.claimCost(o, sd, t0) + CLAIM_KEY_MARGIN) this.setTaker(team, h);
         continue;
       }
       if (cur >= 0 && this.pred.version === this.takerVersion[team]) continue;
@@ -1576,6 +1594,7 @@ export class MatchSim {
     p.recoverUntil = t + p.tune.recoverTime;
     p.lastContactTime = t;
     if (p.grade < 0) p.grade = p.timingDelta < 0 ? G_TOO_EARLY : G_TOO_LATE;
+    if (!this.ai[i]) this.takerVersion[p.team] = -1;
     this.emitP(E_WHIFF, i, p.shot, p.grade, p.timingDelta, reach, kind);
   }
 
