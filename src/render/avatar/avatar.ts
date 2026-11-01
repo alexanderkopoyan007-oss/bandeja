@@ -153,9 +153,10 @@ function alignQ(q: THREE.Quaternion, prev: THREE.Quaternion): void {
 /**
  * a = nlerp(a, b, BL.u) (for blending poses, close enough to slerp). Two rotations can be blended either way round;
  * the way is the one whose result is nearer last frame's (`prev`, the blend's own output, zero when there is none),
- * and the short way only at the blend's start. Re-picking the short way mid-blend whenever b swung far (the old
- * rule) turned the racket over in a frame, and the wrist with it (60 cm at a left-hander's overhead). Both inputs
- * should be continuous from frame to frame (alignQ).
+ * and the short way only at the blend's start, whichever end that is (a fade runs u down from 1: there both ways
+ * start out alike, and a third of the volleys' recoveries took the long way, 250 degrees for a turn of 110). Re-picking
+ * the short way mid-blend whenever b swung far (the old rule) turned the racket over in a frame, and the wrist with
+ * it (60 cm at a left-hander's overhead). Both inputs should be continuous from frame to frame (alignQ).
  */
 /** q negated if that puts it nearer `ref` (the same rotation, kept on one side from frame to frame). */
 function sideOf(q: THREE.Quaternion, ref: THREE.Quaternion): void {
@@ -223,14 +224,22 @@ function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion
   const l1 = Math.sqrt(x1 * x1 + y1 * y1 + z1 * z1 + w1 * w1), l2 = Math.sqrt(x2 * x2 + y2 * y2 + z2 * z2 + w2 * w2);
   let plus: boolean;
   if (l1 < 1e-6 || l2 < 1e-6) plus = l1 >= l2;
-  else if (u < 0.02 || prev.x * prev.x + prev.y * prev.y + prev.z * prev.z + prev.w * prev.w < 0.5) {
+  else if (u < 0.02 || u > 0.98 || prev.x * prev.x + prev.y * prev.y + prev.z * prev.z + prev.w * prev.w < 0.5) {
     plus = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w >= 0;
   } else {
     const c1 = Math.abs(x1 * prev.x + y1 * prev.y + z1 * prev.z + w1 * prev.w) / l1;
     const c2 = Math.abs(x2 * prev.x + y2 * prev.y + z2 * prev.z + w2 * prev.w) / l2;
     plus = c1 >= c2;
   }
-  if (plus) { QN[0] = x1 / l1; QN[1] = y1 / l1; QN[2] = z1 / l1; QN[3] = w1 / l1; } else { QN[0] = x2 / l2; QN[1] = y2 / l2; QN[2] = z2 / l2; QN[3] = w2 / l2; }
+  // Two rotations far apart: the plain blend does most of the turn at the middle of the way, and the racket spun round
+  // the wrist, 135 degrees in a tenth of a second after every backhand volley. This weighting turns it evenly.
+  const c = (a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w) * (plus ? 1 : -1);
+  if (c < 0.7 && c > -0.9995) {
+    const th = Math.acos(c), su = Math.sin(u * th), sv = Math.sin(v * th), k = su + sv, g = su / k, h = (plus ? 1 : -1) * g, e = sv / k;
+    const x = a.x * e + b.x * h, y = a.y * e + b.y * h, z = a.z * e + b.z * h, w = a.w * e + b.w * h;
+    const l = Math.sqrt(x * x + y * y + z * z + w * w);
+    QN[0] = x / l; QN[1] = y / l; QN[2] = z / l; QN[3] = w / l;
+  } else if (plus) { QN[0] = x1 / l1; QN[1] = y1 / l1; QN[2] = z1 / l1; QN[3] = w1 / l1; } else { QN[0] = x2 / l2; QN[1] = y2 / l2; QN[2] = z2 / l2; QN[3] = w2 / l2; }
   a.fromArray(QN);
   prev.copy(a);
 }
@@ -480,6 +489,13 @@ const MOOD_TIME = 1.3;
 /** How far a long follow-through's curve rises (m): a drive's hand comes up to the shoulder with the arm still long. */
 const THROUGH_UP = 0.25;
 const FADE = 0.35;
+/**
+ * Fastest the racket's way back to ready may turn at its peak (rad/s), and the longest that way may take (s): at a fixed
+ * FADE, from a low finish to the head-up ready, the arm took the racket through 110-135 degrees in a tenth of a second,
+ * the hardest movement of the whole volley, and after the ball.
+ */
+const FADE_TURN = (450 * Math.PI) / 180;
+const FADE_MAX = 0.6;
 const PREP = 0.28;
 /**
  * A ball on the player before a full backswing fits (a reflex block of a smash taken 0.15 s after the reaction):
@@ -1057,6 +1073,7 @@ export class Avatar {
   private relS = 0;
   private swingS = 0;
   private fadeStart = 0;
+  private fadeLen = FADE;
   private fadeFromW = 0;
   private readonly conW = new THREE.Vector3();
   /** The clip's arm rotations before the arm solve (racket arm, then free arm). */
@@ -1987,7 +2004,7 @@ export class Avatar {
     if (this.st === ST_PREP || (this.st === ST_SWING && t < this.tCon) || this.st === ST_NONE) this.finishTo = 0;
     if (this.st === ST_FADE) {
       this.setKey(this.from, this.from, 1);
-      const u = smoothstep(this.fadeStart, this.fadeStart + FADE, t);
+      const u = smoothstep(this.fadeStart, this.fadeStart + this.fadeLen, t);
       this.w = this.fadeFromW * (1 - u);
       if (u >= 1) { this.st = ST_NONE; this.w = 0; }
     } else if (this.st === ST_NONE) {
@@ -2021,6 +2038,10 @@ export class Avatar {
     this.snapshot();
     this.st = ST_FADE;
     this.fadeStart = from;
+    // (the racket as it is against ready as it will be, on the chest; 1.5: a smoothstep's peak over its mean)
+    this.quatToWorld(this.readyKey.q, q2);
+    q2.premultiply(this.chestQ);
+    this.fadeLen = Math.min(FADE_MAX, Math.max(FADE, (1.5 * q2.angleTo(this.racketQ)) / FADE_TURN));
     this.fadeFromW = w;
   }
 
