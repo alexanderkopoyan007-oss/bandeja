@@ -3297,3 +3297,31 @@ Your drive at 79 km/h against the AI's 62-64 is not a bug: you aim 7.2 m deep by
 **Tried and dropped.** Taking the arc out of a run and a walk looked right, since their hips come from the leg, but it stood the legs up straight and pops went from 25 to 48. A speed limit on the hips between strokes did nothing once the cause was gone. A forced step judged from the hips' present height fired on every stride and took flight to 47%: it has to be judged from a lower height. The ready hand is placed with the lean too and has to take the same factor: left at a full leg, it pulled the arm 19 cm past the chest and flipped it. `RUN_DUTY1` .37 to .41 gave back the frame of stance those changes cost.
 
 **Numbers.** REVIEW.md Round 16.
+
+## Round 17: the gallop, the aim rule, and what the pops were (2026-11-01)
+
+**The forced step (my regression).** Round 16 made a planted foot step when it was out of reach. It judged reach flat, and at 4 m/s a stride is about 0.53 m behind, past what a straight leg reaches flat because the heel rolls up for it. So the step fired on ordinary strides, the foot left early and landed beside the other, and the run galloped. It now needs the foot past whichever is further, the leg's reach or a stride's own length, and a foot doesn't leave while the other is still in its swing. The review caught this. My own checks passed it.
+
+**What was down at the press stays the run's until let go.** The alternatives were a dead zone or a delay, and both leave a key held long enough still steering. The cost is that a key held before the shot key no longer pre-aims: press it after. Written up in OPEN_QUESTIONS, because it's a real change for anyone who learned the old way.
+
+**A swing goes on the last shot key held.** Round 16's takeover answered a real complaint (the hint said press O and the press was dropped), so it stays, and a release with another shot key still down hands over instead of firing.
+
+**Half a turn.** three's slerp takes the short way each frame, so between two turns about half a turn apart the way flips the frame the gap passes 180. `nlerpQ` against last frame's output already held the way everywhere else. Reset at a stroke's start, because a stroke can end before the path does.
+
+**READY_REACH, and how it was found.** Animation QA failed at 32 pops on a seed. Old and new builds averaged the same over five seeds, so a higher limit would have been defensible, and it would have left the real fault in. Nearly half the pops were labelled "ready", and that was the lead. Three wrong turns on the way: `a.pole` is the free arm's by the end of a frame; a probe inside `shoulderLimit` is overwritten by its later calls on the hand, which is why the `atan2` seam looked ruled out for the wrong reason before it was ruled out properly; and the "ready" label meant `w` under .01, so these were really a stroke's first frames. What happens: the ready hand is near the arm's reach. Near straight, the elbow goes as the square root of the shortfall, so a person's few centimetres of `manner.high` and `out` moved the standing elbow 35 degrees. A lean reached for the hand, and died in a stroke's first frame (`nearW = 0` when `w === 0`). A straight arm has no side for its elbow, which found one again in a frame.
+
+The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it couldn't, because it scales a key about the root and the arm is measured from the shoulder. So the limit sits at run time, on the shoulder as it is, which also covers the move. It lets go for the address, a tap and a carried racket, which are arms of their own. .89 is an elbow of about 52, inside the footage's 46-66, and people whose key was already inside stay where they were (p4 at 60, p9 at 63).
+
+**Limits moved on evidence, not to pass.** `clothFit` lungeSkin 52 to 66: the frame is mostly the neckline down a forward bow, every person reads 48-71 on such a frame, and five seeds read alike on both builds. The animation gate stayed at 30 and now passes on the merits.
+
+**One rule for the arm after the ball.** Findings 7, 8, 10 and 11 read as four problems, and the baseline showed one: every family went to its stop after the ball and the recovery paid for it. `Family.after` is that family's share of the arm, off the footage, reached in 45 ms and held into the recovery. A backhand has none because its footage is long. The limit is along the shoulder-to-hand line, so the racket follows the hand and nothing can miss the ball, which has already gone. Round 15 pulled hands in and put the arms in the body, so this one was audited skinned on two bodies before it was believed: no row got materially worse.
+
+**The ease.** A plain `(1 - s)^n` at n 3-4.5 spends the path in a fifth of the time, which is why the hand parked. Leaving the ball at speed needs that slope at the start only, so FOLLOW_QUICK .55 of the path goes that way and the rest evenly over the whole follow-through.
+
+**The elbow.** I turned the forearm guard on through a volley and nothing moved, which said the guard wasn't seeing these frames. A traced frame showed why: the trunk upright, hips low, the guard's three forearm points clear, and the elbow itself in the waist. `elbowOut` swings it round the shoulder-to-hand line by the depth, on both arms. The guard change stays because a volley's arm is slow after the ball and the reason for keeping it off doesn't apply.
+
+**The body goes to the ball.** `Family.arm` existed and overheads never set it, so they took the default .96, which is exactly the 30-32 degree elbow they showed. And on a low forehand the arm went straight before the trunk bent. `Family.bend` starts the trunk at the family's share, as volleys already did.
+
+**The serve's end stops short.** .27 m in front reached more of the footage's fold and put the racket into the chest on p7, p9 and p10. The body's limit won: .3 m.
+
+**Numbers.** REVIEW.md Round 17.

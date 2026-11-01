@@ -77,6 +77,8 @@ export interface Family {
   tip?: THREE.Quaternion;
   /** How much of the arm's length the shoulder-to-wrist line takes at the contact (default the avatar's ARM_TO): under it the elbow stays bent and the body goes to the ball. */
   arm?: number;
+  /** The most of the arm's length taken at the ball before the trunk bends to it (default 0.98: a straight arm first, the elbow at its stop on every ball under the hip). */
+  bend?: number;
   /** How long the follow-through takes (s; default the avatar's FOLLOW), and how far it goes on through the ball (m; default 0.25). */
   follow?: number;
   through?: number;
@@ -179,7 +181,8 @@ export const FOREHAND: Family = {
   crouch: 1,
   punch: 1,
   arm: 0.8,
-  follow: 0.5,
+  bend: 0.915,
+  follow: 0.38,
   through: 0.85,
   after: 0.91,
 };
@@ -222,6 +225,7 @@ const BH: Family = {
 export const OVERHEAD: Family = {
   name: 'overhead',
   after: 0.93,
+  arm: 0.87,
   // Trophy position: side-on, racket up behind the head, the free hand pointing at the ball.
   back: rolled(key(v(-0.11, 1.8, -0.56), v(-0.02, 0.8, -0.6), v(-1, 0, 0.1), v(-0.1, 1.2, -0.8), -1.25, v(-0.18, 1.8, 0.48)), 180),
   // (the head stays back at the ball: a racket leaning forward can't look up, and `n` is squared to the racket's length, so the key's open face
@@ -261,6 +265,7 @@ export const OVERHEAD: Family = {
 export const VIBORA: Family = {
   name: 'vibora',
   after: 0.93,
+  arm: 0.895,
   back: rolled(key(v(-0.14, 1.78, -0.56), v(-0.05, 0.8, -0.6), v(-1, 0.05, 0.15), v(-0.12, 1.2, -0.8), -1.3, v(-0.18, 1.75, 0.48)), 180),
   contact: key(v(-0.5, 1.7, 0.2), v(0.6, 0.72, 0.1), v(0.3, 0.2, 0.93), v(-0.9, 1.3, -0.05), -0.7, v(0.12, 1.25, 0.5)),
   finish: tipped(rolled(key(v(0.42, 0.82, 0.5), v(0.55, -0.55, 0.45), v(0.3, -0.45, 0.85), v(-0.15, 1.05, 0.4), 0.6, v(0.4, 1.05, 0.15)), 140), 30),

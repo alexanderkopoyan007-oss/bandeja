@@ -461,7 +461,7 @@ const VOLLEY_ARM = 0.78;
 const RECOVER_ARM = 0.85;
 const RECOVER_EASE = 0.12;
 /** How fast the arm comes to Family.after from the ball (s). */
-const AFTER_EASE = 0.07;
+const AFTER_EASE = 0.045;
 const VOLLEY_BEND = 0.86;
 const VOLLEY_BEND_RATE = 9;
 const BACK_FOLLOW = 1;
@@ -4360,7 +4360,7 @@ export class Avatar {
     const mu = ua.matrixWorld.elements;
     const sx = mu[12]! - this.tgt.x, sy = mu[13]! - this.tgt.y, sz = mu[14]! - this.tgt.z;
     // (a volley bends over the ball before it straightens the arm: elbow 63 on video, 30 at every ball under 0.85 m)
-    const excess = Math.sqrt(sx * sx + sy * sy + sz * sz) - this.armLen * (0.98 - (this.fam.wrist ? (0.98 - VOLLEY_BEND) * w * w : 0));
+    const excess = Math.sqrt(sx * sx + sy * sy + sz * sz) - this.armLen * (0.98 - (0.98 - (this.fam.wrist ? VOLLEY_BEND : this.fam.bend ?? 0.98)) * w * w);
     const base = this.spine[0]!;
     this.leanT.identity();
     if (excess > 0) {

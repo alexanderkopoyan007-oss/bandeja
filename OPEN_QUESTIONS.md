@@ -416,3 +416,6 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **Flight in a run.** 25-35% is from running research, not padel steps. Settled by: side-on footage of a pro covering the court, frames with both feet up.
 - **Forced or unforced.** Ours is a formula, the paper's a coder's eye, so only the totals compare. Settled by: scoring one coded match by both.
 - **Generated people up close.** Their eyes don't follow the ball, cloth has no hem lag, hair is solid. Settled by: the owner saying whether this reads at the TV camera.
+- **A held direction key no longer pre-aims.** Round 17: what was down at the press stays the run's until let go, so aim with a key pressed after the shot key. It cures the aim flying to the fence, and it takes away an aim a player may have wanted. Settled by: the owner playing with a key held through the press and saying which they meant.
+- **How often real hands brush the next key.** The stand-in's 10% of balls is a guess; the fix holds at any rate. Settled by: the owner playing ten games.
+- **Ready elbows on the move.** 46-66 is standing footage. The arm is held to the same bend in a run, and whether a pro's opens further is not in the table. Settled by: two clips of a pro running in the ready grip.
