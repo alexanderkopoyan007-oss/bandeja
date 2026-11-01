@@ -277,9 +277,9 @@ export class Hud {
     };
     const pw = c('power'), pr = c('precision'), lr = `${c('left')}/${c('right')}`;
     const how = tap
-      ? 'Tap a shot key as the ball comes: the movement keys then aim the target, you run to the ball, and the swing goes at the right moment by itself<br>'
+      ? 'Tap a shot key as the ball comes: you run to the ball, a movement key pressed then aims the target, and the swing goes at the right moment by itself<br>'
         + `Serve: ${lr} aims, tap a shot key to drop the ball; it is hit for you<br>`
-      : 'Hold a shot key as the ball comes: the movement keys then aim the target and your player runs to the ball<br>'
+      : 'Hold a shot key as the ball comes: your player runs to the ball, and a movement key pressed then aims the target<br>'
         + `Release when the closing ring meets the ring on the ball. Serve: ${lr} aims, press to drop, release to hit<br>`;
     this.help.innerHTML =
       `${c('up')}${c('left')}${c('down')}${c('right')} move &nbsp; ${c('drive')} drive &nbsp; ${c('topspin')} topspin (with ${pr} a chiquita) &nbsp; ${c('slice')} slice &nbsp; ${c('lob')} lob &nbsp; ${c('drop')} drop<br>`
@@ -442,7 +442,7 @@ export class Hud {
       this.hintLast = hint;
       this.hintSince = now;
     }
-    if (hint && now - this.hintSince >= HINT_READ && !this.hintRead.has(hint)) {
+    if (hint && now - this.hintSince >= HINT_READ && !this.hintRead.has(hint) && (hintsSeen[hint] ?? 0) < HINT_TIMES) {
       this.hintRead.add(hint);
       seenHint(hint);
     }

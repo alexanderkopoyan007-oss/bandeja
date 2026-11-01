@@ -39,7 +39,7 @@ const TIPS = [
   'Deep balls are often best <b>off the back glass</b>: let it come off the wall and take it as it drops.',
   'A lob over your head: hold <b>overhead</b> for a bandeja, add <b>power</b> for a smash that can leave the court.',
   'The <b>chiquita</b> (topspin with precision) dips at the feet of a pair at the net.',
-  'While you hold a shot key, the movement keys <b>aim the yellow target</b> and your player runs to the ball.',
+  'While you hold a shot key your player runs to the ball, and a movement key <b>pressed then</b> aims the yellow target.',
   'At the net, the <b>volley</b> key takes the ball in the air and punches it.',
   'A serve must bounce in your opponents’ box; off the glass after that is fine, the mesh is a fault.',
   'Two faults in a row lose the point. A serve that clips the net and lands in is played again.',

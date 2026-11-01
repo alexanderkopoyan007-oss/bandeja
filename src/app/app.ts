@@ -353,7 +353,7 @@ export class App {
         ch('Swing', 'swing', [{ value: 'hold', label: 'Hold and release' }, { value: 'tap', label: 'One tap' }],
           'One tap: press a shot key once and the swing goes off at the right moment by itself (auto timing on); the movement keys still aim. For when holding and releasing a key on time is hard.' + next),
         ch('Timing cues', 'pro', [{ value: false, label: 'Shown' }, { value: true, label: 'Hidden (pro)' }], 'The closing ring, the meter, the trail and the bounce marker. Pro mode plays without them.'),
-        ch('Aim with', 'mouseAim', [{ value: false, label: 'Keys' }, { value: true, label: 'Mouse' }], 'Keys: the movement keys steer the target while a shot key is held. Mouse: point at the far court.'),
+        ch('Aim with', 'mouseAim', [{ value: false, label: 'Keys' }, { value: true, label: 'Mouse' }], 'Keys: a movement key pressed while a shot key is held steers the target (one already down keeps its run until you let it go). Mouse: point at the far court.'),
         { kind: 'group', label: 'Picture' },
         ch('Quality', 'quality', [{ value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'ultra', label: 'Ultra' }],
           'Auto lowers the resolution when frames run long, to hold 60 frames a second. Low draws fewer pixels with softer shadows and no glow. Applies from the next match.'),
@@ -395,14 +395,19 @@ export class App {
           bindKey(k, a.id, code);
           s.keys = k;
         },
-        desc: (a.move ? 'Movement. While a shot key is held it steers the aim instead.'
+        desc: (a.move ? 'Movement. Pressed while a shot key is held, it steers the aim instead.'
           : a.id === 'power' ? 'Held with a shot key as it is let go: a harder ball (with Volley a punch volley). With Overhead a smash: hold it before the ball drops, the jump is taken by then.'
           : a.id === 'precision' ? 'Held with a shot key as it is let go: a placed ball (with Topspin a chiquita). With Overhead a víbora: hold it before the ball drops.'
           : 'Hold as the ball comes, release to hit.') + ' Keys kept by the game: Esc (pause), F3, H, P, M, Tab, Enter.',
       });
     }
+    const hintsBack: Item = { kind: 'button', label: 'Show hints again', desc: 'Each hint retires after six points. This brings them all back.', action: () => {
+      resetHints();
+      hintsBack.label = 'Hints are back';
+      this.menu.refresh();
+    } };
     items.push(
-      { kind: 'button', label: 'Show hints again', desc: 'Each hint retires after six points. This brings them all back.', action: () => { resetHints(); } },
+      hintsBack,
       { kind: 'button', label: 'Reset keys', desc: 'Back to J K L I U O N, Space and Shift, with WASD and the arrows.', action: () => { s.keys = { ...DEFAULT_KEYS }; saveSettings(s); this.menu.refresh(); this.game?.applyPrefs(this.prefs()); } },
       { kind: 'button', label: 'Back', desc: 'Keys are saved as they change.', action: () => this.menu.back() },
     );
