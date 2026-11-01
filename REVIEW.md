@@ -586,7 +586,7 @@ Three reviewers and a sceptic on the shipped build, seeds from 2381000: 22 findi
 | 14 | Medium | The menu says Space works as you let go, and pressing it then gives half a smash | **Fixed in the words.** The stance is the bandeja's by then, so the menu says hold it before the ball drops |
 | 15 | Medium | M, P and H sit by the shot keys and change the game with no message | Half. M and P say what they did. H is unchanged |
 | 16 | Medium | Club resets to Advanced on every reload | **Fixed.** The version number went through the 0-1 clamp |
-| 17 | Medium | Legs on a change of direction: thigh thrown wide, hips drop | Open |
+| 17 | Medium | Legs on a change of direction: thigh thrown wide, hips drop | **Fixed.** Per player-minute on p1: feet wide with hips sunk 3.5 to 0, hips under 0.72 m 7.1 to 0, hip drops over 15 cm 17.4 to 2.1, thigh out with the foot in the air 5.1 to 2.1, past 55 degrees 5.1 to 0.8. Generated body the same: 0 and 0.9. Hips stay at 0.93 m in a run. Both feet off the ground 24 to 29% (real 25-35), a foot down 192 to 183 ms, stance-foot slide 6.5 to 5.2 cm. Pops 25 and 23 to 21 and 22. `tests/render/legsBetween.test.ts` fails the old build at 1.5% and 1.3% |
 | 18 | Medium | The reflex block's racket misses the ball in space half the time | Open, not reproduced. `REFLEX_SEE` .3 changed nothing on 60 strokes because no reflex fired in them; of 13 hits with no key, 1 was over 25 cm off |
 | 19 | Medium | One rally hit in 15-20 leaves before the racket is there | Open |
 | 20 | Medium | The Auto timing option plays better than a good human hand | Open |

@@ -685,7 +685,7 @@ const RUN_V1 = 3.5;
 /** How far through its swing a run's foot is clear of the floor: off it from the first frames, and the flight shows. */
 const RUN_LIFT = 0.12;
 const RUN_DUTY0 = 0.52;
-const RUN_DUTY1 = 0.37;
+const RUN_DUTY1 = 0.41;
 const RUN_AHEAD = 0.3;
 const RUN_WIDTH = 1.2;
 const RUN_WIDE = 1.4;
@@ -722,6 +722,12 @@ const RUN_STRETCH = 0.975;
 const RUN_LANDS = 0.6;
 const RUN_LOOSE = 0.3;
 const RUN_HIP_RATE = 1.2;
+/** The most a run's hips sink for a foot (m): they followed one left behind, hips 0.68 m at 2 m/s, feet over a metre apart. */
+const RUN_SINK = 0.1;
+/** How far down the hips are taken as being when a planted foot is judged out of reach and steps at once, whatever the other foot is doing (m). Less has both feet off the floor 43% of a run and cuts the stance short, more slides the foot and leaves the thigh out; real running is about 30, a foot down 0.2 s. */
+const RUN_STEP_SINK = 0.07;
+/** How much of the way to under the hips a run's foot goes in the middle of a swing: from a foot left out to the side the straight line to its landing held the thigh out 55 degrees in the air. */
+const RUN_UNDER = 0.6;
 /** How fast the hips follow a stroke's `weight` (s). */
 const INTO_EASE = 0.05;
 /** How far a stride throws long hair at speed, to the side and up (m). */
@@ -860,6 +866,8 @@ const LEAN_STROKE = 0.85;
 const LEAN_HAND = 0.25;
 /** Slowing down, the body goes past upright behind its feet: the run's own forward lean has to go first. */
 const LEAN_BRAKE = 1.5;
+/** How much of a leg's length the lean takes the hips off the feet for each radian. All of it put them 0.46 m off the feet at a hard stop, legs near straight, then 0.13 m lower for the arc: hips 0.61 m at walking pace. */
+const LEAN_HIP = 0.6;
 /** How fast the chest turns with the hips into a side-on run and back out of it (rad/s): switched at once, the
  * chest, arms and head jumped up to 45 degrees in a frame. */
 const WARP_CHEST_RATE = 7;
@@ -3157,7 +3165,7 @@ export class Avatar {
     if (drop > room) drop = room > 0 ? room : drop < 0 ? drop : 0;
     this.dropShown = drop;
     // The weight from the ankles: the hips over the driving foot, behind a braking one.
-    const tk = this.legLen * (1 - LEAN_STROKE * this.w);
+    const tk = this.legLen * LEAN_HIP * (1 - LEAN_STROKE * this.w);
     let hipX = this.reachX + this.hipTiltX * tk, hipZ = this.reachZ + this.hipTiltZ * tk + this.intoBall * this.netZ;
     const tilt2 = this.hipTiltX * this.hipTiltX + this.hipTiltZ * this.hipTiltZ;
     drop += 0.5 * tilt2 * tk;
@@ -3188,6 +3196,7 @@ export class Avatar {
           if (top < want) want = top;
         }
       }
+      if (want < low - RUN_SINK) want = low - RUN_SINK;
       if (this.runHipY < 0) this.runHipY = want;
       const lim = RUN_HIP_RATE * this.dt;
       this.runHipY += want > this.runHipY + lim ? lim : want < this.runHipY - lim ? -lim : want - this.runHipY;
@@ -3638,6 +3647,16 @@ export class Avatar {
     let hard = G[0]! < 0 && far0 > r2 ? 0 : G[1]! < 0 && far1 > r2 ? 1 : -1;
     // (a run's feet go by turns even so: two in the middle of a swing together is a hop, feet side by side)
     if (hard >= 0 && run && G[1 - hard]! >= 0 && (G[1 - hard]! < RUN_TURNS || (this.st === ST_NONE && this.gaitUp < RUN_EARLY / hz && (hard === 0 ? far0 : far1) < r2 * RUN_STRANDED))) hard = -1;
+    if (run) {
+      // Further than the leg reaches with the hips a little down: it goes now, whatever the other foot is doing.
+      const fast = smoothstep(RUN_V0, RUN_V1, sp), low = (this.legLen + this.ankleY) * (RUN_HIP0 + (RUN_HIP1 - RUN_HIP0) * fast) - RUN_STEP_SINK - this.ankleY;
+      const stretch = this.legLen * RUN_STRETCH, most = stretch * stretch - low * low;
+      for (let f = 0; f < 2; f++) {
+        if (G[f]! >= 0) continue;
+        const gx = P[f]!.x - rx, gz = P[f]!.z - rz;
+        if (gx * gx + gz * gz > most) { hard = f; break; }
+      }
+    }
     let go = hard;
     if (go < 0 && run) {
       // By turns, half a stride apart, sooner if the foot has fallen behind: a foot goes while the other is in the air,
@@ -3712,6 +3731,12 @@ export class Avatar {
         const e = run ? smoothstep(RUN_ALONG, 1 - RUN_ALONG, u) : smoothstep(0, 1, u), F = this.gaitFrom[f]!;
         x = F.x + (To.x - F.x) * e;
         z = F.z + (To.z - F.z) * e;
+        if (run) {
+          // (round under the hips, on its own side, not along the straight line: a foot left out to the side swung past them)
+          const k = RUN_UNDER * Math.sin(Math.PI * e), wx = sign * c * off, wz = -sign * s * off;
+          x += (rx + wx - x) * k;
+          z += (rz + wz - z) * k;
+        }
         // (from where it is, not from where it took off: half way round, the short way flips)
         const YN = this.gaitYawFrom;
         YN[f] = YN[f]! + (wrapAngle(YT[f]! - YN[f]!) * dt) / (left > dt ? left : dt);
@@ -4199,7 +4224,7 @@ export class Avatar {
       // The key is placed for a body over its feet: the weight takes the hips and the chest forward of them, and they
       // came through the racket it left behind (3% of frames). First, because the chest's turn is about the shoulders,
       // and a key still at the feet's place swung up to 60 cm round them: the hand went behind the back when a run stopped.
-      const reach = this.legLen * (1 - LEAN_STROKE * w);
+      const reach = this.legLen * LEAN_HIP * (1 - LEAN_STROKE * w);
       v2.x += this.hipTiltX * reach + this.tiltX * LEAN_HAND;
       v2.z += this.hipTiltZ * reach + this.tiltZ * LEAN_HAND;
       this.onChest(v2, ua);

@@ -3290,4 +3290,8 @@ Your drive at 79 km/h against the AI's 62-64 is not a bug: you aim 7.2 m deep by
 
 **REFLEX_SEE stays.** The scan was identical because no reflex fired in the sample. That says nothing either way, so the value stays.
 
+**The legs: a lean carried too far, and the hips chasing a foot.** The reviewer guessed the pelvis turned ahead of the feet. Logging every dip showed something else. `hipTilt` is a lean of up to 0.54 rad at a hard stop, and at a whole leg's length it put the hips 0.46 m off the feet, legs near straight, then 0.13 m lower for the arc: hips 0.61 m at walking pace. Separately, the run's reach limit let a planted foot left behind draw the hips down at 1.2 m/s, hips 0.68 m at 2 m/s with the feet over a metre apart. `LEAN_HIP` .6 takes the hips .6 of a leg per radian. `RUN_SINK` stops them following a foot past 10 cm, and a foot out of reach at `RUN_STEP_SINK` steps at once. A swinging foot goes round under the hips (`RUN_UNDER`).
+
+**Tried and dropped.** Taking the arc out of a run and a walk looked right, since their hips come from the leg, but it stood the legs up straight and pops went from 25 to 48. A speed limit on the hips between strokes did nothing once the cause was gone. A forced step judged from the hips' present height fired on every stride and took flight to 47%: it has to be judged from a lower height. The ready hand is placed with the lean too and has to take the same factor: left at a full leg, it pulled the arm 19 cm past the chest and flipped it. `RUN_DUTY1` .37 to .41 gave back the frame of stance those changes cost.
+
 **Numbers.** REVIEW.md Round 16.
