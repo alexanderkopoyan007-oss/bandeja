@@ -296,6 +296,8 @@ export const SERVE: Family = {
   lead: 0.42,
   follow: 0.45,
   weight: 0.2,
+  // (a long arm, not a locked one: elbow 44-52 on the coach, which is 0.91-0.93 of it)
+  arm: 0.93,
 };
 
 /**

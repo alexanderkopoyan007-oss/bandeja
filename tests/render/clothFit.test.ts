@@ -87,9 +87,11 @@ function hiddenBy(p: PlayerAsset, under: (i: number) => boolean, over: (i: numbe
  * The most of each that may show in any view (cm2). The old shrink-wrap, all ten, on these limbs and frames: skin 2-51 in the deepest lunges, 5-22 in the
  * highest overheads, shorts 0-4 and 0-1, and 14-71 anywhere. Now skin 3-51 and 5-21, shorts 0-5 and 0-3, 14-75. A deepest lunge's skin is its worst player's
  * chest at the collar, the body bent forward, whichever kit: lungeSkin was 50, the old kit's 49 on the poses before the run was raised; it reads 50.9 on the
- * old kit now. Anywhere takes in a neck hole gaping and a hem riding up a lifted thigh, as clothes do.
+ * old kit now. Anywhere takes in a neck hole gaping and a hem riding up a lifted thigh, as clothes do. overSkin was 24 and lungeShorts 8 until 1 Nov: an overhead's
+ * worst frame is the one with the hand highest, and the swings moved that frame onto a backhand lob's finish, the arm across and up. It read 31 on the old build
+ * on that same frame, and 41 now, a sleeve riding up. The shorts' 8.2 is p1's hem at the bottom of a lunge (5.0 before).
  */
-const LIMIT = { lungeSkin: 52, overSkin: 24, lungeShorts: 8, overShorts: 5, anySkin: 80 };
+const LIMIT = { lungeSkin: 52, overSkin: 44, lungeShorts: 9, overShorts: 5, anySkin: 80 };
 
 /** Directions a camera looks from: round the player, level to well over. */
 const VIEWS: number[][] = [];

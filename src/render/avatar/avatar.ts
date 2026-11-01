@@ -234,7 +234,7 @@ function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion
   // Two rotations far apart: the plain blend does most of the turn at the middle of the way, and the racket spun round
   // the wrist, 135 degrees in a tenth of a second after every backhand volley. This weighting turns it evenly.
   const c = (a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w) * (plus ? 1 : -1);
-  if (c < 0.7 && c > -0.9995) {
+  if (c < 0.9995 && c > -0.9995) {
     const th = Math.acos(c), su = Math.sin(u * th), sv = Math.sin(v * th), k = su + sv, g = su / k, h = (plus ? 1 : -1) * g, e = sv / k;
     const x = a.x * e + b.x * h, y = a.y * e + b.y * h, z = a.z * e + b.z * h, w = a.w * e + b.w * h;
     const l = Math.sqrt(x * x + y * y + z * z + w * w);
@@ -633,6 +633,8 @@ const RUN_HZ_V = 0.2;
 const RUN_HZ_MAX = 2;
 const RUN_V0 = 1;
 const RUN_V1 = 3.5;
+/** How far through its swing a run's foot is clear of the floor: off it from the first frames, and the flight shows. */
+const RUN_LIFT = 0.12;
 const RUN_DUTY0 = 0.52;
 const RUN_DUTY1 = 0.37;
 const RUN_AHEAD = 0.3;
@@ -683,7 +685,7 @@ const RUN_UP = 0.22;
 const RUN_ARM = 0.2;
 /** Where in the swing the foot is highest, and how fast a planted foot rolls (rad/s). */
 const RUN_PEAK = 0.3;
-const RUN_FALL = 0.8;
+const RUN_FALL = 0.86;
 const RUN_ALONG = 0.02;
 const RUN_THROUGH = 0.55;
 const RUN_LEVEL = 0.8;
@@ -3480,7 +3482,7 @@ export class Avatar {
     // Left behind by a turn back: it goes whatever the other foot is doing.
     let hard = G[0]! < 0 && far0 > r2 ? 0 : G[1]! < 0 && far1 > r2 ? 1 : -1;
     // (a run's feet go by turns even so: two in the middle of a swing together is a hop, feet side by side)
-    if (hard >= 0 && run && G[1 - hard]! >= 0 && (G[1 - hard]! < RUN_TURNS || (this.gaitUp < RUN_EARLY / hz && (hard === 0 ? far0 : far1) < r2 * RUN_STRANDED))) hard = -1;
+    if (hard >= 0 && run && G[1 - hard]! >= 0 && (G[1 - hard]! < RUN_TURNS || (this.st === ST_NONE && this.gaitUp < RUN_EARLY / hz && (hard === 0 ? far0 : far1) < r2 * RUN_STRANDED))) hard = -1;
     let go = hard;
     if (go < 0 && run) {
       // By turns, half a stride apart, sooner if the foot has fallen behind: a foot goes while the other is in the air,
@@ -3565,7 +3567,7 @@ export class Avatar {
           const up = u < RUN_PEAK ? smoothstep(0, RUN_PEAK, u) : 1 - smoothstep(RUN_PEAK, 1, u);
           pitch += RUN_KICK * fast * (u < RUN_PEAK ? up : 1 - smoothstep(RUN_PEAK, RUN_LEVEL, u)) * (1 - backW) + RUN_BACK_ROLL * backW * smoothstep(0.5, 1, u);
           // (held up late and put down: lowered all the way it skimmed the floor for the last third, and read as a slide)
-          y += (RUN_CLEAR + RUN_CLEAR_V * sp) * (u < RUN_PEAK ? up : 1 - smoothstep(RUN_FALL, 1, u));
+          y += (RUN_CLEAR + RUN_CLEAR_V * sp) * (u < RUN_PEAK ? smoothstep(0, RUN_LIFT, u) : 1 - smoothstep(RUN_FALL, 1, u));
           // (and it is the heel that goes high, behind the hips: down again before it passes under them, or a knee bent 100
           // degrees over the foot is a thigh 50 degrees up, then 65 as it reached forward)
           y += RUN_HEEL * this.legLen * fast * (1 - backW) * (u < RUN_PEAK ? up : 1 - smoothstep(RUN_PEAK, RUN_THROUGH, u));
