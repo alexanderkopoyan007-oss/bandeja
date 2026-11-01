@@ -59,7 +59,7 @@ describe('modifiers at the release', () => {
 });
 
 describe('the first press of a match', () => {
-  it('a tap that lets go before the ball is down is no swing: the ball is dropped again, no fault', () => {
+  it('a tap that lets go before the ball is down is no swing: it goes on down for the next press, no fault', () => {
     // (it was a fault, and two of them a double fault, seven seconds into the game: review round 16, the critic's #1)
     const m = new MatchSim({ seed: 7, doubles: true, human: [true, false, false, false], firstServer: 0, assist: 0.45, timingScale: 1.5 });
     const f = new InputFrame();
@@ -74,13 +74,16 @@ describe('the first press of a match', () => {
       f.held = BTN_DRIVE;
       m.step([f, null, null, null]);
       expect(m.phase).toBe(PH_TOSS);
-      for (let i = 0; i < 12; i++) { f.clear(); f.held = BTN_DRIVE; m.step([f, null, null, null]); }
+      for (let i = 0; i < 6; i++) { f.clear(); f.held = BTN_DRIVE; m.step([f, null, null, null]); }
+      const y = m.ball.pos.y;
       f.clear();
       f.push(false, BTN_DRIVE, m.time);
       m.step([f, null, null, null]);
       for (; seq < m.eventSeq; seq++) if (m.events[seq % m.events.length]!.kind === E_FAULT) faults++;
-      expect(m.phase).toBe(PH_SETUP);
-      for (let i = 0; i < 120 * 2 && m.time < m.phaseUntil + 0.1; i++) m.step(none);
+      // (no ball put back in the hand: a metre up in a tick, and it hung there)
+      expect(m.phase).toBe(PH_TOSS);
+      expect(m.ball.pos.y).toBeLessThan(y);
+      expect(m.players[0]!.swing).toBe(SW_IDLE);
     }
     expect(faults).toBe(0);
     expect(m.serveNo).toBe(first);

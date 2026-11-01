@@ -18,6 +18,13 @@ const BACK_HALF_GAP = 2.3;
 // The return is another thing: the server is still running in and the partner holds the line.
 const UP_FOLLOW = 0.2;
 const UP_FOLLOW_RETURN = 0.4;
+/**
+ * A pair at the net leans to a ball it keeps seeing: this share of how far across a human's read ball goes, at the top
+ * level. Each constant before this closed one lane (a low slice, then a drive 0.2 m wider) and left the next, because
+ * the read only steadied a swing and a ball nobody reaches is never played: the far player stayed 3.3 m from a pass
+ * sent there five times running (review round 17, the pro's #1). It leaves the other side open, as it does on a court.
+ */
+const READ_LEAN = 0.35;
 const BACK_FOLLOW = 0.3;
 
 /**
@@ -109,7 +116,9 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   const ai = m.ai[i];
   const weak = ai ? 1 - ai.level : 0;
   const close = ai ? NET_CLOSE * (ai.style.net - 1) : 0;
-  out.x = clamp(lane * s * half + (up ? (m.rally.shots === 1 ? UP_FOLLOW_RETURN : UP_FOLLOW) : BACK_FOLLOW) * (1 - 0.6 * weak) * m.ball.pos.x, p.minX + 0.3, p.maxX - 0.3);
+  const next = up && ai ? m.taker[1 - team]! : -1;
+  const lean = next >= 0 ? READ_LEAN * ai!.level * m.readAcross(next) : 0;
+  out.x = clamp(lane * s * half + (up ? (m.rally.shots === 1 ? UP_FOLLOW_RETURN : UP_FOLLOW) : BACK_FOLLOW) * (1 - 0.6 * weak) * m.ball.pos.x + lean, p.minX + 0.3, p.maxX - 0.3);
   // Our low ball at a pair at the net: the volley has to be lifted, soft and maybe short, so a back player steps in
   // to read it (from 8 m a drop volley landed 6.6 m from the nearest defender: review round 4, the pro's #2).
   const read = !up && !mid && m.lastStrikeTeam === team && m.ball.pos.z * s < 0 && m.ball.pos.y < READ_LOW && m.ball.vel.y <= 0;

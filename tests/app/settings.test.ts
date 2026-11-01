@@ -1,8 +1,8 @@
 // Phase 8: the settings store, key bindings and the options a menu setup turns into (no DOM needed).
 import { describe, expect, it } from 'vitest';
-import { settingsFrom, defaultSettings } from '../../src/app/settings.ts';
+import { DEFAULT_SETUP, settingsFrom, defaultSettings, type MatchSetup } from '../../src/app/settings.ts';
 import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyTables, resolveKeys } from '../../src/game/input/bindings.ts';
-import { directLaunch, optionsFromSetup, optionsFromUrl } from '../../src/app/options.ts';
+import { directLaunch, keepStyles, optionsFromSetup, optionsFromUrl } from '../../src/app/options.ts';
 
 describe('settings store', () => {
   it('keeps known values and ignores anything else', () => {
@@ -146,5 +146,29 @@ describe('world from the URL and the menus', () => {
     expect(world('autoplay=1&arena=club-day').env!.ceiling).toBe(Infinity);
     const s = defaultSettings();
     expect(optionsFromSetup({ ...s.setup, arena: 'hall' }, s, 1, null, false, new URLSearchParams('')).match.world!.env!.ceiling).toBe(9);
+  });
+});
+
+describe('the same people play the same way', () => {
+  const setup: MatchSetup = { ...DEFAULT_SETUP, partner: 'random', opponents: 'random' };
+  const deal = (seed: number, s: MatchSetup = setup): string[] => optionsFromSetup(s, defaultSettings(), seed, null, false, new URLSearchParams()).match.aiStyle as string[];
+
+  it('a knock-out round keeps the partner\'s style and deals new rivals, a rematch keeps all four', () => {
+    let seed = 1;
+    while (deal(seed + 1)[2] === deal(seed)[2]) seed++;
+    const round = deal(seed + 1);
+    keepStyles(round, setup, seed, false);
+    expect(round[2]).toBe(deal(seed)[2]);
+    expect(round[1]).toBe(deal(seed + 1)[1]);
+    const again = deal(seed + 1);
+    keepStyles(again, setup, seed, true);
+    expect(again).toEqual(deal(seed));
+  });
+
+  it('a style chosen in the menu stands', () => {
+    const chosen: MatchSetup = { ...setup, partner: 'muro' };
+    const round = deal(5, chosen);
+    keepStyles(round, chosen, 9, false);
+    expect(round[2]).toBe(deal(5, chosen)[2]);
   });
 });

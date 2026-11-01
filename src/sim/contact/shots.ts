@@ -9,7 +9,7 @@ import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, HIT_POST, HIT_ROOF, LE
 import { SURF_GLASS, WALL_BACK_FAR, WALL_BACK_NEAR } from '../court/court.ts';
 import { V3 } from '../core/v3.ts';
 import { Rng } from '../core/rng.ts';
-import { DT } from '../core/constants.ts';
+import { DT, GRAVITY } from '../core/constants.ts';
 import { abs, atan, atan2, clamp, cos, max, min, sin, sqrt, PI } from '../core/smath.ts';
 import { Racket, RACKETS, faceHalfWidth } from './racket.ts';
 import shotData from '../../../data/shots.json' with { type: 'json' };
@@ -158,6 +158,8 @@ const tmpV = new V3();
  * it (swing errors add up to a metre to a steep lob's top; 3.5% of points ended on the roof); 1 m keeps it rare.
  */
 const ROOF_MARGIN = 1.5;
+/** How far under the roof a struck ball can peak (m): the top of the flight in a vacuum, and spin and the glass add to it. */
+const ROOF_CLEAR = 0.6;
 
 /** Top of the vacuum parabola from height h0 through (dn, want) to (dist, r) (Infinity if it doesn't open down). */
 function apexOf(h0: number, dn: number, dist: number, want: number, r: number): number {
@@ -807,6 +809,11 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
     rotatePitch(ball.vel, (SW.framePitch[0]! + (SW.framePitch[1]! - SW.framePitch[0]!) * rng.next()) * (PI / 180));
     ball.spin.scale(0.3);
   }
+  // Whoever plays in a hall knows its roof, and takes the height off a ball before the racket: the solver's margin is
+  // spent before the swing's errors, and one point in 17 ended up there, one contrapared in four from a human (review
+  // round 17, the pro's #5). In the air it can only lose height. A ball off the frame goes where it goes.
+  const room = solver.world.roofY - ROOF_CLEAR - ball.pos.y;
+  if (!frame && room > 0 && room < Infinity && ball.vel.y > 0 && ball.vel.y * ball.vel.y > 2 * GRAVITY * room) ball.vel.y = sqrt(2 * GRAVITY * room);
   out.speed = ball.vel.length();
   out.racketSpeed = faceV.length();
   out.faceCap = vCap;

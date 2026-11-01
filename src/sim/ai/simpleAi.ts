@@ -1125,6 +1125,11 @@ export class SimpleAi {
     const margin = (1.2 - 0.5 * this.level) * this.style.margin;
     const spread = c.halfW - margin;
     const up = this.opponentsUp(m);
+    // Coming in behind a lob, one of the pair is at the net and the other still back: an overhead sees that, and goes away
+    // from the one coming in. Drawn from the court alone it landed on their volley, 42% of the time, and running in
+    // behind every lob beat waiting to see it had got past (review round 17, the pro's #3).
+    const aIn = abs(a.pos.z) < SPLIT_IN, bIn = abs(b.pos.z) < SPLIT_IN;
+    const open = aIn === bIn ? 0 : (aIn ? b : a).pos.x >= 0 ? 1 : -1;
     let x: number;
     let depth: number;
     if (this.shot === SHOT_BANDEJA && this.bajada) {
@@ -1134,7 +1139,8 @@ export class SimpleAi {
       depth = this.smash ? 6.2 + 1.2 * rng.next() : 7.0 + 1.0 * rng.next();
     } else if (this.shot === SHOT_BANDEJA && this.vibora) {
       // Into the side glass, deep enough that it comes off low towards the back.
-      x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.8 + 0.2 * rng.next());
+      const way = rng.next() < 0.5 ? -1 : 1;
+      x = (open !== 0 ? open : way) * spread * (0.8 + 0.2 * rng.next());
       depth = 6.4 + 1.2 * rng.next();
     } else if (this.shot === SHOT_BANDEJA && this.smash) {
       // Flat and hard, mostly down the line (men 77.7%: Sánchez-Alcaraz et al. 2020), landing as short as a straight
@@ -1150,7 +1156,8 @@ export class SimpleAi {
       depth = smashDepth(m, this.conDepth, this.conHeight) + (putAway ? 0.3 : 0.6) * rng.next();
     } else if (this.shot === SHOT_BANDEJA) {
       // Deep into a corner, so the ball sits down off the back glass.
-      x = (rng.next() < 0.5 ? -1 : 1) * spread * (0.5 + 0.4 * rng.next());
+      const way = rng.next() < 0.5 ? -1 : 1;
+      x = (open !== 0 ? open : way) * spread * (0.5 + 0.4 * rng.next());
       depth = 8.0 + 0.8 * rng.next();
     } else if (this.shot === SHOT_LOB) {
       // Deep enough to get over and behind the net player, short of the back glass on the full: real lobs land
@@ -1313,6 +1320,9 @@ function smashDepth(m: MatchSim, back: number, h: number): number {
 }
 const SMASH_MARGIN = 0.45;
 /** A smash met this close (m from the net) and this high (m) is a put-away aimed for the side glass (por tres). */
+/** Nearer the net than this (m) an opponent has come in. */
+const SPLIT_IN = 4.5;
+
 const SMASH_X3_DEPTH = 5.5;
 const SMASH_X3_HEIGHT = 2.2;
 const SMASH_MIN = 3.2;

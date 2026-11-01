@@ -13,7 +13,7 @@ import { setSafeColours } from '../ui/palette.ts';
 import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '../game/input/bindings.ts';
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
-import { optionsFromSetup } from './options.ts';
+import { keepStyles, optionsFromSetup } from './options.ts';
 
 const ARENAS: Choice[] = [
   { value: 'stadium', label: 'Arena' }, { value: 'hall', label: 'Club hall' },
@@ -110,6 +110,7 @@ export class App {
     if (attract || this.keep === KEEP_NONE) this.castSeed = seed;
     opts.castSeed = this.castSeed;
     if (!attract && this.keep === KEEP_PAIR) opts.rivals = seed;
+    if (!attract && this.keep !== KEEP_NONE && opts.match.aiStyle) keepStyles(opts.match.aiStyle, this.gameSetup(), this.castSeed, this.keep === KEEP_ALL);
     this.keep = KEEP_NONE;
     if (!attract && this.drill >= 0) {
       opts.match.practice = this.drill;
@@ -282,6 +283,9 @@ export class App {
       st[k] = v as MatchSetup[K];
       if (k === 'mode') {
         if (st.mode === 'doubles' && st.court === 'singles-narrow') st.court = 'standard';
+        // One player can't cover 10 m (5.5 shots a point, 37% of points lost on a double bounce): singles starts narrow, and
+        // the standard court is still one row away.
+        else if (st.mode === 'singles' && st.court === 'standard') st.court = 'singles-narrow';
         // The court's options and the opponents' label depend on the mode: the screen is made again.
         this.menu.replace(this.setupScreen());
       }

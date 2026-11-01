@@ -398,6 +398,21 @@ const HIP_FALL = 2;
 /** Time before the contact (s) the hips start leaning towards it, and lean fully. */
 const LEAN_FROM = 0.4;
 const LEAN_FULL = 0.1;
+/**
+ * A key goes down a second before the ball, and turning early is right, but at the stroke's full weight from the press a
+ * player ran that second stooped over a ball still metres away, the arm locked at the back key and both arms dead (trunk
+ * 35 at -500 ms, the AI 11; head 1.33 m, free 1.43; review round 17, the biomechanist's #2). The stroke's share of the
+ * body while the racket is carried, and the time before the ball (s) it starts to take the rest and has it (the hand is
+ * at the end of the arm from about 0.6 of the share, so it has to come late: elbow 30-31 at -0.22 s on video). No later
+ * than the groundstrokes' lead, or a forward swing would start from a carried racket.
+ */
+const HOLD_CARRY = 0.5;
+const HOLD_FAR = 0.45;
+const HOLD_NEAR = 0.32;
+/** Fastest that share changes (per second): a plan can jump when the ball hits something. */
+const HOLD_RATE = 4;
+/** Fastest the bends towards the ball come and go (per second): a held stroke dropped took them from none to all. */
+const NEAR_RATE = 12;
 /** Fastest the hips' reach towards the ball changes after the contact (m/s, over the feet): the follow-through moves
  * the key at racket speed, and a reach following it swung the hips 0.38 m in five frames, a foot turning 123° in one. */
 const REACH_RATE = 2.5;
@@ -484,6 +499,8 @@ const FOLLOW_N = 3;
 /** A hip's range (solveLegs): how far round from the hips a foot (rad), and a knee, may point; how far outward a knee
  * sits off the hips (rad, or they brush each other). */
 const FOOT_OFF_HIPS = (65 * Math.PI) / 180, KNEE_OFF_HIPS = (42 * Math.PI) / 180, KNEE_OUT = 0.14;
+/** Fastest a foot turns off the hips (rad/s): over what the hips turn on a planted foot, under a flip from limit to limit. */
+const FOOT_TURN_RATE = 20;
 const HIP_OUT = 0.68, HIP_ACROSS = 0.36;
 /** How far under the hips the trunk's ellipse goes (of the hips to the neck). */
 const TRUNK_BELOW = -0.08;
@@ -1148,6 +1165,12 @@ export class Avatar {
   private kyaw = 0;
   private crouch = 0;
   private bendW = 0;
+  /** The stroke's share of the body while its key is held (HOLD_CARRY). */
+  private holdW = 0.5;
+  /** Bends towards the ball wait for it: 0 until LEAN_FROM before it, 1 at LEAN_FULL. */
+  private nearW = 0.5;
+  /** The arm kept bent under a carried racket, 0 to 1. */
+  private heldBent = 0;
   private readonly from: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   private readonly con: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   private readonly ctrl = new THREE.Vector3();
@@ -1905,6 +1928,8 @@ export class Avatar {
         this.prepFromW = this.w;
         this.st = ST_PREP;
         this.swingS = 0;
+        this.holdW = -1;
+        if (this.w === 0) this.nearW = 0;
       }
       const tp = this.planned(sim, idx);
       this.hasCon = tp >= 0;
@@ -2018,7 +2043,11 @@ export class Avatar {
         }
       }
       if (this.prepFromW > 0 && u < 1) this.blendFrom(u);
-      this.w = this.prepFromW + (1 - this.prepFromW) * u;
+      // (a serve is a stroke of its own, and an overhead is up with the free arm long before the ball)
+      const held = sim.phase !== PH_RALLY || f.over ? 1 : this.hasCon ? HOLD_CARRY + (1 - HOLD_CARRY) * smoothstep(HOLD_FAR, HOLD_NEAR, this.tPlan - t) : HOLD_CARRY;
+      const lim = HOLD_RATE * this.dt, off = held - this.holdW;
+      this.holdW = this.holdW < 0 ? held : this.holdW + (off > lim ? lim : off < -lim ? -lim : off);
+      this.w = this.prepFromW + (this.holdW - this.prepFromW) * u;
       this.overIn = u;
     } else if (this.st === ST_SWING) {
       if (t < this.tCon) {
@@ -2086,8 +2115,11 @@ export class Avatar {
     if (this.inertial && (Avatar.inertMask & 24) !== 0) { this.keyT = t; this.smoothKey(); }
     // Low balls: bend the knees (contact or plan height), scaled by the stroke's weight.
     const cy = this.hasCon ? this.conW.y : 1;
-    this.crouch = (f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) + (f.sit ?? 0)) * this.w;
-    this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w : 0;
+    const toBall = this.st === ST_SWING ? this.tCon - t : this.st === ST_PREP ? (this.hasCon ? this.tPlan - t : HOLD_FAR) : 0;
+    const nearOff = (sim.phase !== PH_RALLY || f.over ? 1 : smoothstep(LEAN_FROM, LEAN_FULL, toBall)) - this.nearW, nearLim = NEAR_RATE * this.dt;
+    this.nearW += nearOff > nearLim ? nearLim : nearOff < -nearLim ? -nearLim : nearOff;
+    this.crouch = (f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) + (f.sit ?? 0)) * this.w * this.nearW;
+    this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w * this.nearW : 0;
     // Up out of it after the ball: with the whole body tipping into the run the trunk was at 42 degrees at +0.24 s.
     if (this.st === ST_SWING || this.st === ST_FADE) this.bendW *= 1 - BEND_UP * smoothstep(0, BEND_UP_T, t - this.tCon);
   }
@@ -3197,13 +3229,20 @@ export class Avatar {
       // other in a frame, a 128-degree pop)
       const wasOff = this.footOff[side]!;
       let off = wasOff + wrapAngle(wrapAngle(Math.atan2(-v1.z, v1.x) - pelvis) - wasOff);
-      this.footOff[side] = off;
-      if (off > FOOT_OFF_HIPS || off < -FOOT_OFF_HIPS) {
-        const to = off > 0 ? FOOT_OFF_HIPS : -FOOT_OFF_HIPS;
-        qWalk.setFromAxisAngle(AXIS_Y, to - off);
+      // (over to the other side when the body has gone round it, no faster than a foot turns: in a frame it is that pop)
+      const footLim = FOOT_TURN_RATE * this.dt;
+      let footTo = off > FOOT_OFF_HIPS ? FOOT_OFF_HIPS : off < -FOOT_OFF_HIPS ? -FOOT_OFF_HIPS : off;
+      if (footTo - wasOff > footLim) footTo = wasOff + footLim;
+      else if (wasOff - footTo > footLim) footTo = wasOff - footLim;
+      if (footTo !== off) {
+        qWalk.setFromAxisAngle(AXIS_Y, footTo - off);
         FQ.premultiply(qWalk);
-        off = to;
+        off = footTo;
       }
+      // (what the foot was left at, not what it asked for: kept before the limit it could run a whole turn off the hips,
+      // which reads as no turn at all, and the foot stayed 65 degrees round for the rest of the match, 15 feet of 32 in
+      // 20 minutes; review round 17, the biomechanist's #1)
+      this.footOff[side] = off;
       const kh = pelvis + (off > KNEE_OFF_HIPS ? KNEE_OFF_HIPS : off < -KNEE_OFF_HIPS ? -KNEE_OFF_HIPS : off) + (side === 0 ? KNEE_OUT : -KNEE_OUT);
       // (level: the clip's own bend pointing down the leg left the pole on the leg's line, and the knee of a foot coming
       // down to land swung 100 degrees off the hips)
@@ -4188,7 +4227,7 @@ export class Avatar {
       const ang = Math.acos(cs < -1 ? -1 : cs > 1 ? 1 : cs);
       // Only to reach the ball: a finish out of the arm's reach bent the trunk 38-53 degrees after it, a body folded in half.
       const done = this.st === ST_FADE || (this.st === ST_SWING && this.lastT >= this.tCon);
-      const phi = done ? 0 : Math.min(ang, excess / Math.max(al, 0.1), SPINE_REACH) * smoothstep(SPINE_REACH_BACK1, SPINE_REACH_BACK0, ang);
+      const phi = done ? 0 : Math.min(ang, excess / Math.max(al, 0.1), SPINE_REACH) * smoothstep(SPINE_REACH_BACK1, SPINE_REACH_BACK0, ang) * this.nearW;
       // Axis a x b.
       const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
       const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
@@ -4241,11 +4280,14 @@ export class Avatar {
     // On the way back to ready the arm stays bent: the hand's way from the finish to the ready key passes further from
     // the shoulder turning under it than the arm is long, and the elbow went 132, 41, 97 in a fifth of a second.
     this.recoverW += ((this.st === ST_FADE ? 1 : 0) - this.recoverW) * (this.dt > 0 ? 1 - Math.exp(-this.dt / RECOVER_EASE) : 1);
-    if (this.recoverW > 0.001) {
+    // So does a carried racket: a contrapared's and a lob's back keys were still out of reach at half their weight.
+    this.heldBent += ((this.st === ST_PREP ? clamp01((1 - this.holdW) / (1 - HOLD_CARRY)) : 0) - this.heldBent) * (this.dt > 0 ? 1 - Math.exp(-this.dt / RECOVER_EASE) : 0);
+    const bent = Math.max(this.recoverW, this.heldBent);
+    if (bent > 0.001) {
       const e = ua.matrixWorld.elements;
       const dx = this.tgt.x - e[12]!, dy = this.tgt.y - e[13]!, dz = this.tgt.z - e[14]!;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const lim = this.armLen * (1.05 - (1.05 - RECOVER_ARM) * this.recoverW);
+      const lim = this.armLen * (1.05 - (1.05 - RECOVER_ARM) * bent);
       if (d > lim) {
         const r = lim / d;
         this.tgt.set(e[12]! + dx * r, e[13]! + dy * r, e[14]! + dz * r);

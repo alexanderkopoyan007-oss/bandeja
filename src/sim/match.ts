@@ -1001,6 +1001,11 @@ export class MatchSim {
   private readonly readX = [-0, -0, -0, -0];
   private readonly readZ = [-0, -0, -0, -0];
   private readonly focusWins = makeWindows();
+  /** Where a human's next ball is read as going, across (m, read by how sure of it), from where they stand now; 0 for an AI. */
+  readAcross(i: number): number {
+    return this.ai[i] ? 0 : this.readOn[i]! * this.readX[i]! * (this.players[i]!.pos.x >= 0 ? 1 : -1);
+  }
+
   /** Each player's wait for the ball to go by (holdShort; humans: an AI keeps its own). */
   private readonly hold: Hold[] = [{ x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }, { x: -0, z: -0, t: -0 }];
   /** Walls the ball has touched since its last bounce or strike (carried into re-predictions). */
@@ -1425,12 +1430,13 @@ export class MatchSim {
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
       if (abs(delta) > TIMING.miss * scale) {
-        // Let go before the ball has reached the floor: there is nothing yet to swing at, so it is no swing. The ball is
-        // caught and dropped again. As a miss, a tap was a fault and two taps a double fault, seven seconds into the game
-        // (review round 16, the critic's #1).
+        // Let go before the ball has reached the floor: there is nothing yet to swing at, so it is no swing, and the ball
+        // goes on down for the next press. As a miss, a tap was a fault and two taps a double fault, seven seconds into the
+        // game (review round 16, the critic's #1); put back in the hand, the ball jumped a metre up and hung by a server
+        // swinging at nothing (round 17, the biomechanist's #4).
         if (delta < 0 && this.tossBounces === 0) {
-          this.whiff(i, t);
-          this.retoss();
+          p.swing = SW_IDLE;
+          p.grade = -1;
           return;
         }
         // 6.6: the swing is the serve; missing the ball is a fault (7.1.b).
@@ -1618,7 +1624,9 @@ export class MatchSim {
     const r = this.req;
     if (feed) {
       const rr = this.aiRng;
-      r.targetX = (rr.next() < 0.5 ? -1 : 1) * (feed.x[0]! + (feed.x[1]! - feed.x[0]!) * rr.next());
+      // (to the player's side: across a 10 m court, in the side glass drill they played 29% of the feeds)
+      const drillSide = this.players[this.score.receiverPlayer()]!.pos.x >= 0 ? 1 : -1;
+      r.targetX = drillSide * (feed.x[0]! + (feed.x[1]! - feed.x[0]!) * rr.next());
       r.targetZ = -s * (feed.depth[0]! + (feed.depth[1]! - feed.depth[0]!) * rr.next());
     } else if (serving) {
       const bx = this.box;
@@ -1668,8 +1676,9 @@ export class MatchSim {
     r.motor = ai ? ai.motor(this.lastPressure * ai.steadied(b.pos.y)) * (1 - READ_CUT * read)
       : humanMotor(p.grade, this.lastPressure * (shot === SHOT_VOLLEY ? blockShare(b.pos.y) : 1));
     if (!ai && !serving && !feed) {
-      // (each side's own way round: ends change)
-      const dx = r.targetX * s - this.readX[i]!, dz = abs(r.targetZ) - this.readZ[i]!;
+      // (the way across as seen from where they stand, + down the line: the same ball from the other corner is the same
+      // ball, and one aim across the court read as two places; review round 17, the pro's #1)
+      const dx = r.targetX * (p.pos.x >= 0 ? 1 : -1) - this.readX[i]!, dz = abs(r.targetZ) - this.readZ[i]!;
       this.readOn[i]! += (1 / (1 + (dx * dx + dz * dz) / (READ_WIDE * READ_WIDE)) - this.readOn[i]!) * READ_RATE;
       this.readX[i]! += dx * READ_RATE;
       this.readZ[i]! += dz * READ_RATE;

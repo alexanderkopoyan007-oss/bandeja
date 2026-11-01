@@ -130,6 +130,19 @@ const LENGTH: Record<MatchSetup['length'], { setsToWin: number; gamesPerSet: num
   three: { setsToWin: 2, gamesPerSet: 6 },
 };
 
+/**
+ * The same people play the same way: dealt from each match's seed, a partner changed style under the same name between
+ * a knock-out's rounds (review round 17, the critic's #5). A choice in the menu stands. `all`: the opponents too (a rematch).
+ */
+export function keepStyles(styles: string[], setup: MatchSetup, castSeed: number, all: boolean): void {
+  const dealt = dealStyles(castSeed, styles.length);
+  if (styles.length === 4 && setup.partner === 'random') styles[2] = dealt[2]!;
+  if (all && setup.opponents === 'random') {
+    styles[1] = dealt[1]!;
+    if (styles.length === 4) styles[3] = dealt[3]!;
+  }
+}
+
 /** A game from the menus: the player's match (`attract` false) or the AI match behind the title screen. */
 export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, avatar: PlayerAsset | null, attract: boolean,
   params: URLSearchParams): GameOptions {

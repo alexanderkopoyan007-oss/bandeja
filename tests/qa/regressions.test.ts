@@ -69,7 +69,7 @@ describe('serve rules (QA army, FIP 6.6 and 7.1.b)', () => {
     expect(bounced).toBe(0);
     expect(events(m, seq, E_FAULT).length).toBe(0);
     expect(events(m, seq, E_HIT).length).toBe(0);
-    expect(m.phase).toBe(PH_SETUP);
+    expect(m.phase).toBe(PH_TOSS);
   });
 
   it('a dropped ball nobody swings at is not a serve: it bounces twice, the server picks it up and serves again', () => {
