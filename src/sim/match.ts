@@ -17,7 +17,7 @@ import {
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, SHOT_CONTRAPARED, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
-import { findWindows, BEHIND_MAX, makeWindows, OH_ANY, reachAt, type ContactWindow } from './contact/windows.ts';
+import { findWindows, BEHIND_MAX, makeWindows, OH_BANDEJA, OH_SMASH, OH_VIBORA, reachAt, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { holdShort, makeStandPlan, planStand, type Hold, type StandPlan } from './player/positioning.ts';
 import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/formation.ts';
@@ -875,12 +875,17 @@ export class MatchSim {
       const volleyKey = this.goingVolley(p);
       const live = st.valid && t0 < st.t + 0.1 && st.overhead === overhead && st.volleyKey === volleyKey;
       const close = live && st.t - t0 < 0.35;
+      // The overhead this ball is planned as: what is held, settled by the time the ball is close, so the ring stands
+      // still for a late Space. A bandeja, a víbora and a smash are each met at their own height, as an AI's are: all
+      // planned at the smash's 2.35 m, every bandeja was a leap and the víbora came down at 107 km/h (review round 15).
+      if (!close) this.ohHuman[i] = p.heldMod === MOD_POWER ? OH_SMASH : p.heldMod === MOD_PRECISION ? OH_VIBORA : OH_BANDEJA;
+      const oh = this.ohHuman[i]!;
       if (this.pred.version !== st.version || !live || (!close && (this.tick & 7) === 0)) {
         const keep = live ? st.t : -1;
-        if (!(close && planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, true, overhead, volleyKey))) {
-          planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, false, overhead, volleyKey);
+        if (!(close && planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, true, overhead, volleyKey, oh))) {
+          planStand(this.pred, p, s, t0, this.rally.isServe, st, keep, false, overhead, volleyKey, oh);
           if (volleyKey && !(st.valid && st.inTime && st.volley)) {
-            planStand(this.pred, p, s, t0, this.rally.isServe, st, -1, false, overhead, false);
+            planStand(this.pred, p, s, t0, this.rally.isServe, st, -1, false, overhead, false, oh);
             st.volleyKey = true;
           }
         }
@@ -988,6 +993,8 @@ export class MatchSim {
 
   /** How much a human's balls have been going to one place (0..1; READ_WIDE), and that place, on their own side's terms. */
   private readonly readOn = [-0, -0, -0, -0];
+  /** The overhead a human's ball is planned as (windows.ts OH_*). */
+  private readonly ohHuman = [OH_BANDEJA, OH_BANDEJA, OH_BANDEJA, OH_BANDEJA];
   private readonly readX = [-0, -0, -0, -0];
   private readonly readZ = [-0, -0, -0, -0];
   private readonly focusWins = makeWindows();
@@ -1428,7 +1435,7 @@ export class MatchSim {
     const s = this.side(team);
     const mustBounce = this.rally.isServe;
     const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
-      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY, this.ai[i] ? this.ai[i].ohKind : OH_ANY, this.contraGlass(i));
+      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY, this.ai[i] ? this.ai[i].ohKind : this.ohHuman[i]!, this.contraGlass(i));
     let w: ContactWindow | null = null;
     for (let k = 0; k < n; k++) {
       const c = this.windows[k]!;
@@ -1638,7 +1645,7 @@ export class MatchSim {
     this.lastPressure = serving ? 0 : pressureOf(sqrt(v.x * v.x + v.y * v.y + v.z * v.z), this.time - this.lastStrikeTime, d, p.speed(), b.pos.y, walls > 0, walls > 1);
     const ai = this.ai[i], by = this.lastStrikePlayer;
     const read = ai && by >= 0 && !this.ai[by] && this.players[by]!.team !== team ? this.readOn[by]! * ai.level : 0;
-    r.motor = ai ? ai.motor(this.lastPressure) * (1 - READ_CUT * read) : humanMotor(p.grade, this.lastPressure);
+    r.motor = ai ? ai.motor(this.lastPressure * ai.steadied(b.pos.y)) * (1 - READ_CUT * read) : humanMotor(p.grade, this.lastPressure);
     if (!ai && !serving && !feed) {
       // (each side's own way round: ends change)
       const dx = r.targetX * s - this.readX[i]!, dz = abs(r.targetZ) - this.readZ[i]!;
@@ -1831,7 +1838,7 @@ export class MatchSim {
     // Same look-back as the release is judged with: windows must include the moments just gone, or the ideal
     // of a window you are already in slides forward with the clock and the cue never closes.
     return findWindows(this.pred, p.pos.x, p.pos.z, this.side(team), this.rally.isServe, 1, p.tune, out, this.time - RELEASE_LOOKBACK,
-      this.goingOverhead(p), this.goingVolley(p), this.ai[i] ? this.ai[i].ohKind : OH_ANY, this.contraGlass(i));
+      this.goingOverhead(p), this.goingVolley(p), this.ai[i] ? this.ai[i].ohKind : this.ohHuman[i]!, this.contraGlass(i));
   }
 
   /** Fingerprint of the full sim state (determinism checks). */

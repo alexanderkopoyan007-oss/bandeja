@@ -206,14 +206,29 @@ export class SimpleAi {
   }
 
   /**
+   * The share of a ball's pressure that reaches the swing (motor). A volley at the chest is a block, at the net or on
+   * the way in: the pace and the short clock that make it a forced ball on the analyst's sheet ask little of a racket
+   * already there. In full, an AI at the net missed 16% of flat balls at the chest against 3% at the knees; published
+   * 3.4-4.8 a volley (review round 15).
+   */
+  steadied(height: number): number {
+    if (!this.volleying) return 1;
+    const u = clamp((height - BLOCK_FROM) / (BLOCK_TO - BLOCK_FROM), 0, 1);
+    return 1 - BLOCK_CUT * u;
+  }
+
+  /**
    * How steady the swing is for this contact height (ShotRequest.control). At the net the clock is always short, so
    * pressure alone can't tell a sitter from a shoe-top ball: the height can. A ball above the tape is the one a net
    * player kills, the one at the shoes is the one that hurts them (sitters were lost 11.8% of the time, shoe-tops 1.6%:
    * review round 5, the pro's #2).
    */
   control(height: number): number {
-    if (!this.volleying || this.conDepth >= 5) return 1;
-    return height >= SITTER_H ? SITTER_CONTROL : height < SHOE_H ? SHOE_CONTROL : 1;
+    if (!this.volleying) return 1;
+    // (a low ball hurts on the way in as well: a return at the feet of a server running up cost the AI 1.6% of its
+    // replies, and the textbook return was the worst of five; review round 15)
+    if (height < SHOE_H) return SHOE_CONTROL;
+    return this.conDepth < 5 && height >= SITTER_H ? SITTER_CONTROL : 1;
   }
 
   onStrike(m: MatchSim, striker: number): void {
@@ -1222,6 +1237,10 @@ const BACK_LINE = 0.22;
 /** A net volley against two back over VOLLEY_ANGLE_H (m) is put away on the angle VOLLEY_ANGLE of the time. */
 const VOLLEY_ANGLE_H = 1.0;
 const VOLLEY_ANGLE = 0.8;
+/** A net volley's height over which pressure counts for less, and how much less at the top of it (SimpleAi.steadied). */
+const BLOCK_FROM = 0.75;
+const BLOCK_TO = 0.95;
+const BLOCK_CUT = 0.5;
 /** Net volleys at or over SITTER_H (m) and under SHOE_H: the swing's spread (SimpleAi.motor), m taken off the depth. */
 const SITTER_H = 0.95;
 const SITTER_CONTROL = 2.2;
