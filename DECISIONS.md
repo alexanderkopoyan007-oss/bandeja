@@ -3127,3 +3127,20 @@ Your drive at 79 km/h against the AI's 62-64 is not a bug: you aim 7.2 m deep by
 
 **FPS,** alternating runs on a busy machine, shipped against this build: Medium 4x throttled 112.5, 108.5 against 124.4, 98.0; High 216.5, 187.7 against 194.6, 186.0; paced 120.5 in all. No cost I can tell from the load. Alloc 6/8/9 (budget 10).
 
+## Round 13: what the fourth review from the owner's seat found (2026-11-01)
+
+**A held key is a carried racket.** The stroke's weight drove everything from the press: the turn, the arm, the bends for a low ball, the share of the run's lean. A key goes down a second before the ball, and the game asks for that, so a player ran a second bowed over a ball still metres away. Holding the bends back alone fixed the trunk and left the arm locked. The arm was the harder part: the hand reaches the end of the arm at about 0.6 of the back key, so the full weight has to come late, and at 0.5 the racket hung by the hips, in and out of `racketClear`, one pop a stroke. At 0.3 it stays in front, and both arms keep the run's swing. The key press still shows at once, as a turn. Overheads and the serve are left alone: a raised arm long before the ball is right there.
+
+**One line was not the fix.** The reviewers' tested fix for the foot, moving the store below the clamp, stopped the winding and brought back the 130-degree flip it had been written to cure. The carried value exists to stop that flip. Keeping it bounded needs a rate as well, and the rate has to cover a jump inside the limit too, or the pop comes back as a 91-degree step. A cut clears it, for two frames, because the clip's pose lands a frame after the feet are placed.
+
+**A read that moves feet.** Rounds 10-12 each closed one lane with a constant. The sceptic lowered this round's hole because a human can't hold the spot at default key aim, and could have stopped there. I did not, because the same hole has been found three rounds running: nothing in the game answered a repeated ball nobody reaches. A pair that leans to it answers the whole family, and leaves the other side open, which is what a repeated pass costs on a real court. `READ_LEAN` 0.35 has no published source. Round 7 rejected a wider stance for opening the middle; this is a lean and not a wider stance, and only for a ball that has been read.
+
+**A serve's contact can wait for the swing.** Everywhere else a late release is the contact, because the ball is moving and a player must meet it. A serve's ball is nearly still at its top. So a human's serve meets the ball 50 ms after the release (the ideal is 20 ms before the apex, and within 80 ms the height changes by 3 cm or less) and the grade stays the release's. It costs nothing a player can feel and takes away both the stall and the jump. Round 11 had called the stall the price of "release = contact", and for the serve it was not.
+
+**The roof is cut after the errors.** The solver's margin is spent before the swing's errors, so a bigger margin only shortened every shot. A cap at the end on the ball's rise is the one place that sees what really left the racket. A ball off the frame is left alone.
+
+**A side-on run takes 0.3 s to enter.** At 0.2 s, on top of the body's own turn, the hips made most of the snaps. Slower costs the legs nothing I can measure: leg pops did not rise.
+
+**Left alone.** `UP_HALF_GAP` 1.7 was the reviewers' tested fix for the aim hole. Round 7 rejected that width for opening the middle, and the read closes the hole without it. The first-match cliff and a big-point mark are the owner's menu and HUD to decide.
+
+**Numbers.** AI against AI and FPS are in REVIEW.md Round 13. Alloc: 8 and 9 collections against a budget of 10.
