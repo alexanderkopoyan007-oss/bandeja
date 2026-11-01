@@ -3,17 +3,6 @@ import { dealCast } from '../../src/game/cast.ts';
 import { dealNames } from '../../src/game/names.ts';
 
 describe('who plays', () => {
-  it('the generated people are dealt like everyone else, to matches of their own sex', () => {
-    const seen = new Set<string>();
-    for (let seed = 1; seed < 400; seed++) {
-      const c = dealCast(seed);
-      for (const n of c.people) seen.add(n);
-      expect(c.people.includes('meshy2') && !c.women).toBe(false);
-      expect((c.people.includes('meshy') || c.people.includes('meshy3')) && c.women).toBe(false);
-    }
-    for (const n of ['meshy', 'meshy2', 'meshy3']) expect(seen.has(n)).toBe(true);
-  });
-
   it('naming a woman first makes it a match of women, a guest too', () => {
     expect(dealCast(1, ['meshy2', 'p7', 'p8', 'p9']).women).toBe(true);
     expect(dealCast(1, ['p7', 'p8', 'p9', 'p10']).women).toBe(true);

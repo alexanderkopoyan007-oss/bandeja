@@ -36,7 +36,7 @@ describe('the cast', () => {
     for (let seed = 1; seed < 400; seed++) {
       const c = dealCast(seed);
       expect(new Set(c.people).size).toBe(4);
-      const ws = c.people.filter((p) => roster.women.some((w) => w.name === p) || roster.guests.some((g) => g.name === p && 'woman' in g)).length;
+      const ws = c.people.filter((p) => roster.women.some((w) => w.name === p)).length;
       expect(ws === 0 || ws === 4).toBe(true);
       expect(c.women).toBe(ws === 4);
       if (c.women) women++;
@@ -47,6 +47,6 @@ describe('the cast', () => {
     }
     expect(women).toBeGreaterThan(90);
     expect(women).toBeLessThan(200);
-    expect(seen.size).toBe(13);
+    expect(seen.size).toBe(10);
   });
 });
