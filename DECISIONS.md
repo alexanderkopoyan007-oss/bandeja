@@ -3264,7 +3264,7 @@ Your drive at 79 km/h against the AI's 62-64 is not a bug: you aim 7.2 m deep by
 
 ## Round 15: the block, the tray and the arms that sat at their stops (2026-11-01)
 
-**A key that reaches past the arm.** The forehand's and backhand's take-backs had the hand 0.75-0.8 m from the shoulder of a 0.58 m arm, so the elbow sat at its stop from the backswing to the ball and no wrist number could say so. I moved the hand in and lowered `arm`, so the body goes to the ball. Lowering `tip` as well cost the wrist almost nothing: 0.73 at the ball at 20 degrees against 0.77 at 25. Check a key's reach with arithmetic before scanning its angles.
+**A key that reaches past the arm (wrong, see Round 16).** I read the elbow at its 30 degree stop as a fault, moved the hand in and lowered `arm`. The footage has that elbow at 30-31 at -0.22 s, so the long arm was right and the change put the forearm in the trunk.
 
 **The block goes through the held-key path.** A reflex reaches 0.2 s ahead and presses like a key, so it gets the swing, the stroke and the timing of a normal volley. A new `p.reflex` lets a real press take over, and the swing is dropped if the ball stops coming.
 
@@ -3275,3 +3275,19 @@ Your drive at 79 km/h against the AI's 62-64 is not a bug: you aim 7.2 m deep by
 **Hints retire, they don't move.** Six showings each, in localStorage. Their position is a cue, and cues don't change without the owner seeing them.
 
 **Numbers.** REVIEW.md Round 15. The wrist test now covers carry, tap and address: `med('ready')` had hidden them.
+
+## Round 16: the footage outranks a reviewer (2026-11-01)
+
+**What went wrong.** Round 15's body-mechanics reviewer called an elbow of 30 locked, and I moved the hands in. The numbers it asked for improved and the poses got worse: forearms over 5 cm inside the trunk went from 2.7% to 51% at the forehand take-back, 38% to 88% on the serve's finish. No check saw it, because `clip.handTorso` reads the mannequin, whose chest is .112 m with an arm of .55, and people have .142-.149 m with arms of .473-.519 m. docs/research/footage-pose.md had the answer all along. A pose change now goes against that table and a real body (p1 and a generated one) first, and `tests/render/armClear.test.ts` fails the old build at 27% and 40%.
+
+**Key positions are relative to the root, and the body moves.** `intoBall` carries the chest about 0.2 m forward after the ball, so a hand keyed for a standing body goes through it. The serve's finish had to go forward of where a standing person's would.
+
+**A second shot key takes over.** The alternatives were to change the hint or to ignore the first key. The hint is right about what a player wants: on a lob, you see it after you've pressed. Only the rally, only a human, and the release that counts is the new key's, so the old key coming up does nothing.
+
+**The bandeja stays at 1.0.** Lower is more real at the net and costs more than it gives: .7 sends it into the net at 17.5% failures. It needs a flatter path or more pace, not a lower target. Left open.
+
+**Contrapared 1.1.** Small and in the right direction on both seed blocks. Kept on that basis, not on the size of the move.
+
+**REFLEX_SEE stays.** The scan was identical because no reflex fired in the sample. That says nothing either way, so the value stays.
+
+**Numbers.** REVIEW.md Round 16.

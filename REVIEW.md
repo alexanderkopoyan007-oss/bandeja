@@ -540,10 +540,10 @@ Three reviewers on the shipped build, this time with a body-mechanics reviewer i
 | 3 | Medium (was High) | **Hints never stop,** and sit on your own players. | Half. Each hint retires after six showings, kept in the browser. The position is unchanged, and no cue is restyled without the owner seeing it |
 | 4 | Medium (was High) | **Steer a smash and it loses its kill depth.** | **Fixed.** A and D no longer freeze depth, a key held from the run in isn't a steer. Winners by contact depth 42/41/30 (was 25/27/23; untouched 50/43/36). Space pressed late stays deep: the stance was the bandeja's, so it can't be a true smash |
 | 5 | Medium (was High) | **The wrist fix missed the between-point poses,** one frame in five bent about 100 degrees. | **Fixed.** Carry 2.28 to 0.34, address 2.14 to 0.50, tap 2.02 to 0.54-0.81, and now in the wrist test |
-| 6 | Medium (was High) | **The ready pose held both arms out nearly straight.** | **Fixed.** Free elbow 15 to 44-52 (footage 45-47), racket elbow 61 |
+| 6 | Medium (was High) | **The ready pose held both arms out nearly straight.** | Reversed, then redone. This fix put the hands in the trunk (Round 16 #2). Ready now has the elbows out, racket elbow 47, free elbow 30; the footage's free elbow of 45-47 is what clearing the body cost |
 | 7 | Medium (was High) | **The hit is not the racket's fastest moment.** | Better. Smash 9 at the ball to 12, the head coming through later; a serve leaves the ball at 10.6 m/s, not 8 (a cap in the follow-through). The peak is still two frames early, and the sim's face speed is still about three times the drawn one |
-| 8 | Low (was High) | **After every serve the racket goes into the server's face.** | **Fixed.** It stood up in front of the nose, 5 cm off. Now past the far shoulder, 13-20 cm from the skull's centre, elbow 103 |
-| 9 | Medium | The forehand arm sat at its stop from the take-back to the ball. | **Fixed.** The key had the hand 0.8 m from the shoulder of a 0.58 m arm. Elbow 96, 66, 35, 53, 69 through the swing (was 30 all the way), wrist 0.73 at the ball |
+| 8 | Low (was High) | **After every serve the racket goes into the server's face.** | Reversed, then redone. This fix put the arm through the chest (Round 16 #1). The hand now goes on in front of the chest, the racket across to the far shoulder |
+| 9 | Refuted | The forehand arm sat at its stop from the take-back to the ball. | **Wrong finding, and I acted on it.** The footage has the elbow at 30-31 at -0.22 s. Moving the hand in sank the forearm into the trunk. Back on the footage since Round 16 #2 |
 | 10 | Medium | The menu misdescribes the partner, and the TV camera. | **Fixed.** Copy only |
 | 11 | Medium | The AI lob-volleys chest-high balls from the net. | **Fixed.** Not above 1 m. Six thousand points, unseen seeds: shots 10.75 to 10.66, serving pair 66.3 to 66.5, within noise |
 | 12 | Medium | Perfect barely beats Good, and a held key is graded Perfect | Open |
@@ -566,7 +566,7 @@ Frame rate on the fix: 120.5 fps paced, 8.3 ms, none over 20 ms, 82 draw calls, 
 
 ## Round 16 (2026-11-01, on 442eefb; "review round 21" in the code's comments)
 
-Three reviewers and a sceptic on the shipped build, seeds from 2381000: 26 findings, five reached the sceptic, none stayed High. Its best catch was against Round 15 itself: **the arms had been moved into the body.** Round 15 #8 and #9 acted on a reviewer's reading that an elbow at 30 was wrong, when the footage has it at 30-31 at -0.22 s. The numbers it improved were real and the poses got worse, and no check saw it, because `clip.handTorso` reads the mannequin, a thinner body with longer arms.
+Three reviewers and a sceptic on the shipped build, seeds from 2381000: 22 findings, five reached the sceptic, none stayed High. Its best catch was against Round 15 itself: **the arms had been moved into the body.** Round 15 #8 and #9 acted on a reviewer's reading that an elbow at 30 was wrong, when the footage has it at 30-31 at -0.22 s. The numbers it improved were real and the poses got worse, and no check saw it, because `clip.handTorso` reads the mannequin, a thinner body with longer arms.
 
 | # | Rank | Finding | Status |
 |---|---|---|---|
@@ -576,4 +576,21 @@ Three reviewers and a sceptic on the shipped build, seeds from 2381000: 26 findi
 | 4 | Medium | The forehand elbow flicks out and back before the ball | **Fixed** with #2: the wobble was the shortened take-back |
 | 5 | Medium | Jump smash: the hips' debt moved to the landing | **Fixed.** 0.6 m/s after the ball in the air, 1.2 on landing. Lurch 2.7 to 1.3-1.6 m/s, hips off the feet 17 to 11 cm, in-air speed still 0.84 (was 2.5) |
 | 6 | Medium | Low volleys: more bow, straighter arm | **Fixed.** Played from the knees (`VOLLEY_DOWN`). Ball at 0.65-0.8 m: trunk 39 to 31, elbow 33 to 60 (video 63), hips 0.79 to 0.66 |
+| 7 | Medium (was High) | On a lob, the hint says press O, and doing so loses the point | **Fixed.** A second shot key takes over the held swing, and only its own release counts. Stand-in who follows the hint, 40 sets: lob whiffs 492 to 1, points won 32.5 to 48.8%, sets 0 to 14 |
+| 8 | Medium (was High) | The bandeja sits at chest height for whoever is at the net | Open, tried. `netClear` .7 failed: the stroke's failures 8 to 17.5% (real about 3), shots 10.69 to 10.37. Stays 1.0 |
+| 9 | Refuted (was High) | Off the glass the AI misses two to three times too often | **Refuted by the sceptic.** Unforced 8.0 against 5.4-6.3 like for like: the excess is how many balls come off the glass. "Own fence" under one failed a set from your partner. Contrapared fails 29% against about 18 was real: `errorScale` 1.35 to 1.1, double-wall UE 17.9 to 16.5 and 18.3 to 17.3 on two seed blocks, serving pair .659 to .639 and .663 to .658 (real about .62) |
+| 10 | Medium | A lob from the net goes to 10 m and often flies out | **Fixed.** Clearance halves near the net (`nearClear`). Top p50 under 2.5 m out 10.0 to 6.1 m, 2.5-3.5 m out 8.9 to 5.7; over 9 m 73% to 4%, 48% to 5%; out 19 to 9% from 2.5-3.5 m |
+| 11 | Medium | Your Perfect drop volley goes in the net one time in eight | **Fixed.** A capped control bonus on a human's drop volley. All grades, Pro, 40 sets: you E 5.0%, W 36.7%; AI E 2.2%, W 41.7%. The AI keeps its edge: it is not graded |
+| 12 | Medium | A fifth of a second on A or D turns a safe serve into a fault | **Fixed.** Aim 4.5 m/s, .55 m inside the box edge. Stand-in aiming wide: first faults 70 to 39%, double faults 68 to 44% of second serves, serve points won 56.7 to 59.5%. Still high: it aims at the edge on purpose |
+| 13 | Medium | The teaching hints are used up in the first two minutes | **Fixed.** One count a point, after a second on screen. "Lob coming" 7th showing point 5 to 33. "Show hints again" in the menu |
+| 14 | Medium | The menu says Space works as you let go, and pressing it then gives half a smash | **Fixed in the words.** The stance is the bandeja's by then, so the menu says hold it before the ball drops |
+| 15 | Medium | M, P and H sit by the shot keys and change the game with no message | Half. M and P say what they did. H is unchanged |
+| 16 | Medium | Club resets to Advanced on every reload | **Fixed.** The version number went through the 0-1 clamp |
+| 17 | Medium | Legs on a change of direction: thigh thrown wide, hips drop | Open |
+| 18 | Medium | The reflex block's racket misses the ball in space half the time | Open, not reproduced. `REFLEX_SEE` .3 changed nothing on 60 strokes because no reflex fired in them; of 13 hits with no key, 1 was over 25 cm off |
+| 19 | Medium | One rally hit in 15-20 leaves before the racket is there | Open |
+| 20 | Medium | The Auto timing option plays better than a good human hand | Open |
+| 21 | Low | A clean winner is called "Double bounce" | **Fixed.** "Winner" |
+| 22 | Low | The reflex block is graded as if you played it | **Fixed.** No grade |
 
+Six thousand points on unseen seeds, the live build against this one: shots 10.64 to 10.69, seconds 14.10 to 14.20, W/FE/UE 44.8/23.5/31.8 to 43.9/23.3/32.8, serving pair .655 to .659, all within noise. With the contrapared change: .640 and .658.
