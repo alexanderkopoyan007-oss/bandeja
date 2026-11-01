@@ -405,10 +405,11 @@ const LEAN_FULL = 0.1;
  * player ran that second stooped over a ball still metres away, the arm locked at the back key and both arms dead (trunk
  * 35 at -500 ms, the AI 11; head 1.33 m, free 1.43; review round 17, the biomechanist's #2). The stroke's share of the
  * body while the racket is carried, and the time before the ball (s) it starts to take the rest and has it (the hand is
- * at the end of the arm from about 0.6 of the share, so it has to come late: elbow 30-31 at -0.22 s on video). No later
- * than the groundstrokes' lead, or a forward swing would start from a carried racket.
+ * at the end of the arm from about 0.6 of the share, so it has to come late: elbow 30-31 at -0.22 s on video; at 0.5 the
+ * racket hung beside the hips, in and out of racketClear, a pop a stroke). No later than the groundstrokes' lead, or a
+ * forward swing would start from a carried racket.
  */
-const HOLD_CARRY = 0.5;
+const HOLD_CARRY = 0.3;
 const HOLD_FAR = 0.45;
 const HOLD_NEAR = 0.32;
 /** Fastest that share changes (per second): a plan can jump when the ball hits something. */
