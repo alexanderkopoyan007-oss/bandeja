@@ -405,3 +405,14 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **The overhead's racket drop.** 1.4 rad and 1.9 are by eye from the coaching clips, with the speeds under the sim's. Settled by: one slow-motion clip of a pro's bandeja from
   the side, measured for how far the head falls below the hand.
 - **The cut-away's back corner.** The lens sits inside the court, as the net post's does. Settled by: watching a few points; a corner camera outside the glass would need the glass drawn in front of it.
+
+## Phase 9 (expert review: rounds 10 to 16)
+- **Nobody has played it by hand.** Every "you" in rounds 10-16 is a scripted stand-in with perfect sight of the ball's path. Settled by: the owner playing twenty points at default settings and saying what felt wrong.
+- **The sound.** Never listened to by anyone. Settled by: a minute of a match on laptop speakers. Better recordings need CC0 files from a Freesound account, and the owner's OK.
+- **Routine shots fail at half the real rate:** groundstroke 3.0% against 6.1-7.3, volley 4.5 against 6-7. Raising it is measured to shorten rallies and bring W from 44 towards 40, and would make the partner miss more. Settled by: the owner choosing, after playing, whether the partner should.
+- **The first match is a long loss at default.** Settled by: the owner choosing the default level.
+- **A lob from the net.** It now peaks about 6 m, and the project has no published height: that a real one is well under 9 m is from memory. Settled by: side-on footage of three lobs from the net, with the fence's 4 m as the scale.
+- **How far the hips go off the feet at a hard stop.** `LEAN_HIP` .6 was chosen on what the joints did, and the footage table has no stops. Settled by: two side-on clips of a pro stopping from a run, reading hips against front foot.
+- **Flight in a run.** 25-35% is from running research, not padel steps. Settled by: side-on footage of a pro covering the court, frames with both feet up.
+- **Forced or unforced.** Ours is a formula, the paper's a coder's eye, so only the totals compare. Settled by: scoring one coded match by both.
+- **Generated people up close.** Their eyes don't follow the ball, cloth has no hem lag, hair is solid. Settled by: the owner saying whether this reads at the TV camera.

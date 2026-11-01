@@ -695,6 +695,34 @@ The rally run is drawn now instead of played from the clips, and a side-on strip
 - **Into the ball.** Hips 6-14 cm behind the feet at contact to about level or ahead.
 - **Around them.** A singles winner throws both arms up, and there is an umpire on the chair.
 
+### Review rounds 10 to 16 (1 Nov, `REVIEW.md`)
+After the owner's verdict ("this game is straight ass so far"), every round was judged from their seat: a human at player 0, an AI partner, default settings, counting what looks wrong, not averages.
+
+- **Round 10.** Your own swing stopped short and snapped, the racket whipped back after the ball, the serve's arm met the ball folded, one key beat Pro.
+- **Round 11.** A held swing could read past the end of the ball's path and leave a player invisible for the match. Your swing braked before the ball. Volleys were a sideways chop. Every overhead you hit was a leap on a straight leg. The AI at the net missed chest-high balls more than knee-high ones.
+- **Round 12.** A low slice past the net pair beat every level. The bandeja's arm darted and recoiled. A tapped opening serve was a fault.
+- **Round 13.** Nearly half of all feet locked 65 degrees off the hips. With a key held you ran folded at the waist, arms dead.
+- **Round 14.** Stopping a run swung the arm behind the back. A ball at you with no key just hit you. Your partner stayed back when you took the net, and stopped to watch a ball you couldn't reach.
+- **Round 15.** The automatic block now swings, the bandeja opens, a steered smash keeps its depth, hips hold their line in a jump. **Its arm change was wrong:** see Round 16.
+- **Round 16.** The review's best find was against Round 15. A reviewer called a 30 degree elbow locked, the hands were moved in, and the footage has that elbow at 30-31. The numbers improved and the arms went into the body: forearm in the trunk at the forehand take-back 2.7 to 51% of frames. Reversed against the footage, with a test on real bodies. A pose change now goes against `docs/research/footage-pose.md` first.
+
+| Round 16 | Before | After |
+|---|---|---|
+| Serve finish, forearm over 5 cm in the chest | 50% (generated bodies 66) | 0 (1) |
+| Standing, forearm over 2.5 cm in the trunk | 19.8% | 0.6 |
+| Lob hint then O, whiffed lobs in 40 sets | 492 | 1 |
+| Same stand-in, points won | 32.5% | 48.8 |
+| First serves faulted at a wide aim | 70% | 39 |
+| Lob from under 2.5 m, top of flight | 10.0 m | 6.1 |
+| Hip drops over 15 cm, no stroke, per player-minute | 17.4 | 2.1 |
+| Feet wide and hips sunk, per player-minute | 3.5 | 0 |
+| Both feet off the floor in a run (real 25-35) | 24% | 29 |
+| Pops per minute, two seeds | 25, 23 | 21, 22 |
+
+The legs had two causes, and neither was the reviewer's guess. The lean carried the hips a whole leg per radian off the feet, 0.46 m at a hard stop, and the arc took them down: hips 0.61 m at walking pace. And a planted foot left behind drew the hips down at 1.2 m/s.
+
+Generated people: three from Meshy are dealt into ordinary matches with team colours, blinks and a mouth drawn in the shader. The grip became a real continental, and a key's roll about the handle is now treated as the wrist it is, so the backhand hits palm-first.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.
