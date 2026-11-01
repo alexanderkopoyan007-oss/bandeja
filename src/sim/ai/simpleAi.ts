@@ -69,6 +69,20 @@ export function humanMotor(grade: number, pressure: number): number {
   return SKILL.human.motor * SKILL.human.grade[grade]! * (1 + SKILL.pressure * pressure * pressure);
 }
 
+/** The share of a ball's pressure that reaches a volley met at this height (SimpleAi.steadied, and a human's). */
+export function blockShare(height: number): number {
+  const u = clamp((height - BLOCK_FROM) / (BLOCK_TO - BLOCK_FROM), 0, 1);
+  return 1 - BLOCK_CUT * u;
+}
+
+/** ShotRequest.control for a volley at this height, this far from the net (SimpleAi.control, and a human's). */
+export function volleyControl(height: number, depth: number): number {
+  // (a low ball hurts on the way in as well: a return at the feet of a server running up cost the AI 1.6% of its
+  // replies, and the textbook return was the worst of five; review round 15)
+  if (height < SHOE_H) return SHOE_CONTROL;
+  return depth < 5 && height >= SITTER_H ? SITTER_CONTROL : 1;
+}
+
 function byLevel(v: number[], level: number): number {
   const n = v.length - 1;
   const x = level * n;
@@ -212,9 +226,7 @@ export class SimpleAi {
    * 3.4-4.8 a volley (review round 15).
    */
   steadied(height: number): number {
-    if (!this.volleying) return 1;
-    const u = clamp((height - BLOCK_FROM) / (BLOCK_TO - BLOCK_FROM), 0, 1);
-    return 1 - BLOCK_CUT * u;
+    return this.volleying ? blockShare(height) : 1;
   }
 
   /**
@@ -224,11 +236,7 @@ export class SimpleAi {
    * review round 5, the pro's #2).
    */
   control(height: number): number {
-    if (!this.volleying) return 1;
-    // (a low ball hurts on the way in as well: a return at the feet of a server running up cost the AI 1.6% of its
-    // replies, and the textbook return was the worst of five; review round 15)
-    if (height < SHOE_H) return SHOE_CONTROL;
-    return this.conDepth < 5 && height >= SITTER_H ? SITTER_CONTROL : 1;
+    return this.volleying ? volleyControl(height, this.conDepth) : 1;
   }
 
   onStrike(m: MatchSim, striker: number): void {

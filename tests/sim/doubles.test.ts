@@ -6,9 +6,36 @@ import { InputFrame, BTN_DRIVE } from '../../src/sim/input.ts';
 import { SW_IDLE, SW_CHARGE, type Player } from '../../src/sim/player/player.ts';
 import { SHOT_SERVE, SHOT_KEYS } from '../../src/sim/contact/shots.ts';
 import { WHY_HIT_BODY_OPP, WHY_HIT_BODY_OWN } from '../../src/sim/rules/rally.ts';
+import { formationSpot } from '../../src/sim/player/formation.ts';
 import { MODE_GOLDEN, DEFAULT_FORMAT } from '../../src/sim/rules/score.ts';
 
 const NONE = [null, null, null, null];
+
+describe('the pair at the net', () => {
+  // A rally going on, the near pair (0, 2) up, the far pair's hitter in the corner and the ball with them.
+  const at = (shots: number): number => {
+    const m = new MatchSim({ seed: 1, doubles: true, human: [false, false, false, false], firstServer: 0 });
+    const s = m.side(0);
+    m.players[0]!.pos.set(-1.4, 0, s * 3);
+    m.players[2]!.pos.set(1.4, 0, s * 3);
+    m.lastStrikeTeam = 0;
+    m.lastStrikePlayer = 0;
+    m.players[0]!.lastContact.set(0, 1, s * 3);
+    m.rally.shots = shots;
+    m.ball.pos.x = -3.3;
+    const a = { x: 0, z: 0 }, b = { x: 0, z: 0 };
+    formationSpot(m, 0, false, a);
+    formationSpot(m, 2, false, b);
+    return (a.x + b.x) / 2;
+  };
+  it('a settled pair stays near the middle whatever corner the hitter is in', () => {
+    // (it slid 1.3 m, and one low slice past the far player won 63% of points at the top level: review round 16)
+    expect(Math.abs(at(4))).toBeLessThan(0.6);
+  });
+  it('and at the return, the server still running in, leans to the ball', () => {
+    expect(Math.abs(at(1))).toBeGreaterThan(0.9);
+  });
+});
 
 interface Log {
   m: MatchSim;

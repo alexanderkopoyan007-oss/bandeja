@@ -36,24 +36,40 @@ function events(m: MatchSim, from: number, kind: number) {
 }
 
 describe('serve rules (QA army, FIP 6.6 and 7.1.b)', () => {
-  it('a swing at the serve that misses the ball is a fault, even a tap before the ball has bounced', () => {
-    for (const early of [0.6, 0.3]) {
-      const { m, f } = serving();
-      const seq = m.eventSeq;
-      drop(m, f);
-      expect(m.phase).toBe(PH_TOSS);
-      const at = m.tossIdeal - early;
-      while (m.time + DT <= at) { f.clear(); f.held = BTN_DRIVE; m.step([f, null]); }
-      f.clear();
-      f.push(false, BTN_DRIVE, Math.max(at, m.time));
-      m.step([f, null]);
-      for (let k = 0; k < 10 && m.phase !== PH_DEAD; k++) { f.clear(); m.step([f, null]); }
-      const faults = events(m, seq, E_FAULT);
-      expect(faults.length, `released ${early} s early`).toBe(1);
-      expect(faults[0]!.a).toBe(WHY_SERVE_MISSED);
-      expect(faults[0]!.b).toBe(1);
-      expect(events(m, seq, E_HIT).length).toBe(0);
-    }
+  // Early, late, however far: past the windows a swing at the serve misses, and a miss is a fault. But the swing has to be at
+  // a ball that is there: a key let go while the ball is still falling is no swing (nobody swings at one), and it is dropped
+  // again (a tap was a fault, two a double fault, seven seconds into the game: review round 16, the critic's #1).
+  const release = (early: number): { m: ReturnType<typeof serving>['m']; seq: number; bounced: number } => {
+    const { m, f } = serving();
+    const seq = m.eventSeq;
+    drop(m, f);
+    expect(m.phase).toBe(PH_TOSS);
+    const at = m.tossIdeal - early;
+    while (m.time + DT <= at) { f.clear(); f.held = BTN_DRIVE; m.step([f, null]); }
+    const bounced = (m as unknown as { tossBounces: number }).tossBounces;
+    f.clear();
+    f.push(false, BTN_DRIVE, Math.max(at, m.time));
+    m.step([f, null]);
+    for (let k = 0; k < 10 && m.phase !== PH_DEAD; k++) { f.clear(); m.step([f, null]); }
+    return { m, seq, bounced };
+  };
+
+  it('a swing at the serve that misses the ball is a fault', () => {
+    const { m, seq, bounced } = release(0.3);
+    expect(bounced).toBeGreaterThan(0);
+    const faults = events(m, seq, E_FAULT);
+    expect(faults.length).toBe(1);
+    expect(faults[0]!.a).toBe(WHY_SERVE_MISSED);
+    expect(faults[0]!.b).toBe(1);
+    expect(events(m, seq, E_HIT).length).toBe(0);
+  });
+
+  it('a key let go before the ball has reached the floor is no swing', () => {
+    const { m, seq, bounced } = release(0.6);
+    expect(bounced).toBe(0);
+    expect(events(m, seq, E_FAULT).length).toBe(0);
+    expect(events(m, seq, E_HIT).length).toBe(0);
+    expect(m.phase).toBe(PH_SETUP);
   });
 
   it('a dropped ball nobody swings at is not a serve: it bounces twice, the server picks it up and serves again', () => {

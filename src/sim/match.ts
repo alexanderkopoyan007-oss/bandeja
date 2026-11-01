@@ -24,7 +24,7 @@ import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/format
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
 import { smashLanding } from './contact/smashAim.ts';
-import { SimpleAi, WOMENS_SPEED, humanMotor } from './ai/simpleAi.ts';
+import { SimpleAi, WOMENS_SPEED, blockShare, humanMotor, volleyControl } from './ai/simpleAi.ts';
 import { makeWorld, makeNetCloth, type WorldOptions } from './setup.ts';
 import type { NetCloth } from './court/netCloth.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
@@ -197,6 +197,9 @@ const ENDS_CUT = 0.35;
 const READ_WIDE = 1.5;
 const READ_RATE = 0.2;
 const READ_CUT = 0.42;
+/** How deep and how near the side glass (m in from it) a human's contrapared may be aimed: the AI's limits (SimpleAi.contraTarget). */
+const CONTRA_DEEP = 7.6;
+const CONTRA_SIDE = 1.4;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
@@ -1232,9 +1235,11 @@ export class MatchSim {
       return inAir ? SHOT_VOLLEY : SHOT_SLICE;
     }
     if (y >= t.overheadHeight && k !== SHOT_LOB && k !== SHOT_DROP) return k === SHOT_SLICE ? SHOT_BANDEJA : SHOT_SMASH;
-    if (inAir && (k === SHOT_DRIVE || k === SHOT_SLICE)) return SHOT_VOLLEY;
     // Topspin key with precision: a chiquita, soft and dipping to the feet of the players at the net.
     if (k === SHOT_TOPSPIN && this.shotMod === MOD_PRECISION) return SHOT_CHIQUITA;
+    // (the topspin key too: alone in swinging at a ball in the air it went 3-37 where the drive key went 21-19, with nothing
+    // on screen to say why; review round 16, the critic's #3)
+    if (inAir && (k === SHOT_DRIVE || k === SHOT_SLICE || k === SHOT_TOPSPIN)) return SHOT_VOLLEY;
     return k;
   }
 
@@ -1420,6 +1425,14 @@ export class MatchSim {
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
       if (abs(delta) > TIMING.miss * scale) {
+        // Let go before the ball has reached the floor: there is nothing yet to swing at, so it is no swing. The ball is
+        // caught and dropped again. As a miss, a tap was a fault and two taps a double fault, seven seconds into the game
+        // (review round 16, the critic's #1).
+        if (delta < 0 && this.tossBounces === 0) {
+          this.whiff(i, t);
+          this.retoss();
+          return;
+        }
         // 6.6: the swing is the serve; missing the ball is a fault (7.1.b).
         this.rally.onServeMissed();
         this.whiff(i, t);
@@ -1623,6 +1636,13 @@ export class MatchSim {
       r.targetZ = -s * clamp(shape + 0.16 * a.y, 0.1, 0.96) * c.halfL;
     }
 
+    // A contrapared goes up off our own glass to get the ball back: it has no length or width to give. Aimed where the AI
+    // never aims it, a deep target flew on to their glass on the full (review round 16, the critic's #2).
+    if (shot === SHOT_CONTRAPARED && !this.ai[i]) {
+      r.targetX = clamp(r.targetX, -(c.halfW - CONTRA_SIDE), c.halfW - CONTRA_SIDE);
+      r.targetZ = -s * min(abs(r.targetZ), CONTRA_DEEP);
+    }
+
     r.shot = shot;
     // Precision picked the víbora or the chiquita; it does not also scale them.
     r.mod = shot === SHOT_VIBORA || shot === SHOT_CHIQUITA ? MOD_NONE : p.mod;
@@ -1645,7 +1665,8 @@ export class MatchSim {
     this.lastPressure = serving ? 0 : pressureOf(sqrt(v.x * v.x + v.y * v.y + v.z * v.z), this.time - this.lastStrikeTime, d, p.speed(), b.pos.y, walls > 0, walls > 1);
     const ai = this.ai[i], by = this.lastStrikePlayer;
     const read = ai && by >= 0 && !this.ai[by] && this.players[by]!.team !== team ? this.readOn[by]! * ai.level : 0;
-    r.motor = ai ? ai.motor(this.lastPressure * ai.steadied(b.pos.y)) * (1 - READ_CUT * read) : humanMotor(p.grade, this.lastPressure);
+    r.motor = ai ? ai.motor(this.lastPressure * ai.steadied(b.pos.y)) * (1 - READ_CUT * read)
+      : humanMotor(p.grade, this.lastPressure * (shot === SHOT_VOLLEY ? blockShare(b.pos.y) : 1));
     if (!ai && !serving && !feed) {
       // (each side's own way round: ends change)
       const dx = r.targetX * s - this.readX[i]!, dz = abs(r.targetZ) - this.readZ[i]!;
@@ -1653,7 +1674,7 @@ export class MatchSim {
       this.readX[i]! += dx * READ_RATE;
       this.readZ[i]! += dz * READ_RATE;
     }
-    r.control = ai ? ai.control(b.pos.y) : 1;
+    r.control = ai ? ai.control(b.pos.y) : shot === SHOT_VOLLEY ? volleyControl(b.pos.y, abs(b.pos.z)) : 1;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
 
@@ -1664,7 +1685,8 @@ export class MatchSim {
     p.lastContactTime = this.time;
     this.lastStrikeTeam = team;
     this.lastStrikePlayer = i;
-    if (!this.ai[i]) this.intentUp[team] = -1;
+    // (an overhead keeps the net, a human's as an AI's: read off its depth, one from past 6.6 m sent the partner back)
+    if (!this.ai[i]) this.intentUp[team] = shot === SHOT_BANDEJA || shot === SHOT_VIBORA || shot === SHOT_SMASH ? 1 : -1;
     this.lastStrikeTime = this.time;
 
     if (feed) {

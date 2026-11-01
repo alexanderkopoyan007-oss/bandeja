@@ -75,9 +75,12 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   if (coming) {
     // Partner is on it: match their depth (where they will play it from), and if they are taking it on our side,
     // switch.
-    up = abs(mate.pos.z) < 5.2;
     const mateAi = m.ai[i ^ 2];
     const plan = mateAi ? mateAi.standPlan : m.stand[i ^ 2]!;
+    // (a human gone back for an overhead in the air is keeping the net, and their partner holds it: mirrored, half of them
+    // dropped past 6 m and walked back in, review round 16, the pro's #5. AI pairs stay as they are: for them it put a point
+    // on the serving pair, already over, and costs nobody's eye a partner.)
+    up = abs(mate.pos.z) < 5.2 || (!mateAi && abs(p.pos.z) < 5.2 && m.taker[team] === (i ^ 2) && plan.valid && plan.overhead && !plan.afterWall);
     if (m.taker[team] === (i ^ 2) && plan.valid && plan.bx * s * lane > SWITCH_X) lane = -lane;
   } else if (m.lastStrikeTeam === team && m.lastStrikePlayer >= 0) {
     // A switched pair of AIs crosses back when its ball was a long way from bouncing over there (judged once,

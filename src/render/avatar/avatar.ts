@@ -60,6 +60,11 @@ const ELBOW_SHAFT = 3;
 const OVER_WAY = new THREE.Vector3(0, 0.12, 1).normalize();
 const OVER_DOWN = new THREE.Vector3(0, -1, 0.1).normalize();
 const OVER_ON = 0.38;
+/** A human's planned moment follows the ring with this time constant (s); a change of this much (s) is another ball's moment. */
+const RING_TAU = 0.1;
+const RING_JUMP = 0.2;
+/** How far out from the body a swing drawn by the hand bows (m): the straight way from the back to the ball passes the shoulder. */
+const BY_HAND_OUT = 0.14;
 /** The arm OverArm's curves are drawn for (m), when the chest's curves start giving way to the ball (progress), the trunk's ease (s). */
 /** The hand goes through the ball first, then to its chest-frame place (OverArm.under) over these times after it (s). */
 const OVER_AFTER0 = 0.06, OVER_AFTER1 = 0.3;
@@ -1280,6 +1285,8 @@ export class Avatar {
   private keepCon = 1;
   /** The planned contact's time and the plan's spot (for the reach: where the body will be). */
   private tPlan = -1;
+  /** A human's planned moment, smoothed (planned). */
+  private ringT = 0;
   private planOk = false;
   private planX = 0;
   private planZ = 0;
@@ -1773,8 +1780,21 @@ export class Avatar {
         this.ctrl.y -= f.dip;
         this.ctrl.z -= f.loop;
       }
-      bezier(bp, this.ctrl, k.p, e, this.kp);
-      this.kq.copy(this.backTurn(k)).slerp(k.q, e);
+      if (f.byHand) {
+        const q0 = this.backTurn(k);
+        this.overA.copy(this.grip.off).applyQuaternion(q0).negate().add(bp);
+        this.overB.copy(this.grip.off).applyQuaternion(k.q).negate().add(k.p);
+        this.ctrl.copy(this.overA).lerp(this.overB, 0.5);
+        this.ctrl.y -= f.dip;
+        this.ctrl.z -= f.loop;
+        this.ctrl.x += (f.contact.p.x < 0 ? -1 : 1) * BY_HAND_OUT;
+        bezier(this.overA, this.ctrl, this.overB, e, this.kp);
+        this.kq.copy(q0).slerp(k.q, e);
+        this.kp.add(this.overC.copy(this.grip.off).applyQuaternion(this.kq));
+      } else {
+        bezier(bp, this.ctrl, k.p, e, this.kp);
+        this.kq.copy(this.backTurn(k)).slerp(k.q, e);
+      }
     }
     this.kpole.copy(f.back.pole).lerp(k.pole, e);
     // (an overhead's free arm comes in as the chest comes round, ahead of the racket, by the swing's time)
@@ -1831,10 +1851,14 @@ export class Avatar {
     }
     // A human is shown the ring's moment and will let go on it, so that is what the swing is timed to: the plan's own was
     // up to 50 ms sooner on a volley, a racket sent 0.8 m up the ball's line that then came back with it (review round 15).
+    // That moment moves with the player, and a moment 20 ms on is 40 cm further along a volley's ball: smoothed, or the
+    // take-back behind it jumped about in the last fifth of a second (twice the AI's path; review round 16, the coach's #6).
     const ring = ai ? -1 : sim.focusIdeal(idx);
     if (ring >= 0) {
-      this.predAt(sim, ring, this.conW);
-      return ring;
+      const off = ring - this.ringT;
+      this.ringT = this.lastSwing !== SW_CHARGE || Math.abs(off) > RING_JUMP ? ring : this.ringT + off * (1 - Math.exp(-this.dt / RING_TAU));
+      this.predAt(sim, this.ringT, this.conW);
+      return this.ringT;
     }
     this.conW.set(st.bx, st.by, st.bz);
     return st.t;

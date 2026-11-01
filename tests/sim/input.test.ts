@@ -1,10 +1,10 @@
 // Input edge cases at the sim's boundary: what a release reads from the keys around it.
 import { describe, it, expect } from 'vitest';
-import { MatchSim, PH_RALLY, PH_SETUP, PH_TOSS, PH_OVER, E_HIT } from '../../src/sim/match.ts';
+import { MatchSim, PH_RALLY, PH_SETUP, PH_TOSS, PH_OVER, E_HIT, E_FAULT } from '../../src/sim/match.ts';
 import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
-import { SHOT_SMASH } from '../../src/sim/contact/shots.ts';
+import { SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
 
 describe('modifiers at the release', () => {
   it('Space let go a few ms after the overhead key, in the same tick, still makes the smash', () => {
@@ -55,5 +55,50 @@ describe('modifiers at the release', () => {
     }
     expect(smash + other).toBeGreaterThan(8);
     expect(smash / (smash + other)).toBeGreaterThan(0.9);
+  });
+});
+
+describe('the first press of a match', () => {
+  it('a tap that lets go before the ball is down is no swing: the ball is dropped again, no fault', () => {
+    // (it was a fault, and two of them a double fault, seven seconds into the game: review round 16, the critic's #1)
+    const m = new MatchSim({ seed: 7, doubles: true, human: [true, false, false, false], firstServer: 0, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame();
+    const none = [null, null, null, null];
+    for (let i = 0; i < 120 * 12 && (m.phase !== PH_SETUP || m.walking !== 0 || m.time < m.phaseUntil + 0.1); i++) m.step(none);
+    expect(m.phase).toBe(PH_SETUP);
+    const first = m.serveNo;
+    let seq = m.eventSeq, faults = 0;
+    for (let tap = 0; tap < 3; tap++) {
+      f.clear();
+      f.push(true, BTN_DRIVE, m.time);
+      f.held = BTN_DRIVE;
+      m.step([f, null, null, null]);
+      expect(m.phase).toBe(PH_TOSS);
+      for (let i = 0; i < 12; i++) { f.clear(); f.held = BTN_DRIVE; m.step([f, null, null, null]); }
+      f.clear();
+      f.push(false, BTN_DRIVE, m.time);
+      m.step([f, null, null, null]);
+      for (; seq < m.eventSeq; seq++) if (m.events[seq % m.events.length]!.kind === E_FAULT) faults++;
+      expect(m.phase).toBe(PH_SETUP);
+      for (let i = 0; i < 120 * 2 && m.time < m.phaseUntil + 0.1; i++) m.step(none);
+    }
+    expect(faults).toBe(0);
+    expect(m.serveNo).toBe(first);
+  });
+});
+
+describe('the keys in the air', () => {
+  const m = new MatchSim({ seed: 1, human: [false, false] }) as unknown as { shotHeight: number; shotMod: number; shotContra: boolean; shotFor(p: unknown, air: boolean): number };
+  const p = { tune: { overheadHeight: 2.2 }, shot: SHOT_TOPSPIN };
+  it('every ground stroke key plays a ball in the air as a volley, the topspin key too', () => {
+    // (alone in swinging at it, the topspin key lost 37 sets of 40 where the drive key went 21-19, and nothing said why)
+    m.shotHeight = 1.1; m.shotMod = MOD_NONE; m.shotContra = false;
+    for (const k of [SHOT_DRIVE, SHOT_SLICE, SHOT_TOPSPIN]) expect(m.shotFor({ ...p, shot: k }, true)).toBe(SHOT_VOLLEY);
+    expect(m.shotFor(p, false)).toBe(SHOT_TOPSPIN);
+  });
+  it('the chiquita stays where precision asks for it', () => {
+    m.shotMod = MOD_PRECISION;
+    expect(m.shotFor(p, true)).toBe(SHOT_CHIQUITA);
+    m.shotMod = MOD_NONE;
   });
 });

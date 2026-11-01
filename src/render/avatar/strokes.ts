@@ -40,6 +40,11 @@ export interface Family {
    */
   via?: THREE.Vector3;
   viaS?: number;
+  /**
+   * The forward swing is drawn by the hand, not the racket's centre: for a racket that turns over on the way, whose handle
+   * would otherwise pull the hand back into the shoulder and throw it out again at the ball.
+   */
+  byHand?: boolean;
   /** An overhead: its forward swing is drawn in the chest's frame, not the stance's (see OverArm). */
   over?: OverArm;
   /**
@@ -376,8 +381,9 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
       contact: open(f.contact, 0.45),
       low: f.low && open({ ...f.contact, q: f.low }, 0.45).q,
       finish: key(v(side * -0.05, 1.0, 0.68), v(side * 0.55, -0.25, 0.8), v(0, 0.55, 0.85), v(side * 0.3, 1.0, 0.4), f.contact.yaw - side * 0.35, f.finish.off),
-      dip: -0.12,
+      dip: 0.1,
       loop: 0.05,
+      byHand: true,
     };
   }
   if (kind === 'lob') {
@@ -419,7 +425,9 @@ function variant(f: Family, side: number, kind: 'slice' | 'lob' | 'drop' | 'chiq
     back: shrink(f.back, 0.45),
     contact: open(f.contact, 0.55),
     low: f.low && open({ ...f.contact, q: f.low }, 0.55).q,
-    finish: shrink({ ...f.finish, q: open(f.contact, 0.7).q }, 0.65),
+    // (a short carry on through the ball, the arm long: the stroke's own finish, shrunk, put the racket's centre at the
+    // shoulder and the hand 18 cm from it, elbow 139)
+    finish: { ...f.finish, p: f.contact.p.clone().add(v(0, 0.14, 0.32)), q: open(f.contact, 0.7).q, pole: f.contact.pole, yaw: f.contact.yaw },
     dip: 0.05,
     loop: 0,
   };
