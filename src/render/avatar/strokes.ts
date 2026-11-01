@@ -53,6 +53,11 @@ export interface Family {
    * left behind as the chest turned, the elbow folded to 139 degrees (34-52 on video).
    */
   free?: number[];
+  /**
+   * The most of its length the arm is out after the ball (default none: a backhand stays long). The keys are in metres and the arms aren't: every family
+   * but the backhand went to its stop after the ball, 22-30 degrees for a third of a second, and the recovery had to bend it 40 degrees in 100 ms.
+   */
+  after?: number;
   /** How far (m) the hips move towards the net through the swing: into the ball, not behind the feet. */
   weight?: number;
   /** Played facing the player's own back glass (the contrapared): the stance turns round to it. */
@@ -176,6 +181,7 @@ export const FOREHAND: Family = {
   arm: 0.8,
   follow: 0.5,
   through: 0.85,
+  after: 0.91,
 };
 
 /**
@@ -215,6 +221,7 @@ const BH: Family = {
  */
 export const OVERHEAD: Family = {
   name: 'overhead',
+  after: 0.93,
   // Trophy position: side-on, racket up behind the head, the free hand pointing at the ball.
   back: rolled(key(v(-0.11, 1.8, -0.56), v(-0.02, 0.8, -0.6), v(-1, 0, 0.1), v(-0.1, 1.2, -0.8), -1.25, v(-0.18, 1.8, 0.48)), 180),
   // (the head stays back at the ball: a racket leaning forward can't look up, and `n` is squared to the racket's length, so the key's open face
@@ -253,6 +260,7 @@ export const OVERHEAD: Family = {
  */
 export const VIBORA: Family = {
   name: 'vibora',
+  after: 0.93,
   back: rolled(key(v(-0.14, 1.78, -0.56), v(-0.05, 0.8, -0.6), v(-1, 0.05, 0.15), v(-0.12, 1.2, -0.8), -1.3, v(-0.18, 1.75, 0.48)), 180),
   contact: key(v(-0.5, 1.7, 0.2), v(0.6, 0.72, 0.1), v(0.3, 0.2, 0.93), v(-0.9, 1.3, -0.05), -0.7, v(0.12, 1.25, 0.5)),
   finish: tipped(rolled(key(v(0.42, 0.82, 0.5), v(0.55, -0.55, 0.45), v(0.3, -0.45, 0.85), v(-0.15, 1.05, 0.4), 0.6, v(0.4, 1.05, 0.15)), 140), 30),
@@ -325,6 +333,7 @@ function courtKey(p: number[], a: number[], n: number[], pole: number[], yaw: nu
 const SERVE_TURN = 0.82;
 export const SERVE: Family = {
   name: 'serve',
+  after: 0.92,
   back: rolled(courtKey([-0.76, 0.26, 1.67], [-0.5, 0, 0.85], [0.85, 0.5, 0.15], [-0.6, 0.3, 0.85], -1.6, [0.37, 0.47, 1.0]), 100),
   contact: courtKey([0.5, 0.55, 0.92], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.7, 1.1], -0.8, [0.49, 0.09, 0.82]),
   finish: rolled(courtKey([0.35, -0.3, 1.5], [-0.15, -0.9, 0.25], [0.9, 0.2, 0.3], [0.3, 0.35, 1.0], -0.3, [0.33, -0.19, 0.87]), 110),
@@ -341,7 +350,7 @@ export const SERVE: Family = {
     // Folded, the hand before the racket shoulder and the racket lying across the chest to the far one: elbow 123-125 at +0.24 s. Forward of
     // the keys' place: the weight has taken the chest 0.2 m on by then, and a hand keyed for a standing body went through it (forearm
     // 5 cm in the chest on half the frames). Upright the racket stood 5 cm off the nose.
-    under: [-0.12, -0.08, 0.32, 0.1, -0.2, 0.14],
+    under: [-0.08, -0.04, 0.3, 0.12, -0.18, 0.12],
     roll: deg(100),
   },
   // Long and out to its side once the ball is gone: brought round in front, it met the racket coming across.
@@ -376,6 +385,7 @@ export const SERVE_TURN_SHARE = SERVE_TURN;
  */
 export const VOLLEY_FH: Family = {
   name: 'volley-fh',
+  after: 0.87,
   weight: 0.08,
   back: tipped(rolled(key(v(-0.46, 1.4, 0.3), v(-0.3, 0.9, 0.2), v(-0.7, 0.05, 0.7), v(-0.5, 0.95, 0.0), -0.55, v(0.26, 1.2, 0.42)), 120), 25),
   contact: key(v(-0.5, 1.15, 0.65), v(-0.6, 0.3, 0.72), v(0.1, 0.25, 1), v(-0.42, 0.9, 0.0), -0.42, v(0.42, 1.06, 0.54)),
@@ -393,6 +403,7 @@ export const VOLLEY_FH: Family = {
 /** The same on the other side: side-on, the hand crossing to the free side of the chest, the free arm opening behind. */
 const VBH: Family = {
   name: 'volley-bh',
+  after: 0.87,
   weight: 0.06,
   back: key(v(0.42, 1.4, 0.26), v(0.3, 0.9, 0.15), v(0.7, 0.05, 0.7), v(0.2, 1.0, 0.3), 1.45, v(0.28, 1.2, 0.3)),
   contact: key(v(0.5, 1.12, 0.6), v(0.6, 0.3, 0.72), v(-0.1, 0.25, 1), v(0.3, 1.0, 0.3), 1.1, v(0.5, 1.08, -0.2)),

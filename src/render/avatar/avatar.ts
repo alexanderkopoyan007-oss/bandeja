@@ -67,7 +67,7 @@ const RING_JUMP = 0.2;
 const BY_HAND_OUT = 0.14;
 /** The arm OverArm's curves are drawn for (m), when the chest's curves start giving way to the ball (progress), the trunk's ease (s). */
 /** The hand goes through the ball first, then to its chest-frame place (OverArm.under) over these times after it (s). */
-const OVER_AFTER0 = 0, OVER_AFTER1 = 0.24;
+const OVER_AFTER0 = 0, OVER_AFTER1 = 0.3;
 const OVER_ARM = 0.56;
 /** How fast a late release shortens an overhead's way to the ball (s). */
 const LAG_EASE = 0.11;
@@ -365,6 +365,10 @@ const RACKET_CLEAR = 0.015;
 const FOREARM_T = [0.35, 0.65, 1];
 const FOREARM_ROOM = -0.03;
 const FOREARM_AFTER = 0.25;
+/** How far off a trunk capsule's surface the elbow's joint stays (m): the arm's own thickness, less the give of the flank and a capsule that is the body's median. */
+const ELBOW_ROOM = 0.02;
+/** guardCaps' first ones, the pelvis and the chest: the trunk. */
+const TRUNK_CAPS = 2;
 /** Pelvis, chest and head capsules per asset (fitted once): bone pairs, and radii. */
 const GUARD = new WeakMap<PlayerAsset, { bones: Int32Array; r: Float64Array }>();
 function guardCaps(asset: PlayerAsset): { bones: Int32Array; r: Float64Array } {
@@ -454,8 +458,10 @@ const HAND_OVER = 0;
 const HAND_UNDER = 0.3;
 const VOLLEY_ARM = 0.78;
 /** The arm no longer than this share of itself on the way back to ready (see solveArms), eased over RECOVER_EASE s. */
-const RECOVER_ARM = 0.8;
-const RECOVER_EASE = 0.06;
+const RECOVER_ARM = 0.85;
+const RECOVER_EASE = 0.12;
+/** How fast the arm comes to Family.after from the ball (s). */
+const AFTER_EASE = 0.07;
 const VOLLEY_BEND = 0.86;
 const VOLLEY_BEND_RATE = 9;
 const BACK_FOLLOW = 1;
@@ -514,6 +520,11 @@ const FOLLOW = 0.3;
 const FOLLOW_N = 3;
 /** The same for a stroke with an arm drawn in the chest's frame: a serve left the ball at 8 m/s from 13, and a cap of 3 is why. */
 const FOLLOW_N_OVER = 4.5;
+/**
+ * The share of the follow-through's path taken at the speed it left the ball; the rest goes evenly over the whole of it. All of it at that speed had a fast arm at the
+ * finish in 50-80 ms of 300-450, and the hand parked until the recovery, 220 ms on a volley, the serve's elbow flat from +0.18 s (video: folding on past +0.3 s).
+ */
+const FOLLOW_QUICK = 0.55;
 /** A hip's range (solveLegs): how far round from the hips a foot (rad), and a knee, may point; how far outward a knee
  * sits off the hips (rad, or they brush each other). */
 const FOOT_OFF_HIPS = (65 * Math.PI) / 180, KNEE_OFF_HIPS = (42 * Math.PI) / 180, KNEE_OUT = 0.14;
@@ -1012,6 +1023,7 @@ export class Avatar {
   private gaitRunH = 0;
   /** Last frame's turn on an overhead's way to its curve, for keeping the way round (nlerpQ); zero when there is none. */
   private readonly overPrev = new THREE.Quaternion(0, 0, 0, 0);
+  private afterW = -0;
   private runHipY = -1;
   private gaitOn = 0;
   /** 1: walkFeet is drawing a rally's run, not the walk back; which foot goes next, and how long since one went (s). */
@@ -2125,7 +2137,8 @@ export class Avatar {
         // (review round 8, the critic's #4).
         const away = hand ? this.overAt(k, fin, 0.1) * 10 : 2 * k.p.distanceTo(this.ctrl);
         const n = (this.swingV * (f.follow ?? FOLLOW) * this.manner.follow) / Math.max(0.05, away);
-        const top = f.over ? FOLLOW_N_OVER : FOLLOW_N, e = 1 - Math.pow(1 - s, n < 2 ? 2 : n > top ? top : n);
+        const top = f.over ? FOLLOW_N_OVER : FOLLOW_N, ks = (n < 2 ? 2 : n > top ? top : n) / FOLLOW_QUICK;
+        const e = FOLLOW_QUICK * (1 - Math.exp(-ks * s)) / (1 - Math.exp(-ks)) + (1 - FOLLOW_QUICK) * s * s * (3 - 2 * s);
         if (hand) this.overAt(k, fin, e);
         else {
           bezier(k.p, this.ctrl, fin.p, e, this.kp);
@@ -3826,6 +3839,42 @@ export class Avatar {
   }
 
   /**
+   * The elbow out of the trunk, going round the shoulder-to-hand line. Every guard here looks at the hand or a forearm from a third of the way down it, and nothing at the elbow:
+   * with the hips low the elbow is at the waist, and a volley's went 10-14 cm into the flank on a third of its frames, the forearm's guards reading it clear. In proportion to the
+   * depth, so it comes in as the elbow gets there.
+   */
+  private elbowOut(arm: THREE.Bone[], T: THREE.Vector3, P: THREE.Vector3): void {
+    const e = arm[0]!.matrixWorld.elements, A = arm[1]!.position, H = arm[2]!.position;
+    const sx = e[12]!, sy = e[13]!, sz = e[14]!;
+    let lx = T.x - sx, ly = T.y - sy, lz = T.z - sz;
+    const ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
+    if (ll < 1e-6) return;
+    lx /= ll; ly /= ll; lz /= ll;
+    const a2 = A.x * A.x + A.y * A.y + A.z * A.z, b2 = H.x * H.x + H.y * H.y + H.z * H.z, full = Math.sqrt(a2) + Math.sqrt(b2);
+    const c = ll < full ? ll : full, d = (a2 - b2 + c * c) / (2 * c), h2 = a2 - d * d;
+    if (h2 < 1e-4) return;
+    let px = P.x - sx, py = P.y - sy, pz = P.z - sz;
+    const pd = px * lx + py * ly + pz * lz;
+    px -= lx * pd; py -= ly * pd; pz -= lz * pd;
+    const pl = Math.sqrt(px * px + py * py + pz * pz);
+    if (pl < 1e-6) return;
+    const k = Math.sqrt(h2) / pl, ex = sx + lx * d + px * k, ey = sy + ly * d + py * k, ez = sz + lz * d + pz * k;
+    const G = this.guardBones, Rr = this.guardR, B = this.bones;
+    let ox = 0, oy = 0, oz = 0;
+    for (let i = 0; i < TRUNK_CAPS; i++) {
+      const ea = B[G[2 * i]!]!.matrixWorld.elements, eb = B[G[2 * i + 1]!]!.matrixWorld.elements;
+      const ax = ea[12]!, ay = ea[13]!, az = ea[14]!, tx = eb[12]! - ax, ty = eb[13]! - ay, tz = eb[14]! - az;
+      const t2 = tx * tx + ty * ty + tz * tz;
+      let u = t2 > 1e-12 ? ((ex - ax) * tx + (ey - ay) * ty + (ez - az) * tz) / t2 : 0;
+      u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const dx = ex - ax - tx * u, dy = ey - ay - ty * u, dz = ez - az - tz * u, dd = Math.sqrt(dx * dx + dy * dy + dz * dz), pen = Rr[i]! + ELBOW_ROOM - dd;
+      if (pen > 0 && dd > 1e-6) { ox += (dx / dd) * pen; oy += (dy / dd) * pen; oz += (dz / dd) * pen; }
+    }
+    if (ox === 0 && oy === 0 && oz === 0) return;
+    P.x = ex + ox; P.y = ey + oy; P.z = ez + oz;
+  }
+
+  /**
    * A hand target no nearer its shoulder than ARM_MIN of the arm's length. A key blend can pass the hand through the
    * shoulder (a left-hander's slice put the free hand 2 cm from it, a backhand's recovery the racket hand), and
    * there the line from the shoulder to the hand turns over in a frame, the whole arm with it. So the way from the
@@ -3918,7 +3967,7 @@ export class Avatar {
       let best = 0, sx2 = 0, sy2 = 0, sz2 = 0;
       // (the forearm too, each point going with the hand by its share of the way from the elbow)
       // (not in the forward swing, a fast arm's push came and went in a frame: serves popped 30 times a minute for 5)
-      const nR = RACKET_P.length / 3, nF = this.st === ST_SWING && this.lastT < this.tCon + FOREARM_AFTER ? 0 : FOREARM_T.length;
+      const nR = RACKET_P.length / 3, nF = this.st === ST_SWING && this.lastT < this.tCon + (this.fam.wrist ? 0 : FOREARM_AFTER) ? 0 : FOREARM_T.length;
       for (let r = 0; r < nR + nF; r++) {
         let px: number, py: number, pz: number, along = 1, room = RACKET_CLEAR;
         if (r < nR) {
@@ -4379,11 +4428,15 @@ export class Avatar {
     // So does a carried racket: a contrapared's and a lob's back keys were still out of reach at half their weight.
     this.heldBent += ((this.st === ST_PREP ? clamp01((1 - this.holdW) / (1 - HOLD_CARRY)) : 0) - this.heldBent) * (this.dt > 0 ? 1 - Math.exp(-this.dt / RECOVER_EASE) : 0);
     const bent = Math.max(this.recoverW, this.heldBent);
-    if (bent > 0.001) {
+    // After the ball too, and on into the recovery, which takes it from there (Family.after).
+    const af = this.fam.after, afterOn = af !== undefined && ((this.st === ST_SWING && this.lastT >= this.tCon) || this.st === ST_FADE);
+    this.afterW += ((afterOn ? 1 : 0) - this.afterW) * (this.dt > 0 ? 1 - Math.exp(-this.dt / AFTER_EASE) : 1);
+    if (bent > 0.001 || this.afterW > 0.001) {
       const e = ua.matrixWorld.elements;
       const dx = this.tgt.x - e[12]!, dy = this.tgt.y - e[13]!, dz = this.tgt.z - e[14]!;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const lim = this.armLen * (1.05 - (1.05 - RECOVER_ARM) * bent);
+      const l0 = 1.05 - (1.05 - RECOVER_ARM) * bent, l1 = 1.05 - (1.05 - (af ?? 1.05)) * this.afterW;
+      const lim = this.armLen * (l0 < l1 ? l0 : l1);
       if (d > lim) {
         const r = lim / d;
         this.tgt.set(e[12]! + dx * r, e[13]! + dy * r, e[14]! + dz * r);
@@ -4406,6 +4459,7 @@ export class Avatar {
     const t0x = this.tgt.x, t0y = this.tgt.y, t0z = this.tgt.z;
     this.tgt.x += co.x; this.tgt.y += co.y; this.tgt.z += co.z;
     this.outOfTrunk(this.tgt);
+    this.elbowOut(this.armRacket, this.tgt, this.pole);
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
     this.wristLimit(fa, hand, before ? Math.min(1, sLeft) : smoothstep(0, WRIST_AFTER, this.lastT - this.tCon));
     setWorldQuat(hand, q3);
@@ -4478,6 +4532,7 @@ export class Avatar {
     this.keepOff(ul, v1, this.elbowFree.dir);
     const E = this.elbowFree;
     this.dirF0.copy(E.dir); this.sideF0.copy(E.side); this.bendF0 = E.bend[0]!;
+    this.elbowOut(this.armFree, v1, this.pole);
     hingeIK(ul, fl, hl, v1, this.pole, E);
     this.freeClear(ul, fl, hl);
     // Fade into the clip's arms below ARM_FADE of weight: the hinge solve has its own elbow side and upper-arm roll,
