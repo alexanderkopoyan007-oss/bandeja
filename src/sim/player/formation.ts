@@ -104,7 +104,9 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
     // bounce, when the read can't be made any more: followed only while the lob was in the air, the lobbers came in
     // and went back as it landed.
     if (lob === LOB_BEATEN) m.intentUp[team] = 1;
-    up = m.rally.shots === 1 || lob === LOB_BEATEN || (intent >= 0 ? intent === 1 : abs(striker.lastContact.z) < 6.6);
+    // A human who has run in has made the pair's decision: left on the glass behind them, the pair stood one up and one back on one
+    // opponent strike in eight, and won those no better than from both back (review round 18, the pro's #1).
+    up = m.rally.shots === 1 || lob === LOB_BEATEN || (!m.ai[i ^ 2] && abs(mate.pos.z) < 5.2) || (intent >= 0 ? intent === 1 : abs(striker.lastContact.z) < 6.6);
     mid = !up && lob === LOB_WATCH;
   } else {
     up = abs(p.pos.z) < 5.2;

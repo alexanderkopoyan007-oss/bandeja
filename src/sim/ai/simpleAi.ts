@@ -427,6 +427,7 @@ export class SimpleAi {
         this.released = true;
       }
       if (this.pressed && !this.released && p.swing === SW_CHARGE && t1 > this.releaseAt) {
+        if (m.doubles && !this.contra && p.shot !== SHOT_LOB) this.clearPartner(m);
         this.aimAbs(f);
         if (p.shot === SHOT_BANDEJA && this.smash) f.held |= BTN_POWER;
         else if (p.shot === SHOT_BANDEJA && this.vibora) f.held |= BTN_PRECISION;
@@ -512,6 +513,29 @@ export class SimpleAi {
     const k = m.bodyHitIdx(this.index, s);
     const hit = k >= 0 ? m.pred.t[k]! : -1;
     if (hit >= 0) this.releaseAt = min(this.releaseAt, min(ideal + 0.04, hit - 0.03));
+  }
+
+  /**
+   * A partner between us and the net: the ball goes round them, on the nearer side unless that is out of the court. Only the one not
+   * striking used to look, by dodging, and a human doesn't: a flat víbora through your back from 2 m ended 1.7 points in 100, an AI pair
+   * 0.1 (review round 18, the pro's #3). Read at the release: the target was picked when they stood elsewhere.
+   */
+  private clearPartner(m: MatchSim): void {
+    const plan = this.st;
+    if (!plan.valid) return;
+    const mate = m.players[this.index ^ 2]!;
+    // From the contact, an arm's length off the body, to them where they will be as it passes: the striker's feet are 30-40 cm from the
+    // line the ball takes, which is about the room this leaves.
+    const passAt = plan.t + (abs(plan.bz) - abs(mate.pos.z)) / PARTNER_PASS_SPEED;
+    if (abs(plan.bz) - abs(mate.pos.z) < PARTNER_AHEAD || passAt < m.time) return;
+    const mx = mate.pos.x + mate.vel.x * (passAt - m.time);
+    const at = (mate.pos.z - plan.bz) / (this.targetZ - plan.bz);
+    const off = plan.bx + (this.targetX - plan.bx) * at - mx;
+    if (abs(off) >= PARTNER_CLEAR) return;
+    const spread = m.world.court.halfW - (1.2 - 0.5 * this.level) * this.style.margin;
+    const sd = off >= 0 ? 1 : -1;
+    const x = plan.bx + (mx + sd * PARTNER_CLEAR - plan.bx) / at;
+    this.targetX = clamp(abs(x) <= spread ? x : plan.bx + (mx - sd * PARTNER_CLEAR - plan.bx) / at, -spread, spread);
   }
 
   private aimAbs(f: InputFrame): void {
@@ -1322,6 +1346,12 @@ const SMASH_MARGIN = 0.45;
 /** A smash met this close (m from the net) and this high (m) is a put-away aimed for the side glass (por tres). */
 /** Nearer the net than this (m) an opponent has come in. */
 const SPLIT_IN = 4.5;
+/** A partner this much nearer the net (m) than the striker is in the way of the ball. */
+const PARTNER_AHEAD = 0.3;
+/** How wide of them (m) it is aimed: body 0.22 and ball 0.03, and the rest for the swing's error. */
+const PARTNER_CLEAR = 0.55;
+/** A struck ball's speed (m/s) for when it reaches them: 70 km/h. */
+const PARTNER_PASS_SPEED = 19;
 
 const SMASH_X3_DEPTH = 5.5;
 const SMASH_X3_HEIGHT = 2.2;

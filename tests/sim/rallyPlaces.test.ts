@@ -42,7 +42,8 @@ function play(doubles: boolean, matches: number, seed0: number): Tally {
 
 describe('where the AI puts the ball', () => {
   it('doubles: cross-court leads, net drops come off high balls, bandejas are let through', () => {
-    const t = play(true, 8, 2301);
+    // 16 matches: 8 read 0.143 for net drops where 24 others read 0.107.
+    const t = play(true, 16, 2301);
     expect(t.cross / (t.cross + t.line)).toBeGreaterThan(0.5);
     expect(t.dropLow / Math.max(1, t.drops)).toBeLessThan(0.2);
     expect(t.drops / t.points).toBeLessThan(0.14);
