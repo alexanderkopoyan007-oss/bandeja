@@ -19,7 +19,7 @@ Method: ad-hoc observation instrument on official WPT video; 8 matches (QF–F) 
 strokes. Each stroke coded W / FE / cont / UE. Lobs are not a separate category here (they sit inside the
 technique they were hit with).
 
-| Stroke | % of all shots | W % | FE % (opponent's error forced by it) | cont % | UE % |
+| Stroke | % of all shots | W % | FE % (this stroke failing under pressure) | cont % | UE % |
 |---|---|---|---|---|---|
 | Backhand volley | 16.6 | 3.4 | 2.6 | 90.6 | 3.4 |
 | Forehand volley | 13.0 | 5.7 | 2.2 | 87.4 | 4.8 |

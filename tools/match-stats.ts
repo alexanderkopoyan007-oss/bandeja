@@ -284,15 +284,14 @@ function runJob(job: Job): Counts {
             else if (e.a === R.WHY_OWN_SIDE) c.errHow.net++;
             else c.errHow.other++;
           }
-          // Every shot's outcome, as in Mellado-Arbelo et al. (Table 1a): the last shot W or UE/FE (an error: the
-          // error is the failing shot's; FE also credits the shot before it, which forced it), the rest cont.
+          // Every shot's outcome, as in Mellado-Arbelo et al. (Table 1a): the last shot W, or the failing shot's own UE or
+          // FE (the paper's FE is low on a smash and highest on a back-wall exit: the stroke failing under pressure, not one
+          // forcing the next), the rest cont. A shot the opponent whiffed is a shot that went in: cont.
           for (let i = 0; i < n; i++) {
             const h = hits[i]!;
             const r = (c.strokes[h.cls] ??= { W: 0, FE: 0, UE: 0, cont: 0 });
             let o: Outcome = 'cont';
-            if (i === n - 1) o = lastO === 'W' ? 'W' : lastO === 'UE' || lastO === 'FE' ? (last.team === winner ? 'cont' : 'UE') : 'cont';
-            else if (i === n - 2 && lastO === 'FE' && last.team !== winner) o = 'FE';
-            if (i === n - 1 && lastO === 'FE' && last.team === winner) o = 'FE'; // a forced whiff credits the shot
+            if (i === n - 1) o = lastO === 'W' ? 'W' : last.team === winner ? 'cont' : lastO;
             r[o]++;
           }
           hits = [];
@@ -435,7 +434,7 @@ export function report(s: Summary, c: Counts): string {
   L.push(`hit from back / transition / net: ${pct(s.zone.back)} / ${pct(s.zone.transition)} / ${pct(s.zone.net)} (pros 49 / 19 / 26)`);
   L.push(`player-time within 4 m of the net ${pct(s.netTime)}; pairs both up ${pct(s.formation.up)}, both back ${pct(s.formation.back)}, split ${pct(s.formation.split)}; partners ${s.mateDist.toFixed(2)} m apart`);
   L.push(`  both pairs: one up and one back ${pct(s.pairs.upBack)}, all four up ${pct(s.pairs.allUp)}, all four back ${pct(s.pairs.allBack)}, a pair split ${pct(s.pairs.mixed)}`);
-  L.push(`per stroke (pros: smash W 45 UE 6; bandeja W 3.5 UE 3; volley W 3-6 UE 3-5; groundstroke/back-wall W <1 UE 5-6):`);
+  L.push(`per stroke, FE and UE both the failing shot's own (pros W/FE/UE: smash 45/0.8/6; bandeja 3.5/0.2/3; volley 3-6/2-3/3-5; groundstroke, back-wall <1/1.5-3.4/5-6):`);
   for (const [k, r] of Object.entries(s.strokes).sort((a, b) => b[1].n - a[1].n)) L.push(`  ${k.padEnd(13)} n ${String(r.n).padStart(6)}  W ${pct(r.W).padStart(6)}  FE ${pct(r.FE).padStart(6)}  UE ${pct(r.UE).padStart(6)}`);
   if (Object.keys(s.perLevel).length > 1) {
     L.push('per level (endings caused by that team; pros W 35-42 UE 29-33, qualifiers UE 37):');

@@ -3284,7 +3284,9 @@ Your drive at 79 km/h against the AI's 62-64 is not a bug: you aim 7.2 m deep by
 
 **A second shot key takes over.** The alternatives were to change the hint or to ignore the first key. The hint is right about what a player wants: on a lob, you see it after you've pressed. Only the rally, only a human, and the release that counts is the new key's, so the old key coming up does nothing.
 
-**The bandeja stays at 1.0.** Lower is more real at the net and costs more than it gives: .7 sends it into the net at 17.5% failures. It needs a flatter path or more pace, not a lower target. Left open.
+**The bandeja stays at 1.0.** A lower bandeja is more real at the net and turns it into something it isn't: at .7 the shot itself fails no more (2.1 to 2.7%), but it forces errors from whoever meets it 14.8% of the time against 5.9, and the real figure is 0.2. The AI's volley of a low ball is what breaks. Left open: the answer is in that volley, not in the target's height.
+
+**Per-stroke FE (my misreading, then a fix).** I first read that 14.8% as the bandeja failing, because `match-stats` credited a forced error to the shot before the failure. The paper's FE is the failing stroke's own: 0.8 on a smash, 3.4 on a back-wall exit. The tool now counts it that way, and a failed shot that was forced no longer sits in UE. The research note's column heading had the same mistake and is corrected. Older rounds' per-stroke UE figures include forced failures.
 
 **Contrapared 1.1.** Small and in the right direction on both seed blocks. Kept on that basis, not on the size of the move.
 
