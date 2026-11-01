@@ -8,6 +8,13 @@ const gz = (path: string): ArrayBuffer => {
   return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
 };
 
+/** The people generated with Meshy (data/people.json `guests`): not in PEOPLE, whose tests expect parts, hair cards and a face. */
+export const GUESTS = ['meshy', 'meshy2', 'meshy3'];
+
+export function guestAsset(name: string, base: PlayerAsset): PlayerAsset {
+  return parseBodyAsset(gz(`people/${name}.bnz`), base);
+}
+
 export function mannequinWithPeople(): PlayerAsset {
   const base = parsePlayerAsset(gz('player.bnz'));
   for (const n of PEOPLE) base.people.push(parseBodyAsset(gz(`people/${n}.bnz`), base));

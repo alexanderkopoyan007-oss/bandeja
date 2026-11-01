@@ -14,7 +14,7 @@ export interface Cast {
   kits: [number, number];
 }
 
-interface Person { name: string; nations: string[] }
+interface Person { name: string; nations: string[]; woman?: boolean }
 
 /** A seeded generator of its own, so the looks never share the match's. */
 export function seeded(seed: number, salt: number): () => number {
@@ -33,7 +33,8 @@ export function seeded(seed: number, salt: number): () => number {
 export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
   const rnd = seeded(seed, 0x2f0b4a87);
   const women = rnd() < roster.womensMatches;
-  const pool: Person[] = [...(women ? roster.women : roster.men)];
+  const guests: Person[] = roster.guests;
+  const pool: Person[] = [...(women ? roster.women : roster.men), ...guests.filter((p) => (p.woman === true) === women)];
   // Fisher-Yates: everyone in a different order, the first four play.
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
@@ -50,9 +51,10 @@ export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
     pool[1] = rest[0]!;
     pool[3] = rest[1]!;
   }
-  const all = [...roster.men, ...roster.women, ...roster.guests];
+  const all = [...roster.men, ...roster.women, ...guests];
   const picked = only?.length ? only.map((n) => all.find((p) => p.name === n) ?? pool[0]!) : pool.slice(0, 4);
-  return { people: picked.map((p) => p.name), women: only?.length ? roster.women.some((p) => p.name === only[0]) : women, nations: picked.map((p) => p.nations), kits };
+  const firstWoman = roster.women.some((p) => p.name === only?.[0]) || guests.some((p) => p.woman && p.name === only?.[0]);
+  return { people: picked.map((p) => p.name), women: only?.length ? firstWoman : women, nations: picked.map((p) => p.nations), kits };
 }
 
 /** ?people=a,b,c,d, or nothing (0 is the mannequin: asset.ts peopleWanted). */

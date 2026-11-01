@@ -3065,6 +3065,29 @@ Structural to a fused AI mesh: the armpit, fingers fused to the middle knuckle, 
 
 Frame time reads the same but isn't settled: both of his paced runs in `tools/perf.mjs` hitched (p99 18 and 41 ms) and p1's didn't; three alternating pairs of 1,448 frames in a separate probe did not repeat it (p99 9.5-9.6 against 9.3-9.5). The machine was busy throughout. He has only been played by bots.
 
+## Two more people from Meshy, and all three dealt into matches (2026-11-01)
+
+The owner, having seen the first: "Generate 2 more characters in meshy, they look better". Two invented adults, named after nobody and modelled on nobody: a woman (170 cm, olive skin, pale grey shirt, teal shorts) and a man (188 cm, deep brown skin, blue shirt, white shorts). 44 credits each on the owner's Pro plan (9 for the image, 35 for the model): 88 in all, 538 left. The GLBs stay out of git at `~/bandeja-people-src/meshy-woman/` and `meshy-man/`.
+
+**Their verdict is the deciding fact, so they're dealt.** The first man stayed a guest because he has no team colours. The owner has now looked and said these look better, and "the people don't look human close up" is a repeat High in the review. So all three go in the normal deal (`dealCast`, matched by sex): at 8 men and 5 women, about four matches in five have at least one of them. What that costs: a guest wears its own clothes, so a pair with one in it doesn't match, and the scoreboard colour under `?gfx=tv` doesn't match that player. Real amateurs don't match either; pros do.
+
+**The joints are measured now, not hand-set.** `fit.py` cuts the full mesh with level planes, finds the separate outlines (head, trunk, arms, legs), and follows each limb from its end. Wrist and knee are the narrow places, the elbow is the arm's rearmost point (a hanging arm is a little flexed), the rest are ratios. Calibrated on the first man's hand-set joints, which it lands within about a centimetre of without being given them. Each person's result is `tools/assets/meshy/marks/<name>.json`; the first man's are his original hand-set numbers, and with them `build.sh` rebuilt his files byte for byte before the bake changed. The fingers of a generated hand are half fused, so a finger can't be identified from a bump: each tip goes where the first man's was in the hand's frame, onto the nearest point of this hand. Bodies are centred on their own middle first and mirrored; side to side they differ by about a centimetre.
+
+**A bug the first man had too: two parts of the body sharing a texture.** The woman showed a camouflage band at the waist. The source mesh is clean and starting the bake's rays further out changed nothing, so that guess was wrong. Rendering the low mesh showed the shards were in the atlas: a flattened ring, like the waist, can lap over its own other end with no triangle flipped, and whichever part bakes last wins. 278 faces on her, 86 on the new man (eight rounds, because cutting one lap moved others), 111 on the first man. `decimate-bake.py` now finds overlaps on a 1024 grid and gives what overlaps islands of its own until nothing does. All three were rebaked. After packing, 2 to 7 faces still touch, and `guests.test.ts` holds the shared share of texels under 0.05%. The beige wedge at the first man's collar may have been this; I haven't looked at it again.
+
+**Skin went by a fixed brightness floor,** which left a dark-skinned face two thirds cloth (0.65 skin against 0.96 on his forearm), so it lit like a shirt. The floor is now 31% of the person's own brightest warm tone: 0.165 for him, 0.23 for the others. His forearm reads 1.0, his face 0.71 (that slice has his beard in it), his hair 0.005.
+
+| | first man | woman | new man | p5 | p7 |
+|---|---|---|---|---|---|
+| Height, m | 1.80 | 1.70 | 1.88 | 1.82 | 1.71 |
+| Arms as modelled, degrees off the body | 14 | 11 | 18 | | |
+| Edge stretch into the T-pose, p99 | 1.76 | 2.14 | 1.46 | | |
+| Pops per minute, seeds 1, 2, 3 | 21.3, 15.5, 19.8 | 18.5, 16.5, 21.3 | 22.0, 20.8, 14.5 | 22.5, 16.3, 18.5 | 18.8, 14.0, 14.3 |
+
+Guests had no tests at all, because `PEOPLE` lists only the ten. `tests/render/guests.test.ts` checks build, shared texels and pops; `tests/app/cast.test.ts` checks the deal.
+
+Still wrong: no blink or mouth, cloth and face are dead, hair is solid, fingers fused. The woman's arms sit closest to her body, so hers is the worst armpit by the numbers, though her smash looks right from the side and behind. No team colours: a shirt mask in the normal map's unused blue channel would allow them, not done.
+
 ## Round 10: what the review found from the owner's seat (2026-11-01)
 
 The review kept five Highs out of twelve (`REVIEW.md`, round 10). Every number here is on its seeds, old build against new. Three of the five causes turned out to be bugs rather than tuning, and two of the reviewers' guesses were wrong, so the rule that held is the usual one: trace it before changing it.

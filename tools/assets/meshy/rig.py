@@ -1,11 +1,11 @@
 # Step 2 of the Meshy pilot: rigs the decimated mesh (decimate-bake.py's low.npz) on the game skeleton, in Blender's Python.
-#   Blender -b --python tools/assets/meshy/rig.py -- <low-dir> <person-dir (read-person.mjs)> <out-dir>
+#   Blender -b --python tools/assets/meshy/rig.py -- <low-dir> <person-dir (read-person.mjs)> <out-dir> <marks.json> <name>
 #
 # The person is not in p1's pose (arms about 18 degrees off the body, not 42; longer arms, shorter legs), so p1's skeleton can't
 # just be laid over it. What happens instead:
-# - Its joints in its own pose are the landmarks below, measured from slices through the mesh (mirrored: it is symmetric to 2 mm);
-#   hip, knee, elbow and shoulder heights are judgement, the rest is geometry. Hands: p1's fitted by the palm's frame, each
-#   finger's chain then aimed at that fingertip.
+# - Its joints in its own pose are marks/<name>.json, from slices through the mesh (fit.py; the first person's were set by hand, and fit.py is
+#   calibrated on them; mirrored: these bodies are symmetric to about a centimetre). Hands: p1's fitted by the palm's frame, each finger's chain
+#   then aimed at that fingertip.
 # - p1's body is moved onto those joints, bone by bone, and each vertex here takes the weights of the nearest point on it.
 # - The arms are then raised to p1's angle with those weights and the mesh is bound there: a bind with the arms down has
 #   to swing 165 degrees overhead, and linear blend skinning collapses a shoulder at that (p1's 139 are what it was made for).
@@ -16,25 +16,21 @@ from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
 args = sys.argv[sys.argv.index('--') + 1:]
-LOW, P1, OUT = args[0], args[1], args[2]
+LOW, P1, OUT, MARKS, NAME = args[0], args[1], args[2], args[3], args[4]
 os.makedirs(OUT, exist_ok=True)
 
 SIDES = ('Left', 'Right')
 FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky')
 
 # ---------- the person's joints in its own pose (game axes: y up, faces +z, +x its left; the left side, mirrored for the right) ----------
-LM = {
-    'Hips': (0, 1.000, -0.029), 'Spine': (0, 1.0933, -0.015), 'Spine1': (0, 1.1866, -0.033), 'Spine2': (0, 1.3146, -0.091),
-    'Neck': (0, 1.525, -0.005), 'Head': (0, 1.565, -0.008), 'HeadTop_End': (0, 1.800, 0.005),
-    'LeftShoulder': (0.067, 1.488, -0.012), 'LeftArm': (0.200, 1.415, -0.045), 'LeftForeArm': (0.260, 1.165, -0.067), 'LeftHand': (0.358, 0.900, -0.030),
-    'LeftUpLeg': (0.105, 0.955, -0.025), 'LeftLeg': (0.158, 0.490, -0.025), 'LeftFoot': (0.222, 0.100, -0.060),
-}
+M = json.load(open(MARKS))
+LM = {n: tuple(p) for n, p in M['joints'].items()}
 # The hand's frame: fingers' direction, across towards the thumb; and the fingertips.
-HAND_F = np.array((0.387, -0.919, -0.075))
-HAND_K = np.array((0.074, -0.050, 0.996))
-TIPS = {'Thumb': (0.388, 0.785, 0.070), 'Index': (0.425, 0.720, 0.024), 'Middle': (0.427, 0.702, -0.003), 'Ring': (0.413, 0.706, -0.030), 'Pinky': (0.397, 0.731, -0.056)}
+HAND_F = np.array(M['handF'])
+HAND_K = np.array(M['handK'])
+TIPS = {n: tuple(p) for n, p in M['tips'].items()}
 TIP_IN = 0.007  # how far inside the tip the last joint stands
-RAISE = np.radians(24)  # the arms up to p1's angle
+RAISE = np.radians(M['raise'])  # the arms up to p1's angle
 ARMPIT_SMOOTH = 14
 PART_SOURCE_OUT = (4, 9, 10)  # p1's eyes, teeth and tongue give no weights
 
@@ -61,11 +57,11 @@ np.add.at(W_p, (np.arange(nv_p)[:, None].repeat(4, 1), SI_p), SW_p)
 # ---------- the person ----------
 d = np.load(f'{LOW}/low.npz')
 B = d['co'].astype(np.float64)
-V = np.stack([B[:, 0], B[:, 2], -B[:, 1]], 1)
+V = np.stack([B[:, 0] - M['cx'], B[:, 2], -B[:, 1]], 1)  # (on the body's own middle: the marks are mirrored about it)
 TRI = d['tri'].astype(np.int64)
 UV = d['uv']
 HI = d['hico']
-HI = np.stack([HI[:, 0], HI[:, 2], -HI[:, 1]], 1)
+HI = np.stack([HI[:, 0] - M['cx'], HI[:, 2], -HI[:, 1]], 1)
 print('RIG person', len(V), 'verts', len(TRI), 'tris, p1 source tris', len(TRI_p))
 
 
@@ -231,8 +227,10 @@ for _ in range(3):
 
 # The fused armpit: the sleeve's underside is one surface with the ribs, in a crease that unfolds when the arm lifts. Left at the nearest
 # surface's hard edge, all of that went into one thin strip; a wider blend spreads it over the crease's neighbours.
+ax_, ay_ = LM['LeftArm'][:2]
+big = M['height'] / 1.80
 for side_ in (1, -1):
-    zone = (V[:, 0] * side_ > 0.10) & (V[:, 0] * side_ < 0.31) & (V[:, 1] > 1.14) & (V[:, 1] < 1.44)
+    zone = (V[:, 0] * side_ > ax_ - 0.10 * big) & (V[:, 0] * side_ < ax_ + 0.11 * big) & (V[:, 1] > ay_ - 0.275 * big) & (V[:, 1] < ay_ + 0.025 * big)
     for _ in range(ARMPIT_SMOOTH):
         acc = np.zeros_like(W)
         np.add.at(acc, edges[:, 0], W[edges[:, 1]])
@@ -420,8 +418,8 @@ hd = Ab[ix['Head']] + np.array((0, 0.09, 0))
 meshes['alpha'] = mesh([hd, hd + (0.001, 0, 0), hd + (0, 0.001, 0)], [(0, 1, 0)] * 3, [(0, 0)] * 3, [[ix['Head'], 0, 0, 0]] * 3, [[1, 0, 0, 0]] * 3, [6] * 3, [0, 1, 2])
 
 header = {
-    'name': 'meshy', 'height': 1.80, 'bones': names, 'joints': Jt.tolist(), 'move': [Mv[i].flatten(order='F').tolist() for i in range(nb)],
-    'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': 'meshy-normal.webp'}, 'parts': PARTS, 'morphs': [],
+    'name': NAME, 'height': M['height'], 'bones': names, 'joints': Jt.tolist(), 'move': [Mv[i].flatten(order='F').tolist() for i in range(nb)],
+    'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': f'{NAME}-normal.webp'}, 'parts': PARTS, 'morphs': [],
     'kit': {'baked': True, 'top': 'tee', 'bottom': 'shorts', 'mark': 0}, 'meshes': meshes,
 }
 open(f'{OUT}/body.bin', 'wb').write(bytes(blob))

@@ -1,5 +1,5 @@
 {
-  "//": "Who can be dealt to a match (src/game/cast.ts): the people in data/players/, and the nations their names may come from, so that a name fits the face. A match is men or women throughout.",
+  "//": "Who can be dealt to a match (src/game/cast.ts): the people in data/players/, and the nations their names may come from, so that a name fits the face. A match is men or women throughout. Guests are dealt like the rest; each wears its own clothes (one fused surface, tools/assets/meshy/), so a pair with one in it doesn't match.",
   "men": [
     { "name": "p1", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] },
     { "name": "p2", "nations": ["BRA", "FRA", "POR", "NED"] },
@@ -15,7 +15,9 @@
     { "name": "p10", "nations": ["ESP", "ARG", "MEX", "POR"] }
   ],
   "guests": [
-    { "name": "meshy", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] }
+    { "name": "meshy", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] },
+    { "name": "meshy2", "nations": ["ESP", "ITA", "ARG", "POR"], "woman": true },
+    { "name": "meshy3", "nations": ["BRA", "FRA", "POR", "NED"] }
   ],
   "womensMatches": 0.35
 }
