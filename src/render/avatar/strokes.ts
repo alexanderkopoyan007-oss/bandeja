@@ -291,7 +291,8 @@ export const SMASH: Family = {
     knots: [0, 0.34, 0.6, 0.8, 1],
     hand: [0.22, 0.27, 0, 0.25, 0.22, -0.14, 0.24, 0.03, -0.22, 0.27, 0.22, -0.12, 0.3, 0.36, -0.02],
     elbow: [0.29, 0.02, 0.06, 0.29, 0.05, 0.05, 0.28, 0.1, 0.07, 0.26, 0.16, 0.1, 0.22, 0.22, 0.1],
-    back: [deg(37), deg(85), deg(145), deg(90), deg(30)],
+    // (the head comes through late: at 90 it was through by -3 frames and slowing, 14 m/s to 9 at the ball)
+    back: [deg(37), deg(85), deg(145), deg(125), deg(30)],
     tilt: [0.24, -0.55, -0.1],
     pitch: 0.3,
   },

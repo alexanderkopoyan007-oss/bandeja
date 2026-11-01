@@ -541,14 +541,14 @@ Three reviewers on the shipped build, this time with a body-mechanics reviewer i
 | 4 | Medium (was High) | **Steer a smash and it loses its kill depth.** | **Fixed.** A and D no longer freeze depth, a key held from the run in isn't a steer. Winners by contact depth 42/41/30 (was 25/27/23; untouched 50/43/36). Space pressed late stays deep: the stance was the bandeja's, so it can't be a true smash |
 | 5 | Medium (was High) | **The wrist fix missed the between-point poses,** one frame in five bent about 100 degrees. | **Fixed.** Carry 2.28 to 0.34, address 2.14 to 0.50, tap 2.02 to 0.54-0.81, and now in the wrist test |
 | 6 | Medium (was High) | **The ready pose held both arms out nearly straight.** | **Fixed.** Free elbow 15 to 44-52 (footage 45-47), racket elbow 61 |
-| 7 | Medium (was High) | **The hit is not the racket's fastest moment.** | Open. Smash 14 m/s three frames before, 10 at the ball |
+| 7 | Medium (was High) | **The hit is not the racket's fastest moment.** | Better. Smash 9 at the ball to 12, the head coming through later; a serve leaves the ball at 10.6 m/s, not 8 (a cap in the follow-through). The peak is still two frames early, and the sim's face speed is still about three times the drawn one |
 | 8 | Low (was High) | **After every serve the racket goes into the server's face.** | **Fixed.** It stood up in front of the nose, 5 cm off. Now past the far shoulder, 13-20 cm from the skull's centre, elbow 103 |
 | 9 | Medium | The forehand arm sat at its stop from the take-back to the ball. | **Fixed.** The key had the hand 0.8 m from the shoulder of a 0.58 m arm. Elbow 96, 66, 35, 53, 69 through the swing (was 30 all the way), wrist 0.73 at the ball |
 | 10 | Medium | The menu misdescribes the partner, and the TV camera. | **Fixed.** Copy only |
 | 11 | Medium | The AI lob-volleys chest-high balls from the net. | **Fixed.** Not above 1 m. Six thousand points, unseen seeds: shots 10.75 to 10.66, serving pair 66.3 to 66.5, within noise |
 | 12 | Medium | Perfect barely beats Good, and a held key is graded Perfect | Open |
 | 13 | Medium | Your volley meets the ball moving sideways at walking pace | Open |
-| 14 | Medium | The smash arm brakes into the ball | Open. Same as #7 |
+| 14 | Medium | The smash arm brakes into the ball | Better. See #7 |
 | 15 | Medium | The near fence rail sits on the default aim, the other cameras are worse | Open |
 | 16 | Medium | The first match is a long loss by default | The owner's call |
 | 17 | Medium | The serve's wrist is past its limit all the way, the elbow folds and opens, the hips jolt at the ball | Half. The hand goes round the shoulder: elbow peak 90 to 77. The release no longer jumps the arm's way, which also closes most of Round 14's #17: racket 5 to 28 m/s in a frame, now 5 to 16 and building to 21 at the ball. Wrist and hips open |

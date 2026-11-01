@@ -508,6 +508,8 @@ const LAND_DROP = 0.06;
 const LAND_TIME = 0.2;
 const FOLLOW = 0.3;
 const FOLLOW_N = 3;
+/** The same for a stroke with an arm drawn in the chest's frame: a serve left the ball at 8 m/s from 13, and a cap of 3 is why. */
+const FOLLOW_N_OVER = 4.5;
 /** A hip's range (solveLegs): how far round from the hips a foot (rad), and a knee, may point; how far outward a knee
  * sits off the hips (rad, or they brush each other). */
 const FOOT_OFF_HIPS = (65 * Math.PI) / 180, KNEE_OFF_HIPS = (42 * Math.PI) / 180, KNEE_OUT = 0.14;
@@ -2102,7 +2104,7 @@ export class Avatar {
         // (review round 8, the critic's #4).
         const away = hand ? this.overAt(k, fin, 0.1) * 10 : 2 * k.p.distanceTo(this.ctrl);
         const n = (this.swingV * (f.follow ?? FOLLOW) * this.manner.follow) / Math.max(0.05, away);
-        const e = 1 - Math.pow(1 - s, n < 2 ? 2 : n > FOLLOW_N ? FOLLOW_N : n);
+        const top = f.over ? FOLLOW_N_OVER : FOLLOW_N, e = 1 - Math.pow(1 - s, n < 2 ? 2 : n > top ? top : n);
         if (hand) this.overAt(k, fin, e);
         else {
           bezier(k.p, this.ctrl, fin.p, e, this.kp);
