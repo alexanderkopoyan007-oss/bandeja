@@ -440,10 +440,13 @@ const TIP_RATE = (1200 * Math.PI) / 180;
 const WALL_YAW_RATE = 8;
 /** Face centre to the top of the frame (m), and how close the frame comes to the floor when it tips. */
 const RACKET_TOP = 0.17;
-/** The hand's height at a volley: most above the ball (m, the racket's head dropped) and below it (the head up). */
-const HAND_OVER = 0.1;
+/**
+ * The hand's height at a volley: most above the ball (m) and below it (the head up). Never over it: the head dropped 6 cm under the hand on
+ * low forehand volleys, a tray by the hip, and the legs get a low ball, not the wrist.
+ */
+const HAND_OVER = 0;
 const HAND_UNDER = 0.3;
-const VOLLEY_ARM = 0.84;
+const VOLLEY_ARM = 0.78;
 /** The arm no longer than this share of itself on the way back to ready (see solveArms), eased over RECOVER_EASE s. */
 const RECOVER_ARM = 0.8;
 const RECOVER_EASE = 0.06;
@@ -3070,7 +3073,7 @@ export class Avatar {
     {
       // Into the ball: the hips over the front of the feet by the contact (they were 6-14 cm behind them).
       const go = this.st === ST_PREP ? this.swingS : this.st === ST_SWING || this.st === ST_FADE ? 1 : 0;
-      this.intoBall += ((this.fam.weight ?? 0) * go * this.w - this.intoBall) * (this.dt > 0 ? 1 - Math.exp(-this.dt / INTO_EASE) : 0);
+      if (this.jumpT0 < 0) this.intoBall += ((this.fam.weight ?? 0) * go * this.w - this.intoBall) * (this.dt > 0 ? 1 - Math.exp(-this.dt / INTO_EASE) : 0);
     }
     if (before) {
       const k = this.contactKey();
@@ -3112,9 +3115,10 @@ export class Avatar {
     let rz = dh > 1e-3 ? (dz / dh) * push : 0;
     // Before the contact the target is steady, and its limit only smooths a new plan in (the reach must be whole by
     // the contact: it is what puts the racket on the ball).
+    // (nothing pushes off in the air: the hips went back, forward and back again through a jump, 0.56 m of path on a 0.16 m flight)
     if (this.dt > 0) {
       const ex = rx - this.reachX, ez = rz - this.reachZ;
-      const e = Math.sqrt(ex * ex + ez * ez), lim = (before ? REACH_RATE_BEFORE : REACH_RATE) * this.dt;
+      const e = Math.sqrt(ex * ex + ez * ez), lim = this.jumpT0 >= 0 ? 0 : (before ? REACH_RATE_BEFORE : REACH_RATE) * this.dt;
       if (e > lim) { rx = this.reachX + (ex * lim) / e; rz = this.reachZ + (ez * lim) / e; }
     }
     this.reachX = rx;

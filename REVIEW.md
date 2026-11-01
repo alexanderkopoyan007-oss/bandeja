@@ -552,13 +552,13 @@ Three reviewers on the shipped build, this time with a body-mechanics reviewer i
 | 15 | Medium | The near fence rail sits on the default aim, the other cameras are worse | Open |
 | 16 | Medium | The first match is a long loss by default | The owner's call |
 | 17 | Medium | The serve's wrist is past its limit all the way, the elbow folds and opens, the hips jolt at the ball | Open |
-| 18 | Medium | A jump smash's hips swim in the air | Open |
+| 18 | Medium | A jump smash's hips swim in the air | **Fixed.** The reach and the weight hold in flight. Hip path 0.11-0.20 m (was 0.56), up to 0.09 off the line (was 0.37), 0-1 reversals (was 2-4) |
 | 19 | Medium | No lunge: a wider ball gets a lean, not a long step | Open |
 | 20 | Medium | The backhand's forearm kicks the wrong way before the ball | Open |
 | 21 | Medium | The hips sag on the second stride of a long start | Open |
 | 22 | Medium | Por tres is rare and can't be played on purpose | Open |
 | 23 | Medium | Key aim can't reach a put-away volley in time | Open |
-| 24 | Medium | Forehand volleys drop the racket level beside the hip | Open |
+| 24 | Medium | Forehand volleys drop the racket level beside the hip | **Fixed.** The hand no longer sits above the ball, the body goes further to it. Head level to 2 cm over the hand at the ball (was 6 cm under), elbow 94 down to 43, wrist 0.94. The balls in the review's band were in fact 0.68-0.78 m at contact: the plan's height is read before they fall |
 | 25 | Low | The handle sits in the thigh on low volleys | Open |
 | 26 | Low | The split step comes after the strike | Open |
 
