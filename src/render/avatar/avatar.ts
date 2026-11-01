@@ -313,8 +313,10 @@ const ST_FADE = 3;
 const MIN_SWING = 0.11;
 /** The forward swing starts this long before the planned contact while the key is still held (s)... */
 const LEAD = 0.16;
-/** ...and waits this far along (0..1) for the release. */
-const HOVER = 0.85;
+/** ...and, the release being anyone's guess, closes to this long short of the ball (s), whatever the swing's length... */
+const HOVER_GAP = 0.012;
+/** ...slowing over this share of the swing: it never parks (see hover). */
+const HOVER_EASE = 0.12;
 /** Nearest a hand is put to its own shoulder, as a share of the arm's length (see keepOff). */
 const ARM_MIN = 0.35;
 /** Fastest the way from a shoulder to its hand may turn (rad/s; see keepOff). */
@@ -1783,6 +1785,16 @@ export class Avatar {
     return st.t;
   }
 
+  /**
+   * How far along a human's swing is, s being how far it would be were the plan's moment the release. A swing stopped
+   * short of the ball stood still in the air for 50-100 ms and then jumped half a metre in a frame: this one slows
+   * down instead, and is still closing on the ball when the release comes (review round 13).
+   */
+  private hover(s: number, lead: number): number {
+    const top = 1 - HOVER_GAP / lead, from = top - HOVER_EASE;
+    return s <= from ? s : top - HOVER_EASE * Math.exp((from - s) / HOVER_EASE);
+  }
+
   /** The player's stand plan: the AI's own, or the sim's for a human. */
   private plan(sim: MatchSim, idx: number): Readonly<StandPlan> {
     const ai = sim.ai[idx];
@@ -1846,7 +1858,11 @@ export class Avatar {
         // Never faster than the quickest swing (a backswing held while beaten and let go late jumped to nearly
         // done in one frame and snapped the elbow).
         const cap = this.swingS + this.dt / (MIN_SWING * this.fam.punch);
-        this.swingS = Math.max(this.swingS, Math.min(this.known ? 1 : HOVER, 1 - (tp - t) / lead, cap));
+        const s = 1 - (tp - t) / lead;
+        this.swingS = Math.max(this.swingS, Math.min(this.known ? Math.min(s, 1) : this.hover(s, lead), cap));
+        // The plan's moment goes by and the ball goes on, so the racket follows it, the swing's last stretch behind.
+        const on = t + (1 - this.swingS) * lead;
+        if (!this.known && on > tp) this.predAt(sim, on, this.conW);
       }
     }
     // Release (a whiff at release goes straight to recover): finish the swing at the contact moment. The wall turn
