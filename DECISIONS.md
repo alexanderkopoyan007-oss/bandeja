@@ -3090,3 +3090,20 @@ Your drive at 79 km/h against the AI's 62-64 is not a bug: you aim 7.2 m deep by
 **Also:** the "ball about to hit the body" release ran only with a contact in reach, so a plan off the glass switched it off in the very case it was written for. A swing at nothing reads "Out of reach", not the last shot's "Too late" and milliseconds.
 
 **Not done.** The Mediums are open (`REVIEW.md`), the human's víbora at 2.3 m among them. P and M with no message is a HUD change, so it waits for the owner. Sound wasn't reviewed. Nobody has played this by hand, so everything here about the human's swing is a stand-in's.
+
+## Round 11: what the second review from the owner's seat found (2026-11-01)
+
+**The rule of a held swing.** A release is a contact, so the racket must be near the ball at any moment a release can come, and nobody knows that moment. Something has to give. Slowing before the moment made a Perfect release the ugliest case. Now the swing runs 6% behind at full speed to the moment and brakes after it. A release on the moment leaves about a frame of quick swing, the racket 7 ms behind the ball. A late release gets a slow stretch: frozen over 30 ms at the serve went 5 to 10%. That is the right way round. A bad release can look bad. 9% behind was tried first and the last frame reached 54 cm.
+
+**A human's swing is timed to the ring.** The plan's moment and the ring's differ, on a volley by up to 50 ms, which is 0.8 m of ball. The player is shown the ring, so that is what the body goes for. Traced on one volley: plan 0.127 s away, ring 0.177, target 0.77 m apart.
+
+**A human's overhead is planned by what is held,** settled once the ball is under 0.35 s away, so a late Space leaves the ring still. A round 7 note kept the human on one height because a ring that moved mid-charge would play worse. Keeping it cost more: every bandeja a leap, every víbora 107 km/h. A late Space now plays a smash at a bandeja's height, which is what a late decision should cost.
+
+**The AI's chest-high volley changes the swing, not the analyst's sheet.** pressure.ts stays what it was set to be. `SimpleAi.steadied` takes half the pressure off the swing for an air ball over 0.95 m, ramped from 0.75 m, on a volley. Halving pressure.ts itself would have moved errors between forced and unforced without the play changing. Forced errors fell a point and a half and stay low; published 29-33, here 22.8. The review's own copy with the same rule gave 21.8.
+
+**Tests moved, with the reason.** assist: "high" was over 2.0 m, the old plan's height; a bandeja is now met at 1.95, so 1.75. input: six seeds for three, a sample size only. contrapared: into-own-mesh bound 0.15 to 0.2. Over 160 matches the new build is 8 of 173, the old 12 of 186; the 14 seeds in the test give 4 of 20, so the old bound measured the seed.
+
+**Not done.** Round 10's read cannot see a two-spot pattern. It was not needed: a plan now pays everywhere. Pro got harder than a sharp stand-in with a plan can comfortably beat (21-19). I left that. Advanced is the default and a steady plan still wins 36-4 there.
+
+**FPS,** alternating runs on a busy machine, shipped against final: Medium 4x throttled 155.9, 105.5 against 122.3, 127.3; High 203.9, 188.8 against 185.1, 190.5; paced 120.5 in all. No cost I can tell from the load. Alloc 7/8/10 (budget 10), tests 633/633.
+
