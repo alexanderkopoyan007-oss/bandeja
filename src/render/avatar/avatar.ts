@@ -322,10 +322,10 @@ const ST_FADE = 3;
 const MIN_SWING = 0.11;
 /** The forward swing starts this long before the planned contact while the key is still held (s)... */
 const LEAD = 0.16;
-/** ...and, the release being anyone's guess, closes to this long short of the ball (s), whatever the swing's length... */
-const HOVER_GAP = 0.012;
-/** ...slowing over this share of the swing: it never parks (see hover). */
-const HOVER_EASE = 0.12;
+/** ...and, the release being anyone's guess, runs this share of the swing behind it at full speed... */
+const HOVER_BEHIND = 0.06;
+/** ...only braking once the moment has gone by with no release, over this share (it never parks: see hover). */
+const HOVER_EASE = 0.04;
 /** Nearest a hand is put to its own shoulder, as a share of the arm's length (see keepOff). */
 const ARM_MIN = 0.35;
 /** Fastest the way from a shoulder to its hand may turn (rad/s; see keepOff). */
@@ -1818,11 +1818,14 @@ export class Avatar {
   /**
    * How far along a human's swing is, s being how far it would be were the plan's moment the release. A swing stopped
    * short of the ball stood still in the air for 50-100 ms and then jumped half a metre in a frame: this one slows
-   * down instead, and is still closing on the ball when the release comes (review round 13).
+   * down instead, and is still closing on the ball when the release comes (review round 13). The slowing starts at the
+   * plan's moment, not before it: started earlier, even a Perfect release fell to a third of the speed and then snapped
+   * through the ball in a frame, and the better you timed it the worse it looked (review round 15). What is left at a
+   * release that came on the moment is about a frame of quick swing, MIN_SWING's rate putting it 7 ms behind the ball.
    */
-  private hover(s: number, lead: number): number {
-    const top = 1 - HOVER_GAP / lead, from = top - HOVER_EASE;
-    return s <= from ? s : top - HOVER_EASE * Math.exp((from - s) / HOVER_EASE);
+  private hover(s: number): number {
+    const on = s - HOVER_BEHIND, from = 1 - HOVER_BEHIND;
+    return on <= from ? on : from + HOVER_EASE * (1 - Math.exp((from - on) / HOVER_EASE));
   }
 
   /** The player's stand plan: the AI's own, or the sim's for a human. */
@@ -1889,10 +1892,9 @@ export class Avatar {
         // done in one frame and snapped the elbow).
         const cap = this.swingS + this.dt / (MIN_SWING * this.fam.punch);
         const s = 1 - (tp - t) / lead;
-        this.swingS = Math.max(this.swingS, Math.min(this.known ? Math.min(s, 1) : this.hover(s, lead), cap));
-        // The plan's moment goes by and the ball goes on, so the racket follows it, the swing's last stretch behind.
-        const on = t + (1 - this.swingS) * lead;
-        if (!this.known && on > tp) this.predAt(sim, on, this.conW);
+        this.swingS = Math.max(this.swingS, Math.min(this.known ? Math.min(s, 1) : this.hover(s), cap));
+        // The plan's moment goes by and the ball goes on, so the racket follows it: a release now strikes it now.
+        if (!this.known && t > tp) this.predAt(sim, t, this.conW);
       }
     }
     // Release (a whiff at release goes straight to recover): finish the swing at the contact moment. The wall turn

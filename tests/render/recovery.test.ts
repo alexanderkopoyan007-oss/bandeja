@@ -12,10 +12,11 @@ describe('after the ball and at it', () => {
   const ratios: number[] = [], elbows: number[] = [];
   const q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Vector3(), W = new THREE.Vector3();
   const fade = [0, 1, 2, 3].map(() => ({ on: false, was: new THREE.Quaternion(), from: new THREE.Quaternion(), path: 0, cut: false }));
-  let seq = 0, pastEnd = 0;
+  let seq = 0, pastEnd = 0, held: unknown = null;
   const past = new THREE.Vector3();
   runAnimQa(p, { seed: 3, seconds: 150, lefty: [], onFrame: (m, av) => {
-    (av[1] as unknown as { predAt(s: unknown, t: number, o: THREE.Vector3): void }).predAt(m, m.pred.start + 99, past);
+    held = av[1];
+    (held as { predAt(s: unknown, t: number, o: THREE.Vector3): void }).predAt(m, m.pred.start + 99, past);
     pastEnd += Number.isNaN(past.x + past.y + past.z) ? 1 : 0;
     av.forEach((raw, i) => {
       const a = raw as unknown as { st: number; racket: THREE.Object3D };
@@ -46,6 +47,14 @@ describe('after the ball and at it', () => {
   it('a time past the end of the ball\'s path is its last sample', () => {
     // (it was NaN, and the bones it reached stayed NaN: one player gone from the picture for the rest of the match)
     expect(pastEnd).toBe(0);
+  });
+
+  it('a held swing runs at full speed up to the moment and brakes only after it', () => {
+    // (slowing from 12% of the swing before the moment, a Perfect serve fell to 3.4 m/s and then snapped at 23)
+    const a = held as unknown as { hover(s: number): number };
+    expect(a.hover(0.99) - a.hover(0.95)).toBeCloseTo(0.04, 6);
+    expect(a.hover(1.3)).toBeGreaterThan(a.hover(1.1));
+    expect(a.hover(9)).toBeLessThan(1);
   });
 
   it('the racket goes back to ready the short way', () => {
