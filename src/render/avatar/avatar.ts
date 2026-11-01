@@ -67,7 +67,7 @@ const RING_JUMP = 0.2;
 const BY_HAND_OUT = 0.14;
 /** The arm OverArm's curves are drawn for (m), when the chest's curves start giving way to the ball (progress), the trunk's ease (s). */
 /** The hand goes through the ball first, then to its chest-frame place (OverArm.under) over these times after it (s). */
-const OVER_AFTER0 = 0.06, OVER_AFTER1 = 0.3;
+const OVER_AFTER0 = 0, OVER_AFTER1 = 0.24;
 const OVER_ARM = 0.56;
 /** How fast a late release shortens an overhead's way to the ball (s). */
 const LAG_EASE = 0.11;
@@ -383,6 +383,8 @@ const FINISH_EASE = 0.15;
  * it (SPINE_REACH, after the legs): taken by the hips alone every ball under 0.6 m was met in a full squat.
  */
 const DOWN_SHARE = 0.22;
+/** The same at a volley, played from the knees: at 0.22 the trunk bowed 39 degrees to a ball at 0.7 m, the arm long (elbow 33; 63 on video). */
+const VOLLEY_DOWN = 0.8;
 /** The share more for a ball just off the ground (under DOWN_LOW1 m, from DOWN_LOW0): a half-volley is got down to. */
 const DOWN_LOW = 0.45;
 const DOWN_LOW0 = 0.4, DOWN_LOW1 = 0.15;
@@ -427,6 +429,8 @@ const NEAR_RATE = 12;
 const REACH_RATE = 2.5;
 /** The same before the contact (m/s): a new plan's reach comes in over 0.1 s or so. */
 const REACH_RATE_BEFORE = 4;
+/** After a jump's ball and on landing (m/s): held to the ball and let go all at once, the hips lurched 2.7 m/s off the feet. */
+const REACH_RATE_AIR = 0.6, REACH_RATE_LAND = 1.2;
 /** Nearest an ankle comes to its hip, as a share of the leg's length (a deep lunge's front leg is about 0.6). */
 const LEG_FOLD = 0.55;
 /** Lowest an ankle goes (m): the foot flat on the floor. */
@@ -3123,12 +3127,12 @@ export class Avatar {
     // (nothing pushes off in the air: the hips went back, forward and back again through a jump, 0.56 m of path on a 0.16 m flight)
     if (this.dt > 0) {
       const ex = rx - this.reachX, ez = rz - this.reachZ;
-      const e = Math.sqrt(ex * ex + ez * ez), lim = this.jumpT0 >= 0 ? 0 : (before ? REACH_RATE_BEFORE : REACH_RATE) * this.dt;
+      const e = Math.sqrt(ex * ex + ez * ez), lim = (this.jumpT0 >= 0 ? (before ? 0 : REACH_RATE_AIR) : before ? REACH_RATE_BEFORE : this.landAt >= 0 ? REACH_RATE_LAND : REACH_RATE) * this.dt;
       if (e > lim) { rx = this.reachX + (ex * lim) / e; rz = this.reachZ + (ez * lim) / e; }
     }
     this.reachX = rx;
     this.reachZ = rz;
-    const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * (DOWN_SHARE + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y)) : 0;
+    const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * ((this.fam.wrist ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y)) : 0;
     // The knees bend no faster than a body drops (the crouch jumped when the stroke or its contact changed). The
     // reach follows the stroke's key, which is smoothed already.
     let crouch = this.crouch;

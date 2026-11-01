@@ -563,3 +563,17 @@ Three reviewers on the shipped build, this time with a body-mechanics reviewer i
 | 26 | Low | The split step comes after the strike | Open |
 
 Frame rate on the fix: 120.5 fps paced, 8.3 ms, none over 20 ms, 82 draw calls, 471k triangles. Alloc 9 against a budget of 10.
+
+## Round 16 (2026-11-01, on 442eefb; "review round 21" in the code's comments)
+
+Three reviewers and a sceptic on the shipped build, seeds from 2381000: 26 findings, five reached the sceptic, none stayed High. Its best catch was against Round 15 itself: **the arms had been moved into the body.** Round 15 #8 and #9 acted on a reviewer's reading that an elbow at 30 was wrong, when the footage has it at 30-31 at -0.22 s. The numbers it improved were real and the poses got worse, and no check saw it, because `clip.handTorso` reads the mannequin, a thinner body with longer arms.
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | Medium (was High) | **On every serve the racket arm passes through the server's chest.** | **Fixed.** Over 5 cm in: 50% of the finish to 0%, generated bodies 66% to 1%. The hand goes on in front of the chest, the racket lies across to the far shoulder 29 cm off the skull, elbow 51, 31, 31, 82, 101, 102 (video 39, 46, 73, 123, 125). `tests/render/armClear.test.ts` fails the old build |
+| 2 | Medium (was High) | **Pulling the hands in put the arms inside the body** at take-back, in ready and in the run. | **Fixed.** Take-backs back on the footage, forehand elbow 30, 30, 45, 64, 52, 45 (video 30, 39, 48, 47-64, 38-60). Ready: elbow out, hands 5 cm further on: still 19.8 to 0.6%, run 13.6 to 1.3% (generated 26 to 1%, 29 to 7%). Free elbow 30, video 45-47, is what that cost |
+| 3 | Medium | Bandeja: wrist 2.9 times past its range after the ball | **Fixed.** Finish out in front: 1.98, the face closing to -33 by +65 ms (was -63 on the old build) |
+| 4 | Medium | The forehand elbow flicks out and back before the ball | **Fixed** with #2: the wobble was the shortened take-back |
+| 5 | Medium | Jump smash: the hips' debt moved to the landing | **Fixed.** 0.6 m/s after the ball in the air, 1.2 on landing. Lurch 2.7 to 1.3-1.6 m/s, hips off the feet 17 to 11 cm, in-air speed still 0.84 (was 2.5) |
+| 6 | Medium | Low volleys: more bow, straighter arm | **Fixed.** Played from the knees (`VOLLEY_DOWN`). Ball at 0.65-0.8 m: trunk 39 to 31, elbow 33 to 60 (video 63), hips 0.79 to 0.66 |
+
