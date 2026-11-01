@@ -156,6 +156,8 @@ export function kitRegions(asset: PlayerAsset): { region: Float32Array; frame: K
 export interface KitState {
   /** x: 0 dry .. 1 soaked (the match's length and the player's effort). A vector, so writing it doesn't box a double. */
   sweat: { value: THREE.Vector2 };
+  /** A person with a painted face: x the blink, y the jaw (`bakedMaterial`). */
+  face?: { value: THREE.Vector2 };
   /** How far the hems lag the body (m, model space). */
   lag: { value: THREE.Vector3 };
   /** How far a stride throws long hair (m, model space): the mannequin has none. */
@@ -397,7 +399,7 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
  */
 export function personMaterial(asset: PlayerAsset, look: KitLook): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
   const body = asset.look!;
-  if (body.kit.baked) return bakedMaterial(asset);
+  if (body.kit.baked) return bakedMaterial(asset, look);
   const frame = personFrame(asset);
   // Parts (asset.ts): A = shirt, shorts, skin, socks; B = shoes, eyes, teeth, tongue. bodyX by part: skin (lips,
   // T-zone, lids, ears); eyes, shoes, socks: x = their baked occlusion; the shirt: x = where it gets wet first.
@@ -611,14 +613,18 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
 }
 
 const BAKED_CLOTH_AMBIENT = 0.8;
+/** How far a generated person's painted folds darken and lighten the team's colour (of the garment's middle brightness). */
+const FOLD_MIN = 0.5, FOLD_MAX = 1.3;
+/** A generated person's drawn lid and lips (half sizes, m). */
+const EYE_WIDE = 0.0165, EYE_TALL = 0.0085, MOUTH_WIDE = 0.026, MOUTH_TALL = 0.0065;
 
 /**
  * A person who is one fused surface with the look in its texture (the Meshy pilot, tools/assets/meshy/): the atlas's colour, its alpha
  * the skin (warm, lit by `PersonNodeMaterial` as the rest of the cast's skin), the rest matte cloth with a sheen; the tangent-space
- * normals baked from the full mesh over `clothNormal`. Stubs: no team colours, no hems (there is no separate cloth to lag), no sweat
+ * normals baked from the full mesh over `clothNormal`, the team's shirt and shorts where kit-mask.py found them. Stubs: no hems (there is no separate cloth to lag), no sweat
  * patches, no hair cards (the second mesh is a speck inside the head).
  */
-function bakedMaterial(asset: PlayerAsset): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
+function bakedMaterial(asset: PlayerAsset, look: KitLook): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
   const body = asset.look!;
   const sweatU = uniform(new THREE.Vector2());
   const sweat = sweatU.x;
@@ -627,8 +633,34 @@ function bakedMaterial(asset: PlayerAsset): { material: PersonNodeMaterial; hair
   const skin = tex.w.sub(0.25).div(0.75).clamp();
   // Occlusion per vertex (rig.py, kept as the sock part's in bodyX.x): all of the ambient light, a little of the colour.
   const ao = attribute<'vec4'>('bodyX', 'vec4').x;
+  // The team's shirt and shorts (kit-mask.py, the normal map's alpha): their colour by how much lighter or darker this texel is than
+  // the garment's middle, which keeps the folds Meshy painted. (A 0.25 alpha is nothing, 0.62 the shirt, 1 the shorts.)
+  const normalTex = body.clothNormal ? texture(body.clothNormal, uv()) : null;
+  const band = normalTex ? normalTex.w : float(0.25);
+  const shortsW = smoothstep(0.72, 0.9, band);
+  const shirtW = smoothstep(0.32, 0.5, band).sub(shortsW);
+  const lum = tex.xyz.dot(vec3(0.2126, 0.7152, 0.0722));
+  const folds = (middle: number | undefined): THREE.Node<'float'> => lum.div(middle ?? 1).clamp(FOLD_MIN, FOLD_MAX);
+  const kitC = (c: number): THREE.Node<'vec3'> => { const k = new THREE.Color(c); return vec3(k.r, k.g, k.b); };
+  const cloth = tex.xyz
+    .mul(float(1).sub(shirtW).sub(shortsW))
+    .add(kitC(look.shirt).mul(folds(body.kit.shirtLum)).mul(shirtW))
+    .add(kitC(look.shorts).mul(folds(body.kit.shortsLum)).mul(shortsW));
+  // The eyes and mouth are paint on one surface, so what a lid and a parted lip do is drawn here, in the skin's own place on the body
+  // (the rest pose, so a mouth's dark stretches with the lips as the jaw drops). x = blink, y = the jaw.
+  const faceU = uniform(new THREE.Vector2());
+  const { eye = [0, -9, 0], mouth = [0, -9, 0], lid = [0.5, 0.35, 0.3] } = body.kit;
+  const rest = positionGeometry;
+  const ring = (a: THREE.Node<'float'>, b: THREE.Node<'float'>): THREE.Node<'float'> => a.mul(a).add(b.mul(b));
+  const onFace = smoothstep(eye[2] - 0.03, eye[2] - 0.02, rest.z);
+  const eyeX = rest.x.abs().sub(eye[0]).div(EYE_WIDE), eyeY = rest.y.sub(eye[1]).div(EYE_TALL);
+  const lidW = float(1).sub(smoothstep(0.6, 1.1, ring(eyeX, eyeY))).mul(onFace).mul(faceU.x);
+  // (the lashes meet along the lid's lower edge)
+  const lash = smoothstep(-0.95, -0.55, eyeY).mul(float(1).sub(smoothstep(-0.55, -0.15, eyeY))).mul(0.65);
+  const lipsW = float(1).sub(smoothstep(0.45, 1, ring(rest.x.div(MOUTH_WIDE), rest.y.sub(mouth[1]).div(MOUTH_TALL)))).mul(onFace).mul(smoothstep(0.05, 0.2, faceU.y));
+  const drawn = mix(mix(cloth, vec3(lid[0], lid[1], lid[2]).mul(float(1).sub(lash)), lidW), vec3(0.03, 0.012, 0.012), lipsW);
   const m = new PersonNodeMaterial();
-  m.colorNode = tex.xyz.mul(float(0.6).add(ao.mul(0.4)));
+  m.colorNode = drawn.mul(float(0.6).add(ao.mul(0.4)));
   m.aoNode = ao;
   m.side = THREE.DoubleSide;
   m.shadowSide = THREE.BackSide;
@@ -636,15 +668,15 @@ function bakedMaterial(asset: PlayerAsset): { material: PersonNodeMaterial; hair
   m.metalnessNode = float(0);
   m.clearcoatNode = skin.mul(float(0.05).add(sweat.mul(0.35)));
   m.clearcoatRoughnessNode = float(0.32);
-  m.sheenNode = mix(tex.xyz, vec3(1, 1, 1), 0.3).mul(float(1).sub(skin).mul(0.6));
+  m.sheenNode = mix(cloth, vec3(1, 1, 1), 0.3).mul(float(1).sub(skin).mul(0.6));
   m.sheenRoughnessNode = float(0.55);
   // (flat in the creases: the bake's normals on the walls of a fold are wild, and the fold opens when the arm lifts)
-  if (body.clothNormal) m.normalNode = uvNormal(texture(body.clothNormal, uv()).xy.mul(2).sub(1).mul(smoothstep(0.08, 0.4, ao)), uv());
+  if (normalTex) m.normalNode = uvNormal(normalTex.xy.mul(2).sub(1).mul(smoothstep(0.08, 0.4, ao)), uv());
   m.scatterNode = skin.mul(SKIN_SCATTER);
   // (the white shirt too, most of the way: under a lifted arm it showed the court's blue as a gash)
   m.ambientFixNode = mix(float(BAKED_CLOTH_AMBIENT), float(1), skin);
   m.toneBackNode = skin.mul(SKIN_TONE_BACK);
-  return { material: m, hair: new PersonNodeMaterial(), state: { sweat: sweatU, lag: uniform(new THREE.Vector3()), sway: uniform(new THREE.Vector3()) } };
+  return { material: m, hair: new PersonNodeMaterial(), state: { sweat: sweatU, lag: uniform(new THREE.Vector3()), sway: uniform(new THREE.Vector3()), face: faceU } };
 }
 
 /**

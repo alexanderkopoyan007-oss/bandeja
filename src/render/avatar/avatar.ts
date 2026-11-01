@@ -2651,6 +2651,7 @@ export class Avatar {
     f.gazeYaw = Math.atan2(v2.x, v2.z) * w;
     f.gazePitch = Math.atan2(v2.y, Math.sqrt(v2.x * v2.x + v2.z * v2.z)) * w;
     this.face!.update(dt, f);
+    this.kit?.face?.value.set(this.face!.blink, this.face!.jaw);
   }
 
   /** `feet`: where each sole's lowest point is now. */

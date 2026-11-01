@@ -31,6 +31,9 @@ const SACCADE = 0.02;
 export class FaceDriver {
   /** Every morphed mesh's influences (the face and the hair share them). */
   readonly influences: Float32Array;
+  /** The lids and the jaw now, for a person whose eyes and mouth are paint (kit.ts `bakedMaterial` draws them). */
+  blink = 0;
+  jaw = 0;
   private readonly at: Int32Array;
   private seed: number;
   private nextBlink = 0;
@@ -102,13 +105,15 @@ export class FaceDriver {
     this.eyePitch += (pw - this.eyePitch) * a;
 
     const squint = e * 0.55 + won * 0.25;
+    this.blink = blink;
+    this.jaw = g * 0.45 + breath * 0.22 + won * 0.15;
     this.set(0, blink + squint * 0.15 + lost * 0.1);
     this.set(1, blink * 0.97 + squint * 0.15 + lost * 0.1);
     this.set(2, squint);
     this.set(3, e * 0.7 + g * 0.3);
     this.set(4, lost * 0.7);
     this.set(5, won * 0.35);
-    this.set(6, g * 0.45 + breath * 0.22 + won * 0.15);
+    this.set(6, this.jaw);
     this.set(7, e * (1 - g) * 0.6 + lost * 0.45);
     this.set(8, won * 0.75);
     this.set(9, g * 0.6 + e * 0.15);

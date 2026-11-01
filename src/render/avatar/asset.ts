@@ -88,6 +88,13 @@ export interface KitCut {
   sole?: string;
   /** One fused surface with its look baked into a texture (tools/assets/meshy/): no parts for the shader to colour, `bakedMaterial`. */
   baked?: boolean;
+  /** Their shirt's and shorts' middle brightness (kit-mask.py). */
+  shirtLum?: number;
+  shortsLum?: number;
+  /** Where its painted left eye and mouth are in the bind pose, and the lid's colour (rig.py, kit-mask.py). */
+  eye?: [number, number, number];
+  mouth?: [number, number, number];
+  lid?: [number, number, number];
 }
 
 export interface BodyLook {

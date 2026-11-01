@@ -392,7 +392,7 @@ fit_parts[:] = 5  # (the part whose occlusion the file keeps per vertex: bodyX.x
 
 # ---------- split at the UV seams, out ----------
 seen = {}
-pos, nrm, uv_o, si_o, sw_o, part, index, ao_o = [], [], [], [], [], [], [], []
+pos, nrm, uv_o, si_o, sw_o, part, index, ao_o, from_v = [], [], [], [], [], [], [], [], []
 for t in range(len(TRI)):
     for c_ in range(3):
         v = int(TRI[t, c_])
@@ -407,8 +407,61 @@ for t in range(len(TRI)):
             sw_o.append(sw[v])
             part.append(fit_parts[v])
             ao_o.append(ao[v])
+            from_v.append(v)
         index.append(seen[key])
 print('RIG game vertices', len(seen), 'triangles', len(TRI), 'source vertices', len(V))
+
+# ---------- the face's keys: p1's, carried across by nearest surface as the weights were ----------
+# The head is one painted surface: no lids to close and no gap between the lips, so a blink and the inside of an open mouth are drawn
+# (kit.ts bakedMaterial, at `eye` and `mouth` in the header) and those keys carry only the skin round them. The eyes can't look anywhere,
+# so the gaze keys stay behind too.
+KEYS = ('squint', 'browDown', 'browInnerUp', 'browUp', 'jawOpen', 'mouthPress', 'smile', 'grimace', 'sneer', 'neckTense')
+KEY_NEAREST = 6
+KEY_DEPTH = 0.4  # how much a surface's depth counts against its place on the face: the two heads' profiles differ most
+LIPS_WIDE, LIPS_TALL = 0.032, 0.03  # round the mouth the lips part: skin over the line takes its keys only from skin over it, and under from under
+F = json.load(open(f'{LOW}/face.json'))
+fv_p = np.fromfile(f'{P1}/p1-face-verts.u32', dtype=np.uint32)
+kd = np.fromfile(f'{P1}/p1-morph.f32', dtype=np.float32).reshape(len(j['morphs']), len(fv_p), 6)
+D_p = np.zeros((len(KEYS), nv_p, 6), dtype=np.float32)
+for k_, n_ in enumerate(KEYS):
+    D_p[k_, fv_p] = kd[j['morphs'].index(n_)]
+del kd
+
+
+def in_bind(p):
+    i = int(np.argmin(((V - p) ** 2).sum(1)))
+    return np.asarray(p, dtype=np.float64) + Vb[i] - V[i]
+
+
+eye_m = in_bind(F['eye'])
+mouth_m = in_bind((0, F['mouth'][0], F['mouth'][1]))
+balls = P[PART_p == 4]
+eye_p = np.array((balls[balls[:, 0] > 0, 0].mean(), balls[:, 1].mean(), balls[:, 2].max()))
+# p1's mouth: where the jaw's move jumps, going up the face's middle.
+m_ = (np.abs(P[:, 0]) < 0.012) & (P[:, 1] < eye_p[1] - 0.035) & (P[:, 1] > eye_p[1] - 0.13) & (PART_p == 0) & (P[:, 2] > eye_p[2] - 0.04)
+o_ = np.argsort(P[m_, 1])
+ys_, dy_ = P[m_, 1][o_], np.abs(D_p[KEYS.index('jawOpen'), m_, 1])[o_]
+i_ = int(np.argmax(np.abs(np.diff(dy_))))
+mouth_p = (ys_[i_] + ys_[i_ + 1]) / 2
+sx_, sy_ = eye_p[0] / eye_m[0], (eye_p[1] - mouth_p) / (eye_m[1] - mouth_m[1])
+print('RIG face: eye', eye_m.round(4), 'mouth', mouth_m.round(4), '| p1 eye', eye_p.round(4), 'mouth', round(float(mouth_p), 4), '| scale', round(sx_, 3), round(sy_, 3))
+laid = np.stack((Vb[:, 0] * sx_, eye_p[1] + (Vb[:, 1] - eye_m[1]) * sy_, eye_p[2] + (Vb[:, 2] - eye_m[2]) * sx_), 1)
+src = np.nonzero((PART_p == 0) & (P[:, 1] > eye_p[1] - 0.3))[0]
+tgt = np.nonzero((laid[:, 1] > eye_p[1] - 0.3) & (np.abs(laid[:, 0]) < 0.16))[0]
+S_ = P[src] * (1, 1, KEY_DEPTH)
+T_ = laid[tgt] * (1, 1, KEY_DEPTH)
+D_m = np.zeros((len(KEYS), len(V), 6), dtype=np.float32)
+for at in range(0, len(tgt), 400):
+    t_ = T_[at:at + 400]
+    d2 = ((t_[:, None] - S_[None]) ** 2).sum(2)
+    by_lips = (np.abs(t_[:, 0]) < LIPS_WIDE) & (np.abs(t_[:, 1] - mouth_p) < LIPS_TALL)
+    d2[by_lips] += 1e3 * ((t_[by_lips, 1, None] > mouth_p) != (S_[:, 1] > mouth_p))
+    near = np.argpartition(d2, KEY_NEAREST, axis=1)[:, :KEY_NEAREST]
+    w_ = 1 / (np.take_along_axis(d2, near, 1) + 2e-6) ** 1.5
+    w_ /= w_.sum(1, keepdims=True)
+    D_m[:, tgt[at:at + 400]] = (D_p[:, src[near]] * w_[None, :, :, None]).sum(2)
+D_m[:, :, :3] /= sx_
+print('RIG face keys over', int((np.abs(D_m).max((0, 2)) > 1e-5).sum()), 'vertices; largest moves (mm)', {n_: round(float(np.linalg.norm(D_m[k_, :, :3], axis=1).max() * 1000), 1) for k_, n_ in enumerate(KEYS)})
 
 PARTS = {'skin': 0, 'shirt': 1, 'shorts': 2, 'shoe': 3, 'eye': 4, 'sock': 5, 'hair': 6, 'brow': 7, 'lash': 8, 'teeth': 9, 'tongue': 10}
 blob = bytearray()
@@ -431,14 +484,16 @@ def mesh(pos_, nrm_, uv_, si_, sw_, part_, index_, ao_=None):
 
 
 meshes = {'opaque': mesh(pos, nrm, uv_o, si_o, sw_o, part, index, ao_o)}
+meshes['opaque']['morph'] = put(D_m.transpose(1, 0, 2)[np.array(from_v)], '<f4')
 # No hair cards: one speck inside the head, so that everything that expects a second mesh has one.
 hd = Ab[ix['Head']] + np.array((0, 0.09, 0))
 meshes['alpha'] = mesh([hd, hd + (0.001, 0, 0), hd + (0, 0.001, 0)], [(0, 1, 0)] * 3, [(0, 0)] * 3, [[ix['Head'], 0, 0, 0]] * 3, [[1, 0, 0, 0]] * 3, [6] * 3, [0, 1, 2])
 
 header = {
     'name': NAME, 'height': M['height'], 'bones': names, 'joints': Jt.tolist(), 'move': [Mv[i].flatten(order='F').tolist() for i in range(nb)],
-    'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': f'{NAME}-normal.webp'}, 'parts': PARTS, 'morphs': [],
-    'kit': {'baked': True, 'top': 'tee', 'bottom': 'shorts', 'mark': 0}, 'meshes': meshes,
+    'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': f'{NAME}-normal.webp'}, 'parts': PARTS, 'morphs': list(KEYS),
+    'kit': {'baked': True, 'top': 'tee', 'bottom': 'shorts', 'mark': 0, **json.load(open(f'{LOW}/kit.json')),
+            'eye': eye_m.tolist(), 'mouth': mouth_m.tolist(), 'lid': F['lid']}, 'meshes': meshes,
 }
 open(f'{OUT}/body.bin', 'wb').write(bytes(blob))
 json.dump(header, open(f'{OUT}/body.json', 'w'))

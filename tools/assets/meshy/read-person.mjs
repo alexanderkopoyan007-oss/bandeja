@@ -29,6 +29,15 @@ for (const kind of ['opaque', 'alpha']) {
   writeFileSync(`${out}/${name}-${kind}-index.u32`, Buffer.from(I.buffer));
   parts[kind] = { vertices: n, indices: m.indices };
 }
+// The face's keys over the vertices they move, xyz of position then of normal.
+const op = h.meshes.opaque, fv = op.face ? new Uint32Array(buf, base + op.face.verts[0], op.face.vertices).slice() : new Uint32Array(0);
+const keys = op.morphs ?? [], KD = new Float32Array(keys.length * fv.length * 6);
+keys.forEach((k, m) => {
+  const q = new Int16Array(buf, base + k.data[0], k.data[1] / 2);
+  for (let i = 0; i < fv.length * 6; i++) KD[m * fv.length * 6 + i] = (q[i] / 32767) * (i % 6 < 3 ? k.pos : k.nrm);
+});
+writeFileSync(`${out}/${name}-face-verts.u32`, Buffer.from(fv.buffer));
+writeFileSync(`${out}/${name}-morph.f32`, Buffer.from(KD.buffer));
 const bindPose = [], rest = [];
 const nb = h.bones.length;
 h.bones.forEach((b, i) => {
@@ -38,7 +47,7 @@ h.bones.forEach((b, i) => {
   rest[i] = b.parent < 0 ? l : rest[b.parent].clone().multiply(l);
 });
 writeFileSync(`${out}/${name}.json`, JSON.stringify({
-  name: h.name, height: h.height, hips: h.hips, kit: h.kit, parts, partCodes: h.parts,
+  name: h.name, height: h.height, hips: h.hips, kit: h.kit, parts, partCodes: h.parts, morphs: keys.map((k) => k.name),
   bones: h.bones, bindPose, restWorld: rest.map((m) => m.elements.slice()),
 }));
 console.log(name, nb, 'bones', JSON.stringify(parts), 'height', h.height, 'hips', h.hips);

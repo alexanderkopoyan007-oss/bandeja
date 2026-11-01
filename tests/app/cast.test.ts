@@ -9,10 +9,9 @@ describe('who plays', () => {
       const c = dealCast(seed);
       for (const n of c.people) seen.add(n);
       expect(c.people.includes('meshy2') && !c.women).toBe(false);
-      expect(c.people.includes('meshy3') && c.women).toBe(false);
+      expect((c.people.includes('meshy') || c.people.includes('meshy3')) && c.women).toBe(false);
     }
-    expect(seen.has('meshy2') && seen.has('meshy3')).toBe(true);
-    expect(seen.has('meshy')).toBe(false); // (his arms were modelled down: the sleeve is fused to his ribs)
+    expect(seen.has('meshy') && seen.has('meshy2') && seen.has('meshy3')).toBe(true);
   });
 
   it('naming a woman first makes it a match of women, a guest too', () => {

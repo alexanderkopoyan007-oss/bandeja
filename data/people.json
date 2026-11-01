@@ -15,7 +15,7 @@
     { "name": "p10", "nations": ["ESP", "ARG", "MEX", "POR"] }
   ],
   "guests": [
-    { "name": "meshy", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] },
+    { "name": "meshy", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"], "dealt": true },
     { "name": "meshy2", "nations": ["ESP", "ITA", "ARG", "POR"], "woman": true, "dealt": true },
     { "name": "meshy3", "nations": ["BRA", "FRA", "POR", "NED"], "dealt": true }
   ],

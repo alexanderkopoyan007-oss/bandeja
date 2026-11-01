@@ -53,7 +53,7 @@ describe('the generated people', () => {
 
   // Modelled with the arms down, the sleeve fuses to the ribs: lifted, the arm comes out of a hole and half the sleeve stays behind, which the owner
   // read as an arm on backwards (804 cm2 stretched on the first woman). Joint numbers can't see it: this measures the skin. Modelled in a T: 42, and 13.
-  it.each(['meshy2', 'meshy3'])('the skin of %s stays on the arm when the arm goes overhead', (name) => {
+  it.each(GUESTS)('the skin of %s stays on the arm when the arm goes overhead', (name) => {
     const a = guests[GUESTS.indexOf(name)]!;
     const arm = a.bone('RightArm'), S = new THREE.Vector3().setFromMatrixPosition(a.restWorld[arm]!);
     const raised = new Set([arm]);
@@ -78,6 +78,37 @@ describe('the generated people', () => {
       if (st > 1.8 && area(q) > area(r)) stretched += area(q) - area(r);
     }
     expect(stretched * 1e4).toBeLessThan(80);
+  });
+
+  // One painted surface, so a face moves only by p1's keys carried across (rig.py), and the kit's colours only by a mask (kit-mask.py).
+  it.each(GUESTS)('%s has a face that moves and a kit to colour', (name) => {
+    const a = guests[GUESTS.indexOf(name)]!;
+    const { kit, morphs, face, height } = a.look!;
+    expect(kit.shirtLum).toBeGreaterThan(0);
+    expect(kit.shortsLum).toBeGreaterThan(0);
+    expect(face).not.toBeNull();
+    const f = face!, P = a.geometry.getAttribute('position');
+    expect(f.verts.length).toBeGreaterThan(300);
+    // The face and neck and nothing else: a key that reached the shirt would drag the collar.
+    let lowest = Infinity;
+    for (const v of f.verts) lowest = Math.min(lowest, P.getY(v));
+    expect(lowest / height).toBeGreaterThan(0.72);
+    // The lips part: over the mouth the skin stays, under it the jaw takes it down (with only one key's nearest skin they smeared).
+    const m = kit.mouth!, jaw = f.pos[morphs.indexOf('jawOpen')]!;
+    let over = 0, under = 0;
+    f.verts.forEach((v, i) => {
+      if (Math.abs(P.getX(v)) > 0.015 || P.getZ(v) < m[2] - 0.02) return;
+      const up = P.getY(v) - m[1];
+      if (up > 0.004 && up < 0.02) over = Math.max(over, -jaw[i * 3 + 1]!);
+      if (up < -0.004 && up > -0.02) under = Math.max(under, -jaw[i * 3 + 1]!);
+    });
+    expect(under).toBeGreaterThan(0.02);
+    expect(over).toBeLessThan(under * 0.5);
+    // Both eyes level, the mouth under them on the middle: the drawn lid and lips land on the paint.
+    expect(kit.eye![0]).toBeGreaterThan(0.025);
+    expect(kit.eye![0]).toBeLessThan(0.045);
+    expect((kit.eye![1] - m[1]) / height).toBeGreaterThan(0.03);
+    expect((kit.eye![1] - m[1]) / height).toBeLessThan(0.056);
   });
 
   it.each(GUESTS)('%s moves as cleanly as the regular cast', (name) => {

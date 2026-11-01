@@ -47,6 +47,6 @@ describe('the cast', () => {
     }
     expect(women).toBeGreaterThan(90);
     expect(women).toBeLessThan(200);
-    expect(seen.size).toBe(12);
+    expect(seen.size).toBe(13);
   });
 });
