@@ -1630,8 +1630,12 @@ export class Avatar {
     const i = pr.indexAt(t);
     // Between the samples either side (a tick apart): the sample at or before t alone put the racket up to a
     // tick's flight (8-17 cm at rally speeds) behind the ball.
+    // (the last sample has none after it: reading past the end, even times nothing, gave NaN, and that player's bones
+    // stayed NaN for the rest of the match, the player gone from the picture; review round 15, the sceptic)
+    if (i < 0) return out;
+    if (i + 1 >= pr.n) return out.set(pr.x[i]!, pr.y[i]!, pr.z[i]!);
     let f = (t - pr.start) / DT - i;
-    if (i + 1 >= pr.n || !(f > 0)) f = 0;
+    if (!(f > 0)) f = 0;
     else if (f > 1) f = 1;
     out.x = pr.x[i]! + (pr.x[i + 1]! - pr.x[i]!) * f;
     out.y = pr.y[i]! + (pr.y[i + 1]! - pr.y[i]!) * f;

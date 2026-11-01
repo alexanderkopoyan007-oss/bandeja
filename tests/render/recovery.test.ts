@@ -12,8 +12,11 @@ describe('after the ball and at it', () => {
   const ratios: number[] = [], elbows: number[] = [];
   const q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Vector3(), W = new THREE.Vector3();
   const fade = [0, 1, 2, 3].map(() => ({ on: false, was: new THREE.Quaternion(), from: new THREE.Quaternion(), path: 0, cut: false }));
-  let seq = 0;
+  let seq = 0, pastEnd = 0;
+  const past = new THREE.Vector3();
   runAnimQa(p, { seed: 3, seconds: 150, lefty: [], onFrame: (m, av) => {
+    (av[1] as unknown as { predAt(s: unknown, t: number, o: THREE.Vector3): void }).predAt(m, m.pred.start + 99, past);
+    pastEnd += Number.isNaN(past.x + past.y + past.z) ? 1 : 0;
     av.forEach((raw, i) => {
       const a = raw as unknown as { st: number; racket: THREE.Object3D };
       const f = fade[i]!;
@@ -39,6 +42,11 @@ describe('after the ball and at it', () => {
       elbows.push(180 - (180 / Math.PI) * S.sub(E).angleTo(W.sub(E)));
     }
   } });
+
+  it('a time past the end of the ball\'s path is its last sample', () => {
+    // (it was NaN, and the bones it reached stayed NaN: one player gone from the picture for the rest of the match)
+    expect(pastEnd).toBe(0);
+  });
 
   it('the racket goes back to ready the short way', () => {
     expect(ratios.length).toBeGreaterThan(20);
