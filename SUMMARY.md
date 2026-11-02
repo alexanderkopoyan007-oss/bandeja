@@ -695,7 +695,7 @@ The rally run is drawn now instead of played from the clips, and a side-on strip
 - **Into the ball.** Hips 6-14 cm behind the feet at contact to about level or ahead.
 - **Around them.** A singles winner throws both arms up, and there is an umpire on the chair.
 
-### Review rounds 10 to 17 (1 Nov, `REVIEW.md`)
+### Review rounds 10 to 18 (1 Nov, `REVIEW.md`)
 After the owner's verdict ("this game is straight ass so far"), every round was judged from their seat: a human at player 0, an AI partner, default settings, counting what looks wrong, not averages.
 
 - **Round 10.** Your own swing stopped short and snapped, the racket whipped back after the ball, the serve's arm met the ball folded, one key beat Pro.
@@ -784,3 +784,20 @@ Generated people: three from Meshy are dealt into ordinary matches with team col
   - The ambient light on skin didn't change at all at first: three adds the environment's diffuse in its specular
     step, so both had to be overridden.
   - One skin made Blender quit silently during the build, and one hairstyle covered an eye. Both were swapped.
+
+**Round 18 (2 Nov):** sound and the generated people, at the owner's request.
+
+| Measure | Real | Before | After |
+|---|---|---|---|
+| Men's grunt pitch | 297-325 Hz | 135-200 Hz | 260-350 Hz |
+| Women's grunt pitch | 574-650 Hz | 230-330 Hz | 520-700 Hz |
+| Grunts per racket hit, one minute at each venue | not measured | 7 in 74 | 22 in 88 |
+| Footsteps a second, four players | not measured | 11.3 | 7.5 |
+| Racket against Wadman's curve, rms | 0 | 3.2 dB | 2.1 dB |
+| Glass against Wadman's curve, rms | 0 | 4.4 dB | 2.9 dB |
+| Generated people on court | | dealt at random | 2 of 4 in a men's match, 1 in a women's |
+| Frame rate, high at 120 Hz, real audio, generated people | | not measured | 120.5 fps, none over 20 ms, 81 draw calls, 473,621 triangles |
+
+The real engine's output was read for the first time. A Chrome launched by a tool has a stopped audio clock, so earlier frame
+rates rendered no sound; those and these aren't like for like. Nobody has listened to any of it.
+
