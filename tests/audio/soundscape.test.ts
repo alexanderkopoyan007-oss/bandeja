@@ -1,9 +1,9 @@
 // Phase 6: what the soundscape asks for over an AI match, recorded instead of played.
 import { describe, expect, it } from 'vitest';
 import { MatchSim, E_HIT, E_FLOOR, E_WALL, E_POINT, E_WHIFF, E_BODY, E_ROOF, PH_TOSS } from '../../src/sim/match.ts';
-import { SHOT_SERVE } from '../../src/sim/contact/shots.ts';
+import { SHOT_SERVE, SHOT_SLICE, SHOT_DRIVE, SHOT_BANDEJA, SHOT_SMASH } from '../../src/sim/contact/shots.ts';
 import { SURF_GLASS } from '../../src/sim/court/court.ts';
-import { Soundscape, type FeetSource } from '../../src/audio/soundscape.ts';
+import { Soundscape, effortOf, type FeetSource } from '../../src/audio/soundscape.ts';
 import type { AudioSink } from '../../src/audio/sink.ts';
 import { AUDIO } from '../../src/audio/bank.ts';
 import { WHOOSH_PEAK } from '../../src/audio/voices.ts';
@@ -101,6 +101,12 @@ describe('soundscape', () => {
       expect(p.gain).toBeGreaterThan(0);
       expect(p.gain).toBeLessThanOrEqual(2.7);
     }
+  });
+
+  it('puts the effort where it is: a smash and a hard drive over a bandeja, a slice or padel\'s underarm serve', () => {
+    expect(effortOf(SHOT_SERVE, 18.5)).toBeLessThan(0.3);
+    expect(effortOf(SHOT_SLICE, 18.5)).toBeLessThan(effortOf(SHOT_DRIVE, 18.5));
+    expect(effortOf(SHOT_BANDEJA, 20)).toBeLessThan(effortOf(SHOT_SMASH, 25));
   });
 
   it('players grunt on some shots, not all; every swing swishes, misses too, peaking just before the contact', () => {

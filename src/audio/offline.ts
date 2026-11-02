@@ -207,7 +207,7 @@ export class OfflineEngine implements AudioSink {
     const irL = resample(room.ch[0]!, room.sr, SR), irR = resample(room.ch[1]!, room.sr, SR);
     const revL = convolve(wetL, irL, n), revR = convolve(wetR, irR, n);
     // Master, limiter, clip.
-    const m = db(this.o.masterDb ?? AUDIO.master + (AUDIO as { lift?: number }).lift!);
+    const m = db(this.o.masterDb ?? AUDIO.master + (AUDIO as { lift?: number }).lift! + (arenaAudio(this.o.env.arena).trim ?? 0));
     const preL = new Float32Array(n), preR = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       preL[i] = (dryL[i]! + revL[i]! * wetGain) * m;

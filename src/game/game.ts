@@ -300,11 +300,13 @@ export class Game {
     this.audio.enabled = opts.sound !== false;
     this.audio.setLevels(prefs.volume ?? 1, prefs.crowd ?? 1);
     this.audio.load();
-    this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? [], cast.voices);
+    this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? [], cast.voices, cast.tones);
     this.feetSrc = this.players.map((pv) => ({ feet: pv.avatar ? pv.avatar.feet : null }));
     const unlock = (): void => this.audio.unlock();
     addEventListener('keydown', unlock, { signal: sig });
     addEventListener('pointerdown', unlock, { signal: sig });
+    // The press that started this match came before it, so the match began silent until the next key.
+    if (navigator.userActivation?.hasBeenActive) unlock();
     this.feedback = new Feedback(this.pad, this.cam);
     this.feedback.shake = prefs.shake !== false;
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
@@ -752,6 +754,7 @@ export class Game {
       if (showing) this.soundscape.replay(rp.sim, rp.clock, this.feetSrc, frameDt, rp.speed);
       else this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
       if (this.ball.routineBounce) this.soundscape.routineBounce(this.ball.mesh.position.x, this.ball.mesh.position.z);
+      for (let i = 0; i < this.players.length; i++) { const av = this.players[i]!.avatar; if (av) av.gruntAt = this.soundscape.gruntAt[i]!; }
     } catch (e) {
       if (!this.audioFailed) { this.audioFailed = true; console.warn('audio', e); }
     }

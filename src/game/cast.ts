@@ -16,9 +16,11 @@ export interface Cast {
   kits: [number, number];
   /** Each player's grunt (voices.ts PLAYER_VOICES): a person's own, on the women's half of the table in a women's match. */
   voices: number[];
+  /** Each player's pitch on that voice: thirteen people share four, and two on one court were the same recording. */
+  tones: number[];
 }
 
-interface Person { name: string; nations: string[]; voice: number; woman?: boolean; dealt?: boolean }
+interface Person { name: string; nations: string[]; voice: number; tone: number; woman?: boolean; dealt?: boolean }
 
 /** A seeded generator of its own, so the looks never share the match's. */
 export function seeded(seed: number, salt: number): () => number {
@@ -63,7 +65,7 @@ export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
   const picked = only?.length ? only.map((n) => all.find((p) => p.name === n) ?? pool[0]!) : pool.slice(0, 4);
   const firstWoman = roster.women.some((p) => p.name === only?.[0]) || guests.some((p) => p.woman && p.name === only?.[0]);
   const womens = only?.length ? firstWoman : women;
-  return { people: picked.map((p) => p.name), women: womens, nations: picked.map((p) => p.nations), kits, voices: picked.map((p) => p.voice + (womens ? 4 : 0)) };
+  return { people: picked.map((p) => p.name), women: womens, nations: picked.map((p) => p.nations), kits, voices: picked.map((p) => p.voice + (womens ? 4 : 0)), tones: picked.map((p) => p.tone) };
 }
 
 /** ?people=a,b,c,d, or nothing (0 is the mannequin: asset.ts peopleWanted). */

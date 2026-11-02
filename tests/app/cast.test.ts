@@ -17,6 +17,12 @@ describe('who plays', () => {
     }
   });
 
+  it('nobody on a court sounds like anybody else: thirteen people share four voices, and two played one recording in three matches of four', () => {
+    for (let seed = 0; seed < 400; seed++) {
+      const c = dealCast(seed);
+      expect(new Set(c.voices.map((v, i) => `${v} ${c.tones[i]}`)).size).toBe(4);
+    }
+  });
   it('a person keeps one voice from match to match, and each style is on court in a men\'s match', () => {
     const voice = new Map<string, number>();
     for (let seed = 1; seed < 200; seed++) {

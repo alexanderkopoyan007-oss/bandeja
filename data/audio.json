@@ -2,15 +2,17 @@
   "//": "Sound (Phase 6). Every sound is synthesised at load in a worker (src/audio/voices.ts recipes, src/audio/bank.ts lists them) and played through WebAudio from the broadcast camera (src/audio/engine.ts), driven by the sim's events, the players' feet and a crowd that follows the match (src/audio/soundscape.ts). DECISIONS.md (Phase 6) has the reasoning and sources; tests/audio holds the measurable parts.",
   "variants": { "racket": 3, "bounce": 4, "glass": 3, "mesh": 3, "metal": 2, "net": 2, "body": 2, "whoosh": 3, "step": 4, "scuff": 3, "grunt": 3, "applause": 4, "ooh": 3, "aah": 3, "cheer": 3, "bird": 6 },
   "//variants": "Renders of each sound per parameter bin; play picks one at random (never the one just played) and varies its pitch +-3% and level +-1.5 dB, so no two hits are the same. Three or more of anything heard often: with two, never repeating the last makes a strict A/B/A/B (the applause after every point alternated between two renders).",
-  "peak": { "racket": -3.7, "bounce": -17, "glass": -8, "mesh": -21, "metal": -10, "net": -14, "body": -20, "whoosh": -32, "step": -31, "scuff": -44, "grunt": -19, "bird": -43 },
+  "peak": { "racket": -7.4, "bounce": -17, "glass": -13, "mesh": -21, "metal": -10, "net": -14, "body": -20, "whoosh": -32, "step": -31, "scuff": -44, "grunt": -19, "bird": -43 },
   "//peak": "dBFS peak of the loudest render of each family, heard at the reference distance. Impacts follow a law below it (bank.ts `law`: a bin's level goes with its speed or force, the bins only change the timbre). Bounces, steps and scuffs are levelled on turf: other floors keep their own loudness against it (a resin court is louder than sand). Set against what a level meter reads on court (data/audio-reference.json, docs/research/sound.md): at full pace the glass reads about as much as the racket (a hit at it reads 2.9 dB over a hit of the same stroke, Wadman et al. 2021), the mesh 7.4 dB under the racket at equal distance and far longer. The rest has no published level, and sits by reasoning: nobody who has surveyed a court names feet or swings among its sounds, and from the broadcast camera (about 20 m) they are near the limit of hearing: a shoe's slide 9 dB and more under a typical bounce, a smash's swish 20 dB under the hit, a bird under the ball.",
-  "rms": { "applause": -36, "ooh": -40, "aah": -41, "cheer": -35, "murmur": -47, "wind": -44, "crickets": -48, "hum": -56, "hall": -46 },
+  "rms": { "applause": -42, "ooh": -46, "aah": -47, "cheer": -41, "murmur": -47, "wind": -44, "crickets": -48, "hum": -56, "hall": -46 },
   "//rms": "Crowd and ambience beds by loudness (RMS dBFS of the loudest render), not peak; reactions (applause, ooh, aah, cheer) by the rms of the part that sounds, capped at -9 dBFS peak. These are the stadium's 4,600; a smaller crowd is quieter by 10 log10(N / 4600) (power with headcount), +6 dB for a club's few watchers sitting by the court (bank.ts crowdDb): 8 people clap 22 dB under the stadium. On a level meter through the whole chain a big applause reads about 7 dB over the hardest hit in a rally (it read 16.5 dB over: the first levels were set by rms against 50 ms of a hit, and the master's 12 dB lift then applied to both), the crowd's chatter 8 dB under it (hushed 16 dB further in a point). No measured applause-to-hit ratio was found: an estimate.",
   "distance": { "ref": 16, "rolloff": 0.85, "max": 120, "airHz": 18000, "airM": 30 },
   "//distance": "From the broadcast camera (the listener): ref is the near baseline's distance, where a sound plays at its family level; the inverse law with this rolloff makes the far baseline (36 m) about 6 dB quieter. Air and distance take the highs: lowpass at airHz / (1 + d / airM).",
   "master": -1,
-  "lift": 12,
+  "lift": 18,
+  "crest": { "racket": 6, "glass": 6 },
   "limiter": { "threshold": -2, "ratio": 20 },
+  "//lift": "Raised 12 to 18 dB, and the default volume from 0.8 to 1, when a match was measured through the real output at -35.3 LUFS (TV -24): a hit's first millisecond sits 25 dB over what a meter reads, so `crest` rounds 6 dB off the racket and the glass in the render, and the master follows. Reactions came down 6 dB in `rms` against the rally: applause had been 17 dB over it. `trim` on the open clubs, where the ball is close and hits reached the limiter one every 3 s: -3 dB, against a stadium's 1 in 15 s.",
   "//master": "dB before the safety limiter (a compressor at -2 dBFS, hard knee, 20:1, its automatic make-up gain taken back out, so it is unity below -2 dBFS) and a clip that passes everything under 0.8 unchanged and rounds off above: the mix tests (tests/audio/bank.test.ts) hold the busiest moments of every arena and floor under the limiter's threshold.",
   "arenas": {
     "stadium": {
@@ -21,16 +23,16 @@
     "hall": {
       "room": { "rt60": [1.6, 1.25, 0.8], "preDelay": 0.02, "early": [[0.012, 0.35, -0.5], [0.024, 0.3, 0.5], [0.052, 0.3, 0]], "flutter": [0.052, 0.18] },
       "//room": "A covered club: a steel shed with open or half-open sides. RT60 about 1.25 s (BB93's 1.5 s ceiling for sports halls; the open sides let sound out). The bare roof about 9 m over a hard floor gives a flutter echo every 52 ms. An untreated padel hall can be far longer: a Finnish one was estimated at about 12 s bare and treated to under 3 s (Ruukki, a vendor's figures).",
-      "wet": -3, "crowd": 14, "talkers": 8, "ambience": ["hall"], "neighbours": 1
+      "wet": -3, "trim": -2, "crowd": 14, "talkers": 8, "ambience": ["hall"], "neighbours": 1
     },
     "club-day": {
       "room": { "rt60": [0.9, 1.25, 0.6], "xo": [350, 1500], "preDelay": 0.01, "early": [[0.014, 0.35, -0.6], [0.029, 0.35, 0.6], [0.058, 0.25, 0], [0.12, 0.1, 0.3]] },
       "//room": "Outdoors the room is the cage: glass on four sides and open on top, it still rings. T20 measured in an outdoor cage (Wadman et al. 2021 Fig. 4.2.5): 0.5-1.0 s up to 250 Hz, 1.25 s at 500-1000 Hz, 0.6 s from 2 kHz. The early reflections are its glass; `wet` is set so a hit's tail falls as the waveform does in their Fig. 4.3.1. `crowdSend` and `bedSend`: the watchers, the wind and the crickets are outside it.",
-      "wet": -1, "crowdSend": 0.15, "bedSend": 0.1, "crowd": 8, "talkers": 6, "ambience": ["wind"], "birds": true, "neighbours": 2
+      "wet": -1, "trim": -3, "crowdSend": 0.15, "bedSend": 0.1, "crowd": 8, "talkers": 6, "ambience": ["wind"], "birds": true, "neighbours": 2
     },
     "club-night": {
       "room": { "rt60": [0.9, 1.25, 0.6], "xo": [350, 1500], "preDelay": 0.01, "early": [[0.014, 0.35, -0.6], [0.029, 0.35, 0.6], [0.058, 0.25, 0], [0.12, 0.1, 0.3]] },
-      "wet": -1, "crowdSend": 0.15, "bedSend": 0.1, "crowd": 10, "talkers": 8, "ambience": ["wind", "crickets", "hum"], "neighbours": 2
+      "wet": -1, "trim": -3, "crowdSend": 0.15, "bedSend": 0.1, "crowd": 10, "talkers": 8, "ambience": ["wind", "crickets", "hum"], "neighbours": 2
     }
   },
   "crowd": { "chatter": 0, "hush": -16, "tensionGain": 13, "big": 50 },

@@ -568,8 +568,11 @@ export const PLAYER_VOICES: (VoiceSpec & { style: number })[] = [
   { f0: 555, tract: 0.89, style: GRUNT_LONG }, { f0: 660, tract: 0.79, style: GRUNT_CLIPPED },
 ];
 
-/** The study's pitch by shot against the forehand's: males 325.0 on the serve, 297.5 on the backhand, 311.8 here. */
-export const GRUNT_SERVE = 1.042, GRUNT_BACKHAND = 0.954;
+/**
+ * The study's pitch by shot against the forehand's: males 325.0 on the serve, 297.5 on the backhand, 311.8 here. A tennis
+ * serve is an overhead at full effort, so that figure goes with padel's overheads, not its underarm serve.
+ */
+export const GRUNT_OVERHEAD = 1.042, GRUNT_BACKHAND = 0.954;
 
 /**
  * A grunt with a shot (`effort` 0..1), from a voice of PLAYER_VOICES. Players exhale through hard strokes; past a

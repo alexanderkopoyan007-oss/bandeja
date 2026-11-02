@@ -10,8 +10,9 @@ import {
   SHOT_SMASH, SHOT_VIBORA, SHOT_BANDEJA, SHOT_VOLLEY, SHOT_SLICE, SHOT_DROP, SHOT_LOB, SHOT_CHIQUITA, SHOT_SERVE,
 } from '../sim/contact/shots.ts';
 import { SURF_GLASS, SURF_MESH, WALL_BACK_NEAR, WALL_BACK_FAR, type ZoneHit } from '../sim/court/court.ts';
+import { G_EARLY, G_LATE, G_PERFECT } from '../sim/contact/timing.ts';
 import { WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP } from '../sim/rules/rally.ts';
-import { RK_DRIVE, RK_VOLLEY, RK_OVER, RK_SLICE, RK_TOUCH, WHOOSH_PEAK, PLAYER_VOICES, GRUNT_SERVE, GRUNT_BACKHAND } from './voices.ts';
+import { RK_DRIVE, RK_VOLLEY, RK_OVER, RK_SLICE, RK_TOUCH, WHOOSH_PEAK, PLAYER_VOICES, GRUNT_OVERHEAD, GRUNT_BACKHAND } from './voices.ts';
 import {
   AUDIO, arenaAudio, binFor, racketBin, RQ_CLEAN, RQ_OFF, RQ_FRAME, RACKET_POWER, BOUNCE_V, GLASS_V, MESH_V, METAL_V,
   NET_V, WHOOSH_S, STEP_F, GRUNT_E, APPLAUSE_SMALL, APPLAUSE_BIG,
@@ -33,10 +34,17 @@ const RING = 32;
 const GRUNTER = [0.9, 0.7];
 /** A shot's effort to the chance of a grunt: a usual drive (effort 0.4) brings one about every other time. */
 const GRUNT_KEEN = 1.6;
+/** A well struck ball is firmer and a little tighter than a mistimed one (a player hears their own timing). */
+const SWEET_GAIN = 1.26, SWEET_RATE = 1.02;
+const MISTIMED_GAIN = 0.84, MISTIMED_RATE = 0.985;
 /** A sole this high (m) is off the floor; this low, on it. */
 const FOOT_UP = 0.03, FOOT_DOWN = 0.012;
 /** Under this speed (m/s) a foot set down is the stance settling, not a step: a third of all landings in a real match. */
 const FOOT_STILL = 0.15;
+/** The crowd on the edge of its seats from the first shot of a star or golden point (a rally of 16 shots otherwise). */
+const DECIDING_TENSION = 0.6;
+/** A game won: the crowd's answer to a game, under a set's. */
+const CELEBRATE_GAME = 0.5;
 const db = (x: number): number => Math.pow(10, x / 20);
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
@@ -52,6 +60,23 @@ function swingSpeed(shot: number): number {
     case SHOT_SERVE: return 0.5;
     case SHOT_SLICE: return 0.55;
     default: return 0.65;
+  }
+}
+
+/**
+ * How hard a shot is struck (0..1), which is what a grunt goes with. Padel's serve is underarm at about 67 km/h, and a
+ * slice or a bandeja is placed: taken from the ball's speed like a drive they brought more grunts than the drives did,
+ * 18.6% of all grunts on the serve and 8.6% on the smash.
+ */
+export function effortOf(shot: number, speed: number): number {
+  switch (shot) {
+    case SHOT_SMASH: return 0.6 + 0.4 * clamp01((speed - 25) / 15);
+    case SHOT_VIBORA: return 0.5;
+    case SHOT_BANDEJA: return 0.4;
+    case SHOT_VOLLEY: case SHOT_DROP: case SHOT_CHIQUITA: case SHOT_LOB: return 0.15;
+    case SHOT_SERVE: return 0.2;
+    case SHOT_SLICE: return 0.25 + 0.3 * clamp01((speed - 14) / 14);
+    default: return 0.4 + 0.5 * clamp01((speed - 14) / 14);
   }
 }
 
@@ -91,7 +116,7 @@ export class Soundscape {
   private readonly scuffT = new Float64Array(4).fill(-1);
   private lastMurmurDb = 1e9;
   private lastBigAt = -10;
-  /** This update's set/match celebration (0 none, 1 set, 2 match): played once after the events. */
+  /** This update's celebration (0 none, CELEBRATE_GAME, 1 set, 2 match): played once after the events. */
   private celebrate = 0;
   private readonly birds: boolean;
   private nextBird = 3;
@@ -110,10 +135,15 @@ export class Soundscape {
   private lastTime = -1;
   /** Each player's voice (voices.ts PLAYER_VOICES): the person's own, from the cast. */
   private readonly voices: number[];
+  /** Each player's pitch on that voice: four voices are shared by thirteen people. */
+  private readonly tones: number[];
+  /** When each player last grunted (sim s): the mouth goes with it (face.ts). */
+  readonly gruntAt = [-10, -10, -10, -10];
 
-  constructor(out: AudioSink, arena: string, neighbours: number[], voices: number[] = [0, 1, 2, 3]) {
+  constructor(out: AudioSink, arena: string, neighbours: number[], voices: number[] = [0, 1, 2, 3], tones: number[] = [1, 1, 1, 1]) {
     this.out = out;
     this.voices = voices;
+    this.tones = tones;
     const a = arenaAudio(arena);
     this.crowdSize = a.crowd;
     this.big = a.crowd >= AUDIO.crowd.big;
@@ -212,18 +242,20 @@ export class Soundscape {
         const power = d > 0 ? clamp01((d - 4) / 36) : clamp01((c - 5) / 35);
         const pb = binFor(RACKET_POWER, Math.max(0.12, power), this.rand());
         const rq = q >= 2 ? RQ_FRAME : q > OFF_CENTRE ? RQ_OFF : RQ_CLEAN;
-        out.play('racket', racketBin(rk, pb.bin, rq), x, y, z, pb.gain, this.rate, delay, BUS_BALL);
+        // (where on the face barely moves with the timing: a Perfect and a Late played one sound)
+        const mistimed = b === G_EARLY || b === G_LATE;
+        const firm = rq !== RQ_CLEAN ? 1 : b === G_PERFECT ? SWEET_GAIN : mistimed ? MISTIMED_GAIN : 1;
+        const tight = rq !== RQ_CLEAN || this.replaying ? 1 : b === G_PERFECT ? SWEET_RATE : mistimed ? MISTIMED_RATE : 1;
+        out.play('racket', racketBin(rk, pb.bin, rq), x, y, z, pb.gain * firm, this.rate * tight, delay, BUS_BALL);
         // A grunt with the effort: overheads and hard drives; the odd breath on a lighter shot.
-        const effort = a === SHOT_SMASH ? 0.6 + 0.4 * clamp01((c - 25) / 15)
-          : a === SHOT_VIBORA || a === SHOT_BANDEJA ? 0.55
-            : a === SHOT_VOLLEY || a === SHOT_DROP || a === SHOT_CHIQUITA || a === SHOT_LOB ? 0.15
-              : 0.4 + 0.5 * clamp01((c - 14) / 14);
+        const effort = effortOf(a, c);
         const voice = player >= 0 ? this.voices[player]! : 0;
         if (player >= 0 && this.rand() < GRUNTER[PLAYER_VOICES[voice]!.style]! * Math.min(1, effort * GRUNT_KEEN)) {
           const p = sim.players[player]!;
+          this.gruntAt[player] = sim.time;
           const eb = binFor(GRUNT_E, effort, this.rand());
-          const pitch = a === SHOT_SERVE ? GRUNT_SERVE : p.handSide < 0 ? GRUNT_BACKHAND : 1;
-          out.play('grunt', voice * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, this.rate * pitch, delay + 0.015, BUS_PLAYERS);
+          const pitch = a === SHOT_SMASH || a === SHOT_VIBORA ? GRUNT_OVERHEAD : p.handSide < 0 ? GRUNT_BACKHAND : 1;
+          out.play('grunt', voice * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, this.rate * pitch * this.tones[player]!, delay + 0.015, BUS_PLAYERS);
         }
         // The crowd gasps at a great get: a smash or a ball off two walls sent back (never at a serve).
         if (this.big && !this.replaying && a !== SHOT_SERVE && sim.phase === PH_RALLY && this.lastHitTeam >= 0 && team !== this.lastHitTeam) {
@@ -302,6 +334,7 @@ export class Soundscape {
         this.celebrate = 2;
         break;
       case E_GAME:
+        this.celebrate = Math.max(this.celebrate, CELEBRATE_GAME);
         break;
     }
   }
@@ -314,14 +347,14 @@ export class Soundscape {
     this.wallsSinceHit = 0;
   }
 
-  /** A set or the match: one celebration (the set and the match arrive together), on top of the point's applause. */
+  /** A game, a set or the match: one celebration (they arrive together), on top of the point's applause. */
   private celebration(now: number): void {
     const k = this.celebrate;
     this.celebrate = 0;
-    if (this.big) this.out.playFlat('cheer', 0, k === 2 ? 1.2 : 0.9, 0.3, BUS_CROWD);
+    if (this.big && k >= 1) this.out.playFlat('cheer', 0, k === 2 ? 1.2 : 0.9, 0.3, BUS_CROWD);
     // The point's big applause is still going (4.5 s): swell it only if it has died down.
     if (now - this.lastBigAt > 3) {
-      this.out.playFlat('applause', APPLAUSE_BIG, k === 2 ? 1.3 : 1.1, 0.35, BUS_CROWD);
+      this.out.playFlat('applause', APPLAUSE_BIG, k === 2 ? 1.3 : k === 1 ? 1.1 : 0.8, 0.35, BUS_CROWD);
       this.lastBigAt = now;
     }
   }
@@ -333,7 +366,11 @@ export class Soundscape {
     const out = this.out;
     const clap = 0.25 + this.rand() * 0.3;
     const big = (gain: number, at: number): void => { out.playFlat('applause', APPLAUSE_BIG, gain, at, BUS_CROWD); this.lastBigAt = now; };
-    if (why === WHY_EXIT_AFTER_BOUNCE) {
+    if (sim.score.isDecidingPoint()) {
+      // A star or golden point: everyone knew what it was worth.
+      if (this.big) out.playFlat('cheer', 0, 1, 0.3, BUS_CROWD);
+      big(1.2, clap);
+    } else if (why === WHY_EXIT_AFTER_BOUNCE) {
       if (this.big) out.playFlat('cheer', 0, 1.1, 0.3, BUS_CROWD);
       big(1.2, clap);
     } else if ((why === WHY_DOUBLE_BOUNCE || why === WHY_HIT_BODY_OPP) && hitter === winner && (this.lastHitShot === SHOT_SMASH || this.lastHitShot === SHOT_VIBORA)) {
@@ -355,7 +392,7 @@ export class Soundscape {
    */
   private crowdBed(sim: MatchSim, dt: number): void {
     const inPoint = sim.phase === PH_SETUP || sim.phase === PH_RALLY || sim.phase === PH_TOSS;
-    const t = sim.phase === PH_RALLY ? clamp01((sim.rally.shots - 6) / 16) : 0;
+    const t = sim.phase === PH_RALLY ? Math.max(sim.score.isDecidingPoint() ? DECIDING_TENSION : 0, clamp01((sim.rally.shots - 6) / 16)) : 0;
     this.tension += (t - this.tension) * (dt > 0 ? 1 - Math.exp(-dt / 1.5) : 0);
     const want = inPoint ? AUDIO.crowd.hush + AUDIO.crowd.tensionGain * this.tension : AUDIO.crowd.chatter;
     const phaseChanged = sim.phase !== this.lastPhase;

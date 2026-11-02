@@ -75,7 +75,7 @@ export function defaultSettings(): Settings {
     setup: { ...DEFAULT_SETUP },
     timing: 'forgiving', assist: 'normal', autoTiming: false, swing: 'hold', pro: false, mouseAim: false,
     quality: 'auto', showFps: false, camera: 'tv', replays: true,
-    volume: 0.8, crowd: 1,
+    volume: 1, crowd: 1,
     motion: 'system', safeColours: false, contrast: false, textSize: 1, announce: true, rumble: true,
     keys: {},
     defaultsV: 1,
@@ -131,6 +131,11 @@ export function loadSettings(): Settings {
   if (s.defaultsV < 2) {
     if (s.setup.level === 'club') s.setup.level = 'advanced';
     s.defaultsV = 2;
+  }
+  // So did the volume, from 0.8: that took a further 3.9 dB off a match already 10 LU under a TV programme.
+  if (s.defaultsV < 3) {
+    if (s.volume === 0.8) s.volume = 1;
+    s.defaultsV = 3;
   }
   // Narrow singles only exists for singles.
   if (s.setup.court === 'singles-narrow' && s.setup.mode === 'doubles') s.setup.court = 'standard';

@@ -7,7 +7,7 @@ import { Rng, SR, peak, rms } from './dsp.ts';
 import * as V from './voices.ts';
 
 export const AUDIO = spec;
-export type ArenaAudio = typeof spec.arenas.stadium & { room: V.RoomSpec; birds?: boolean; crowdSend?: number; bedSend?: number };
+export type ArenaAudio = typeof spec.arenas.stadium & { room: V.RoomSpec; birds?: boolean; crowdSend?: number; bedSend?: number; trim?: number };
 
 /** How much of a sound from outside the court reaches the room (sends to the reverb): a crowd in a hall is in it. */
 export const CROWD_SEND = 0.7, BED_SEND = 0.6;
@@ -64,6 +64,8 @@ export interface FamilyDef {
   active?: boolean;
   /** No render may peak above this (dBFS): a sparse crowd is very peaky for its rms. */
   peakCap?: number;
+  /** Rounds this many dB off the top of each render's peak: a hit's first millisecond sits 25 dB over what the ear reads of it. */
+  crest?: number;
 }
 
 /** A crowd's level against the stadium's 4,600: power goes with headcount (10 log10 N); a club's few watchers sit
@@ -86,7 +88,7 @@ export function families(env: BankEnv): FamilyDef[] {
   const ladder0 = (): number => 0;
   const out: FamilyDef[] = [
     {
-      name: 'racket', bins: 45, variants: va.racket!, sr: SR, peak: pk.racket,
+      name: 'racket', bins: 45, variants: va.racket!, sr: SR, peak: pk.racket, crest: spec.crest.racket,
       render: (r, b) => V.racket(r, Math.floor(b / 9), RACKET_POWER[Math.floor(b / 3) % 3]!, [0.05, 0.75, 0.5][b % 3]!, b % 3 === RQ_FRAME),
       // One ladder per kind and contact (clean, off-centre, frame), up the power bins.
       law: { x: (b) => RACKET_POWER[Math.floor(b / 3) % 3]!, ladder: (b) => Math.floor(b / 9) * 3 + (b % 3) },
@@ -95,7 +97,7 @@ export function families(env: BankEnv): FamilyDef[] {
       name: 'bounce', bins: BOUNCE_V.length, variants: va.bounce!, sr: SR, peak: pk.bounce, render: (r, b, e) => V.bounce(r, e.floor, BOUNCE_V[b]!),
       law: { x: (b) => BOUNCE_V[b]!, ladder: ladder0 }, floorRef: true,
     },
-    { name: 'glass', bins: GLASS_V.length, variants: va.glass!, sr: SR, peak: pk.glass, render: (r, b) => V.glass(r, GLASS_V[b]!), law: { x: (b) => GLASS_V[b]!, ladder: ladder0 } },
+    { name: 'glass', bins: GLASS_V.length, variants: va.glass!, sr: SR, peak: pk.glass, crest: spec.crest.glass, render: (r, b) => V.glass(r, GLASS_V[b]!), law: { x: (b) => GLASS_V[b]!, ladder: ladder0 } },
     { name: 'mesh', bins: MESH_V.length, variants: va.mesh!, sr: SR, peak: pk.mesh, render: (r, b) => V.mesh(r, MESH_V[b]!), law: { x: (b) => MESH_V[b]!, ladder: ladder0 } },
     {
       name: 'net', bins: 4, variants: va.net!, sr: SR, peak: pk.net, render: (r, b) => V.net(r, b >= 2, NET_V[b % 2]!),
@@ -198,9 +200,26 @@ function topLevel(def: FamilyDef, rows: Sample[][]): number {
   return top;
 }
 
+/** Takes `db` off a render's peak with a soft knee (tanh), both channels alike, leaving what is well under it alone. */
+function roundPeak(s: Sample, db: number): void {
+  const edge = peakOf(s) * Math.pow(10, -db / 20);
+  if (edge <= 0) return;
+  for (const c of s.ch) {
+    let m = 0;
+    for (let i = 0; i < c.length; i++) {
+      c[i] = edge * Math.tanh(c[i]! / edge);
+      m += c[i]!;
+    }
+    // A hit is lopsided, so rounding it leaves a little DC: taken out over the first of it, under the hit (the tail must still end at 0).
+    const n = Math.min(c.length, Math.round(0.02 * s.sr));
+    for (let i = 0; i < n; i++) c[i] = c[i]! - (2 * m / n) * Math.pow(Math.sin((Math.PI * i) / n), 2);
+  }
+}
+
 /** Render a whole family ([bin][variant]) at its level. */
 export function renderFamily(def: FamilyDef, env: BankEnv): Sample[][] {
   const rows = renderRows(def, env);
+  if (def.crest !== undefined) for (const row of rows) for (const s of row) roundPeak(s, def.crest);
   if (def.law) levelLaw(rows, def.law);
   let top = topLevel(def, rows);
   if (def.floorRef && env.floor !== V.FL_TURF) {
