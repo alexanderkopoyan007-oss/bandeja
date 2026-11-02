@@ -3348,3 +3348,14 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **Glass level left alone.** The 3 dB shortfall on Wadman's reading compares unknown speeds; at the top bins it was reasoned
   at +0.5 dB, and it is now about +1 dB.
 
+
+## Round 18, after the review (2026-11-02)
+
+- **A shared voice gets a person's own pitch, not a new voice.** Rendering more voices costs bank time and memory on every load. `tone` in `data/people.json` moves a person ±5%, about a semitone, inside the study's spread.
+- **All thirteen people keep grunting.** Half of top men grunt often enough to study, and a third manner that rarely grunts would fit that. The owner asked for grunts on the characters, so the rate is left for the owner to hear.
+- **The serve keeps no overhead pitch.** The tennis figure is an overhead at full effort, so it moved to padel's smash and víbora. A padel serve is 67 km/h underarm.
+- **Peaks are rounded in the render, not by working the limiter harder.** It costs nothing in play, each render is treated alike whatever its level, and the limiter stays a safety. The DC this leaves is taken out over the first 20 ms, under the hit.
+- **Reactions came down 6 dB against the rally.** "A big applause reads about 7 dB over the hardest hit" was an estimate, and from the camera it read 17 dB over a usual rally. A broadcast mix keeps them closer.
+- **The serve's chest turn is -0.4 at the ball, not -0.8.** The ball stood 27 degrees to the free side of the chest's line, so the hand had to whip across it. The video's hand is in front of the shoulder.
+- **The depth of a low volley came up on reasoning.** No footage has one. A ball at 0.8 m needs 15-25 cm off the body once the arm reaches down and the racket tilts, and the game gave 30 cm. The elbow stayed inside the video's 53-79 on p1 at .55.
+- **Crossed feet in a walk: the fix is not known.** Two tries did nothing and both were taken out.

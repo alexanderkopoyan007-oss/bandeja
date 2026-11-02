@@ -416,13 +416,17 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **Flight in a run.** 25-35% is from running research, not padel steps. Settled by: side-on footage of a pro covering the court, frames with both feet up.
 - **Forced or unforced.** Ours is a formula, the paper's a coder's eye, so only the totals compare. Settled by: scoring one coded match by both.
 - **Generated people up close.** Their eyes don't follow the ball, cloth has no hem lag, hair is solid. Settled by: the owner saying whether this reads at the TV camera.
-- **A held direction key no longer pre-aims.** Round 17: what was down at the press stays the run's until let go, so aim with a key pressed after the shot key. It cures the aim flying to the fence, and it takes away an aim a player may have wanted. Settled by: the owner playing with a key held through the press and saying which they meant.
+- **How far apart two fingers land.** A key that went down within 80 ms before the shot key counts as aim, and one held from the run stays the run's. The 80 ms is a judgement, and how a pre-aim from the run should feel is the owner's call. Settled by: the owner playing ten games.
 - **How often real hands brush the next key.** The stand-in's 10% of balls is a guess; the fix holds at any rate. Settled by: the owner playing ten games.
 - **Ready elbows on the move.** 46-66 is standing footage. The arm is held to the same bend in a run, and whether a pro's opens further is not in the table. Settled by: two clips of a pro running in the ready grip.
 - **The serve's fold.** It ends at 92-109 by seat and body against the video's 123-125, because any closer the racket touches the chest on short bodies. Settled by: a side-on clip of where the racket lies at the end of a short player's serve.
 - **How narrow a run's feet land.** RUN_WIDTH .7 gives 17 cm; 5-10 cm is from memory and nothing in the project's research has it. Settled by: a clip of a pro running straight at the camera.
 - **A volley's arm after the ball.** The footage has no row, so 58-60 follows the contact's bend rather than a measurement. Settled by: three side-on volleys read to +0.3 s.
 - **The two grunts' shapes.** Only mean pitch is measured. Lengths, contours, strain and how often they come are reasoned. Settled by: a duration and contour study of professional grunts, or the owner's ear.
-- **The mouth during a grunt.** The face opens on smashes and serves only, whichever shot grunted. From the broadcast camera the mouth is a few pixels. Settled by: a close camera, if the owner ever wants one.
+- **The two pitches of a shared voice.** `tone` moves a person ±5%. Whether two people on a court sound like two people is for an ear. Settled by: the owner listening to one match.
 - **Partner calls and shouts.** `E_CALL` is silent, and Piana puts shouts at +1.9 dB on the game. A synthesised word would sound like a machine. Settled by: voice recordings cleared for a public game.
-
+- **The level.** -27 LUFS at default volume, against TV's -24, on no real speakers. Settled by: the owner saying whether the ball and the crowd sit right on their own system.
+- **A Perfect's sound.** +2 dB and 2% tighter, in the same render. Settled by: the owner saying whether it can be felt, or a recording of a sweet-spot hit.
+- **The near fence.** Wire by the camera at 30%. Settled by: the owner saying whether it looks like a lens or like a fence that isn't there.
+- **Crossed legs in a walk.** One walk in seven, 20-46 cm across, in the fast turn after a point. Two tries did nothing. Settled by: more tracing, and a clip of a player turning to walk back.
+- **A bandeja's spin.** -2400 rpm is set from how it should play, and no source gives one. Settled by: a spin reading from high-speed footage.

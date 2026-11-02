@@ -354,3 +354,18 @@ sub-octave beat the voice. The stadium's "before" column is the build before thi
 new grunts' pitch not yet in; the rest are 1d275f7 against e318742. The limiter works a little more at the club, on hits at the
 near baseline closest to the camera: under 1.5 dB, for milliseconds, and nothing reaches full scale.
 
+### After the review (2 Nov)
+
+The critic measured a match at the default volume for the first time. Every earlier figure here came from `?autoplay=1`, which sets no volume.
+
+| Output, 75 s of AI play | Before | After |
+|---|---|---|
+| Stadium, default volume | -35.3 LUFS, momentary median -40.4, peak -1.6 at slider 1 | -27.0 LUFS, median -30.6, peak -0.8 |
+| Open club, default volume | -33.8 LUFS, median -36.6 | -27.8 LUFS, median -31.3, peak -1.1 |
+| Moments over -2 dBFS | stadium 5, club 25 with the master raised and no trim | stadium 5, club 7 |
+| Racket, median LAFmax alone, stadium | -35.3 | -29.4 |
+
+What changed: 6 dB rounded off each racket and glass render's peak (`crest`), `lift` 12 to 18, the default volume 0.8 to 1, reactions 6 dB down, `trim` -3 on the clubs and -2 on the hall. The racket's and the glass's `peak` were then set so their meter levels hold against the rest: -7.4 and -13.
+
+Grunts by shot, six AI matches, seeds 2453000-5, 10 a minute (12.2 before): serve 28% with no voice, slice 38%, bandeja 54%, drive 65%, víbora 63%, smash 84%, contrapared 71%, volleys and lobs about 20%, all breath. No real per-shot rate is published, so these are reasoned.
+

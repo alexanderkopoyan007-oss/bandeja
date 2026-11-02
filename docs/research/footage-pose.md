@@ -29,7 +29,7 @@ or 37 s, but what its coach says in that window is unknown, so the backhand rows
 | Forehand volley | Shoulders on the hips | 25 (20-37) | 18 | 4 |
 | Forehand volley | Chest turned from the net | 11-55 by the camera | 40 | 4 |
 | Forehand volley | Free hand | elbow 78, 0.24 m in front | elbow 74, 0.10 | 4 |
-| Forehand volley | Hips, knees | 0.82-0.85, 40-45 / 30 | 0.83, 62 / 40 | 4 |
+| Forehand volley | Hips, knees | 0.82-0.85, 40-45 / 30 | 0.84-0.87, 54-61 / 44-48 at the clip's height; 0.62-0.71 for a ball at 0.7-0.95 m, which the clip doesn't show | 4 |
 | Volley | Elbow from -0.3 s to contact | forehand 61, 95, 98, 98, 47; backhand 98, 98, 100, 77, 30 (mid height, measured by round 8; 57 was a mid forehand's contact only) | 116, 90, 82, then 57 (was 30 at its stop until the hit) | 4 |
 | Ready (two hands) | Elbows, racket / free | 46-66 / 45-47 (284 frames, 3 clips) | 61-67 / 44-56 (was 28 / 32) | [5](https://www.youtube.com/watch?v=YawHc7Cv8us), [6](https://www.youtube.com/watch?v=-zYGF4P_Q9A), [7](https://www.youtube.com/watch?v=5MH8RDf4qfg) |
 | Ready (two hands) | Wrist below, in front of the shoulder | 0.69-0.75 trunks, 0.27-0.30 m | 0.63, 0.3 m | 5, 6, 7 |
@@ -54,8 +54,8 @@ or 37 s, but what its coach says in that window is unknown, so the backhand rows
 | Backhand volley | Take-back | wrist at shoulder height, across the chest, elbow 59-68, both hands up | keyed the same | 5 |
 | Serve | Set-up | ball and racket hands both at the shoulder's height, arms wide (the coach's clock face, heights marked on screen, 4:36-4:54) | keyed on it | [7](https://www.youtube.com/watch?v=gvxuqyt_hn0) |
 | Serve | Contact | at the waist; low contact is the coach's first common error | 0.91 m (was 0.70) | 7 |
-| Serve | Racket hand from its shoulder, in arm's lengths: out, up, forward, s before the ball | -0.8 to -0.2 s: 0.6-0.8, 0, 0.5 (shoulder height, elbow 44-62); at the ball about 0, -0.73, 0.6; +0.24 s -0.08, -0.04, 0.49 | same | 7, 1 serve, 25 fps, 4:54 |
-| Serve | Racket elbow | 44-62 back, 39 at the ball, then 46, 73, 123, 125 by +0.3 s (folded, racket up by the far shoulder) | 41-51 back, 42, 68, 98, 105 | 7 |
+| Serve | Racket hand from its shoulder, in arm's lengths: out, up, forward, s before the ball | -0.8 to -0.2 s: 0.6-0.8, 0, 0.5 (shoulder height, elbow 44-62); at the ball about 0, -0.73, 0.6; +0.24 s -0.08, -0.04, 0.49 | set-up the same; at the ball -0.21, -0.33, 0.81, the racket level; +0.24 s -0.18, -0.09, 0.57 | 7, 1 serve, 25 fps, 4:54 |
+| Serve | Racket elbow | 44-62 back, 39 at the ball, then 46, 73, 123, 125 by +0.3 s (folded, racket up by the far shoulder) | p1 39-51 back, 50, 41, 64, 106, 106; generated 41, 41, 52, 102, 91 | 7 |
 | Serve | Free arm | up with the ball, then long and out to its side, elbow 10-15, coming round in front after the ball | 33-61, then round in front | 7 |
 | Serve | Trunk | 3-9 at the top, up to 26 in the downswing, about 10 after | 9-16, 22 after | 7 |
 

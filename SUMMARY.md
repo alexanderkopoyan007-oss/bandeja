@@ -801,3 +801,20 @@ Generated people: three from Meshy are dealt into ordinary matches with team col
 The real engine's output was read for the first time. A Chrome launched by a tool has a stopped audio clock, so earlier frame
 rates rendered no sound; those and these aren't like for like. Nobody has listened to any of it.
 
+After that round's review, on the same build:
+
+| Measure | Real | Before | After |
+|---|---|---|---|
+| Match loudness at default volume, stadium | TV -24 LUFS | -35.3 LUFS | -27.0 LUFS |
+| Match start, real menus | sound from the start | silent to the first key | running at the first sample |
+| Grunts a minute; share of serves | no figure | 12.2; 72% | 10; 28%, none voiced |
+| Two people on one recording | | 75% of matches | never |
+| Hips 0.24 s after a volley (forehand, ball 0.7-0.95 m) | no figure | 0.60 | 0.81 |
+| Volley elbow, same balls | 53-79 | 69 | 54 |
+| Strong kicks on a first step | no figure | 20.8%, 4.1 a court-minute | 3.8%, 0.8 |
+| Run: knee landing, most, leaving | about 14, 40, 20-30, from memory | 34, 53, 44 | 27, 41, 41 |
+| Serve: wrist past range after the ball | within 1 | 1.6-2.07 | 0.69-1.02 |
+| Bandeja untouched off the back glass | 1.5-3 m, from memory | 5.3 m | 3.9 m |
+| Shots a point, seconds, W/FE/UE, serving pair | 10-11, 9.4-14.8, 34-42/29-33/29-33, ~62 | 10.63, 14.15, 43.8/22.2/34.0, .654 | 10.55, 13.98, 44.7/22.7/32.5, .655 |
+| Frame rate, high at 120 Hz, real audio, generated people | | 120.5 fps, none over 20 ms | holds 120 Hz, frame p99 8.3 ms, none over 20 ms, 82 draw calls, 474,225 triangles |
+
