@@ -223,6 +223,8 @@ const AIM_VOLLEY = 1.6;
 const AIM_SURE_EDGE = 1.2;
 const AIM_SURE_SHORT = 2;
 const AIM_SURE_OVERHEAD = 4;
+const AIM_SURE_LOB = 5.5;
+const AIM_SURE_GROUND = 3.5;
 /**
  * A direction that went down this long before a shot key (s) goes with it, as aim: to place a shot a hand presses the two
  * together, and with what was down at the press the run's (steerAim), a key landing first left the ball on the default
@@ -240,6 +242,8 @@ const SERVE_AIM_SPEED = 4.5;
 const SERVE_AIM_EDGE = 0.55;
 /** Default aim depth (fraction of the half) for the overhead key: deep for a bandeja, mid-court for a smash. */
 const OVERHEAD_AIM_DEPTH = 0.8;
+/** Untouched lob target: as deep as the AI's (real ones land 5.5-8.6 m past the net). At 9 m, past the keys' own stop, one in seven went into the glass on the full. */
+const LOB_AIM_DEPTH = 0.82;
 /** Untouched víbora target: cross-court, this deep (fraction of the half), into the side glass. */
 const VIBORA_AIM_DEPTH = 0.68;
 /** Untouched smash target: clear the tape by this much at full pace (smashAim.ts), but land no shorter than this. */
@@ -1181,16 +1185,36 @@ export class MatchSim {
   standDown(i: number): void {
     const p = this.players[i]!;
     if (this.ai[i] && p.swing === SW_CHARGE) p.swing = SW_IDLE;
-    this.handOver(i);
+    this.handOver(i, true);
   }
 
   /** The taker can't get to it: the ball is their partner's at once, while it is still in the air between them. */
-  handOver(i: number): void {
+  handOver(i: number, givenUp = false): void {
     if (!this.doubles) return;
     const team = i & 1;
     if (this.taker[team] !== i) return;
     const o = i ^ 2;
-    if (this.claimCost(o, this.side(team), this.time) < CLAIM_OUT) this.setTaker(team, o);
+    // (given up on, it is the partner's if they have any contact at all: in time or not, nobody else is left to play it)
+    if (this.claimCost(o, this.side(team), this.time) < (givenUp ? CLAIM_OUT * 2 : CLAIM_OUT)) this.setTaker(team, o);
+  }
+
+  /**
+   * The taker has planned and can't get there: the contact their partner goes for all the same, null while the taker is in time. The call only
+   * changed at the bounce, so a soft ball down the middle was left to a net player who couldn't reach it, the server ran on past it, and both
+   * turned round when it had come off the glass (review round 27).
+   */
+  coverPlan(i: number, s: number): StandPlan | null {
+    const team = i & 1, tk = this.taker[team]!;
+    if (tk < 0 || tk === i) return null;
+    const p = this.players[i]!;
+    // (once gone, gone for this ball: a taker's plan flickers in and out of time, and the partner went and came back with it)
+    if (p.coverFor !== this.pred.version) {
+      const st = this.ai[tk] ? this.ai[tk]!.standPlan : this.stand[tk]!, ai = this.ai[i];
+      if (!st.valid || st.inTime || (ai && ai.reactAt > this.time)) return null;
+      p.coverFor = this.pred.version;
+    }
+    const plan = this.claim[i]!;
+    return planStand(this.pred, p, s, this.time, this.rally.isServe, plan, -1, false, false) ? plan : null;
   }
 
   private setTaker(team: number, i: number): void {
@@ -1393,19 +1417,19 @@ export class MatchSim {
     // (smash winners halved; review round 20).
     if (abs(f.moveY) < 0.1) p.steerFrom = 0;
     if (abs(f.moveX) < 0.1) p.steerFromX = 0;
-    // And a key landing with the shot key and pointing where the player still has to go is the run's, whichever finger came first: the run
-    // back from a lob pressed with the overhead took the target to its stop 0.9 m past the net, one good smash in four into it, and the run
-    // to a wide ball took it to the side glass (review round 25). Only with it: the game has the running by then, so a key pressed later in
-    // the hold can't be the run's. Marked on every tick of the hold, it stayed dead past arrival, half of bandejas lost their corner and
-    // nothing on screen said why (review round 26). (A stick is followed up: a thumb takes two or three frames to reach full.)
-    const st = this.stand[p.index]!;
-    if (!serve && st.valid && this.time - p.chargeStart < STEER_CHORD) {
+    // And on an overhead a key landing with the shot key and pointing where the player still has to go is the run's, whichever finger came
+    // first: the run back from a lob pressed with the overhead took the target to its stop 0.9 m past the net, one good smash in four into it
+    // (review round 25). Only with it: the game has the running by then, so a key pressed later in the hold can't be the run's. Marked on every
+    // tick of the hold, it stayed dead past arrival, half of bandejas lost their corner and nothing on screen said why (review round 26). A
+    // ground stroke has no need of it, its stops below make a run key cheap, and there it killed the chord that places the shot (round 27).
+    // (A stick is followed up: a thumb takes two or three frames to reach full.)
+    const st = this.stand[p.index]!, overhead = !serve && p.shot === SHOT_BANDEJA;
+    if (overhead && st.valid && this.time - p.chargeStart < STEER_CHORD) {
       const togoX = st.x - p.pos.x, togoZ = st.z - p.pos.z;
       if (abs(togoZ) > STEER_RUN && -s * f.moveY * togoZ > 0 && abs(f.moveY) > abs(p.steerFrom)) p.steerFrom = f.moveY;
       if (abs(togoX) > STEER_RUN && s * f.moveX * togoX > 0 && abs(f.moveX) > abs(p.steerFromX)) p.steerFromX = f.moveX;
     }
     const ahead = abs(f.moveY - p.steerFrom) > STEER_TOUCH, across = abs(f.moveX - p.steerFromX) > STEER_TOUCH;
-    const overhead = !serve && p.shot === SHOT_BANDEJA;
     if (f.aimAbs || (overhead && (f.held & BTN_PRECISION) === 0 ? ahead : ahead || across)) p.aimTouched = true;
     if (!f.aimAbs && !p.aimTouched && overhead) {
       // An overhead target nobody has steered follows the shot: deep for a bandeja; for a smash (Space) the
@@ -1439,9 +1463,12 @@ export class MatchSim {
       // aimed there went in on the full (review round 25).
       const sure = (f.held & BTN_PRECISION) === 0 && !f.aimAbs;
       const edgeX = sure && across ? AIM_SURE_EDGE : 0.45, edgeZ = sure && ahead ? AIM_SURE_EDGE : 0.45;
-      // (an overhead isn't pulled in by a key pressed late on the way back: a smash goes no shorter than it can go at full pace)
-      const short = !sure || !ahead || p.shot === SHOT_DROP || p.shot === SHOT_CHIQUITA ? 0.9
-        : !overhead ? AIM_SURE_SHORT : (f.held & BTN_POWER) !== 0 ? this.smashSpot(p) : AIM_SURE_OVERHEAD;
+      // A wrong reading of a key stays cheap, each shot stopping where it is still that shot: a smash no shorter than it can go at full pace, a
+      // víbora with the other overheads though Precision is down for it (0.9 m past the net, one in four into it; review round 27), a lob where
+      // real ones come down, a ground stroke from the back not into the tape. A volley and the soft shots may go as short as they are meant to.
+      const soft = p.shot === SHOT_DROP || p.shot === SHOT_CHIQUITA || !ahead || f.aimAbs;
+      const short = soft || (!sure && !overhead) ? 0.9 : overhead ? ((f.held & BTN_POWER) !== 0 ? this.smashSpot(p) : AIM_SURE_OVERHEAD)
+        : p.shot === SHOT_LOB ? AIM_SURE_LOB : st.valid && st.volley ? AIM_SURE_SHORT : AIM_SURE_GROUND;
       p.aimX = clamp(p.aimX, -c.halfW + edgeX, c.halfW - edgeX);
       p.aimZ = -s * clamp(-s * p.aimZ, short, c.halfL - edgeZ);
     }
@@ -1455,10 +1482,15 @@ export class MatchSim {
     return smashLanding(c.netHeightAt(0), back, h, SMASH_NET_MARGIN, SMASH_MIN_DEPTH, c.halfL - 2.0);
   }
 
+  /** Where a human's shot is aimed before the keys touch it (a share of the half). */
+  private aimDepth(shot: number): number {
+    return shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : shot === SHOT_LOB ? LOB_AIM_DEPTH : this.solverDepth(shot);
+  }
+
   /** The held swing goes on as this shot. */
   private takeOver(p: Player, shot: number): void {
     p.shot = shot;
-    if (!p.aimTouched) p.aimZ = -this.side(p.team) * (shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot)) * this.world.court.halfL;
+    if (!p.aimTouched) p.aimZ = -this.side(p.team) * this.aimDepth(shot) * this.world.court.halfL;
   }
 
   private press(i: number, shot: number, t: number): void {
@@ -1495,9 +1527,8 @@ export class MatchSim {
     if ((this.phase === PH_RALLY || (this.phase === PH_TOSS && i !== this.score.serverPlayer())) && !this.ai[i]) {
       // Each rally shot starts aimed down the middle at the shot's natural depth; the keys move it from there. A return held for in the toss
       // too: it kept the last point's target, after a change of ends on the player's own side, so half of them went 0.9 m past the net (review round 26).
-      const depth = shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot);
       p.aimX = 0;
-      p.aimZ = -this.side(team) * depth * this.world.court.halfL;
+      p.aimZ = -this.side(team) * this.aimDepth(shot) * this.world.court.halfL;
       p.aimTouched = false;
     }
   }
@@ -2029,7 +2060,7 @@ export class MatchSim {
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
-        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldShot).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
+        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldShot).num(p.coverFor).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);

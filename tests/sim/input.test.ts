@@ -4,7 +4,7 @@ import { MatchSim, PH_RALLY, PH_SETUP, PH_TOSS, PH_OVER, E_HIT, E_FAULT } from '
 import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION, BTN_SLICE } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { SW_IDLE, SW_CHARGE, SW_RECOVER } from '../../src/sim/player/player.ts';
-import { SHOT_BANDEJA, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, SHOT_VIBORA, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
+import { SHOT_BANDEJA, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, SHOT_VIBORA, SHOT_LOB, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
 import type { Player } from '../../src/sim/player/player.ts';
 
 /** The private parts these cases reach for. */
@@ -279,16 +279,20 @@ describe('a movement key and the aim', () => {
     }
     throw new Error('no wide ball to hold for');
   }
-  it('a key pointing where the player still has to go is the run\'s when it lands with the shot key', () => {
+  it('on a ground stroke a key landing with the shot key aims, the way the ball is taking the player too', () => {
     const { m, f, x0, toward } = holdingWide();
-    run(m, f, toward, 40);
-    expect(m.players[0]!.aimX).toBeCloseTo(x0, 5);
-  });
-  it('pressed later in the hold it aims: the game has the running by then', () => {
-    const { m, f, x0, toward } = holdingWide();
-    run(m, f, 0, 14);
     run(m, f, toward, 12);
     expect(Math.abs(m.players[0]!.aimX - x0)).toBeGreaterThan(0.5);
+  });
+  it('on an overhead a key landing with the shot key and pointing at the spot is the run\'s, and later in the hold it aims', () => {
+    const { m, f, x0, toward } = holdingWide();
+    const p = m.players[0]!;
+    p.shot = SHOT_BANDEJA;
+    run(m, f, toward, 40);
+    expect(p.aimX).toBeCloseTo(x0, 5);
+    run(m, f, 0, 2);
+    run(m, f, toward, 12);
+    expect(Math.abs(p.aimX - x0)).toBeGreaterThan(0.5);
   });
   it('the other way it aims', () => {
     const { m, f, x0, toward } = holdingWide();
@@ -307,6 +311,29 @@ describe('a movement key and the aim', () => {
     f.held = BTN_OVERHEAD;
     for (let i = 0; i < 240; i++) m.steerAim(p, f, s, false);
     expect(-s * p.aimZ).toBeCloseTo(4, 5);
+    // Nor a víbora, with Precision down for it.
+    p.aimZ = -s * 7;
+    f.held = BTN_OVERHEAD | BTN_PRECISION;
+    for (let i = 0; i < 240; i++) m.steerAim(p, f, s, false);
+    expect(-s * p.aimZ).toBeCloseTo(4, 5);
+  });
+  it('a lob and a ground stroke keep to theirs, and Precision takes them on', () => {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 }) as never as Priv;
+    const f = new InputFrame(), p = m.players[0]!, s = m.side(0);
+    p.chargeStart = m.time - 1;
+    f.moveY = -1;
+    p.shot = SHOT_LOB;
+    f.held = BTN_DRIVE;
+    p.aimZ = -s * 8;
+    for (let i = 0; i < 240; i++) m.steerAim(p, f, s, false);
+    expect(-s * p.aimZ).toBeCloseTo(5.5, 5);
+    p.shot = SHOT_DRIVE;
+    p.aimZ = -s * 7;
+    for (let i = 0; i < 240; i++) m.steerAim(p, f, s, false);
+    expect(-s * p.aimZ).toBeCloseTo(3.5, 5);
+    f.held = BTN_DRIVE | BTN_PRECISION;
+    for (let i = 0; i < 240; i++) m.steerAim(p, f, s, false);
+    expect(-s * p.aimZ).toBeCloseTo(0.9, 5);
   });
   it('the keys stop in from the glass, Precision goes on to the lines', () => {
     const { m, f, toward } = holdingWide();

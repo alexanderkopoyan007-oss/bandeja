@@ -367,6 +367,15 @@ export class SimpleAi {
         this.pressed = false;
         this.released = false;
         this.planVersion = -1;
+        const cover = coming ? m.coverPlan(this.index, s) : null;
+        if (cover) {
+          this.goX = cover.x;
+          this.goZ = cover.z;
+          this.goBy = cover.t - 0.15;
+          this.chasing = true;
+          this.drift(f, p, s);
+          return;
+        }
         this.formation(m, f, p, s, coming);
         return;
       }
@@ -712,6 +721,9 @@ export class SimpleAi {
       if (!(close && k >= 0 && planStand(pr, p, s, now, m.rally.isServe, st, k, true, false))) {
         if (!planStand(pr, p, s, now, m.rally.isServe, st, k, false, false)) { this.planned = false; this.contra = false; m.handOver(this.index); return; }
       }
+      // Its best is out of time: the partner's, if they can get there. The plan came back all the same, the net player held the ball to the end
+      // and gave up on it, and a soft return down the middle went past both of them (review round 27).
+      if (!st.inTime) m.handOver(this.index);
     }
     // A hard ball on its way to the glass with no time to set up for it: wait for it off the wall, out of its line. The
     // plan's least-late contact was on the rise (first plan 0.18 s after a smash, in time for it 6.8%, while a contact

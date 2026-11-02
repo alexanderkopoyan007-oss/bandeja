@@ -395,7 +395,7 @@ export class App {
           bindKey(k, a.id, code);
           s.keys = k;
         },
-        desc: (a.move ? 'Movement. Pressed while a shot key is held, it steers the aim instead, unless it points where the ball is taking you: then it stays the run.'
+        desc: (a.move ? 'Movement. Pressed while a shot key is held, it steers the aim instead, and the game does the running. One already down when the shot key goes down stays the run until you let it go.'
           : a.id === 'power' ? 'Held with a shot key as it is let go: a harder ball (with Volley a punch volley). With Overhead a smash: hold it before the ball drops, the jump is taken by then.'
           : a.id === 'precision' ? 'Held with a shot key as it is let go: a placed ball, and the aim goes right to the lines (with Topspin a chiquita). With Overhead a víbora: hold it before the ball drops.'
           : 'Hold as the ball comes, release to hit.') + ' Keys kept by the game: Esc (pause), F3, H, P, M, Tab, Enter.',

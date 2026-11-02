@@ -14,7 +14,7 @@ function measure() {
   const bandeja: number[] = [], vibora: number[] = [];
   const net: number[] = [], back: number[] = [], netX: number[] = [];
   // (six whole matches: about 500 serves. In 300 s a match has only about 15 points.)
-  for (let seed = 1; seed <= 6; seed++) {
+  for (let seed = 1; seed <= 12; seed++) {
     const m = new MatchSim({ seed, doubles: true, human: [false, false, false, false], aiLevel: [1, 1] });
     const frames = [null, null, null, null];
     let seq = 0, open = false, fromLeft = false, bounced = false;
