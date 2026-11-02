@@ -3371,3 +3371,13 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **A menu over a match keeps the context running.** Suspended, the ticks and the volume slider can't sound. The game's sound goes behind a hushed `stage` node instead, and only a hidden tab suspends.
 - **The AI's error law stays.** Two shapes of it were tried to make placement pay, and both swapped one wrong figure for another. See Round 19 #11.
 - **Volleys in front stay Open.** The hand is where the sim's stand-off puts it. Moving that is a sim change with a one-camera depth as its evidence.
+
+## Round 20: a key is the run's only as it lands, and the legs don't wait for the arms (2026-11-02)
+
+- **After the chord every key aims.** Round 19 asked what a key pointed at. The better question was when it went down: holding a shot key hands the running to the game, so a key pressed later can't be a run key. Dropping the rule altogether was tried, and a run key landing with the overhead then won 60.4% against 65.9, so the chord stays. A key that lands inside 80 ms pointing at the spot still does nothing. That is the one case where the game has to guess.
+- **A wrong reading has to be cheap.** A smash can't be pulled in past its full-pace landing and the other overheads stop at 4 m, so a late run key costs depth, not the shot. Precision still goes to the lines.
+- **The legs leave the stroke at 0.08 s.** The arms finish the swing on a body already on its way. Waiting for the follow-through gave the first half second of every recovery to the clip's legs.
+- **Past the spine's limit the chest moves, not the hips.** Holding the hips to the chest doubled the crab run. In a run the limit now turns the chest. Outside a run the old clamp stands, because the stroke's chest has to be where the keys put it.
+- **Speed carries through the contact.** A rate limit from a standing start is a corner, so reach and drop now rise to it at 25 m/s². Before the ball the limit stands as it was, because the reach must be whole by the contact.
+- **Lean sits high in the spine.** 15/35/50 from the waist. Tipping the pelvis was tried as the truer answer and opened more holes in the kit.
+- **The bed went down, not the ball up.** Round 19's high-pass moved the bed's power into hearing and kept its rms. The cut leaves the stadium at -25.8 LUFS, under TV's -24, and no lift was added back to chase it.

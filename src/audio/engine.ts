@@ -22,6 +22,8 @@ interface Voice {
 
 const POOL = 32;
 const db = (x: number): number => Math.pow(10, x / 20);
+/** What the panner's inverse distance law leaves of a sound d m away. */
+const falloff = (d: number): number => AUDIO.distance.ref / (AUDIO.distance.ref + AUDIO.distance.rolloff * (Math.max(AUDIO.distance.ref, Math.min(d, AUDIO.distance.max)) - AUDIO.distance.ref));
 
 export class AudioEngine implements AudioSink {
   enabled = true;
@@ -32,6 +34,7 @@ export class AudioEngine implements AudioSink {
   private readonly buffers = new Map<string, AudioBuffer[][]>();
   private room: Sample | null = null;
   private buses: GainNode[] = [];
+  private crowdWet: GainNode | null = null;
   private wet: GainNode | null = null;
   private convolver: ConvolverNode | null = null;
   private voices: Voice[] = [];
@@ -152,6 +155,11 @@ export class AudioEngine implements AudioSink {
       const wet = ctx.createGain();
       wet.gain.value = db(arenaAudio(this.env.arena).wet);
       this.wet = wet;
+      // (the crowd's way into the room goes through its slider too: at 0 the applause stood 9 dB down in the reverb)
+      const crowdWet = ctx.createGain();
+      crowdWet.gain.value = this.crowdLevel * this.crowdLevel;
+      crowdWet.connect(wet);
+      this.crowdWet = crowdWet;
       this.convolver = ctx.createConvolver();
       this.convolver.normalize = false;
       wet.connect(this.convolver).connect(stage);
@@ -267,7 +275,6 @@ export class AudioEngine implements AudioSink {
     // Every play a little different: +-3% pitch, +-1.5 dB.
     src.playbackRate.value = rate * (1 + (this.rand() - 0.5) * 0.06);
     src.connect(v.gain);
-    v.gain.gain.setValueAtTime(gain * db((this.rand() - 0.5) * 3), t);
     const dx = x - this.lx, dy = y - this.ly, dz = z - this.lz;
     // Across the picture, as a broadcast pans: one microphone at the lens has the side glass 1 dB off the middle.
     const R = this.right, wide = (AUDIO.width - 1) * (dx * R.x + dy * R.y + dz * R.z);
@@ -276,6 +283,9 @@ export class AudioEngine implements AudioSink {
     v.pan.positionZ.setValueAtTime(z + wide * R.z, t);
     // Air and distance take the highs; farther sounds are wetter (less direct sound against the same room).
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    // (the panner's own distance law on the true distance: widened, the side glass came out 2 dB under the same ball in the middle)
+    const wx = dx + wide * R.x, wy = dy + wide * R.y, wz = dz + wide * R.z;
+    v.gain.gain.setValueAtTime(gain * db((this.rand() - 0.5) * 3) * (falloff(Math.sqrt(wx * wx + wy * wy + wz * wz)) / falloff(d)), t);
     v.air.frequency.setValueAtTime(Math.min(20000, AUDIO.distance.airHz / (1 + d / AUDIO.distance.airM)), t);
     v.send.gain.setValueAtTime(bus === BUS_AMB ? AMB_SEND : 0.5 + d / 40, t);
     src.start(t, Math.max(0, offset));
@@ -300,7 +310,7 @@ export class AudioEngine implements AudioSink {
     // The crowd is in the room too.
     const s = ctx.createGain();
     s.gain.value = arenaAudio(this.env.arena).crowdSend ?? CROWD_SEND;
-    g.connect(s).connect(this.wet!);
+    g.connect(s).connect(bus === BUS_CROWD ? this.crowdWet! : this.wet!);
     src.start(t);
     src.onended = (): void => { g.disconnect(); s.disconnect(); };
   }
@@ -318,7 +328,7 @@ export class AudioEngine implements AudioSink {
       g.connect(this.buses[name === 'murmur' ? BUS_CROWD : BUS_AMB]!);
       const s = this.ctx.createGain();
       s.gain.value = arenaAudio(this.env.arena).bedSend ?? BED_SEND;
-      g.connect(s).connect(this.wet!);
+      g.connect(s).connect(name === 'murmur' ? this.crowdWet! : this.wet!);
       l = { src: null, gain: g, want: gain, tc };
       this.loops.set(name, l);
       this.startLoop(name);
@@ -388,6 +398,7 @@ export class AudioEngine implements AudioSink {
     const t = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(db(AUDIO.master + AUDIO.lift + (arenaAudio(this.env.arena).trim ?? 0)) * this.volume * this.volume, t, 0.02);
     this.buses[BUS_CROWD]?.gain.setTargetAtTime(this.crowdLevel * this.crowdLevel, t, 0.02);
+    this.crowdWet?.gain.setTargetAtTime(this.crowdLevel * this.crowdLevel, t, 0.02);
   }
 
   /**
@@ -424,6 +435,7 @@ export class AudioEngine implements AudioSink {
     this.buffers.clear();
     this.voices = [];
     this.buses = [];
+    this.crowdWet = null;
     this.master = null;
     if (ctx) void ctx.close().catch(() => undefined);
   }

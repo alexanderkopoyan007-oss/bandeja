@@ -430,9 +430,14 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **The near fence.** Wire by the camera at 30%. Settled by: the owner saying whether it looks like a lens or like a fence that isn't there.
 - **Crossed legs in a walk.** One walk in seven, 20-46 cm across, in the fast turn after a point. Two tries did nothing. Settled by: more tracing, and a clip of a player turning to walk back.
 - **A bandeja's spin.** -2400 rpm is set from how it should play, and no source gives one. Settled by: a spin reading from high-speed footage.
-- **Aiming the way you are running.** A key pointing at the planned spot is the run's until you are 0.4 m from it. Whether that loses a shot a person wants is unmeasured. Settled by: the owner playing ten games with the keys.
+- **A key landing with the shot key.** Inside 80 ms and pointing at the spot, it is the run's until let go. The length is a judgement, and no figure gives how far apart two fingers land. Settled by: the owner playing ten games with the keys.
 - **Where the keys alone stop.** 1.2 m from the glass and 2 m from the net are judgements. Settled by: the same ten games.
 - **How much bounce a run has.** The wave is the right way round at about 2 cm on the hips, 2.5 on the head, against a remembered 5-10. Settled by: a side-on clip of a pro running at 4 m/s, read at the hip.
 - **Stereo width.** Multiplied by 4 from the lens. Settled by: the owner on headphones and on laptop speakers.
 - **The next courts' level.** No published figure. Settled by: the owner listening at the club venue.
 - **Why placement pays so little.** Aim at the gap and aim at the player win the same. The AI's forced errors stay at 20-25% under any error law tried, so it is more likely in what it reaches. Settled by: a study of the AI's reach against real court coverage.
+- **Where an overhead's keys stop.** A smash at its full-pace landing, the rest 4 m from the net, are judgements. Settled by: the owner's ten games.
+- **Whether the bed now sits right.** -52 on the hall bed is an estimate, and no level for a hushed arena has a source. Settled by: the owner listening to a stadium point on their own speakers.
+- **The waist on one person.** One person's shirt and shorts leave gaps of 3-12 rays of 3 mm in some bent frames, on any build. Under a pixel from the nearest camera, and only in a frame or two. Settled by: rebuilding that person's kit with more overlap at the hem.
+- **What a real recovery's feet do.** The footage table has no row for steps after the ball, stops or cadence. Settled by: a side-on clip of a pro recovering from a wide ball and stopping hard, read frame by frame.
+- **Why the cadence is flat.** 4.6-4.8 steps a second from 2 to 5 m/s. Raising the reach limit alone didn't change it. Settled by: tracing which rule sends each foot, against the same clip.

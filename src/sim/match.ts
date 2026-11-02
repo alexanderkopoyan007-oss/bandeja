@@ -218,6 +218,7 @@ const CONTRA_SIDE = 1.4;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
+const AIM_VOLLEY = 1.6;
 /** How near the glass, and the net, the keys alone take a target (m). */
 const AIM_SURE_EDGE = 1.2;
 const AIM_SURE_SHORT = 2;
@@ -1424,8 +1425,10 @@ export class MatchSim {
       p.aimX = f.aimTX;
       p.aimZ = f.aimTZ;
     } else {
-      if (serve || across) p.aimX += s * f.moveX * (serve ? SERVE_AIM_SPEED : AIM_SPEED_X) * DT;
-      if (serve || ahead) p.aimZ += -s * f.moveY * (serve ? SERVE_AIM_SPEED : AIM_SPEED_Z) * DT;
+      // (a volley's hold is a fifth of a second: at the rally's speed the target got 2 m of the 3.4 to a corner)
+      const quick = st.valid && st.volley ? AIM_VOLLEY : 1;
+      if (serve || across) p.aimX += s * f.moveX * (serve ? SERVE_AIM_SPEED : AIM_SPEED_X * quick) * DT;
+      if (serve || ahead) p.aimZ += -s * f.moveY * (serve ? SERVE_AIM_SPEED : AIM_SPEED_Z * quick) * DT;
     }
     if (serve) {
       const bx = this.box;

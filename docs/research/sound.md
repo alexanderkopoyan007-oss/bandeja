@@ -378,3 +378,11 @@ Next courts: racket median -54.3 dB at the camera against your near pair -42.7 a
 Women's grunts sit 5 dB under the men's bins, because the same effort at the top of a woman's range read 7 dB nearer the hit. Piana's 2.4 dB under impacts is a whole game's figure, not per shot, so this is a judgement.
 
 Left and right at the hit, width 3, stadium and hall: x 1-3 near +2.4 dB, far +1.1; x -3 to -1 near -1.0, far -1.0. At width 4, stadium: x -5.5 to -3 near -4.0, far -2.4; x 1-3 near +2.1, far +0.9. Hits at the side glass read little more than that, since a good part of a glass hit is the room.
+
+## 10. Round 20 (2 Nov)
+
+- **The bed.** `rms.hall` -46 to -52. Round 19's 70 Hz floor moved its power into hearing, and 40-160 Hz is about half of it. A hit stood 11 dB over it, and the far glass about 5. The hushed-arena comparison is from memory, so the cut is an estimate.
+- **The crowd.** It now talks through the walk back and hushes when the set-up opens. Between points it reads about -33 LAeq in the stadium, which is why the capture's "bed" went up while the air handling came down.
+- **The Crowd slider** now reaches the reverb send, which it missed before.
+- **Width** no longer costs level at the sides. The panner keeps its position, and the voice's gain makes up the difference from the true distance.
+- **Level.** Stadium -25.8 LUFS, peak -1.1. Club -26.4, peak -1.7. Nobody has listened.

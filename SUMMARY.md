@@ -759,6 +759,29 @@ Two Highs in review, both marked down to Medium by the sceptic and both faults o
 | Women, 6000 points | 11.79, 16.45, 37.5/24.0/38.5, .603 | 11.3, 15.7, 36.2/26.0/37.9, .618 |
 | Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
 
+### Review round 20 (2 Nov, `REVIEW.md`)
+Two Highs, both confirmed by the sceptic and both fixed: a key pressed during a hold aimed nothing, and every recovery started on the clip's legs. The round also reversed four faults Round 19 had caused.
+
+| Round 20 | Before | After |
+|---|---|---|
+| Target within 0.5 m at release, bandeja | 16% | 100 |
+| The same, lob / pass | 32 / 38% | 94 / 96 |
+| Clip legs, share of moving frames | 13.3% | 5.4 |
+| Forehands moving off on clip legs | 96% | 13 |
+| Hips 45-110 off the way of travel, 3+ m/s | 18.3% | 8.1 |
+| Return held for in the set-up: points won | 39.9% | 49.0 |
+| Those returns under 3 m from the net | 49% | 0 |
+| Volley target reached, p50 | 2.11 m | 2.93 |
+| Foot ahead of the hips, braking landing, p50 | 19 cm | 33 |
+| Hip spikes over 6 mm in a run | 13 a second | 6 |
+| Chest after the ball on a serve | 25 degrees/s | about 195 |
+| Víboras turned into another shot | 20% | 8.8 |
+| Pops a minute, three seeds | 21 / 14 / 20 | 14.8 / 12.0 / 12.8 |
+| Stadium level, LUFS | -24.3 | -25.8 |
+| Match, 6000 points: shots, s, W/FE/UE | 10.2, 13.5, 43.1/23.3/33.6 | 10.1, 13.3, 44.1/22.4/33.4 |
+| Women, 6000 points | 11.3, 15.7, 36.2/26.0/37.9 | 11.2, 15.4, 36.1/25.6/38.3 |
+| Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

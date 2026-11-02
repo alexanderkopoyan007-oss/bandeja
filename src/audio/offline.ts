@@ -135,7 +135,7 @@ export class OfflineEngine implements AudioSink {
     if (az > 90) az = 180 - az;
     if (az < -90) az = -180 - az;
     const u = (az + 90) / 180;
-    const distGain = AUDIO.distance.ref / (AUDIO.distance.ref + AUDIO.distance.rolloff * (Math.max(AUDIO.distance.ref, Math.min(d, AUDIO.distance.max)) - AUDIO.distance.ref));
+    const distGain = AUDIO.distance.ref / (AUDIO.distance.ref + AUDIO.distance.rolloff * (Math.max(AUDIO.distance.ref, Math.min(d0, AUDIO.distance.max)) - AUDIO.distance.ref));
     return { l: Math.cos((u * Math.PI) / 2) * distGain, r: Math.sin((u * Math.PI) / 2) * distGain, d: d0 };
   }
 

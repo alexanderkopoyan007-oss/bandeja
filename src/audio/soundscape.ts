@@ -127,7 +127,7 @@ export class Soundscape {
   private readonly birds: boolean;
   private nextBird = 3;
   // The crowd.
-  private lastPhase = -1;
+  private lastInPoint = false;
   private tension = 0;
   private lastOoh = -10;
   private lastHitShot = -1;
@@ -367,6 +367,7 @@ export class Soundscape {
 
   /** The crowd's answer to a point: bigger for long rallies, winners, a ball played out of the court. */
   private pointEnds(sim: MatchSim, winner: number, why: number, now: number): void {
+    if (sim.cfg.practice !== undefined) return;
     const shots = sim.rally.shots;
     const hitter = sim.rally.hitter >= 0 ? sim.rally.hitter & 1 : -1;
     const out = this.out;
@@ -397,12 +398,13 @@ export class Soundscape {
    * rally (the crowd on the edge of its seats). Levels are sent only when they change.
    */
   private crowdBed(sim: MatchSim, dt: number): void {
-    const inPoint = sim.phase === PH_SETUP || sim.phase === PH_RALLY || sim.phase === PH_TOSS;
+    // (the walk back is still the crowd's: hushed from the end of the point, it had about a second of chatter in an eight second gap)
+    const inPoint = (sim.phase === PH_SETUP && sim.walking === 0) || sim.phase === PH_RALLY || sim.phase === PH_TOSS;
     const t = sim.phase === PH_RALLY ? Math.max(sim.score.isDecidingPoint() ? DECIDING_TENSION : 0, clamp01((sim.rally.shots - 6) / 16)) : 0;
     this.tension += (t - this.tension) * (dt > 0 ? 1 - Math.exp(-dt / 1.5) : 0);
     const want = inPoint ? AUDIO.crowd.hush + AUDIO.crowd.tensionGain * this.tension : AUDIO.crowd.chatter;
-    const phaseChanged = sim.phase !== this.lastPhase;
-    this.lastPhase = sim.phase;
+    const phaseChanged = inPoint !== this.lastInPoint;
+    this.lastInPoint = inPoint;
     if (phaseChanged || Math.abs(want - this.lastMurmurDb) > 0.5) {
       // Hush quickly as the server gets ready; pick up after the point; follow a rally's build slowly.
       const tc = phaseChanged ? (inPoint ? 0.35 : 0.8) : 1;
