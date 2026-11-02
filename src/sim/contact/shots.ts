@@ -52,6 +52,8 @@ export interface ShotShape {
   /** Planned impact point, from the tip of the racket (m). */
   impact: number;
   errorScale: number;
+  /** How much more the errors are from deep (at DEEP_TO m from the net; none up to DEEP_FROM): a flat smash from the back is the club player's mistake. */
+  deepError?: number;
   /** Full pace: hit at the contact's top speed, elevation chosen for the distance (kill smash). */
   pace?: boolean;
   /** Sidespin (rpm), curving the ball towards the side it is aimed at (víbora). */
@@ -68,6 +70,8 @@ export interface ShotShape {
 
 /** Where a lob's clearance is the shot's own (m from the net), and where it is only `nearClear` of it. */
 const NEAR_CLEAR_FROM = 2, NEAR_CLEAR_TO = 7;
+/** Where a smash's errors start growing with depth, and where they have grown by all of `deepError` (m from the net). */
+const DEEP_FROM = 5, DEEP_TO = 8.3;
 
 interface ModSpec { netClear: number; speed: number; error: number }
 
@@ -715,7 +719,8 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   // Pace shots keep a safer margin over the tape: full pace when that clears it, else as fast as clears it.
   const paceClear = clear + 0.25;
   // Swing errors (spreads here: the swing is made for the contact this hitter usually gets).
-  const err = shape.errorScale * mod.error / req.control;
+  const deep = shape.deepError !== undefined ? 1 + shape.deepError * clamp((abs(ball.pos.z) - DEEP_FROM) / (DEEP_TO - DEEP_FROM), 0, 1) : 1;
+  const err = (shape.errorScale * deep * mod.error) / req.control;
   const mv = req.moving;
   const st = req.stretch;
   const spread = (c: number[]) => c[0]! + c[1]! * bad + (c[2] ?? 0) * mv + (c[3] ?? 0) * st;

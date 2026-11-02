@@ -75,6 +75,8 @@ const WAY_AT = 0.45;
 /** The hand goes through the ball first, then to its chest-frame place (OverArm.under) over these times after it (s). */
 const OVER_AFTER0 = 0, OVER_AFTER1 = 0.3;
 const OVER_ARM = 0.56;
+/** Of the speed the hand brings to a serve's ball, how much carries on past it, the time that takes to spend (s), and when the path has it back. */
+const THROUGH_CARRY = 0.85, THROUGH_TIME = 0.06, THROUGH_FROM = 0.05, THROUGH_TO = 0.28;
 /** How fast a late release shortens an overhead's way to the ball (s). */
 const LAG_EASE = 0.11;
 const OVER_TO_BALL = 0.72;
@@ -337,6 +339,7 @@ const ST_FADE = 3;
 /** How long the racket takes from the end of the backswing to the ball at least (s). A release closer to the
  * contact than this still shows a whole swing, arriving a little after the real contact. */
 const MIN_SWING = 0.11;
+const MIN_CAUGHT = 0.05;
 /** How far past the ideal moment a human's serve is timed (s). With SERVE_STRIKE (sim) the rest of the swing fits in. */
 const SERVE_LATE = 0.05;
 /** The forward swing starts this long before the planned contact while the key is still held (s)... */
@@ -523,7 +526,17 @@ const SCISSOR_FRONT = 0.22;
 /** When the kick opens against the contact (s), and how far both feet come up under the hips in the air (m): 3 cm of a leg is 27 degrees at the knee. */
 const SCISSOR_FROM = -0.04, SCISSOR_OPEN = 0.14, SCISSOR_TUCK = 0.03;
 /** A bandeja's rear foot off the floor (m), when against the contact it goes, and when it comes down again (s). */
-const REAR_OFF = 0.05, REAR_OFF_FROM = -0.14, REAR_OFF_AT = -0.03, REAR_DOWN_FROM = 0.12, REAR_DOWN_AT = 0.3;
+const REAR_OFF = 0.05, REAR_OFF_FROM = -0.08, REAR_OFF_AT = -0.01, REAR_OFF_LAND_FROM = 0.05, REAR_OFF_LAND_AT = 0.2;
+/**
+ * And before that it rolls up over its toes as the weight goes onto the front foot (rad, from REAR_ROLL_FROM to REAR_ROLL_AT s about the ball, down again
+ * from REAR_DOWN_FROM to REAR_DOWN_AT). A flat lift hovered for half a second with the knee closing, and read as nothing (review round 29).
+ */
+const REAR_ROLL = 0.6, REAR_ROLL_FROM = -0.24, REAR_ROLL_AT = -0.03, REAR_DOWN_FROM = 0.1, REAR_DOWN_AT = 0.3;
+/**
+ * In the air the legs come in under the body: AIR_IN of the feet's width across the stance goes, and neither leg reaches past AIR_REACH of its length (1 -
+ * cos(13.5), knees 27 on video). Left to a stance measured on the floor the feet stayed 0.52-0.65 m apart, and on a longer body the front knee locked at 2 degrees.
+ */
+const AIR_IN = 0.6, AIR_REACH = 0.9725, AIR_REAR_UP = 0.04;
 /** ...and comes up this far, or that leg sits at its full length, a peg to the hip (2 degrees, 37 on video). */
 const SCISSOR_FRONT_UP = 0.06;
 const JUMP_HEIGHT = 1.8;
@@ -602,6 +615,8 @@ const TAP_TURN = 0.8;
  * the critic's #2: a trot in the ready crouch, knees 40 degrees.)
  */
 const WALK_UP = 0.8;
+/** Each player's idle clip this far apart (s): all four breathed in step from the same frame, the one crouch held by four people. */
+const IDLE_APART = 1.37;
 const WALK_CADENCE = 0.4;
 /**
  * The walk's feet. A slowed jog keeps its flight phase (both feet off 21% of frames, 5 steps a second, 83% of the way
@@ -1001,6 +1016,8 @@ export class Avatar {
   /** Sole points per foot, and hip-to-ankle length at rest. */
   private readonly soles: SolePoint[][];
   private readonly legLen: number;
+  /** How far a jump's legs have come in under the body (scissor, AIR_*). */
+  private airK = 0;
   /** The clip's feet before IK: ankle height and lowest sole point (world). */
   private readonly fkY = new Float64Array(2);
   private readonly lowY = new Float64Array(2);
@@ -1248,6 +1265,12 @@ export class Avatar {
   private readonly overC = new THREE.Vector3();
   private overU = 0;
   private overIn = 1;
+  /** The serve's hand through the ball (serveThrough): the velocity it carries, the contact it's for, the target these last two frames. */
+  private readonly throughV = new THREE.Vector3();
+  private throughFor = -1;
+  private readonly handWas = new THREE.Vector3();
+  private readonly handWas2 = new THREE.Vector3();
+  private handDt = 0;
   /** The shoulders' cartwheel and the trunk's bow, eased. */
   private overTilt = 0;
   private overBow = 0;
@@ -2128,7 +2151,8 @@ export class Avatar {
       }
       // (from tRel, the moment relS is: counted from this frame the last of the swing took a frame longer than it had,
       // and the racket fell by a quarter just at the ball; review round 9, the critic's #8)
-      this.tCon = Math.max(hit ? p.lastContactTime : this.hasCon ? p.contactTime : t, this.tRel + (1 - this.relS) * MIN_SWING * this.fam.punch);
+      // (the ball gone before the swing started: it takes the quickest way, and is still 40 cm behind it; one hit in forty, the arm swinging at nothing; review round 29)
+      this.tCon = Math.max(hit ? p.lastContactTime : this.hasCon ? p.contactTime : t, this.tRel + (1 - this.relS) * (hit ? MIN_CAUGHT : MIN_SWING) * this.fam.punch);
       this.st = ST_SWING;
     } else if (this.st === ST_SWING && sw === SW_COMMITTED) {
       this.predAt(sim, p.contactTime, this.conW);
@@ -2388,7 +2412,7 @@ export class Avatar {
     const tmp = this.tmp;
     acc.clear();
     if (move < 1) {
-      tmp.t = this.idleClock;
+      tmp.t = this.idleClock + p.index * IDLE_APART;
       sampleClip(this.clips.idle, tmp);
       const sw = this.standW;
       if (sw > 0) {
@@ -2596,10 +2620,10 @@ export class Avatar {
 
     this.yRoot = yRoot;
     const ohStand = this.st === ST_PREP || this.st === ST_SWING ? this.fam.stand ?? 0 : 0;
-    const walks = sim.walking > 0 || sim.phase === PH_OVER;
+    const walks = sim.walking > 0 || sim.phase === PH_OVER || sim.phase === PH_DEAD;
     this.walkUp += ((walks ? WALK_UP : 0) - this.walkUp) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / STAND_EASE) : 0);
     if (this.walkUp < 0.001) this.walkUp = 0;
-    const standTo = sim.phase === PH_OVER ? 1 : this.addr ? SERVE_STAND : sim.walking > 0 ? WALK_UP : ohStand;
+    const standTo = sim.phase === PH_OVER ? 1 : this.addr ? SERVE_STAND : sim.walking > 0 || sim.phase === PH_DEAD ? WALK_UP : ohStand;
     this.standW += (standTo - this.standW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / (ohStand > 0 ? OVERHEAD_STAND_EASE : STAND_EASE)) : 0);
     if (this.standW < 0.001) this.standW = 0;
     this.netZ = p.pos.z > 0 ? -1 : 1;
@@ -3172,11 +3196,16 @@ export class Avatar {
    * floor the rear foot of a bandeja or a víbora comes off it into the ball.
    */
   private scissor(): void {
-    const back = this.handed > 0 ? this.footR : this.footL, front = this.handed > 0 ? this.footL : this.footR;
+    const rear = this.handed > 0 ? 1 : 0;
+    const back = rear === 1 ? this.footR : this.footL, front = rear === 1 ? this.footL : this.footR;
     const con = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
+    this.airK = 0;
     if (this.jumpT0 < 0 || this.jumpT <= 0) {
       if (con >= 0 && (this.fam.name === 'overhead' || this.fam.name === 'vibora')) {
-        back.y += REAR_OFF * smoothstep(REAR_OFF_FROM, REAR_OFF_AT, this.lastT - con) * (1 - smoothstep(REAR_DOWN_FROM, REAR_DOWN_AT, this.lastT - con));
+        const T = this.lastT - con;
+        const roll = REAR_ROLL * smoothstep(REAR_ROLL_FROM, REAR_ROLL_AT, T) * (1 - smoothstep(REAR_DOWN_FROM, REAR_DOWN_AT, T));
+        if (roll > 0.001) this.rollOver(rear, back, rear === 1 ? this.footQR : this.footQL, roll);
+        back.y += REAR_OFF * smoothstep(REAR_OFF_FROM, REAR_OFF_AT, T) * (1 - smoothstep(REAR_OFF_LAND_FROM, REAR_OFF_LAND_AT, T));
       }
       return;
     }
@@ -3184,6 +3213,7 @@ export class Avatar {
     if (u <= 0 || u >= 1) return;
     const air = 4 * u * (1 - u);
     const lift = this.jumpH * air;
+    this.airK = smoothstep(0.02, SCISSOR_FULL, lift);
     if (lift < 0.02) return;
     const k = Math.min(1, lift / SCISSOR_FULL), kick = k * (con < 0 ? 1 : smoothstep(SCISSOR_FROM, SCISSOR_OPEN, this.lastT - con));
     const fx = this.stanceS, fz = this.stanceC;
@@ -3191,6 +3221,26 @@ export class Avatar {
     back.y += SCISSOR_UP * kick + SCISSOR_TUCK * k;
     front.x += fx * SCISSOR_FRONT * kick; front.z += fz * SCISSOR_FRONT * kick;
     front.y += SCISSOR_FRONT_UP * kick + SCISSOR_TUCK * k;
+    // (up to the ball the rear leg is long as well: the clip's bent rear foot came with the jump, knee 64 at the hit against 23 on video)
+    if (con >= 0 && back.y > front.y + AIR_REAR_UP) back.y -= (back.y - front.y - AIR_REAR_UP) * k * (1 - smoothstep(SCISSOR_FROM, SCISSOR_OPEN, this.lastT - con));
+  }
+
+  /** Foot f's target rolled over the ball of the foot, heel up by `pitch` rad, the toes staying flat on the floor as they are. */
+  private rollOver(f: number, A: THREE.Vector3, Q: THREE.Quaternion, pitch: number): void {
+    const b = this.ballLen, h = this.ankleY, sn = Math.sin(pitch), cs = Math.cos(pitch), fw = b * (1 - cs) + h * sn;
+    q3.copy(this.footRestQ[f]!).invert().premultiply(Q);
+    v1.set(0, 0, 1).applyQuaternion(q3);
+    const l = Math.sqrt(v1.x * v1.x + v1.z * v1.z) || 1, sf = v1.x / l, cf = v1.z / l;
+    A.x += sf * fw;
+    A.y += b * sn + h * (cs - 1);
+    A.z += cf * fw;
+    const toe = this.toes[f]!;
+    qWalk.multiplyQuaternions(Q, toe.quaternion);
+    v1.set(cf, 0, -sf);
+    q3.setFromAxisAngle(v1, pitch);
+    Q.premultiply(q3);
+    qWalk2.copy(Q).invert().multiply(qWalk);
+    toe.quaternion.copy(qWalk2);
   }
 
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */
@@ -3437,6 +3487,18 @@ export class Avatar {
       // over a tenth of a second (14 times in 24 seeds both ways x 120 s; none since).
       this.pole.set((mh[12]! + A.x) * 0.5 + bd.x * 0.8, (mh[13]! + A.y) * 0.5 + bd.y * 0.8, (mh[14]! + A.z) * 0.5 + bd.z * 0.8);
       const fx = A.x - mh[12]!, fy = A.y - mh[13]!, fz = A.z - mh[14]!;
+      if (this.airK > 0) {
+        const cx = this.stanceC, cz = -this.stanceS, wide = (fx * cx + fz * cz) * AIR_IN * this.airK;
+        A.x -= cx * wide;
+        A.z -= cz * wide;
+        const gx = A.x - mh[12]!, gy = A.y - mh[13]!, gz = A.z - mh[14]!, d = Math.sqrt(gx * gx + gy * gy + gz * gz);
+        const far = this.legLen * (1 - (1 - AIR_REACH) * this.airK);
+        if (d > far) {
+          A.x = mh[12]! + (gx * far) / d;
+          A.y = mh[13]! + (gy * far) / d;
+          A.z = mh[14]! + (gz * far) / d;
+        }
+      }
       const minD = this.legLen * LEG_FOLD;
       if (fx * fx + fy * fy + fz * fz < minD * minD) {
         const y = mh[13]! - Math.sqrt(Math.max(0, minD * minD - fx * fx - fz * fz));
@@ -4323,6 +4385,26 @@ export class Avatar {
     v2.z += (m[14]! - O.z * ho + U.z * hu + F.z * hf + h.z - v2.z) * u;
   }
 
+  /**
+   * The hand goes on through the ball with the speed it brought (THROUGH_*). The curve into the ball and the path away from it meet there with nothing to say they run
+   * on: the hand lost half its speed in a tick at the serve's hit, 6.9 to 3.2 m/s, and the racket flicked over on a nearly still hand (review round 29).
+   */
+  private serveThrough(): void {
+    const T = this.lastT - this.tCon;
+    if ((this.st === ST_SWING || this.st === ST_FADE) && T >= 0) {
+      if (this.throughFor !== this.tCon) {
+        this.throughFor = this.tCon;
+        this.throughV.subVectors(this.handWas, this.handWas2);
+        if (this.handDt > 0) this.throughV.multiplyScalar(THROUGH_CARRY / this.handDt);
+        else this.throughV.set(0, 0, 0);
+      }
+      v2.addScaledVector(this.throughV, THROUGH_TIME * (1 - Math.exp(-T / THROUGH_TIME)) * (1 - smoothstep(THROUGH_FROM, THROUGH_TO, T)));
+    }
+    this.handWas2.copy(this.handWas);
+    this.handWas.copy(v2);
+    this.handDt = this.dt;
+  }
+
   /** The trunk's axes from the shoulders: out towards `arm`, up the spine, forward out of the chest (world). */
   private chestAxes(arm: THREE.Bone, other: THREE.Bone): void {
     const a = arm.matrixWorld.elements, o = other.matrixWorld.elements, H = this.hips.matrixWorld.elements;
@@ -4474,6 +4556,7 @@ export class Avatar {
     const over = this.fam.over;
     if (over && (this.st === ST_PREP || (this.st === ST_SWING && this.lastT < this.tCon))) this.overKey(over, ua);
     else if (over?.under && (this.st === ST_SWING || this.st === ST_FADE)) this.overAfter(over.under, ua);
+    if (over?.under) this.serveThrough();
     alignQ(q2, this.prevKeyQ);
     BL.u = w;
     this.blendRacket(this.outKey);

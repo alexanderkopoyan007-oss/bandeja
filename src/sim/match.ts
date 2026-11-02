@@ -16,7 +16,7 @@ import {
   ShotSolver, strike, SHAPES, SHOT_KEYS, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, SHOT_CONTRAPARED, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
-import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
+import { gradeTiming, gradeQuality, G_GOOD, G_LATE, G_PERFECT, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, BEHIND_MAX, makeWindows, OH_BANDEJA, OH_SMASH, OH_VIBORA, reachAt, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { holdBack, holdShort, makeStandPlan, planStand, type Hold, type StandPlan } from './player/positioning.ts';
@@ -202,11 +202,12 @@ const COPY_SEEN = new Map<object, object>();
 /** The ball dead after a point before the walk back starts (1.7 s with walkBack off). */
 const POINT_DEAD_WALK = 1.2;
 /**
- * After a change of ends, the extra dead time for the picture to dip before the cut (s): more after a game, for its call to be read and the
- * point to be taken in, and the serve that much later. It was the shortest break in the match, 3.4 s from the last ball to the next serve against
- * 8 after any other point, and the game's call was gone in the frame it came up.
+ * A change of ends: everyone walks for the net post on their pair's side (ENDS_POST_IN m inside the side glass, ENDS_POST_Z m from the net and the
+ * pair's other player ENDS_POST_GAP further back) for ENDS_HOLD s, ENDS_TIE in a tie-break, which has no break; the picture dips and cuts; and they
+ * walk on from the same post on the new side to their places. It was 3.4 s, the shortest break in the match, then six seconds of four people standing
+ * still (review round 29). A human's key shortens the hold to ENDS_CUT.
  */
-const ENDS_CUT = 0.35, ENDS_HOLD = 2.4, ENDS_SERVE_WAIT = 1.5;
+const ENDS_CUT = 0.35, ENDS_HOLD = 2.4, ENDS_TIE = 1.4, ENDS_POST_IN = 0.8, ENDS_POST_Z = 1.2, ENDS_POST_GAP = 1.1;
 /**
  * A human's balls going to the same place again and again are read: a ball a player has seen coming five times is no
  * pressure, whatever its pace. How far apart two targets still count as one place (m), how much of the running figure
@@ -260,8 +261,11 @@ const RELEASE_LOOKBACK = 0.3;
 const MIDDLE_MARGIN = 0.8;
 const SWITCH_MARGIN = 1.0;
 const CLAIM_OUT = 20;
-/** A partner goes for the taker's ball at once if the taker's plan is this late (s), or once it has been out of time this long (s), and has the ball once this much nearer it (m). */
-const COVER_LATE = 0.15, COVER_WAIT = 0.12, COVER_TAKES = 0.5;
+/**
+ * A partner goes for the taker's ball at once if the taker's plan is this late (s), or once it has been out of time this long (s), and has the ball once this much nearer it (m).
+ * Over a taker already swinging, an AI's only if it's COVER_SWUNG late: its last 0.2 s read late, and the partner ran on 116 balls in 100 points that the taker then played.
+ */
+const COVER_LATE = 0.15, COVER_WAIT = 0.12, COVER_TAKES = 0.5, COVER_SWUNG = 0.3;
 /**
  * Calls: a ball is called once its taker has held CALL_AFTER (s) past the strike (about when a player has read it:
  * the 0.14-0.20 s reaction, ai/simpleAi.ts), when the runs are within CALL_MARGIN (m) of each other (a ball either
@@ -307,12 +311,10 @@ export class MatchSim {
   private walkUntil = -0.5;
   /** The next startPoint begins with the partners meeting (a point was played, not a fault or let). */
   private walkMeet = 0;
-  /** The dead time is held ENDS_CUT longer after a change of ends, then everyone is put on the other side. */
+  /** A change of ends is under way: the dead time ends at the cut (ENDS_*), everyone walking off (walking 3). */
   private endsCut = 0;
   /** Which way round the pairs are: the score's ends, from the set-up after they change (`side` looks here, so nobody turns round in the hold). */
   private courtEnds = 0;
-  /** How much longer than usual an AI takes over this serve (s). */
-  serveWait = 0;
   /**
    * This dead time ends with everyone put in their places at once, not walking there (a change of ends, or walkBack
    * off): presentation cuts away over it (ui/transitions.ts).
@@ -465,19 +467,19 @@ export class MatchSim {
 
   private startPoint(): void {
     this.courtEnds = this.score.ends;
-    this.serveWait = this.endsCut === 2 ? ENDS_SERVE_WAIT : 0;
+    const turned = this.endsCut !== 0;
     const c = this.world.court;
     const sc = this.score;
     const sTeam = sc.serverTeam();
     const rTeam = 1 - sTeam;
-    // Walk back from where everyone stands (not at the start, and not across the net at a change of ends: the
-    // presentation cuts there).
+    // Walk back from where everyone stands, or after a change of ends from the post they walked to, on the new side (the presentation cuts between).
+    // Not at the start.
     let walk = this.cfg.walkBack !== false && this.tick > 0;
     for (let i = 0; i < this.players.length; i++) {
       const p = this.players[i]!;
-      this.walkHomeX[i] = p.pos.x;
-      this.walkHomeZ[i] = p.pos.z;
-      if (p.pos.z * this.side(p.team) <= 0) walk = false;
+      this.walkHomeX[i] = turned ? this.walkHomeX[i]! : p.pos.x;
+      this.walkHomeZ[i] = turned ? -this.walkHomeZ[i]! : p.pos.z;
+      if (this.walkHomeZ[i]! * this.side(p.team) <= 0) walk = false;
     }
     for (const p of this.players) p.setHalf(this.side(p.team), c.halfW, c.halfL);
     if (sc.isDecidingPoint() && sc.decidingSide < 0) {
@@ -593,8 +595,22 @@ export class MatchSim {
       p.move();
       if (this.walkD > (meet ? 0.25 : WALK_DONE)) far++;
     }
+    // (walking off at a change of ends, the hold's end takes them on)
+    if (this.walking === 3) return;
     if (meet && (far === 0 || this.time >= this.walkStage)) this.walking = 2;
     else if (!meet && (far === 0 || this.time >= this.walkUntil)) this.endWalk();
+  }
+
+  /** A change of ends' hold: everyone off to the net post on their pair's side, the spots in walkHome (ENDS_*). */
+  private walkOff(): void {
+    const c = this.world.court;
+    for (let i = 0; i < this.players.length; i++) {
+      const p = this.players[i]!, q = this.doubles ? this.players[i ^ 2]! : p;
+      const az = abs(p.pos.z), bz = abs(q.pos.z);
+      this.walkHomeX[i] = (p.pos.x + q.pos.x >= 0 ? 1 : -1) * (c.halfW - ENDS_POST_IN);
+      this.walkHomeZ[i] = this.side(p.team) * (ENDS_POST_Z + (az > bz || (az === bz && i > (i ^ 2)) ? ENDS_POST_GAP : 0));
+    }
+    this.walking = 3;
   }
 
   /** Steer player i to their place, or (meeting) to MEET_GAP from their partner; the distance left in walkD. */
@@ -1051,11 +1067,11 @@ export class MatchSim {
     // ball at 15 m/s). Nobody waits for a ball to reach their chest: an AI's swing has always gone in time.
     if (human && p.swing === SW_CHARGE && this.phase === PH_RALLY && this.rally.hitter !== team) {
       const focus = this.focusIdeal(i);
-      if (focus >= 0 && this.focusInReach && this.focusGo < t0 + DT) this.releaseSwing(i, t0, f);
+      if (focus >= 0 && this.focusInReach && this.focusGo < t0 + DT) { this.heldOut = true; this.releaseSwing(i, t0, f); }
       else {
         // (whatever the plan: most balls that hit a human holding a key had a contact planned off the glass, out of reach)
         const k = this.bodyHitIdx(i, this.side(team));
-        if (k >= 0 && this.pred.t[k]! - BODY_LEAD < t0 + DT) this.releaseSwing(i, t0, f);
+        if (k >= 0 && this.pred.t[k]! - BODY_LEAD < t0 + DT) { this.heldOut = true; this.releaseSwing(i, t0, f); }
       }
     }
     // With no key down it is a reflex block, above the shins: a racket is up at the net, and the AI has always had this. A ball at
@@ -1233,7 +1249,7 @@ export class MatchSim {
     // (once gone, gone for this ball: a taker's plan flickers in and out of time, and the partner went and came back with it)
     if (p.coverFor !== this.pred.version) {
       const st = this.ai[tk] ? this.ai[tk]!.standPlan : this.stand[tk]!, ai = this.ai[i];
-      if (!st.valid || st.inTime || (!this.ai[tk] && q.swing !== SW_IDLE)) p.coverSince = -1;
+      if (!st.valid || st.inTime || (q.swing !== SW_IDLE && (!this.ai[tk] || st.late < COVER_SWUNG))) p.coverSince = -1;
       else if (p.coverSince < 0) p.coverSince = this.time;
       if (p.coverSince < 0 || (st.late < COVER_LATE && this.time - p.coverSince < COVER_WAIT) || (ai && ai.reactAt > this.time)) return null;
       p.coverFor = this.pred.version;
@@ -1537,6 +1553,10 @@ export class MatchSim {
       return;
     }
     if (p.swing !== SW_IDLE && !p.reflex) return;
+    if (this.walking === 3) {
+      if (!this.ai[i] && this.time + ENDS_CUT < this.phaseUntil) this.phaseUntil = this.time + ENDS_CUT;
+      return;
+    }
     if (this.phase === PH_SETUP) {
       // A human's key skips the walk back.
       if (this.walking > 0) { if (!this.ai[i]) this.endWalk(); return; }
@@ -1601,6 +1621,8 @@ export class MatchSim {
   private releaseSwing(i: number, t: number, f: InputFrame): void {
     const p = this.players[i]!;
     const team = p.team;
+    const heldOut = this.heldOut;
+    this.heldOut = false;
     p.release = t;
     const held = this.relHeld >= 0 ? this.relHeld : f.held;
     this.relHeld = -1;
@@ -1673,6 +1695,9 @@ export class MatchSim {
     const delta = t - w.ideal;
     p.timingDelta = delta;
     p.grade = gradeTiming(delta, TIMING, scale);
+    // A key never let go gets a late hit, whatever the moment it went off: holding every ball down was graded as if it were timed, Perfect or Good on three in four, and won
+    // a third of the points against Advanced (review round 29; round 10 before it).
+    if (heldOut && (p.grade === G_PERFECT || p.grade === G_GOOD)) p.grade = G_LATE;
     // A late release whose ball is already past the body (as contact() judges it) is too late whatever the timing
     // setting: the accessibility scale widens the grades, not the court (a "Good" volley 70 ms late was then cut at
     // contact as out of reach).
@@ -1738,6 +1763,8 @@ export class MatchSim {
 
   /** Set by focusIdeal: the last moment a swing can go and still meet the focused contact. */
   private focusGo = 1e9;
+  /** This release is a held key going off by itself (a local of update's, across the call). */
+  private heldOut = false;
   /** Set by focusIdeal: false while the planned contact is still out of reach from where the player is. */
   focusInReach = true;
   /** Set by focusIdeal: the height of the focused contact and whether it is in the air. */
@@ -2035,12 +2062,11 @@ export class MatchSim {
         return;
       }
       if ((ev & EV_CHANGE_ENDS) !== 0 && this.cfg.walkBack !== false) {
-        // Changing ends: nobody walks round the net; the picture cuts (cutComing) a moment later, when everyone is
-        // put on the other side.
+        // Changing ends: everyone walks off to the post; the picture cuts (cutComing) as they get near it, and they come on from it on the other side.
         this.pendingPointWinner = -1;
-        const game = (ev & EV_GAME) !== 0;
-        this.endsCut = game ? 2 : 1;
-        this.phaseUntil = this.time + (game ? ENDS_HOLD : ENDS_CUT);
+        this.endsCut = 1;
+        this.phaseUntil = this.time + ((ev & EV_GAME) !== 0 ? ENDS_HOLD : ENDS_TIE);
+        this.walkOff();
         return;
       }
       if (ev & EV_CHANGE_ENDS) this.emit(E_ENDS, -1);
@@ -2103,7 +2129,7 @@ export class MatchSim {
     h.num(this.crossBack[0]!).num(this.crossBack[1]!).num(this.claimGap[0]!).num(this.claimGap[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     h.num(this.tossBounces).num(this.tossBX).num(this.tossBZ);
-    h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut).num(this.courtEnds).num(this.serveWait);
+    h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut).num(this.courtEnds);
     for (let i = 0; i < this.players.length; i++) h.num(this.walkHomeX[i]!).num(this.walkHomeZ[i]!).num(this.walkHomeF[i]!);
     h.num(this.overStage).num(this.overUntil);
     for (let i = 0; i < this.players.length; i++) h.num(this.overX[i]!).num(this.overZ[i]!).num(this.overMate[i]!);

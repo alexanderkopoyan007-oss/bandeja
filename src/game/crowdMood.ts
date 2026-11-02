@@ -36,7 +36,8 @@ export class CrowdMood {
         if (why === WHY_EXIT_AFTER_BOUNCE) this.react(1, 0.9);
         else if ((why === WHY_DOUBLE_BOUNCE || why === WHY_HIT_BODY_OPP) && winnerHit && (this.lastShot === SHOT_SMASH || this.lastShot === SHOT_VIBORA)) this.react(0.9, 0.35);
         else if (shots >= 12) this.react(0.75 + 0.25 * Math.min(1, (shots - 12) / 15), winnerHit && shots >= 20 ? 0.6 : 0);
-        else this.react(0.25 + 0.35 * Math.min(1, shots / 12), 0);
+        // (an error gets no hands in the stands, as it gets none on the sound: they were seen clapping in silence)
+        else if (winnerHit) this.react(0.25 + 0.35 * Math.min(1, shots / 12), 0);
       } else if (e.kind === E_SET || e.kind === E_MATCH) {
         this.react(1, 1);
       }

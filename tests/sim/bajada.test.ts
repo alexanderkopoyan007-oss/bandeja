@@ -85,7 +85,7 @@ describe('bajada', () => {
       }
       return { inPoints: withBajada / points, bajadas, deep: deep / Math.max(1, bajadas), planned, plannedDeep, lostShare: lost / Math.max(1, bajadas) };
     };
-    const top = run(1, Array.from({ length: 20 }, (_, k) => k + 1));
+    const top = run(1, Array.from({ length: 40 }, (_, k) => k + 1));
     const low = run(0, [1, 2, 3, 4, 5, 6]);
     // WPT men 14-17% of points. Here about 28%: a smash now comes off the glass at 2.5 m, where it is taken overhead
     // (review round 6), and it is open in REVIEW.md.

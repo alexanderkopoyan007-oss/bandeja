@@ -2,12 +2,14 @@
 // holding the key too long gets a late hit, not a swing through nothing; on the assist, they don't run into a ball they
 // mean to take off the glass. Six points in a hundred ended that way, and one swing in ten went through the air.
 import { describe, expect, it } from 'vitest';
-import { MatchSim, E_BODY, E_HIT, E_POINT, E_WHIFF, PH_OVER, PH_RALLY, PH_SETUP, PH_TOSS } from '../../src/sim/match.ts';
+import { MatchSim, E_BODY, E_HIT, E_POINT, E_SWING, E_WHIFF, PH_OVER, PH_RALLY, PH_SETUP, PH_TOSS } from '../../src/sim/match.ts';
+import { G_GOOD, G_PERFECT } from '../../src/sim/contact/timing.ts';
+import { SHOT_SERVE } from '../../src/sim/contact/shots.ts';
 import { InputFrame, BTN_DRIVE } from '../../src/sim/input.ts';
 
 describe('the human seat', () => {
   it('holding the key to the end hits the ball, and the ball seldom hits the player', () => {
-    let hits = 0, whiffs = 0, bodies = 0, points = 0;
+    let hits = 0, whiffs = 0, bodies = 0, points = 0, swings = 0, praised = 0;
     for (let i = 0; i < 4; i++) {
       const m = new MatchSim({ seed: 180001 + i, doubles: true, human: [true, false, false, false], aiLevel: [0.8, 0.8], aiStyle: [],
         timingScale: 1.5, assist: 0.45, autoTiming: false, format: { mode: 1, setsToWin: 1, gamesPerSet: 3, finalSet: 0 } } as never);
@@ -34,10 +36,14 @@ describe('the human seat', () => {
           else if (e.kind === E_WHIFF && e.player === 0) whiffs++;
           else if (e.kind === E_BODY && e.player === 0) bodies++;
           else if (e.kind === E_POINT) points++;
+          else if (e.kind === E_SWING && e.player === 0 && e.a !== SHOT_SERVE) { swings++; if (e.b === G_PERFECT || e.b === G_GOOD) praised++; }
         }
       }
     }
-    expect(hits).toBeGreaterThan(150);
+    // (a key never let go is a late hit now, so these matches are over sooner: 144 hits where a timed-as-if-released hold had over 150)
+    expect(hits).toBeGreaterThan(120);
+    // (those left are this script letting go as its plan goes: real releases; three in four were praised)
+    expect(praised / swings).toBeLessThan(0.25);
     expect(whiffs / (hits + whiffs)).toBeLessThan(0.05);
     expect(bodies / points).toBeLessThan(0.07);
   }, 300000);

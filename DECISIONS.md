@@ -3401,3 +3401,16 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **Pairs turn at the cut.** `side` reads `courtEnds`, which takes the score's ends in `startPoint`. With a 2.4 s hold, reading the score's ends had everyone turn round in place in front of the call.
 - **The back-glass step uses the dodge's wait.** It is the same `Hold` the AI and the assist already obey, so there is no second way of moving.
 - **The wrist limit uses the hand's own axes.** The shaft limit could not see ulnar deviation. The limit acts only after the ball and fades with the stroke, so contact and ready are as footage has them.
+
+## Round 23: people walk between ends, and a foot rolls (2026-11-02)
+
+- **The routine is a drawn thing with a sim constant.** `ROUTINE_*` sit in the sim's constants because an AI has to wait for them, and the view draws them. A human who goes before 0.8 s never sees the routine start. One who goes inside it gets a 0.18 s gather: holding the toss for the next catch would have put up to half a second of lag on a press.
+- **A change of ends is a walk with a cut in it.** `walkOff` is walking state 3, inside the dead time, and the post on the new side is where the ordinary walk back starts. There was no need for a second way of moving. ENDS_SERVE_WAIT goes, since the walk is the wait. In a tie-break the hold is 1.4 s.
+- **The cut-away is the shot at the cut.** The swing round on top of it was a second camera move, so it now runs only with cut-aways off.
+- **Air legs are held by each body's own length.** A knee of 27 degrees is only 2.75% off a straight leg, so a fixed tuck in metres locked some bodies and folded others. `AIR_REACH` is a share of the leg, and the rear foot stays near the front one until the ball.
+- **A rolled foot, not a lifted one.** The published sequence has the racket-side foot leaving the floor before the contact. Anatomy says it goes through the toes with the weight forward. So the roll does the visible work and the lift is a short one at the ball. The overhead and víbora now have a `weight` of 0.14 m, where they had none.
+- **The serve's hand is carried past a seam.** Before the ball the hand is on `overKey`'s curve, after it on the key path to `under`, and neither knows the other's speed. I tried bending the path first, and it changed nothing because `under` drives that stretch. `serveThrough` adds the arrival velocity and lets it run out. The dip is smaller, not gone.
+- **A held key is Late at best.** The comment in the code already said a late hit. The grade didn't. It costs a player who holds on, which is the point of a timing game.
+- **Smash errors grow with depth.** `deepError` 1 doubles them from 5 m to 8.3 m. No source gives the size. The match figures hold, and whether the bandeja now pays from deep is for the next review to read.
+- **The cover guard keeps a late limit for an AI taker.** COVER_SWUNG 0.3 s is a trade between false covers (116 to 45) and the slice hole (back to 3.3%). At 0.15 s false covers stayed at 89 and at no limit the hole reopened at 20.9%.
+

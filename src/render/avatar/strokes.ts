@@ -230,6 +230,8 @@ const BH: Family = {
  */
 export const OVERHEAD: Family = {
   name: 'overhead',
+  // (the hips forward onto the front foot: it had no weight, and they stayed midway between the feet)
+  weight: 0.14,
   after: 0.93,
   arm: 0.87,
   // Trophy position: side-on, racket up behind the head, the free hand pointing at the ball.
@@ -270,6 +272,7 @@ export const OVERHEAD: Family = {
  */
 export const VIBORA: Family = {
   name: 'vibora',
+  weight: 0.14,
   after: 0.93,
   arm: 0.895,
   back: rolled(key(v(-0.14, 1.78, -0.56), v(-0.05, 0.8, -0.6), v(-1, 0.05, 0.15), v(-0.12, 1.2, -0.8), -1.3, v(-0.18, 1.75, 0.48)), 180),

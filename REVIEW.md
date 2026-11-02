@@ -756,16 +756,16 @@ Three reviewers and a sceptic on the shipped build. One High, confirmed by the s
 |---|---|---|---|
 | 1 | High | **The ball hangs in the air beside the server through every walk back.** At 1.4 m, 0.8 m from a hand, with both hands on the racket. | **Fixed.** The ball is drawn in the server's free hand on the walk and goes with it to the address spot. Render only. Nearest hand to the drawn ball 0.78 to 0.08 m, on 9 of 9 walks in the real build. |
 | 2 | Medium | The partner stands beside a ball and lets it die. | **Fixed.** Round 21 handed balls to a human 5 m off, and the cover had no right to strike. A human now gets a ball only by the shorter run, and a partner who gets nearer than the taker has it. Balls dying within 1.3 m of him, per 100 points: 0.20 on Round 20, 1.67 on Round 21, 0.71 now. Of the 13 traced I read seven: he was the taker on all of them and running on most, so these look like balls he was late for, not balls he had no right to. |
-| 3 | Medium | The partner leaves his place for balls that are yours. | **Fixed.** Plans now say how late they are. Clearly late (0.15 s), he goes at once. Only just late, he waits 0.12 s. Never on a human with a key down. Covers on your balls that you played anyway, 77-79 to 7 per 100 points. |
+| 3 | Medium | The partner leaves his place for balls that are yours. | **Fixed.** Plans now say how late they are. Clearly late (0.15 s), he goes at once. Only just late, he waits 0.12 s. Never on a human with a key down. Covers on your balls that you played anyway, 77-79 to 7 per 100 points. (Round 23: true of your pair only. The AI pair stood at 116 a hundred points.) |
 | 4 | Medium | Partners bunch up two to three times as often. | **Fixed.** Within 0.75 m on a ball, per 100 points, your pair 1.7 on Round 20, 4.9 on Round 21, 2.1 now; AI pair 2.8, 5.5, 3.2. |
 | 5 | Medium | A run key landing with a ground stroke costs five points. | **Fixed.** With a metre or more to go in that direction, a key pointing at the spot is the run's. Points won with no key 62.7, with one 63.0 (Round 21: 65.1 and 59.8). The trade: with the spot further than a metre, a key landing with the shot and pointing at it doesn't aim. Chord hit rate lob 90 to 86, volley 71 to 65. |
 | 6 | Medium | The chiquita key doesn't play a chiquita. | **Fixed.** The target goes to a chiquita's depth while Precision is down. Lands 8.3 to 3.3-3.4 m past the net. |
-| 7 | Medium | The change of ends is the shortest break in the match, and wipes the Game call. | **Fixed.** Hold 0.35 to 2.4 s after a game, the pairs turn at the cut and not before, and "Change of ends" comes up at the cut. An AI server takes 1.5 s longer. Last ball to next serve 3.4 to 6.9 s, against 8.2 after a point and 4.8 after a fault. |
-| 8 | Medium | The score card sits on the service box after every game. | **Fixed by timing.** It comes up with the walk, or after the cut, so it has gone by the serve. Its position is unchanged: moving it is a HUD change for the owner. |
-| 9 | Medium | The jump smash is a split leap. | **Better.** The kick opens after the ball, and the feet tuck 3 cm. Feet at the ball 0.89 to 0.62 m, knees 2/75 to 18/39, against 27/23 on footage. Widest 0.87 m, after the ball. |
+| 7 | Medium | The change of ends is the shortest break in the match, and wipes the Game call. | **Fixed.** Hold 0.35 to 2.4 s after a game, the pairs turn at the cut and not before, and "Change of ends" comes up at the cut. An AI server takes 1.5 s longer. Last ball to next serve 3.4 to 6.9 s, against 8.2 after a point and 4.8 after a fault. (Round 23: this made six seconds of four people standing still. Reworked as a walk.) |
+| 8 | Medium | The score card sits on the service box after every game. | **Fixed by timing.** It comes up with the walk, or after the cut, so it has gone by the serve. Its position is unchanged: moving it is a HUD change for the owner. (Round 23: a key held through the cut still tossed under the card. The walk now comes first.) |
+| 9 | Medium | The jump smash is a split leap. | **Better.** The kick opens after the ball, and the feet tuck 3 cm. Feet at the ball 0.89 to 0.62 m, knees 2/75 to 18/39, against 27/23 on footage. Widest 0.87 m, after the ball. (Round 23: 18/39 was one body. Five of eight locked the front knee at 2 degrees.) |
 | 10 | Medium | After every serve both arms set solid. | **Better.** The serve's follow-through 0.45 to 0.32 s. Hands still on a moving body 0.18 to 0.08 s. |
 | 11 | Medium | Off the back glass the player doesn't go with the rebound. | **Better.** He waits 0.5 m deeper and goes in 0.45 s before the ball, through the same wait-at-a-spot rule as a dodge. Moved over 0.3 m forward 14 to 40 of about 100, p90 0.33 to 0.67 m. It needs 0.55 s or more of warning and room behind: 37% of contacts off walls get it. Speed at the ball p50 still 0. |
-| 12 | Medium | The bandeja stays on two planted feet. | **Better.** Overheads plant at 0.3 s at any speed, and the rear foot comes off 5 cm in the last 0.1 s. Rear foot off at the ball 24 to 92%. Front foot down before it p50 0.12 to 0.19 s, against 0.264 in the study. |
+| 12 | Medium | The bandeja stays on two planted feet. | **Better.** Overheads plant at 0.3 s at any speed, and the rear foot comes off 5 cm in the last 0.1 s. Rear foot off at the ball 24 to 92%. Front foot down before it p50 0.12 to 0.19 s, against 0.264 in the study. (Round 23: the lift read as floating, flat and hovering, with no weight forward. Replaced by a roll.) |
 | 13 | Medium | After the ball the hand bends past a wrist's range. | **Better.** The hand is held to a wrist's range through the follow-through, on its own axes, from 0.85 of it. Score after the ball 1.5-2.0 to 1.0-1.15. A wrist.test row for it would still be worth having. |
 | 14 | Low | The crowd claps a ball in the net like a winner. | **Fixed.** The small applause goes to a shot that won the point. |
 | 15 | Low | The hush through a let never held. | **Fixed in the code.** Unmeasured, because of #16. |
@@ -778,3 +778,37 @@ Three reviewers and a sceptic on the shipped build. One High, confirmed by the s
 Two tests failed with nothing wrong. Wrist at contact on 24 fresh seeds is the same on both builds (backhand 0.93 and 0.94), so the test's sample went from 8 seeds to 24. The waist test was different: this build has one gap of 28 rays, about 2.5 square cm in one bent frame, on the person whose thin overlap OPEN_QUESTIONS.md already records. Round 21 shows 9 and 6 on the same frames. That kit has its own limit of 30 until it is rebuilt, and that is a looser limit, not a fix.
 
 Pops on twelve fresh seeds: 15.5 a minute (Round 21 15.0, Round 20 15.1), within noise.
+
+## Round 23 (2026-11-02, on d259e8c; "review round 29" in the code's comments)
+
+Three reviewers and a sceptic on the shipped build. One High, confirmed by the sceptic, and fixed. The sceptic marked the change of ends down to Medium. Three Mediums were Round 22's own: the change of ends, the bandeja's floating foot, and the AI pair's covers.
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | High | **The ball jumps from the floor to the hand at the toss.** The routine bounces were drawn only in the set-up and stopped the frame the toss began. 38 of 38 with a key held through the walk, 39 of 43 pressing at 0.6-1.2 s, 111 of 154 for an AI. | **Fixed.** The routine starts 0.8 s after the server is placed, later than a held key's toss. An AI serves after it. A press in the bounces gathers the drawn ball into the toss over 0.18 s. Jumps over 0.35 m: 0 of 79 across three press timings, human and AI. |
+| 2 | Medium (High before the sceptic) | The change of ends is six seconds of four people standing still. | **Fixed.** Everyone walks for the net post on their pair's side in the hold, the picture cuts, and they walk on from the post on the new side. A key shortens the hold to 0.35 s and then skips the walk. The cut-away replaces the camera's swing round. Last ball to next serve 13.0 s (a point 9.4). |
+| 3 | Medium | All four freeze in one identical crouch in dead time. | **Fixed.** They stand up after the ball, and each idle clip runs 1.37 s apart from the next. |
+| 4 | Medium | The AI pair covers 116 balls per 100 points that the taker then plays. | **Better.** Over an AI taker already swinging, the partner goes only at 0.3 s late. 116 to 45 per 100, your pair 9. The slice hole stays closed at 3.3% from 5-6 m and about 1% nearer. |
+| 5 | Medium | The jump smash's front leg locks, in an A-frame in the air. | **Fixed.** In the air the feet come in under the hips and neither leg passes 97% of its own length, on every body. Knees at the ball 27/30, 27/37, 27/33 and 30/42 on four bodies (footage 27/23; p8, meshy and meshy2 were 2 in front). Feet 0.35-0.43 m apart (0.52-0.65). |
+| 6 | Medium | The bandeja's rear foot floats. | **Fixed.** It rolls up over its toes with the weight going forward: foot pitch at the ball 21 to about 53 degrees, hips 0.45 to 0.63 of the way to the front foot, then a 5 cm lift for about 0.05 s at the ball, where it hovered 0.58 s. |
+| 7 | Medium | The serve's hand stops dead at the ball. | **Better, not gone.** The hand carries its speed through. It still falls from 8.5 to about 4 m/s for two ticks, then picks up to 5.8 where it stayed near 3. Elbow after the ball 30, 41, 45, 101 (footage 39, 46, 73, 123). |
+| 8 | Medium | The ball leaves before the swing starts, one hit in forty. | **Better, unmeasured in frames.** A swing caught out now takes 0.05 s rather than 0.11. |
+| 9 | Medium | Holding a key and never letting go earns Perfect and Good. | **Fixed.** A key that goes off by itself is Late at best. Good or Perfect on three swings in four falls to under one in five, and those left are that script's real releases. |
+| 10 | Medium | Perfect is a straighter ball, not a heavier one. | Open. Only the speed cap moves with timing, and most shots are below it. Paying in pace means lowering the flight, which moves every rally. |
+| 11 | Medium | Human whiffs 7.9 per 100 against 1 for the AI, the ring closing on a lost ball. | Open. The ring is a cue, and cues don't change without showing the owner. |
+| 12 | Medium | From deep the bandeja is the worst overhead, and a flat smash from anywhere beats a mix. | **Better, unmeasured by policy.** Smash errors now grow with depth from 5 m, doubling by 8.3 m. The match figures hold. |
+| 13 | Medium | Net pat-a-cake, 9 per 100 at 40 km/h. | Open. |
+| 14 | Medium | Rally shape 10.8/22.4/21/45.8 against 26/26/22/26. | Open, a repeat. |
+| 15 | Low | Held side key dead on 18.7% of ground chords, with no cue. | Open. |
+| 16 | Low | The crowd is seen clapping silently after errors. | **Fixed.** Hands go up only for a shot that won the point. |
+| 17 | Low | A key held through the ends tosses a human's serve under the card. | **Better.** The walk comes first now. |
+| 18 | Low | P, H and M toggles sit beside the shot keys. | Open. The owner's call. |
+| 19 | Low | 'Your serve' banner, tap in the first 0.5 s thrown away. | Open. |
+| 20 | Low | Meshy people are duck-footed. | Open. |
+| 21 | Low | Contrapared goes 13-18 m high. | Open. 8.2% over 10 m. |
+
+Three tests moved with nothing wrong. Bajada share from deep read 0.50 against a limit of 0.5, and passes on 40 seeds, up from 20. The neighbours' hits read 118 where 125 was the floor, and the test now runs 600 s, as that count swings on the sound engine's random stream. The human seat test's hit count fell to 144 because a held key now plays worse, so its limit went from 150 to 120, a looser limit, with a new check beside it.
+
+Removing the AI half of the cover guard outright, as the review's trial did, took AI covers to 19 per 100 and reopened the slice hole at 20.9% from 5-6 m. That trial's points hid it, and only the return figure showed it.
+
+Pops on twelve fresh seeds: 15.2 a minute.

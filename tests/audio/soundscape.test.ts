@@ -160,13 +160,13 @@ describe('soundscape', () => {
   });
 
   it('the courts next door are heard at a club, about a hit a second in their rallies; birds call now and then', () => {
-    const c = run(300, 'club-day');
+    const c = run(600, 'club-day');
     const far = c.rec.plays.filter((p) => p.fam === 'racket' && Math.abs(p.x) > 6);
-    // Two neighbours at 7.3 hits a rally, 1.25 s apart, 14.5 s between points: about 195 in 300 s. (Rally lengths are
-    // geometric: over 120 s, where about 78 were expected, a change to the match gave 48, by the sound engine's
-    // random stream alone.)
-    expect(far.length).toBeGreaterThan(125);
-    expect(far.length).toBeLessThan(300);
+    // Two neighbours at 7.3 hits a rally, 1.25 s apart, 14.5 s between points: about 390 in 600 s. (Rally lengths are
+    // geometric: over 120 s, where about 78 were expected, a change to the match gave 48, and over 300 s 118 for 195, by the
+    // sound engine's random stream alone.)
+    expect(far.length).toBeGreaterThan(250);
+    expect(far.length).toBeLessThan(600);
     expect(c.rec.flats.some((f) => f.fam === 'cheer')).toBe(false);
     const birds = c.rec.plays.filter((p) => p.fam === 'bird');
     expect(birds.length).toBeGreaterThan(30);

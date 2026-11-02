@@ -827,6 +827,29 @@ One High, confirmed and fixed: the ball hung in the air through every walk back.
 | Women, 6000 points | 11.0, 15.2, 33.5/28.5/38.0 | 11.4, 15.7, 31.7/27.5/40.8 |
 | Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
 
+### Review round 23 (2 Nov, `REVIEW.md`)
+One High, confirmed and fixed: the ball jumped from the floor to the hand at the toss. Three Mediums were Round 22's own: the change of ends, the bandeja's floating foot, and the AI pair's covers.
+
+| Round 23 | Before | After |
+|---|---|---|
+| Ball jumps over 0.35 m at the toss | 38 of 38 held, 39 of 43 prompt, 111 of 154 AI | 0 of 79 |
+| Change of ends | six seconds standing still | a walk both ways, key skips it |
+| Last ball to next serve: point / ends / fault | 8.2 / 6.9 / 4.8 s | 9.4 / 13.0 / 6.0 |
+| AI pair covers taker then plays, per 100 | 116 | 45 |
+| Slice return winners, server 5-6 m / nearer | 0.8 / 1.7% | 3.3 / about 1 |
+| Balls dying beside the partner, per 100 | 0.71 | 0.71 |
+| Jump smash knees at the ball, four bodies | front locked at 2 on three | 27/30, 27/37, 27/33, 30/42 (footage 27/23) |
+| Jump smash feet apart at the ball | 0.52-0.65 m | 0.35-0.43 |
+| Bandeja rear foot pitch at the ball | 21 degrees | about 53 |
+| Bandeja hips towards the front foot | 0.45 | 0.63 |
+| Serve hand speed at the ball, ticks 0, +1, +3 | 6.9, 3.2, 3 m/s | 8.5, 4.3, 5.3 |
+| Held key graded Good or Perfect | 76% | under 18% |
+| Pops a minute, twelve fresh seeds | 15.5 | 15.2 |
+| Stadium / club, LUFS | -25.6 / -26.3 | -24.6 / -26.2 |
+| Match, 6000 points: shots, s, W/FE/UE | 10.4, 13.7, 42.1/24.4/33.5 | 10.3, 13.5, 41.7/23.7/34.6 |
+| Women, 6000 points | 11.4, 15.7, 31.7/27.5/40.8 | 11.5, 15.8, 33.0/26.4/40.6 |
+| Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.
