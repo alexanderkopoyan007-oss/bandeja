@@ -11,6 +11,7 @@ import {
 } from '../sim/rules/rally.ts';
 import { Score, EV_GAME, EV_SET, EV_MATCH, MODE_STAR, MODE_GOLDEN } from '../sim/rules/score.ts';
 import { SHOT_SERVE, SHOT_SMASH, SHOT_KEYS } from '../sim/contact/shots.ts';
+import { eventsOf } from '../net/feed.ts';
 
 const CSS = `
 #hud .tv { --tv-ink: #f4f6fa; --tv-dim: #a9b3c4; --tv-bg: rgba(11,17,38,.9); --tv-bg2: rgba(20,29,61,.92); --tv-gold: #f2c14e;
@@ -194,8 +195,8 @@ export class TvGraphics {
       this.tag.classList.toggle('on', !!txt);
     }
 
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
+    while (this.seen < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seen % eventsOf(sim).events.length]!;
       this.seen++;
       if (e.seq < 0) continue;
       this.onEvent(sim, e, now);

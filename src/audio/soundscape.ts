@@ -18,6 +18,7 @@ import {
   NET_V, WHOOSH_S, STEP_F, GRUNT_E, APPLAUSE_SMALL, APPLAUSE_BIG,
 } from './bank.ts';
 import { BUS_BALL, BUS_PLAYERS, BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
+import { eventsOf } from '../net/feed.ts';
 
 /** A contact this far from the face's centre (0 centre, 1 edge) sounds off-centre. */
 /** A routine bounce before the serve hits the floor at about this speed (m/s: pushed down from 0.95 m). */
@@ -182,11 +183,11 @@ export class Soundscape {
     this.replaying = false;
     if (sim !== this.sim) {
       this.sim = sim;
-      this.seen = sim.eventSeq;
+      this.seen = eventsOf(sim).eventSeq;
     }
-    if (sim.eventSeq - this.seen > sim.events.length) this.seen = sim.eventSeq - sim.events.length;
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
+    if (eventsOf(sim).eventSeq - this.seen > eventsOf(sim).events.length) this.seen = eventsOf(sim).eventSeq - eventsOf(sim).events.length;
+    while (this.seen < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seen % eventsOf(sim).events.length]!;
       this.seen++;
       const delay = Math.min(0.05, Math.max(0, e.time - renderTime));
       this.event(sim, e.kind, e.team, e.player, e.a, e.b, e.c, e.x, e.y, e.z, e.d, e.q, delay, renderTime);
@@ -207,13 +208,13 @@ export class Soundscape {
   replay(sim: MatchSim, renderTime: number, feet: readonly FeetSource[], dt: number, speed: number): void {
     if (!this.replaying) {
       this.replaying = true;
-      this.seenReplay = sim.eventSeq;
+      this.seenReplay = eventsOf(sim).eventSeq;
     }
     const rate = Math.sqrt(speed);
     this.rate = rate < REPLAY_PITCH ? REPLAY_PITCH : rate;
-    if (sim.eventSeq - this.seenReplay > sim.events.length) this.seenReplay = sim.eventSeq - sim.events.length;
-    while (this.seenReplay < sim.eventSeq) {
-      const e = sim.events[this.seenReplay % sim.events.length]!;
+    if (eventsOf(sim).eventSeq - this.seenReplay > eventsOf(sim).events.length) this.seenReplay = eventsOf(sim).eventSeq - eventsOf(sim).events.length;
+    while (this.seenReplay < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seenReplay % eventsOf(sim).events.length]!;
       this.seenReplay++;
       if (e.kind !== E_SWING && e.kind !== E_WHIFF && e.kind !== E_HIT && e.kind !== E_FLOOR && e.kind !== E_WALL && e.kind !== E_NET && e.kind !== E_BODY && e.kind !== E_ROOF) continue;
       const delay = Math.min(0.05, Math.max(0, e.time - renderTime));

@@ -4,6 +4,7 @@
 // side, the net, a wall before the bounce or out.
 import type { MatchSim } from '../sim/match.ts';
 import { E_HIT, E_POINT, E_FAULT } from '../sim/match.ts';
+import { eventsOf } from '../net/feed.ts';
 import {
   WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP, WHY_OWN_SIDE, WHY_WALL_BEFORE_BOUNCE, WHY_OWN_MESH, WHY_OUT, WHY_ROOF, WHY_ROOF_AFTER_BOUNCE,
   WHY_HIT_BODY_OWN, WHY_WHIFF,
@@ -35,9 +36,9 @@ export class MatchStats {
   private seen = 0;
 
   update(sim: MatchSim): void {
-    if (sim.eventSeq - this.seen > sim.events.length) this.seen = sim.eventSeq - sim.events.length;
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
+    if (eventsOf(sim).eventSeq - this.seen > eventsOf(sim).events.length) this.seen = eventsOf(sim).eventSeq - eventsOf(sim).events.length;
+    while (this.seen < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seen % eventsOf(sim).events.length]!;
       this.seen++;
       if (e.seq < 0) continue;
       if (e.kind === E_HIT && e.team >= 0) {

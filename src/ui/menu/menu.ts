@@ -87,7 +87,7 @@ export const MENU_CSS = `
 export interface Choice<T = unknown> { value: T; label: string }
 
 export interface Item {
-  kind: 'button' | 'choice' | 'slider' | 'key' | 'group';
+  kind: 'button' | 'choice' | 'slider' | 'key' | 'group' | 'text';
   label: string;
   /** What it does or means, shown under the list while focused (a function: worked out each time it is shown). */
   desc?: string | (() => string);
@@ -96,6 +96,9 @@ export interface Item {
   options?: Choice[];
   get?: () => unknown;
   set?: (v: unknown) => void;
+  /** Text: a letter typed (null: rub one out), or something pasted. */
+  type?: (letter: string | null) => void;
+  paste?: (text: string) => void;
   /** Sliders: 0..1 in `step`s. */
   step?: number;
   /** Key bindings: the keys' names now; `listen` starts a capture. */
@@ -168,6 +171,10 @@ export class Menu {
     this.foot.setAttribute('aria-hidden', 'true');
     // Capture phase: menu keys never reach the game behind (its own listeners are on the bubble phase).
     addEventListener('keydown', (e) => this.onKey(e), true);
+    addEventListener('paste', (e) => {
+      const it = this.items[this.focusIdx];
+      if (this.visible && it?.kind === 'text') { it.paste?.(e.clipboardData?.getData('text') ?? ''); this.refresh(); }
+    });
     addEventListener('keyup', (e) => { if (this.visible) e.stopImmediatePropagation(); }, true);
   }
 
@@ -182,6 +189,11 @@ export class Menu {
   /** Reduced motion: screens fade instead of sliding. */
   set calm(on: boolean) {
     this.root.classList.toggle('calm', on);
+  }
+
+  /** The screen showing, by id (undefined: none). */
+  get showing(): string | undefined {
+    return this.visible ? this.current?.id : undefined;
   }
 
   /** Show a screen on top of the stack (or as the only one with `reset`). */
@@ -339,6 +351,12 @@ export class Menu {
       b.innerHTML = `<span class="lab"></span>`;
       b.querySelector('.lab')!.textContent = it.label;
       b.setAttribute('aria-label', it.label);
+    } else if (it.kind === 'text') {
+      b.innerHTML = `<span class="lab"></span><span class="val"></span>`;
+      b.querySelector('.lab')!.textContent = it.label;
+      const v = String(it.get?.() ?? '');
+      b.querySelector('.val')!.textContent = v === '' ? '_' : v;
+      b.setAttribute('aria-label', `${it.label}: ${v}`);
     } else if (it.kind === 'choice') {
       const opts = it.options ?? [];
       const v = it.get?.();
@@ -446,6 +464,13 @@ export class Menu {
       return;
     }
     const c = e.code;
+    const typing = this.items[this.focusIdx];
+    if (typing?.kind === 'text' && !e.metaKey && !e.ctrlKey && (/^Key[A-Z]$/.test(c) || c === 'Backspace')) {
+      e.preventDefault();
+      typing.type?.(c === 'Backspace' ? null : c.slice(3));
+      this.refresh();
+      return;
+    }
     const handled = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'Enter', 'Space', 'Escape', 'Backspace', 'Tab'];
     if (!handled.includes(c)) return;
     e.preventDefault();

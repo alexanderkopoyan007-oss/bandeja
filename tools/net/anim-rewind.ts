@@ -8,7 +8,7 @@ import { parsePlayerAsset } from '../../src/render/avatar/asset.ts';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { Hands } from './hash-core.ts';
-import { RollbackClient, type Packet } from './rollback.ts';
+import { RollbackClient, type Packet } from '../../src/net/rollback.ts';
 
 const gz = readFileSync('public/assets/player.bnz');
 const raw = gunzipSync(gz);
@@ -25,7 +25,8 @@ function run(seed: number, ms: number, delay: number, seconds: number) {
   const lost = () => { r = (Math.imul(r, 1664525) + 1013904223) | 0; return ms > 0 && (r >>> 8) / (1 << 24) < 0.02; };
   const go = (m: MatchSim, c: RollbackClient, s: number) => {
     const M = m as never as { score: { serverPlayer(): number } };
-    return c.local(s, hands[s]!.frame(m, s, m.tick, (m.phase === PH_SETUP || m.phase === PH_TOSS) && M.score.serverPlayer() === s));
+    c.local(s, hands[s]!.frame(m, s, m.tick, (m.phase === PH_SETUP || m.phase === PH_TOSS) && M.score.serverPlayer() === s));
+    return c.packet(s);
   };
   MatchSim.prototype.step = function step(this: MatchSim, inputs: never): void {
     if (busy || (view && this !== view)) { realStep.call(this, inputs); return; }

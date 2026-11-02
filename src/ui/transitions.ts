@@ -6,6 +6,7 @@
 // so that it has gone by the serve: from the set-up it lay over the near service box for the serve and the return.
 import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import { PH_DEAD, E_GAME, E_SET } from '../sim/match.ts';
+import { eventsOf } from '../net/feed.ts';
 
 const CSS = `
 #hud .dip { position: absolute; inset: 0; background: #05070a; opacity: 0; pointer-events: none; }
@@ -62,9 +63,9 @@ export class Transitions {
 
   /** `team`: the human's team (or 0), whose row goes first. `now`: seconds. */
   update(sim: MatchSim, team: number, now: number): void {
-    if (sim.eventSeq - this.seen > sim.events.length) this.seen = sim.eventSeq - sim.events.length;
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
+    if (eventsOf(sim).eventSeq - this.seen > eventsOf(sim).events.length) this.seen = eventsOf(sim).eventSeq - eventsOf(sim).events.length;
+    while (this.seen < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seen % eventsOf(sim).events.length]!;
       this.seen++;
       if (e.seq >= 0) this.onEvent(e);
     }

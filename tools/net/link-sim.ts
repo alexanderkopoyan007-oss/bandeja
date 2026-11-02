@@ -6,7 +6,7 @@ import { MatchSim, E_FLOOR, E_HIT, E_NET, E_POINT, E_SWING, E_TOSS, E_WALL, E_WH
 import { InputFrame } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { Hands } from './hash-core.ts';
-import { RollbackClient, type Packet, type Frame } from './rollback.ts';
+import { RollbackClient, type Packet, type Frame } from '../../src/net/rollback.ts';
 
 class Link {
   private readonly q: Array<{ at: number; p: Packet }> = [];
@@ -72,7 +72,8 @@ export function runLink(cfg: MatchConfig, seats: number[][], ms: number, loss: n
       const M = m as never as { score: { serverPlayer(): number } };
       for (const s of c.seats) {
         const f = hands[s]!.frame(m, s, m.tick, (m.phase === PH_SETUP || m.phase === PH_TOSS) && M.score.serverPlayer() === s);
-        const pk = c.local(s, f);
+        c.local(s, f);
+        const pk = c.packet(s);
         trueFrames[s]!.set(pk.ack, pk.frames[pk.frames.length - 1]!);
         for (let b = 0; b < clients.length; b++) links[a]![b]?.send(now, pk);
       }

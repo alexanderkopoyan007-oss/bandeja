@@ -32,6 +32,9 @@ function smooth(t: number): number {
   return x * x * (3 - 2 * x);
 }
 
+/** How quickly a rewind's correction to the ball is drawn away (s). */
+const EASE_S = 0.08;
+
 export class BallView {
   /** Holds the ball at its position, stretched along its path for the shutter (ballLook.ts). */
   readonly mesh = new THREE.Group();
@@ -156,6 +159,22 @@ export class BallView {
     m.lerpVectors(hand, m, addr);
     this.placeShadow(m.x, m.y, m.z);
   }
+
+  /**
+   * Online: a rewind moves the ball, by as much as 1.4 m at 80 ms one way. The jump is drawn away over about EASE_S, so the ball
+   * flies a little off the sim's line for a moment and joins it, instead of hopping (docs/net-proof.md).
+   */
+  ease(nudge: { x: number; y: number; z: number }, dt: number): void {
+    this.fix.x += nudge.x; this.fix.y += nudge.y; this.fix.z += nudge.z;
+    nudge.x = 0; nudge.y = 0; nudge.z = 0;
+    const k = Math.exp(-dt / EASE_S), f = this.fix;
+    f.x *= k; f.y *= k; f.z *= k;
+    const m = this.mesh.position;
+    m.x += f.x; m.y += f.y; m.z += f.z;
+    if (m.y < this.radius) m.y = this.radius;
+    this.placeShadow(m.x, m.y, m.z);
+  }
+  private readonly fix = { x: 0, y: 0, z: 0 };
 
   private placeShadow(x: number, y: number, z: number): void {
     const h = Math.max(0, y - this.radius);

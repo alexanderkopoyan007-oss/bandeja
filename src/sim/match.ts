@@ -118,6 +118,8 @@ export interface MatchConfig {
   format?: MatchFormat;
   /** Two players a side. Players are numbered team + 2 * slot: 0 and 1 face each other, 2 and 3 are partners. */
   doubles?: boolean;
+  /** Online: seconds a person can leave a serve waiting before the AI takes their seat. Nobody can stop a shared match. */
+  serveClock?: number;
   /** Which players are controlled by a human (input frames supplied), one entry per player. */
   human: boolean[];
   /** AI skill 0..1 per team. */
@@ -300,6 +302,8 @@ export class MatchSim {
   readonly aiRng: Rng;
   readonly ai: Array<SimpleAi | null>;
   readonly aiFrames: InputFrame[];
+  /** Seats the AI took over from a player who left, a bit each. */
+  aiTaken = 0;
 
   tick = 0;
   time = 0;
@@ -816,6 +820,9 @@ export class MatchSim {
     // Doubles: settle which partner goes for an incoming ball before anyone moves.
     if (this.doubles && this.phase === PH_RALLY) this.updateTakers();
 
+    if (this.cfg.serveClock !== undefined && this.phase === PH_SETUP && this.walking === 0 && this.time >= this.phaseUntil + this.cfg.serveClock) {
+      this.giveToAi(this.score.serverPlayer());
+    }
     // Inputs (AI writes its own frames).
     for (let i = 0; i < n; i++) {
       const ai = this.ai[i];
@@ -2157,6 +2164,21 @@ export class MatchSim {
    * Become a copy of `src`, a match built with the same config: every field, the players, AIs, ball, net and random
    * streams. Stepped on with the same human inputs it plays the same ticks (replays re-run a point from its start).
    */
+  /**
+   * A player has gone: the AI plays their seat from this tick on. Online every client does this on the same tick
+   * (net/rollback.ts); the seat's swing, if any, goes with them.
+   */
+  giveToAi(i: number): void {
+    if (this.ai[i]) return;
+    const p = this.players[i]!, cfg = this.cfg, ai = new SimpleAi(i, (cfg.aiLevel ?? [0.55, 0.55])[i & 1]!, styleOf(cfg.aiStyle?.[i]), cfg.women === true);
+    ai.reset();
+    this.ai[i] = ai;
+    this.aiTaken |= 1 << i;
+    p.glassWait = ai.glassWait;
+    if (p.swing === SW_CHARGE) p.swing = SW_IDLE;
+    this.takerVersion[p.team] = -1;
+  }
+
   copyFrom(src: MatchSim): void {
     COPY_SEEN.clear();
     copyState(this, src, COPY_SEEN);
@@ -2183,6 +2205,7 @@ export class MatchSim {
     h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut).num(this.courtEnds).num(this.tossDue);
     for (let i = 0; i < this.players.length; i++) h.num(this.walkHomeX[i]!).num(this.walkHomeZ[i]!).num(this.walkHomeF[i]!);
     h.num(this.overStage).num(this.overUntil);
+    if (this.aiTaken !== 0) h.num(this.aiTaken);
     for (let i = 0; i < this.players.length; i++) h.num(this.overX[i]!).num(this.overZ[i]!).num(this.overMate[i]!);
     const st: number[] = [];
     this.score.writeState(st);

@@ -32,6 +32,7 @@ import { Transitions } from '../ui/transitions.ts';
 import { Announcer } from '../ui/announce.ts';
 import { QUALITY, type QualityPreset } from '../render/quality.ts';
 import { displayPeriod, stopDisplaySample } from '../render/display.ts';
+import type { NetHooks } from '../net/netMatch.ts';
 
 const MAX_TICKS_PER_FRAME = 12;
 /** After match point: the results come OVER_HOLD_MS after the players have played the end out (MatchSim.overStage 4),
@@ -42,6 +43,9 @@ const OVER_SKIP_AFTER_MS = 800;
 /** How long the match's sound takes to go under a menu (s): the crowd dies away under the results, it doesn't cut. */
 const HUSH_PAUSE = 0.15;
 const HUSH_OVER = 4;
+
+/** The longest the warm-up holds the loading screen (ms). */
+const WARM_MAX_MS = 20000;
 
 export interface GameOptions {
   match: MatchConfig;
@@ -199,8 +203,8 @@ export class Game {
   photo: PhotoOverlay | null = null;
   /** The sim stands still (the scene is still drawn): photo-match comparisons. */
   paused = false;
-  /** The two-tab proof (tools/net/tab.ts): takes over the step, for a client that also rewinds. */
-  stepper: ((sim: MatchSim) => void) | null = null;
+  /** An online match (net/netMatch.ts): its client steps the sim, and the match doesn't stop for anyone's menu. */
+  online: NetHooks | null = null;
   /** Paused by a menu (Esc, Start): the sim, the sound and the input all wait. */
   private menuPaused = false;
   /** Every listener this game adds goes when it is torn down. */
@@ -346,12 +350,13 @@ export class Game {
     addEventListener('resize', () => this.resize(), { signal: sig });
     // Leaving the game (another window, a hidden tab, the controller gone) opens the pause menu, so a point
     // isn't played on without you; outside a match onMenu does nothing.
-    addEventListener('blur', () => this.onMenu?.(), { signal: sig });
+    addEventListener('blur', () => { if (!this.online) this.onMenu?.(); }, { signal: sig });
     this.pad.onLost = () => this.onMenu?.();
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.onMenu?.();
+      if (document.hidden && !this.online) this.onMenu?.();
       // Freeze the sim while the tab is hidden instead of fast-forwarding on return.
       this.audio.pause(document.hidden);
+      if (this.online) return;
       if (document.hidden) this.hiddenAt = performance.now();
       else if (this.hiddenAt >= 0) {
         this.epoch += performance.now() - this.hiddenAt;
@@ -470,6 +475,7 @@ export class Game {
 
   /** Tear the game down: the loop, listeners, sound, the HUD layer and every GPU resource. */
   dispose(): void {
+    this.pump?.terminate();
     if (this.disposed) return;
     this.disposed = true;
     this.running = false;
@@ -491,7 +497,8 @@ export class Game {
   async warmUp(): Promise<void> {
     this.cam.update(this.sim, this.team, null, 0);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
-    await this.renderer.compileAsync(this.scene, this.cam.camera);
+    // (never a loading screen for ever, least of all with others waiting: what isn't done by then compiles as it's first drawn)
+    await Promise.race([this.renderer.compileAsync(this.scene, this.cam.camera), new Promise((r) => setTimeout(r, WARM_MAX_MS))]);
     // The post passes' own shaders compile on their first frame: draw one now.
     if (this.post) this.post.render();
   }
@@ -514,6 +521,33 @@ export class Game {
     this.running = true;
   }
 
+  /** Online: every player's first tick is at this moment (performance.now() time on this machine). */
+  startAt(at: number): void {
+    this.paused = false;
+    this.epoch = at;
+  }
+
+  /**
+   * A hidden tab draws no frames, but the other players are waiting on its inputs. A worker's timer isn't slowed as the tab's own are,
+   * so the match goes on without the picture.
+   */
+  keepOnline(): void {
+    const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 16)'], { type: 'text/javascript' })));
+    w.onmessage = () => {
+      const net = this.online;
+      if (!document.hidden || !net || this.paused || this.disposed) return;
+      net.frame();
+      this.epoch += net.drift();
+      const human = this.opts.human, simNow = (performance.now() - this.epoch) / 1000;
+      for (let n = 0; this.sim.time < simNow && n < 24 && !net.held; n++) {
+        this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
+        net.step(this.inputs[human] ?? null);
+      }
+    };
+    this.pump = w;
+  }
+  private pump: Worker | null = null;
+
   /** start() has run (tools wait for this; the page exposes the game before its warm-up). */
   running = false;
   /** GPU timestamps are on (?gputime=1 and the GPU has them); one read-back at a time. */
@@ -524,6 +558,11 @@ export class Game {
     if (this.opts.autoplay) return null;
     const f = this.frame;
     f.clear();
+    // (online a menu doesn't stop the match, and the keys are the menu's)
+    if (this.menuPaused) {
+      f.held = this.simHeld;
+      return f;
+    }
     this.kb.axes(this.axes);
     // The pad's stick, when it is pushed, wins over the keys.
     const pad = this.pad.x !== 0 || this.pad.y !== 0;
@@ -638,6 +677,11 @@ export class Game {
       while (now < until) now = performance.now();
     }
     this.frameNow = now;
+    const net = this.online;
+    if (net) {
+      net.frame();
+      this.epoch += net.drift();
+    }
     const simNow = (now - this.epoch) / 1000;
     const s0 = performance.now();
     let n = 0;
@@ -671,24 +715,30 @@ export class Game {
     // A replay due: the live match waits (as for a menu) while the point is shown again.
     const rp = this.replays;
     if (rp.state === RP_IDLE && rp.due >= 0 && this.sim.time >= rp.due && !this.menuPaused) {
-      if (this.photo || !rp.enabled) rp.stop();
+      if (this.photo || !rp.enabled || net) rp.stop();
       else { rp.begin(); this.kb.flush(); this.replayPad = this.pad.held; }
     }
-    if (this.paused || this.menuPaused || rp.state !== RP_IDLE) {
+    if (this.paused || (this.menuPaused && !net) || rp.state !== RP_IDLE) {
       this.epoch = now - this.sim.time * 1000;
       drawn = this.sim.time;
     }
     while (this.sim.time < drawn && n < MAX_TICKS_PER_FRAME) {
       if (holding && hp.swing === SW_CHARGE && this.sim.time + DT > simNow) break;
+      // (held up, the tick can't run: the keys stay in their queue, or a release made now is lost)
+      if (net?.held) break;
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
-      rp.beforeStep(this.sim, this.inputs[human] ?? null);
-      if (this.stepper) this.stepper(this.sim);
-      else this.sim.step(this.inputs);
-      rp.afterStep(this.sim);
+      if (net) net.step(this.inputs[human] ?? null);
+      else {
+        rp.beforeStep(this.sim, this.inputs[human] ?? null);
+        this.sim.step(this.inputs);
+        rp.afterStep(this.sim);
+      }
       n++;
     }
-    let cueNow = simNow;
-    if (n === MAX_TICKS_PER_FRAME) {
+    // (online a press acts `lead` after it is made, so the cue closes that much sooner)
+    let cueNow = simNow + (net ? net.lead : 0);
+    // (online, time isn't dropped: the others are on this clock, so a backlog is caught up)
+    if (n === MAX_TICKS_PER_FRAME && !net) {
       // Drop a backlog rather than spiral; draw from the new clock (the old one would draw the newest tick and step
       // back next frame). Keys still queued keep their wall-clock stamps, which are now in the sim's past: they are
       // moved up to now, or a release made during the hitch is graded up to 0.2 s early and struck late.
@@ -747,6 +797,7 @@ export class Game {
     if (showing) this.ball.showMarker = false;
     this.ball.update(view, vAlpha, team);
     this.ball.showMarker = marker;
+    if (net) this.ball.ease(net.nudge, frameDt);
     this.net.update(view, vAlpha);
     for (let i = 0; i < this.players.length; i++) this.players[i]!.update(view, view.players[i]!, i, vAlpha, vTime);
     const server = view.phase === PH_SETUP ? this.players[view.score.serverPlayer()]!.avatar : null;
@@ -772,6 +823,8 @@ export class Game {
     }
     this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
       now / 1000, frameDt, cueNow);
+    this.hud.cueLead = net ? net.lead : 0;
+    this.hud.netNote = net ? net.note : '';
     this.hud.update(this.sim, who, now / 1000);
     this.tv?.update(this.sim);
     this.stats.update(this.sim);
@@ -779,7 +832,7 @@ export class Game {
     this.announcer?.update(this.sim, team);
     // The match is over: the players play it out (MatchSim.overStage: reactions, the walk to the net, rackets
     // touched across it), then the app shows the results. Enter or Space skips to them (overSkip).
-    if (this.sim.phase === PH_OVER && !this.overSent) {
+    if (this.sim.phase === PH_OVER && !this.overSent && (!net || net.over)) {
       if (this.overAt < 0) this.overAt = now;
       if (this.sim.overStage >= 4 && this.overDoneAt < 0) this.overDoneAt = now;
       const done = this.overDoneAt >= 0 && now - this.overDoneAt > OVER_HOLD_MS;

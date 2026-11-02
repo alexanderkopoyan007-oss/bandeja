@@ -13,6 +13,7 @@ import { SHAPES, SHOT_BANDEJA, SHOT_VOLLEY } from '../sim/contact/shots.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 import { PAL, gradeColour, hex } from './palette.ts';
 import { DEFAULT_KEYS, keyName } from '../game/input/bindings.ts';
+import { eventsOf } from '../net/feed.ts';
 
 /** E_CALL's words (CALL_MINE, CALL_YOURS, CALL_SWITCH), as a pair shouts them. */
 const CALL_TEXT = ['Mine!', 'Yours!', 'Switch!'];
@@ -372,6 +373,11 @@ export class Hud {
   }
 
   /** `human`: the human's player number, -1 with autoplay. */
+  /** Online: a press acts this long after it is made (s), so the meter runs that far ahead. */
+  cueLead = 0;
+  /** An online match's word on its connection, over any hint. */
+  netNote = '';
+
   update(sim: MatchSim, human: number, now: number): void {
     const team = human >= 0 ? sim.players[human]!.team : -1;
     const sc = sim.score;
@@ -389,8 +395,8 @@ export class Hud {
     }
 
     // New events.
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
+    while (this.seen < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seen % eventsOf(sim).events.length]!;
       this.seen++;
       if (e.seq < 0) continue;
       this.onEvent(sim, e, human, team, now);
@@ -407,7 +413,7 @@ export class Hud {
       if (ideal >= 0 && (p.swing === SW_CHARGE || sim.phase === PH_TOSS)) {
         // The zones follow the shot being timed (each shot has its own windows).
         this.setTiming(sim.windowScale(human));
-        const d = sim.time - ideal; // negative = before ideal
+        const d = sim.time + this.cueLead - ideal; // negative = before ideal
         const frac = Math.min(1, Math.max(0, 0.5 + d / 0.5));
         this.mark.style.left = `${(frac * 100).toFixed(1)}%`;
         show = true;
@@ -447,6 +453,7 @@ export class Hud {
       seenHint(hint);
     }
     if (hint && (hintsSeen[hint] ?? 0) >= HINT_TIMES && !this.hintRead.has(hint)) hint = '';
+    if (this.netNote) hint = this.netNote;
     // (HTML of our own strings and key names escaped by cap())
     if (hint) this.set(this.hint, hint, true);
     if (!!hint !== this.hintOn) { this.hintOn = !!hint; this.toggle(this.hint, 'on', this.hintOn); }

@@ -4,6 +4,7 @@
 import type { MatchSim, MatchEvent } from '../sim/match.ts';
 import { PH_DEAD, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_ENDS } from '../sim/match.ts';
 import { REASON_TEXT } from '../sim/rules/rally.ts';
+import { eventsOf } from '../net/feed.ts';
 
 export class Announcer {
   private readonly el: HTMLElement;
@@ -16,7 +17,7 @@ export class Announcer {
 
   /** `sim`: start from its current events (turned on mid-match, nothing already said is said again). */
   constructor(root: HTMLElement, sim?: MatchSim) {
-    if (sim) this.seen = sim.eventSeq;
+    if (sim) this.seen = eventsOf(sim).eventSeq;
     this.el = document.createElement('div');
     this.el.setAttribute('aria-live', 'polite');
     this.el.setAttribute('role', 'status');
@@ -27,9 +28,9 @@ export class Announcer {
 
   /** `team`: the player's team. */
   update(sim: MatchSim, team: number): void {
-    if (sim.eventSeq - this.seen > sim.events.length) this.seen = sim.eventSeq - sim.events.length;
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
+    if (eventsOf(sim).eventSeq - this.seen > eventsOf(sim).events.length) this.seen = eventsOf(sim).eventSeq - eventsOf(sim).events.length;
+    while (this.seen < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seen % eventsOf(sim).events.length]!;
       this.seen++;
       if (e.seq >= 0) this.onEvent(sim, e, team);
     }

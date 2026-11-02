@@ -4,6 +4,7 @@
 import { E_GAME, E_HIT, E_POINT, E_SET, E_MATCH, type MatchSim } from '../sim/match.ts';
 import { SHOT_SMASH, SHOT_VIBORA } from '../sim/contact/shots.ts';
 import { WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP } from '../sim/rules/rally.ts';
+import { eventsOf } from '../net/feed.ts';
 
 /** How long the applause and the standing last (seconds, to 1/e): the applause sound runs about 4.5 s. */
 const CLAP_TIME = 2.6;
@@ -21,9 +22,9 @@ export class CrowdMood {
   update(sim: MatchSim, dt: number): void {
     this.applause *= Math.exp(-dt / CLAP_TIME);
     this.ovation *= Math.exp(-dt / STAND_TIME);
-    if (sim.eventSeq - this.seen > sim.events.length) this.seen = sim.eventSeq - sim.events.length;
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
+    if (eventsOf(sim).eventSeq - this.seen > eventsOf(sim).events.length) this.seen = eventsOf(sim).eventSeq - eventsOf(sim).events.length;
+    while (this.seen < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seen % eventsOf(sim).events.length]!;
       this.seen++;
       if (e.seq < 0) continue;
       if (e.kind === E_HIT) {

@@ -4,7 +4,7 @@
 import { E_HIT, E_WHIFF, PH_SETUP, PH_TOSS, type MatchConfig } from '../../src/sim/match.ts';
 import { GRADE_TEXT } from '../../src/sim/contact/timing.ts';
 import { DT } from '../../src/sim/core/constants.ts';
-import { RollbackClient } from './rollback.ts';
+import { RollbackClient } from '../../src/net/rollback.ts';
 import { Hands } from './hash-core.ts';
 
 const FORMAT = { mode: 1, setsToWin: 2, gamesPerSet: 6, finalSet: 0 };
@@ -19,7 +19,9 @@ function run(seed: number, delay: number, lead: number, timed: number, secs: num
   const m = a.sim, M = m as never as { score: { serverPlayer(): number } };
   for (let t = 0; t < secs * 120; t++) {
     const toss = (s: number): boolean => (m.phase === PH_SETUP || m.phase === PH_TOSS) && M.score.serverPlayer() === s;
-    const pa = a.local(0, H[0]!.frame(m, 0, m.tick, toss(0))), pb = b.local(1, H[1]!.frame(b.sim, 1, b.sim.tick, toss(1)));
+    a.local(0, H[0]!.frame(m, 0, m.tick, toss(0)));
+    b.local(1, H[1]!.frame(b.sim, 1, b.sim.tick, toss(1)));
+    const pa = a.packet(0), pb = b.packet(1);
     b.receive(pa);
     a.receive(pb);
     a.advance();

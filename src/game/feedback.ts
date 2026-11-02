@@ -7,6 +7,7 @@ import { SHOT_SMASH, SHOT_VIBORA, SHOT_BANDEJA } from '../sim/contact/shots.ts';
 import { gradeQuality } from '../sim/contact/timing.ts';
 import type { GamepadInput } from './input/gamepad.ts';
 import type { BroadcastCamera } from '../render/views.ts';
+import { eventsOf } from '../net/feed.ts';
 
 const v = new THREE.Vector3();
 
@@ -27,13 +28,13 @@ export class Feedback {
   update(sim: MatchSim, human: number, nowMs: number): void {
     if (sim !== this.sim) {
       this.sim = sim;
-      this.seen = sim.eventSeq;
+      this.seen = eventsOf(sim).eventSeq;
     }
     // Events older than the ring are gone; skip rather than read overwritten slots.
-    if (sim.eventSeq - this.seen > sim.events.length) this.seen = sim.eventSeq - sim.events.length;
+    if (eventsOf(sim).eventSeq - this.seen > eventsOf(sim).events.length) this.seen = eventsOf(sim).eventSeq - eventsOf(sim).events.length;
     const camera = this.cam.camera;
-    while (this.seen < sim.eventSeq) {
-      const e = sim.events[this.seen % sim.events.length]!;
+    while (this.seen < eventsOf(sim).eventSeq) {
+      const e = eventsOf(sim).events[this.seen % eventsOf(sim).events.length]!;
       this.seen++;
       if (e.kind !== E_HIT && e.kind !== E_WHIFF) continue;
       // How far from the camera, for the kick.

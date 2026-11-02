@@ -13,8 +13,14 @@ import { setSafeColours } from '../ui/palette.ts';
 import { resetHints } from '../ui/hud.ts';
 import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '../game/input/bindings.ts';
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
-import { loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
+import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
 import { keepStyles, optionsFromSetup } from './options.ts';
+import { OnlineSession, SEATS, type OnlineStart } from '../net/session.ts';
+import { NetMatch } from '../net/netMatch.ts';
+import { validCode } from '../net/room.ts';
+import { TEST_SHORT } from '../net/config.ts';
+import { QueueSocket, type Found } from '../net/queue.ts';
+import type { MatchConfig } from '../sim/match.ts';
 
 const ARENAS: Choice[] = [
   { value: 'stadium', label: 'Arena' }, { value: 'hall', label: 'Club hall' },
@@ -22,6 +28,40 @@ const ARENAS: Choice[] = [
 ];
 
 const nextSeed = (s: number): number => (Math.imul(s, 1103515245) + 12345) >>> 1;
+const PAGE_TITLE = document.title;
+/** Seconds a serve can wait before the AI takes the seat: strangers have nobody to ask, friends can shout. */
+const PUBLIC_SERVE_CLOCK = 20;
+const FRIENDS_SERVE_CLOCK = 60;
+/** The queue gives up after this (s): it mustn't stay open on nobody for a day. */
+const QUEUE_MAX_S = 600;
+/** Public matches: how long a room's first player may be behind the rest, how long the group gets to arrive before starting
+ *  with whoever came, and when the room is given up for the queue again (ms). */
+const ROOM_PATIENCE_MS = 6000;
+const ROOM_FILL_MS = 7000;
+const ROOM_GIVE_UP_MS = 15000;
+/** How long the match can stay unstarted once this client is ready (ms): past the host's own wait for anyone loading. */
+const GO_WAIT_MS = 45000;
+/** After this long alone in the queue, say so (s). */
+const LONELY_S = 60;
+/** The same match for everyone: nobody's own setup or settings decide it. */
+const publicSetup = (seed: number): MatchSetup => ({
+  ...DEFAULT_SETUP, mode: 'doubles', hand: 'right', level: 'club', partner: 'random', opponents: 'random', court: 'standard', scoring: 'golden', length: 'short',
+  arena: ARENAS[seed % ARENAS.length]!.value as MatchSetup['arena'],
+});
+/** The seats, on a match made for one human. */
+function seatMatch(m: MatchConfig, seats: number[], clock: number): void {
+  m.human = seats.map((id) => id >= 0);
+  m.lefty = new Array(SEATS).fill(false);
+  m.aiLevel = [m.aiLevel![1]!, m.aiLevel![1]!];
+  m.serveClock = clock;
+  if (TEST_SHORT) m.format = { ...m.format!, setsToWin: 1, gamesPerSet: 1 };
+}
+/** A public match from its seed alone, the same on every machine: nothing a stranger sends can shape it. */
+function publicStart(seed: number, seats: number[]): Omit<OnlineStart, 'seats' | 'delay'> {
+  const setup = publicSetup(seed), m = optionsFromSetup(setup, defaultSettings(), seed, null, false, new URLSearchParams()).match;
+  seatMatch(m, seats, PUBLIC_SERVE_CLOCK);
+  return { match: m, castSeed: seed, arena: setup.arena };
+}
 /** Who the next game keeps of the last one's cast (build). */
 const KEEP_NONE = 0;
 const KEEP_ALL = 1;
@@ -51,6 +91,21 @@ export class App {
   private rebuilding: Promise<void> | null = null;
   /** The frame-rate setting as last applied (F3 toggles the meter in a game; only a change of the setting overrides it). */
   private fpsApplied: boolean | null = null;
+  /** The online room this page is in, the match on in it, the one about to be built, and a code being typed. */
+  private online: OnlineSession | null = null;
+  private net: NetMatch | null = null;
+  private onlineStart: OnlineStart | null = null;
+  /** The room a match is being built for: by the time it's built the player may have gone from it. */
+  private buildingFor: OnlineSession | null = null;
+  private joinCode = '';
+  private lobbyTimer: ReturnType<typeof setInterval> | null = null;
+  private roomTimer: ReturnType<typeof setInterval> | null = null;
+  private goTimer: ReturnType<typeof setTimeout> | null = null;
+  private queue: QueueSocket | null = null;
+  /** A match with whoever the queue found, not a room of friends. */
+  private publicMatch = false;
+  private searchFrom = 0;
+  private searching = 1;
 
   constructor(renderer: THREE.WebGPURenderer, hud: HTMLElement, params: URLSearchParams, loading: LoadingScreen) {
     this.renderer = renderer;
@@ -89,6 +144,11 @@ export class App {
     await this.build(true, (name, f) => L.stage(name, 0.52 + 0.46 * f));
     await L.done();
     this.menu.open(this.titleScreen(), true);
+    // An invite link opens straight into its room.
+    const room = this.params.get('room')?.toUpperCase();
+    if (room && validCode(room)) this.connect(room);
+    else if (this.params.get('online') === 'new') this.connect(null);
+    else if (this.params.get('online') === 'find') this.findMatch();
   }
 
   // ---- games ---------------------------------------------------------------------------------------------
@@ -113,6 +173,17 @@ export class App {
     if (!attract && this.keep === KEEP_PAIR) opts.rivals = seed;
     if (!attract && this.keep !== KEEP_NONE && opts.match.aiStyle) keepStyles(opts.match.aiStyle, this.gameSetup(), this.castSeed, this.keep === KEEP_ALL);
     this.keep = KEEP_NONE;
+    const on = attract ? null : this.onlineStart;
+    if (this.params.has('cap')) opts.fpsCap = Number(this.params.get('cap'));
+    if (on && this.online) {
+      // The host's match, to the bit: the sims must be one match. Only the seat and what is drawn are this player's.
+      opts.match = structuredClone(on.match);
+      opts.human = this.online.seat;
+      opts.arena = on.arena;
+      opts.replays = false;
+      opts.prefs!.replays = false;
+      this.castSeed = opts.castSeed = on.castSeed;
+    }
     if (!attract && this.drill >= 0) {
       opts.match.practice = this.drill;
       opts.match.firstServer = 1;
@@ -124,6 +195,13 @@ export class App {
     const g = new Game(opts, this.renderer, this.hud);
     (window as unknown as { __bandeja: Game }).__bandeja = g;
     this.game = g;
+    if (on && this.online && this.online === this.buildingFor) {
+      const net = new NetMatch(g.sim, this.online, on);
+      net.onDesync = () => this.onlineBroke('The players’ games stopped matching, so the match had to end.', true);
+      g.online = this.net = net;
+      g.paused = true;
+      g.keepOnline();
+    }
     stage('Compiling shaders', 0.55);
     await frame();
     await g.warmUp();
@@ -139,7 +217,7 @@ export class App {
     this.playing = !attract;
     if (this.settings.showFps && !attract) g.debug.toggle();
     // The window was left while the match was loading (the blur came before there was a match to pause).
-    if (!attract && (document.hidden || !document.hasFocus())) g.onMenu();
+    if (!attract && !on && (document.hidden || !document.hasFocus())) g.onMenu();
   }
 
   /** The next match's people, fetched while nothing is at stake, so starting it doesn't wait for the network. */
@@ -203,6 +281,7 @@ export class App {
   private async toTitle(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    this.closeRoom();
     this.menu.hide();
     this.loading.show('Back to the club');
     try {
@@ -222,6 +301,268 @@ export class App {
     this.game?.setMenuPaused(true);
     this.menu.open(this.resultsScreen(st), true);
     this.fetchAhead();
+  }
+
+  // ---- online ----------------------------------------------------------------------------------------------
+
+  /** Into a room: a new one (null), or the one with this code. */
+  private connect(code: string | null): void {
+    this.closeRoom();
+    this.publicMatch = false;
+    this.enterRoom(new OnlineSession(code));
+    this.menu.open(this.lobbyScreen());
+    if (this.params.has('online')) this.autoStart();
+  }
+
+  private enterRoom(s: OnlineSession): void {
+    this.drill = -1;
+    this.cupRound = -1;
+    this.online = s;
+    s.onChange = () => this.refreshOnline();
+    s.onStart = (st) => void this.startOnline(st);
+    // (still building, startOnline picks it up from the session when it's done)
+    s.onGo = (at) => { if (!this.busy) this.goAt(at); };
+    // (a public room that never came together: back in the queue)
+    s.onClosed = (m) => { if (this.publicMatch && !this.net) this.findMatch(); else this.onlineBroke(m, false); };
+    s.onLeft = (seat) => {
+      this.net?.seatLeft(seat);
+      this.refreshOnline();
+    };
+    if (this.lobbyTimer) clearInterval(this.lobbyTimer);
+    this.lobbyTimer = setInterval(() => this.refreshOnline(), 1000);
+  }
+
+  private goAt(at: number): void {
+    document.title = PAGE_TITLE;
+    if (this.goTimer) clearTimeout(this.goTimer);
+    this.goTimer = null;
+    this.game?.startAt(at);
+    this.net?.begin(at);
+  }
+
+  private refreshOnline(): void {
+    if (this.menu.showing === 'lobby' || this.menu.showing === 'search') this.menu.refresh();
+  }
+
+  /** Public play: the queue finds the others, and the match starts by itself. */
+  private findMatch(): void {
+    this.closeRoom();
+    this.publicMatch = true;
+    this.searchFrom = performance.now();
+    this.searching = 1;
+    this.queue = new QueueSocket({
+      waiting: (n) => { this.searching = n; this.refreshOnline(); },
+      found: (f) => this.matchFound(f),
+      failed: (m) => this.onlineBroke(m, false),
+    });
+    this.lobbyTimer = setInterval(() => {
+      if (performance.now() - this.searchFrom > QUEUE_MAX_S * 1000) this.onlineBroke('Nobody else came along. Try again later, or send a friend an invite.', false);
+      else this.refreshOnline();
+    }, 1000);
+    this.menu.open(this.searchScreen(), true);
+  }
+
+  private matchFound(f: Found): void {
+    this.queue = null;
+    // (people wait in another tab: the tab's title is what they'll see)
+    document.title = 'Match found · BANDEJA';
+    const s = new OnlineSession(f.code, { create: f.host, max: f.n, patience: ROOM_PATIENCE_MS });
+    this.enterRoom(s);
+    this.refreshOnline();
+    const from = performance.now();
+    this.roomTimer = setInterval(() => {
+      const waited = performance.now() - from, linked = s.links?.ids().every((id) => s.links!.rtt(id) > 0) ?? false;
+      if (s.isHost && s.players >= 2 && linked && (s.players >= f.n || waited > ROOM_FILL_MS)) this.hostStart();
+      else if (waited > ROOM_GIVE_UP_MS) this.findMatch();
+    }, 200);
+  }
+
+  /** Tools: `&players=N` starts once N are in. */
+  private autoStart(): void {
+    const want = Number(this.params.get('players') ?? 0);
+    if (want < 2) return;
+    const t = setInterval(() => {
+      if (this.online?.isHost && this.online.players >= want && this.online.links?.ids().every((id) => this.online!.links!.rtt(id) > 0)) {
+        clearInterval(t);
+        this.hostStart();
+      }
+    }, 200);
+  }
+
+  private closeRoom(): void {
+    document.title = PAGE_TITLE;
+    if (this.lobbyTimer) clearInterval(this.lobbyTimer);
+    this.lobbyTimer = null;
+    if (this.roomTimer) clearInterval(this.roomTimer);
+    this.roomTimer = null;
+    if (this.goTimer) clearTimeout(this.goTimer);
+    this.goTimer = null;
+    this.queue?.close();
+    this.queue = null;
+    this.net?.end();
+    this.net = null;
+    if (this.game) this.game.online = null;
+    this.online?.leave();
+    this.online = null;
+    this.onlineStart = null;
+  }
+
+  /** The host's Start: the match is decided here, once, and sent to everyone. */
+  private hostStart(): void {
+    const s = this.online;
+    if (!s?.isHost || s.players < 2 || this.busy) return;
+    const seed = (this.seedBase = nextSeed(this.seedBase));
+    if (this.publicMatch) {
+      void this.startOnline(s.start(publicStart(seed, s.seats)));
+      return;
+    }
+    const base = this.gameSetup();
+    const setup: MatchSetup = { ...base, mode: 'doubles', hand: 'right', court: base.court === 'singles-narrow' ? 'standard' : base.court };
+    const m = optionsFromSetup(setup, this.settings, seed, null, false, this.params).match;
+    seatMatch(m, s.seats, FRIENDS_SERVE_CLOCK);
+    void this.startOnline(s.start({ match: m, castSeed: seed, arena: setup.arena }));
+  }
+
+  private async startOnline(st: OnlineStart): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    if (this.roomTimer) clearInterval(this.roomTimer);
+    this.roomTimer = null;
+    this.net?.end();
+    this.net = null;
+    const s = this.online;
+    this.buildingFor = s;
+    // (only the seed, the seats and the delay count in a public match: nobody decides one for anyone else)
+    this.onlineStart = this.publicMatch ? { ...publicStart(st.castSeed, st.seats), delay: st.delay, seats: st.seats } : st;
+    this.menu.hide();
+    this.loading.show('Setting up the court');
+    try {
+      if (this.rebuilding) await this.rebuilding;
+      await this.build(false, (n, f) => this.loading.stage(n, f));
+      await this.loading.done();
+    } catch (err) {
+      this.loading.fail(`The match could not start: ${readable(err)}.`);
+      throw err;
+    } finally {
+      this.busy = false;
+      this.onlineStart = null;
+    }
+    // (they left while it built: what was built is nothing to them)
+    if (!s || this.online !== s) {
+      this.game?.setMenuPaused(true);
+      return;
+    }
+    s.ready();
+    if (s.goTime !== null) this.goAt(s.goTime);
+    // (nobody here to say go)
+    else this.goTimer = setTimeout(() => this.onlineBroke('The match could not start.', false), GO_WAIT_MS);
+  }
+
+  /** Something ended the match or the room. `room`: the room itself is still there. */
+  private onlineBroke(message: string, room: boolean): void {
+    this.net?.end();
+    this.net = null;
+    if (this.game) {
+      this.game.online = null;
+      // (not the title screen's match, if this is a code that didn't work)
+      if (this.playing) this.game.setMenuPaused(true);
+    }
+    if (room) this.online?.backToLobby();
+    else this.closeRoom();
+    const pub = this.publicMatch;
+    this.menu.open({
+      id: 'netdown', title: 'Online', sub: message, back: null,
+      items: [
+        { kind: 'button', label: 'Find another match', primary: true, desc: 'Back in the queue.', hidden: () => !pub, action: () => this.findMatch() },
+        { kind: 'button', label: 'Back to the room', primary: true, desc: 'Stay with the same players.', hidden: () => pub || !room || !this.online, action: () => this.backToRoom() },
+        { kind: 'button', label: 'Title screen', primary: !room && !pub, desc: 'Back to the club.', action: () => this.leaveRoom() },
+      ],
+    }, true);
+  }
+
+  private backToRoom(): void {
+    this.net?.end();
+    this.net = null;
+    if (this.game) this.game.online = null;
+    this.online?.backToLobby();
+    this.menu.open(this.lobbyScreen(), true);
+  }
+
+  private leaveRoom(): void {
+    this.closeRoom();
+    if (this.playing) void this.toTitle();
+    else this.menu.open(this.titleScreen(), true);
+  }
+
+  private onlineScreen(): Screen {
+    return {
+      id: 'online', title: 'Online', sub: 'Doubles against real people',
+      items: [
+        { kind: 'button', label: 'Find a match', primary: true, desc: 'Plays you with whoever else is looking: one short set, with the AI in any empty seat. Players connect directly, so they can see each other’s IP address.', action: () => this.findMatch() },
+        { kind: 'button', label: 'Create a match', desc: 'You get a code and an invite link to send. Up to four people; the AI plays any seat left empty.', action: () => this.connect(null) },
+        { kind: 'button', label: 'Join with a code', desc: 'Type the code a friend sent you, or open their link.', action: () => { this.joinCode = ''; this.menu.open(this.joinScreen()); } },
+      ],
+    };
+  }
+
+  private joinScreen(): Screen {
+    const clean = (t: string): string => t.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
+    return {
+      id: 'join', title: 'Join', sub: 'Five letters',
+      items: [
+        {
+          kind: 'text', label: 'Code', desc: 'Type the code, or paste the link.', get: () => this.joinCode,
+          type: (l) => { this.joinCode = l === null ? this.joinCode.slice(0, -1) : clean(this.joinCode + l); },
+          paste: (t) => { this.joinCode = clean(t.match(/[?&]room=([A-Za-z]{5})/)?.[1] ?? t); },
+        },
+        { kind: 'button', label: 'Join', primary: true, desc: 'Into the room.', disabled: () => !validCode(this.joinCode), action: () => { if (validCode(this.joinCode)) this.connect(this.joinCode); } },
+      ],
+    };
+  }
+
+  private searchScreen(): Screen {
+    return {
+      id: 'search', title: 'Find a match', sub: 'Doubles, one short set', back: () => this.leaveRoom(), side: () => this.searchCard(),
+      items: [{ kind: 'button', label: 'Stop looking', desc: 'Back to the title.', action: () => this.leaveRoom() }],
+    };
+  }
+
+  private searchCard(): string {
+    const secs = Math.floor((performance.now() - this.searchFrom) / 1000), clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    if (this.online) return '<div class="card"><h2>Players found</h2><table><tr><td class="l">Connecting</td><td></td></tr></table></div>';
+    const who = this.searching > 1 ? `${this.searching} looking now` : 'Nobody else yet';
+    const tip = secs >= LONELY_S ? '<p style="margin-top:12px">Nobody else is looking right now. Keep waiting, or send a friend an invite with Create a match.</p>' : '';
+    return `<div class="card"><h2>Looking for players</h2><table><tr><td class="l">${who}</td><td>${clock}</td></tr></table>${tip}</div>`;
+  }
+
+  private inviteLink(): string {
+    return `${location.origin}${location.pathname}?room=${this.online?.code ?? ''}`;
+  }
+
+  private lobbyScreen(): Screen {
+    const s = this.online!;
+    return {
+      id: 'lobby', title: 'Online', sub: `Match code ${s.code}`, back: () => this.leaveRoom(), side: () => this.lobbyCard(),
+      items: [
+        { kind: 'button', label: 'Copy invite link', desc: () => this.inviteLink(), action: () => void navigator.clipboard?.writeText(this.inviteLink()) },
+        { kind: 'button', label: 'Change sides', desc: 'Move to the other pair.', disabled: () => s.seat < 0, action: () => s.changeSide() },
+        { kind: 'button', label: 'Match setup', desc: () => this.setupLine(), hidden: () => !s.isHost, action: () => this.menu.open(this.setupScreen()) },
+        { kind: 'button', label: 'Start match', primary: true, desc: 'Everyone goes onto court. The AI plays any empty seat.', hidden: () => !s.isHost, disabled: () => s.players < 2, action: () => this.hostStart() },
+        { kind: 'button', label: 'Leave', desc: 'Back to the title.', action: () => this.leaveRoom() },
+      ],
+    };
+  }
+
+  private lobbyCard(): string {
+    const s = this.online;
+    if (!s) return '';
+    const row = (seat: number): string => {
+      const id = s.seats[seat]!, me = id === s.you, name = id < 0 ? 'AI' : me ? 'You' : id === s.host ? 'Host' : `Player ${id + 1}`;
+      const line = id < 0 || me || !s.links ? '' : s.links.direct(id) ? `${Math.round(s.links.rtt(id))} ms` : 'Through the server';
+      return `<tr><td class="l">${name}</td><td>${line}</td></tr>`;
+    };
+    const wait = s.you < 0 ? 'Connecting' : s.players < 2 ? 'Waiting for a friend' : s.isHost ? 'Ready' : 'The host starts the match';
+    return `<div class="card"><h2>${wait}</h2><table>${row(0)}${row(2)}</table><h2 style="margin-top:14px">Against</h2><table>${row(1)}${row(3)}</table></div>`;
   }
 
   // ---- settings applied outside a game --------------------------------------------------------------------
@@ -251,6 +592,7 @@ export class App {
       items: [
         { kind: 'button', label: 'Play', primary: true, desc: 'Set up a match: doubles or singles, your partner and opponents, the venue, the scoring.', action: () => this.menu.open(this.setupScreen()) },
         { kind: 'button', label: 'Quick match', desc: () => `Straight onto court with your last setup: ${this.setupLine()}.`, action: () => this.play(-1, -1) },
+        { kind: 'button', label: 'Online', desc: 'Find a match with anyone looking, or send a friend a link. Up to four people.', action: () => this.menu.open(this.onlineScreen()) },
         { kind: 'button', label: 'Knock-out', desc: 'Three rounds, a short set each, against stronger players every round. Lose and you are out.', action: () => this.play(-1, 0) },
         { kind: 'button', label: 'Practice', desc: 'A coach feeds you the shots padel is made of: off the glass, overheads, volleys.', action: () => this.menu.open(this.practiceScreen()) },
         { kind: 'button', label: 'Settings', desc: 'Timing, assists, picture quality, sound and accessibility.', action: () => this.menu.open(this.settingsScreen()) },
@@ -297,7 +639,7 @@ export class App {
       id: 'setup', title: 'Match', sub: 'Set up the match', side: () => this.setupCard(),
       items: [
         ch('mode', 'Mode', [{ value: 'doubles', label: 'Doubles' }, { value: 'singles', label: 'Singles' }],
-          'Padel is played in pairs. Singles is one against one on the same court, or on a narrow one.'),
+          'Padel is played in pairs. Singles is one against one on the same court, or on a narrow one.', () => !!this.online),
         ch('level', 'Opponents', [{ value: 'novice', label: 'Novice' }, { value: 'club', label: 'Club' }, { value: 'advanced', label: 'Advanced' }, { value: 'pro', label: 'Pro' }],
           'How well the AI plays: reaction, reading the ball, timing and shot choice (your partner plays a level above it).'),
         ch('partner', 'Partner', this.styleChoices(), 'Your partner’s game. El Relojero is even; El Muro lobs and stays back; Martillo takes the net and smashes; La Serpiente plays víboras and drops.', () => st.mode !== 'doubles'),
@@ -309,8 +651,9 @@ export class App {
           'Star point: two advantages, then a deciding point at the third deuce (the FIP’s newest method). Golden point: the first deuce is decided by one point. Advantage: win by two.'),
         ch('length', 'Length', [{ value: 'short', label: 'Short set (to 4)' }, { value: 'set', label: 'One set' }, { value: 'three', label: 'Best of three' }],
           'A tie-break at 6-6 (4-4 in a short set).'),
-        ch('hand', 'You play', [{ value: 'right', label: 'Right-handed' }, { value: 'left', label: 'Left-handed' }], 'Your racket hand.'),
-        { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court with this setup (it is kept for Quick match).', action: () => this.play(-1, -1) },
+        ch('hand', 'You play', [{ value: 'right', label: 'Right-handed' }, { value: 'left', label: 'Left-handed' }], 'Your racket hand.', () => !!this.online),
+        { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court with this setup (it is kept for Quick match).', hidden: () => !!this.online, action: () => this.play(-1, -1) },
+        { kind: 'button', label: 'Done', primary: true, desc: 'Back to the room.', hidden: () => !this.online, action: () => this.menu.pop() },
       ],
       focus: 0,
     };
@@ -452,6 +795,17 @@ export class App {
     const g = this.game;
     const sc = g?.sim.score;
     const sub = sc ? `${[...sc.history.map((h) => `${h[0]}-${h[1]}`), `${sc.games[0]}-${sc.games[1]}`].join('  ')}` : '';
+    if (this.online) {
+      return {
+        id: 'pause', title: 'Menu', sub: 'The match goes on without you', back: () => this.resume(),
+        items: [
+          { kind: 'button', label: 'Resume', primary: true, desc: 'Back to the point.', action: () => this.resume() },
+          { kind: 'button', label: 'Settings', desc: 'Sound, picture and accessibility change at once.', action: () => this.menu.open(this.settingsScreen()) },
+          { kind: 'button', label: 'Controls', desc: 'Every shot on the keyboard and the gamepad; change any key.', action: () => this.menu.open(this.controlsScreen()) },
+          { kind: 'button', label: 'Leave the match', desc: 'Ends the match for everyone.', action: () => this.menu.open(this.confirm('Leave?', 'This ends the match for everyone.', 'Back to the title.', () => this.leaveRoom())) },
+        ],
+      };
+    }
     return {
       id: 'pause', title: 'Paused', sub, back: () => this.resume(),
       items: [
@@ -477,7 +831,7 @@ export class App {
   private resultsScreen(st: MatchStats): Screen {
     const g = this.game!;
     const sim = g.sim;
-    const won = sim.score.winner === 0;
+    const won = sim.score.winner === g.team;
     const sets = sim.score.history.map((h) => `${h[0]}-${h[1]}`).join('  ');
     const T = st.team;
     const mins = Math.round(st.duration / 60);
@@ -507,6 +861,16 @@ export class App {
             ? { kind: 'button', label: `On to the ${CUP[round + 1]!.name.toLowerCase()}`, primary: true, desc: `Stronger opponents: ${CUP[round + 1]!.level}.`, action: () => { this.keep = KEEP_PAIR; this.play(-1, round + 1); } }
             : { kind: 'button', label: 'Start again', primary: true, desc: 'A new draw, from the first round.', action: () => this.play(-1, 0) },
           { kind: 'button', label: 'Title screen', desc: 'Back to the club.', action: () => void this.toTitle() },
+        ],
+      };
+    }
+    if (this.online) {
+      return {
+        id: 'results', title: won ? 'You win' : 'They win', sub: `Game, set and match · ${sets}`, back: null, side: () => side,
+        items: [
+          { kind: 'button', label: 'Find another match', primary: true, desc: 'Back in the queue.', hidden: () => !this.publicMatch, action: () => this.findMatch() },
+          { kind: 'button', label: 'Back to the room', primary: true, desc: 'Stay with the same players for another match.', hidden: () => this.publicMatch, action: () => this.backToRoom() },
+          { kind: 'button', label: 'Title screen', desc: 'Leave the room.', action: () => this.leaveRoom() },
         ],
       };
     }
