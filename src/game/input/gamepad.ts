@@ -6,8 +6,9 @@ import type { KeyboardInput } from './keyboard.ts';
 
 /**
  * Standard-mapping button index -> sim button. Face buttons are the four ground strokes and the lob, the bumpers
- * the two shots taken in the air (volley, overhead), the triggers the modifiers (power, precision) and the d-pad
- * the touch shot (drop).
+ * the two shots taken in the air (volley, overhead), the triggers the modifiers (power, precision) and the
+ * right stick's click the touch shot (drop). The d-pad has it too, but that is under the thumb that aims, and a drop's
+ * whole worth is where it lands.
  */
 const MAP: Array<[number, number]> = [
   [0, BTN_DRIVE], // A / cross
@@ -18,6 +19,7 @@ const MAP: Array<[number, number]> = [
   [5, BTN_OVERHEAD], // right bumper
   [7, BTN_POWER], // right trigger
   [6, BTN_PRECISION], // left trigger
+  [11, BTN_DROP], // right stick click
   [13, BTN_DROP], // d-pad down
   [12, BTN_DROP], // d-pad up
 ];
@@ -109,7 +111,7 @@ export class GamepadInput {
       this.down[m[0]] = on;
       const was = (this.held & m[1]) !== 0;
       // Two pad buttons share the drop: it is held while either is.
-      const any = on || (m[1] === BTN_DROP && (this.down[12] || this.down[13]));
+      const any = on || (m[1] === BTN_DROP && (this.down[11] || this.down[12] || this.down[13]));
       if (any === was) continue;
       this.held = any ? this.held | m[1] : this.held & ~m[1];
       kb.inject(any, m[1], ts);

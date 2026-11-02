@@ -193,6 +193,34 @@ describe('a movement key and the aim', () => {
     run(m, f, 1, 30);
     expect(m.players[0]!.aimX).toBeCloseTo(x0, 5);
   });
+  it('aims when it went down with the shot key, whichever landed first', () => {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame();
+    const p = m.players[0]!;
+    for (let i = 0; i < 120 * 40 && (p.swing as number) !== SW_CHARGE; i++) {
+      f.clear();
+      if (m.phase === PH_RALLY && m.rally.hitter === 1 && m.stand[0]!.valid && p.swing === SW_IDLE) {
+        // The direction one tick (8 ms) before the shot key.
+        f.moveX = 1;
+        m.step([f, null]);
+        f.clear();
+        f.moveX = 1;
+        f.push(true, BTN_DRIVE, m.time);
+        f.held = BTN_DRIVE;
+      }
+      m.step([f, null]);
+    }
+    if (!p.aiming) { f.clear(); f.held = BTN_DRIVE; f.moveX = 1; m.step([f, null]); }
+    expect(p.aiming).toBe(true);
+    const x0 = p.aimX;
+    run(m, f, 1, 12);
+    expect(Math.abs(p.aimX - x0)).toBeGreaterThan(0.5);
+  });
+  it('a stick wobbling round where it was at the press is not a steer', () => {
+    const { m, f, x0 } = holding(0.8);
+    for (let i = 0; i < 40; i++) run(m, f, 0.8 + (i % 2 ? 0.15 : -0.15), 1);
+    expect(m.players[0]!.aimX).toBeCloseTo(x0, 5);
+  });
   it('aims once it has been let go and pressed again', () => {
     const { m, f, x0 } = holding(1);
     run(m, f, 0, 2);

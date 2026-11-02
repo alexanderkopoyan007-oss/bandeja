@@ -417,7 +417,7 @@ export class App {
   private padCard(): string {
     const rows = [
       ['Left stick', 'Move (aim while a shot is held)'], ['A', 'Drive'], ['X', 'Topspin'], ['B', 'Slice'], ['Y', 'Lob'],
-      ['D-pad', 'Drop shot'], ['LB', 'Volley'], ['RB', 'Overhead'], ['RT', 'Power'], ['LT', 'Precision'], ['Start', 'Pause'],
+      ['Right stick click', 'Drop shot'], ['LB', 'Volley'], ['RB', 'Overhead'], ['RT', 'Power'], ['LT', 'Precision'], ['Start', 'Pause'],
     ];
     const more = [
       ['Overhead + power', 'Smash'], ['Overhead + precision', 'Víbora'], ['Topspin + precision', 'Chiquita'], ['Volley + power', 'Punch volley'],

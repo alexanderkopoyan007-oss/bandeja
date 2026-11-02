@@ -288,7 +288,7 @@ export class Hud {
       + how
       + `Doubles: you are the ringed player; your partner calls the balls on their side, ${tap ? 'pressing' : 'holding'} a shot key takes it<br>`
       + `${pw} power &nbsp; ${pr} precision &nbsp; ${keys('[M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide')}<br>`
-      + 'Gamepad: stick moves &nbsp; A drive &nbsp; X topspin &nbsp; B slice &nbsp; Y lob &nbsp; d-pad drop &nbsp; LB volley &nbsp; RB overhead &nbsp; RT power &nbsp; LT precision';
+      + 'Gamepad: stick moves &nbsp; A drive &nbsp; X topspin &nbsp; B slice &nbsp; Y lob &nbsp; right stick click drop &nbsp; LB volley &nbsp; RB overhead &nbsp; RT power &nbsp; LT precision';
     this.hintBandeja = `Bandeja · hold ${pw} to smash, ${pr} for a víbora`;
     this.hintVolley = `Volley · hold ${pw} to punch it flat`;
     this.hintLob = `Lob coming · ${tap ? 'press' : 'hold'} ${c('overhead')} for an overhead`;

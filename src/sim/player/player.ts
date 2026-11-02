@@ -61,6 +61,9 @@ export class Player {
   steerFrom = -0;
   /** The same across. */
   steerFromX = -0;
+  /** When the forward and the across keys were last at rest (see match.ts STEER_CHORD). */
+  restY = -0;
+  restX = -0;
 
   /** Split-step: take-off time, and the end of it (hop and landing; the avatar draws it). */
   splitAt = -10;
@@ -346,7 +349,7 @@ export class Player {
     out.push(this.pos.x, this.pos.z, this.vel.x, this.vel.z, this.facing, this.swing, this.shot, this.mod,
       this.chargeStart, this.release, this.contactTime, this.timingDelta, this.grade, this.recoverUntil,
       this.handSide, this.splitUntil, this.lastContactTime, this.lastContact.x, this.lastContact.y, this.lastContact.z,
-      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.reflex ? 1 : 0, this.steerFrom, this.steerFromX, this.heldMod, this.splitAt, this.pushFrom,
+      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.reflex ? 1 : 0, this.steerFrom, this.steerFromX, this.restY, this.restX, this.heldMod, this.splitAt, this.pushFrom,
       this.contra ? 1 : 0);
   }
 
@@ -357,6 +360,7 @@ export class Player {
     this.grade = s[i++]!; this.recoverUntil = s[i++]!; this.handSide = s[i++]!; this.splitUntil = s[i++]!;
     this.lastContactTime = s[i++]!; this.lastContact.x = s[i++]!; this.lastContact.y = s[i++]!; this.lastContact.z = s[i++]!;
     this.aimX = s[i++]!; this.aimZ = s[i++]!; this.aiming = s[i++]! === 1; this.aimTouched = s[i++]! === 1; this.reflex = s[i++]! === 1; this.steerFrom = s[i++]!; this.steerFromX = s[i++]!;
+    this.restY = s[i++]!; this.restX = s[i++]!;
     this.heldMod = s[i++]!;
     this.splitAt = s[i++]!;
     this.pushFrom = s[i++]!;
