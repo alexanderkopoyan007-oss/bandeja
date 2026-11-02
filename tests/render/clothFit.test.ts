@@ -96,8 +96,10 @@ function hiddenBy(p: PlayerAsset, under: (i: number) => boolean, over: (i: numbe
  * lungeSkin was 52 on one rally that happened not to bow at its deepest, and 62.7 now the rallies have moved: on seeds 14601-5 the old and new builds read 49, 33, 44, 38, 44 and
  * 63, 42, 38, 38, 38. Of that frame's 62.7 cm2 the larger part is the neckline, seen down a forward bow (every person reads 48-71 on such a frame) and the rest a band of thigh over
  * a hem riding up on a thigh raised 81 degrees. Cloth failing reads far past it. lungeShorts reads 5.4-10.9 over those seeds on both builds: 9 holds on this seed only.
+ * Since volleys stopped being played from a sit, a forward bow is the deepest lunge on most people's rallies, not a chance one: over those seeds the worst of each person reads
+ * 40-72.6, the 48-71 above, where the sit's frames read 2-27. overSkin's 44 is the sleeve as before, 39.2 to 44.0 with the rallies moved (31.5 to 31.7 on another seed).
  */
-const LIMIT = { lungeSkin: 66, overSkin: 44, lungeShorts: 9, overShorts: 16, anySkin: 80 };
+const LIMIT = { lungeSkin: 75, overSkin: 46, lungeShorts: 9, overShorts: 16, anySkin: 80 };
 
 /** Directions a camera looks from: round the player, level to well over. */
 const VIEWS: number[][] = [];

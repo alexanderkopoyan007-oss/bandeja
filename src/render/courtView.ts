@@ -11,6 +11,8 @@ import {
   WALL_BACK_NEAR, WALL_BACK_FAR, WALL_SIDE_LEFT, WALL_SIDE_RIGHT, type Panel,
 } from '../sim/court/court.ts';
 
+/** What is left of the fence's wire at FENCE_NEAR0 m from the camera and nearer, all of it from FENCE_NEAR1 m. */
+const FENCE_NEAR = 0.3, FENCE_NEAR0 = 7, FENCE_NEAR1 = 12;
 const POST = 0.08; // square steel tube
 const RAIL = 0.05;
 
@@ -19,7 +21,7 @@ const RAIL = 0.05;
  * and when a cell shrinks below a couple of pixels it fades to the average coverage, so the fence never
  * shimmers or forms moire patterns at a distance.
  */
-export function wireMaterial(cell: number, wire: number, diamond: boolean, tint: number, strength: number, knot = 0): THREE.MeshBasicNodeMaterial {
+export function wireMaterial(cell: number, wire: number, diamond: boolean, tint: number, strength: number, knot = 0, nearFade = false): THREE.MeshBasicNodeMaterial {
   const p = uv().div(cell);
   const q = diamond ? vec2(p.x.add(p.y), p.x.sub(p.y)).mul(0.70710678) : p;
   const f = fract(q);
@@ -42,7 +44,10 @@ export function wireMaterial(cell: number, wire: number, diamond: boolean, tint:
   // of screen; a lit transparent material here cost more than half the frame at 4K.
   const m = new THREE.MeshBasicNodeMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false });
   m.colorNode = color(tint);
-  m.opacityNode = mix(line, float(Math.min(1, avg * 2.2)), far).mul(strength);
+  const opacity = mix(line, float(Math.min(1, avg * 2.2)), far).mul(strength);
+  // The near end's wire is 7 m from the broadcast camera and a player stands behind it a third of a rally, drawn sharp at a
+  // retina pixel ratio. A long lens throws wire that close out of focus: it goes by how near the camera it is.
+  m.opacityNode = nearFade ? opacity.mul(mix(float(FENCE_NEAR), float(1), smoothstep(FENCE_NEAR0, FENCE_NEAR1, length(positionWorld.sub(cameraPosition))))) : opacity;
   return m;
 }
 
@@ -89,7 +94,7 @@ export function buildCourtView(court: Court, look: CourtLook = { frame: '#1b1e21
   g.add(glassMesh);
 
   // Welded mesh: rhomboid holes about 6 cm across the diagonal (FIP: 5-7.08 cm), 2.8 mm wire.
-  const fence = mesh.mesh(wireMaterial(0.045, 0.0028, true, 0x202326, 1));
+  const fence = mesh.mesh(wireMaterial(0.045, 0.0028, true, 0x202326, 1, 0, true));
   fence.renderOrder = 2;
   g.add(fence);
 

@@ -66,6 +66,10 @@ const RING_JUMP = 0.2;
 /** How far out from the body a swing drawn by the hand bows (m): the straight way from the back to the ball passes the shoulder. */
 const BY_HAND_OUT = 0.14;
 /** The arm OverArm's curves are drawn for (m), when the chest's curves start giving way to the ball (progress), the trunk's ease (s). */
+/** How long the mouth stays with a grunt (s): the clipped voice's is 0.1-0.2, the long one's 0.26-0.56. */
+const GRUNT_MOUTH = 0.35;
+/** How far through a follow-through (Family.way) the racket is at its way round. */
+const WAY_AT = 0.45;
 /** The hand goes through the ball first, then to its chest-frame place (OverArm.under) over these times after it (s). */
 const OVER_AFTER0 = 0, OVER_AFTER1 = 0.3;
 const OVER_ARM = 0.56;
@@ -388,7 +392,9 @@ const FINISH_EASE = 0.15;
  */
 const DOWN_SHARE = 0.22;
 /** The same at a volley, played from the knees: at 0.22 the trunk bowed 39 degrees to a ball at 0.7 m, the arm long (elbow 33; 63 on video). */
-const VOLLEY_DOWN = 0.8;
+const VOLLEY_DOWN = 0.55;
+/** Time after the ball (s) that drop is let go over. */
+const VOLLEY_UP = 0.3;
 /** The share more for a ball just off the ground (under DOWN_LOW1 m, from DOWN_LOW0): a half-volley is got down to. */
 const DOWN_LOW = 0.45;
 const DOWN_LOW0 = 0.4, DOWN_LOW1 = 0.15;
@@ -690,9 +696,9 @@ const STEP_TIME = 0.15;
  * RUN_KICK rad of heel at speed; RUN_ROLL rad of heel up as a foot leaves. RUN_REACH of the leg from the hips, a planted
  * foot goes. RUN_STILL: nearer its place than this (m), a foot isn't due a step.
  */
-const RUN_V_ON = 0.9;
-const RUN_V_OFF = 0.55;
-const RUN_PLANT = 0.2;
+const RUN_V_ON = 0.45;
+const RUN_V_OFF = 0.3;
+const RUN_PLANT = 0.3;
 const RUN_IN = 0.1;
 const RUN_HZ0 = 1.15;
 const RUN_HZ_V = 0.2;
@@ -709,7 +715,7 @@ const RUN_WIDE = 1.4;
 const RUN_CLEAR = 0.04;
 const RUN_CLEAR_V = 0.01;
 const RUN_KICK = 0.9;
-const RUN_ROLL = 0.75;
+const RUN_ROLL = 0.5;
 const RUN_REACH = 0.58;
 const RUN_STILL = 0.06;
 /**
@@ -719,8 +725,8 @@ const RUN_STILL = 0.06;
  * off the landing, which sat the short players in a squat: 0.80 of the height, the thigh 60 degrees forward at the median,
  * the knee 69 on the straighter leg. Runners: knee about 14 at the landing, 40 down, 5-10 cm of bob.
  */
-const RUN_HIP0 = 0.93;
-const RUN_HIP1 = 0.9;
+const RUN_HIP0 = 0.96;
+const RUN_HIP1 = 0.94;
 const RUN_BOB = 0.05;
 const RUN_LOW = 0.3;
 /** Into and out of those hips (s): on with the gait they jumped with every run tipping into a walk, a knee 10 degrees in a frame. */
@@ -956,6 +962,10 @@ export class Avatar {
   private jumpT0 = -1;
   private jumpT = 0;
   private landAt = -1;
+  /** When this player last grunted (sim s; the soundscape says): the mouth opens with the voice, not by the stroke. */
+  gruntAt = -10;
+  /** A volley's reach down at the ball (m; see VOLLEY_UP). */
+  private downAt = 0;
   /** The hips' drop shown last frame (m; see HIP_RISE). */
   private dropShown = 0;
   /** Planted feet (left, right): weight, where each is (world), its yaw, and a step under way (-1: none). */
@@ -2125,7 +2135,7 @@ export class Avatar {
         const s = clamp01((t - this.tCon) / ((f.follow ?? FOLLOW) * this.manner.follow));
         const k = this.contactKey();
         const fin = this.finishKey(f, k);
-        const hand = f.over && !f.over.under;
+        const hand = f.way || (f.over && !f.over.under);
         // (an overhead goes on the way it came, over the top, before it wraps down)
         if (hand) this.overPath(k, fin);
         else {
@@ -2197,7 +2207,10 @@ export class Avatar {
   /** The key at `e` of an overhead's follow-through (overPath); returns how far its racket centre is from the ball's key. */
   private overAt(k: Key, fin: Key, e: number): number {
     bezier(this.overA, this.ctrl, this.overB, e, this.kp);
-    this.kq.copy(k.q).slerp(fin.q, e);
+    const way = this.fam.way;
+    if (way && e < WAY_AT) this.kq.copy(k.q).slerp(way, e / WAY_AT);
+    else if (way) this.kq.copy(way).slerp(fin.q, (e - WAY_AT) / (1 - WAY_AT));
+    else this.kq.copy(k.q).slerp(fin.q, e);
     this.kp.add(this.overC.copy(this.grip.off).applyQuaternion(this.kq));
     return this.kp.distanceTo(k.p);
   }
@@ -2676,7 +2689,7 @@ export class Avatar {
     f.sinceContact = p.lastContactTime > 0 && p.lastContactTime <= t ? t - p.lastContactTime : -1;
     const fam = rightFamily(this.fam);
     f.strain = fam === SMASH ? 1 : fam === OVERHEAD || fam === VIBORA ? 0.8 : fam === SERVE ? 0.7 : fam.punch < 1 ? 0.45 : 0.65;
-    f.grunt = fam === SMASH || fam === SERVE;
+    f.grunt = t >= this.gruntAt && t - this.gruntAt < GRUNT_MOUTH;
     // Out of breath: the run's pace averaged over about 6 s, from a brisk 3 m/s up.
     const sp = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
     this.puff += (Math.min(1, Math.max(0, (sp - 1.2) / 3)) - this.puff) * (dt > 0 ? 1 - Math.exp(-dt / 6) : 0);
@@ -3162,7 +3175,13 @@ export class Avatar {
     }
     this.reachX = rx;
     this.reachZ = rz;
-    const down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * ((this.fam.wrist ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y)) : 0;
+    let down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * ((this.fam.wrist ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y)) : 0;
+    // A volley's finish stays down where it met the ball, and the hips went on following that key: lowest 0.3 s after
+    // the ball, back 0.55 s after it, and four volleys in ten ran off still sitting. The drop was for the ball.
+    if (this.fam.wrist) {
+      if (before) this.downAt = down;
+      else down = this.downAt * (1 - smoothstep(0, VOLLEY_UP, this.lastT - this.tCon));
+    }
     // The knees bend no faster than a body drops (the crouch jumped when the stroke or its contact changed). The
     // reach follows the stroke's key, which is smoothed already.
     let crouch = this.crouch;
@@ -4164,7 +4183,9 @@ export class Avatar {
     const O = this.chestOut, F = this.chestFwd, rw = this.trunkW, rd = this.trunkD;
     const x = px * O.x + py * O.y + pz * O.z, z = px * F.x + py * F.y + pz * F.z, e2 = (x * x) / (rw * rw) + (z * z) / (rd * rd);
     if (e2 >= 1) return;
-    const e = Math.sqrt(e2), k = e > 1e-3 ? 1 / e - 1 : 0, mx = x * k, mz = e > 1e-3 ? z * k : rd;
+    // Round the front, whichever half of the trunk the key has reached: pushed straight out a hand crossing the body went round the back,
+    // 26-41 cm behind the chest on a stroke in a hundred, the elbow through the breastbone.
+    const e = Math.sqrt(e2), k = e > 1e-3 ? 1 / e - 1 : 0, mx = x * k, mz = e > 1e-3 ? (z < 0 ? -z * (2 + k) : z * k) : rd;
     T.x += O.x * mx + F.x * mz;
     T.y += O.y * mx + F.y * mz;
     T.z += O.z * mx + F.z * mz;

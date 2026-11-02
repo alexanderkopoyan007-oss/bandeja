@@ -48,6 +48,11 @@ export interface Family {
   /** An overhead: its forward swing is drawn in the chest's frame, not the stance's (see OverArm). */
   over?: OverArm;
   /**
+   * The racket's turn on the way from the ball to the finish, where those two lie half a turn apart: left to find its own
+   * way the serve's went round head-down, the shaft straight at the floor 80-130 ms after the ball, the wrist twice past its range.
+   */
+  way?: THREE.Quaternion;
+  /**
    * Where the free hand goes, in the chest's frame: at the backswing, the ball and the finish, each out to the free side,
    * up the trunk and forward out of the chest from its shoulder, in arm's lengths. Keyed in the stance's frame it was
    * left behind as the chest turned, the elbow folded to 139 degrees (34-52 on video).
@@ -340,7 +345,7 @@ export const SERVE: Family = {
   name: 'serve',
   after: 0.92,
   back: rolled(courtKey([-0.76, 0.26, 1.67], [-0.5, 0, 0.85], [0.85, 0.5, 0.15], [-0.6, 0.3, 0.85], -1.6, [0.37, 0.47, 1.0]), 100),
-  contact: courtKey([0.5, 0.55, 0.92], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.7, 1.1], -0.8, [0.49, 0.09, 0.82]),
+  contact: courtKey([0.5, 0.55, 0.92], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.7, 1.1], -0.4, [0.49, 0.09, 0.82]),
   finish: rolled(courtKey([0.35, -0.3, 1.5], [-0.15, -0.9, 0.25], [0.9, 0.2, 0.3], [0.3, 0.35, 1.0], -0.3, [0.33, -0.19, 0.87]), 110),
   // Off a coach's serve, frame by frame: the racket hand held out at the shoulder's height until about 0.2 s before the ball,
   // then down across the body to it, the elbow 44-52 all the way.
@@ -358,6 +363,8 @@ export const SERVE: Family = {
     under: [-0.08, -0.04, 0.3, 0.12, -0.18, 0.12],
     roll: deg(100),
   },
+  // Forward and up, the palm to the free side: from there it folds up by the far shoulder (clip 7).
+  way: courtKey([0, 0, 0], [0.75, 0, 0.65], [0, -1, 0], [0, 0, 0], 0, [0, 0, 0]).q,
   // Long and out to its side once the ball is gone: brought round in front, it met the racket coming across.
   free: [0.85, -0.45, 0.05, 0.7, -0.5, 0.05, 0.75, -0.6, 0.2],
   dip: 0.1,
@@ -579,6 +586,7 @@ function mirrorFamily(f: Family): Family {
     finish: mirrorKey(f.finish),
     low: f.low && new THREE.Quaternion(f.low.x, -f.low.y, -f.low.z, f.low.w),
     tip: f.tip && new THREE.Quaternion(f.tip.x, -f.tip.y, -f.tip.z, f.tip.w),
+    way: f.way && new THREE.Quaternion(f.way.x, -f.way.y, -f.way.z, f.way.w),
     via: f.via && v(-f.via.x, f.via.y, f.via.z),
     wrist: f.wrist && v(-f.wrist.x, f.wrist.y, f.wrist.z),
   };

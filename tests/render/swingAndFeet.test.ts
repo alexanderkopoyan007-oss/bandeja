@@ -30,6 +30,8 @@ describe('swings and feet', () => {
   const down: number[] = [], slid: number[] = [];
   /** Hips against the feet towards the net at a forehand's contact (m). */
   const into: number[] = [];
+  /** How far the hips have come up 0.28 s after a volley (m), and how far up the racket points 0.1 s after a serve (-1 straight down). */
+  const risen: number[] = [], serveHead: number[] = [];
   /** Frames with a stroke holding the arm; of those, the wrist folded, and either arm raised and behind the chest. */
   let held = 0, folded = 0, freeBack = 0, racketBack = 0;
   /** An overhead's forward swing: frames, the hand or the elbow fallen under the shoulder; shoulders' tilt at the ball (degrees), trunk's lean after it. */
@@ -55,6 +57,7 @@ describe('swings and feet', () => {
     for (const seed of [301, 302, 303]) {
       const rings: number[][][] = [[], [], [], []];
       const open: Array<{ pl: number; shot: number; at: number }> = [];
+      const volleys: Array<{ pl: number; y: number; at: number }> = [], serves: Array<{ pl: number; at: number }> = [];
       const up = [false, false, false, false], still = [0, 0, 0, 0];
       const plant = Array.from({ length: 8 }, () => ({ on: false, x: 0, z: 0, far: 0, n: 0 }));
       let seen = 0, frame = 0;
@@ -149,6 +152,23 @@ describe('swings and feet', () => {
               const z = (k: number): number => v.setFromMatrixPosition(x.bones[legs[k]!]!.matrixWorld).z;
               into.push((z(0) + z(1) - z(2) - z(3)) * 0.5 * (m.players[e.player]!.pos.z > 0 ? -1 : 1));
             }
+            if (x.fam.name.startsWith('volley')) volleys.push({ pl: e.player, y: v.setFromMatrixPosition(x.bones[legs[0]!]!.matrixWorld).y, at: frame });
+            if (x.fam.name.startsWith('serve')) serves.push({ pl: e.player, at: frame });
+          }
+          for (let q = volleys.length - 1; q >= 0; q--) {
+            const h = volleys[q]!;
+            if (frame < h.at + 34) continue;
+            volleys.splice(q, 1);
+            const x = av[h.pl] as unknown as { bones: THREE.Object3D[] };
+            risen.push(v.setFromMatrixPosition(x.bones[legs[0]!]!.matrixWorld).y - h.y);
+          }
+          for (let q = serves.length - 1; q >= 0; q--) {
+            const h = serves[q]!;
+            if (frame < h.at + 12) continue;
+            serves.splice(q, 1);
+            const x = av[h.pl] as unknown as { racket: THREE.Object3D; armRacket: THREE.Object3D[] };
+            const hand = new THREE.Vector3().setFromMatrixPosition(x.armRacket[2]!.matrixWorld), head = x.racket.getWorldPosition(new THREE.Vector3());
+            serveHead.push((head.y - hand.y) / head.distanceTo(hand));
           }
           for (let q = open.length - 1; q >= 0; q--) {
             const h = open[q]!;
@@ -199,6 +219,16 @@ describe('swings and feet', () => {
     expect(into.length).toBeGreaterThan(20);
     // It was 13 cm behind them.
     expect(med(into)).toBeGreaterThan(-0.06);
+  });
+
+  it('stands up out of a volley: the drop was for the ball, and it stayed for half a second, four volleys in ten run off sitting', () => {
+    expect(risen.length).toBeGreaterThan(20);
+    expect(med(risen)).toBeGreaterThan(0.04);
+  });
+
+  it('takes the serve\'s racket forward and up after the ball: it went round head-down, straight at the floor', () => {
+    expect(serveHead.length).toBeGreaterThan(10);
+    expect(med(serveHead)).toBeGreaterThan(-0.3);
   });
 
   it('keeps its arms inside a person\'s joints', () => {
