@@ -739,6 +739,26 @@ The legs had two causes, and neither was the reviewer's guess. The lean carried 
 
 Generated people: three from Meshy are dealt into ordinary matches with team colours, blinks and a mouth drawn in the shader. The grip became a real continental, and a key's roll about the handle is now treated as the wrist it is, so the backhand hits palm-first.
 
+### Review round 19 (2 Nov, `REVIEW.md`)
+Two Highs in review, both marked down to Medium by the sceptic and both faults of Round 18's own: the chord window put the run's key on the aim, and the higher hips turned the run's wave upside down. Fixed, with the rest of what was cheap and real.
+
+| Round 19 | Before | After |
+|---|---|---|
+| S held with the overhead on a lob: smash won | 40% | 74.9 |
+| Aim of those smashes, p50 | 0.9 m | 4.5 |
+| Wide ball, key on every press: wall on the full | 21.6% of points | 8.1 (no key 4.0) |
+| Key pressed too soon, let go on the ring: swings | 0 of 20 | 20 of 20 |
+| Run's hips, foot under them / leaving or in flight | +1.7 / -2.9 cm | -1.2 / +0.5 |
+| Trunk in a start, p1, at +0.15 s | 7.5 degrees | 13 |
+| Trunk in a stop at its furthest back, p1 | -10 degrees | -13 |
+| Fast sideways, shoulders over 60 off the hips | 13.3% of frames | 11.0 |
+| Bandeja won from 5-6 m | 55.3% | 64.1 |
+| Next courts against your far pair | +3.6 dB | -7.2 |
+| Stadium level, LUFS | -27.0 | -24.3 (TV's -24) |
+| Match, 6000 points: shots, s, W/FE/UE, serving | 10.55, 13.98, 44.7/22.7/32.5, .655 | 10.2, 13.5, 43.1/23.3/33.6, .663 |
+| Women, 6000 points | 11.79, 16.45, 37.5/24.0/38.5, .603 | 11.3, 15.7, 36.2/26.0/37.9, .618 |
+| Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

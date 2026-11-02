@@ -3359,3 +3359,15 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **The serve's chest turn is -0.4 at the ball, not -0.8.** The ball stood 27 degrees to the free side of the chest's line, so the hand had to whip across it. The video's hand is in front of the shoulder.
 - **The depth of a low volley came up on reasoning.** No footage has one. A ball at 0.8 m needs 15-25 cm off the body once the arm reaches down and the racket tilts, and the game gave 30 cm. The elbow stayed inside the video's 53-79 on p1 at .55.
 - **Crossed feet in a walk: the fix is not known.** Two tries did nothing and both were taken out.
+
+
+## Round 19: what a key is for, and whose clock the hips are on (2026-11-02)
+
+- **A key is the run's if it points where the player still has to go, whenever it landed.** Round 18's chord window treated any key within 80 ms of the press as aim. The plan is known, so the game can tell: the cost is that aiming along the way you are running waits until you are near the spot, or takes a second press.
+- **Keys alone stop short of the walls; Precision goes to the lines.** A target reaches the stop in 0.4 s, so a held key was always going to get there. The stop now sits where a ball is safe, and the risk is on a key that says so. Shots whose default sits past the stop keep their default until a key moves them.
+- **The hips run on the feet's clock.** gaitPhase is the arms' and is pulled towards the landings at a rate that leaves it a quarter of a step out. A leg can't be driven by a clock it doesn't share.
+- **The heel gives the leg its reach.** RUN_ROLL .5 was too little to leave the floor from: a real foot is close to vertical at toe-off. The reach limit was right to cut the hips. What was wrong was the foot under it.
+- **Stereo by position.** A microphone at the lens is physically right and tells you nothing about the ball. Width changes the panner only: air, send and everything that goes with distance keep the true figures.
+- **A menu over a match keeps the context running.** Suspended, the ticks and the volume slider can't sound. The game's sound goes behind a hushed `stage` node instead, and only a hidden tab suspends.
+- **The AI's error law stays.** Two shapes of it were tried to make placement pay, and both swapped one wrong figure for another. See Round 19 #11.
+- **Volleys in front stay Open.** The hand is where the sim's stand-off puts it. Moving that is a sim change with a one-camera depth as its evidence.

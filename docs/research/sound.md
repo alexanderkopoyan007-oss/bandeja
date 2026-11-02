@@ -369,3 +369,12 @@ What changed: 6 dB rounded off each racket and glass render's peak (`crest`), `l
 
 Grunts by shot, six AI matches, seeds 2453000-5, 10 a minute (12.2 before): serve 28% with no voice, slice 38%, bandeja 54%, drive 65%, víbora 63%, smash 84%, contrapared 71%, volleys and lobs about 20%, all breath. No real per-shot rate is published, so these are reasoned.
 
+## 9. Round 19 (2 Nov)
+
+Real output, 75 s each, default settings. Stadium -24.3 LUFS, peak -0.7, at width 4. At width 3: club-day -27.1, -1.9; hall -26.5, -1.1. The hall's first capture after its trim. Bed LAeq, median: stadium -39.8, club -44.5, hall -41.4, with a 70 Hz floor under the wind and hall beds (the same rms, which had been spent under 40 Hz). A usual hit reads about 11 dB over the bed in the stadium, down from 16: if the ball now sits too near the room, the bed's rms is the first thing to take down.
+
+Next courts: racket median -54.3 dB at the camera against your near pair -42.7 and far pair -47.1, about 15 hits a minute a court, on the Crowd slider. No published level exists for a court next door; the only figure is Higgins' 88 impacts in five minutes.
+
+Women's grunts sit 5 dB under the men's bins, because the same effort at the top of a woman's range read 7 dB nearer the hit. Piana's 2.4 dB under impacts is a whole game's figure, not per shot, so this is a judgement.
+
+Left and right at the hit, width 3, stadium and hall: x 1-3 near +2.4 dB, far +1.1; x -3 to -1 near -1.0, far -1.0. At width 4, stadium: x -5.5 to -3 near -4.0, far -2.4; x 1-3 near +2.1, far +0.9. Hits at the side glass read little more than that, since a good part of a glass hit is the room.

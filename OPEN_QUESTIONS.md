@@ -425,8 +425,14 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **The two grunts' shapes.** Only mean pitch is measured. Lengths, contours, strain and how often they come are reasoned. Settled by: a duration and contour study of professional grunts, or the owner's ear.
 - **The two pitches of a shared voice.** `tone` moves a person ±5%. Whether two people on a court sound like two people is for an ear. Settled by: the owner listening to one match.
 - **Partner calls and shouts.** `E_CALL` is silent, and Piana puts shouts at +1.9 dB on the game. A synthesised word would sound like a machine. Settled by: voice recordings cleared for a public game.
-- **The level.** -27 LUFS at default volume, against TV's -24, on no real speakers. Settled by: the owner saying whether the ball and the crowd sit right on their own system.
+- **The level.** -24.3 LUFS in the stadium at default volume, -27 in the club, on no real speakers. Settled by: the owner saying whether the ball and the crowd sit right on their own system.
 - **A Perfect's sound.** +2 dB and 2% tighter, in the same render. Settled by: the owner saying whether it can be felt, or a recording of a sweet-spot hit.
 - **The near fence.** Wire by the camera at 30%. Settled by: the owner saying whether it looks like a lens or like a fence that isn't there.
 - **Crossed legs in a walk.** One walk in seven, 20-46 cm across, in the fast turn after a point. Two tries did nothing. Settled by: more tracing, and a clip of a player turning to walk back.
 - **A bandeja's spin.** -2400 rpm is set from how it should play, and no source gives one. Settled by: a spin reading from high-speed footage.
+- **Aiming the way you are running.** A key pointing at the planned spot is the run's until you are 0.4 m from it. Whether that loses a shot a person wants is unmeasured. Settled by: the owner playing ten games with the keys.
+- **Where the keys alone stop.** 1.2 m from the glass and 2 m from the net are judgements. Settled by: the same ten games.
+- **How much bounce a run has.** The wave is the right way round at about 2 cm on the hips, 2.5 on the head, against a remembered 5-10. Settled by: a side-on clip of a pro running at 4 m/s, read at the hip.
+- **Stereo width.** Multiplied by 4 from the lens. Settled by: the owner on headphones and on laptop speakers.
+- **The next courts' level.** No published figure. Settled by: the owner listening at the club venue.
+- **Why placement pays so little.** Aim at the gap and aim at the player win the same. The AI's forced errors stay at 20-25% under any error law tried, so it is more likely in what it reaches. Settled by: a study of the AI's reach against real court coverage.
