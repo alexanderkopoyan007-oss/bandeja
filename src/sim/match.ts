@@ -221,6 +221,7 @@ const AIM_SPEED_Z = 9;
 /** How near the glass, and the net, the keys alone take a target (m). */
 const AIM_SURE_EDGE = 1.2;
 const AIM_SURE_SHORT = 2;
+const AIM_SURE_OVERHEAD = 4;
 /**
  * A direction that went down this long before a shot key (s) goes with it, as aim: to place a shot a hand presses the two
  * together, and with what was down at the press the run's (steerAim), a key landing first left the ball on the default
@@ -1003,7 +1004,9 @@ export class MatchSim {
     }
     // A key pressed too soon, still down: its hold starts as soon as there is a swing to hold. The press was thrown away in the 0.35 s after a contact and
     // through the other side's set-up, a second a serve, and the ring came and closed on a key doing nothing (review round 25).
-    if (p.heldShot >= 0 && p.swing === SW_IDLE && (this.phase === PH_RALLY || this.phase === PH_TOSS)) {
+    // The server's starts the toss when the set-up opens: pressed in the walk back, it ended the walk and then did nothing while held.
+    if (p.heldShot >= 0 && p.swing === SW_IDLE && (this.phase === PH_RALLY || this.phase === PH_TOSS
+      || (this.phase === PH_SETUP && this.walking === 0 && i === this.score.serverPlayer() && t0 >= this.phaseUntil))) {
       this.press(i, p.heldShot, t0);
       p.heldShot = -1;
       p.steerFrom = f.moveY;
@@ -1310,8 +1313,9 @@ export class MatchSim {
     const k = p.shot;
     if (k === SHOT_BANDEJA) {
       // Overhead key: a bandeja, a smash with power held, a víbora with precision held. A ball that has dropped
-      // too low is sliced instead.
-      if (y >= t.overheadHeight - 0.3) return this.shotMod === MOD_POWER ? SHOT_SMASH : this.shotMod === MOD_PRECISION ? SHOT_VIBORA : SHOT_BANDEJA;
+      // too low is sliced instead: for a víbora, planned 23 cm under a bandeja, as far under its plan as a bandeja's limit is. One 45 ms late
+      // came off as a volley, one in five, on a Good ring (review round 26).
+      if (y >= t.overheadHeight - (this.shotMod === MOD_PRECISION ? 0.53 : 0.3)) return this.shotMod === MOD_POWER ? SHOT_SMASH : this.shotMod === MOD_PRECISION ? SHOT_VIBORA : SHOT_BANDEJA;
       return inAir ? SHOT_VOLLEY : SHOT_SLICE;
     }
     if (k === SHOT_VOLLEY) {
@@ -1388,14 +1392,16 @@ export class MatchSim {
     // (smash winners halved; review round 20).
     if (abs(f.moveY) < 0.1) p.steerFrom = 0;
     if (abs(f.moveX) < 0.1) p.steerFromX = 0;
-    // And a key pointing where the player still has to go is the run's, whichever finger landed first: the run back from a lob pressed with
-    // the overhead took the target to its stop 0.9 m past the net, one good smash in four into it, and the run to a wide ball took it to
-    // the side glass (review round 25).
+    // And a key landing with the shot key and pointing where the player still has to go is the run's, whichever finger came first: the run
+    // back from a lob pressed with the overhead took the target to its stop 0.9 m past the net, one good smash in four into it, and the run
+    // to a wide ball took it to the side glass (review round 25). Only with it: the game has the running by then, so a key pressed later in
+    // the hold can't be the run's. Marked on every tick of the hold, it stayed dead past arrival, half of bandejas lost their corner and
+    // nothing on screen said why (review round 26). (A stick is followed up: a thumb takes two or three frames to reach full.)
     const st = this.stand[p.index]!;
-    if (!serve && st.valid) {
+    if (!serve && st.valid && this.time - p.chargeStart < STEER_CHORD) {
       const togoX = st.x - p.pos.x, togoZ = st.z - p.pos.z;
-      if (p.steerFrom === 0 && abs(togoZ) > STEER_RUN && -s * f.moveY * togoZ > 0) p.steerFrom = f.moveY;
-      if (p.steerFromX === 0 && abs(togoX) > STEER_RUN && s * f.moveX * togoX > 0) p.steerFromX = f.moveX;
+      if (abs(togoZ) > STEER_RUN && -s * f.moveY * togoZ > 0 && abs(f.moveY) > abs(p.steerFrom)) p.steerFrom = f.moveY;
+      if (abs(togoX) > STEER_RUN && s * f.moveX * togoX > 0 && abs(f.moveX) > abs(p.steerFromX)) p.steerFromX = f.moveX;
     }
     const ahead = abs(f.moveY - p.steerFrom) > STEER_TOUCH, across = abs(f.moveX - p.steerFromX) > STEER_TOUCH;
     const overhead = !serve && p.shot === SHOT_BANDEJA;
@@ -1405,10 +1411,7 @@ export class MatchSim {
       // shortest landing at which a full-pace smash from the planned contact clears the net with margin.
       // Near the net that is mid-court, and the steep bounce can leave the court; from deep it lands deeper.
       if ((f.held & BTN_POWER) !== 0) {
-        const st = this.stand[p.index]!;
-        const back = abs(st.valid ? st.bz : p.pos.z);
-        const h = st.valid ? st.by : p.tune.overheadIdealHeight;
-        p.aimZ = -s * smashLanding(c.netHeightAt(0), back, h, SMASH_NET_MARGIN, SMASH_MIN_DEPTH, c.halfL - 2.0);
+        p.aimZ = -s * this.smashSpot(p);
       } else if ((f.held & BTN_PRECISION) !== 0) {
         // Víbora: cross-court into the side glass.
         p.aimX = (p.pos.x > 0 ? -1 : 1) * (c.halfW - 0.9);
@@ -1433,10 +1436,20 @@ export class MatchSim {
       // aimed there went in on the full (review round 25).
       const sure = (f.held & BTN_PRECISION) === 0 && !f.aimAbs;
       const edgeX = sure && across ? AIM_SURE_EDGE : 0.45, edgeZ = sure && ahead ? AIM_SURE_EDGE : 0.45;
-      const short = sure && ahead && p.shot !== SHOT_DROP && p.shot !== SHOT_CHIQUITA ? AIM_SURE_SHORT : 0.9;
+      // (an overhead isn't pulled in by a key pressed late on the way back: a smash goes no shorter than it can go at full pace)
+      const short = !sure || !ahead || p.shot === SHOT_DROP || p.shot === SHOT_CHIQUITA ? 0.9
+        : !overhead ? AIM_SURE_SHORT : (f.held & BTN_POWER) !== 0 ? this.smashSpot(p) : AIM_SURE_OVERHEAD;
       p.aimX = clamp(p.aimX, -c.halfW + edgeX, c.halfW - edgeX);
       p.aimZ = -s * clamp(-s * p.aimZ, short, c.halfL - edgeZ);
     }
+  }
+
+  /** How far past the net a full-pace smash from the planned contact lands, clearing the tape with margin (m). */
+  private smashSpot(p: Player): number {
+    const c = this.world.court, st = this.stand[p.index]!;
+    const back = abs(st.valid ? st.bz : p.pos.z);
+    const h = st.valid ? st.by : p.tune.overheadIdealHeight;
+    return smashLanding(c.netHeightAt(0), back, h, SMASH_NET_MARGIN, SMASH_MIN_DEPTH, c.halfL - 2.0);
   }
 
   /** The held swing goes on as this shot. */
@@ -1476,8 +1489,9 @@ export class MatchSim {
     p.reflex = false;
     p.chargeStart = t;
     p.grade = -1;
-    if (this.phase === PH_RALLY && !this.ai[i]) {
-      // Each rally shot starts aimed down the middle at the shot's natural depth; the keys move it from there.
+    if ((this.phase === PH_RALLY || (this.phase === PH_TOSS && i !== this.score.serverPlayer())) && !this.ai[i]) {
+      // Each rally shot starts aimed down the middle at the shot's natural depth; the keys move it from there. A return held for in the toss
+      // too: it kept the last point's target, after a change of ends on the player's own side, so half of them went 0.9 m past the net (review round 26).
       const depth = shot === SHOT_BANDEJA ? OVERHEAD_AIM_DEPTH : this.solverDepth(shot);
       p.aimX = 0;
       p.aimZ = -this.side(team) * depth * this.world.court.halfL;

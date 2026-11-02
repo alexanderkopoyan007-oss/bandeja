@@ -4,7 +4,16 @@ import { MatchSim, PH_RALLY, PH_SETUP, PH_TOSS, PH_OVER, E_HIT, E_FAULT } from '
 import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION, BTN_SLICE } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { SW_IDLE, SW_CHARGE, SW_RECOVER } from '../../src/sim/player/player.ts';
-import { SHOT_BANDEJA, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
+import { SHOT_BANDEJA, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, SHOT_VIBORA, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
+import type { Player } from '../../src/sim/player/player.ts';
+
+/** The private parts these cases reach for. */
+interface Priv {
+  players: Player[]; time: number; shotMod: number; shotHeight: number;
+  side(team: number): number; smashSpot(p: Player): number;
+  steerAim(p: Player, f: InputFrame, s: number, serve: boolean): void;
+  shotFor(p: Player, inAir: boolean): number;
+}
 
 describe('modifiers at the release', () => {
   it('Space let go a few ms after the overhead key, in the same tick, still makes the smash', () => {
@@ -87,6 +96,22 @@ describe('the first press of a match', () => {
     }
     expect(faults).toBe(0);
     expect(m.serveNo).toBe(first);
+  });
+});
+
+describe('a late overhead', () => {
+  it('is a worse víbora, not another shot: the limit sits as far under its plan as a bandeja\'s', () => {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 0 }) as never as Priv;
+    const p = m.players[0]!;
+    p.shot = SHOT_BANDEJA;
+    m.shotMod = MOD_PRECISION;
+    m.shotHeight = 1.35;
+    expect(m.shotFor(p, true)).toBe(SHOT_VIBORA);
+    m.shotHeight = 1.25;
+    expect(m.shotFor(p, true)).toBe(SHOT_VOLLEY);
+    m.shotMod = MOD_NONE;
+    m.shotHeight = 1.5;
+    expect(m.shotFor(p, true)).toBe(SHOT_VOLLEY);
   });
 });
 
@@ -254,15 +279,34 @@ describe('a movement key and the aim', () => {
     }
     throw new Error('no wide ball to hold for');
   }
-  it('a key pointing where the player still has to go is the run\'s, even after the shot key', () => {
+  it('a key pointing where the player still has to go is the run\'s when it lands with the shot key', () => {
     const { m, f, x0, toward } = holdingWide();
-    run(m, f, toward, 12);
+    run(m, f, toward, 40);
     expect(m.players[0]!.aimX).toBeCloseTo(x0, 5);
+  });
+  it('pressed later in the hold it aims: the game has the running by then', () => {
+    const { m, f, x0, toward } = holdingWide();
+    run(m, f, 0, 14);
+    run(m, f, toward, 12);
+    expect(Math.abs(m.players[0]!.aimX - x0)).toBeGreaterThan(0.5);
   });
   it('the other way it aims', () => {
     const { m, f, x0, toward } = holdingWide();
     run(m, f, -toward, 12);
     expect(Math.abs(m.players[0]!.aimX - x0)).toBeGreaterThan(0.5);
+  });
+  it('a late key on the way back does not pull an overhead in', () => {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 }) as never as Priv;
+    const f = new InputFrame(), p = m.players[0]!, s = m.side(0);
+    p.shot = SHOT_BANDEJA;
+    p.chargeStart = m.time - 1;
+    f.moveY = -1;
+    f.held = BTN_OVERHEAD | BTN_POWER;
+    for (let i = 0; i < 120; i++) m.steerAim(p, f, s, false);
+    expect(-s * p.aimZ).toBeCloseTo(m.smashSpot(p), 5);
+    f.held = BTN_OVERHEAD;
+    for (let i = 0; i < 240; i++) m.steerAim(p, f, s, false);
+    expect(-s * p.aimZ).toBeCloseTo(4, 5);
   });
   it('the keys stop in from the glass, Precision goes on to the lines', () => {
     const { m, f, toward } = holdingWide();
@@ -275,6 +319,32 @@ describe('a movement key and the aim', () => {
 });
 
 describe('a shot key pressed too soon', () => {
+  it('held for the return, it starts down the middle, not on the last point\'s target', () => {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame(), p = m.players[0]!;
+    p.aimX = 3;
+    p.aimZ = 8 * m.side(0);
+    f.push(true, BTN_DRIVE, m.time);
+    f.held = BTN_DRIVE;
+    m.step([f, null]);
+    expect(m.phase).toBe(PH_SETUP);
+    for (let k = 0; k < 120 * 8 && (p.swing as number) !== SW_CHARGE; k++) { f.clear(); f.held = BTN_DRIVE; m.step([f, null]); }
+    expect(p.swing).toBe(SW_CHARGE);
+    expect(p.aimX).toBe(0);
+    expect(p.aimZ * m.side(0)).toBeLessThan(-5);
+  });
+  it('held by the server, it tosses when the set-up opens', () => {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 0, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame(), p = m.players[0]!;
+    f.push(true, BTN_DRIVE, m.time);
+    f.held = BTN_DRIVE;
+    m.step([f, null]);
+    expect(m.phase).toBe(PH_SETUP);
+    expect(p.heldShot).toBe(SHOT_DRIVE);
+    for (let k = 0; k < 120 * 3 && m.phase === PH_SETUP; k++) { f.clear(); f.held = BTN_DRIVE; m.step([f, null]); }
+    expect(m.phase).toBe(PH_TOSS);
+    expect(p.swing).toBe(SW_CHARGE);
+  });
   it('starts its hold when the recovery ends', () => {
     const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
     const f = new InputFrame(), p = m.players[0]!;
