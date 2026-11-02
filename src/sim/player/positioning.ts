@@ -47,6 +47,8 @@ export function makeStandPlan(): StandPlan {
   return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, onRun: false, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, volleyKey: false, inTime: false, late: 0, contra: false, turned: false, version: -1 };
 }
 
+/** How much deeper than a contact off the back glass a player waits (m), how long before it they go in (s), the least time worth setting up for (s), and the least room there has to be (m). */
+const STEP_BACK = 0.5, STEP_IN = 0.45, STEP_MIN = 0.1, STEP_ROOM = 0.2;
 /** Margin kept between the ball's path and the body (on top of the body radius). */
 const BODY_CLEAR = 0.2;
 /** Depth band in front of the back glass where hitting the ball before it reaches the glass is cramped. */
@@ -417,6 +419,23 @@ export interface Hold {
   x: number;
   z: number;
   t: number;
+}
+
+/**
+ * Off the back glass a player lets the ball go by, then goes in with it and hits it in front: wait STEP_BACK deeper than the contact until STEP_IN
+ * before it. Run straight to the contact, they stood there flat-footed as it came off, moving 2 cm towards the net from the glass to the ball.
+ */
+export function holdBack(pr: Prediction, p: Player, s: number, now: number, tx: number, tz: number, contact: number, out: Hold): void {
+  const t = contact - STEP_IN;
+  if (t < now + STEP_MIN) return;
+  const z = clamp(tz + s * STEP_BACK, p.minZ, p.maxZ);
+  if (abs(z - tz) < STEP_ROOM) return;
+  let i = 0;
+  while (i < pr.n - 1 && pr.t[i]! < contact) i++;
+  if (pr.vz[i]! * s >= 0 || !clearOfBall(pr, now, i, tx, z, p.tune.height, p.tune.bodyRadius)) return;
+  out.x = tx;
+  out.z = z;
+  out.t = t;
 }
 
 /**

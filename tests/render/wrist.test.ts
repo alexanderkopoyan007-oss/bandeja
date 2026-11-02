@@ -21,7 +21,7 @@ describe('the wrist', () => {
     const S = new THREE.Vector3(), E = new THREE.Vector3(), W = new THREE.Vector3(), M = new THREE.Vector3(), I = new THREE.Vector3(), L = new THREE.Vector3();
     const A = new THREE.Vector3(), F = new THREE.Vector3(), K = new THREE.Vector3(), N = new THREE.Vector3(), U = new THREE.Vector3(), H = new THREE.Vector3(), T = new THREE.Vector3(), Up = new THREE.Vector3();
     interface Av { addr: boolean; carryW: number; tapW: number; armRacket: unknown; armR: unknown; root: THREE.Object3D; bones: THREE.Bone[]; w: number; ready: number; st: number; lastT: number; tCon: number; fam: { name: string } }
-    for (const seed of [2350001, 2350002, 2350003, 2350004, 2350005, 2350006, 2350007, 2350008]) {
+    for (let seed = 2361001; seed <= 2361024; seed++) {
       runAnimQa(P, { seed, seconds: 60, onFrame: (_m: unknown, av: unknown[]) => {
         for (const x of av as Av[]) {
           if (x.armRacket !== x.armR) continue;

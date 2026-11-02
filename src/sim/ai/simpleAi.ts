@@ -9,7 +9,7 @@ import { abs, clamp, floor, max, min, sqrt } from '../core/smath.ts';
 import { DT } from '../core/constants.ts';
 import { PF_FLOOR, type Prediction } from '../ball/predict.ts';
 import { findWindows, makeWindows, OH_ANY, OH_BANDEJA, OH_SMASH, OH_VIBORA } from '../contact/windows.ts';
-import { holdShort, makeStandPlan, offGlassHigh, planStand, BAJADA_ABOVE, BAJADA_DEPTH, DODGE, type Hold, type StandPlan } from '../player/positioning.ts';
+import { holdBack, holdShort, makeStandPlan, offGlassHigh, planStand, BAJADA_ABOVE, BAJADA_DEPTH, DODGE, type Hold, type StandPlan } from '../player/positioning.ts';
 import { smashLanding } from '../contact/smashAim.ts';
 import { formationSpot, type Spot } from '../player/formation.ts';
 import { styleOf, type AiStyle } from './styles.ts';
@@ -754,6 +754,7 @@ export class SimpleAi {
     if (!overhead && !st.volley) {
       holdShort(pr, p, s, m.time, st.x, st.z, st.t, this.hold);
       if (this.hold.t > 0) hit = -1;
+      else if (st.afterWall && !st.contra) holdBack(pr, p, s, m.time, st.x, st.z, st.t, this.hold);
     }
     if ((!st.inTime || (hit >= 0 && hit < st.t + 0.09)) && !overhead) {
       // No comfortable contact in time, or the ball comes at us before the planned one (a fast ball at the

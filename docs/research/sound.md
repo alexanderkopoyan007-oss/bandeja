@@ -394,3 +394,10 @@ Left and right at the hit, width 3, stadium and hall: x 1-3 near +2.4 dB, far +1
 - **Star points.** The swell from the first shot is gone. It had no source.
 - **Between two serves.** The hush holds through a first-serve fault and a let, so the crowd doesn't talk up and hush again in a second.
 - **Level.** Stadium -24.4 LUFS, peak -0.4. Club -26.1, peak -1.1. The ball at the sides is what moved it. Nobody has listened.
+
+## 12. Round 22 (2 Nov)
+
+- **Applause.** The small applause on a short point now goes only to a shot that won it. There is no source for how much real crowds clap an error; this is a judgement.
+- **Lets.** The hush through a let now holds, by events, where Round 21's read a result already cleared. No let has happened in play, so it is unheard and unmeasured.
+- **Change of ends.** By arithmetic, not measured: 4.5 s of applause from about 1.5 s after the point ends at +6 s, and the serve is at +6.9 s.
+- **Level.** Stadium -25.6 LUFS, peak -0.7. Club -26.3, peak -1.3. The stadium was -24.4 on Round 21. Less applause and longer breaks would lower it, but I did not separate them. Nobody has listened.

@@ -19,7 +19,7 @@ import {
 import { gradeTiming, gradeQuality, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
 import { findWindows, BEHIND_MAX, makeWindows, OH_BANDEJA, OH_SMASH, OH_VIBORA, reachAt, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
-import { holdShort, makeStandPlan, planStand, type Hold, type StandPlan } from './player/positioning.ts';
+import { holdBack, holdShort, makeStandPlan, planStand, type Hold, type StandPlan } from './player/positioning.ts';
 import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
@@ -948,6 +948,7 @@ export class MatchSim {
         const H = this.hold[i]!;
         H.t = -0;
         if (st.valid && !overhead && !st.volley) holdShort(this.pred, p, s, t0, st.x, st.z, st.t, H);
+        if (st.valid && st.afterWall && !st.volley && !st.contra && H.t <= 0) holdBack(this.pred, p, s, t0, st.x, st.z, st.t, H);
       }
     } else {
       st.valid = false;

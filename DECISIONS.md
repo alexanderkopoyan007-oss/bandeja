@@ -3391,3 +3391,13 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **The width law is shared code.** The inverted ratio survived because nothing tested it and the live engine and the offline chain each had their own. They now call one function in `bank.ts`.
 - **A star point isn't louder.** The tension bed from the first shot had no source. The hush is what a crowd demonstrably does, so that stays and the swell goes.
 - **Pops are read on fresh seeds.** The eight tuned seeds flattered Round 20. Twelve fresh seeds are the comparison now.
+
+## Round 22: the ball is in a hand, and a partner has a right to what he goes for (2026-11-02)
+
+- **The drawn ball goes to the hand, not the sim's ball.** The sim keeps its ball at the address spot through the walk, because everything else reads it there. A ball in the hand is the picture's business, so it stays out of the sim and out of the hash.
+- **Say how late, not just late.** `inTime` is one bit, and Round 21's cover hung on it. A plan's `late` separates a ball the taker has lost from one they will reach anyway. A wait alone held the real cover back as much as the false alarm, and the slice hole came back at 10%.
+- **Cover and handing over are one idea.** Whoever goes for a ball has to be able to play it. A partner nearer than the taker by 0.5 m has it, unless the taker is swinging. An AI partner still takes a ball given up on whatever the run, because the slice hole came back without it. A human gets a ball only by the shorter run, because they have to see it first.
+- **A run key is told by the distance left.** A key landing with the shot means run when there is a metre to go and aim when the spot is at hand. Round 21 chose aim for every ground stroke and it cost five points. This still takes a chord away from a player a long way from the spot, and that shows as lob 90 to 86, volley 71 to 65.
+- **Pairs turn at the cut.** `side` reads `courtEnds`, which takes the score's ends in `startPoint`. With a 2.4 s hold, reading the score's ends had everyone turn round in place in front of the call.
+- **The back-glass step uses the dodge's wait.** It is the same `Hold` the AI and the assist already obey, so there is no second way of moving.
+- **The wrist limit uses the hand's own axes.** The shaft limit could not see ulnar deviation. The limit acts only after the ball and fades with the stroke, so contact and ready are as footage has them.

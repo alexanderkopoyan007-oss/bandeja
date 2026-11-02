@@ -803,6 +803,30 @@ Nothing stood at High: the sceptic marked all three down to Medium. The round fi
 
 Round 20's pops line above was read on seeds I'd tuned on. On fresh seeds it is 15.1.
 
+### Review round 22 (2 Nov, `REVIEW.md`)
+One High, confirmed and fixed: the ball hung in the air through every walk back. Four Mediums were Round 21's own and are reworked: the partner, and a run key on ground strokes.
+
+| Round 22 | Before | After |
+|---|---|---|
+| Nearest hand to the drawn ball on the walk | 0.78 m | 0.08 |
+| Balls dying beside the partner, per 100 points | 1.67 | 0.71 (Round 20: 0.20) |
+| Partners within 0.75 m, your pair / AI pair, per 100 | 4.9 / 5.5 | 2.1 / 3.2 (Round 20: 1.7 / 2.8) |
+| Covers of your ball that you played anyway, per 100 | 77-79 | 7 |
+| Slice return down the middle: winners | 0.3% | about 1.3 (Round 20: 13.7) |
+| Run key on a ground stroke: cost in points | 5.3 | none |
+| Chiquita lands past the net | 8.3 m | 3.3-3.4 |
+| Last ball to next serve at a change of ends | 3.4 s | 6.9 |
+| Jump smash: feet apart, knees at the ball | 0.89 m, 2/75 | 0.62, 18/39 (footage 27/23) |
+| Serve: both hands still on a moving body | 0.18 s | 0.08 |
+| Off the back glass, moved over 0.3 m forward | 14 of about 100 | 40 |
+| Bandeja: rear foot off at the ball | 24% | 92 |
+| Wrist after the ball, share of its range | 1.5-2.0 | 1.0-1.15 |
+| Pops a minute, twelve fresh seeds | 15.0 | 15.5 |
+| Stadium / club, LUFS | -24.4 / -26.1 | -25.6 / -26.3 |
+| Match, 6000 points: shots, s, W/FE/UE | 10.2, 13.5, 41.1/24.9/34.0 | 10.4, 13.7, 42.1/24.4/33.5 |
+| Women, 6000 points | 11.0, 15.2, 33.5/28.5/38.0 | 11.4, 15.7, 31.7/27.5/40.8 |
+| Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

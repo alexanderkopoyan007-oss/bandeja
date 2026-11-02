@@ -1,7 +1,7 @@
 // Input edge cases at the sim's boundary: what a release reads from the keys around it.
 import { describe, it, expect } from 'vitest';
 import { MatchSim, PH_RALLY, PH_SETUP, PH_TOSS, PH_OVER, E_HIT, E_FAULT } from '../../src/sim/match.ts';
-import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION, BTN_SLICE } from '../../src/sim/input.ts';
+import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION, BTN_SLICE, BTN_TOPSPIN } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
 import { SW_IDLE, SW_CHARGE, SW_RECOVER } from '../../src/sim/player/player.ts';
 import { SHOT_BANDEJA, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, SHOT_VIBORA, SHOT_LOB, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
@@ -287,6 +287,16 @@ describe('a movement key and the aim', () => {
     run(m, f, 0, 2);
     run(m, f, toward, 12);
     expect(Math.abs(p.aimX - x0)).toBeGreaterThan(0.5);
+  });
+  it('the topspin key with Precision aims where a chiquita goes, the topspin key alone deep', () => {
+    const { m, f } = holdingWide();
+    const p = m.players[0]!, halfL = m.world.court.halfL;
+    p.shot = SHOT_TOPSPIN;
+    const hold = (held: number): void => { for (let i = 0; i < 2; i++) { f.clear(); f.held = held; m.step([f, null]); } };
+    hold(BTN_TOPSPIN | BTN_PRECISION);
+    expect(Math.abs(p.aimZ) / halfL).toBeLessThan(0.4);
+    hold(BTN_TOPSPIN);
+    expect(Math.abs(p.aimZ) / halfL).toBeGreaterThan(0.6);
   });
   it('with the spot at hand it is the chord that places the shot', () => {
     const { m, f, x0, toward } = holdingWide();
