@@ -2,6 +2,7 @@
 import type { MatchSim } from '../match.ts';
 import { abs, clamp, max } from '../core/smath.ts';
 import { PF_FLOOR } from '../ball/predict.ts';
+import type { StandPlan } from './positioning.ts';
 
 /** Depth of a pair at the net and at the back (m from the net). */
 export const UP_Z = 3.1;
@@ -157,6 +158,32 @@ export function bounceIsFar(m: MatchSim): boolean {
 }
 
 /**
+ * A partner between us and the net: the ball goes round them, on the nearer side unless that is out of the court. Only the one not
+ * striking used to look, by dodging, and a human doesn't: a flat víbora through your back from 2 m ended 1.7 points in 100, an AI pair
+ * 0.1 (review round 18, the pro's #3). Read at the release: the target was picked when they stood elsewhere. The target's x comes back.
+ */
+export function roundPartner(m: MatchSim, i: number, plan: StandPlan, tx: number, tz: number, spread: number): number {
+  const mate = m.players[i ^ 2]!;
+  // From the contact, an arm's length off the body, to them where they will be as it passes: the striker's feet are 30-40 cm from the
+  // line the ball takes, which is about the room this leaves.
+  const passAt = plan.t + (abs(plan.bz) - abs(mate.pos.z)) / PARTNER_PASS_SPEED;
+  if (abs(plan.bz) - abs(mate.pos.z) < PARTNER_AHEAD || passAt < m.time) return tx;
+  const mx = mate.pos.x + mate.vel.x * (passAt - m.time);
+  const at = (mate.pos.z - plan.bz) / (tz - plan.bz);
+  const off = plan.bx + (tx - plan.bx) * at - mx;
+  if (abs(off) >= PARTNER_CLEAR) return tx;
+  const sd = off >= 0 ? 1 : -1;
+  const x = plan.bx + (mx + sd * PARTNER_CLEAR - plan.bx) / at;
+  return clamp(abs(x) <= spread ? x : plan.bx + (mx - sd * PARTNER_CLEAR - plan.bx) / at, -spread, spread);
+}
+/** A partner this much nearer the net (m) than the striker is in the way of the ball. */
+const PARTNER_AHEAD = 0.3;
+/** How wide of them (m) it is aimed: body 0.22 and ball 0.03, and the rest for the swing's error. */
+const PARTNER_CLEAR = 0.55;
+/** A struck ball's speed (m/s) for when it reaches them: 70 km/h. */
+const PARTNER_PASS_SPEED = 19;
+
+/**
  * Our ball is a lob: do we follow it in? The lob is how a pair takes the net (60.6% of net takes: Muñoz et al. 2017):
  * once it gets past the net players, the lobbers run in while the others turn for the glass. A lobbing player reads
  * it off the opponent taking it: set to take it in the air (a bandeja or smash, a volley) means stay back; running
@@ -186,13 +213,17 @@ function lobFollow(m: MatchSim, s: number, team: number): number {
   const ai = m.ai[k];
   const plan = ai ? ai.standPlan : m.stand[k]!;
   const planned = plan.valid && plan.version === pr.version;
-  if (planned && plan.volley && plan.inTime) return LOB_NO;
+  // Pushed this deep the lob has done its work, overhead or not: on 8 m both lobbers watched a bandeja from the back glass, and it won three points in four
+  // from the worst place on court (review round 31).
+  if (planned && plan.volley && plan.inTime && abs(plan.bz) < LOB_DEEP) return LOB_NO;
   // A person's plan says what key is down, and at the lob's first tick none is. Read as beaten then, both lobbers ran in on six in ten of a human's bandejas
   // and volleyed them chest high, and an AI's never (review round 30). If they can get there, the lobbers wait in the middle for what they do about it.
   if (!ai) {
     if (m.canOverhead(k) < 0) return LOB_BEATEN;
-    if (m.goingOverhead(m.players[k]!)) return LOB_NO;
-    return m.time < lands - LOB_DECIDE ? LOB_WATCH : LOB_BEATEN;
+    // (a held plan can start off the bounce and turn into one in the air as they run back, and a read of beaten stays: taken at once, both lobbers came in on 45 of 46 bandejas met in the air)
+    const held = m.goingOverhead(m.players[k]!);
+    if (held && (!planned || (plan.volley && abs(plan.bz) < LOB_DEEP))) return LOB_NO;
+    return m.time < lands - (held ? LOB_DECIDE_HELD : LOB_DECIDE) ? LOB_WATCH : LOB_BEATEN;
   }
   return planned ? LOB_BEATEN : LOB_WATCH;
 }
@@ -205,5 +236,9 @@ const LOB_LAND = 5.0;
 const LOB_LAND_SHY = 8.0;
 /** How long before it lands a human has shown they're going to take a lob they can reach (s): after that it's beaten. */
 const LOB_DECIDE = 0.5;
+/** The same with the overhead key down, as the plan shows it sooner (s). Left at 0.5 the lobbers were 4.9 m from the net at the contact, and an overhead from 8 m still won 63. */
+const LOB_DECIDE_HELD = 0.9;
+/** An overhead met this far from the net or further is no threat: the lobbers come in as if it were beaten (m). An excellent lob is returned from 8.61 ± .37 (shots-movement-feel.md). */
+const LOB_DEEP = 7.5;
 /** The transition zone the lobbers step to while the lob is read (m from the net). */
 const LOB_MID_Z = 6.0;

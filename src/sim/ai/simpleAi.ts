@@ -11,7 +11,7 @@ import { PF_FLOOR, type Prediction } from '../ball/predict.ts';
 import { findWindows, makeWindows, OH_ANY, OH_BANDEJA, OH_SMASH, OH_VIBORA } from '../contact/windows.ts';
 import { holdBack, holdShort, makeStandPlan, offGlassHigh, planStand, BAJADA_ABOVE, BAJADA_DEPTH, DODGE, type Hold, type StandPlan } from '../player/positioning.ts';
 import { smashLanding } from '../contact/smashAim.ts';
-import { formationSpot, type Spot } from '../player/formation.ts';
+import { formationSpot, roundPartner, type Spot } from '../player/formation.ts';
 import { styleOf, type AiStyle } from './styles.ts';
 import skillData from '../../../data/ai-skill.json' with { type: 'json' };
 
@@ -26,6 +26,8 @@ const SURPRISE = 0.15;
  * AI judged on each shot's own windows, 1.8 gives 6.4% (and 11.3).
  */
 const AFTER_WALL = 1.8;
+/** Off the back glass with both at the net: the share of lobs for a neutral style at the top level, against 0.5 from anywhere else. At .75 points fell to 9.8 shots. */
+const GLASS_LOB = 0.62;
 /**
  * The bajada (an overhead off our own back glass, positioning.ts BAJADA_*): BAJADA_HARD of them are struck flat and
  * hard (the smash shape), the rest placed like a bandeja; after BAJADA_NET of them (per unit of the style's net) the
@@ -526,27 +528,9 @@ export class SimpleAi {
     if (hit >= 0) this.releaseAt = min(this.releaseAt, min(ideal + 0.04, hit - 0.03));
   }
 
-  /**
-   * A partner between us and the net: the ball goes round them, on the nearer side unless that is out of the court. Only the one not
-   * striking used to look, by dodging, and a human doesn't: a flat víbora through your back from 2 m ended 1.7 points in 100, an AI pair
-   * 0.1 (review round 18, the pro's #3). Read at the release: the target was picked when they stood elsewhere.
-   */
+  /** See roundPartner: the AI's target, read at the release. */
   private clearPartner(m: MatchSim): void {
-    const plan = this.st;
-    if (!plan.valid) return;
-    const mate = m.players[this.index ^ 2]!;
-    // From the contact, an arm's length off the body, to them where they will be as it passes: the striker's feet are 30-40 cm from the
-    // line the ball takes, which is about the room this leaves.
-    const passAt = plan.t + (abs(plan.bz) - abs(mate.pos.z)) / PARTNER_PASS_SPEED;
-    if (abs(plan.bz) - abs(mate.pos.z) < PARTNER_AHEAD || passAt < m.time) return;
-    const mx = mate.pos.x + mate.vel.x * (passAt - m.time);
-    const at = (mate.pos.z - plan.bz) / (this.targetZ - plan.bz);
-    const off = plan.bx + (this.targetX - plan.bx) * at - mx;
-    if (abs(off) >= PARTNER_CLEAR) return;
-    const spread = m.world.court.halfW - (1.2 - 0.5 * this.level) * this.style.margin;
-    const sd = off >= 0 ? 1 : -1;
-    const x = plan.bx + (mx + sd * PARTNER_CLEAR - plan.bx) / at;
-    this.targetX = clamp(abs(x) <= spread ? x : plan.bx + (mx - sd * PARTNER_CLEAR - plan.bx) / at, -spread, spread);
+    if (this.st.valid) this.targetX = roundPartner(m, this.index, this.st, this.targetX, this.targetZ, m.world.court.halfW - (1.2 - 0.5 * this.level) * this.style.margin);
   }
 
   private aimAbs(f: InputFrame): void {
@@ -1077,7 +1061,9 @@ export class SimpleAi {
     } else if (up === 2) {
       // Lob them (and take the net if it gets past), dip a chiquita at their feet, or keep it low; from the
       // back that is a defensive shot.
-      const lob = min(0.9, 0.5 * st.lob * lobSense);
+      // Off the back glass the lob is the safe ball as well as the way in: drives from there with both at the net failed one in five, lobs one in eleven, and half
+      // the partner's waist-high balls off the glass were drives and slices (review round 31).
+      const lob = min(0.9, (this.st.afterWall ? GLASS_LOB : 0.5) * st.lob * lobSense);
       const chiq = height > 0.4 && height < 1.4 ? min(0.6, 0.35 * st.drop) * (1 - lob) : 0;
       this.shot = r < lob ? SHOT_LOB : r < lob + chiq ? SHOT_TOPSPIN : r < lob + chiq + this.sliceOf(0.6) * (1 - lob - chiq) ? SHOT_SLICE : SHOT_DRIVE;
       this.chiquita = this.shot === SHOT_TOPSPIN;
@@ -1363,12 +1349,6 @@ const SMASH_MARGIN = 0.45;
 /** A smash met this close (m from the net) and this high (m) is a put-away aimed for the side glass (por tres). */
 /** Nearer the net than this (m) an opponent has come in. */
 const SPLIT_IN = 4.5;
-/** A partner this much nearer the net (m) than the striker is in the way of the ball. */
-const PARTNER_AHEAD = 0.3;
-/** How wide of them (m) it is aimed: body 0.22 and ball 0.03, and the rest for the swing's error. */
-const PARTNER_CLEAR = 0.55;
-/** A struck ball's speed (m/s) for when it reaches them: 70 km/h. */
-const PARTNER_PASS_SPEED = 19;
 
 const SMASH_X3_DEPTH = 5.5;
 const SMASH_X3_HEIGHT = 2.2;

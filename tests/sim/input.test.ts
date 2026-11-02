@@ -20,7 +20,7 @@ describe('modifiers at the release', () => {
     // The fresh-eyes review: the release read the modifiers from the tick's end, so Space let go up to ~10 ms
     // after O turned every smash into a bandeja (and Shift's víbora and chiquita the same way).
     let smash = 0, other = 0;
-    for (const seed of [1, 2, 3, 4, 5, 6]) {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       const m = new MatchSim({ seed, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
       const f = new InputFrame();
       const p = m.players[0]!;
