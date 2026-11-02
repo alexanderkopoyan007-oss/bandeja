@@ -406,7 +406,7 @@ Only things that genuinely couldn't be verified, each with what would settle it.
   the side, measured for how far the head falls below the hand.
 - **The cut-away's back corner.** The lens sits inside the court, as the net post's does. Settled by: watching a few points; a corner camera outside the glass would need the glass drawn in front of it.
 
-## Phase 9 (expert review: rounds 10 to 16)
+## Phase 9 (expert review: rounds 10 to 17)
 - **Nobody has played it by hand.** Every "you" in rounds 10-16 is a scripted stand-in with perfect sight of the ball's path. Settled by: the owner playing twenty points at default settings and saying what felt wrong.
 - **The sound.** Never listened to by anyone. Settled by: a minute of a match on laptop speakers. Better recordings need CC0 files from a Freesound account, and the owner's OK.
 - **Routine shots fail at half the real rate:** groundstroke 3.0% against 6.1-7.3, volley 4.5 against 6-7. Raising it is measured to shorten rallies and bring W from 44 towards 40, and would make the partner miss more. Settled by: the owner choosing, after playing, whether the partner should.
@@ -419,3 +419,6 @@ Only things that genuinely couldn't be verified, each with what would settle it.
 - **A held direction key no longer pre-aims.** Round 17: what was down at the press stays the run's until let go, so aim with a key pressed after the shot key. It cures the aim flying to the fence, and it takes away an aim a player may have wanted. Settled by: the owner playing with a key held through the press and saying which they meant.
 - **How often real hands brush the next key.** The stand-in's 10% of balls is a guess; the fix holds at any rate. Settled by: the owner playing ten games.
 - **Ready elbows on the move.** 46-66 is standing footage. The arm is held to the same bend in a run, and whether a pro's opens further is not in the table. Settled by: two clips of a pro running in the ready grip.
+- **The serve's fold.** It ends at 92-109 by seat and body against the video's 123-125, because any closer the racket touches the chest on short bodies. Settled by: a side-on clip of where the racket lies at the end of a short player's serve.
+- **How narrow a run's feet land.** RUN_WIDTH .7 gives 17 cm; 5-10 cm is from memory and nothing in the project's research has it. Settled by: a clip of a pro running straight at the camera.
+- **A volley's arm after the ball.** The footage has no row, so 58-60 follows the contact's bend rather than a measurement. Settled by: three side-on volleys read to +0.3 s.

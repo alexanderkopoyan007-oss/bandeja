@@ -695,7 +695,7 @@ The rally run is drawn now instead of played from the clips, and a side-on strip
 - **Into the ball.** Hips 6-14 cm behind the feet at contact to about level or ahead.
 - **Around them.** A singles winner throws both arms up, and there is an umpire on the chair.
 
-### Review rounds 10 to 16 (1 Nov, `REVIEW.md`)
+### Review rounds 10 to 17 (1 Nov, `REVIEW.md`)
 After the owner's verdict ("this game is straight ass so far"), every round was judged from their seat: a human at player 0, an AI partner, default settings, counting what looks wrong, not averages.
 
 - **Round 10.** Your own swing stopped short and snapped, the racket whipped back after the ball, the serve's arm met the ball folded, one key beat Pro.
@@ -716,10 +716,26 @@ After the owner's verdict ("this game is straight ass so far"), every round was 
 | Lob from under 2.5 m, top of flight | 10.0 m | 6.1 |
 | Hip drops over 15 cm, no stroke, per player-minute | 17.4 | 2.1 |
 | Feet wide and hips sunk, per player-minute | 3.5 | 0 |
-| Both feet off the floor in a run (real 25-35) | 24% | 29 |
-| Pops per minute, two seeds | 25, 23 | 21, 22 |
 
 The legs had two causes, and neither was the reviewer's guess. The lean carried the hips a whole leg per radian off the feet, 0.46 m at a hard stop, and the arc took them down: hips 0.61 m at walking pace. And a planted foot left behind drew the hips down at 1.2 m/s.
+
+- **Round 17.** Both Highs: the run galloped, which was my own Round 16 change, and a key held after the shot key flew the aim to the fence. Chasing two failed tests then found the largest fault of the stretch. Half of all the pops were arms held nearly straight in the ready position, and five people of ten stood at 22-45 degrees against the footage's 46-66. After that the arm's whole stroke went back on the footage with one rule, and the elbow, which nothing had ever checked, came out of the waist.
+
+| Round 17 | Before | After | Video |
+|---|---|---|---|
+| Standing ready elbow, ten people | 22-63 | 54-63 | 46-66 |
+| Pops per player-minute, seeds 3, 5, 6 | 28, 32, 35 | 16, 16, 17 | |
+| Runs with a paired landing | 33% | 3% | |
+| Forward stride width | 27 cm | 17 cm | |
+| Forehand elbow -.22, -.08, 0, +.08, +.16, +.24 s | 30, 30, 31, 44, 36, 51 | 31, 39, 47, 44, 48, 49 | 30, 39, 48, 47-64, 38-60, 43-64 |
+| Bandeja elbow at the ball, +.08, +.16 s, p1 | 42, 30, 27 | 50, 46, 42 | 54-65, then 31-62 |
+| Forehand volley elbow +.08, +.16, +.32 s, p1 | 31, 29, 33 | 58, 60, 59 | no row after the ball |
+| Serve elbow 0, +.08, +.16, +.24, +.32 s, p1 | 45, 30, 89, 102, 102 | 45, 35, 74, 101, 109 | 39, 46, 73, 123, 125 |
+| Same, the human's seat | 47, 30, 85, 90, 96 | 47, 35, 70, 87, 92 | |
+| Peak elbow speed into recovery, forehand volley | 718 deg/s | 134 | |
+| Forearm over 5 cm in the body, all frames, p1 | 1.65% | 0.66 | |
+| Same, generated body | 5.73% | 3.14 | |
+| Key left down, worst aim cell, points | 46.8% | 53.8 | |
 
 Generated people: three from Meshy are dealt into ordinary matches with team colours, blinks and a mouth drawn in the shader. The grip became a real continental, and a key's roll about the handle is now treated as the wrist it is, so the backhand hits palm-first.
 
