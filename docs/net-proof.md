@@ -1,6 +1,6 @@
 # Can BANDEJA be played online?
 
-A feasibility check on branch `net-proof`, 2 November 2026, on the game at `b6e9bd9`. Nothing here is shipped.
+A feasibility check on branch `net-proof`, 2 November 2026, on the game at `b6e9bd9`. The feature built on it is described in `docs/online.md`; the changes table below was the to-do list for that.
 
 ## Verdict: works, with named changes
 
@@ -188,7 +188,6 @@ node tools/net/alloc-rewind.mjs
 node tools/net/link-sim.ts 600
 node tools/net/anim-rewind.ts
 node tools/net/grades.ts 3000
-npx vite build --outDir /tmp/dist-net && bash tools/one-chrome.sh node tools/net/tabs-run.mjs /tmp/dist-net 120
 ```
 
 `tests/net/rewind.test.ts` holds the two promises in the suite: a rewind changes nothing, and two clients agree over 80 ms with 2% loss. All 716 tests pass on this branch. `game.ts` and `main.ts` have a few added lines for the harness; they aren't meant to ship as they are.

@@ -78,6 +78,7 @@ export class OnlineSession {
   readonly handovers: Array<{ from: number; h: SeatHandover }> = [];
   /** Go, as this machine's performance.now() time: set once it's known, loading or not. */
   goTime: number | null = null;
+  /** Go on this machine's wall clock, for anyone who asks after it. */
   private wentAt: number | null = null;
   private amReady = false;
   /** This player became the host before go was said, so nobody has told it who is ready. */
@@ -146,8 +147,10 @@ export class OnlineSession {
     else if (from !== this.host) return;
     else if ('seats' in m) { if (validSeats(m.seats)) { this.seats = m.seats; this.onChange?.(); } }
     else if ('start' in m) this.heardStart(m.start);
-    else if ('go' in m && Number.isFinite(m.go)) {
+    else if ('go' in m && Number.isFinite(m.go) && this.started && this.wentAt === null) {
+      // (once: a second go would restart the clock of a match already running)
       this.goTime = m.go - (this.links?.offset(this.host) ?? 0) - performance.timeOrigin;
+      this.wentAt = this.goTime + performance.timeOrigin;
       this.onGo?.(this.goTime);
     }
   }

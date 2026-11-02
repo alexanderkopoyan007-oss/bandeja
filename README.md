@@ -4,6 +4,8 @@ A realistic, fluid 3D padel game for the browser. Free and open source; runs ent
 
 **Play:** https://alexanderkopoyan007-oss.github.io/bandeja/
 
+Online doubles for 2 to 4 people, with friends or strangers, is on the menu under Online. See `docs/online.md`.
+
 ```bash
 npm install
 npm run dev        # http://localhost:5190

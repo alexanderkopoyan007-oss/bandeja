@@ -64,6 +64,8 @@ const read = `(() => {
     links: s?.links ? s.links.ids().map((id) => ({ id, direct: s.links.direct(id), rtt: Math.round(s.links.rtt(id)) })) : [], points: g ? g.sim.score.pointsPlayed ?? null : null, feed: n?.feed.eventSeq, sim: g?.sim.eventSeq };
 })()`;
 const QS = 'quality=medium&dpr=1&cap=60';
+/** BASE=<url>: the deployed site instead of a local build (with REMOTE=1). */
+const BASE = process.env.BASE ?? 'http://127.0.0.1:4193/';
 /** Presses a menu's button by its label, as a click. */
 async function press(p, screen, label) {
   await p.waitForFunction((s) => window.__app?.menu.showing === s, { timeout: 120000, polling: 100 }, screen);
@@ -76,14 +78,14 @@ for (const [n, lag, loss, relay] of runs) {
   const link = `lag=${lag}&loss=${loss}${relay ? '&relay=1' : ''}${WHOLE ? '&short=1' : ''}`;
   // MENUS=1: in through the menus as a person comes: the first by Create, the second by typing the code, the rest by the link.
   // FIND=1: everyone into the public queue, and the queue makes the match.
-  const host = await open(`http://127.0.0.1:4193/?${FIND ? 'online=find&' : MENUS ? '' : `online=new&players=${n}&`}${QS}&${link}`, (logs[0] = []));
+  const host = await open(`${BASE}?${FIND ? 'online=find&' : MENUS ? '' : `online=new&players=${n}&`}${QS}&${link}`, (logs[0] = []));
   pages.push(host);
   if (MENUS) await press(host, 'title', 'Online'), await press(host, 'online', 'Create a match');
   if (!FIND) await host.waitForFunction('window.__app?.online?.you >= 0', { timeout: 120000, polling: 200 });
   const code = FIND ? 'queue' : await host.evaluate('window.__app.online.code');
   for (let i = 1; i < n; i++) {
-    if (FIND) { pages.push(await open(`http://127.0.0.1:4193/?online=find&${QS}&${link}`, (logs[i] = []))); continue; }
-    const p = await open(`http://127.0.0.1:4193/?${MENUS && i === 1 ? '' : `room=${code}&`}${QS}&${link}`, (logs[i] = []));
+    if (FIND) { pages.push(await open(`${BASE}?online=find&${QS}&${link}`, (logs[i] = []))); continue; }
+    const p = await open(`${BASE}?${MENUS && i === 1 ? '' : `room=${code}&`}${QS}&${link}`, (logs[i] = []));
     pages.push(p);
     if (MENUS && i === 1) {
       await press(p, 'title', 'Online');

@@ -238,7 +238,7 @@ export class NetMatch implements NetHooks {
 
   private giveSeat(h: SeatHandover): void {
     if (![...this.seatOf.values()].includes(h.seat)) return;
-    for (const [id, s] of this.seatOf) if (s === h.seat) this.seatOf.delete(id);
+    for (const [id, s] of this.seatOf) if (s === h.seat) { this.seatOf.delete(id); this.behind.delete(id); }
     this.going.delete(h.seat);
     // Hashes either side of this may come from different histories.
     this.theirHash.clear();
