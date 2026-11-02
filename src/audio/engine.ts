@@ -4,7 +4,7 @@
 // camera each frame. Browsers start audio only from a user gesture (`unlock`); until then, and until the bank's
 // family has arrived from the worker, plays are dropped.
 import * as THREE from 'three/webgpu';
-import { AUDIO, AMB_SEND, BED_SEND, CROWD_SEND, arenaAudio, families, renderFamily, renderRoom, type BankEnv, type Sample } from './bank.ts';
+import { AUDIO, AMB_SEND, BED_SEND, CROWD_SEND, arenaAudio, families, renderFamily, renderRoom, widthLevel, type BankEnv, type Sample } from './bank.ts';
 import { resample } from './dsp.ts';
 import { BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
 
@@ -23,7 +23,6 @@ interface Voice {
 const POOL = 32;
 const db = (x: number): number => Math.pow(10, x / 20);
 /** What the panner's inverse distance law leaves of a sound d m away. */
-const falloff = (d: number): number => AUDIO.distance.ref / (AUDIO.distance.ref + AUDIO.distance.rolloff * (Math.max(AUDIO.distance.ref, Math.min(d, AUDIO.distance.max)) - AUDIO.distance.ref));
 
 export class AudioEngine implements AudioSink {
   enabled = true;
@@ -268,6 +267,8 @@ export class AudioEngine implements AudioSink {
       v.pan.disconnect();
       v.pan.connect(this.buses[bus]!);
       v.pan.connect(v.send);
+      v.send.disconnect();
+      v.send.connect(bus === BUS_CROWD ? this.crowdWet! : this.wet!);
       v.bus = bus;
     }
     const src = ctx.createBufferSource();
@@ -283,9 +284,8 @@ export class AudioEngine implements AudioSink {
     v.pan.positionZ.setValueAtTime(z + wide * R.z, t);
     // Air and distance take the highs; farther sounds are wetter (less direct sound against the same room).
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    // (the panner's own distance law on the true distance: widened, the side glass came out 2 dB under the same ball in the middle)
     const wx = dx + wide * R.x, wy = dy + wide * R.y, wz = dz + wide * R.z;
-    v.gain.gain.setValueAtTime(gain * db((this.rand() - 0.5) * 3) * (falloff(Math.sqrt(wx * wx + wy * wy + wz * wz)) / falloff(d)), t);
+    v.gain.gain.setValueAtTime(gain * db((this.rand() - 0.5) * 3) * widthLevel(d, Math.sqrt(wx * wx + wy * wy + wz * wz), bus), t);
     v.air.frequency.setValueAtTime(Math.min(20000, AUDIO.distance.airHz / (1 + d / AUDIO.distance.airM)), t);
     v.send.gain.setValueAtTime(bus === BUS_AMB ? AMB_SEND : 0.5 + d / 40, t);
     src.start(t, Math.max(0, offset));

@@ -545,7 +545,7 @@ const TRUNK_BELOW = -0.08;
 const READY_TURN_MAX = 1.6;
 const READY_TURN_EASE = 0.09;
 /** A run's free hand from its shoulder, in arm's lengths: out, up the trunk, forward, and its swing fore and aft. */
-const RUN_HAND_OUT = 0.08, RUN_HAND_UP = -0.62, RUN_HAND_FWD = 0.22, RUN_HAND_SWING = 0.3;
+const RUN_HAND_OUT = 0.16, RUN_HAND_UP = -0.56, RUN_HAND_FWD = 0.22, RUN_HAND_SWING = 0.3;
 /** An ankle's range from flat on a square shin, up and pointed (rad). */
 const ANKLE_UP = (34 * Math.PI) / 180, ANKLE_DOWN = (50 * Math.PI) / 180;
 /** How far (m) a volley's way out bows on through the ball. */
@@ -703,6 +703,12 @@ const RUN_V_OFF = 0.3;
 const RUN_PLANT = 0.3;
 /** The run is back on this long after a contact (s). */
 const RUN_AFTER = 0.08;
+/** How much of RUN_PLANT goes by RUN_PLANT_V1 m/s, from RUN_PLANT_V0. */
+const RUN_PLANT_FAST = 0.6;
+/** The chest stops following a run's hips this long before a contact (s), wholly by RUN_CHEST_NEAR, and is free again RUN_CHEST_BACK after it. */
+const RUN_CHEST_FAR = 0.6, RUN_CHEST_NEAR = 0.3, RUN_CHEST_BACK = 0.3, RUN_CHEST_EASE = 0.06;
+const RUN_PLANT_V0 = 1.5;
+const RUN_PLANT_V1 = 3;
 const RUN_IN = 0.1;
 const RUN_HZ0 = 1.15;
 const RUN_HZ_V = 0.2;
@@ -1025,6 +1031,7 @@ export class Avatar {
   /** How far the chest has turned with the legs' warp (rad), following WARP_CHEST_RATE. */
   private chestWarp = 0;
   private warpWish = 0;
+  private chestFree = 1;
   /** What the warp has still to turn after a switch into or out of a side-on run (rad), going at WARP_SWITCH_RATE. */
   private warpOff = 0;
   private readonly pose: Pose;
@@ -2502,7 +2509,14 @@ export class Avatar {
       // Running in a rally, up to the last steps before a contact (a backswing is begun on the run).
       // And from just after it: the arms finish the stroke on a body already on its way. Kept off to the end of the follow-through, the first
       // half second of every recovery was the clip's legs, both feet up half the time (review round 26).
-      const near2 = (this.st === ST_SWING && t < this.tCon + RUN_AFTER) || (this.st === ST_PREP && this.hasCon && this.tPlan - t < RUN_PLANT);
+      // (and at a run's pace later: taken off 0.3 s out with the body still going at 3 m/s, the last stride to the ball was the clip's too, a shin
+      // level behind for a third of a second; review round 27)
+      const plantIn = RUN_PLANT * (1 - RUN_PLANT_FAST * smoothstep(RUN_PLANT_V0, RUN_PLANT_V1, sp));
+      // (the chest is the stroke's by then: going with the hips up to the ball, it came back to it in the last frames and took the arms with it)
+      // (eased: a swing that starts inside RUN_CHEST_NEAR would otherwise take the whole twist off in one frame)
+      const free = this.st === ST_SWING ? (t < this.tCon ? 0 : smoothstep(0, RUN_CHEST_BACK, t - this.tCon)) : this.st === ST_PREP && this.hasCon ? smoothstep(RUN_CHEST_NEAR, RUN_CHEST_FAR, this.tPlan - t) : 1;
+      this.chestFree += (free - this.chestFree) * (1 - Math.exp(-this.dt / RUN_CHEST_EASE));
+      const near2 = (this.st === ST_SWING && t < this.tCon + RUN_AFTER && this.tCon - t < plantIn) || (this.st === ST_PREP && this.hasCon && this.tPlan - t < plantIn);
       const running = !going && sim.phase === PH_RALLY && !near2 && sp > (this.gaitRun > 0 && this.gaitW > 0 ? RUN_V_OFF : RUN_V_ON);
       if (going) this.gaitRun = 0;
       else if (running) this.gaitRun = 1;
@@ -2582,7 +2596,7 @@ export class Avatar {
     {
       // (in a run the chest goes too, off a stroke's turn as well: held on the stroke, the hips stayed with it and the legs ran sideways to
       // the way they were going, the fast frames that far off it doubled by a smaller TWIST_MAX; review round 26)
-      const wa = this.warp + (this.warpWish - this.chestTurn * (1 - this.bt) - this.warp) * this.gaitW, room = WARP_SPINE_MAX + RETREAT_SPINE * this.retreat;
+      const wa = this.warp + (this.warpWish - this.chestTurn * (1 - this.bt) - this.warp) * this.gaitW * this.chestFree, room = WARP_SPINE_MAX + RETREAT_SPINE * this.retreat;
       const want = wa > room ? wa - room : wa < -room ? wa + room : 0;
       const lim = cut ? Math.PI : WARP_CHEST_RATE * dt, d = want - this.chestWarp;
       this.chestWarp += d > lim ? lim : d < -lim ? -lim : d;
@@ -3206,8 +3220,9 @@ export class Avatar {
     this.reachZ = rz;
     let down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * ((this.fam.wrist ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y)) : 0;
     // A volley's finish stays down where it met the ball, and the hips went on following that key: lowest 0.3 s after
-    // the ball, back 0.55 s after it, and four volleys in ten ran off still sitting. The drop was for the ball.
-    if (this.fam.wrist) {
+    // the ball, back 0.55 s after it, and four volleys in ten ran off still sitting. The drop was for the ball. A serve the same: 7 cm down and back
+    // in a quarter of a second after every ball (review round 27).
+    if (this.fam.wrist || this.fam.name === 'serve') {
       if (before) this.downAt = down;
       else down = this.downAt * (1 - smoothstep(0, VOLLEY_UP, this.lastT - this.tCon));
     }

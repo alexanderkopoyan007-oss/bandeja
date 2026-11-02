@@ -178,7 +178,8 @@ export const FOREHAND: Family = {
   // (long: the elbow 30-31 at -0.22 s on video. Moved in to bend it, the forearm lay across the belly, 2.7% of take-backs to 51%.)
   back: rolled(key(v(-0.75, 1.06, -0.35), v(-0.25, 0.6, -0.75), v(-1, 0.05, -0.1), v(-0.55, 0.75, -0.55), -1.05, v(0.12, 1.25, 0.4)), 120),
   contact: key(v(-0.75, 1.0, 0.45), v(-0.85, 0.12, 0.5), v(0.05, 0.08, 1), v(-0.45, 0.8, -0.15), 0.15, v(0.42, 1.12, 0.36)),
-  finish: rolled(key(v(0.27, 1.66, 0.36), v(0.35, 0.7, -0.6), v(0.85, 0.1, 0.4), v(-0.3, 1.2, 0.6), 0.95, v(0.5, 1.1, -0.2)), 55),
+  // (up past the shoulder by +0.24 s on video: at 1.66 the hand stopped short of it and lost half its speed in 50 ms)
+  finish: rolled(key(v(0.27, 1.8, 0.36), v(0.35, 0.7, -0.6), v(0.85, 0.1, 0.4), v(-0.3, 1.2, 0.6), 0.95, v(0.5, 1.1, -0.2)), 55),
   low: racketQuat(v(-0.6, -0.74, 0.32), v(0.05, 0.3, 1)),
   tip: tipQ(20),
   dip: 0.28,

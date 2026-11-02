@@ -3,7 +3,7 @@
 // shape (the rally's length, the score), and asks an AudioSink for sounds. Never writes to the sim. Pure logic: the
 // tests drive it with a recording sink.
 import {
-  E_HIT, E_FLOOR, E_WALL, E_NET, E_BODY, E_ROOF, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_SWING, E_WHIFF, PH_RALLY, PH_TOSS, PH_SETUP,
+  E_HIT, E_FLOOR, E_WALL, E_NET, E_BODY, E_ROOF, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_SWING, E_WHIFF, PH_RALLY, PH_TOSS, PH_SETUP, PH_DEAD,
   type MatchSim,
 } from '../sim/match.ts';
 import {
@@ -11,7 +11,7 @@ import {
 } from '../sim/contact/shots.ts';
 import { SURF_GLASS, SURF_MESH, WALL_BACK_NEAR, WALL_BACK_FAR, type ZoneHit } from '../sim/court/court.ts';
 import { G_EARLY, G_LATE, G_PERFECT } from '../sim/contact/timing.ts';
-import { WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP } from '../sim/rules/rally.ts';
+import { R_FAULT, R_LET, WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP } from '../sim/rules/rally.ts';
 import { RK_DRIVE, RK_VOLLEY, RK_OVER, RK_SLICE, RK_TOUCH, WHOOSH_PEAK, PLAYER_VOICES, GRUNT_OVERHEAD, GRUNT_BACKHAND } from './voices.ts';
 import {
   AUDIO, arenaAudio, binFor, racketBin, RQ_CLEAN, RQ_OFF, RQ_FRAME, RACKET_POWER, BOUNCE_V, GLASS_V, MESH_V, METAL_V,
@@ -47,8 +47,6 @@ const NEXT_GAIN = 0.4, NEXT_REST = 12;
 const FOOT_UP = 0.03, FOOT_DOWN = 0.012;
 /** Under this speed (m/s) a foot set down is the stance settling, not a step: a third of all landings in a real match. */
 const FOOT_STILL = 0.15;
-/** The crowd on the edge of its seats from the first shot of a star or golden point (a rally of 16 shots otherwise). */
-const DECIDING_TENSION = 0.6;
 /** A game won: the crowd's answer to a game, under a set's. */
 const CELEBRATE_GAME = 0.5;
 const db = (x: number): number => Math.pow(10, x / 20);
@@ -399,8 +397,10 @@ export class Soundscape {
    */
   private crowdBed(sim: MatchSim, dt: number): void {
     // (the walk back is still the crowd's: hushed from the end of the point, it had about a second of chatter in an eight second gap)
-    const inPoint = (sim.phase === PH_SETUP && sim.walking === 0) || sim.phase === PH_RALLY || sim.phase === PH_TOSS;
-    const t = sim.phase === PH_RALLY ? Math.max(sim.score.isDecidingPoint() ? DECIDING_TENSION : 0, clamp01((sim.rally.shots - 6) / 16)) : 0;
+    // (nor does it start up between two serves: back to full talk after a fault, it had to hush again for the second)
+    const another = sim.rally.result === R_LET || (sim.rally.result === R_FAULT && sim.serveNo === 1);
+    const inPoint = (sim.phase === PH_SETUP && (sim.walking === 0 || sim.serveNo === 2)) || sim.phase === PH_RALLY || sim.phase === PH_TOSS || (sim.phase === PH_DEAD && another);
+    const t = sim.phase === PH_RALLY ? clamp01((sim.rally.shots - 6) / 16) : 0;
     this.tension += (t - this.tension) * (dt > 0 ? 1 - Math.exp(-dt / 1.5) : 0);
     const want = inPoint ? AUDIO.crowd.hush + AUDIO.crowd.tensionGain * this.tension : AUDIO.crowd.chatter;
     const phaseChanged = inPoint !== this.lastInPoint;

@@ -3,10 +3,10 @@
 // a model of the limiter and the soft clip. Keep it in step with engine.ts. The limiter is a model of a
 // DynamicsCompressorNode (a 6 ms look-ahead as in Chromium, the node's attack and release on the linked peak), not the
 // node itself: read its gain reduction as an estimate.
-import { AUDIO, AMB_SEND, BED_SEND, CROWD_SEND, arenaAudio, renderFamily, renderRoom, families, type BankEnv, type Sample } from './bank.ts';
+import { AUDIO, AMB_SEND, BED_SEND, CROWD_SEND, arenaAudio, falloff, renderFamily, renderRoom, families, widthLevel, type BankEnv, type Sample } from './bank.ts';
 import { Biquad, resample, SR } from './dsp.ts';
 import { fft, pow2 } from './measure.ts';
-import { BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
+import { BUS_BALL, BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
 
 const db = (x: number): number => Math.pow(10, x / 20);
 const POOL = 32;
@@ -107,7 +107,7 @@ export class OfflineEngine implements AudioSink {
   }
 
   /** Equal-power panner gains for a source, as the WebAudio spec works them out (listener up is about +y). */
-  private pan(x: number, y: number, z: number): { l: number; r: number; d: number } {
+  private pan(x: number, y: number, z: number, bus: number): { l: number; r: number; d: number } {
     const L = this.o.listener;
     let dx = x - L.x, dz = z - L.z;
     const dy = y - L.y;
@@ -135,7 +135,7 @@ export class OfflineEngine implements AudioSink {
     if (az > 90) az = 180 - az;
     if (az < -90) az = -180 - az;
     const u = (az + 90) / 180;
-    const distGain = AUDIO.distance.ref / (AUDIO.distance.ref + AUDIO.distance.rolloff * (Math.max(AUDIO.distance.ref, Math.min(d0, AUDIO.distance.max)) - AUDIO.distance.ref));
+    const distGain = falloff(d) * widthLevel(d0, d, bus);
     return { l: Math.cos((u * Math.PI) / 2) * distGain, r: Math.sin((u * Math.PI) / 2) * distGain, d: d0 };
   }
 
@@ -163,7 +163,7 @@ export class OfflineEngine implements AudioSink {
         if (v < 0) { v = 0; for (let k = 1; k < POOL; k++) if (this.voiceUntil[k]! < this.voiceUntil[v]!) v = k; }
         this.voiceUntil[v] = s.at + dur;
       }
-      const pos = s.flat ? { l: 1, r: 1, d: 0 } : this.pan(s.x, s.y, s.z);
+      const pos = s.flat ? { l: 1, r: 1, d: 0 } : this.pan(s.x, s.y, s.z, s.bus);
       const stepSr = (sample.sr * s.rate) / SR;
       const cL = sample.ch[0]!, cR = sample.ch[1] ?? cL;
       if (!s.flat) { air.set('lp', Math.min(20000, AUDIO.distance.airHz / (1 + pos.d / AUDIO.distance.airM)), Math.SQRT1_2); air.reset(); }
@@ -269,4 +269,4 @@ export function convolve(x: Float32Array, ir: Float32Array, n: number): Float32A
   return out;
 }
 
-export { BUS_CROWD, BUS_AMB };
+export { BUS_BALL, BUS_CROWD, BUS_AMB };

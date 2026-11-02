@@ -4,9 +4,20 @@
 // render sits at the family's level (peak or rms, data/audio.json); bins keep their levels relative to each other.
 import spec from '../../data/audio.json' with { type: 'json' };
 import { Rng, SR, peak, rms } from './dsp.ts';
+import { BUS_AMB, BUS_CROWD } from './sink.ts';
 import * as V from './voices.ts';
 
 export const AUDIO = spec;
+
+/** The panner's inverse law at a distance from the lens. */
+export const falloff = (d: number): number => AUDIO.distance.ref / (AUDIO.distance.ref + AUDIO.distance.rolloff * (Math.max(AUDIO.distance.ref, Math.min(d, AUDIO.distance.max)) - AUDIO.distance.ref));
+
+/**
+ * Level on top of a panner widened to `wd`, for a sound `d` from the lens. The width is for direction, so what is on
+ * the court keeps its true distance (at the widened one the side glass came out 2 dB under the same ball in the
+ * middle); what is off the court was matched at the widened distance and stays there.
+ */
+export const widthLevel = (d: number, wd: number, bus: number): number => (bus === BUS_CROWD || bus === BUS_AMB ? 1 : falloff(d) / falloff(wd));
 export type ArenaAudio = typeof spec.arenas.stadium & { room: V.RoomSpec; birds?: boolean; crowdSend?: number; bedSend?: number; trim?: number };
 
 /** How much of a sound from outside the court reaches the room (sends to the reverb): a crowd in a hall is in it. */

@@ -1,8 +1,8 @@
 // A simulated match through a model of the whole chain (src/audio/offline.ts): what comes out, not what goes in.
 import { describe, expect, it } from 'vitest';
-import { AUDIO } from '../../src/audio/bank.ts';
+import { AUDIO, falloff, widthLevel } from '../../src/audio/bank.ts';
 import { aWeight, fastMax } from '../../src/audio/measure.ts';
-import { OfflineEngine, offlineBank } from '../../src/audio/offline.ts';
+import { BUS_AMB, BUS_BALL, BUS_CROWD, OfflineEngine, offlineBank } from '../../src/audio/offline.ts';
 import { Soundscape, type FeetSource } from '../../src/audio/soundscape.ts';
 import { FL_TURF } from '../../src/audio/voices.ts';
 import { MatchSim } from '../../src/sim/match.ts';
@@ -26,6 +26,14 @@ const eng = new OfflineEngine({ env, secs: SECS, bank, listener: { x: 0, y: 7.6,
 const laf = (k: string): number => fastMax(aWeight(eng.render(new Set([k])).L));
 
 describe('through the whole chain', () => {
+  it('widens the picture without moving a level on the court', () => {
+    const d = 22, wide = 34;
+    expect(falloff(wide) * widthLevel(d, wide, BUS_BALL)).toBeCloseTo(falloff(d), 9);
+    expect(widthLevel(d, wide, BUS_BALL)).toBeGreaterThan(1);
+    expect(widthLevel(d, wide, BUS_CROWD)).toBe(1);
+    expect(widthLevel(d, wide, BUS_AMB)).toBe(1);
+  });
+
   it('leaves the limiter idle in play and stays in range', () => {
     const r = eng.render();
     let gr = 0, pk = 0;
