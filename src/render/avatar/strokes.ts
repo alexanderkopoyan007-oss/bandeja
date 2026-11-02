@@ -346,7 +346,8 @@ export const SERVE: Family = {
   after: 0.92,
   back: rolled(courtKey([-0.76, 0.26, 1.67], [-0.5, 0, 0.85], [0.85, 0.5, 0.15], [-0.6, 0.3, 0.85], -1.6, [0.37, 0.47, 1.0]), 100),
   contact: courtKey([0.5, 0.55, 0.92], [-0.2, 1, -0.15], [0.91, 0, 0.42], [-0.1, 0.7, 1.1], -0.4, [0.49, 0.09, 0.82]),
-  finish: rolled(courtKey([0.35, -0.3, 1.5], [-0.15, -0.9, 0.25], [0.9, 0.2, 0.3], [0.3, 0.35, 1.0], -0.3, [0.33, -0.19, 0.87]), 110),
+  // (the chest goes on through the ball to square and past: at the contact's turn to the end it stopped dead, side-on for half a second)
+  finish: rolled(courtKey([0.35, -0.3, 1.5], [-0.15, -0.9, 0.25], [0.9, 0.2, 0.3], [0.3, 0.35, 1.0], 0.3, [0.33, -0.19, 0.87]), 110),
   // Off a coach's serve, frame by frame: the racket hand held out at the shoulder's height until about 0.2 s before the ball,
   // then down across the body to it, the elbow 44-52 all the way.
   over: {

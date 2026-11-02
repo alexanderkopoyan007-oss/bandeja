@@ -441,6 +441,8 @@ const REACH_RATE = 2.5;
 const REACH_RATE_BEFORE = 4;
 /** After a jump's ball and on landing (m/s): held to the ball and let go all at once, the hips lurched 2.7 m/s off the feet. */
 const REACH_RATE_AIR = 0.6, REACH_RATE_LAND = 1.2;
+/** Fastest the reach's speed rises after the contact (m/s²): to the limit in about a tenth of a second. */
+const REACH_ACC = 25;
 /** Nearest an ankle comes to its hip, as a share of the leg's length (a deep lunge's front leg is about 0.6). */
 const LEG_FOLD = 0.55;
 /** Lowest an ankle goes (m): the foot flat on the floor. */
@@ -699,6 +701,8 @@ const STEP_TIME = 0.15;
 const RUN_V_ON = 0.45;
 const RUN_V_OFF = 0.3;
 const RUN_PLANT = 0.3;
+/** The run is back on this long after a contact (s). */
+const RUN_AFTER = 0.08;
 const RUN_IN = 0.1;
 const RUN_HZ0 = 1.15;
 const RUN_HZ_V = 0.2;
@@ -745,6 +749,7 @@ const RUN_STRETCH = 0.975;
 const RUN_LANDS = 0.6;
 const RUN_LOOSE = 0.3;
 const RUN_HIP_RATE = 1.2;
+const RUN_HIP_EASE = 0.03;
 /** The most a run's hips sink for a foot (m): they followed one left behind, hips 0.68 m at 2 m/s, feet over a metre apart. */
 const RUN_SINK = 0.13;
 /** How far down the hips are taken as being when a planted foot is judged out of reach and steps at once, whatever the other foot is doing (m). Less has both feet off the floor 43% of a run and cuts the stance short, more slides the foot and leaves the thigh out; real running is about 30, a foot down 0.2 s. */
@@ -887,10 +892,16 @@ const LEAN_MAX = 0.42;
 const LEAN_W = 13;
 const LEAN_Z = 0.62;
 const LEAN_TRUNK = 1;
+/** Its share in each joint of the spine, least at the waist: in thirds, a hard stop parted a shirt from its shorts. */
+const LEAN_SPINE = [0.15, 0.35, 0.5];
 const LEAN_STROKE = 0.85;
 const LEAN_HAND = 0.25;
 /** Slowing down, the body goes past upright behind its feet: the run's own forward lean has to go first. */
 const LEAN_BRAKE = 1.5;
+/** And its limit, over LEAN_MAX: a stop's trunk went 37 degrees back over feet that hadn't come out in front of it. */
+const LEAN_BRAKE_MAX = 1.1;
+/** How far a landing goes ahead for each radian of lean back, and in for each forward (m): a stop lands out in front of the body, a start under it. */
+const RUN_LEAN_STEP = 0.5;
 /** How much of a leg's length the lean takes the hips off the feet for each radian. All of it put them 0.46 m off the feet at a hard stop, legs near straight, then 0.13 m lower for the arc: hips 0.61 m at walking pace. */
 const LEAN_HIP = 0.4;
 /** How fast the chest turns with the hips into a side-on run and back out of it (rad/s): switched at once, the
@@ -1013,6 +1024,7 @@ export class Avatar {
   private sideRun = false;
   /** How far the chest has turned with the legs' warp (rad), following WARP_CHEST_RATE. */
   private chestWarp = 0;
+  private warpWish = 0;
   /** What the warp has still to turn after a switch into or out of a side-on run (rad), going at WARP_SWITCH_RATE. */
   private warpOff = 0;
   private readonly pose: Pose;
@@ -1037,6 +1049,7 @@ export class Avatar {
   private readonly overPrev = new THREE.Quaternion(0, 0, 0, 0);
   private afterW = -0;
   private runHipY = -1;
+  private runHipTo = 0;
   private gaitOn = 0;
   /** 1: walkFeet is drawing a rally's run, not the walk back; which foot goes next, and how long since one went (s). */
   private gaitRun = 0;
@@ -1258,6 +1271,8 @@ export class Avatar {
   /** Hips pushed towards a ball out of reach (world x, z). */
   private reachX = 0;
   private reachZ = 0;
+  private reachV = 0;
+  private dropV = 0;
   /** The weight's tilt (rad, towards world x and z) and its rate; last frame's filtered velocity. */
   private tiltX = 0;
   private tiltZ = 0;
@@ -2299,6 +2314,7 @@ export class Avatar {
       const lim = WARP_SWITCH_RATE * this.dt, o = this.warpOff;
       this.warpOff = o > lim ? o - lim : o < -lim ? o + lim : 0;
       this.warp -= this.warpOff;
+      this.warpWish = this.warp;
       // The legs no further round from the chest than a spine turns: running one way with the chest turned into a stroke
       // the other, the shoulders were up to 135 degrees off the hips.
       const ch = this.chestTurn * (1 - this.bt) + this.chestWarp;
@@ -2378,7 +2394,7 @@ export class Avatar {
     this.lastVZ = this.vz;
     const brake = ax * this.vx + az * this.vz < 0 ? LEAN_BRAKE : 1;
     let tx = ax * LEAN_GAIN * brake, tz = az * LEAN_GAIN * brake;
-    const t = Math.sqrt(tx * tx + tz * tz), most = LEAN_MAX * brake;
+    const t = Math.sqrt(tx * tx + tz * tz), most = LEAN_MAX * (brake > 1 ? LEAN_BRAKE_MAX : 1);
     if (t > most) { tx *= most / t; tz *= most / t; }
     const h = dt < 0.02 ? dt : 0.02;
     const w2 = LEAN_W * LEAN_W, d = 2 * LEAN_Z * LEAN_W;
@@ -2484,7 +2500,9 @@ export class Avatar {
       this.yaw += this.walkTurn;
       const gait = this.gaitW > 0 ? WALK_GAIT_V * 0.5 : WALK_GAIT_V;
       // Running in a rally, up to the last steps before a contact (a backswing is begun on the run).
-      const near2 = this.st === ST_SWING || (this.st === ST_PREP && this.hasCon && this.tPlan - t < RUN_PLANT) || (this.st === ST_FADE && this.w > 0.5);
+      // And from just after it: the arms finish the stroke on a body already on its way. Kept off to the end of the follow-through, the first
+      // half second of every recovery was the clip's legs, both feet up half the time (review round 26).
+      const near2 = (this.st === ST_SWING && t < this.tCon + RUN_AFTER) || (this.st === ST_PREP && this.hasCon && this.tPlan - t < RUN_PLANT);
       const running = !going && sim.phase === PH_RALLY && !near2 && sp > (this.gaitRun > 0 && this.gaitW > 0 ? RUN_V_OFF : RUN_V_ON);
       if (going) this.gaitRun = 0;
       else if (running) this.gaitRun = 1;
@@ -2562,7 +2580,9 @@ export class Avatar {
     // unchanged up to WARP_SPINE_MAX of warp; past it (a side-on run) the chest turns with the hips, no faster than
     // WARP_CHEST_RATE.
     {
-      const wa = this.warp, room = WARP_SPINE_MAX + RETREAT_SPINE * this.retreat;
+      // (in a run the chest goes too, off a stroke's turn as well: held on the stroke, the hips stayed with it and the legs ran sideways to
+      // the way they were going, the fast frames that far off it doubled by a smaller TWIST_MAX; review round 26)
+      const wa = this.warp + (this.warpWish - this.chestTurn * (1 - this.bt) - this.warp) * this.gaitW, room = WARP_SPINE_MAX + RETREAT_SPINE * this.retreat;
       const want = wa > room ? wa - room : wa < -room ? wa + room : 0;
       const lim = cut ? Math.PI : WARP_CHEST_RATE * dt, d = want - this.chestWarp;
       this.chestWarp += d > lim ? lim : d < -lim ? -lim : d;
@@ -2604,9 +2624,11 @@ export class Avatar {
       this.hipTiltX = this.tiltX;
       this.hipTiltZ = this.tiltZ;
       if (fw * fw + lf * lf > 1e-6) {
-        q2.setFromAxisAngle(AXIS_X, fw / 3);
-        q1.setFromAxisAngle(AXIS_Z, -lf / 3);
-        for (let j = 0; j < 3; j++) this.spine[j]!.quaternion.multiply(q2).multiply(q1);
+        for (let j = 0; j < 3; j++) {
+          q2.setFromAxisAngle(AXIS_X, fw * LEAN_SPINE[j]!);
+          q1.setFromAxisAngle(AXIS_Z, -lf * LEAN_SPINE[j]!);
+          this.spine[j]!.quaternion.multiply(q2).multiply(q1);
+        }
         q2.setFromAxisAngle(AXIS_X, -fw * 0.6);
         this.neck.quaternion.multiply(q2);
       }
@@ -3173,8 +3195,12 @@ export class Avatar {
     // (nothing pushes off in the air: the hips went back, forward and back again through a jump, 0.56 m of path on a 0.16 m flight)
     if (this.dt > 0) {
       const ex = rx - this.reachX, ez = rz - this.reachZ;
-      const e = Math.sqrt(ex * ex + ez * ez), lim = (this.jumpT0 >= 0 ? (before ? 0 : REACH_RATE_AIR) : before ? REACH_RATE_BEFORE : this.landAt >= 0 ? REACH_RATE_LAND : REACH_RATE) * this.dt;
+      const e = Math.sqrt(ex * ex + ez * ez);
+      // (after the ball from where it was going: the limit from a standing start was a corner on the frame of contact, 2 m/s and more in a tick on every stroke)
+      const top = this.jumpT0 >= 0 ? (before ? 0 : REACH_RATE_AIR) : before ? REACH_RATE_BEFORE : this.landAt >= 0 ? REACH_RATE_LAND : REACH_RATE, was = this.reachV + REACH_ACC * this.dt;
+      const lim = (before || was > top ? top : was) * this.dt;
       if (e > lim) { rx = this.reachX + (ex * lim) / e; rz = this.reachZ + (ez * lim) / e; }
+      this.reachV = (e > lim ? lim : e) / this.dt;
     }
     this.reachX = rx;
     this.reachZ = rz;
@@ -3203,6 +3229,12 @@ export class Avatar {
     // Down no faster than a body drops into a lunge: the contact's key jumps when the contact is replanned at the
     // release (an overhead planned at 2.0 m taken at 1.2 m), and the hips fell 20-30 cm in a frame, the knees 50-97°.
     if (this.dt > 0 && drop > this.dropShown + HIP_FALL * this.dt) drop = this.dropShown + HIP_FALL * this.dt;
+    // And after the ball from the speed they had: on the frame of contact a serve's hips went from rising to falling at the limit.
+    if (this.dt > 0) {
+      const v = (drop - this.dropShown) / this.dt, lim = REACH_ACC * this.dt;
+      if (!before) drop = this.dropShown + (v > this.dropV + lim ? this.dropV + lim : v < this.dropV - lim ? this.dropV - lim : v) * this.dt;
+      this.dropV = (drop - this.dropShown) / this.dt;
+    }
     // Never lower than a deep lunge, thigh level (the drop and the reach together put the hip joints 0.28 m off the
     // floor, the legs folded flat and turning over).
     const room = this.hips.matrixWorld.elements[13]! - HIP_FLOOR;
@@ -3244,9 +3276,11 @@ export class Avatar {
         }
       }
       if (want < low - RUN_SINK) want = low - RUN_SINK;
-      if (this.runHipY < 0) this.runHipY = want;
-      const lim = RUN_HIP_RATE * this.dt;
-      this.runHipY += want > this.runHipY + lim ? lim : want < this.runHipY - lim ? -lim : want - this.runHipY;
+      if (this.runHipY < 0) this.runHipY = this.runHipTo = want;
+      // (eased first: each cap above comes and goes with a foot, and went straight to the limit, the head jumping 2 cm in a frame nine times a second)
+      this.runHipTo += (want - this.runHipTo) * (this.dt > 0 ? 1 - Math.exp(-this.dt / RUN_HIP_EASE) : 0);
+      const lim = RUN_HIP_RATE * this.dt, to = this.runHipTo;
+      this.runHipY += to > this.runHipY + lim ? lim : to < this.runHipY - lim ? -lim : to - this.runHipY;
       drop += (y - this.runHipY) * this.gaitRunH;
     } else this.runHipY = -1;
     this.hipOutX = hipX;
@@ -3767,9 +3801,10 @@ export class Avatar {
         // Where the body will be when it lands, the step ahead of that, on its own side of the line.
         const left = (1 - u) * swingT;
         const wd = sign * this.hipW * wide;
-        To.x = rx + vx * left + ux * ahead + c * wd;
+        const lean = run ? this.tiltX * ux + this.tiltZ * uz : 0, out = ahead - lean * (lean > 0 ? RUN_LEAN_STEP * 0.45 : RUN_LEAN_STEP);
+        To.x = rx + vx * left + ux * out + c * wd;
         To.y = 0;
-        To.z = rz + vz * left + uz * ahead - s * wd;
+        To.z = rz + vz * left + uz * out - s * wd;
         // Going sideways the trailing foot closes up to the hips, and no further: a side step, not one leg through the
         // other (over SIDE_RUN_ON the legs have turned onto the way, and it never comes to this).
         const lat = sign * across * ahead + this.hipW * wide, least = this.hipW * wide * RUN_CLOSE;
