@@ -37,6 +37,8 @@ const GRUNT_KEEN = 1.6;
 /** A well struck ball is firmer and a little tighter than a mistimed one (a player hears their own timing). */
 const SWEET_GAIN = 1.26, SWEET_RATE = 1.02;
 const MISTIMED_GAIN = 0.84, MISTIMED_RATE = 0.985;
+/** The most a play is lifted: a bin can already carry 2.2, and a Perfect on it went over. */
+const GAIN_TOP = 2.7;
 /** The voices from here on are women's, and this much under the men's bins: at the top of their range the same effort reads 7 dB over the hit a man's does (a usual drive +5 dB, voice first and ball second), and the game keeps grunts under the racket. */
 const GRUNT_WOMEN = 4, GRUNT_WOMEN_GAIN = 0.56;
 /** The next courts: under the far pair of your own court, on the Crowd slider, and a rest of NEXT_REST to twice that between points. Played at the level of your own match they ran a false tick under the ball you were timing, 46 impacts a minute a court where the survey has 18. */
@@ -250,7 +252,7 @@ export class Soundscape {
         const mistimed = b === G_EARLY || b === G_LATE;
         const firm = rq !== RQ_CLEAN ? 1 : b === G_PERFECT ? SWEET_GAIN : mistimed ? MISTIMED_GAIN : 1;
         const tight = rq !== RQ_CLEAN || this.replaying ? 1 : b === G_PERFECT ? SWEET_RATE : mistimed ? MISTIMED_RATE : 1;
-        out.play('racket', racketBin(rk, pb.bin, rq), x, y, z, pb.gain * firm, this.rate * tight, delay, BUS_BALL);
+        out.play('racket', racketBin(rk, pb.bin, rq), x, y, z, Math.min(GAIN_TOP, pb.gain * firm), this.rate * tight, delay, BUS_BALL);
         // A grunt with the effort: overheads and hard drives; the odd breath on a lighter shot.
         const effort = effortOf(a, c);
         const voice = player >= 0 ? this.voices[player]! : 0;

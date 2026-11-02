@@ -706,7 +706,7 @@ const RUN_HZ_MAX = 2;
 const RUN_V0 = 1;
 const RUN_V1 = 3.5;
 /** How far through its swing a run's foot is clear of the floor: off it from the first frames, and the flight shows. */
-const RUN_LIFT = 0.12;
+const RUN_LIFT = 0.1;
 const RUN_DUTY0 = 0.52;
 const RUN_DUTY1 = 0.41;
 const RUN_AHEAD = 0.3;
@@ -744,7 +744,7 @@ const RUN_SOFT = 0.03;
 const RUN_STRETCH = 0.975;
 const RUN_LANDS = 0.6;
 const RUN_LOOSE = 0.3;
-const RUN_HIP_RATE = 1.8;
+const RUN_HIP_RATE = 1.2;
 /** The most a run's hips sink for a foot (m): they followed one left behind, hips 0.68 m at 2 m/s, feet over a metre apart. */
 const RUN_SINK = 0.13;
 /** How far down the hips are taken as being when a planted foot is judged out of reach and steps at once, whatever the other foot is doing (m). Less has both feet off the floor 43% of a run and cuts the stance short, more slides the foot and leaves the thigh out; real running is about 30, a foot down 0.2 s. */
@@ -862,7 +862,7 @@ const CYCLE_EASE = 0.06;
 /** Most the spine turns back against the legs' warp (rad); past it the chest turns with the hips. */
 const WARP_SPINE_MAX = Math.PI / 4;
 /** Most the chest turns off the hips (rad). */
-const TWIST_MAX = Math.PI / 3;
+const TWIST_MAX = Math.PI / 4;
 /**
  * The run back for a ball going over or past: side-on, shoulder to the net, not backpedalling square. Turns the
  * stance RETREAT_TURN (the overhead's own take-back) as the player goes back between RETREAT_V0 and RETREAT_V1 (m/s). The
@@ -882,8 +882,8 @@ const RETREAT_OUT = 0.22;
  * LEAN_STROKE of it gone in a stroke, whose keys lean for themselves. Trunk and body answered at 3% of physics, the same
  * in a start, a steady run and a hard stop (review round 8, the critic's #1).
  */
-const LEAN_GAIN = 0.055;
-const LEAN_MAX = 0.36;
+const LEAN_GAIN = 0.09;
+const LEAN_MAX = 0.42;
 const LEAN_W = 13;
 const LEAN_Z = 0.62;
 const LEAN_TRUNK = 1;
@@ -892,7 +892,7 @@ const LEAN_HAND = 0.25;
 /** Slowing down, the body goes past upright behind its feet: the run's own forward lean has to go first. */
 const LEAN_BRAKE = 1.5;
 /** How much of a leg's length the lean takes the hips off the feet for each radian. All of it put them 0.46 m off the feet at a hard stop, legs near straight, then 0.13 m lower for the arc: hips 0.61 m at walking pace. */
-const LEAN_HIP = 0.6;
+const LEAN_HIP = 0.4;
 /** How fast the chest turns with the hips into a side-on run and back out of it (rad/s): switched at once, the
  * chest, arms and head jumped up to 45 degrees in a frame. */
 const WARP_CHEST_RATE = 7;

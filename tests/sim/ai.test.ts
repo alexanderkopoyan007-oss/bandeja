@@ -118,7 +118,8 @@ describe('AI personalities', () => {
         const v = Math.hypot(m.ball.vel.x, m.ball.vel.y, m.ball.vel.z), w = Math.hypot(m.ball.spin.x, m.ball.spin.y, m.ball.spin.z);
         const ai = m.ai[(e.team ^ 1)]! as unknown as { readX: number; readZ: number };
         const off = Math.hypot(ai.readX, ai.readZ) > 0;
-        if (v < 13 || w < 90) { plain++; if (off) plainOff++; }
+        // (a contrapared at 12 m/s still carries its spin: 3 mm is no misread)
+        if (v < 13 || w < 90) { plain++; if (Math.hypot(ai.readX, ai.readZ) > 0.01) plainOff++; }
         else if (e.a === SHOT_BANDEJA || e.a === SHOT_VIBORA) { hard++; if (off) hardOff++; }
       }
     }
