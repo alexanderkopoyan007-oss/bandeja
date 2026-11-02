@@ -715,7 +715,7 @@ const RUN_WIDE = 1.4;
 const RUN_CLEAR = 0.04;
 const RUN_CLEAR_V = 0.01;
 const RUN_KICK = 0.9;
-const RUN_ROLL = 0.5;
+const RUN_ROLL = 0.95;
 const RUN_REACH = 0.58;
 const RUN_STILL = 0.06;
 /**
@@ -725,9 +725,9 @@ const RUN_STILL = 0.06;
  * off the landing, which sat the short players in a squat: 0.80 of the height, the thigh 60 degrees forward at the median,
  * the knee 69 on the straighter leg. Runners: knee about 14 at the landing, 40 down, 5-10 cm of bob.
  */
-const RUN_HIP0 = 0.96;
-const RUN_HIP1 = 0.94;
-const RUN_BOB = 0.05;
+const RUN_HIP0 = 0.94;
+const RUN_HIP1 = 0.92;
+const RUN_BOB = 0.06;
 const RUN_LOW = 0.3;
 /** Into and out of those hips (s): on with the gait they jumped with every run tipping into a walk, a knee 10 degrees in a frame. */
 const RUN_HIP_IN = 0.12;
@@ -744,13 +744,15 @@ const RUN_SOFT = 0.03;
 const RUN_STRETCH = 0.975;
 const RUN_LANDS = 0.6;
 const RUN_LOOSE = 0.3;
-const RUN_HIP_RATE = 1.2;
+const RUN_HIP_RATE = 1.8;
 /** The most a run's hips sink for a foot (m): they followed one left behind, hips 0.68 m at 2 m/s, feet over a metre apart. */
 const RUN_SINK = 0.13;
 /** How far down the hips are taken as being when a planted foot is judged out of reach and steps at once, whatever the other foot is doing (m). Less has both feet off the floor 43% of a run and cuts the stance short, more slides the foot and leaves the thigh out; real running is about 30, a foot down 0.2 s. */
 const RUN_STEP_SINK = 0.07;
 /** How much of the way to under the hips a run's foot goes in the middle of a swing: from a foot left out to the side the straight line to its landing held the thigh out 55 degrees in the air. */
 const RUN_UNDER = 0.6;
+/** How far past the trunk's rim (`k`, the share of the way out) a hand is taken right round the front. */
+const TRUNK_ROUND = 0.25;
 /** How fast the hips follow a stroke's `weight` (s). */
 const INTO_EASE = 0.05;
 /** How far a stride throws long hair at speed, to the side and up (m). */
@@ -1045,6 +1047,7 @@ export class Avatar {
   private hipOutZ = 0;
   private gaitPhase = 0;
   private gaitSince = 0;
+  private gaitHz = 0.5;
   private gaitLast = 0;
   /** Each foot: how far through its swing (-1: down), seconds down, its pitch at lift-off and now. */
   private readonly gaitSwing = new Float64Array(2);
@@ -3224,7 +3227,10 @@ export class Avatar {
       const y = (this.legL[0]!.matrixWorld.elements[13]! + this.legR[0]!.matrixWorld.elements[13]!) * 0.5;
       const fast = smoothstep(RUN_V0, RUN_V1, this.sp), stance = RUN_DUTY0 + (RUN_DUTY1 - RUN_DUTY0) * fast;
       const low = (this.legLen + this.ankleY) * (RUN_HIP0 + (RUN_HIP1 - RUN_HIP0) * fast);
-      let want = low + RUN_BOB * 0.5 * (1 - Math.cos(4 * Math.PI * (this.gaitPhase - RUN_LOW * stance)));
+      // (on the feet's own clock, the time since the last landing: gaitPhase is the arms' and lags the landings, and on it the hips rode
+      // highest with a foot under them and lowest as it left, a walk's wave on a run's legs)
+      const step = 2 * this.gaitHz * this.gaitSince;
+      let want = low + RUN_BOB * 0.5 * (1 - Math.cos(2 * Math.PI * ((step < 1 ? step : 1) - 2 * RUN_LOW * stance)));
       // No higher than the feet on the floor can reach, and the one about to be: a leg at full stretch is where a knee pops.
       const r2 = this.legLen * this.legLen * RUN_STRETCH * RUN_STRETCH, ox = this.root.position.x + hipX, oz = this.root.position.z + hipZ;
       for (let f = 0; f < 2; f++) {
@@ -3678,6 +3684,7 @@ export class Avatar {
     const G = this.gaitSwing, P = this.gaitPlant;
     this.gaitSince += dt;
     this.gaitUp += dt;
+    this.gaitHz = hz;
     const off = run ? this.hipW * wide : 0;
     // How far ahead of its place each foot is, along the way it is going.
     const d0x = P[0]!.x - rx - c * off, d0z = P[0]!.z - rz + s * off, d1x = P[1]!.x - rx + c * off, d1z = P[1]!.z - rz - s * off;
@@ -4185,7 +4192,8 @@ export class Avatar {
     if (e2 >= 1) return;
     // Round the front, whichever half of the trunk the key has reached: pushed straight out a hand crossing the body went round the back,
     // 26-41 cm behind the chest on a stroke in a hundred, the elbow through the breastbone.
-    const e = Math.sqrt(e2), k = e > 1e-3 ? 1 / e - 1 : 0, mx = x * k, mz = e > 1e-3 ? (z < 0 ? -z * (2 + k) : z * k) : rd;
+    // (coming in with the depth: all at once at the back rim, a hand jumped through the body in a frame)
+    const e = Math.sqrt(e2), k = e > 1e-3 ? 1 / e - 1 : 0, mx = x * k, mz = e > 1e-3 ? (z < 0 ? z * k - 2 * z * (1 + k) * smoothstep(0, TRUNK_ROUND, k) : z * k) : rd;
     T.x += O.x * mx + F.x * mz;
     T.y += O.y * mx + F.y * mz;
     T.z += O.z * mx + F.z * mz;

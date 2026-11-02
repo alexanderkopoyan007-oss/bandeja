@@ -39,6 +39,9 @@ const MAX_TICKS_PER_FRAME = 12;
 const OVER_HOLD_MS = 1500;
 const OVER_MAX_MS = 16000;
 const OVER_SKIP_AFTER_MS = 800;
+/** How long the match's sound takes to go under a menu (s): the crowd dies away under the results, it doesn't cut. */
+const HUSH_PAUSE = 0.15;
+const HUSH_OVER = 4;
 
 export interface GameOptions {
   match: MatchConfig;
@@ -343,7 +346,7 @@ export class Game {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.onMenu?.();
       // Freeze the sim while the tab is hidden instead of fast-forwarding on return.
-      this.audio.pause(document.hidden || this.menuPaused);
+      this.audio.pause(document.hidden);
       if (document.hidden) this.hiddenAt = performance.now();
       else if (this.hiddenAt >= 0) {
         this.epoch += performance.now() - this.hiddenAt;
@@ -422,7 +425,8 @@ export class Game {
       this.kb.resume(this.simHeld, this.pad.held, performance.now());
       this.pad.consumeStart();
     }
-    this.audio.pause(on || document.hidden);
+    // (a menu over the match keeps the context running: its ticks, and the volume you are setting, have to sound)
+    this.audio.hush(on, on && this.sim.phase === PH_OVER ? HUSH_OVER : HUSH_PAUSE);
     this.hudLayer.classList.toggle('paused', on);
   }
 

@@ -782,6 +782,7 @@ function loopable(x: Float32Array, secs: number, fade: number, sr: number): Floa
  * frequency-swept chirps in a few patterns), `crickets` (night: a 4.5 kHz carrier in pulse trains), `hum` (floodlight
  * ballasts at twice the 50 Hz mains, very faint), `hall` (a covered hall's air: broadband, low).
  */
+const BED_FLOOR = 70;
 export function ambience(rng: Rng, kind: 'wind' | 'birds' | 'crickets' | 'hum' | 'hall', secs: number): Float32Array[] {
   const sr = LO_SR, fade = 0.5;
   const total = secs + fade;
@@ -789,13 +790,15 @@ export function ambience(rng: Rng, kind: 'wind' | 'birds' | 'crickets' | 'hum' |
   if (kind === 'wind' || kind === 'hall') {
     for (const ch of [L, R]) {
       const lp = Biquad.make('lp', kind === 'wind' ? 500 : 900, 0.7, 0, sr), lp2 = Biquad.make('lp', 300, 0.7, 0, sr);
+      // (with no floor to it, levelled by rms, two thirds of the bed's power was under 40 Hz: a throb in headphones, nothing on a laptop)
+      const hp = Biquad.make('hp', BED_FLOOR, 0.7, 0, sr);
       const ph = rng.next() * 6.28, f1 = rng.range(0.05, 0.11), f2 = rng.range(0.15, 0.3);
       let brown = 0;
       for (let i = 0; i < ch.length; i++) {
         const t = i / sr;
         brown = brown * 0.995 + (rng.next() * 2 - 1) * 0.05;
         const gust = kind === 'wind' ? 0.55 + 0.3 * Math.sin(2 * Math.PI * f1 * t + ph) + 0.15 * Math.sin(2 * Math.PI * f2 * t) : 1;
-        ch[i] = (lp.run(rng.next() * 2 - 1) * 0.6 + lp2.run(brown) * 2) * gust * 0.3;
+        ch[i] = hp.run((lp.run(rng.next() * 2 - 1) * 0.6 + lp2.run(brown) * 2) * gust * 0.3);
       }
     }
     if (kind === 'wind') {

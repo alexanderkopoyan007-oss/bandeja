@@ -109,12 +109,17 @@ export class OfflineEngine implements AudioSink {
   /** Equal-power panner gains for a source, as the WebAudio spec works them out (listener up is about +y). */
   private pan(x: number, y: number, z: number): { l: number; r: number; d: number } {
     const L = this.o.listener;
-    const dx = x - L.x, dy = y - L.y, dz = z - L.z;
-    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    let dx = x - L.x, dz = z - L.z;
+    const dy = y - L.y;
+    const d0 = Math.sqrt(dx * dx + dy * dy + dz * dz);
     // right = forward x up
     let rx = -L.fz, rz = L.fx;
     const rl = Math.hypot(rx, rz) || 1;
     rx /= rl; rz /= rl;
+    const wide = (AUDIO.width - 1) * (dx * rx + dz * rz);
+    dx += wide * rx;
+    dz += wide * rz;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const fl = Math.hypot(L.fx, L.fy, L.fz) || 1;
     const fx = L.fx / fl, fy = L.fy / fl, fz = L.fz / fl;
     // up = right x forward
@@ -131,7 +136,7 @@ export class OfflineEngine implements AudioSink {
     if (az < -90) az = -180 - az;
     const u = (az + 90) / 180;
     const distGain = AUDIO.distance.ref / (AUDIO.distance.ref + AUDIO.distance.rolloff * (Math.max(AUDIO.distance.ref, Math.min(d, AUDIO.distance.max)) - AUDIO.distance.ref));
-    return { l: Math.cos((u * Math.PI) / 2) * distGain, r: Math.sin((u * Math.PI) / 2) * distGain, d };
+    return { l: Math.cos((u * Math.PI) / 2) * distGain, r: Math.sin((u * Math.PI) / 2) * distGain, d: d0 };
   }
 
   /** Work the chain out. `only`: just these families (loops included), to measure each on its own. */

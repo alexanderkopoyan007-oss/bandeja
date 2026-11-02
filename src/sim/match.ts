@@ -218,6 +218,9 @@ const CONTRA_SIDE = 1.4;
 /** How fast the keys move the aim target (m/s across, m/s in depth). */
 const AIM_SPEED_X = 11;
 const AIM_SPEED_Z = 9;
+/** How near the glass, and the net, the keys alone take a target (m). */
+const AIM_SURE_EDGE = 1.2;
+const AIM_SURE_SHORT = 2;
 /**
  * A direction that went down this long before a shot key (s) goes with it, as aim: to place a shot a hand presses the two
  * together, and with what was down at the press the run's (steerAim), a key landing first left the ball on the default
@@ -226,6 +229,8 @@ const AIM_SPEED_Z = 9;
 const STEER_CHORD = 0.08;
 /** How far a key or stick must move from where it was at the press to steer (a key is 0 or 1; a thumb wobbles). */
 const STEER_TOUCH = 0.35;
+/** Further than this (m) from the planned spot, a key pointing at it is running there, not aiming. */
+const STEER_RUN = 0.4;
 /** Most of the sitter's control a human's drop volley gets: the same ball from the same grade went in the net 8 times as often as the AI's. */
 const DROP_VOLLEY_CONTROL = 1.6;
 /** A serve's aim (m/s) and how near the box's edge it goes (m): at the rally's speed a fifth of a second on A crossed the box to the stop by the fence, two thirds of those serves faults. */
@@ -972,10 +977,12 @@ export class MatchSim {
       if (e.press) {
         const at = max(e.t, t0);
         this.press(i, shot, at);
+        p.heldShot = human && p.swing !== SW_CHARGE ? shot : -1;
         // (a key that went down with the press is the aim: a chord of two fingers landed either way round)
         p.steerFrom = at - p.restY < STEER_CHORD ? 0 : f.moveY;
         p.steerFromX = at - p.restX < STEER_CHORD ? 0 : f.moveX;
       }
+      else if (shot === p.heldShot) p.heldShot = -1;
       else if (p.swing === SW_CHARGE && p.shot === shot && !(human && this.cfg.tapSwing && this.cfg.autoTiming)) {
         // The keys as they were at this release: f.held is the tick's end; undo this tick's later changes.
         let h = f.held;
@@ -993,6 +1000,14 @@ export class MatchSim {
         this.relHeld = h;
         this.releaseSwing(i, e.t, f);
       }
+    }
+    // A key pressed too soon, still down: its hold starts as soon as there is a swing to hold. The press was thrown away in the 0.35 s after a contact and
+    // through the other side's set-up, a second a serve, and the ring came and closed on a key doing nothing (review round 25).
+    if (p.heldShot >= 0 && p.swing === SW_IDLE && (this.phase === PH_RALLY || this.phase === PH_TOSS)) {
+      this.press(i, p.heldShot, t0);
+      p.heldShot = -1;
+      p.steerFrom = f.moveY;
+      p.steerFromX = f.moveX;
     }
     // Assisted timing: still holding when the ideal moment arrives, the swing goes off by itself.
     if (this.cfg.autoTiming && human && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
@@ -1373,6 +1388,15 @@ export class MatchSim {
     // (smash winners halved; review round 20).
     if (abs(f.moveY) < 0.1) p.steerFrom = 0;
     if (abs(f.moveX) < 0.1) p.steerFromX = 0;
+    // And a key pointing where the player still has to go is the run's, whichever finger landed first: the run back from a lob pressed with
+    // the overhead took the target to its stop 0.9 m past the net, one good smash in four into it, and the run to a wide ball took it to
+    // the side glass (review round 25).
+    const st = this.stand[p.index]!;
+    if (!serve && st.valid) {
+      const togoX = st.x - p.pos.x, togoZ = st.z - p.pos.z;
+      if (p.steerFrom === 0 && abs(togoZ) > STEER_RUN && -s * f.moveY * togoZ > 0) p.steerFrom = f.moveY;
+      if (p.steerFromX === 0 && abs(togoX) > STEER_RUN && s * f.moveX * togoX > 0) p.steerFromX = f.moveX;
+    }
     const ahead = abs(f.moveY - p.steerFrom) > STEER_TOUCH, across = abs(f.moveX - p.steerFromX) > STEER_TOUCH;
     const overhead = !serve && p.shot === SHOT_BANDEJA;
     if (f.aimAbs || (overhead && (f.held & BTN_PRECISION) === 0 ? ahead : ahead || across)) p.aimTouched = true;
@@ -1405,8 +1429,13 @@ export class MatchSim {
       p.aimX = clamp(p.aimX, min(bx.x0, bx.x1) + SERVE_AIM_EDGE, max(bx.x0, bx.x1) - SERVE_AIM_EDGE);
       p.aimZ = -s * clamp(-s * p.aimZ, 1.4, c.def.serviceLineFromNet - 0.3);
     } else {
-      p.aimX = clamp(p.aimX, -c.halfW + 0.45, c.halfW - 0.45);
-      p.aimZ = -s * clamp(-s * p.aimZ, 0.9, c.halfL - 0.45);
+      // The keys stop in from the walls and the tape, Precision takes them to the lines: 45 cm off the glass was reached in 0.4 s and a drive
+      // aimed there went in on the full (review round 25).
+      const sure = (f.held & BTN_PRECISION) === 0 && !f.aimAbs;
+      const edgeX = sure && across ? AIM_SURE_EDGE : 0.45, edgeZ = sure && ahead ? AIM_SURE_EDGE : 0.45;
+      const short = sure && ahead && p.shot !== SHOT_DROP && p.shot !== SHOT_CHIQUITA ? AIM_SURE_SHORT : 0.9;
+      p.aimX = clamp(p.aimX, -c.halfW + edgeX, c.halfW - edgeX);
+      p.aimZ = -s * clamp(-s * p.aimZ, short, c.halfL - edgeZ);
     }
   }
 
@@ -1983,7 +2012,7 @@ export class MatchSim {
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
-        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
+        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldShot).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);

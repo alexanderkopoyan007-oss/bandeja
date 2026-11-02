@@ -37,6 +37,10 @@ const GRUNT_KEEN = 1.6;
 /** A well struck ball is firmer and a little tighter than a mistimed one (a player hears their own timing). */
 const SWEET_GAIN = 1.26, SWEET_RATE = 1.02;
 const MISTIMED_GAIN = 0.84, MISTIMED_RATE = 0.985;
+/** The voices from here on are women's, and this much under the men's bins: at the top of their range the same effort reads 7 dB over the hit a man's does (a usual drive +5 dB, voice first and ball second), and the game keeps grunts under the racket. */
+const GRUNT_WOMEN = 4, GRUNT_WOMEN_GAIN = 0.56;
+/** The next courts: under the far pair of your own court, on the Crowd slider, and a rest of NEXT_REST to twice that between points. Played at the level of your own match they ran a false tick under the ball you were timing, 46 impacts a minute a court where the survey has 18. */
+const NEXT_GAIN = 0.4, NEXT_REST = 12;
 /** A sole this high (m) is off the floor; this low, on it. */
 const FOOT_UP = 0.03, FOOT_DOWN = 0.012;
 /** Under this speed (m/s) a foot set down is the stance settling, not a step: a third of all landings in a real match. */
@@ -255,7 +259,7 @@ export class Soundscape {
           this.gruntAt[player] = sim.time;
           const eb = binFor(GRUNT_E, effort, this.rand());
           const pitch = a === SHOT_SMASH || a === SHOT_VIBORA ? GRUNT_OVERHEAD : p.handSide < 0 ? GRUNT_BACKHAND : 1;
-          out.play('grunt', voice * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, this.rate * pitch * this.tones[player]!, delay + 0.015, BUS_PLAYERS);
+          out.play('grunt', voice * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, voice >= GRUNT_WOMEN ? GRUNT_WOMEN_GAIN : 1, this.rate * pitch * this.tones[player]!, delay + 0.015, BUS_PLAYERS);
         }
         // The crowd gasps at a great get: a smash or a ball off two walls sent back (never at a serve).
         if (this.big && !this.replaying && a !== SHOT_SERVE && sim.phase === PH_RALLY && this.lastHitTeam >= 0 && team !== this.lastHitTeam) {
@@ -498,18 +502,20 @@ export class Soundscape {
       if (this.nShots[i]! <= 0) {
         // A new point after a pause.
         this.nShots[i] = 2 + Math.floor(-Math.log(1 - this.rand() * 0.98) * 6);
-        this.nNext[i] = t + 8 + this.rand() * 10;
+        this.nNext[i] = t + NEXT_REST + this.rand() * NEXT_REST;
         continue;
       }
       const end = this.nEnd[i]!;
       const x = nx + (this.rand() - 0.5) * 6, z = end * (5 + this.rand() * 4);
-      const pb = binFor(RACKET_POWER, 0.3 + 0.5 * this.rand(), this.rand());
-      this.out.play('racket', racketBin(RK_DRIVE, pb.bin, this.rand() < 0.85 ? RQ_CLEAN : RQ_OFF), x, 1, z, 0.8, 1, 0, BUS_BALL);
-      const bv = binFor(BOUNCE_V, 4 + 6 * this.rand(), this.rand());
-      this.out.play('bounce', bv.bin, nx + (this.rand() - 0.5) * 6, 0, -end * (3 + this.rand() * 5), bv.gain * 0.8, 1, 0.55, BUS_BALL);
-      if (this.rand() < 0.3) {
+      const pb = binFor(RACKET_POWER, 0.15 + 0.3 * this.rand(), this.rand());
+      this.out.play('racket', racketBin(RK_DRIVE, pb.bin, this.rand() < 0.85 ? RQ_CLEAN : RQ_OFF), x, 1, z, pb.gain * NEXT_GAIN, 1, 0, BUS_CROWD);
+      if (this.rand() < 0.4) {
+        const bv = binFor(BOUNCE_V, 4 + 6 * this.rand(), this.rand());
+        this.out.play('bounce', bv.bin, nx + (this.rand() - 0.5) * 6, 0, -end * (3 + this.rand() * 5), bv.gain * NEXT_GAIN, 1, 0.55, BUS_CROWD);
+      }
+      if (this.rand() < 0.15) {
         const gv = binFor(GLASS_V, 5 + 8 * this.rand(), this.rand());
-        this.out.play('glass', gv.bin, nx + (this.rand() - 0.5) * 8, 1, -end * 10, gv.gain * 0.7, 1, 0.85, BUS_BALL);
+        this.out.play('glass', gv.bin, nx + (this.rand() - 0.5) * 8, 1, -end * 10, gv.gain * NEXT_GAIN, 1, 0.85, BUS_CROWD);
       }
       this.nEnd[i] = -end;
       this.nShots[i] = this.nShots[i]! - 1;

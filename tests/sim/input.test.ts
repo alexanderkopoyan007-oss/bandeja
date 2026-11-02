@@ -1,9 +1,9 @@
 // Input edge cases at the sim's boundary: what a release reads from the keys around it.
 import { describe, it, expect } from 'vitest';
 import { MatchSim, PH_RALLY, PH_SETUP, PH_TOSS, PH_OVER, E_HIT, E_FAULT } from '../../src/sim/match.ts';
-import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER, BTN_SLICE } from '../../src/sim/input.ts';
+import { InputFrame, BTN_DRIVE, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION, BTN_SLICE } from '../../src/sim/input.ts';
 import { DT } from '../../src/sim/core/constants.ts';
-import { SW_IDLE, SW_CHARGE } from '../../src/sim/player/player.ts';
+import { SW_IDLE, SW_CHARGE, SW_RECOVER } from '../../src/sim/player/player.ts';
 import { SHOT_BANDEJA, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, SHOT_SLICE, SHOT_TOPSPIN, SHOT_VOLLEY, MOD_NONE, MOD_PRECISION } from '../../src/sim/contact/shots.ts';
 
 describe('modifiers at the release', () => {
@@ -231,5 +231,78 @@ describe('a movement key and the aim', () => {
     const { m, f, x0 } = holding(0);
     run(m, f, 1, 12);
     expect(Math.abs(m.players[0]!.aimX - x0)).toBeGreaterThan(0.5);
+  });
+  /** Holding for a ball well to one side of the player: the key that way, whichever side of the court they are on. */
+  function holdingWide(): { m: MatchSim; f: InputFrame; x0: number; toward: number } {
+    for (let seed = 12; seed < 60; seed++) {
+      const m = new MatchSim({ seed, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
+      const f = new InputFrame(), p = m.players[0]!, st = m.stand[0]!;
+      for (let i = 0; i < 120 * 40; i++) {
+        f.clear();
+        if (m.phase === PH_RALLY && m.rally.hitter === 1 && st.valid && p.swing === SW_IDLE && Math.abs(st.x - p.pos.x) > 0.9 && st.t - m.time > 0.9) {
+          f.push(true, BTN_DRIVE, m.time);
+          f.held = BTN_DRIVE;
+          m.step([f, null]);
+          f.clear();
+          f.held = BTN_DRIVE;
+          m.step([f, null]);
+          if ((p.swing as number) === SW_CHARGE && p.aiming) return { m, f, x0: p.aimX, toward: Math.sign((st.x - p.pos.x) * (p.pos.z > 0 ? 1 : -1)) };
+          break;
+        }
+        m.step([f, null]);
+      }
+    }
+    throw new Error('no wide ball to hold for');
+  }
+  it('a key pointing where the player still has to go is the run\'s, even after the shot key', () => {
+    const { m, f, x0, toward } = holdingWide();
+    run(m, f, toward, 12);
+    expect(m.players[0]!.aimX).toBeCloseTo(x0, 5);
+  });
+  it('the other way it aims', () => {
+    const { m, f, x0, toward } = holdingWide();
+    run(m, f, -toward, 12);
+    expect(Math.abs(m.players[0]!.aimX - x0)).toBeGreaterThan(0.5);
+  });
+  it('the keys stop in from the glass, Precision goes on to the lines', () => {
+    const { m, f, toward } = holdingWide();
+    const p = m.players[0]!, edge = m.world.court.halfW;
+    run(m, f, -toward, 50);
+    expect(edge - Math.abs(p.aimX)).toBeCloseTo(1.2, 5);
+    for (let i = 0; i < 20; i++) { f.clear(); f.held = BTN_DRIVE | BTN_PRECISION; f.moveX = -toward; m.step([f, null]); }
+    expect(edge - Math.abs(p.aimX)).toBeLessThan(0.5);
+  });
+});
+
+describe('a shot key pressed too soon', () => {
+  it('starts its hold when the recovery ends', () => {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame(), p = m.players[0]!;
+    for (let i = 0; i < 120 * 30 && m.phase !== PH_RALLY; i++) { f.clear(); m.step([f, null]); }
+    expect(m.phase).toBe(PH_RALLY);
+    p.swing = SW_RECOVER;
+    p.recoverUntil = m.time + 0.1;
+    f.clear();
+    f.push(true, BTN_DRIVE, m.time);
+    f.held = BTN_DRIVE;
+    m.step([f, null]);
+    expect(p.heldShot).toBe(SHOT_DRIVE);
+    for (let k = 0; k < 30 && (p.swing as number) !== SW_CHARGE; k++) { f.clear(); f.held = BTN_DRIVE; m.step([f, null]); }
+    expect(p.swing).toBe(SW_CHARGE);
+    expect(p.heldShot).toBe(-1);
+  });
+  it('is forgotten when it comes up before then', () => {
+    const m = new MatchSim({ seed: 12, human: [true, false], firstServer: 1, assist: 0.45, timingScale: 1.5 });
+    const f = new InputFrame(), p = m.players[0]!;
+    p.swing = SW_RECOVER;
+    p.recoverUntil = m.time + 0.3;
+    f.push(true, BTN_DRIVE, m.time);
+    f.held = BTN_DRIVE;
+    m.step([f, null]);
+    expect(p.heldShot).toBe(SHOT_DRIVE);
+    f.clear();
+    f.push(false, BTN_DRIVE, m.time);
+    m.step([f, null]);
+    expect(p.heldShot).toBe(-1);
   });
 });

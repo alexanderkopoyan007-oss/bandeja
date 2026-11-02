@@ -44,6 +44,7 @@ export class AudioEngine implements AudioSink {
   /** Families still to come from the worker (for the debug overlay and tests). */
   pending = true;
   private readonly fwd = new THREE.Vector3();
+  private readonly right = new THREE.Vector3(1, 0, 0);
   private readonly up = new THREE.Vector3();
   /** The listener's position, kept here: Firefox's AudioListener has no positionX (only setPosition). */
   private lx = 0;
@@ -53,6 +54,7 @@ export class AudioEngine implements AudioSink {
   /** The page wants sound (not hidden): resume whenever the context stops for any other reason. */
   private wantRunning = true;
   private master: GainNode | null = null;
+  private stage: GainNode | null = null;
   private closed = false;
   /** The player's volume and crowd level (0..1, applied on an audio taper: gain = level squared). */
   private volume = 1;
@@ -138,9 +140,12 @@ export class AudioEngine implements AudioSink {
       clip.curve = softClipCurve();
       clip.oversample = '2x';
       master.connect(lim).connect(unmakeup).connect(clip).connect(ctx.destination);
+      const stage = ctx.createGain();
+      stage.connect(master);
+      this.stage = stage;
       for (let b = 0; b < 4; b++) {
         const g = ctx.createGain();
-        g.connect(master);
+        g.connect(stage);
         this.buses.push(g);
       }
       this.applyLevels();
@@ -149,7 +154,7 @@ export class AudioEngine implements AudioSink {
       this.wet = wet;
       this.convolver = ctx.createConvolver();
       this.convolver.normalize = false;
-      wet.connect(this.convolver).connect(master);
+      wet.connect(this.convolver).connect(stage);
       for (let i = 0; i < POOL; i++) {
         const gain = ctx.createGain();
         const air = ctx.createBiquadFilter();
@@ -263,11 +268,13 @@ export class AudioEngine implements AudioSink {
     src.playbackRate.value = rate * (1 + (this.rand() - 0.5) * 0.06);
     src.connect(v.gain);
     v.gain.gain.setValueAtTime(gain * db((this.rand() - 0.5) * 3), t);
-    v.pan.positionX.setValueAtTime(x, t);
-    v.pan.positionY.setValueAtTime(y, t);
-    v.pan.positionZ.setValueAtTime(z, t);
-    // Air and distance take the highs; farther sounds are wetter (less direct sound against the same room).
     const dx = x - this.lx, dy = y - this.ly, dz = z - this.lz;
+    // Across the picture, as a broadcast pans: one microphone at the lens has the side glass 1 dB off the middle.
+    const R = this.right, wide = (AUDIO.width - 1) * (dx * R.x + dy * R.y + dz * R.z);
+    v.pan.positionX.setValueAtTime(x + wide * R.x, t);
+    v.pan.positionY.setValueAtTime(y + wide * R.y, t);
+    v.pan.positionZ.setValueAtTime(z + wide * R.z, t);
+    // Air and distance take the highs; farther sounds are wetter (less direct sound against the same room).
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     v.air.frequency.setValueAtTime(Math.min(20000, AUDIO.distance.airHz / (1 + d / AUDIO.distance.airM)), t);
     v.send.gain.setValueAtTime(bus === BUS_AMB ? AMB_SEND : 0.5 + d / 40, t);
@@ -357,6 +364,7 @@ export class AudioEngine implements AudioSink {
     this.lx = p.x; this.ly = p.y; this.lz = p.z;
     this.fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
     this.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    this.right.crossVectors(this.fwd, this.up);
     if (l.positionX) {
       l.positionX.value = p.x; l.positionY.value = p.y; l.positionZ.value = p.z;
       l.forwardX.value = this.fwd.x; l.forwardY.value = this.fwd.y; l.forwardZ.value = this.fwd.z;
@@ -384,14 +392,15 @@ export class AudioEngine implements AudioSink {
 
   /**
    * Menu sounds: a soft wooden tick for a move, a brighter one for a choice, a lower one for back. Two damped modes
-   * of a struck bar (no samples), well under the game's levels.
+   * of a struck bar (no samples), well under the game's levels: past the stage, so they still sound in a paused match, and
+   * through the master's lift, so 10 dB under a firm hit means these amplitudes.
    */
   uiBlip(kind: 'move' | 'ok' | 'back'): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.master) return;
     const f = kind === 'ok' ? 1320 : kind === 'back' ? 660 : 980;
     const t = ctx.currentTime;
-    for (const [mul, amp, decay] of [[1, 0.05, 0.04], [2.76, 0.02, 0.018]] as const) {
+    for (const [mul, amp, decay] of [[1, 0.014, 0.04], [2.76, 0.0056, 0.018]] as const) {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       o.frequency.value = f * mul;
@@ -427,6 +436,12 @@ export class AudioEngine implements AudioSink {
     // (always ask: a quick hide and show can find the state still 'running' while the suspend is pending)
     if (hidden) void ctx.suspend().catch(() => undefined);
     else void ctx.resume().catch(() => undefined);
+  }
+
+  /** The game's sound away and back (s to fade), the menu's ticks left: a menu over a match has the context running. */
+  hush(on: boolean, secs: number): void {
+    const ctx = this.ctx;
+    if (ctx && this.stage) this.stage.gain.setTargetAtTime(on ? 0 : 1, ctx.currentTime, secs / 3);
   }
 
   /** Families the engine has (for tests and the debug overlay). */
