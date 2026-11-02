@@ -869,6 +869,24 @@ One High, confirmed and fixed: the ball jumped from the floor to the hand at the
 | Women, 6000 points | 11.5, 15.8, 33.0/26.4/40.6 | 11.0, 14.6, 34.0/26.9/39.2 |
 | Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
 
+| Round 25 | Before | After |
+|---|---|---|
+| Your overhead from 8 m or deeper, won | 73.3 | 58.3 |
+| Your overhead from 6.5-8 m, won | 68.8 | 58.5 |
+| Your bandeja at Pro, won | 72-74 | 46-52 |
+| Lobbers both up, off the bounce from 7.5 m+ | 8 of 124 | 93 of 111 |
+| Lobbers both up, met in the air inside 7.5 m | 7 of 78 | 8 of 46 |
+| Stand-in at Pro, two seeds | 59.1, 28-2; 62.4, 30-0 | 55.1, 22-8; 59.0, 25-5 |
+| Stand-in at Advanced, two seeds | 64.6, 29-1; 66.6, 30-0 | 64.8, 30-0; 64.9, 30-0 |
+| Your víbora hitting your own side, deep víboras | 7 of 133 | 1 of 168 |
+| Partner's error, waist-high off the back glass | 12.3 | 10.6 |
+| Leg flung back, per player-minute | 0.49 | 0.20 |
+| Foot glides over 30 cm, per player-minute | 1.76 | 1.31 |
+| Pops a minute, twelve seeds | 12.5 | 13.3 |
+| Match, 6000 points: shots, s, W/FE/UE | 10.3, 13.1, 41.4/25.8/32.8 | 10.0, 12.8, 42.2/25.3/32.5 |
+| Women, 6000 points | 11.3, 15.0, 34.7/28.5/36.8 | 11.2, 15.0, 34.2/29.5/36.3 |
+| Frame p99, Medium at 4x throttle, loaded machine | 14.2 | 14.2 |
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

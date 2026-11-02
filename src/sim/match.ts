@@ -21,7 +21,7 @@ import { gradeTiming, gradeQuality, G_GOOD, G_LATE, G_PERFECT, G_TOO_EARLY, G_TO
 import { findWindows, BEHIND_MAX, makeWindows, OH_BANDEJA, OH_SMASH, OH_VIBORA, reachAt, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { holdBack, holdShort, makeStandPlan, planStand, type Hold, type StandPlan } from './player/positioning.ts';
-import { formationSpot, bounceIsFar, SWITCH_X, type Spot } from './player/formation.ts';
+import { formationSpot, bounceIsFar, roundPartner, SWITCH_X, type Spot } from './player/formation.ts';
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
 import { smashLanding } from './contact/smashAim.ts';
@@ -1677,7 +1677,9 @@ export class MatchSim {
     if (!this.ai[i] && (this.cfg.assist ?? p.tune.positioningAssist) > 0) {
       // Human with the aim target: it was steered while charging (or put under the mouse).
       a.abs = true;
-      a.tx = p.aimX;
+      // (an aim nobody steered goes round the partner as an AI's does: the untouched víbora from the back ran through them on one in twenty; review round 31)
+      const st = this.stand[i]!;
+      a.tx = this.doubles && !p.aimTouched && st.valid && !st.contra && p.shot !== SHOT_LOB ? roundPartner(this, i, st, p.aimX, p.aimZ, this.world.court.halfW - 0.9) : p.aimX;
       a.tz = p.aimZ;
     } else {
       a.abs = f.aimAbs;

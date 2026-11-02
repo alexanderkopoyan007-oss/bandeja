@@ -724,6 +724,8 @@ const STEP_TIME = 0.15;
  */
 const RUN_V_ON = 0.45;
 const RUN_V_OFF = 0.3;
+/** Between points the run gait takes over at this speed and a half metre a second more (m/s). */
+const RUN_V_BREAK = 2.5;
 const RUN_PLANT = 0.3;
 /** The run is back on this long after a contact (s). */
 const RUN_AFTER = 0.08;
@@ -835,6 +837,9 @@ const STEP_MIN = 0.04;
  * longer, a body turning on the spot (a left-hander's stroke squaring up from a ball behind) left it 180° behind. */
 const WAIT_TURN_MAX = 1.6;
 const STEP_LIFT = 0.05;
+/** A step's height for its length (share), and the fastest a stepping foot's way is covered (m/s, on average over the step). */
+const STEP_RISE = 0.2;
+const STEP_SPEED = 2.6;
 const STEP_SNAP = 0.7;
 /**
  * Foot locks while moving: a clip's stance foot drifts over the floor (its stride doesn't match the body's speed
@@ -1038,6 +1043,7 @@ export class Avatar {
   /** A release forced while the foot is still down steps it (lifted), rather than sliding it; and its length (s). */
   private readonly relLift = new Uint8Array(2);
   private readonly relDur = new Float64Array([LOCK_RELEASE, LOCK_RELEASE]);
+  private readonly relUp = new Float64Array([STEP_LIFT, STEP_LIFT]);
   /** The step's target rotations last frame, each kept on the side of the one before (see the step). */
   private readonly relQT = [new THREE.Quaternion(), new THREE.Quaternion()];
   private readonly relToeT = [new THREE.Quaternion(), new THREE.Quaternion()];
@@ -2583,7 +2589,10 @@ export class Avatar {
       const free = this.st === ST_SWING ? (t < this.tCon ? 0 : smoothstep(0, RUN_CHEST_BACK, t - this.tCon)) : this.st === ST_PREP && this.hasCon ? smoothstep(RUN_CHEST_NEAR, RUN_CHEST_FAR, this.tPlan - t) : 1;
       this.chestFree += (free - this.chestFree) * (1 - Math.exp(-this.dt / RUN_CHEST_EASE));
       const near2 = (this.st === ST_SWING && t < this.tCon + RUN_AFTER && this.tCon - t < plantIn) || (this.st === ST_PREP && this.hasCon && this.tPlan - t < plantIn);
-      const running = !going && sim.phase === PH_RALLY && !near2 && sp > (this.gaitRun > 0 && this.gaitW > 0 ? RUN_V_OFF : RUN_V_ON);
+      // (and a real run between points: moving in the set-up or after a point drew the clips' bounding strides, the rear leg out straight and the foot .55 m up, review round 31.
+      // A shuffle there stays off it: at the rally's speeds the gait went on and off under people settling for the serve, 1.5 pops a player-minute)
+      const rally = sim.phase === PH_RALLY, on = this.gaitRun > 0 && this.gaitW > 0;
+      const running = !going && !near2 && sp > (rally ? (on ? RUN_V_OFF : RUN_V_ON) : on ? RUN_V_BREAK : RUN_V_BREAK + 0.5);
       // A foot in the air comes down before the run lets go of it: faded out at 0.47 of its swing it was left behind a body doing 4 m/s, and the leg's length dragged
       // it out straight behind, 0.4 m off the floor, on a lunge at a ball going past (review round 30).
       this.gaitStop = !running && !going && !cut && this.gaitRun > 0;
@@ -3790,6 +3799,12 @@ export class Avatar {
         Q.copy(this.lockQ[f]!);
         toe.quaternion.copy(this.lockToe[f]!);
       } else if (this.relT[f]! >= 0) {
+        if (this.relT[f] === 0) {
+          // A step is as long and as high as the way it has to go: over a fixed 0.15 s, 5 cm up, a foot handed on from the run skated 30-50 cm on its toes (review round 31).
+          const go = Math.hypot(A.x - this.relFrom[f]!.x, A.z - this.relFrom[f]!.z);
+          this.relUp[f] = go * STEP_RISE > STEP_LIFT ? go * STEP_RISE : STEP_LIFT;
+          if (this.relLift[f] === 1 && go / STEP_SPEED > this.relDur[f]!) this.relDur[f] = go / STEP_SPEED;
+        }
         let t = this.relT[f]! + this.dt / this.relDur[f]!;
         if (t >= 1) t = -1;
         this.relT[f] = t;
@@ -3798,7 +3813,7 @@ export class Avatar {
           const F = this.relFrom[f]!;
           A.x = F.x + (A.x - F.x) * e;
           A.z = F.z + (A.z - F.z) * e;
-          if (this.relLift[f] === 1) A.y += STEP_LIFT * Math.sin(Math.PI * t);
+          if (this.relLift[f] === 1) A.y += this.relUp[f]! * Math.sin(Math.PI * t);
           // From the step's start to the target, the target kept on the side of last frame's (the short way only on
           // the first frame) and never re-picked: the target moves with the body, and Quaternion.slerp re-picks the
           // short way once start and target are 180° apart (the foot spun 165° in a frame). Chasing the target from

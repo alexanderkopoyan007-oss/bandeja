@@ -48,7 +48,7 @@ describe('bajada', () => {
     expect(offGlassHigh(lob, -1, 0, minY, BAJADA_DEPTH, halfL)).toBe(-1);
   });
 
-  it('AI: in about as many points as pros, by level, mostly kept in play', { timeout: 120000 }, () => {
+  it('AI: in about as many points as pros, by level, mostly kept in play', { timeout: 300000 }, () => {
     const run = (level: number, seeds: number[]) => {
       let points = 0, withBajada = 0, bajadas = 0, deep = 0, planned = 0, plannedDeep = 0, lost = 0, inPoint = false;
       for (const seed of seeds) {

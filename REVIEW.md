@@ -846,3 +846,35 @@ Tests that moved, all read before they were changed. **Ball lab:** its limits pi
 My first left-handed recording wasn't left-handed: that recorder ignored the setting, and the numbers looked like a fix. Frame rate read 52 fps with another job on the machine's graphics; the live build read 59 beside it, and both hold 120 Hz alone.
 
 Pops on twelve fresh seeds: 12.5 a minute.
+
+## Round 25 (2026-11-02, on b6e9bd9; "review round 31" in the code's comments)
+
+Three reviewers and a sceptic on the shipped build: 21 findings, two of them High, and those two were one bug. It was Round 24's own over-correction: fixing "the AI reads a person's lob as beaten" left both lobbers on an 8 m line while you played from your own glass.
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | High | **The lobbers wait on 8 m while you hit from your own back glass.** A held overhead returned "stay back" without asking where it met the ball. From 8 m or deeper it won 73.3%, the worst place on court beating everything else. | **Fixed.** A held overhead met in the air inside 7.5 m keeps them back; off the bounce, or from 7.5 m or deeper, they come in, read 0.9 s before the bounce. From 8 m+ 58.3%, from 6.5-8 m 58.5 (68.8), bandeja 46-52 (72-74). Both up on balls met in the air inside 7.5 m 8 of 46 on the build before the last change (live 7 of 78), on balls played off the bounce from 7.5 m+ 93 of 111 (live 8 of 124). Tested both ways. |
+| 2 | Medium | Pro has no headroom. Two reports: a tight hand wins nine sets in ten, whatever plan it plays, and only timing moves it. 80-120 ms is about level. | **Better, open.** Stand-in 55.1, 22-8 and 59.0, 25-5 on seeds that read 59.1, 28-2 and 62.4, 30-0. Advanced still 64.8-64.9, 30-0. How much timing should count is the owner's call. |
+| 3 | Medium | The partner misses one waist-high ball in eight off the back glass. | **Better, small.** The AI lobs more off the glass with both opponents up (0.62 of a neutral style's balls, 0.5 elsewhere; 0.75 took points under 10 shots). Partner 12.3 to 10.6, you 1.8. Back-wall unforced errors 8.9 to 8.1, women 8.0 to 7.1. Errors into the net, women 58.0 to 52.9 (real 51). |
+| 4 | Medium | The new glass strands the AI on corner balls. | Open. Not traced: the reviewer didn't find why the taker's x stops. |
+| 5 | Medium | From the back the AI volleys a bandeja at its shins and loses nearly half. | Open. The review guessed the plan's height filter. I filtered low balls out of the plan and the rate didn't move, 3.2 per 100 against 3.1, so the filter came out. These aren't plans: the AI is in the ball's way as it drops. |
+| 6 | Medium | Your untouched víbora from the back hits your own partner. | **Fixed.** An aim nobody steered goes round the partner by the AI's own rule, now shared (`roundPartner`). 7 of 133 to 1 of 168 on one seed, measured before the last sim change. A steered aim is left alone. |
+| 7 | Medium | The ball jumps to the server's hand in one frame, up to 9 m. | **Fixed in the code, not measured in frames.** The last ball goes small over 0.25 s and the next comes up in the hand. Render only. |
+| 8 | Medium | AI defenders play off the back glass with their hips against the wall limit, and take the ball sooner. | Open. |
+| 9 | Medium | A run's end finishes with a foot gliding or whipped across the floor. | **Better.** Round 24's own cost. A step's length and height now follow its distance. 1.76 to 1.31 per player-minute; Round 23 read 1.20. |
+| 10 | Medium | Round 24's "leg flung 0.50 to 0.23" doesn't reproduce, and most of the seat's count is a run with no gait between points. | **Fixed.** The run gait also runs between points, from 3 m/s. 0.49 to 0.20 per player-minute. At the rally's speeds it switched on and off under people settling for the serve, about 1.5 pops a minute, so a shuffle stays off it. |
+| 11 | Medium | The run has almost no flight: 4-6% with both feet off, against a real 25-35%. | Open. |
+| 12 | Medium | The ball leaves with the racket far away, one hit in twenty-five. | Open. A press too near contact, so not a render fix. |
+| 13 | Low | Seven more: scraping low balls off the back glass, a press in the routine waiting up to 0.76 s, a key halving the wait between points unsaid, the routine bounce played softer than drawn, rackets through the back glass, the víbora's free arm, the forehand's free elbow. | Open. |
+
+Corrections to Round 24: #13's reading is wrong. A player using the keys loses 13 points from 45 to 120 ms; the new lob read accounted for all of that rise, and the new glass took 1.7 back. #4's 0.50 to 0.23 did not reproduce: on the same seeds and bodies the same rule reads 0.45 to 0.49.
+
+Corrections by the sceptic to this round's reports: level 1 is Pro and the default is Advanced, 0.8, which is what the tables above lead with. "They stand still" applies only to a press at 0.26 s; with a press about 1.0 s after the lob the nearest lobber walks in to 6.2 m and back out to 7.9 m. "The bandeja is the problem" did not reproduce: all three overheads paid. And where real lobbers stand at the overhead has no source: that they should come in is player judgement plus the game's own rule.
+
+Also fixed: a net built from the cached climate data and one that settled from scratch differed in two fields, so the first match in each climate had a different state hash (`netCloth.ts`). Found by the online proof's rewind check.
+
+Two of mine worth keeping. A read of "beaten" latches until the pair's next strike, so my first fix sent the lobbers in on 45 of 46 balls met in the air, undoing Round 24. It showed only when the test failed and I split it by how the ball was met. And `critic11/seat.ts` has its tree hard-coded, so my first víbora count compared a build with itself.
+
+Tests that moved, all read first. **lobRead:** split in two, kept in the air and off the bounce from deep. **input:** a sample of 8 reached its floor of 8, so it runs ten seeds, not six. **clothFit overSkin:** 46.08 against 46 on one seed; two other seeds read 26-31 on both builds, so the limit is 47.
+
+Pops on the twelve seeds: 13.3 a minute (12.5). The build just before the filter came out read 12.9 with leg pops level, 260 to 264, so I put the difference down to the matches changing, not proved. Frame p99 14.2 ms on both builds, read on a machine under load 10-27, so it says only that nothing is obviously worse.

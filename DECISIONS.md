@@ -3424,3 +3424,14 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **A press in the routine waits for the ball's next return,** not the routine's end. Going at once turned the ball round in mid-air, and waiting out the routine would have been a dead key. `tossDue` carries it, and a tap still tosses.
 - **Names go through `rightFamily`.** Any test on `fam.name` is false for a left-hander, and there is now a test that the avatar has none.
 - **The serve's carry is left at 0.6/0.04/0.02/0.18.** A longer decay moved the dip and didn't shrink it.
+
+## Round 25: where an overhead meets the ball decides the lobbers (2026-11-02)
+
+- **The question is where the ball is met, not whether the key is down.** A bandeja from 7 m in the air is a threat worth staying back for. One from the back glass off the bounce is the lob having worked, and the lob is how a pair takes the net (60.6% of net takes, Muñoz 2017). `LOB_DEEP` 7.5 is a judgement; an excellent lob is returned from 8.61 ± .37 m, but no source says where lobbers stand at the overhead.
+- **The read waits, because beaten latches.** `intentUp` holds a read of beaten until the pair's next strike, and a held overhead's plan can start off the bounce and turn into a ball met in the air. Read at once, the lobbers came in on 45 of 46 of those. They now hold mid-court until 0.9 s before the bounce. At 0.5 s they were 4.9 m from the net at the contact and the deep overhead still won 63. 1.3 s read the same as 0.9 within the noise: 54.3 and 61.0 against 52.6 and 60.3.
+- **A person's untouched aim follows the AI's rule.** `roundPartner` moved to formation.ts and both call it. A steered aim is never moved: it's theirs.
+- **The filter that didn't work came out.** Leaving it would have looked like a fix to a Medium that's still open.
+- **Glass lobs at 0.62, not 0.75.** 0.75 cut back-wall errors further but took points to 9.8 shots, under the real 10-11.
+- **The run gait between points starts at 3 m/s.** The rally's 0.45 m/s switched it on under people settling for the serve. A real run is what flung the leg.
+- **A step's height and time follow its distance** (`STEP_RISE`, `STEP_SPEED`). Both are judgements, and footage has no row for them.
+- **Not done on purpose:** Pro's headroom and how much timing counts. Those are the owner's call, and they need a hand on the keys.

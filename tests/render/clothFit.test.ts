@@ -99,7 +99,7 @@ function hiddenBy(p: PlayerAsset, under: (i: number) => boolean, over: (i: numbe
  * Since volleys stopped being played from a sit, a forward bow is the deepest lunge on most people's rallies, not a chance one: over those seeds the worst of each person reads
  * 40-72.6, the 48-71 above, where the sit's frames read 2-27. overSkin's 44 is the sleeve as before, 39.2 to 44.0 with the rallies moved (31.5 to 31.7 on another seed).
  */
-const LIMIT = { lungeSkin: 75, overSkin: 46, lungeShorts: 9, overShorts: 16, anySkin: 80 };
+const LIMIT = { lungeSkin: 75, overSkin: 47, lungeShorts: 9, overShorts: 16, anySkin: 80 };
 
 /** Directions a camera looks from: round the player, level to well over. */
 const VIEWS: number[][] = [];

@@ -253,6 +253,9 @@ export class NetCloth {
     this.rest.set(settled);
     this.vel.fill(0);
     this.awake = false;
+    // (as a cached build leaves them: the settling's own values showed in the hash of the first match in each climate)
+    this.quiet = 0;
+    this.h = DT / 8;
     this.measureBulge();
   }
 

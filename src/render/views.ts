@@ -2,7 +2,7 @@
 import * as THREE from 'three/webgpu';
 import { PAL, gradeColour } from '../ui/palette.ts';
 import type { MatchSim } from '../sim/match.ts';
-import { PH_OVER, PH_RALLY, PH_TOSS } from '../sim/match.ts';
+import { PH_DEAD, PH_OVER, PH_RALLY, PH_TOSS } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
 import { PF_FLOOR } from '../sim/ball/predict.ts';
 import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
@@ -31,6 +31,9 @@ function smooth(t: number): number {
   const x = Math.min(1, Math.max(0, t));
   return x * x * (3 - 2 * x);
 }
+
+/** How long the last ball takes to go, and the next to come up in the server's hand (s). */
+const DEAL_FADE = 0.25;
 
 export class BallView {
   /** Holds the ball at its position, stretched along its path for the shutter (ballLook.ts). */
@@ -86,6 +89,7 @@ export class BallView {
 
   /** The next frame draws another match or moment (replays): no trail carried over, no spin blur from the jump. */
   cutNext(): void {
+    this.dealAt = -100;
     this.trailCount = 0;
     this.lastTrailTime = -1;
     this.lastSpinT = -1;
@@ -103,6 +107,7 @@ export class BallView {
     const z = p.z + (b.z - p.z) * alpha;
     y = this.serveBounce(sim, y, sim.time + alpha * DT);
     this.mesh.position.set(x, y, z);
+    this.dealt(sim, sim.time + alpha * DT);
     {
       const t = sim.time + alpha * DT;
       const dt = this.lastSpinT < 0 || t < this.lastSpinT || t - this.lastSpinT > 0.25 ? 0 : t - this.lastSpinT;
@@ -156,6 +161,25 @@ export class BallView {
     m.lerpVectors(hand, m, addr);
     this.placeShadow(m.x, m.y, m.z);
   }
+
+  /**
+   * The sim deals the next ball to the server's hand as the dead time ends, from wherever the last one stopped (up to 9 m in a frame, every point; review round 31).
+   * The last one goes small over DEAL_FADE, and the next comes up in the hand, in place of a jump: at a broadcast's distance that is a few pixels fading out and in.
+   */
+  private dealt(sim: MatchSim, t: number): void {
+    if (sim.phase === PH_DEAD) this.dealAt = -1;
+    else if (this.dealAt === -1) this.dealAt = t;
+    // (nothing is dealt after the last point; a replay's clock runs behind the deal it would otherwise wait for)
+    const out = sim.phase === PH_DEAD ? (sim.phaseUntil - t) / DEAL_FADE : sim.phase === PH_OVER ? 0 : t < this.dealAt ? 1 : (t - this.dealAt) / DEAL_FADE;
+    const k = out >= 1 ? 1 : out <= 0 ? 0 : out;
+    if (k !== this.dealK) {
+      this.dealK = k;
+      this.felt.scale.setScalar(k < 1e-3 ? 1e-3 : k);
+      this.shadow.visible = k > 0.5;
+    }
+  }
+  private dealAt = 0;
+  private dealK = 1;
 
   private placeShadow(x: number, y: number, z: number): void {
     const h = Math.max(0, y - this.radius);
