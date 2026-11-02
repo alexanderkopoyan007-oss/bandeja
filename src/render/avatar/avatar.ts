@@ -52,6 +52,8 @@ const ELBOW_BEHIND = 0.45;
 const WRIST_MAX = 1.48;
 const WRIST_EDGE = 0.3;
 const WRIST_AFTER = 0.08;
+/** A person's wrist (rad, as wrist.test.ts): flexion, extension, radial and ulnar deviation; held to it from HAND_SOFT of it, softly over HAND_EDGE. */
+const HAND_FLEX = 1.31, HAND_EXT = 1.22, HAND_RADIAL = 0.35, HAND_ULNAR = 0.61, HAND_SOFT = 0.85, HAND_EDGE = 0.3;
 /** How fast that limit moves the racket on the hand (rad/s). */
 const WRIST_RATE = (720 * Math.PI) / 180;
 /** How strongly the racket's line picks the elbow's side against the key's pole (see elbowBehindRacket). */
@@ -518,6 +520,10 @@ const SCISSOR_FULL = 0.15;
 const SCISSOR_BACK = 0.3;
 const SCISSOR_UP = 0.3;
 const SCISSOR_FRONT = 0.22;
+/** When the kick opens against the contact (s), and how far both feet come up under the hips in the air (m): 3 cm of a leg is 27 degrees at the knee. */
+const SCISSOR_FROM = -0.04, SCISSOR_OPEN = 0.14, SCISSOR_TUCK = 0.03;
+/** A bandeja's rear foot off the floor (m), when against the contact it goes, and when it comes down again (s). */
+const REAR_OFF = 0.05, REAR_OFF_FROM = -0.14, REAR_OFF_AT = -0.03, REAR_DOWN_FROM = 0.12, REAR_DOWN_AT = 0.3;
 /** ...and comes up this far, or that leg sits at its full length, a peg to the hip (2 degrees, 37 on video). */
 const SCISSOR_FRONT_UP = 0.06;
 const JUMP_HEIGHT = 1.8;
@@ -633,6 +639,8 @@ const WALK_NEAR0 = 0.5;
 const WALK_NEAR1 = 1.8;
 /** How far towards the carry key (CARRY) the racket goes while walking back. */
 const CARRY_W = 0.9;
+/** The middle of a hand past the wrist, as a share of the forearm. */
+const PALM_ALONG = 0.33;
 const STAND_EASE = 0.4;
 /**
  * How far from the idle's ready crouch a server stands, from the address to the contact: a server is tall behind the
@@ -1166,6 +1174,14 @@ export class Avatar {
   private readonly readyMix: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   /** Serving: the address is the ready pose (from the point's setup to the contact). */
   private addr = false;
+  /** How far the free hand has gone to the serve's address spot (0 to 1). */
+  get addressing(): number { return this.addrW; }
+  /** The middle of the free hand (world): a third of a forearm past the wrist, about where a ball sits in it. */
+  palm(out: THREE.Vector3): THREE.Vector3 {
+    v1.setFromMatrixPosition(this.armFree[1]!.matrixWorld);
+    out.setFromMatrixPosition(this.armFree[2]!.matrixWorld);
+    return out.add(v1.subVectors(out, v1).multiplyScalar(PALM_ALONG));
+  }
   /** The serve's ball is still in the free hand (set up, or being pushed down). */
   private inHand = false;
   /** A point is on for this player (the ready position applies). */
@@ -1236,6 +1252,10 @@ export class Avatar {
   private overTilt = 0;
   private overBow = 0;
   private readonly wristWant = new THREE.Quaternion();
+  private readonly handAxes: THREE.Vector3[] = [];
+  private readonly handF = new THREE.Vector3();
+  private readonly handK = new THREE.Vector3();
+  private readonly wristAfter = new THREE.Quaternion();
   private readonly tipWant = new THREE.Quaternion();
   private readonly tipOff = new THREE.Quaternion();
   private readonly wristQ = new THREE.Quaternion();
@@ -1522,6 +1542,14 @@ export class Avatar {
     this.headRestInv.invert();
     this.armR = [b('RightArm'), b('RightForeArm'), b('RightHand')];
     this.armL = [b('LeftArm'), b('LeftForeArm'), b('LeftHand')];
+    // The hand's own axes, in the wrist's frame: along the middle finger, and across the knuckles from the little finger to the index.
+    for (let i = 0; i < 2; i++) {
+      const at = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(asset.restWorld[asset.bone((i === 0 ? 'Right' : 'Left') + n)]!);
+      const wrist = at('Hand'), Q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().extractRotation(asset.restWorld[asset.bone(i === 0 ? 'RightHand' : 'LeftHand')]!)).invert();
+      const F = at('HandMiddle1').sub(wrist).normalize(), K = at('HandIndex1').sub(at('HandPinky1'));
+      K.addScaledVector(F, -K.dot(F)).normalize();
+      this.handAxes.push(F.applyQuaternion(Q), K.applyQuaternion(Q));
+    }
     this.elbowR = elbowHinge(asset, 'RightForeArm');
     this.elbowL = elbowHinge(asset, 'LeftForeArm');
     const gc = guardCaps(asset);
@@ -1669,6 +1697,8 @@ export class Avatar {
 
   private setHanded(h: number): void {
     this.handed = h;
+    this.handF.copy(this.handAxes[h > 0 ? 0 : 2]!);
+    this.handK.copy(this.handAxes[h > 0 ? 1 : 3]!);
     this.grip = this.grips[h > 0 ? 0 : 1]!;
     this.armRacket = h > 0 ? this.armR : this.armL;
     this.armFree = h > 0 ? this.armL : this.armR;
@@ -2511,7 +2541,8 @@ export class Avatar {
       // half second of every recovery was the clip's legs, both feet up half the time (review round 26).
       // (and at a run's pace later: taken off 0.3 s out with the body still going at 3 m/s, the last stride to the ball was the clip's too, a shin
       // level behind for a third of a second; review round 27)
-      const plantIn = RUN_PLANT * (1 - RUN_PLANT_FAST * smoothstep(RUN_PLANT_V0, RUN_PLANT_V1, sp));
+      // (an overhead's front foot is down over a quarter of a second before the ball, at any speed: it was 0.12 s, the weight never through it)
+      const plantIn = this.fam.name === 'overhead' || this.fam.name === 'vibora' ? RUN_PLANT : RUN_PLANT * (1 - RUN_PLANT_FAST * smoothstep(RUN_PLANT_V0, RUN_PLANT_V1, sp));
       // (the chest is the stroke's by then: going with the hips up to the ball, it came back to it in the last frames and took the arms with it)
       // (eased: a swing that starts inside RUN_CHEST_NEAR would otherwise take the whole twist off in one frame)
       const free = this.st === ST_SWING ? (t < this.tCon ? 0 : smoothstep(0, RUN_CHEST_BACK, t - this.tCon)) : this.st === ST_PREP && this.hasCon ? smoothstep(RUN_CHEST_NEAR, RUN_CHEST_FAR, this.tPlan - t) : 1;
@@ -3136,22 +3167,30 @@ export class Avatar {
   /**
    * In the air, an overhead's scissor kick: the racket-side leg comes through behind, knee bent, the other reaches
    * forward for the landing (MediaPipe on WPT smashes: knees 138 and 37 at the top of the jump, where every smash here
-   * was dead straight, 1.7 degrees).
+   * was dead straight, 1.7 degrees). After the ball: at it the legs are long and under the body, knees 27 and 23 on the
+   * footage, where the kick opened 0.15 s before it had the feet a metre apart with the front knee locked. And on the
+   * floor the rear foot of a bandeja or a víbora comes off it into the ball.
    */
   private scissor(): void {
-    if (this.jumpT0 < 0 || this.jumpT <= 0) return;
+    const back = this.handed > 0 ? this.footR : this.footL, front = this.handed > 0 ? this.footL : this.footR;
+    const con = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
+    if (this.jumpT0 < 0 || this.jumpT <= 0) {
+      if (con >= 0 && (this.fam.name === 'overhead' || this.fam.name === 'vibora')) {
+        back.y += REAR_OFF * smoothstep(REAR_OFF_FROM, REAR_OFF_AT, this.lastT - con) * (1 - smoothstep(REAR_DOWN_FROM, REAR_DOWN_AT, this.lastT - con));
+      }
+      return;
+    }
     const u = (this.lastT - this.jumpT0) / this.jumpT;
     if (u <= 0 || u >= 1) return;
     const air = 4 * u * (1 - u);
     const lift = this.jumpH * air;
     if (lift < 0.02) return;
-    const k = Math.min(1, lift / SCISSOR_FULL);
-    const back = this.handed > 0 ? this.footR : this.footL, front = this.handed > 0 ? this.footL : this.footR;
+    const k = Math.min(1, lift / SCISSOR_FULL), kick = k * (con < 0 ? 1 : smoothstep(SCISSOR_FROM, SCISSOR_OPEN, this.lastT - con));
     const fx = this.stanceS, fz = this.stanceC;
-    back.x -= fx * SCISSOR_BACK * k; back.z -= fz * SCISSOR_BACK * k;
-    back.y += SCISSOR_UP * k;
-    front.x += fx * SCISSOR_FRONT * k; front.z += fz * SCISSOR_FRONT * k;
-    front.y += SCISSOR_FRONT_UP * k;
+    back.x -= fx * SCISSOR_BACK * kick; back.z -= fz * SCISSOR_BACK * kick;
+    back.y += SCISSOR_UP * kick + SCISSOR_TUCK * k;
+    front.x += fx * SCISSOR_FRONT * kick; front.z += fz * SCISSOR_FRONT * kick;
+    front.y += SCISSOR_FRONT_UP * kick + SCISSOR_TUCK * k;
   }
 
   /** Crouch and lunge: lower the hips (and push them towards a ball out of reach) with the feet kept planted. */
@@ -4117,6 +4156,24 @@ export class Avatar {
       if (dev > from && al > 1e-6) {
         v3.x = ax / al; v3.y = ay / al; v3.z = az / al;
         D.setFromAxisAngle(v3, (dev - from - WRIST_EDGE * (1 - Math.exp((from - dev) / WRIST_EDGE))) * k);
+      }
+      // And on through the follow-through by the hand itself: nothing asked what the keys there did to a wrist, and it went half as far again as
+      // one goes, the racket's head flopping over at the end of the bandeja, the slice and the lob (review round 28).
+      const after = (this.st === ST_SWING && this.lastT > this.tCon) || this.st === ST_FADE ? k * this.w : 0;
+      if (after > 0) {
+        const F = v1.copy(this.handF).applyQuaternion(q3), K = v2.copy(this.handK).applyQuaternion(q3);
+        const nx = (K.y * F.z - K.z * F.y) * this.handed, ny = (K.z * F.x - K.x * F.z) * this.handed, nz = (K.x * F.y - K.y * F.x) * this.handed;
+        const c = fx * F.x + fy * F.y + fz * F.z, bend = Math.acos(c < -1 ? -1 : c > 1 ? 1 : c);
+        const up = -(fx * K.x + fy * K.y + fz * K.z), bk = -(fx * nx + fy * ny + fz * nz), r = Math.sqrt(up * up + bk * bk);
+        if (r > 1e-6) {
+          const fl = bk / r, ra = up / r, a = fl / (fl > 0 ? HAND_FLEX : HAND_EXT), e = ra / (ra > 0 ? HAND_RADIAL : HAND_ULNAR), past = bend * Math.sqrt(a * a + e * e);
+          if (past > HAND_SOFT) {
+            const to = HAND_SOFT + HAND_EDGE * (1 - Math.exp((HAND_SOFT - past) / HAND_EDGE));
+            v3.set(F.y * fz - F.z * fy, F.z * fx - F.x * fz, F.x * fy - F.y * fx).normalize();
+            this.wristAfter.setFromAxisAngle(v3, bend * (1 - to / past) * after);
+            D.premultiply(this.wristAfter);
+          }
+        }
       }
     }
     // Followed at a wrist's speed: with the shaft dead against the forearm the axis has no way to go, and taken as it

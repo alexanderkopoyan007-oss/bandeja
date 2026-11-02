@@ -3,7 +3,7 @@
 // shape (the rally's length, the score), and asks an AudioSink for sounds. Never writes to the sim. Pure logic: the
 // tests drive it with a recording sink.
 import {
-  E_HIT, E_FLOOR, E_WALL, E_NET, E_BODY, E_ROOF, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_SWING, E_WHIFF, PH_RALLY, PH_TOSS, PH_SETUP, PH_DEAD,
+  E_HIT, E_FLOOR, E_WALL, E_NET, E_BODY, E_ROOF, E_POINT, E_FAULT, E_LET, E_GAME, E_SET, E_MATCH, E_SWING, E_WHIFF, PH_RALLY, PH_TOSS, PH_SETUP,
   type MatchSim,
 } from '../sim/match.ts';
 import {
@@ -11,7 +11,7 @@ import {
 } from '../sim/contact/shots.ts';
 import { SURF_GLASS, SURF_MESH, WALL_BACK_NEAR, WALL_BACK_FAR, type ZoneHit } from '../sim/court/court.ts';
 import { G_EARLY, G_LATE, G_PERFECT } from '../sim/contact/timing.ts';
-import { R_FAULT, R_LET, WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP } from '../sim/rules/rally.ts';
+import { WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP } from '../sim/rules/rally.ts';
 import { RK_DRIVE, RK_VOLLEY, RK_OVER, RK_SLICE, RK_TOUCH, WHOOSH_PEAK, PLAYER_VOICES, GRUNT_OVERHEAD, GRUNT_BACKHAND } from './voices.ts';
 import {
   AUDIO, arenaAudio, binFor, racketBin, RQ_CLEAN, RQ_OFF, RQ_FRAME, RACKET_POWER, BOUNCE_V, GLASS_V, MESH_V, METAL_V,
@@ -120,6 +120,8 @@ export class Soundscape {
   private readonly scuffT = new Float64Array(4).fill(-1);
   private lastMurmurDb = 1e9;
   private lastBigAt = -10;
+  /** A first serve missed or a let: the crowd stays hushed for the next one. */
+  private anotherServe = false;
   /** This update's celebration (0 none, CELEBRATE_GAME, 1 set, 2 match): played once after the events. */
   private celebrate = 0;
   private readonly birds: boolean;
@@ -326,9 +328,11 @@ export class Soundscape {
       case E_FAULT:
         // A double fault: the crowd groans, no applause.
         if (b === 2 && this.big) out.playFlat('aah', 0, 0.6, 0.3, BUS_CROWD);
+        this.anotherServe = b !== 2;
         this.rallyOver();
         break;
       case E_LET:
+        this.anotherServe = true;
         this.rallyOver();
         break;
       case E_SET:
@@ -386,7 +390,8 @@ export class Soundscape {
       if (this.big && hitter === winner && shots >= 20) out.playFlat('cheer', 0, 0.8, 0.3, BUS_CROWD);
       else if (this.big && hitter >= 0 && hitter !== winner) out.playFlat('aah', 0, 0.7, 0.25, BUS_CROWD);
       big(0.8 + 0.3 * clamp01((shots - 12) / 15), clap + 0.2);
-    } else if (this.rand() < (this.big ? 0.75 : 0.5)) {
+    } else if (hitter === winner && this.rand() < (this.big ? 0.75 : 0.5)) {
+      // (for a shot that won it: a ball in the net was clapped like a winner, and the clapping stopped meaning anything)
       out.playFlat('applause', APPLAUSE_SMALL, 0.6 + 0.4 * clamp01(shots / 12), clap, BUS_CROWD);
     }
   }
@@ -398,8 +403,8 @@ export class Soundscape {
   private crowdBed(sim: MatchSim, dt: number): void {
     // (the walk back is still the crowd's: hushed from the end of the point, it had about a second of chatter in an eight second gap)
     // (nor does it start up between two serves: back to full talk after a fault, it had to hush again for the second)
-    const another = sim.rally.result === R_LET || (sim.rally.result === R_FAULT && sim.serveNo === 1);
-    const inPoint = (sim.phase === PH_SETUP && (sim.walking === 0 || sim.serveNo === 2)) || sim.phase === PH_RALLY || sim.phase === PH_TOSS || (sim.phase === PH_DEAD && another);
+    if (sim.phase === PH_RALLY) this.anotherServe = false;
+    const inPoint = (sim.phase === PH_SETUP && sim.walking === 0) || sim.phase === PH_RALLY || sim.phase === PH_TOSS || this.anotherServe;
     const t = sim.phase === PH_RALLY ? clamp01((sim.rally.shots - 6) / 16) : 0;
     this.tension += (t - this.tension) * (dt > 0 ? 1 - Math.exp(-dt / 1.5) : 0);
     const want = inPoint ? AUDIO.crowd.hush + AUDIO.crowd.tensionGain * this.tension : AUDIO.crowd.chatter;

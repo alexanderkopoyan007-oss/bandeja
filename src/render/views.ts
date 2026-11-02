@@ -111,11 +111,7 @@ export class BallView {
       const w = sim.ball.spin, v = sim.ball.vel;
       this.blur.value.x = spinBall(this.mesh, this.felt, w.x, w.y, w.z, dt, v.x, v.y, v.z, this.radius, BallView.shutter);
     }
-    const h = Math.max(0, y - sim.world.spec.radius);
-    this.shadow.position.set(x, 0.003, z);
-    const sc = 1 + h * 0.25;
-    this.shadow.scale.set(sc, sc, sc);
-    (this.shadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.12, 0.72 - h * 0.13);
+    this.placeShadow(x, y, z);
 
     // Trail: one point per sim tick, while a struck ball is in play (from the toss it hung under the dropped ball like a
     // string, and stayed drawn behind a dead one between points).
@@ -152,6 +148,24 @@ export class BallView {
   }
 
   /** The ball's drawn height during the server's routine bounces (else `y`); sets routineBounce at each floor. */
+  /**
+   * The server has the ball through the walk back: drawn in `hand` until the hand has gone over to the address spot the
+   * sim keeps it at (`addr`, 0 to 1). At that spot, walking, it hung in the air beside him with both his hands on the racket.
+   */
+  carried(hand: THREE.Vector3, addr: number): void {
+    const m = this.mesh.position;
+    m.lerpVectors(hand, m, addr);
+    this.placeShadow(m.x, m.y, m.z);
+  }
+
+  private placeShadow(x: number, y: number, z: number): void {
+    const h = Math.max(0, y - this.radius);
+    this.shadow.position.set(x, 0.003, z);
+    const sc = 1 + h * 0.25;
+    this.shadow.scale.set(sc, sc, sc);
+    (this.shadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.12, 0.72 - h * 0.13);
+  }
+
   private serveBounce(sim: MatchSim, y: number, t: number): number {
     this.routineBounce = false;
     if (sim.phase !== PH_SETUP || sim.walking !== 0) { this.placedAt = -1; this.lastRoutine = -1; return y; }

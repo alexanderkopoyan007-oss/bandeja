@@ -376,7 +376,8 @@ export const SERVE: Family = {
   punch: 1,
   bodyTurn: SERVE_TURN,
   lead: 0.42,
-  follow: 0.45,
+  // (the finish is reached by +0.25 s: at 0.45 both arms stood still on the chest for a fifth of a second of every point with the body off at 2 m/s)
+  follow: 0.32,
   weight: 0.2,
   // (a long arm, not a locked one: elbow 44-52 on the coach, which is 0.91-0.93 of it)
   arm: 0.93,

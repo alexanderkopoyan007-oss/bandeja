@@ -1,6 +1,6 @@
 // The browser game: fixed-step sim driven by requestAnimationFrame, timestamped input, render interpolation.
 import * as THREE from 'three/webgpu';
-import { MatchSim, PH_RALLY, PH_OVER, type MatchConfig } from '../sim/match.ts';
+import { MatchSim, PH_RALLY, PH_OVER, PH_SETUP, type MatchConfig } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import { InputFrame } from '../sim/input.ts';
 import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
@@ -147,6 +147,9 @@ export interface PerfProbe {
   backend: string;
   points: number;
 }
+
+/** Where the server's free hand is, for the ball on the walk back. */
+const palmAt = new THREE.Vector3();
 
 export class Game {
   readonly opts: GameOptions;
@@ -743,6 +746,8 @@ export class Game {
     this.ball.showMarker = marker;
     this.net.update(view, vAlpha);
     for (let i = 0; i < this.players.length; i++) this.players[i]!.update(view, view.players[i]!, i, vAlpha, vTime);
+    const server = view.phase === PH_SETUP ? this.players[view.score.serverPlayer()]!.avatar : null;
+    if (server) this.ball.carried(server.palm(palmAt), server.addressing);
     const who = this.opts.autoplay || showing ? -1 : human;
     // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last
     // frame's camera, which is close enough).
