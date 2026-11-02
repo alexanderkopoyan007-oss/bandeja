@@ -30,6 +30,8 @@ export interface StandPlan {
   volleyKey: boolean;
   /** The player can get there in time (false: the best try, out of time). */
   inTime: boolean;
+  /** How late the best try is (s; 0 in time). */
+  late: number;
   /** A contrapared: the player faces their own back glass and plays the ball up into it (see CONTRA_*). */
   contra: boolean;
   /**
@@ -42,7 +44,7 @@ export interface StandPlan {
 }
 
 export function makeStandPlan(): StandPlan {
-  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, onRun: false, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, volleyKey: false, inTime: false, contra: false, turned: false, version: -1 };
+  return { valid: false, x: 0, z: 0, t: 0, bx: 0, by: 0, onRun: false, bz: 0, hand: 1, afterWall: false, volley: false, overhead: false, volleyKey: false, inTime: false, late: 0, contra: false, turned: false, version: -1 };
 }
 
 /** Margin kept between the ball's path and the body (on top of the body radius). */
@@ -282,6 +284,7 @@ export function planStand(
         found = true;
         write(out, sx, sz, ti, x, y, z, useFh ? 1 : -1, afterWall, b === 0);
         out.inTime = true;
+        out.late = 0;
         out.contra = false;
         out.onRun = onRun;
       }
@@ -289,6 +292,7 @@ export function planStand(
       fbSlack = slack;
       write(out, sx, sz, ti, x, y, z, useFh ? 1 : -1, afterWall, b === 0);
       out.inTime = false;
+      out.late = -slack;
       out.contra = false;
     }
     // The contrapared from this sample: facing the glass, from the net side of the ball.
@@ -321,6 +325,7 @@ export function planStand(
         fbSlack = cSlack;
         write(out, cx, cz, ti, x, y, z, cFh ? 1 : -1, pr.walls[i]! > 0, false);
         out.inTime = false;
+        out.late = -cSlack;
         out.contra = true;
       }
       continue;
@@ -333,6 +338,7 @@ export function planStand(
       found = true;
       write(out, cx, cz, ti, x, y, z, cFh ? 1 : -1, pr.walls[i]! > 0, false);
       out.inTime = true;
+      out.late = 0;
       out.contra = true;
     }
   }

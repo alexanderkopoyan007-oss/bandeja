@@ -68,6 +68,8 @@ export class Player {
   heldShot = -1;
   /** The ball (its prediction's version) this player is covering for a beaten partner (MatchSim.coverPlan). */
   coverFor = -1;
+  /** Since when the taker's plan has been out of time (-1: it hasn't). */
+  coverSince = -1;
 
   /** Split-step: take-off time, and the end of it (hop and landing; the avatar draws it). */
   splitAt = -10;
@@ -353,7 +355,7 @@ export class Player {
     out.push(this.pos.x, this.pos.z, this.vel.x, this.vel.z, this.facing, this.swing, this.shot, this.mod,
       this.chargeStart, this.release, this.contactTime, this.timingDelta, this.grade, this.recoverUntil,
       this.handSide, this.splitUntil, this.lastContactTime, this.lastContact.x, this.lastContact.y, this.lastContact.z,
-      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.reflex ? 1 : 0, this.steerFrom, this.steerFromX, this.restY, this.restX, this.heldShot, this.coverFor, this.heldMod, this.splitAt, this.pushFrom,
+      this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.reflex ? 1 : 0, this.steerFrom, this.steerFromX, this.restY, this.restX, this.heldShot, this.coverFor, this.coverSince, this.heldMod, this.splitAt, this.pushFrom,
       this.contra ? 1 : 0);
   }
 
@@ -364,7 +366,7 @@ export class Player {
     this.grade = s[i++]!; this.recoverUntil = s[i++]!; this.handSide = s[i++]!; this.splitUntil = s[i++]!;
     this.lastContactTime = s[i++]!; this.lastContact.x = s[i++]!; this.lastContact.y = s[i++]!; this.lastContact.z = s[i++]!;
     this.aimX = s[i++]!; this.aimZ = s[i++]!; this.aiming = s[i++]! === 1; this.aimTouched = s[i++]! === 1; this.reflex = s[i++]! === 1; this.steerFrom = s[i++]!; this.steerFromX = s[i++]!;
-    this.restY = s[i++]!; this.restX = s[i++]!; this.heldShot = s[i++]!; this.coverFor = s[i++]!;
+    this.restY = s[i++]!; this.restX = s[i++]!; this.heldShot = s[i++]!; this.coverFor = s[i++]!; this.coverSince = s[i++]!;
     this.heldMod = s[i++]!;
     this.splitAt = s[i++]!;
     this.pushFrom = s[i++]!;

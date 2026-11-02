@@ -201,8 +201,12 @@ const OVER_BACK = 0.9;
 const COPY_SEEN = new Map<object, object>();
 /** The ball dead after a point before the walk back starts (1.7 s with walkBack off). */
 const POINT_DEAD_WALK = 1.2;
-/** After a change of ends, the extra dead time for the picture to dip before the cut (s). */
-const ENDS_CUT = 0.35;
+/**
+ * After a change of ends, the extra dead time for the picture to dip before the cut (s): more after a game, for its call to be read and the
+ * point to be taken in, and the serve that much later. It was the shortest break in the match, 3.4 s from the last ball to the next serve against
+ * 8 after any other point, and the game's call was gone in the frame it came up.
+ */
+const ENDS_CUT = 0.35, ENDS_HOLD = 2.4, ENDS_SERVE_WAIT = 1.5;
 /**
  * A human's balls going to the same place again and again are read: a ball a player has seen coming five times is no
  * pressure, whatever its pace. How far apart two targets still count as one place (m), how much of the running figure
@@ -234,7 +238,7 @@ const STEER_CHORD = 0.08;
 /** How far a key or stick must move from where it was at the press to steer (a key is 0 or 1; a thumb wobbles). */
 const STEER_TOUCH = 0.35;
 /** Further than this (m) from the planned spot, a key pointing at it is running there, not aiming. */
-const STEER_RUN = 0.4;
+const STEER_RUN = 0.4, STEER_RUN_GROUND = 1;
 /** Most of the sitter's control a human's drop volley gets: the same ball from the same grade went in the net 8 times as often as the AI's. */
 const DROP_VOLLEY_CONTROL = 1.6;
 /** A serve's aim (m/s) and how near the box's edge it goes (m): at the rally's speed a fifth of a second on A crossed the box to the stop by the fence, two thirds of those serves faults. */
@@ -256,6 +260,8 @@ const RELEASE_LOOKBACK = 0.3;
 const MIDDLE_MARGIN = 0.8;
 const SWITCH_MARGIN = 1.0;
 const CLAIM_OUT = 20;
+/** A partner goes for the taker's ball at once if the taker's plan is this late (s), or once it has been out of time this long (s), and has the ball once this much nearer it (m). */
+const COVER_LATE = 0.15, COVER_WAIT = 0.12, COVER_TAKES = 0.5;
 /**
  * Calls: a ball is called once its taker has held CALL_AFTER (s) past the strike (about when a player has read it:
  * the 0.14-0.20 s reaction, ai/simpleAi.ts), when the runs are within CALL_MARGIN (m) of each other (a ball either
@@ -303,6 +309,10 @@ export class MatchSim {
   private walkMeet = 0;
   /** The dead time is held ENDS_CUT longer after a change of ends, then everyone is put on the other side. */
   private endsCut = 0;
+  /** Which way round the pairs are: the score's ends, from the set-up after they change (`side` looks here, so nobody turns round in the hold). */
+  private courtEnds = 0;
+  /** How much longer than usual an AI takes over this serve (s). */
+  serveWait = 0;
   /**
    * This dead time ends with everyone put in their places at once, not walking there (a change of ends, or walkBack
    * off): presentation cuts away over it (ui/transitions.ts).
@@ -425,7 +435,7 @@ export class MatchSim {
   /** Half of the court team plays this game: +1 = z > 0. */
   side(team: number): number {
     const base = team === TEAM_NEAR ? 1 : -1;
-    return this.score.ends === 0 ? base : -base;
+    return this.courtEnds === 0 ? base : -base;
   }
 
   // ---- events --------------------------------------------------------------------------------
@@ -454,6 +464,8 @@ export class MatchSim {
   // ---- point setup ---------------------------------------------------------------------------
 
   private startPoint(): void {
+    this.courtEnds = this.score.ends;
+    this.serveWait = this.endsCut === 2 ? ENDS_SERVE_WAIT : 0;
     const c = this.world.court;
     const sc = this.score;
     const sTeam = sc.serverTeam();
@@ -1111,6 +1123,8 @@ export class MatchSim {
     for (let team = 0; team < 2; team++) {
       if (hitter < 0 || hitter === team) {
         this.taker[team] = -1;
+        this.players[team]!.coverSince = -1;
+        if (this.doubles) this.players[team + 2]!.coverSince = -1;
         if (hitter === team && this.crossBack[team] === 0 && this.rally.bounces === 0 && this.ai[team] && this.ai[team + 2]
           && bounceIsFar(this)) this.crossBack[team] = 1;
         continue;
@@ -1188,33 +1202,48 @@ export class MatchSim {
     this.handOver(i, true);
   }
 
-  /** The taker can't get to it: the ball is their partner's at once, while it is still in the air between them. */
+  /**
+   * The taker can't get to it: the ball is their partner's at once, while it is still in the air between them, if they are better placed for it.
+   * An AI partner has one given up on whatever the run, nobody else being left to play it. A human only by the shorter run: they have to see it
+   * and go, and a ball given to a partner 5 m off at the net from 3 m away died between them, the AI standing by it with no right to play it
+   * (review round 28).
+   */
   handOver(i: number, givenUp = false): void {
     if (!this.doubles) return;
     const team = i & 1;
     if (this.taker[team] !== i) return;
-    const o = i ^ 2;
-    // (given up on, it is the partner's if they have any contact at all: in time or not, nobody else is left to play it)
-    if (this.claimCost(o, this.side(team), this.time) < (givenUp ? CLAIM_OUT * 2 : CLAIM_OUT)) this.setTaker(team, o);
+    const o = i ^ 2, s = this.side(team), theirs = this.claimCost(o, s, this.time);
+    const mine = givenUp && this.ai[o] ? CLAIM_OUT * 2 : this.claimCost(i, s, this.time);
+    if (this.ai[o] ? theirs < mine : theirs < CLAIM_OUT && (mine >= CLAIM_OUT * 2 || theirs < mine % CLAIM_OUT)) this.setTaker(team, o);
   }
 
   /**
    * The taker has planned and can't get there: the contact their partner goes for all the same, null while the taker is in time. The call only
    * changed at the bounce, so a soft ball down the middle was left to a net player who couldn't reach it, the server ran on past it, and both
-   * turned round when it had come off the glass (review round 27).
+   * turned round when it had come off the glass (review round 27). At once on a plan clearly late, COVER_LATE; a plan only just late for
+   * COVER_WAIT first: one tick of that had the partner off on four balls in five that the taker played anyway, and the pair shoulder to shoulder
+   * at the back three times as often. Never on a human with a key down, who has said it is theirs. And the partner who gets nearer than the taker
+   * has it (review round 28).
    */
   coverPlan(i: number, s: number): StandPlan | null {
     const team = i & 1, tk = this.taker[team]!;
     if (tk < 0 || tk === i) return null;
-    const p = this.players[i]!;
+    const p = this.players[i]!, q = this.players[tk]!;
     // (once gone, gone for this ball: a taker's plan flickers in and out of time, and the partner went and came back with it)
     if (p.coverFor !== this.pred.version) {
       const st = this.ai[tk] ? this.ai[tk]!.standPlan : this.stand[tk]!, ai = this.ai[i];
-      if (!st.valid || st.inTime || (ai && ai.reactAt > this.time)) return null;
+      if (!st.valid || st.inTime || (!this.ai[tk] && q.swing !== SW_IDLE)) p.coverSince = -1;
+      else if (p.coverSince < 0) p.coverSince = this.time;
+      if (p.coverSince < 0 || (st.late < COVER_LATE && this.time - p.coverSince < COVER_WAIT) || (ai && ai.reactAt > this.time)) return null;
       p.coverFor = this.pred.version;
     }
     const plan = this.claim[i]!;
-    return planStand(this.pred, p, s, this.time, this.rally.isServe, plan, -1, false, false) ? plan : null;
+    if (!planStand(this.pred, p, s, this.time, this.rally.isServe, plan, -1, false, false)) return null;
+    if (q.swing === SW_IDLE) {
+      const ax = plan.x - p.pos.x, az = plan.z - p.pos.z, bx = plan.x - q.pos.x, bz = plan.z - q.pos.z;
+      if (sqrt(ax * ax + az * az) + COVER_TAKES < sqrt(bx * bx + bz * bz)) this.setTaker(team, i);
+    }
+    return plan;
   }
 
   private setTaker(team: number, i: number): void {
@@ -1421,13 +1450,14 @@ export class MatchSim {
     // first: the run back from a lob pressed with the overhead took the target to its stop 0.9 m past the net, one good smash in four into it
     // (review round 25). Only with it: the game has the running by then, so a key pressed later in the hold can't be the run's. Marked on every
     // tick of the hold, it stayed dead past arrival, half of bandejas lost their corner and nothing on screen said why (review round 26). A
-    // ground stroke has no need of it, its stops below make a run key cheap, and there it killed the chord that places the shot (round 27).
+    // ground stroke is the same with further to run: taken as the aim with any way left, a key landing with the shot cost five points in a hundred
+    // (slices short and wide, chiquitas on the glass; review round 28), and with the spot at hand it is the chord that places the shot (round 27).
     // (A stick is followed up: a thumb takes two or three frames to reach full.)
     const st = this.stand[p.index]!, overhead = !serve && p.shot === SHOT_BANDEJA;
-    if (overhead && st.valid && this.time - p.chargeStart < STEER_CHORD) {
-      const togoX = st.x - p.pos.x, togoZ = st.z - p.pos.z;
-      if (abs(togoZ) > STEER_RUN && -s * f.moveY * togoZ > 0 && abs(f.moveY) > abs(p.steerFrom)) p.steerFrom = f.moveY;
-      if (abs(togoX) > STEER_RUN && s * f.moveX * togoX > 0 && abs(f.moveX) > abs(p.steerFromX)) p.steerFromX = f.moveX;
+    if (!serve && st.valid && this.time - p.chargeStart < STEER_CHORD) {
+      const togoX = st.x - p.pos.x, togoZ = st.z - p.pos.z, far = overhead ? STEER_RUN : STEER_RUN_GROUND;
+      if (abs(togoZ) > far && -s * f.moveY * togoZ > 0 && abs(f.moveY) > abs(p.steerFrom)) p.steerFrom = f.moveY;
+      if (abs(togoX) > far && s * f.moveX * togoX > 0 && abs(f.moveX) > abs(p.steerFromX)) p.steerFromX = f.moveX;
     }
     const ahead = abs(f.moveY - p.steerFrom) > STEER_TOUCH, across = abs(f.moveX - p.steerFromX) > STEER_TOUCH;
     if (f.aimAbs || (overhead && (f.held & BTN_PRECISION) === 0 ? ahead : ahead || across)) p.aimTouched = true;
@@ -1444,6 +1474,9 @@ export class MatchSim {
       } else {
         p.aimZ = -s * OVERHEAD_AIM_DEPTH * c.halfL;
       }
+    } else if (!f.aimAbs && !p.aimTouched && p.shot === SHOT_TOPSPIN) {
+      // The same key with Precision is a chiquita, and it goes where one goes: at the topspin's depth it flew 8 m past the net over the pair there.
+      p.aimZ = -s * this.solverDepth((f.held & BTN_PRECISION) !== 0 ? SHOT_CHIQUITA : SHOT_TOPSPIN) * c.halfL;
     }
     if (f.aimAbs) {
       p.aimX = f.aimTX;
@@ -1466,7 +1499,7 @@ export class MatchSim {
       // A wrong reading of a key stays cheap, each shot stopping where it is still that shot: a smash no shorter than it can go at full pace, a
       // víbora with the other overheads though Precision is down for it (0.9 m past the net, one in four into it; review round 27), a lob where
       // real ones come down, a ground stroke from the back not into the tape. A volley and the soft shots may go as short as they are meant to.
-      const soft = p.shot === SHOT_DROP || p.shot === SHOT_CHIQUITA || !ahead || f.aimAbs;
+      const soft = p.shot === SHOT_DROP || !ahead || f.aimAbs;
       const short = soft || (!sure && !overhead) ? 0.9 : overhead ? ((f.held & BTN_POWER) !== 0 ? this.smashSpot(p) : AIM_SURE_OVERHEAD)
         : p.shot === SHOT_LOB ? AIM_SURE_LOB : st.valid && st.volley ? AIM_SURE_SHORT : AIM_SURE_GROUND;
       p.aimX = clamp(p.aimX, -c.halfW + edgeX, c.halfW - edgeX);
@@ -1992,7 +2025,6 @@ export class MatchSim {
       this.serveNo = 1;
       if (ev & EV_GAME) this.emit(E_GAME, this.pendingPointWinner);
       if (ev & EV_SET) this.emit(E_SET, this.pendingPointWinner);
-      if (ev & EV_CHANGE_ENDS) this.emit(E_ENDS, -1);
       if (ev & EV_MATCH) {
         this.emit(E_MATCH, this.pendingPointWinner);
         this.phase = PH_OVER;
@@ -2005,12 +2037,15 @@ export class MatchSim {
         // Changing ends: nobody walks round the net; the picture cuts (cutComing) a moment later, when everyone is
         // put on the other side.
         this.pendingPointWinner = -1;
-        this.endsCut = 1;
-        this.phaseUntil = this.time + ENDS_CUT;
+        const game = (ev & EV_GAME) !== 0;
+        this.endsCut = game ? 2 : 1;
+        this.phaseUntil = this.time + (game ? ENDS_HOLD : ENDS_CUT);
         return;
       }
+      if (ev & EV_CHANGE_ENDS) this.emit(E_ENDS, -1);
     } else if (this.endsCut !== 0) {
       // (the cut after a change of ends: the point is scored already)
+      this.emit(E_ENDS, -1);
     } else if (r.result === R_FAULT) {
       this.serveNo = 2;
     }
@@ -2060,14 +2095,14 @@ export class MatchSim {
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
-        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldShot).num(p.coverFor).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
+        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldShot).num(p.coverFor).num(p.coverSince).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);
     h.num(this.crossBack[0]!).num(this.crossBack[1]!).num(this.claimGap[0]!).num(this.claimGap[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     h.num(this.tossBounces).num(this.tossBX).num(this.tossBZ);
-    h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut);
+    h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut).num(this.courtEnds).num(this.serveWait);
     for (let i = 0; i < this.players.length; i++) h.num(this.walkHomeX[i]!).num(this.walkHomeZ[i]!).num(this.walkHomeF[i]!);
     h.num(this.overStage).num(this.overUntil);
     for (let i = 0; i < this.players.length; i++) h.num(this.overX[i]!).num(this.overZ[i]!).num(this.overMate[i]!);

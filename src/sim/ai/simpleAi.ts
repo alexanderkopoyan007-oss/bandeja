@@ -290,7 +290,7 @@ export class SimpleAi {
       // (the serve's moment is drawn once everyone is in place after the walk back: MatchSim.walking)
       if (!serving || m.walking !== 0) return;
       if (this.servePressAt < 0) {
-        this.servePressAt = t0 + 0.7 + 0.7 * rng.next();
+        this.servePressAt = t0 + m.serveWait + 0.7 + 0.7 * rng.next();
         const r = rng.next();
         // A first serve goes for the lines and pace; a second serve is a safe slice with room to spare (pros fault
         // about 10% of first serves and 2% of second serves: Mellado-Arbelo et al. 2019).

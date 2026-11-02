@@ -279,10 +279,21 @@ describe('a movement key and the aim', () => {
     }
     throw new Error('no wide ball to hold for');
   }
-  it('on a ground stroke a key landing with the shot key aims, the way the ball is taking the player too', () => {
+  it('on a ground stroke a key landing with the shot key is the run\'s with a long way to go, and later in the hold it aims', () => {
     const { m, f, x0, toward } = holdingWide();
+    const p = m.players[0]!;
+    run(m, f, toward, 40);
+    expect(p.aimX).toBeCloseTo(x0, 5);
+    run(m, f, 0, 2);
     run(m, f, toward, 12);
-    expect(Math.abs(m.players[0]!.aimX - x0)).toBeGreaterThan(0.5);
+    expect(Math.abs(p.aimX - x0)).toBeGreaterThan(0.5);
+  });
+  it('with the spot at hand it is the chord that places the shot', () => {
+    const { m, f, x0, toward } = holdingWide();
+    const p = m.players[0]!;
+    p.pos.x = m.stand[0]!.x - m.side(0) * toward * 0.7;
+    run(m, f, toward, 12);
+    expect(Math.abs(p.aimX - x0)).toBeGreaterThan(0.5);
   });
   it('on an overhead a key landing with the shot key and pointing at the spot is the run\'s, and later in the hold it aims', () => {
     const { m, f, x0, toward } = holdingWide();
