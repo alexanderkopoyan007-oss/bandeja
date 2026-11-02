@@ -199,6 +199,8 @@ export class Game {
   photo: PhotoOverlay | null = null;
   /** The sim stands still (the scene is still drawn): photo-match comparisons. */
   paused = false;
+  /** The two-tab proof (tools/net/tab.ts): takes over the step, for a client that also rewinds. */
+  stepper: ((sim: MatchSim) => void) | null = null;
   /** Paused by a menu (Esc, Start): the sim, the sound and the input all wait. */
   private menuPaused = false;
   /** Every listener this game adds goes when it is torn down. */
@@ -680,7 +682,8 @@ export class Game {
       if (holding && hp.swing === SW_CHARGE && this.sim.time + DT > simNow) break;
       this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
       rp.beforeStep(this.sim, this.inputs[human] ?? null);
-      this.sim.step(this.inputs);
+      if (this.stepper) this.stepper(this.sim);
+      else this.sim.step(this.inputs);
       rp.afterStep(this.sim);
       n++;
     }

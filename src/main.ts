@@ -97,6 +97,8 @@ async function start(): Promise<void> {
 
   const urlOptions = optionsFromUrl(params, await avatar);
   urlOptions.people = castParam(params);
+  const net = params.has('net') ? await import('../tools/net/tab.ts') : null;
+  net?.prepare(urlOptions, params);
   const game = new Game(urlOptions, renderer, document.getElementById('hud')!);
   // Exposed before the warm-up: tools that step the game themselves don't need it (and a hidden tab stalls it).
   (window as unknown as { __bandeja: Game }).__bandeja = game;
@@ -132,6 +134,7 @@ async function start(): Promise<void> {
     game.resize();
   }
   await game.warmUp();
+  net?.attach(game, params);
   game.start();
 }
 
