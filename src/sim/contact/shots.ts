@@ -114,6 +114,8 @@ export interface ShotRequest {
   targetZ: number;
   /** Contact quality from timing, 0..1. */
   quality: number;
+  /** Met before it has bounced (a smash's deepError: off the glass a smash is a bajada). */
+  inAir: boolean;
   /** Signed timing error in seconds (negative = early): adds a pull/push bias. */
   timingDelta: number;
   /** +1 when the ball is on the hitter's forehand side, -1 backhand. */
@@ -719,7 +721,7 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
   // Pace shots keep a safer margin over the tape: full pace when that clears it, else as fast as clears it.
   const paceClear = clear + 0.25;
   // Swing errors (spreads here: the swing is made for the contact this hitter usually gets).
-  const deep = shape.deepError !== undefined ? 1 + shape.deepError * clamp((abs(ball.pos.z) - DEEP_FROM) / (DEEP_TO - DEEP_FROM), 0, 1) : 1;
+  const deep = shape.deepError !== undefined && req.inAir ? 1 + shape.deepError * clamp((abs(ball.pos.z) - DEEP_FROM) / (DEEP_TO - DEEP_FROM), 0, 1) : 1;
   const err = (shape.errorScale * deep * mod.error) / req.control;
   const mv = req.moving;
   const st = req.stretch;

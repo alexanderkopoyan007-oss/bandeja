@@ -3,7 +3,7 @@
 import { Ball, HIT_FLOOR, HIT_WALL, HIT_NET, HIT_NETCORD, HIT_POST, HIT_ROOF, LEFT_COURT, type BallWorld } from './ball/ball.ts';
 import { Prediction, PF_FLOOR, PF_WALL } from './ball/predict.ts';
 import { Rng } from './core/rng.ts';
-import { DT, TEAM_NEAR } from './core/constants.ts';
+import { DT, ROUTINE_AFTER, ROUTINE_BOUNCES, ROUTINE_PERIOD, TEAM_NEAR } from './core/constants.ts';
 import { Hasher } from './core/hash.ts';
 import { abs, clamp, floor, max, min, sqrt } from './core/smath.ts';
 import { V3 } from './core/v3.ts';
@@ -11,6 +11,7 @@ import { copyState } from './core/copyState.ts';
 import { SURF_GLASS, WALL_SIDE_LEFT, WALL_SIDE_RIGHT } from './court/court.ts';
 import { Score, SIDE_RIGHT, SIDE_LEFT, DEFAULT_FORMAT, EV_GAME, EV_SET, EV_MATCH, EV_CHANGE_ENDS, type MatchFormat } from './rules/score.ts';
 import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
+import skillData from '../../data/ai-skill.json' with { type: 'json' };
 import { Player, SW_IDLE, SW_CHARGE, SW_COMMITTED, SW_RECOVER, DEFAULT_TUNING } from './player/player.ts';
 import {
   ShotSolver, strike, SHAPES, SHOT_KEYS, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
@@ -56,6 +57,8 @@ export const E_EXIT = 14;
 export const E_ROOF = 19;
 export const E_ENDS = 15;
 export const E_SWING = 16;
+/** E_SWING's x: a held key went off by itself. */
+export const SWING_HELD = 1;
 /** Doubles: a player calls the ball (a: CALL_*). */
 export const E_CALL = 17;
 /** E_CALL's a: the taker's "mine", the partner's "yours", "switch" (the partner takes a lob over us: we cross). */
@@ -154,6 +157,10 @@ const DRILLS = practiceData.drills.map((d) => ({ ...d, feeds: d.feeds.map((f) =>
  * off a clip that turned out to be the coach's example of what club players do wrong.
  */
 const SERVE_HAND_HEIGHT = 1.4;
+/** Player.ohArrive, for everyone: a person's arrival at an overhead was a stop, and they took 48% of lobs in the air from 6.5-7.5 m to a partner's 78 (review round 30). */
+const OH_ARRIVE = skillData.ohArrive;
+/** How long after being placed a server can toss (s); the routine counts from then. Read back as phaseUntil - SETUP_HOLD. */
+export const SETUP_HOLD = 0.5;
 const SERVE_HAND_AHEAD = 0.5;
 const SERVE_HAND_OUT = 0.55;
 /** The push down on the drop (m/s). */
@@ -383,7 +390,7 @@ export class MatchSim {
   // Every field is written at each contact before the solve; the -0s make the fractions doubles from the start (a
   // first Perfect's quality 1 then a Good's 0.85 changed the request's map mid-match; see Ball's fields).
   private readonly req: ShotRequest = {
-    shot: 0, mod: 0, targetX: -0, targetZ: -0, quality: -0, timingDelta: -0, handSide: 1, moving: -0, stretch: -0, power: -0, control: -0, spinScale: -0, motor: -0, bodyX: -0, bodyZ: -0,
+    shot: 0, mod: 0, targetX: -0, targetZ: -0, inAir: true, quality: -0, timingDelta: -0, handSide: 1, moving: -0, stretch: -0, power: -0, control: -0, spinScale: -0, motor: -0, bodyX: -0, bodyZ: -0,
   };
   private readonly res: ShotResult = { reachable: true, speed: 0, idealX: 0, idealZ: 0 };
   /** Aim captured at release, per player: relative (-1..1) or absolute. */
@@ -420,10 +427,12 @@ export class MatchSim {
       this.players.push(new Player(i, tune));
       if (cfg.lefty?.[i]) this.players[i]!.handed = -1;
       this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, styleOf(cfg.aiStyle?.[i]), cfg.women === true));
-      if (!cfg.human[i]) { this.players[i]!.glassWait = this.ai[i]!.glassWait; this.players[i]!.ohArrive = this.ai[i]!.ohArrive; }
+      if (!cfg.human[i]) this.players[i]!.glassWait = this.ai[i]!.glassWait;
+      this.players[i]!.ohArrive = OH_ARRIVE;
       this.aiFrames.push(new InputFrame());
       this.stand.push(makeStandPlan());
       this.claim.push(makeStandPlan());
+      this.canPlan.push(makeStandPlan());
       this.aim.push({ abs: false, x: 0, y: 0, tx: 0, tz: 0 });
       this.prevPlayers.push({ x: 0, z: 0 });
     }
@@ -545,7 +554,8 @@ export class MatchSim {
     rb.x0 = this.box.x0; rb.x1 = this.box.x1; rb.z0 = this.box.z0; rb.z1 = this.box.z1;
     this.rally.lineTolerance = c.def.lineWidth / 2;
     this.phase = PH_SETUP;
-    this.phaseUntil = this.time + 0.5;
+    this.phaseUntil = this.time + SETUP_HOLD;
+    this.tossDue = 0;
     this.walking = 0;
     if (walk) {
       // The places are the walk's ends: back to where everyone was.
@@ -569,6 +579,29 @@ export class MatchSim {
     for (const a of this.ai) a?.reset();
   }
 
+  /**
+   * When human i could meet the ball overhead, in time, whatever key is down (-1: they can't). An AI's plan is an overhead from the lob's first tick and a person's
+   * only once the key is down, so a plan can't say what a person can reach (formation's lobFollow).
+   */
+  canOverhead(i: number): number {
+    const p = this.players[i]!;
+    if (p.canFor !== this.pred.version) {
+      p.canFor = this.pred.version;
+      const st = this.canPlan[i]!;
+      // (in the air only: left to itself an overhead's plan takes the ball high off the bounce, and read that way nearly every lob was beaten)
+      p.canAt = planStand(this.pred, p, this.side(p.team), this.time, false, st, -1, false, true, true) && st.volley && st.inTime ? st.t : -1;
+    }
+    return p.canAt;
+  }
+
+  /** How long until the server's bounce under way (ROUTINE_*) is back in the hand, s; 0 with none under way. */
+  private routineLeft(t: number): number {
+    const u = t - (this.phaseUntil - SETUP_HOLD) - ROUTINE_AFTER;
+    if (u <= 0 || u >= ROUTINE_BOUNCES * ROUTINE_PERIOD) return 0;
+    const left = ROUTINE_PERIOD - u % ROUTINE_PERIOD;
+    return left < ROUTINE_PERIOD - DT ? left : 0;
+  }
+
   /** Everyone at their place for the serve (the walk done, given up, or skipped). */
   private endWalk(): void {
     if (this.walking === 0) return;
@@ -580,7 +613,7 @@ export class MatchSim {
       p.vel.set(0, 0, 0);
     }
     this.walking = 0;
-    this.phaseUntil = this.time + 0.5;
+    this.phaseUntil = this.time + SETUP_HOLD;
     this.placeBallInHand();
   }
 
@@ -1046,6 +1079,11 @@ export class MatchSim {
       p.steerFrom = f.moveY;
       p.steerFromX = f.moveX;
     }
+    // A press that waited for the ball to come back up. Tapped, the key has gone already, and with it the swing, as a tap's goes.
+    if (this.tossDue !== 0 && this.phase === PH_SETUP && i === this.score.serverPlayer() && this.routineLeft(t0) <= 0) {
+      this.press(i, this.tossDue - 1, t0);
+      if ((f.held & SHOT_KEYS_MASK) === 0) p.swing = SW_IDLE;
+    }
     // Assisted timing: still holding when the ideal moment arrives, the swing goes off by itself.
     if (this.cfg.autoTiming && human && p.swing === SW_CHARGE && this.phase !== PH_SETUP) {
       // Not while the planned contact is still out of reach (still running there): a swing then meets nothing.
@@ -1351,7 +1389,7 @@ export class MatchSim {
   }
 
   /** The player is holding (or has just released) the overhead key. */
-  private goingOverhead(p: Player): boolean {
+  goingOverhead(p: Player): boolean {
     return p.shot === SHOT_BANDEJA && (p.swing === SW_CHARGE || p.swing === SW_COMMITTED);
   }
 
@@ -1421,12 +1459,16 @@ export class MatchSim {
     this.form.x = waits ? H.x : st.x;
     this.form.z = waits ? H.z : st.z;
     this.arriveK = k * pushing;
+    // (an overhead is met still moving, as the plan counted on: Player.ohArrive)
+    this.arriveV = st.overhead && !waits ? p.ohArrive : 0;
     this.arrive(p);
+    this.arriveV = 0;
   }
 
   /** Where arrive() steers to, and how hard (fields, not arguments: V8 boxes doubles passed to calls). */
   private readonly form: Spot = { x: 0, z: 0 };
   private arriveK = 0;
+  private arriveV = 0;
 
   /**
    * Steer towards `form` at strength `arriveK` into assistX/assistZ. Arrive, don't overshoot: ask only for the
@@ -1449,7 +1491,7 @@ export class MatchSim {
     p.qx = dx / d;
     p.qz = dz / d;
     p.topToward(lx, lz);
-    const g = k * min(1, sqrt(2 * t.brake * 0.8 * d) / p.qTop);
+    const g = k * min(1, sqrt(this.arriveV * this.arriveV + 2 * t.brake * 0.8 * d) / p.qTop);
     this.assistX = (dx / d) * g;
     this.assistZ = (dz / d) * g;
   }
@@ -1561,6 +1603,9 @@ export class MatchSim {
       // A human's key skips the walk back.
       if (this.walking > 0) { if (!this.ai[i]) this.endWalk(); return; }
       if (i !== this.score.serverPlayer() || t < this.phaseUntil) return;
+      // In one of the server's bounces: the serve goes when the ball is back up.
+      if (!this.ai[i] && this.routineLeft(t) > 0) { this.tossDue = shot + 1; return; }
+      this.tossDue = 0;
       // Drop the ball for the serve.
       this.phase = PH_TOSS;
       this.tossBounces = 0;
@@ -1698,6 +1743,7 @@ export class MatchSim {
     // A key never let go gets a late hit, whatever the moment it went off: holding every ball down was graded as if it were timed, Perfect or Good on three in four, and won
     // a third of the points against Advanced (review round 29; round 10 before it).
     if (heldOut && (p.grade === G_PERFECT || p.grade === G_GOOD)) p.grade = G_LATE;
+    this.heldLast = heldOut;
     // A late release whose ball is already past the body (as contact() judges it) is too late whatever the timing
     // setting: the accessibility scale widens the grades, not the court (a "Good" volley 70 ms late was then cut at
     // contact as out of reach).
@@ -1713,7 +1759,7 @@ export class MatchSim {
     if (p.contactTime < this.time) p.contactTime = this.time;
     p.contra = w.contra;
     p.swing = SW_COMMITTED;
-    this.emitP(E_SWING, i, p.shot, p.grade, delta);
+    this.emitP(E_SWING, i, p.shot, p.grade, delta, this.heldLast ? SWING_HELD : 0);
   }
 
   /** Ideal moment of the contact the player is going for, or -1 (assisted timing). */
@@ -1763,8 +1809,12 @@ export class MatchSim {
 
   /** Set by focusIdeal: the last moment a swing can go and still meet the focused contact. */
   private focusGo = 1e9;
+  private readonly canPlan: StandPlan[] = [];
+  /** A human's serve waiting for the ball to come back up: the shot + 1, or 0. */
+  private tossDue = 0;
   /** This release is a held key going off by itself (a local of update's, across the call). */
   private heldOut = false;
+  private heldLast = false;
   /** Set by focusIdeal: false while the planned contact is still out of reach from where the player is. */
   focusInReach = true;
   /** Set by focusIdeal: the height of the focused contact and whether it is in the air. */
@@ -1878,6 +1928,7 @@ export class MatchSim {
     }
 
     r.shot = shot;
+    r.inAir = this.rally.bounces === 0;
     // Precision picked the víbora or the chiquita; it does not also scale them.
     r.mod = shot === SHOT_VIBORA || shot === SHOT_CHIQUITA ? MOD_NONE : p.mod;
     r.quality = gradeQuality(p.grade);
@@ -2122,14 +2173,14 @@ export class MatchSim {
     this.net.hashInto(h);
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
-        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldShot).num(p.coverFor).num(p.coverSince).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
+        .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldShot).num(p.coverFor).num(p.coverSince).num(p.canAt).num(p.canFor).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);
     h.num(this.crossBack[0]!).num(this.crossBack[1]!).num(this.claimGap[0]!).num(this.claimGap[1]!);
     for (let i = 0; i < 4; i++) h.num(this.rng.s[i]!).num(this.aiRng.s[i]!);
     h.num(this.tossBounces).num(this.tossBX).num(this.tossBZ);
-    h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut).num(this.courtEnds);
+    h.num(this.walking).num(this.walkStage).num(this.walkUntil).num(this.walkMeet).num(this.endsCut).num(this.courtEnds).num(this.tossDue);
     for (let i = 0; i < this.players.length; i++) h.num(this.walkHomeX[i]!).num(this.walkHomeZ[i]!).num(this.walkHomeF[i]!);
     h.num(this.overStage).num(this.overUntil);
     for (let i = 0; i < this.players.length; i++) h.num(this.overX[i]!).num(this.overZ[i]!).num(this.overMate[i]!);

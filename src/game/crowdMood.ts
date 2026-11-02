@@ -1,7 +1,7 @@
 // What the stadium's crowd is doing, read from the match's events (render only): quiet through a point, applause
 // after it (more for a long rally, a winning smash or víbora, a ball played out of the court), on its feet for the
 // biggest moments and a set or the match. The same judgement as the crowd's sound (audio/soundscape.ts pointEnds).
-import { E_HIT, E_POINT, E_SET, E_MATCH, type MatchSim } from '../sim/match.ts';
+import { E_GAME, E_HIT, E_POINT, E_SET, E_MATCH, type MatchSim } from '../sim/match.ts';
 import { SHOT_SMASH, SHOT_VIBORA } from '../sim/contact/shots.ts';
 import { WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP } from '../sim/rules/rally.ts';
 
@@ -40,6 +40,9 @@ export class CrowdMood {
         else if (winnerHit) this.react(0.25 + 0.35 * Math.min(1, shots / 12), 0);
       } else if (e.kind === E_SET || e.kind === E_MATCH) {
         this.react(1, 1);
+      } else if (e.kind === E_GAME) {
+        // (the applause for a game came up with no hands, on any point that was short or ended in an error)
+        this.react(0.8, 0);
       }
     }
   }

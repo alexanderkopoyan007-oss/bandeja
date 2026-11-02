@@ -92,8 +92,8 @@ describe('avatar', () => {
 
   it('mirrors for left-handers', () => {
     const lefty = [false, true, true, false];
-    // (120 s: since players walk back between points, 90 s held 12 of their hits)
-    const { hits, nan } = play(11, 120, lefty);
+    // (150 s: since players walk back between points 90 s held 12 of their hits, and 120 s holds 12 now the glass plays lower)
+    const { hits, nan } = play(11, 150, lefty);
     expect(nan).toBe(0);
     const left = hits.filter((h) => lefty[h.player]);
     expect(left.length).toBeGreaterThan(12);

@@ -187,7 +187,7 @@ describe('the kit on the people', () => {
       const hip = new THREE.Vector3(), knee = new THREE.Vector3(), hand = new THREE.Vector3(), head = new THREE.Vector3(), v = new THREE.Vector3();
       const lunges: number[][] = [], overs: number[][] = [];
       let next = 0.3, anySkin = 0;
-      runAnimQa(p, { seed: 14601, seconds: 24, lefty: [], onFrame: (m, av) => {
+      runAnimQa(p, { seed: 14601, seconds: 30, lefty: [], onFrame: (m, av) => {
         if (m.time < next) return;
         next += 0.08;
         for (const raw of av) {
@@ -215,8 +215,8 @@ describe('the kit on the people', () => {
       // (the deepest of them, by the end: "deepest so far" judged whatever came first)
       for (const [l, s, h] of lunges) if (l > worst.lunge * 0.97) { worst.lungeSkin = Math.max(worst.lungeSkin, s); worst.lungeShorts = Math.max(worst.lungeShorts, h); }
       for (const [l, s, h] of overs) if (l > worst.over * 0.97) { worst.overSkin = Math.max(worst.overSkin, s); worst.overShorts = Math.max(worst.overShorts, h); }
-      // (the rally has them: lunges of 75-82 degrees, a hand 10-20 cm over the head)
-      expect(worst.lunge).toBeGreaterThan(1.3);
+      // (the rally has them: lunges of 70-81 degrees by body, a hand 10-20 cm over the head)
+      expect(worst.lunge).toBeGreaterThan(1.2);
       expect(worst.over).toBeGreaterThan(0.08);
       expect(worst.lungeSkin).toBeLessThan(LIMIT.lungeSkin);
       expect(worst.overSkin).toBeLessThan(LIMIT.overSkin);

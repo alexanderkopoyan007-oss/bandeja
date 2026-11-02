@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { E_ENDS, E_GAME, E_HIT, E_POINT, E_TOSS, MatchSim, PH_DEAD, PH_SETUP } from '../../src/sim/match.ts';
 import { InputFrame, BTN_DRIVE } from '../../src/sim/input.ts';
-import { DT, ROUTINE_SECS } from '../../src/sim/core/constants.ts';
+import { DT, ROUTINE_AFTER, ROUTINE_PERIOD, ROUTINE_SECS } from '../../src/sim/core/constants.ts';
 
 describe('a change of ends', () => {
   it('holds the game\'s call, turns the pairs round at the cut, and takes longer than a fault', () => {
@@ -96,5 +96,33 @@ describe('the server\'s routine', () => {
       }
     }
     expect(n).toBeGreaterThan(10);
+  }, 120_000);
+
+  it('makes a person\'s press wait for the ball to come back, a tap or a held key', () => {
+    for (const hold of [false, true]) {
+      const m = new MatchSim({ seed: 46, doubles: true, human: [true, false, false, false], aiLevel: [1, 1], timingScale: 1.5, assist: 0.45, autoTiming: false } as never);
+      const M = m as never as { score: { serverPlayer(): number } };
+      const f = new InputFrame();
+      let seen = 0, placed = -1, pressed = -1, tossed = -1, down = false;
+      for (let k = 0; k < 120 * 900 && tossed < 0; k++) {
+        f.clear();
+        const mine = m.phase === PH_SETUP && M.score.serverPlayer() === 0;
+        if (mine && m.walking === 0 && placed < 0) placed = m.time;
+        // (pressed with the first bounce on its way down)
+        if (mine && placed >= 0 && pressed < 0 && m.time > placed + 1.2) { f.push(true, BTN_DRIVE, m.time); pressed = m.time; down = true; }
+        else if (!hold && down && m.time > pressed + 0.1) { f.push(false, BTN_DRIVE, m.time); down = false; }
+        f.held = down ? BTN_DRIVE : 0;
+        m.step([f, null, null, null]);
+        while (seen < m.eventSeq) {
+          const e = m.events[seen % m.events.length]!;
+          seen++;
+          if (e.kind === E_TOSS && e.player === 0 && pressed >= 0) tossed = m.time;
+        }
+      }
+      expect(pressed).toBeGreaterThan(0);
+      // (a toss that doesn't wait turned the ball round in the air; a tap dropped in the wait never tossed at all)
+      expect(tossed - placed).toBeGreaterThan(ROUTINE_AFTER + ROUTINE_PERIOD - DT);
+      expect(tossed - placed).toBeLessThan(ROUTINE_AFTER + ROUTINE_PERIOD + 0.05);
+    }
   }, 120_000);
 });

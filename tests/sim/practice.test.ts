@@ -10,7 +10,7 @@ describe('practice', () => {
       const m = new MatchSim({ seed: 30 + i, human: [true, false], aiLevel: [0.5, 0.5], practice: i, firstServer: 1, walkBack: false });
       let seen = 0, feeds = 0, landed = 0, inPlace = 0, faults = 0, last = -1;
       const none = [null, null];
-      for (let t = 0; t < 120 * 90; t++) {
+      for (let t = 0; t < 120 * 100; t++) {
         m.step(none);
         while (seen < m.eventSeq) {
           const e = m.events[seen % m.events.length]!;

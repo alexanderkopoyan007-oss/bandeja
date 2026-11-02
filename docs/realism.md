@@ -124,8 +124,9 @@ measured against published data, and lands with tests that check the model again
   The point impedance of a 12 mm panel takes 1-2% of the ball's energy, so its restitution is about 0.985 of a
   rigid wall's (derived; the panel's first mode, about 11 Hz, is far below the 4 ms contact).
 - **Friction against glass.** No padel measurement exists. Felt on smooth glazed tile in the ITF court-pace test
-  reads SPR 65.5, a friction of about 0.35; concrete walls read 0.56-0.60 (Dignall 2004). The game's glass: 0.35,
-  and the lab's SPR test against it reads 64.9.
+  reads SPR 65.5, a friction of about 0.35; concrete walls read 0.56-0.60 (Dignall 2004). The game's glass is 0.12
+  with a Hertzian fall of 0.04, and the lab's SPR test against it reads 88. That is a fit to how pros' smashes end
+  and to the owner's play, not a measurement: at 0.35 a drive was still climbing 3 m off the glass (Round 24).
 - **Restitution against impact speed** is the ball's own: pressurised tennis balls on a rigid surface fall from
   about 0.80 at 3 m/s to 0.60 at 20 m/s (Dignall 2004). Every hard surface in the game uses that slope
   (0.0115 per m/s); the glass reads 0.80 at 3 m/s and 0.61 at 20 m/s in the lab.

@@ -812,3 +812,37 @@ Three tests moved with nothing wrong. Bajada share from deep read 0.50 against a
 Removing the AI half of the cover guard outright, as the review's trial did, took AI covers to 19 per 100 and reopened the slice hole at 20.9% from 5-6 m. That trial's points hid it, and only the return figure showed it.
 
 Pops on twelve fresh seeds: 15.2 a minute.
+
+## Round 24 (2026-11-02, on d5eaa97; "review round 30" in the code's comments)
+
+Three reviewers and a sceptic on the shipped build, and one find of the owner's that the review missed. Two Highs, both confirmed. The sceptic cut the leg flung back to Medium, and showed that "the bandeja is worst from deep" and "a smash beats it by 2.5" did not reproduce once the lob read was fixed. Most of the rest were Round 23's own.
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | Owner's find | **Drives pop up too high off the back glass.** A drive reached the glass rolling at about 3000 rpm and left it rising at 4 m/s, still climbing 3 m out. | **Fixed.** Glass friction 0.35 to 0.12, and its fall with hit speed 0.35 to 0.04. Top after the glass 1.44 to 1.13 m, over 1.5 m 45 to 16%, over 2 m 12 to 0%, height 3 m out 1.57 to 1.18, taken at 1.21 to 0.97 m. Bandeja 0.75 to 0.74, lob 2.80 to 2.82, smash 2.76 to 2.62. No published height exists: this is a fit, see DECISIONS. |
+| 2 | High | **The AI reads a person's lob as beaten.** A person has no plan until they press, so both lobbers ran in on 65% of lobs and met the bandeja from 7 m at 2.8 m. | **Fixed.** `canOverhead` asks whether they can still get under it. Lobbers stay at 8.0 m, both up 11.7%, your pair won 66.0 from 6.5-8 m (was 49.4), 75.9 from 8 m and more. The AI partner's pair wins 69.9, so no new imbalance. Tested. |
+| 3 | High | **The routine bounce runs backwards under a still hand.** The ball left the palm 0.37-0.48 m at the end of a walk on 10 of 11. | **Fixed.** Thrown down, off the floor and back up to the hand, which moves with it, and the head follows. A press waits for the ball's next return, tap or hold. Tested. |
+| 4 | Medium (High before the sceptic) | The rear leg is flung straight behind where a run hands over to a stroke. | **Better.** A foot in the air comes down before the run lets go of it: 0.50 to 0.23 per player-minute. My first version only held that while a foot was up, so the frame it landed took a new step and people stepped on the spot, pops 15.2 to 21.5. The generated-people test caught it, and the stop now holds. |
+| 5 | Medium | You take fewer lobs in the air. | **Better, unsettled.** Everyone now arrives at the same speed for an overhead. The stand-in still takes 23 and 10% in the air from 6.5-8.5 m against the partner's 79 and 58, and its own policy isn't separated from the game's. |
+| 6 | Medium | `deepError` doubled bajada errors, 7.7 to 15.9. | **Fixed.** Only a ball met in the air. 9.2 now, with the lower glass (real forehand 8.5, backhand 3). Round 23's "the match figures hold" was wrong. Tested. |
+| 7 | Medium | The AI lob-volleys one ball in five when it's in trouble. | **Fixed.** 2.8 to 0.9% of balls met in the air near the net. |
+| 8 | Medium | The smash is the slowest swing, its head peaking at -0.042 s and braking. | Open. Round 11's #14, not traced. |
+| 9 | Medium | Left-handers missed Rounds 21-23. | **Fixed.** A test on `fam.name` is false for a `-left` family. Rear foot pitch 57 at the ball, matching right-handers; it was 17-22. Tested. A left-hander's serve hand comes through 10-15 cm lower for 0.15 s, not traced. |
+| 10 | Medium | Round 23's serve carry overshoots and the elbow snaps. | **Better, not gone.** Carry 0.85 to 0.6. The wrist still dips 9 cm at +0.13 s. Stretching the decay to 0.32 s moved the dip and didn't shrink it, so that isn't its cause. The elbow's fold is close to the footage's own. |
+| 11 | Medium | The overhead key on a dropped ball holds the trophy and chops. | **Fixed in the code, not measured.** A ball below the key's reach draws the slice family the sim hits. |
+| 12 | Medium | A release on the ring graded Late, with nothing to say why. | **Fixed.** A swing that goes off by itself shows 'Held on' and 'let go to time it'. Text only. |
+| 13 | Medium | Timing barely pays: 20/60/120 ms win 41.5/41.2/40.1, a hold 31.6. | Open. The owner's call. |
+| 14 | Low | Your smash 20 km/h over the in-play figure, as hard from the back glass. | Open. |
+| 15 | Low | The jump smash lands on both feet and the rear foot stamps. | Open. |
+| 16 | Low | A rolled rear foot slides when a step is under way, and toes stay bent in the air. | Open. |
+| 17 | Low | MIN_CAUGHT raises racket jumps over 25 m/s, 4.7 to 7.2%. | Open. |
+| 18 | Low | The cut at a change of ends lands on the wrong pair. | **Fixed in the code, not measured.** |
+| 19 | Low | Crowd hands against the sound: 87 games with no hands. | **Better.** A game now gets a hand. Hands in silence not re-measured. |
+
+Corrections to Round 23: #1's gather is gone, replaced by #3 here. #6's rear foot still slides (#16 here). #9's "Late at best" now reads 'Held on'. #12's match figures did not hold. Slice winners nearer the server were 0.5, not about 1.
+
+Tests that moved, all read before they were changed. **Ball lab:** its limits pinned the old rebounds, and "chest height a metre out" was itself an assumption; SPR now 85-91, not 62-68, as the game's glass is no longer glazed tile. **Contrapared:** the target moved 0.5 m because that aim met a panel join, where a ball lands half a metre short and no aim gets round it; over 433 positions the solver's median is 6.6 cm and p99 19 cm, against 22 before. **Longer windows, same limits:** left-handers' hits 120 to 150 s, Practice 90 to 100 s. **Looser, and why:** both feet off in a run 0.08 to 0.07, a real change from 0.082 to 0.079 over nine seeds in a figure already far short of the real 25-35%; the cloth test's deepest lunge 1.3 to 1.2, which only checks a lunge was seen, and it runs 30 s.
+
+My first left-handed recording wasn't left-handed: that recorder ignored the setting, and the numbers looked like a fix. Frame rate read 52 fps with another job on the machine's graphics; the live build read 59 beside it, and both hold 120 Hz alone.
+
+Pops on twelve fresh seeds: 12.5 a minute.

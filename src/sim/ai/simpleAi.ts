@@ -1059,7 +1059,8 @@ export class SimpleAi {
     let go = 0;
     if (volley || depth < 5) {
       const near = depth < 4.2;
-      if (up === 2 && height < LOB_VOLLEY_TOP && r < min(0.6, 0.3 * st.lob)) {
+      // (a surprise: at one low ball in five it was every seventh point, against two at the net who can smash it)
+      if (up === 2 && height < LOB_VOLLEY_TOP && r < min(0.2, 0.1 * st.lob)) {
         // Both pairs at the net: a lob volley sends them back (net duels are short in real play; they had become
         // 60% of the AI's volleys, ending on bodies and through the middle). Off a ball you can only lift: one at your chest is
         // punched down, and lobbed it won 1% against a volley's 8% (review round 20).

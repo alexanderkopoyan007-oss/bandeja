@@ -81,10 +81,10 @@ describe('ball lab: glass', () => {
     expect(ratio).toBeLessThan(0.995);
   });
 
-  it('court pace against the glass: SPR about 65, felt on smooth glazed tile (ITF test, Dignall 2004)', () => {
+  it('court pace against the glass: a slick surface, nothing like the SPR 65.5 of glazed tile (fitted, data/surfaces.json)', () => {
     const itf = get('spr-glass').itf!;
-    expect(itf.spr).toBeGreaterThan(62);
-    expect(itf.spr).toBeLessThan(68);
+    expect(itf.spr).toBeGreaterThan(85);
+    expect(itf.spr).toBeLessThan(91);
   });
 
   it('topspin climbs the glass, a slice dies off it, flat in between', () => {
@@ -95,9 +95,10 @@ describe('ball lab: glass', () => {
     expect(flat.apexAfterGlass).toBeGreaterThan(slice.apexAfterGlass);
     expect(slice.apexAfterGlass).toBeLessThan(0.5);
     expect(slice.comesBack).toBeLessThan(3);
-    // A topspin drive comes off at chest height a metre out: the defender's ball.
-    expect(top.heightAt1m).toBeGreaterThan(1.1);
-    expect(top.heightAt1m).toBeLessThan(1.7);
+    // A topspin drive comes off about waist height a metre out. It was chest height, still climbing 3 m out, and the
+    // owner, who plays, saw it: "it stays down".
+    expect(top.heightAt1m).toBeGreaterThan(0.85);
+    expect(top.heightAt1m).toBeLessThan(1.3);
   });
 
   it('a big smash bounced near the glass climbs out of reach (por tres territory)', () => {
@@ -107,7 +108,7 @@ describe('ball lab: glass', () => {
   });
 
   it('felt grips less the harder it is pressed: friction measured at a light impact is kept, a hard shallow bounce slips', () => {
-    expect(get('spr-glass').itf!.mu).toBeCloseTo(0.35, 2);
+    expect(get('spr-glass').itf!.mu).toBeCloseTo(0.12, 2);
     expect(get('cpr-turf').itf!.mu).toBeCloseTo(0.59, 2);
     const deg = Math.PI / 180;
     const a = 22 * deg;
@@ -123,7 +124,7 @@ describe('ball lab: glass', () => {
     // a change to the bounce that moves these is a change to how wall play feels, and must be meant.
     const want: Record<string, [number, number, number, number, number, number]> = {
       'glass-flat': [6.5, 9.5, 0.9, 1.5, 0.6, 1.0],
-      'glass-top': [9.0, 13.5, 1.6, 2.6, 1.1, 1.7],
+      'glass-top': [7.0, 10.0, 1.2, 1.9, 0.85, 1.3],
       'glass-slice': [1.5, 3.2, 0.2, 0.5, 0.15, 0.45],
       'glass-lob': [3.5, 5.8, 2.4, 3.4, 2.1, 3.1],
       'corner-back-side': [4.0, 6.2, 0.6, 1.0, 0.45, 0.8],

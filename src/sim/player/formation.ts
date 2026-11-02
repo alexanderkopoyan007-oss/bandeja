@@ -175,8 +175,9 @@ function lobFollow(m: MatchSim, s: number, team: number): number {
   const shy = lobber ? max(0, 1 - lobber.style.net) : 0;
   let top = 0;
   let land = 0;
+  let lands = 0;
   for (let i = 0; i < pr.n; i++) {
-    if (pr.bounces[i]! > 0) { land = pr.z[i]! * s < 0 ? abs(pr.z[i]!) : 0; break; }
+    if (pr.bounces[i]! > 0) { land = pr.z[i]! * s < 0 ? abs(pr.z[i]!) : 0; lands = pr.t[i]!; break; }
     if (pr.y[i]! > top) top = pr.y[i]!;
   }
   if (top < LOB_TOP || land < LOB_LAND + LOB_LAND_SHY * shy) return LOB_NO;
@@ -184,8 +185,16 @@ function lobFollow(m: MatchSim, s: number, team: number): number {
   if (k < 0) return LOB_WATCH;
   const ai = m.ai[k];
   const plan = ai ? ai.standPlan : m.stand[k]!;
-  if (!plan.valid || plan.version !== pr.version) return LOB_WATCH;
-  return plan.volley && plan.inTime ? LOB_NO : LOB_BEATEN;
+  const planned = plan.valid && plan.version === pr.version;
+  if (planned && plan.volley && plan.inTime) return LOB_NO;
+  // A person's plan says what key is down, and at the lob's first tick none is. Read as beaten then, both lobbers ran in on six in ten of a human's bandejas
+  // and volleyed them chest high, and an AI's never (review round 30). If they can get there, the lobbers wait in the middle for what they do about it.
+  if (!ai) {
+    if (m.canOverhead(k) < 0) return LOB_BEATEN;
+    if (m.goingOverhead(m.players[k]!)) return LOB_NO;
+    return m.time < lands - LOB_DECIDE ? LOB_WATCH : LOB_BEATEN;
+  }
+  return planned ? LOB_BEATEN : LOB_WATCH;
 }
 const LOB_NO = 0;
 const LOB_WATCH = 1;
@@ -194,5 +203,7 @@ const LOB_BEATEN = 2;
 const LOB_TOP = 4.5;
 const LOB_LAND = 5.0;
 const LOB_LAND_SHY = 8.0;
+/** How long before it lands a human has shown they're going to take a lob they can reach (s): after that it's beaten. */
+const LOB_DECIDE = 0.5;
 /** The transition zone the lobbers step to while the lob is read (m from the net). */
 const LOB_MID_Z = 6.0;

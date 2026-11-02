@@ -29,7 +29,8 @@ describe('contrapared', () => {
   it('solver: up into the own back glass, over the net, down near the target', () => {
     const p = new V3(), v = new V3(), w = new V3();
     // (x, y, z) on the near half 1.0-2.5 m from the glass (z = 10), target on the far half.
-    for (const [x, y, z, tx, tz] of [[0, 0.8, 8.6, 0, -6.5], [-3, 0.6, 9.0, 2, -7], [3.5, 1.2, 8.3, -3, -5], [-2, 1.0, 7.5, 0, -6]]) {
+    // (off the glass panels' joins: a ball that meets one lands half a metre short, as a real one does, and no aim gets round that)
+    for (const [x, y, z, tx, tz] of [[0, 0.8, 8.6, 0, -6.5], [-3, 0.6, 9.0, 2, -7], [3.5, 1.2, 8.3, -3.5, -5], [-2, 1.0, 7.5, 0, -6]]) {
       p.set(x!, y!, z!);
       expect(solver.solveContra(p, tx!, tz!, -400, 30, 1.9, v, w)).toBe(true);
       solver.flyWalls(p, v, w);
@@ -63,7 +64,7 @@ describe('contrapared', () => {
         b.vel.set(0.4, -1.2, 7);
         b.spin.set(0, 0, 0);
         const req: ShotRequest = {
-          shot: SHOT_CONTRAPARED, mod: MOD_NONE, targetX: 0, targetZ: -6.8, quality: 0.82, timingDelta: 0, handSide: 1,
+          shot: SHOT_CONTRAPARED, mod: MOD_NONE, targetX: 0, targetZ: -6.8, inAir: true, quality: 0.82, timingDelta: 0, handSide: 1,
           moving: 0, stretch: 0, power: 1, control: 1, spinScale: 1, motor: 0, bodyX: x!, bodyZ: z! - 0.6,
         };
         strike(solver, b, req, new Rng(100 + k), res);

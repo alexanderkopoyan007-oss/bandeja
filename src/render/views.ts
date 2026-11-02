@@ -2,7 +2,7 @@
 import * as THREE from 'three/webgpu';
 import { PAL, gradeColour } from '../ui/palette.ts';
 import type { MatchSim } from '../sim/match.ts';
-import { PH_OVER, PH_RALLY, PH_SETUP, PH_TOSS } from '../sim/match.ts';
+import { PH_OVER, PH_RALLY, PH_TOSS } from '../sim/match.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../sim/player/player.ts';
 import { PF_FLOOR } from '../sim/ball/predict.ts';
 import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
@@ -14,7 +14,8 @@ import type { PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
 import type { Cast } from '../game/cast.ts';
 import { makeBall, spinBall } from './ballLook.ts';
-import { DT, ROUTINE_AFTER, ROUTINE_BOUNCES, ROUTINE_PERIOD } from '../sim/core/constants.ts';
+import { DT } from '../sim/core/constants.ts';
+import { routineBounceOf, routineHeight, routineTime, routineUp } from './routine.ts';
 
 const TIMING = tuning.timing;
 const BALL_COLOR = 0xdff23b;
@@ -88,13 +89,11 @@ export class BallView {
     this.trailCount = 0;
     this.lastTrailTime = -1;
     this.lastSpinT = -1;
-    this.placedAt = -1;
   }
 
   /** The server's routine bounce touched the floor this frame (serveBounce): the game plays its sound. */
   routineBounce = false;
   /** When everyone was last in place for the serve (sim time), for the server's routine bounces. */
-  private placedAt = -1;
 
   update(sim: MatchSim, alpha: number, humanTeam: number): void {
     const b = sim.ball.pos;
@@ -168,36 +167,14 @@ export class BallView {
 
   private serveBounce(sim: MatchSim, y: number, t: number): number {
     this.routineBounce = false;
-    if (sim.phase !== PH_SETUP || sim.walking !== 0) {
-      this.placedAt = -1;
-      this.lastRoutine = -1;
-      // A serve started in the bounces: the drawn ball gathers into the sim's. It went from the floor to the hand in a frame, 1.35 m (review round 29).
-      if (this.routineY >= 0) { this.gatherFrom = this.routineY; this.gatherAt = t; this.routineY = -1; }
-      if (this.gatherAt < 0) return y;
-      const k = (t - this.gatherAt) / ROUTINE_GATHER;
-      if (k >= 1) { this.gatherAt = -1; return y; }
-      return this.gatherFrom + (y - this.gatherFrom) * k * k * (3 - 2 * k);
-    }
-    if (this.placedAt < 0) this.placedAt = t;
-    const u = t - this.placedAt - ROUTINE_AFTER;
-    if (u < 0 || u >= ROUTINE_BOUNCES * ROUTINE_PERIOD) { this.routineY = -1; return y; }
-    const k = Math.floor(u / ROUTINE_PERIOD);
-    const f = u / ROUTINE_PERIOD - k;
-    const r = sim.world.spec.radius;
-    // Down from the hand, off the floor at the half period, back up into it.
-    const a = 2 * f - 1;
-    if (f >= 0.5 && this.lastRoutine !== k) { this.lastRoutine = k; this.routineBounce = true; }
-    this.routineY = r + (y - r) * a * a;
-    return this.routineY;
+    const u = routineTime(sim, t);
+    if (u < 0) { this.lastRoutine = -1; return y; }
+    const k = routineBounceOf(u);
+    if (routineUp(u) && this.lastRoutine !== k) { this.lastRoutine = k; this.routineBounce = true; }
+    return routineHeight(u, y, sim.world.spec.radius);
   }
   private lastRoutine = -1;
-  private routineY = -1;
-  private gatherFrom = 0;
-  private gatherAt = -1;
 }
-
-/** How long the drawn ball takes to gather into the serve's when the serve starts in the routine (ROUTINE_*): a quick bounce's worth (s). */
-const ROUTINE_GATHER = 0.18;
 
 export class PlayerView {
   /** At the player's feet. */
@@ -491,6 +468,8 @@ export class BroadcastCamera {
       this.to = want;
       // (with the cut-away up the dip hides the turn: the swing round was a second move on top of the cut)
       this.turnStart = BroadcastCamera.cutaways && sim.walking > 0 ? -1 : now;
+      // (on the pair where they now are: it kept the half they had left, and panned over)
+      this.cutOn = false;
     }
     // The change-of-ends swing goes round an ellipse (a side's stands come nearer the court than an end's) and
     // climbs over them: on the end's 25.5 m circle the lens went through the stadium's back rows.

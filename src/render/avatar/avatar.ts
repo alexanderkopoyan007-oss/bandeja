@@ -3,7 +3,8 @@
 // moment) and the racket in the right hand. Reads the sim only. Allocation-free per frame.
 import * as THREE from 'three/webgpu';
 import type { MatchSim } from '../../sim/match.ts';
-import { PH_DEAD, PH_OVER, PH_RALLY, PH_SETUP, PH_TOSS } from '../../sim/match.ts';
+import { PH_DEAD, PH_OVER, PH_RALLY, PH_SETUP, PH_TOSS, SETUP_HOLD } from '../../sim/match.ts';
+import { routineHand, routineHeight, routineTime } from '../routine.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
 import { MOD_POWER, MOD_PRECISION, SHOT_BANDEJA, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH, SHOT_TOPSPIN, SHOT_VIBORA } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
@@ -76,7 +77,7 @@ const WAY_AT = 0.45;
 const OVER_AFTER0 = 0, OVER_AFTER1 = 0.3;
 const OVER_ARM = 0.56;
 /** Of the speed the hand brings to a serve's ball, how much carries on past it, the time that takes to spend (s), and when the path has it back. */
-const THROUGH_CARRY = 0.85, THROUGH_TIME = 0.06, THROUGH_FROM = 0.05, THROUGH_TO = 0.28;
+const THROUGH_CARRY = 0.6, THROUGH_TIME = 0.04, THROUGH_FROM = 0.02, THROUGH_TO = 0.18;
 /** How fast a late release shortens an overhead's way to the ball (s). */
 const LAG_EASE = 0.11;
 const OVER_TO_BALL = 0.72;
@@ -1018,6 +1019,10 @@ export class Avatar {
   private readonly legLen: number;
   /** How far a jump's legs have come in under the body (scissor, AIR_*). */
   private airK = 0;
+  /** A run has ended: no new step (held only with a foot up, the frame it landed took the next one, and they stepped on the spot). */
+  private gaitStop = false;
+  /** ... and with a foot in the air, the gait stays until it's down. */
+  private gaitEnd = false;
   /** The clip's feet before IK: ankle height and lowest sole point (world). */
   private readonly fkY = new Float64Array(2);
   private readonly lowY = new Float64Array(2);
@@ -1171,6 +1176,7 @@ export class Avatar {
   private readonly addrKey: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   /** The address's share of the ready pose (eased: at the serve's contact the address hands over to the ready pose). */
   private addrW = 0;
+  private placedW = 1;
   /** The chest's turn from square this frame (hips and spine together, rad). */
   private chestTurn = 0;
   private readonly outAddr = new THREE.Quaternion(0, 0, 0, 0);
@@ -1192,7 +1198,7 @@ export class Avatar {
   /** Serving: the address is the ready pose (from the point's setup to the contact). */
   private addr = false;
   /** How far the free hand has gone to the serve's address spot (0 to 1). */
-  get addressing(): number { return this.addrW; }
+  get addressing(): number { return this.addrW * this.placedW; }
   /** The middle of the free hand (world): a third of a forearm past the wrist, about where a ball sits in it. */
   palm(out: THREE.Vector3): THREE.Vector3 {
     v1.setFromMatrixPosition(this.armFree[1]!.matrixWorld);
@@ -1785,7 +1791,9 @@ export class Avatar {
     const ai = sim.ai[idx];
     // While the key is held the modifiers being held say it; from the release on, the ones it was released with.
     const mod = p.swing === SW_CHARGE ? p.heldMod : p.mod;
-    if (overhead || c.y > 1.8) {
+    // (a ball dropped below what the overhead key can reach is the sim's slice or volley: the trophy held and a chop from 1.5 m at it left the ball going on its own)
+    const low = overhead && c.y < p.tune.overheadHeight - (mod === MOD_PRECISION ? 0.53 : 0.3);
+    if ((overhead && !low) || c.y > 1.8) {
       if (p.shot === SHOT_SMASH || mod === MOD_POWER || (ai !== null && ai !== undefined && ai.smash)) return SMASH;
       // The víbora: the overhead key with precision (the sim's SHOT_BANDEJA + MOD_PRECISION), or an AI's intent.
       if (p.shot === SHOT_VIBORA || (p.shot === SHOT_BANDEJA && mod === MOD_PRECISION) || (ai !== null && ai !== undefined && ai.vibora)) return VIBORA;
@@ -1794,7 +1802,7 @@ export class Avatar {
     if (volley) return hand > 0 ? VOLLEY_FH : VOLLEY_BH;
     const sh = p.shot;
     if (sh === SHOT_TOPSPIN && (mod === MOD_PRECISION || (ai !== null && ai !== undefined && ai.chiquita))) return hand > 0 ? FH_CHIQUITA : BH_CHIQUITA;
-    if (sh === SHOT_SLICE) return hand > 0 ? FH_SLICE : BH_SLICE;
+    if (sh === SHOT_SLICE || low) return hand > 0 ? FH_SLICE : BH_SLICE;
     if (sh === SHOT_LOB) return hand > 0 ? FH_LOB : BH_LOB;
     if (sh === SHOT_DROP) return hand > 0 ? FH_DROP : BH_DROP;
     return hand > 0 ? FOREHAND : BACKHAND;
@@ -2524,6 +2532,8 @@ export class Avatar {
     if (want < CARRY_W * this.carryW) want = CARRY_W * this.carryW;
     this.ready += (want - this.ready) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
     this.addrW += ((this.addr ? 1 : 0) - this.addrW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.1) : 0);
+    // (the ball stays in the hand as the hand comes up, by the first moment the serve can go: at addrW's 0.1 s it left the palm by 0.4 m at the end of a walk)
+    this.placedW = sim.phase === PH_SETUP ? smoothstep(0, SETUP_HOLD, sim.time - (sim.phaseUntil - SETUP_HOLD)) : 1;
     this.mixReady();
     // (a blend not under way has no last frame to stay on the side of: the first frame of a racket tap, at 7% of the way,
     // took the last tap's side, the long way, and every hand on court jumped 35 degrees in a frame; review round 15)
@@ -2566,17 +2576,22 @@ export class Avatar {
       // (and at a run's pace later: taken off 0.3 s out with the body still going at 3 m/s, the last stride to the ball was the clip's too, a shin
       // level behind for a third of a second; review round 27)
       // (an overhead's front foot is down over a quarter of a second before the ball, at any speed: it was 0.12 s, the weight never through it)
-      const plantIn = this.fam.name === 'overhead' || this.fam.name === 'vibora' ? RUN_PLANT : RUN_PLANT * (1 - RUN_PLANT_FAST * smoothstep(RUN_PLANT_V0, RUN_PLANT_V1, sp));
+      const rightName = rightFamily(this.fam).name;
+      const plantIn = rightName === 'overhead' || rightName === 'vibora' ? RUN_PLANT : RUN_PLANT * (1 - RUN_PLANT_FAST * smoothstep(RUN_PLANT_V0, RUN_PLANT_V1, sp));
       // (the chest is the stroke's by then: going with the hips up to the ball, it came back to it in the last frames and took the arms with it)
       // (eased: a swing that starts inside RUN_CHEST_NEAR would otherwise take the whole twist off in one frame)
       const free = this.st === ST_SWING ? (t < this.tCon ? 0 : smoothstep(0, RUN_CHEST_BACK, t - this.tCon)) : this.st === ST_PREP && this.hasCon ? smoothstep(RUN_CHEST_NEAR, RUN_CHEST_FAR, this.tPlan - t) : 1;
       this.chestFree += (free - this.chestFree) * (1 - Math.exp(-this.dt / RUN_CHEST_EASE));
       const near2 = (this.st === ST_SWING && t < this.tCon + RUN_AFTER && this.tCon - t < plantIn) || (this.st === ST_PREP && this.hasCon && this.tPlan - t < plantIn);
       const running = !going && sim.phase === PH_RALLY && !near2 && sp > (this.gaitRun > 0 && this.gaitW > 0 ? RUN_V_OFF : RUN_V_ON);
+      // A foot in the air comes down before the run lets go of it: faded out at 0.47 of its swing it was left behind a body doing 4 m/s, and the leg's length dragged
+      // it out straight behind, 0.4 m off the floor, on a lunge at a ball going past (review round 30).
+      this.gaitStop = !running && !going && !cut && this.gaitRun > 0;
+      this.gaitEnd = this.gaitStop && this.gaitW > 0 && (this.gaitSwing[0]! > 0 || this.gaitSwing[1]! > 0);
       if (going) this.gaitRun = 0;
       else if (running) this.gaitRun = 1;
       const ramp = dt > 0 ? dt / (this.gaitRun > 0 ? RUN_IN : WALK_IN) : 0;
-      this.gaitW = cut || (going && this.w >= 0.02) ? 0 : running || (going && sp > gait) ? Math.min(1, this.gaitW + ramp) : Math.max(0, this.gaitW - ramp);
+      this.gaitW = cut || (going && this.w >= 0.02) ? 0 : running || this.gaitEnd || (going && sp > gait) ? Math.min(1, this.gaitW + ramp) : Math.max(0, this.gaitW - ramp);
       this.gaitH += ((this.gaitW > 0 && this.gaitRun === 0 ? 1 : 0) - this.gaitH) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / WALK_IN) : 0);
       if (this.gaitH < 0.001) this.gaitH = 0;
       this.gaitRunH += ((this.gaitW > 0 && this.gaitRun > 0 ? 1 : 0) - this.gaitRunH) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / RUN_HIP_IN) : 0);
@@ -2742,10 +2757,14 @@ export class Avatar {
       const b = sim.ball;
       if (sim.phase === PH_SETUP) this.inHand = true;
       else if (b.pos.y < SERVE_LET_GO || b.vel.y >= 0) this.inHand = false;
-      if (this.inHand) { v1.set(b.pos.x, b.pos.y, b.pos.z); this.toModel(v1, this.addrKey.off); }
+      if (this.inHand) {
+        const u = routineTime(sim, t);
+        v1.set(b.pos.x, b.pos.y - (u >= 0 ? routineHand(u) : 0), b.pos.z);
+        this.toModel(v1, this.addrKey.off);
+      }
     }
 
-    const watch = on || (this.addr && sim.phase === PH_TOSS) || sim.walking > 0;
+    const watch = on || (this.addr && (sim.phase === PH_TOSS || routineTime(sim, t) >= 0)) || sim.walking > 0;
     this.look += ((watch ? 1 : 0) - this.look) * (dt > 0 ? 1 - Math.exp(-dt / 0.25) : 0);
     this.gazeAt(sim, idx, t, dt);
     this.gazeSettle(dt);
@@ -3014,7 +3033,12 @@ export class Avatar {
     const away = sim.walking > 0 || sim.phase === PH_OVER;
     this.gazeUp += ((away ? 1 : 0) - this.gazeUp) * (dt > 0 ? 1 - Math.exp(-dt / GAZE_UP_T) : 1);
     const b = sim.ball.pos, G = this.gaze;
-    if (this.gazeUp < 0.001) { G.copy(b); return; }
+    if (this.gazeUp < 0.001) {
+      G.copy(b);
+      const u = this.addr ? routineTime(sim, t) : -1;
+      if (u >= 0) G.y = routineHeight(u, b.y, sim.world.spec.radius);
+      return;
+    }
     const hm = this.head.matrixWorld.elements, hy = hm[13]!;
     let x: number, z: number, y = hy;
     const mate = sim.doubles && sim.walking === 1 ? sim.players[(idx + 2) & 3]! : null;
@@ -3201,7 +3225,8 @@ export class Avatar {
     const con = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
     this.airK = 0;
     if (this.jumpT0 < 0 || this.jumpT <= 0) {
-      if (con >= 0 && (this.fam.name === 'overhead' || this.fam.name === 'vibora')) {
+      const name = rightFamily(this.fam).name;
+      if (con >= 0 && (name === 'overhead' || name === 'vibora')) {
         const T = this.lastT - con;
         const roll = REAR_ROLL * smoothstep(REAR_ROLL_FROM, REAR_ROLL_AT, T) * (1 - smoothstep(REAR_DOWN_FROM, REAR_DOWN_AT, T));
         if (roll > 0.001) this.rollOver(rear, back, rear === 1 ? this.footQR : this.footQL, roll);
@@ -3311,7 +3336,7 @@ export class Avatar {
     // A volley's finish stays down where it met the ball, and the hips went on following that key: lowest 0.3 s after
     // the ball, back 0.55 s after it, and four volleys in ten ran off still sitting. The drop was for the ball. A serve the same: 7 cm down and back
     // in a quarter of a second after every ball (review round 27).
-    if (this.fam.wrist || this.fam.name === 'serve') {
+    if (this.fam.wrist || rightFamily(this.fam).name === 'serve') {
       if (before) this.downAt = down;
       else down = this.downAt * (1 - smoothstep(0, VOLLEY_UP, this.lastT - this.tCon));
     }
@@ -3874,7 +3899,7 @@ export class Avatar {
       const turned = wrapAngle(yaw - this.gaitYaw[f]!);
       if (rel < -back || this.gaitSince > 0.35 / hz || turned > 0.9 || turned < -0.9) go = f;
     }
-    if (go >= 0) {
+    if (go >= 0 && !this.gaitStop) {
       G[go] = 0;
       this.gaitNext = 1 - go;
       this.gaitUp = 0;

@@ -836,7 +836,7 @@ One High, confirmed and fixed: the ball jumped from the floor to the hand at the
 | Change of ends | six seconds standing still | a walk both ways, key skips it |
 | Last ball to next serve: point / ends / fault | 8.2 / 6.9 / 4.8 s | 9.4 / 13.0 / 6.0 |
 | AI pair covers taker then plays, per 100 | 116 | 45 |
-| Slice return winners, server 5-6 m / nearer | 0.8 / 1.7% | 3.3 / about 1 |
+| Slice return winners, server 5-6 m / nearer | 0.8 / 1.7% | 3.3 / 0.5 |
 | Balls dying beside the partner, per 100 | 0.71 | 0.71 |
 | Jump smash knees at the ball, four bodies | front locked at 2 on three | 27/30, 27/37, 27/33, 30/42 (footage 27/23) |
 | Jump smash feet apart at the ball | 0.52-0.65 m | 0.35-0.43 |
@@ -848,6 +848,25 @@ One High, confirmed and fixed: the ball jumped from the floor to the hand at the
 | Stadium / club, LUFS | -25.6 / -26.3 | -24.6 / -26.2 |
 | Match, 6000 points: shots, s, W/FE/UE | 10.4, 13.7, 42.1/24.4/33.5 | 10.3, 13.5, 41.7/23.7/34.6 |
 | Women, 6000 points | 11.4, 15.7, 31.7/27.5/40.8 | 11.5, 15.8, 33.0/26.4/40.6 |
+| Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
+
+| Round 24 | Before | After |
+|---|---|---|
+| Drive off the back glass: top, over 1.5 m, over 2 m | 1.44 m, 45%, 12% | 1.13 m, 16%, 0% |
+| Drive height 3 m out, height it's taken at | 1.57, 1.21 m | 1.18, 0.97 m |
+| Bandeja, lob, smash: top after the glass | 0.75, 2.80, 2.76 m | 0.74, 2.82, 2.62 m |
+| Your bandeja from 6.5-8 m: lobbers' depth, both up, pair won | 2.8 m, 65%, 49.4 | 8.0 m, 11.7%, 66.0 |
+| AI partner's bandeja from 6.5-8 m, pair won | | 69.9 |
+| Stand-in's seat at the top level, won, sets | 56.6%, before the last lob step | 60.4%, 28-2 |
+| Bajada unforced errors, per 100 | 15.9 | 9.2 (real forehand 8.5, backhand 3) |
+| AI lobs off a ball met in the air near the net | 2.8% | 0.9% |
+| Leg flung back, per player-minute | 0.50 | 0.23 |
+| Left-handers' rear foot pitch at the ball | 17-22 degrees | 57 (right-handers 53-57) |
+| Pops a minute, twelve fresh seeds | 15.2 | 12.5 |
+| Balls dying beside the partner, per 100 | 0.71 | 0.59 |
+| Stadium / club, LUFS | -24.6 / -26.2 | -25.4 / -26.4 |
+| Match, 6000 points: shots, s, W/FE/UE | 10.3, 13.5, 41.7/23.7/34.6 | 10.3, 13.1, 41.2/24.8/34.0 |
+| Women, 6000 points | 11.5, 15.8, 33.0/26.4/40.6 | 11.0, 14.6, 34.0/26.9/39.2 |
 | Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
 
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
