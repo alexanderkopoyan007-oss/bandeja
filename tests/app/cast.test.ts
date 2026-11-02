@@ -3,15 +3,32 @@ import { dealCast } from '../../src/game/cast.ts';
 import { dealNames } from '../../src/game/names.ts';
 
 describe('who plays', () => {
-  it('the generated people modelled with their arms out are dealt like everyone else, to matches of their own sex', () => {
-    const seen = new Set<string>();
+  it('the generated people are dealt first and each only once, one to a team, in matches of their own sex', () => {
     for (let seed = 1; seed < 400; seed++) {
       const c = dealCast(seed);
-      for (const n of c.people) seen.add(n);
-      expect(c.people.includes('meshy2') && !c.women).toBe(false);
-      expect((c.people.includes('meshy') || c.people.includes('meshy3')) && c.women).toBe(false);
+      expect(new Set(c.people).size).toBe(4);
+      if (c.women) {
+        expect(c.people[0]).toBe('meshy2');
+        expect(c.people.includes('meshy') || c.people.includes('meshy3')).toBe(false);
+      } else {
+        expect([c.people[0], c.people[1]].sort()).toEqual(['meshy', 'meshy3']);
+        expect(c.people.includes('meshy2')).toBe(false);
+      }
     }
-    expect(seen.has('meshy') && seen.has('meshy2') && seen.has('meshy3')).toBe(true);
+  });
+
+  it('a person keeps one voice from match to match, and each style is on court in a men\'s match', () => {
+    const voice = new Map<string, number>();
+    for (let seed = 1; seed < 200; seed++) {
+      const c = dealCast(seed);
+      c.people.forEach((n, i) => {
+        expect(c.voices[i]!).toBeGreaterThanOrEqual(c.women ? 4 : 0);
+        expect(c.voices[i]!).toBeLessThan(c.women ? 8 : 4);
+        expect(voice.get(n) ?? c.voices[i]).toBe(c.voices[i]);
+        voice.set(n, c.voices[i]!);
+      });
+      if (!c.women) expect(new Set([c.voices[0]! % 2, c.voices[1]! % 2]).size).toBe(2);
+    }
   });
 
   it('naming a woman first makes it a match of women, a guest too', () => {

@@ -91,8 +91,10 @@ function heapTop(profile, secs, n = 14) {
 async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = false, gpuLoad = 1, cap = 0, query = '' }) {
   const loadBefore = load3();
   // Audio on (Phase 6): no gesture in a headless run, so let the page start it; its main-thread cost is measured.
+  // --disable-audio-output: launched from a tool, a context reads 'running' but its clock stops after two quanta when it
+  // can't open the device. With no device asked for, it runs on Chrome's timer, so the sound is really rendered.
   // Developer features give the GPU timestamps full precision (Chrome rounds them to 100 µs otherwise).
-  const args = ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required',
+  const args = ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required', '--disable-audio-output',
     '--enable-webgpu-developer-features'];
   if (unlimited) args.push('--disable-frame-rate-limit', '--disable-gpu-vsync');
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args });
@@ -170,7 +172,7 @@ async function run(name, { dpr, throttle, unlimited, quality = 'high', trace = f
 async function deopt(name, { dpr, throttle, quality, warm }) {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, dumpio: false,
     args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--disable-frame-rate-limit', '--disable-gpu-vsync',
-      '--autoplay-policy=no-user-gesture-required', '--js-flags=--trace-deopt-verbose'] });
+      '--autoplay-policy=no-user-gesture-required', '--disable-audio-output', '--js-flags=--trace-deopt-verbose'] });
   // Each bailout line, and the "deoptimize at <url:line:col>, reason" line after it.
   const events = [];
   let pending = null;
@@ -282,7 +284,7 @@ async function tris(quality) {
  */
 async function load(name, { down, up, rtt, throttle, noYield = false }) {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
-    args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required'] });
+    args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required', '--disable-audio-output'] });
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
   const errors = [];

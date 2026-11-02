@@ -1,6 +1,8 @@
 // Who plays a match, dealt from its seed (review round 4, the critic's #3: the same four men in the same kit under new
 // names): men or women throughout, four people from the roster (data/people.json, data/players/), the kits. The names
-// (game/names.ts) come from the nations a person's face fits. Nothing here touches the sim: looks only.
+// (game/names.ts) come from the nations a person's face fits. The generated people look the best of the roster, so
+// they are dealt first, the player's own place and then the far side's; repeating one on a court would bring back the
+// same men under new names, so the rest of the court is the others. Nothing here touches the sim: looks and voices.
 import roster from '../../data/people.json';
 import { KIT_COUNT } from '../render/avatar/kit.ts';
 
@@ -12,9 +14,11 @@ export interface Cast {
   nations: string[][];
   /** The two teams' kits (kit.ts kitFor). */
   kits: [number, number];
+  /** Each player's grunt (voices.ts PLAYER_VOICES): a person's own, on the women's half of the table in a women's match. */
+  voices: number[];
 }
 
-interface Person { name: string; nations: string[]; woman?: boolean; dealt?: boolean }
+interface Person { name: string; nations: string[]; voice: number; woman?: boolean; dealt?: boolean }
 
 /** A seeded generator of its own, so the looks never share the match's. */
 export function seeded(seed: number, salt: number): () => number {
@@ -41,6 +45,10 @@ export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
     const t = pool[i]!; pool[i] = pool[j]!; pool[j] = t;
   }
   const kits: [number, number] = [Math.floor(rnd() * KIT_COUNT), Math.floor(rnd() * KIT_COUNT)];
+  // Seats 0 and 1 are one from each team, the player's and the one facing the camera.
+  const made = pool.filter((p) => p.dealt), others = pool.filter((p) => !p.dealt);
+  const seats = [made[0] ?? others.shift()!, made[1] ?? others.shift()!];
+  pool.splice(0, pool.length, ...seats, ...others, ...made.slice(2));
   if (rivals !== undefined) {
     const r = seeded(rivals, 0x7c1e93d5);
     const rest = pool.filter((_, i) => i !== 0 && i !== 2);
@@ -54,7 +62,8 @@ export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
   const all = [...roster.men, ...roster.women, ...guests];
   const picked = only?.length ? only.map((n) => all.find((p) => p.name === n) ?? pool[0]!) : pool.slice(0, 4);
   const firstWoman = roster.women.some((p) => p.name === only?.[0]) || guests.some((p) => p.woman && p.name === only?.[0]);
-  return { people: picked.map((p) => p.name), women: only?.length ? firstWoman : women, nations: picked.map((p) => p.nations), kits };
+  const womens = only?.length ? firstWoman : women;
+  return { people: picked.map((p) => p.name), women: womens, nations: picked.map((p) => p.nations), kits, voices: picked.map((p) => p.voice + (womens ? 4 : 0)) };
 }
 
 /** ?people=a,b,c,d, or nothing (0 is the mannequin: asset.ts peopleWanted). */

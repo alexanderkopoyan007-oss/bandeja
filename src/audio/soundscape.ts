@@ -11,7 +11,7 @@ import {
 } from '../sim/contact/shots.ts';
 import { SURF_GLASS, SURF_MESH, WALL_BACK_NEAR, WALL_BACK_FAR, type ZoneHit } from '../sim/court/court.ts';
 import { WHY_DOUBLE_BOUNCE, WHY_EXIT_AFTER_BOUNCE, WHY_HIT_BODY_OPP } from '../sim/rules/rally.ts';
-import { RK_DRIVE, RK_VOLLEY, RK_OVER, RK_SLICE, RK_TOUCH, WHOOSH_PEAK } from './voices.ts';
+import { RK_DRIVE, RK_VOLLEY, RK_OVER, RK_SLICE, RK_TOUCH, WHOOSH_PEAK, PLAYER_VOICES, GRUNT_SERVE, GRUNT_BACKHAND } from './voices.ts';
 import {
   AUDIO, arenaAudio, binFor, racketBin, RQ_CLEAN, RQ_OFF, RQ_FRAME, RACKET_POWER, BOUNCE_V, GLASS_V, MESH_V, METAL_V,
   NET_V, WHOOSH_S, STEP_F, GRUNT_E, APPLAUSE_SMALL, APPLAUSE_BIG,
@@ -29,10 +29,14 @@ const WHOOSH_LEAD = 0.02;
 /** Scuffs are judged over this much sim time (a frame's difference is frame-rate dependent). */
 const SCUFF_WINDOW = 0.1;
 const RING = 32;
-/** How likely each player (by number) is to grunt on a hard shot: some players do, some barely. */
-const GRUNTER = [0.85, 0.5, 0.7, 0.35];
+/** How likely each way of grunting (voices.ts GRUNT_LONG, GRUNT_CLIPPED) is to come on a hard shot. */
+const GRUNTER = [0.9, 0.7];
+/** A shot's effort to the chance of a grunt: a usual drive (effort 0.4) brings one about every other time. */
+const GRUNT_KEEN = 1.6;
 /** A sole this high (m) is off the floor; this low, on it. */
 const FOOT_UP = 0.03, FOOT_DOWN = 0.012;
+/** Under this speed (m/s) a foot set down is the stance settling, not a step: a third of all landings in a real match. */
+const FOOT_STILL = 0.15;
 const db = (x: number): number => Math.pow(10, x / 20);
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
@@ -104,9 +108,12 @@ export class Soundscape {
   private readonly nShots: number[];
   private readonly nEnd: number[];
   private lastTime = -1;
+  /** Each player's voice (voices.ts PLAYER_VOICES): the person's own, from the cast. */
+  private readonly voices: number[];
 
-  constructor(out: AudioSink, arena: string, neighbours: number[]) {
+  constructor(out: AudioSink, arena: string, neighbours: number[], voices: number[] = [0, 1, 2, 3]) {
     this.out = out;
+    this.voices = voices;
     const a = arenaAudio(arena);
     this.crowdSize = a.crowd;
     this.big = a.crowd >= AUDIO.crowd.big;
@@ -210,11 +217,13 @@ export class Soundscape {
         const effort = a === SHOT_SMASH ? 0.6 + 0.4 * clamp01((c - 25) / 15)
           : a === SHOT_VIBORA || a === SHOT_BANDEJA ? 0.55
             : a === SHOT_VOLLEY || a === SHOT_DROP || a === SHOT_CHIQUITA || a === SHOT_LOB ? 0.15
-              : 0.25 + 0.6 * clamp01((c - 18) / 16);
-        if (player >= 0 && this.rand() < (GRUNTER[player] ?? 0.5) * effort) {
+              : 0.4 + 0.5 * clamp01((c - 14) / 14);
+        const voice = player >= 0 ? this.voices[player]! : 0;
+        if (player >= 0 && this.rand() < GRUNTER[PLAYER_VOICES[voice]!.style]! * Math.min(1, effort * GRUNT_KEEN)) {
           const p = sim.players[player]!;
           const eb = binFor(GRUNT_E, effort, this.rand());
-          out.play('grunt', (player + (sim.cfg.women ? 4 : 0)) * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, this.rate, delay + 0.015, BUS_PLAYERS);
+          const pitch = a === SHOT_SERVE ? GRUNT_SERVE : p.handSide < 0 ? GRUNT_BACKHAND : 1;
+          out.play('grunt', voice * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, 1, this.rate * pitch, delay + 0.015, BUS_PLAYERS);
         }
         // The crowd gasps at a great get: a smash or a ball off two walls sent back (never at a serve).
         if (this.big && !this.replaying && a !== SHOT_SERVE && sim.phase === PH_RALLY && this.lastHitTeam >= 0 && team !== this.lastHitTeam) {
@@ -407,7 +416,7 @@ export class Soundscape {
         const y = feet[f * 3 + 1]!;
         if (this.footDown[k] === 0 && y < FOOT_DOWN) {
           // (marked down before playing: a play that throws must not replay this landing every frame)
-          const heard = this.footT[k]! >= 0 && t - this.footT[k]! > 0.12;
+          const heard = this.footT[k]! >= 0 && t - this.footT[k]! > 0.12 && speed > FOOT_STILL;
           this.footDown[k] = 1;
           this.footT[k] = t;
           if (heard) {

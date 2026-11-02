@@ -142,7 +142,7 @@ describe('voices', () => {
   /** Fundamental by autocorrelation over a window. */
   function f0(b: Float32Array, from: number, len: number, sr: number): number {
     let best = 0, bestLag = 0;
-    for (let lag = Math.round(sr / 400); lag < Math.round(sr / 70); lag++) {
+    for (let lag = Math.round(sr / 900); lag < Math.round(sr / 70); lag++) {
       let s = 0;
       for (let i = 0; i < len; i++) s += b[from + i]! * b[from + i + lag]!;
       if (s > best) { best = s; bestLag = lag; }
@@ -150,15 +150,55 @@ describe('voices', () => {
     return sr / bestLag;
   }
 
-  it('a grunt is voiced near the speaker\'s pitch (raised by effort), louder and longer with effort', () => {
-    const v = V.PLAYER_VOICES[0]!;
-    const g = V.grunt(new Rng(9), v, 0.9);
-    const p = f0(g, Math.round(0.03 * V.LO_SR), 1200, V.LO_SR);
-    expect(p).toBeGreaterThan(v.f0 * 1.05);
-    expect(p).toBeLessThan(v.f0 * 1.7);
-    const hard = many(6, (r) => V.grunt(r, v, 0.95)), light = many(6, (r) => V.grunt(r, v, 0.3));
-    expect(mean(hard.map((b) => rms(b)))).toBeGreaterThan(mean(light.map((b) => rms(b))));
-    expect(mean(hard.map((b) => b.length))).toBeGreaterThan(mean(light.map((b) => b.length)));
+  // Raine, Pisanski & Reby 2017: men 297-325 Hz, women 574-650 Hz, very little overlap, against 100-130 and 190-210 spoken.
+  const meanPitch = (g: Float32Array): number => {
+    const hop = Math.round(0.02 * V.LO_SR);
+    let e = 0;
+    for (let i = 0; i < g.length; i++) e += g[i]! * g[i]!;
+    let sum = 0, wt = 0;
+    for (let i = 0; i + 1200 < g.length; i += hop) {
+      let w = 0;
+      for (let k = 0; k < 1200; k++) w += g[i + k]! * g[i + k]!;
+      if (w < (e / g.length) * 1200 * 0.25) continue;
+      sum += f0(g, i, 1200, V.LO_SR) * w;
+      wt += w;
+    }
+    return sum / wt;
+  };
+
+  it('a grunt sits at the pitch measured on professionals, three times speaking pitch, and sex hardly overlaps', () => {
+    const at = (i: number): number => mean(many(6, (r) => V.grunt(r, V.PLAYER_VOICES[i]!, 0.6)).map(meanPitch));
+    const men = [0, 1, 2, 3].map(at), women = [4, 5, 6, 7].map(at);
+    for (const p of men) { expect(p).toBeGreaterThan(260); expect(p).toBeLessThan(350); }
+    for (const p of women) { expect(p).toBeGreaterThan(520); expect(p).toBeLessThan(700); }
+    expect(Math.max(...men)).toBeLessThan(Math.min(...women));
+  });
+
+  it('there are two ways of grunting: a long one that climbs to past half way, a short one that starts high and falls', () => {
+    const long = V.PLAYER_VOICES[0]!, clipped = V.PLAYER_VOICES[1]!;
+    expect(long.style).toBe(V.GRUNT_LONG);
+    expect(clipped.style).toBe(V.GRUNT_CLIPPED);
+    const span = (g: Float32Array): number => {
+      let top = 0, last = 0;
+      for (let i = 0; i < g.length; i++) top = Math.max(top, Math.abs(g[i]!));
+      for (let i = 0; i < g.length; i++) if (Math.abs(g[i]!) > top * 0.1) last = i;
+      return last / V.LO_SR;
+    };
+    expect(mean(many(6, (r) => V.grunt(r, long, 0.95)).map(span))).toBeGreaterThan(0.42);
+    expect(mean(many(6, (r) => V.grunt(r, clipped, 0.95)).map(span))).toBeLessThan(0.24);
+    const part = (g: Float32Array, a: number, b: number): number => f0(g, Math.round(a * V.LO_SR), Math.round(b * V.LO_SR), V.LO_SR);
+    const g = V.grunt(new Rng(5), long, 0.95);
+    expect(part(g, 0.28, 0.05)).toBeGreaterThan(part(g, 0.05, 0.05) * 1.1);
+    const c = V.grunt(new Rng(5), clipped, 0.95);
+    expect(part(c, 0.01, 0.05)).toBeGreaterThan(part(c, 0.12, 0.05) * 1.05);
+  });
+
+  it('harder is louder and longer, for both', () => {
+    for (const v of [V.PLAYER_VOICES[0]!, V.PLAYER_VOICES[1]!]) {
+      const hard = many(6, (r) => V.grunt(r, v, 0.95)), light = many(6, (r) => V.grunt(r, v, 0.3));
+      expect(mean(hard.map((b) => rms(b)))).toBeGreaterThan(mean(light.map((b) => rms(b))));
+      expect(mean(hard.map((b) => b.length))).toBeGreaterThan(mean(light.map((b) => b.length)));
+    }
   });
 });
 

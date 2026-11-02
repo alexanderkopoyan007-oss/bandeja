@@ -1,23 +1,23 @@
 {
   "//": "Who can be dealt to a match (src/game/cast.ts): the people in data/players/, and the nations their names may come from, so that a name fits the face. A match is men or women throughout. Generated people (tools/assets/meshy/) are guests: dealt only if `dealt`, modelled with the arms held out; the first was modelled with them down, his sleeve is fused to his ribs, and he plays only when named (?people=).",
   "men": [
-    { "name": "p1", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] },
-    { "name": "p2", "nations": ["BRA", "FRA", "POR", "NED"] },
-    { "name": "p3", "nations": ["ESP", "SWE", "NED", "ITA", "ARG"] },
-    { "name": "p4", "nations": ["JPN", "KOR"] },
-    { "name": "p5", "nations": ["ESP", "ARG", "MEX", "BRA"] },
-    { "name": "p6", "nations": ["MEX", "ARG", "BRA"] }
+    { "name": "p1", "voice": 2, "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] },
+    { "name": "p2", "voice": 1, "nations": ["BRA", "FRA", "POR", "NED"] },
+    { "name": "p3", "voice": 0, "nations": ["ESP", "SWE", "NED", "ITA", "ARG"] },
+    { "name": "p4", "voice": 3, "nations": ["JPN", "KOR"] },
+    { "name": "p5", "voice": 2, "nations": ["ESP", "ARG", "MEX", "BRA"] },
+    { "name": "p6", "voice": 3, "nations": ["MEX", "ARG", "BRA"] }
   ],
   "women": [
-    { "name": "p7", "nations": ["ESP", "ITA", "FRA", "SWE", "NED", "ARG"] },
-    { "name": "p8", "nations": ["BRA", "FRA", "POR"] },
-    { "name": "p9", "nations": ["JPN", "KOR"] },
-    { "name": "p10", "nations": ["ESP", "ARG", "MEX", "POR"] }
+    { "name": "p7", "voice": 0, "nations": ["ESP", "ITA", "FRA", "SWE", "NED", "ARG"] },
+    { "name": "p8", "voice": 1, "nations": ["BRA", "FRA", "POR"] },
+    { "name": "p9", "voice": 2, "nations": ["JPN", "KOR"] },
+    { "name": "p10", "voice": 3, "nations": ["ESP", "ARG", "MEX", "POR"] }
   ],
   "guests": [
-    { "name": "meshy", "nations": ["ESP", "ARG", "ITA", "FRA", "POR"], "dealt": true },
-    { "name": "meshy2", "nations": ["ESP", "ITA", "ARG", "POR"], "woman": true, "dealt": true },
-    { "name": "meshy3", "nations": ["BRA", "FRA", "POR", "NED"], "dealt": true }
+    { "name": "meshy", "voice": 0, "nations": ["ESP", "ARG", "ITA", "FRA", "POR"], "dealt": true },
+    { "name": "meshy2", "voice": 1, "nations": ["ESP", "ITA", "ARG", "POR"], "woman": true, "dealt": true },
+    { "name": "meshy3", "voice": 1, "nations": ["BRA", "FRA", "POR", "NED"], "dealt": true }
   ],
   "womensMatches": 0.35
 }

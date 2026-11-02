@@ -270,7 +270,7 @@ useful one, for checking the whole picture; 5-7 and 10 would let the mesh be mea
 
 ## 7. Gaps
 
-- Nobody has listened: not to the before, not to the after. Every line above is a number.
+- Nobody has listened: not to the before, not to the after, not to section 8. Every line above is a number.
 - The real curves are single events of unknown speed read by hand off a thesis's figures. Nothing under 125 Hz is used.
 - Racket mode frequencies are fitted to a spectrum: no modal analysis of a padel racket exists. A real hit's centroid isn't
   published. The fit still misses by 4-7 dB at 500 Hz and 2-3.2 kHz.
@@ -286,11 +286,10 @@ useful one, for checking the whole picture; 5-7 and 10 would let the mesh be mea
   are fitted but barely heard in the audit.
 - The applause-to-hit ratio is my estimate. Stadium and hall RT60 and wets are estimates. The club tail is still 3-7 dB under
   the reading. The hall's still 1-8 dB under it.
-- `src/audio/offline.ts` is a model of `engine.ts`. The limiter is modelled. `engine.ts`'s changes were typechecked, tested in
-  their parts, and never run in a browser this round.
+- `src/audio/offline.ts` is a model of `engine.ts`. The limiter is modelled. Section 8 reads the real engine's output.
 - LAFmax minus LAeq: ours 12-14 dB against 19.5 (Wadman) and 7.1 (Abu Dhabi). Ours is in between; those two don't agree.
-- Voices are still formant synthesis. There are no calls or shouts though `E_CALL` exists and Piana puts shouts at +1.9 dB
-  on the whole game. `E_EXIT`, `E_SPLIT` are silent too.
+- Voices are still formant synthesis, and there are no calls or shouts though `E_CALL` exists and Piana puts shouts at +1.9 dB
+  on the whole game. A spoken "mine" built this way would sound like a machine; real recordings are the honest way to it. `E_EXIT`, `E_SPLIT` are silent too.
 - Laptop speakers weren't measured. Close cameras weren't audited: every mix figure is from the broadcast camera.
 - The stadium mix is 8.5 dB quieter overall, hits about the same, peak -5.4 dBFS. `lift` wasn't raised: the owner's call.
 - The default arena stays the stadium.
@@ -299,3 +298,41 @@ useful one, for checking the whole picture; 5-7 and 10 would let the mesh be mea
 - `dsp.spectrum` still uses a Hann window from the first sample, which weighs an attack at nothing. The game doesn't use it;
   four band-share checks in `tests/audio/voices.test.ts` still do. The centroid helper moved to `measure.ts`.
 - Patent number for the hard-court bounce is unsettled (section 2).
+
+## 8. Grunts, and what really comes out (2 Nov)
+
+The owner asked for grunts like two named tennis players. Their recordings aren't used, for the reasons in `DECISIONS.md`:
+two voices are generated in the same broad manners, and no name is attached to either.
+
+**Grunts were more than an octave too low.** [Raine, Pisanski & Reby 2017, Animal Behaviour 130](https://sussex.figshare.com/articles/journal_contribution/Tennis_grunts_communicate_acoustic_cues_to_sex_and_contest_outcome/23445572)
+measured 367 grunts from 50 professional tennis matches and serve grunts from 60 players. Ours used the speaking voice raised
+by effort.
+
+| Measure | Real | Before | After |
+|---|---|---|---|
+| Men, serve grunts of 60 players | 297 Hz | 135-200 Hz | see below |
+| Women, same | 574 Hz | 230-330 Hz | |
+| Men's 14 frequent grunters: serve / forehand / backhand | 325 / 312 / 298 Hz | 135-200 Hz | voices 285-330 Hz, serve x1.042, backhand x0.954 |
+| Women's frequent grunters: serve / forehand | 650 / 616 Hz | 230-330 Hz | voices 555-660 Hz |
+| Against speaking pitch | three times | about 1.4 times | about three times |
+| Overlap between the sexes | very little | men 135-200, women 230-330 | men 260-350, women 520-700 |
+
+Speaking pitch, age, height and weight predicted none of it, so a grunt's pitch is its own number here. Still from that paper
+and not modelled: about 15 Hz higher late in a match, about one semitone higher in a match being lost. Of top-30 players 90%
+of men and 76% of women grunted at all, and half of men and 63% of women often enough to study.
+
+Reasoned, not measured: both shapes and both lengths (long 0.3-0.55 s climbing to about 60% of its length, clipped 0.11-0.2 s
+falling), the strain (every other glottal cycle stronger, so a subharmonic), how often they come (a usual drive about every
+other time, a volley about one in five) and the level (a top grunt 1.5-3 dB under a top racket hit for men, as loud for women,
+on a level meter). The mouth doesn't know: the face still opens only on smashes and serves.
+
+**The engine has now been heard by a meter.** A Chrome launched by a tool reads its context as `running` while the clock stands
+still after two quanta (a bare oscillator did the same, headless or not), so every earlier "audio on" run rendered nothing.
+`--disable-audio-output` runs the clock on a timer; `tools/perf.mjs` now passes it. An AudioWorklet after the clip took 60 s of
+what would go to the speakers.
+
+That found one fault nothing had: a third of all footsteps came from standing players, a foot set down as the stance settled,
+11.3 steps a second against the offline model's 7.5. Under 0.15 m/s they are now silent.
+
+Racket and glass moved against Wadman's curves too: rms miss 3.2 to 2.1 dB and 4.4 to 2.9 dB. The worst bands: racket 2.5 kHz
+-8 to -3, glass 2 kHz -9 to -7, 125 Hz +5 to +3.

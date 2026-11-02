@@ -300,7 +300,7 @@ export class Game {
     this.audio.enabled = opts.sound !== false;
     this.audio.setLevels(prefs.volume ?? 1, prefs.crowd ?? 1);
     this.audio.load();
-    this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? []);
+    this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? [], cast.voices);
     this.feetSrc = this.players.map((pv) => ({ feet: pv.avatar ? pv.avatar.feet : null }));
     const unlock = (): void => this.audio.unlock();
     addEventListener('keydown', unlock, { signal: sig });

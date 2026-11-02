@@ -83,16 +83,17 @@ export function racket(rng: Rng, kind: number, power: number, off: number, frame
   const bright = 0.7 + 0.3 * p;
   const dull = 1 - 0.5 * q;
   const pock: Mode[] = [
-    { f: jit(rng, 430, 0.05), t60: 0.03, a: 0.55 + 0.2 * soft },
-    { f: jit(rng, 690, 0.04), t60: 0.03, a: 0.8 * (1 - 0.3 * q) },
+    { f: jit(rng, 430, 0.05), t60: 0.03, a: 0.68 + 0.2 * soft },
+    { f: jit(rng, 690, 0.04), t60: 0.03, a: 0.72 * (1 - 0.3 * q) },
     { f: jit(rng, 1020, 0.05), t60: 0.02, a: 0.6 * dull * (1 - 0.4 * soft) },
     { f: jit(rng, 1450, 0.05), t60: 0.016, a: 0.62 * dull * bright * (1 - 0.5 * soft) },
   ];
   // (the onset's half-sine has its null at about 1.9 kHz: what lies past it rings from the very first of the contact)
   const edge: Mode[] = [
     { f: jit(rng, 1850, 0.06), t60: 0.013, a: 0.13 * dull * bright * (1 - 0.6 * soft) },
-    { f: jit(rng, 2750, 0.06), t60: 0.011, a: 0.12 * dull * bright * (1 - 0.7 * soft) },
-    { f: jit(rng, 3500, 0.06), t60: 0.008, a: 0.08 * dull * bright * (1 - 0.7 * soft) },
+    { f: jit(rng, 2450, 0.06), t60: 0.012, a: 0.15 * dull * bright * (1 - 0.7 * soft) },
+    { f: jit(rng, 2950, 0.06), t60: 0.011, a: 0.15 * dull * bright * (1 - 0.7 * soft) },
+    { f: jit(rng, 3500, 0.06), t60: 0.008, a: 0.09 * dull * bright * (1 - 0.7 * soft) },
   ];
   if (frame) { pock[0]!.a *= 0.6; pock[1]!.a *= 0.5; }
   for (const m of pock) m.a *= loud;
@@ -218,7 +219,7 @@ export function glass(rng: Rng, v: number): Float32Array {
   // The felt's slap on a hard face: the measured hit holds up to 6 kHz, 30 dB down, far past the panel's modes.
   noiseBurst(out, rng, 0.001, 0.0003, 0.018, 0.75 * loud, [Biquad.make('hp', 1400, 0.7), Biquad.make('lp', 4600, 0.7), Biquad.make('lp', 7000, 0.7)]);
   // The frame's steel, struck through the clamps: a short low thud under the panel.
-  modal(out, 0.002, [{ f: jit(rng, 92, 0.1), t60: 0.22, a: 0.14 * loud }, { f: jit(rng, 151, 0.1), t60: 0.18, a: 0.1 * loud }], contact * 0.5);
+  modal(out, 0.002, [{ f: jit(rng, 92, 0.1), t60: 0.22, a: 0.1 * loud }, { f: jit(rng, 151, 0.1), t60: 0.18, a: 0.07 * loud }], contact * 0.5);
   if (v > 14) {
     // A hard ball rattles the panel in its fixings: a few metallic clicks just after.
     const clicks = 1 + Math.floor(rng.next() * 3 + 2 * clamp01((v - 14) / 15));
@@ -239,13 +240,13 @@ export function glass(rng: Rng, v: number): Float32Array {
 
 /** What the measured glass hit keeps of the panel's modes (Wadman et al. Fig. 4.3.2, data/audio-reference.json). */
 function glassWeight(f: number): number {
-  if (f < 130) return (f / 130) ** 2;
-  if (f < 450) return 1;
+  if (f < 130) return 0.7 * (f / 130) ** 2;
+  if (f < 450) return 0.7;
   // Into the hollow at 700 Hz and out to the shoulder at 1-1.4 kHz.
-  if (f < 700) return 1 - 0.8 * ((f - 450) / 250);
-  if (f < 1050) return 0.2 + 0.5 * ((f - 700) / 350);
-  if (f < 1400) return 0.7;
-  return 0.7 * Math.max(0.15, 1 - (f - 1400) / 1300);
+  if (f < 700) return 0.7 - 0.5 * ((f - 450) / 250);
+  if (f < 1050) return 0.2 + 0.65 * ((f - 700) / 350);
+  if (f < 1400) return 0.85;
+  return 0.85 * Math.max(0.15, 1 - (f - 1400) / 2200);
 }
 
 // ---- mesh -------------------------------------------------------------------------------------------------------
@@ -498,14 +499,15 @@ const BW = [90, 110, 170, 250, 300];
  * One vocal sound: a glottal source (a Rosenberg pulse train with jitter and shimmer, plus breath noise) through a
  * cascade of formant resonators (Klatt 1980) and the lips' radiation (a first difference), at LO_SR. `pitch` is a
  * contour (0..1 time to a multiple of f0), `vowel` a key of VOWELS or two to glide between, `breath` 0..1 how much
- * of the source is aspiration noise, `amp` the envelope's level.
+ * of the source is aspiration noise, `amp` the envelope's level, `rough` 0..1 how strained: every other glottal cycle
+ * stronger, so a subharmonic at half the pitch, the crack of a voice pushed hard.
  */
 export function vocal(out: Float32Array, rng: Rng, at: number, len: number, v: VoiceSpec, vowel: string, vowel2: string,
-  pitch: (u: number) => number, breath: number, amp: number, attack = 0.02, release = 0.08, sr = LO_SR): void {
+  pitch: (u: number) => number, breath: number, amp: number, attack = 0.02, release = 0.08, sr = LO_SR, rough = 0): void {
   const start = Math.round(at * sr), n = Math.round(len * sr);
   const fa = VOWELS[vowel]!, fb = VOWELS[vowel2]!;
   const f0 = form5(sr);
-  let phase = 0, jitter = 0, shimmer = 1, lastLip = 0, pf = 1;
+  let phase = 0, jitter = 0, shimmer = 1, lastLip = 0, pf = 1, odd = false;
   const ns = Biquad.make('hp', 400, 0.7, 0, sr);
   const nb = breath * 0.6, nv = 1 - breath;
   for (let i = 0; i < n && start + i < out.length; i++) {
@@ -520,6 +522,8 @@ export function vocal(out: Float32Array, rng: Rng, at: number, len: number, v: V
       phase -= 1;
       jitter = (rng.next() - 0.5) * 0.02;
       shimmer = 1 + (rng.next() - 0.5) * 0.12;
+      odd = !odd;
+      shimmer *= odd ? 1 + 0.5 * rough : 1 - 0.5 * rough;
     }
     const g = GLOTTIS[(phase * GL_N) | 0]!;
     let x = g * shimmer * nv + ns.run(rng.next() * 2 - 1) * nb * (phase < 0.6 ? 1 : 0.3);
@@ -547,29 +551,52 @@ const GLOTTIS = (() => {
   return t;
 })();
 
-/** The players' voices (by player number): four men's voices, a little apart in pitch and size, then four women's
- * (about 1.7 x the pitch through a tract about 15% shorter: speech 165-255 Hz, Titze 1989). */
-export const PLAYER_VOICES: VoiceSpec[] = [
-  { f0: 112, tract: 1.0 }, { f0: 124, tract: 0.95 }, { f0: 101, tract: 1.05 }, { f0: 136, tract: 0.93 },
-  { f0: 190, tract: 0.85 }, { f0: 211, tract: 0.81 }, { f0: 172, tract: 0.89 }, { f0: 231, tract: 0.79 },
-];
+/** How someone grunts: a long effort climbing through the ball, or one short clipped bark. */
+export const GRUNT_LONG = 0, GRUNT_CLIPPED = 1;
 
 /**
- * A grunt with a shot (`effort` 0..1). Players exhale through hard strokes; past a point it is voiced, short,
- * pitched up by the effort and falling ("hah", "uh"). Light efforts are only breath. Shouts and grunts carry more
- * sound power in real padel than the impacts do (Piana et al.: +1.9 dB(A) overall with them), so they matter in the
- * mix, but the game keeps them a step under the racket.
+ * The players' voices, four men's then four women's (data/people.json gives each person one). A grunt is not the
+ * speaking voice: Raine, Pisanski & Reby 2017 measured professional grunts at three times speaking pitch, men 297 Hz
+ * and women 574 Hz on serves with very little overlap, and speaking pitch, age and size predict nothing of it. `f0`
+ * here is the forehand's grunt, a little under the top of those players' range (312 and 616 Hz). The tract is still
+ * the speaker's: a woman's about 15% shorter.
  */
-export function grunt(rng: Rng, v: VoiceSpec, effort: number): Float32Array {
+export const PLAYER_VOICES: (VoiceSpec & { style: number })[] = [
+  { f0: 300, tract: 1.0, style: GRUNT_LONG }, { f0: 315, tract: 0.95, style: GRUNT_CLIPPED },
+  { f0: 285, tract: 1.05, style: GRUNT_LONG }, { f0: 330, tract: 0.93, style: GRUNT_CLIPPED },
+  { f0: 590, tract: 0.85, style: GRUNT_LONG }, { f0: 625, tract: 0.81, style: GRUNT_CLIPPED },
+  { f0: 555, tract: 0.89, style: GRUNT_LONG }, { f0: 660, tract: 0.79, style: GRUNT_CLIPPED },
+];
+
+/** The study's pitch by shot against the forehand's: males 325.0 on the serve, 297.5 on the backhand, 311.8 here. */
+export const GRUNT_SERVE = 1.042, GRUNT_BACKHAND = 0.954;
+
+/**
+ * A grunt with a shot (`effort` 0..1), from a voice of PLAYER_VOICES. Players exhale through hard strokes; past a
+ * point it is voiced and strained, higher with the effort. Light efforts are mostly breath. GRUNT_LONG opens from
+ * "uh" to "ah" and climbs for over half its length, a third of a second to over half of one. GRUNT_CLIPPED starts on
+ * the glottis at the top of its pitch and falls, stopped dead in under a fifth of a second. Only the mean pitch is
+ * measured: the two shapes and lengths are reasoned. Shouts and grunts carry more sound power in real padel than the
+ * impacts do (Piana et al.: +1.9 dB(A) overall with them), so they matter in the mix, but the game keeps them a step
+ * under the racket.
+ */
+export function grunt(rng: Rng, v: VoiceSpec & { style: number }, effort: number): Float32Array {
   const e = clamp01(effort);
-  const len = 0.11 + 0.22 * e * rng.range(0.8, 1.2);
+  const top = 0.9 + 0.2 * e;
+  const breath = e < 0.3 ? 0.9 : 0.12 + 0.3 * (1 - e);
+  const amp = 0.25 + 0.75 * e, rough = e < 0.3 ? 0 : 0.35 * e;
+  if (v.style === GRUNT_LONG) {
+    const len = (0.26 + 0.3 * e) * rng.range(0.9, 1.1);
+    const out = buf(len + 0.05, LO_SR);
+    const peak = rng.range(0.55, 0.68);
+    vocal(out, rng, 0.004, len, v, 'uh', e > 0.5 ? 'ah' : 'uh',
+      (u) => top * (u < peak ? 0.84 + (0.3 * u) / peak : 1.14 - (0.26 * (u - peak)) / (1 - peak)), breath, amp, 0.04, 0.12, LO_SR, rough);
+    dcBlock(out, LO_SR);
+    return fadeTail(out, 0.02, LO_SR);
+  }
+  const len = (0.1 + 0.1 * e) * rng.range(0.9, 1.1);
   const out = buf(len + 0.05, LO_SR);
-  const rise = 1 + 0.45 * e;
-  const fall = rng.range(0.18, 0.3);
-  const vowels = e > 0.7 ? ['ah', 'uh'] : ['uh', 'uh'];
-  const breath = e < 0.3 ? 0.95 : 0.25 + 0.3 * (1 - e);
-  vocal(out, rng, 0.004, len, v, vowels[0]!, vowels[1]!, (u) => rise * (1 + 0.06 * Math.min(1, u * 8) - fall * u), breath,
-    0.25 + 0.75 * e, e > 0.6 ? 0.008 : 0.03, 0.06 + 0.04 * e);
+  vocal(out, rng, 0.004, len, v, e > 0.5 ? 'ah' : 'uh', 'uh', (u) => top * (1.1 - 0.2 * u), breath, amp, 0.004, 0.018, LO_SR, rough);
   dcBlock(out, LO_SR);
   return fadeTail(out, 0.02, LO_SR);
 }

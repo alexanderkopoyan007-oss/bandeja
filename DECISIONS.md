@@ -3325,3 +3325,26 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 **The serve's end stops short.** .27 m in front reached more of the footage's fold and put the racket into the chest on p7, p9 and p10. The body's limit won: .3 m.
 
 **Numbers.** REVIEW.md Round 17.
+
+## Round 18: the owner's grunts, the generated people on court, the real sound output (2026-11-02)
+
+- **The owner asked for two named players' grunts. No recording of them is used.** A clip cut from broadcast footage is
+  someone else's copyright and that player's own voice, in a public game whose rule is no real players and CC0 assets only.
+  Two grunts are generated in code in the same broad manners, a long rising one and a short clipped one. Neither copies a
+  recording, and no name is attached to either anywhere in the repository or the build.
+- **Pitch comes from the study, not from the speaking voice.** Raine, Pisanski & Reby 2017: men 297 Hz and women 574 Hz on
+  serves, three times speaking pitch. Ours were at 135-200 and 230-330. Evidence and what is still reasoned:
+  `docs/research/sound.md` section 8.
+- **A voice goes with the person** (`data/people.json` `voice`, `Cast.voices`), not the seat, so a person sounds the same in
+  every match. The chance of a grunt goes with the way of grunting, not the seat: seat 3 used to grunt at 0.35.
+- **The generated people are dealt first, and never twice on a court.** Three exist, two men and one woman. A men's match has
+  both men, the player's own place and the far side's, one to a team. A women's match has the one woman in the player's own
+  place. The other seats are MPFB people. Filling the court by repeating them was rejected: Round 4's critic called out the
+  same men under new names. Filling every seat needs two more men and three more women, which costs Meshy credits, so it is
+  the owner's call. The odds of a women's match are unchanged.
+- **The audio clock.** Every earlier "audio on" run had a clock standing still, so `tools/perf.mjs` now passes
+  `--disable-audio-output`, and frame rates from here on carry real audio. Old and new frame rates aren't like for like.
+- **Footsteps under 0.15 m/s are silent.** A third of all landings were standing players' stances settling.
+- **Glass level left alone.** The 3 dB shortfall on Wadman's reading compares unknown speeds; at the top bins it was reasoned
+  at +0.5 dB, and it is now about +1 dB.
+
