@@ -336,3 +336,21 @@ That found one fault nothing had: a third of all footsteps came from standing pl
 
 Racket and glass moved against Wadman's curves too: rms miss 3.2 to 2.1 dB and 4.4 to 2.9 dB. The worst bands: racket 2.5 kHz
 -8 to -3, glass 2 kHz -9 to -7, 125 Hz +5 to +3.
+
+Read from that output, 60 s of AI play, same seed:
+
+| Measure | Stadium before | Stadium after | Club before | Club after |
+|---|---|---|---|---|
+| Peak (dBFS) | -1.7 | -2.1 | -1.5 | -0.5 |
+| Moments over the limiter's -2 dBFS | | 0 | 3 | 7 |
+| LAeq | -38.4 | -38.2 | -39.5 | -37.5 |
+| Between hits, LAeq | -51.5 | -51.5 | -52.8 | -51.1 |
+| Racket alone, median LAFmax | -34.3 | -35.3 | -33.4 | -32.4 |
+| Footsteps a second | 11.3 | 7.5 | 11.5 | 7.5 |
+| Grunts in the minute | 4 | 10 | 3 | 12 |
+
+The grunts' own pitch in that output: mostly 330-375 Hz for men, with a few reading at 200-240 where the racket's tail or a
+sub-octave beat the voice. The stadium's "before" column is the build before this section's racket and glass changes, with the
+new grunts' pitch not yet in; the rest are 1d275f7 against e318742. The limiter works a little more at the club, on hits at the
+near baseline closest to the camera: under 1.5 dB, for milliseconds, and nothing reaches full scale.
+
