@@ -782,6 +782,27 @@ Two Highs, both confirmed by the sceptic and both fixed: a key pressed during a 
 | Women, 6000 points | 11.3, 15.7, 36.2/26.0/37.9 | 11.2, 15.4, 36.1/25.6/38.3 |
 | Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
 
+### Review round 21 (2 Nov, `REVIEW.md`)
+Nothing stood at High: the sceptic marked all three down to Medium. The round fixed them anyway, and reversed faults Round 20 had caused, including an inverted stereo correction and a claim about the víbora that was false.
+
+| Round 21 | Before | After |
+|---|---|---|
+| Slice return down the middle: winners | 13.7% | 0.3 |
+| Late run key on a víbora: points won | 64.8% | 69.0 |
+| A late key's cost, points | 6.5 | 5.7 |
+| Target within 0.5 m, key landing with the shot: lob / slice / pass | dead | 97 / 98 / 94 |
+| One-foot hang at 2.5+ m/s, p50, p1 | .34 s | .27 |
+| Serve's dip | 6.9 cm | 3.5 |
+| Forehand wrist at +.05 s | 4.0 m/s | 5.0 |
+| Free forearm in the flank, run frames, p1 | 15-18% | 7.6 |
+| Pops a minute, twelve fresh seeds | 15.1 | 15.0 |
+| Stadium / club, LUFS | -25.8 / -26.4 | -24.4 / -26.1 |
+| Match, 6000 points: shots, s, W/FE/UE | 10.1, 13.3, 44.1/22.4/33.4 | 10.2, 13.5, 41.1/24.9/34.0 |
+| Women, 6000 points | 11.2, 15.4, 36.1/25.6/38.3 | 11.0, 15.2, 33.5/28.5/38.0 |
+| Frame p50/p99, none over 20 ms | 8.3/8.3 | 8.3/8.3 |
+
+Round 20's pops line above was read on seeds I'd tuned on. On fresh seeds it is 15.1.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

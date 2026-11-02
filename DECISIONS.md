@@ -3375,9 +3375,19 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 ## Round 20: a key is the run's only as it lands, and the legs don't wait for the arms (2026-11-02)
 
 - **After the chord every key aims.** Round 19 asked what a key pointed at. The better question was when it went down: holding a shot key hands the running to the game, so a key pressed later can't be a run key. Dropping the rule altogether was tried, and a run key landing with the overhead then won 60.4% against 65.9, so the chord stays. A key that lands inside 80 ms pointing at the spot still does nothing. That is the one case where the game has to guess.
-- **A wrong reading has to be cheap.** A smash can't be pulled in past its full-pace landing and the other overheads stop at 4 m, so a late run key costs depth, not the shot. Precision still goes to the lines.
+- **A wrong reading has to be cheap.** A smash can't be pulled in past its full-pace landing and the other overheads stop at 4 m, so a late run key costs depth, not the shot. Precision still goes to the lines. (Round 21: on a víbora Precision switched this off, so a late key could still wreck it.)
 - **The legs leave the stroke at 0.08 s.** The arms finish the swing on a body already on its way. Waiting for the follow-through gave the first half second of every recovery to the clip's legs.
 - **Past the spine's limit the chest moves, not the hips.** Holding the hips to the chest doubled the crab run. In a run the limit now turns the chest. Outside a run the old clamp stands, because the stroke's chest has to be where the keys put it.
 - **Speed carries through the contact.** A rate limit from a standing start is a corner, so reach and drop now rise to it at 25 m/s². Before the ball the limit stands as it was, because the reach must be whole by the contact.
 - **Lean sits high in the spine.** 15/35/50 from the waist. Tipping the pelvis was tried as the truer answer and opened more holes in the kit.
 - **The bed went down, not the ball up.** Round 19's high-pass moved the bed's power into hearing and kept its rms. The cut leaves the stadium at -25.8 LUFS, under TV's -24, and no lift was added back to chase it.
+
+## Round 21: every shot has its own stop, and a partner covers what the taker gives up (2026-11-02)
+
+- **Stops by shot.** One short stop treated a lob and a volley alike. Lob 5.5 m, volley 2, ground stroke 3.5, overhead 4, with a smash at its full-pace landing, and these now hold under Precision on overheads. A wrong reading should cost depth, on every shot.
+- **The chord is for overheads only.** Only there are you heading for a spot while the key is down, and it still wins 67.9% with a run key landing on the shot. On a ground stroke a key landing with the shot now aims, because a held key there has nothing to run to.
+- **Whose key it is.** A key already down when the shot key goes down stays the run's until you let it go. On an overhead, a key landing within `STEER_CHORD` pointing at the spot is the run's too. Any later key aims.
+- **Covering is a second plan, not a handover alone.** Handing the ball over changed nothing: the server's claim was out of time as he ran on at 3 m/s. The partner now plans a stand of their own for a ball the taker can't reach, latched by prediction version so it doesn't flicker, because flicker raised pops past 30.
+- **The width law is shared code.** The inverted ratio survived because nothing tested it and the live engine and the offline chain each had their own. They now call one function in `bank.ts`.
+- **A star point isn't louder.** The tension bed from the first shot had no source. The hush is what a crowd demonstrably does, so that stays and the swell goes.
+- **Pops are read on fresh seeds.** The eight tuned seeds flattered Round 20. Twelve fresh seeds are the comparison now.

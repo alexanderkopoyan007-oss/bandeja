@@ -384,5 +384,13 @@ Left and right at the hit, width 3, stadium and hall: x 1-3 near +2.4 dB, far +1
 - **The bed.** `rms.hall` -46 to -52. Round 19's 70 Hz floor moved its power into hearing, and 40-160 Hz is about half of it. A hit stood 11 dB over it, and the far glass about 5. The hushed-arena comparison is from memory, so the cut is an estimate.
 - **The crowd.** It now talks through the walk back and hushes when the set-up opens. Between points it reads about -33 LAeq in the stadium, which is why the capture's "bed" went up while the air handling came down.
 - **The Crowd slider** now reaches the reverb send, which it missed before.
-- **Width** no longer costs level at the sides. The panner keeps its position, and the voice's gain makes up the difference from the true distance.
+- **Width** no longer costs level at the sides. The panner keeps its position, and the voice's gain makes up the difference from the true distance. (Round 21: this was inverted and did the opposite. See section 11.)
 - **Level.** Stadium -25.8 LUFS, peak -1.1. Club -26.4, peak -1.7. Nobody has listened.
+
+## 11. Round 21 (2 Nov)
+
+- **Width, corrected.** Round 20's ratio was upside down, so the sides lost level instead of keeping it. The law is `widthLevel` in `bank.ts`, used by the engine and the offline chain, and a test holds it. It applies to ball and player sounds. Next courts and birds were level-matched at the widened distance and stay there.
+- **Sends.** A voice moved to the Crowd bus now sends through the crowd's reverb gain, so the slider reaches next courts' reverb too.
+- **Star points.** The swell from the first shot is gone. It had no source.
+- **Between two serves.** The hush holds through a first-serve fault and a let, so the crowd doesn't talk up and hush again in a second.
+- **Level.** Stadium -24.4 LUFS, peak -0.4. Club -26.1, peak -1.1. The ball at the sides is what moved it. Nobody has listened.
