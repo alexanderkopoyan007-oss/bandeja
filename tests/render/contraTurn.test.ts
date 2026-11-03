@@ -9,15 +9,19 @@ import { mannequinWithPeople } from './people.ts';
 describe('the turn back after a contrapared', () => {
   const p = mannequinWithPeople().people[0]!;
   const yaws: number[][] = [[], [], [], []], faces: number[][] = [[], [], [], []], times: number[] = [], contras: Array<{ i: number; k: number }> = [];
-  let seq = 0;
-  runAnimQa(p, { seed: 7, seconds: 600, lefty: [], onFrame: (m, av) => {
-    times.push(m.time);
-    av.forEach((raw, i) => { yaws[i]!.push((raw as unknown as { yaw: number }).yaw); faces[i]!.push(m.players[i]!.facing); });
-    for (; seq < m.eventSeq; seq++) {
-      const e = m.events[seq % m.events.length]!;
-      if (e.kind === E_HIT && e.a === SHOT_CONTRAPARED) contras.push({ i: e.player, k: times.length - 1 });
-    }
-  } });
+  // (two seeds, one after the other in the same arrays: a contrapared comes a few times in ten minutes, and seed 7 alone had none once the
+  // defenders read close overheads, and seeds 7 and 8 two; a window across the join holds no contrapared)
+  for (const seed of [7, 8, 11]) {
+    let seq = 0;
+    runAnimQa(p, { seed, seconds: 600, lefty: [], onFrame: (m, av) => {
+      times.push(m.time);
+      av.forEach((raw, i) => { yaws[i]!.push((raw as unknown as { yaw: number }).yaw); faces[i]!.push(m.players[i]!.facing); });
+      for (; seq < m.eventSeq; seq++) {
+        const e = m.events[seq % m.events.length]!;
+        if (e.kind === E_HIT && e.a === SHOT_CONTRAPARED) contras.push({ i: e.player, k: times.length - 1 });
+      }
+    } });
+  }
 
   it('turns at most 135 degrees in any third of a second in the second after one', () => {
     const worstOf = (src: number[][]): number => {
@@ -36,7 +40,7 @@ describe('the turn back after a contrapared', () => {
     return worst;
     };
     const worst = worstOf(yaws);
-    // (the sim's own facing, which chases the ball back over them, turned 137 in the worst third of a second here; drawn, 204 before)
+    // (the sim's own facing, which chases the ball back over them, turned 137 in the worst third of a second; drawn, 204 before and 108 now, over 5 contrapareds on three seeds)
     expect(worstOf(faces)).toBeLessThan(180);
     expect(contras.length).toBeGreaterThan(3);
     expect(worst).toBeLessThan(135);
