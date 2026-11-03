@@ -268,6 +268,8 @@ function nlerpQ(a: THREE.Quaternion, b: THREE.Quaternion, prev: THREE.Quaternion
 type Elbow = HingeLimb & { dir: THREE.Vector3 };
 /** How fast an elbow's side may swing round the shoulder-to-hand line (rad/s): the shoulder's rotation speed limit. */
 const ELBOW_SIDE_RATE = (1500 * Math.PI) / 180;
+/** The racket elbow's out of a stroke, and how long after the ball (s) the stroke's own pace lasts. */
+const ELBOW_SIDE_CALM = (500 * Math.PI) / 180, ELBOW_SIDE_FAST_AFTER = 0.12;
 /**
  * How fast an elbow may bend or straighten (rad/s): 1.8x the forearm's peak in a serve (LIMITS, 2050 deg/s), so
  * no swing comes near it and it stops only the jumps (80-99 degrees in a frame; at 1.25x a human's late serve met
@@ -2487,6 +2489,17 @@ export class Avatar {
     normalize(acc);
   }
 
+  /**
+   * How far the racket elbow's side may swing round the shoulder-to-hand line this frame: at a stroke's pace into the ball and just after
+   * it, at ELBOW_SIDE_CALM after that. At the stroke's pace all the time, the elbow flew round a still hand on the way back to the ready,
+   * 0.14 m or more in 0.1 s after a quarter to a half of forehand volleys (review round 33, #9).
+   */
+  private racketSideLimit(): number {
+    if (this.dt <= 0) return Math.PI;
+    const fast = this.st === ST_PREP || (this.st === ST_SWING && this.lastT < this.tCon + ELBOW_SIDE_FAST_AFTER);
+    return (fast ? ELBOW_SIDE_RATE : ELBOW_SIDE_CALM) * this.dt;
+  }
+
   /** The tilt's spring on this frame's acceleration (LEAN_*). */
   private carryWeight(): void {
     const dt = this.dt;
@@ -4327,7 +4340,9 @@ export class Avatar {
     this.elbowRacket.side.copy(this.side0);
     this.elbowRacket.bend[0] = this.bend0;
     this.keepOff(ua, this.tgt, this.elbowRacket.dir);
+    IK_TURN[0] = this.racketSideLimit();
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
+    IK_TURN[0] = this.dt > 0 ? ELBOW_SIDE_RATE * this.dt : Math.PI;
     setWorldQuat(hand, q3);
     hand.updateMatrixWorld(true);
   }
@@ -4816,7 +4831,9 @@ export class Avatar {
     this.tgt.x += co.x; this.tgt.y += co.y; this.tgt.z += co.z;
     this.outOfTrunk(this.tgt);
     this.elbowOut(this.armRacket, this.tgt, this.pole);
+    IK_TURN[0] = this.racketSideLimit();
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
+    IK_TURN[0] = this.dt > 0 ? ELBOW_SIDE_RATE * this.dt : Math.PI;
     this.wristLimit(fa, hand, before ? Math.min(1, sLeft) : smoothstep(0, WRIST_AFTER, this.lastT - this.tCon));
     setWorldQuat(hand, q3);
     hand.updateMatrixWorld(true);
