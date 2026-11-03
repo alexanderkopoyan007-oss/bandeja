@@ -277,11 +277,13 @@ export class Hud {
       return cap(code ? keyName(code) : '–');
     };
     const pw = c('power'), pr = c('precision'), lr = `${c('left')}/${c('right')}`;
+    // (the key picks the serve, and nothing said so: the first key named was the weakest, 66% of serve points against 71-73; review round 26)
+    const kinds = `${c('drive')} serves flat, ${c('topspin')} with topspin, any other with slice`;
     const how = tap
       ? 'Tap a shot key as the ball comes: you run to the ball, a movement key pressed then aims the target, and the swing goes at the right moment by itself<br>'
-        + `Serve: ${lr} aims, tap a shot key to drop the ball; it is hit for you<br>`
+        + `Serve: ${lr} aims, tap a shot key to drop the ball; it is hit for you. ${kinds}<br>`
       : 'Hold a shot key as the ball comes: your player runs to the ball, and a movement key pressed then aims the target<br>'
-        + `Release when the closing ring meets the ring on the ball. Serve: ${lr} aims, press to drop, release to hit<br>`;
+        + `Release when the closing ring meets the ring on the ball. Serve: ${lr} aims, press to drop, release to hit. ${kinds}<br>`;
     this.help.innerHTML =
       `${c('up')}${c('left')}${c('down')}${c('right')} move &nbsp; ${c('drive')} drive &nbsp; ${c('topspin')} topspin (with ${pr} a chiquita) &nbsp; ${c('slice')} slice &nbsp; ${c('lob')} lob &nbsp; ${c('drop')} drop<br>`
       + `${c('overhead')} overhead for lobs: a bandeja; with ${pw} a smash that can leave the court; with ${pr} a víbora<br>`
