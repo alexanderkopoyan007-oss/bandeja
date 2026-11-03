@@ -611,6 +611,8 @@ const BOW_ANGLE = 0.62;
 const TAP_HOLD = 0.75;
 /** How fast the body turns back from its own glass after a contrapared (rad/s): 180 degrees in 0.57 s, a pivot on the spot. */
 const GLASS_BACK = 5.5;
+/** How long a server takes to turn side-on into the address (s, eased in and out): 68 degrees at the hips, begun as they stand at their place. */
+const ADDR_TURN_S = 1.2;
 /** When into the tap the rackets touch (s; the pose is nine-tenths there), and at what height (m). */
 const TAP_TOUCH = 0.3, TAP_TOUCH_Y = 1.3;
 const TAP_TURN = 0.8;
@@ -1186,6 +1188,8 @@ export class Avatar {
   private readonly addrKey: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   /** The address's share of the ready pose (eased: at the serve's contact the address hands over to the ready pose). */
   private addrW = 0;
+  /** How far the body has turned side-on into the address (0 to 1, at ADDR_TURN_S; the hands go at addrW's pace). */
+  private addrTurn = 0;
   private placedW = 1;
   /** The chest's turn from square this frame (hips and spine together, rad). */
   private chestTurn = 0;
@@ -2549,6 +2553,11 @@ export class Avatar {
     if (want < CARRY_W * this.carryW) want = CARRY_W * this.carryW;
     this.ready += (want - this.ready) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.18) : 0);
     this.addrW += ((this.addr ? 1 : 0) - this.addrW) * (cut ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.1) : 0);
+    // The body turns side-on at a person's pace, from the moment the server stands at their place while the others walk in. It came with
+    // the hands, 83 degrees at the chest in 0.38 s, every serve, as the walk ended (review round 34, #4). Out of it with the hands.
+    const hx = sim.walkHomeX[idx]! - p.pos.x, hz = sim.walkHomeZ[idx]! - p.pos.z;
+    const addrTo = this.addr || (sim.walking === 2 && sim.score.serverPlayer() === idx && hx * hx + hz * hz < WALK_NEAR0 * WALK_NEAR0 && this.vx * this.vx + this.vz * this.vz < WALK_GAIT_V * WALK_GAIT_V);
+    this.addrTurn = cut ? (addrTo ? 1 : 0) : addrTo ? Math.min(1, this.addrTurn + dt / ADDR_TURN_S) : Math.min(this.addrTurn, this.addrW);
     // (the ball stays in the hand as the hand comes up, by the first moment the serve can go: at addrW's 0.1 s it left the palm by 0.4 m at the end of a walk)
     this.placedW = sim.phase === PH_SETUP ? smoothstep(0, SETUP_HOLD, sim.time - (sim.phaseUntil - SETUP_HOLD)) : 1;
     this.mixReady();
@@ -2558,7 +2567,8 @@ export class Avatar {
     else this.outCarry.set(0, 0, 0, 0);
     if (this.tapW > 0.001) this.mixKey(this.tapMix, this.tapKey ?? (this.handed > 0 ? TAP : TAP_LEFT), this.tapW, this.outTap);
     else this.outTap.set(0, 0, 0, 0);
-    const sq = Math.max(this.w, this.ready * this.addrW);
+    // (held on the net from then too: the sim turns the server 48 degrees as the walk ends, and the hands' 0.1 s let 15 of it through and back)
+    const sq = Math.max(this.w, this.ready * (addrTo ? 1 : this.addrW));
     // (a contrapared is played facing the player's own back glass: while it's being played, as the family stays set after it, and a server whose last ball of the
     // point was one turned to their own glass to serve, 180 degrees in 0.3 s; review round 33)
     let yaw = p.facing + wrapAngle(net - p.facing) * sq;
@@ -2663,8 +2673,10 @@ export class Avatar {
       this.finishU = this.finishTo >= this.finishU && this.finishTo > 0 ? this.finishTo : d < -r ? this.finishU - r : this.finishTo;
     }
     this.wall += (this.wallWant - this.wall) * (dt > 0 ? 1 - Math.exp(-dt / WALL_EASE) : 0);
-    const turn = this.kyaw * this.w + this.readyKey.yaw * this.ready * (1 - this.w);
-    const btTo = this.w > 0.01 ? this.fam.bodyTurn ?? BODY_TURN : this.addr ? SERVE_TURN_SHARE : BODY_TURN;
+    // (the address's turn at its own pace, addrTurn, not the hands')
+    const at = smoothstep(0, 1, this.addrTurn), rk = this.readyFit;
+    const turn = this.kyaw * this.w + (rk.yaw + (this.addrKey.yaw - rk.yaw) * at) * this.ready * (1 - this.w);
+    const btTo = this.w > 0.01 ? this.fam.bodyTurn ?? BODY_TURN : BODY_TURN + (SERVE_TURN_SHARE - BODY_TURN) * at;
     this.bt += (btTo - this.bt) * (dt > 0 && !cut ? 1 - Math.exp(-dt / 0.12) : 1);
     // No faster than a body turns: the turn away from a wall changes sides with the stroke's hand (the hips 77° in a
     // frame on a monkey's change of hand beside the glass).
