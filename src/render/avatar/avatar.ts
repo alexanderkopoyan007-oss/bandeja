@@ -636,19 +636,21 @@ const WALK_CADENCE = 0.4;
  * both feet down and WALK_SWAY over the foot that is down, and each arm swings WALK_ARM against its leg. Below
  * WALK_GAIT_V (m/s) it stands. They turn at up to WALK_TURN_RATE (rad/s) to where they are going (the sim's facing stays
  * on the net), back to the net from WALK_NEAR1 m off their place to WALK_NEAR0, and it fades in and out over WALK_IN s.
+ * (The hips at 0.96 of the leg and a step a leg long held a knee straight in 55% of walk frames, a stroll on locked knees; review
+ * round 32, #10. Now 19%, the swing leg folding 58 degrees at the median.)
  */
 const WALK_STANCE = 0.6;
 const WALK_AHEAD = 0.85;
 const WALK_REACH = 0.75;
 const WALK_HEEL = 0.3;
 const WALK_ROLL = 0.62;
-const WALK_STEP = 1;
+const WALK_STEP = 0.85;
 const WALK_HZ0 = 0.6;
 const WALK_HZ1 = 1.25;
 const WALK_CLEAR = 0.03;
 const WALK_WIDTH = 0.95;
 const WALK_TOE = 0.1;
-const WALK_HIP = 0.96;
+const WALK_HIP = 0.92;
 const WALK_BOB = 0.04;
 const WALK_SWAY = 0.02;
 const WALK_ARM = 0.13;
