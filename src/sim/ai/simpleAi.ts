@@ -7,7 +7,7 @@ import type { MatchSim } from '../match.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_OVERHEAD, BTN_POWER, BTN_PRECISION } from '../input.ts';
 import { abs, clamp, floor, max, min, sqrt } from '../core/smath.ts';
 import { DT, ROUTINE_SECS } from '../core/constants.ts';
-import { PF_FLOOR, type Prediction } from '../ball/predict.ts';
+import { PF_EXIT, PF_FLOOR, PF_NET, PF_WALL, type Prediction } from '../ball/predict.ts';
 import { findWindows, makeWindows, OH_ANY, OH_BANDEJA, OH_SMASH, OH_VIBORA } from '../contact/windows.ts';
 import { holdBack, holdShort, makeStandPlan, offGlassHigh, planStand, BAJADA_ABOVE, BAJADA_DEPTH, DODGE, type Hold, type StandPlan } from '../player/positioning.ts';
 import { smashLanding } from '../contact/smashAim.ts';
@@ -672,6 +672,31 @@ export class SimpleAi {
   private readZ = 0;
   /** When the planned ball reaches the glass on our side; negative if it is played before any glass. */
   private glassT = -1;
+  /** The strike whose ball was read for going out, and how high on our glass it has to land to be read so (m). */
+  private outFor = -1;
+  private outAbove = 0;
+
+  /**
+   * The ball hits our glass or mesh, or leaves over it, before it bounces: out, so whoever touches it first loses the point. Read as
+   * out when it meets the wall above `outAbove`, drawn once a strike round OUT_ABOVE, more loosely at lower levels. Nobody let a ball
+   * go: the net player played three in four of them in reach and gave back 1.6 points in 100 (review round 34, #1).
+   */
+  private goingOut(m: MatchSim, contactT: number): boolean {
+    const pr = m.pred, s = m.side(this.team);
+    if (m.rally.isServe || pr.n === 0 || pr.bounces[0]! > 0) return false;
+    for (let i = 1; i < pr.n; i++) {
+      const f = pr.flags[i]!;
+      if ((f & (PF_FLOOR | PF_NET)) !== 0) return false;
+      if ((f & (PF_WALL | PF_EXIT)) === 0 || pr.z[i]! * s <= 0) continue;
+      if (pr.t[i]! < contactT) return false;
+      if (this.outFor !== pr.strikeT) {
+        this.outFor = pr.strikeT;
+        this.outAbove = OUT_ABOVE + m.aiRng.normal() * OUT_READ * (1.2 - this.level);
+      }
+      return (f & PF_EXIT) !== 0 || pr.y[i]! > this.outAbove;
+    }
+    return false;
+  }
 
   private plan(m: MatchSim): void {
     const pr = m.pred;
@@ -719,6 +744,8 @@ export class SimpleAi {
       // back over the net by itself, as a real kick smash does).
       else if (k === CLIMBS && !st.inTime) { this.planned = false; this.contra = false; return; }
     }
+    // Out on the full into our glass or over it: let it go, if we read it so and it isn't coming at us where we stand.
+    if (!st.afterWall && p.swing !== SW_CHARGE && m.bodyHitIdx(this.index, s) < 0 && this.goingOut(m, st.t)) { this.planned = false; this.contra = false; return; }
     this.overhead = overhead;
     // (a held swing follows the plan too: the sim judges its release against the windows of the kind planned now)
     this.contra = !overhead && st.contra;
@@ -1190,7 +1217,7 @@ export class SimpleAi {
       // Deep enough to get over and behind the net player, short of the back glass on the full: real lobs land
       // anywhere from about 5.5 m (good) to 8.6 m (excellent) from the net (Ramón-Llin et al. 2019).
       x = lobX(m.players[this.index]!.pos.x, (rng.next() < 0.5 ? -1 : 1) * spread * (0.3 + 0.5 * rng.next()));
-      depth = min(8.2, c.halfL - 1.8 - 0.6 * (1 - this.level)) - 1.2 * rng.next();
+      depth = min(LOB_DEEPEST, c.halfL - LOB_GLASS - LOB_GLASS_LOW * (1 - this.level)) - (LOB_SPREAD - LOB_SPREAD_TOP * this.level) * rng.next();
     } else if (this.shot === SHOT_DROP) {
       x = (a.pos.x + b.pos.x) * 0.5 + rng.normal() * 1.2;
       depth = 1.8;
@@ -1259,6 +1286,10 @@ export class SimpleAi {
  * the ball reaches the glass (s) they go on with it. Read exactly, nothing that went through the glass ever beat a
  * defender: bandeja + víbora 1.6% of winners (12.7), smash 55 (43), 11.6 shots (10-11). */
 const READ_ERR = 0.65;
+/** goingOut: a ball meeting our glass on the full above this is read as out (m), with a misread of OUT_READ × (1.2 - level) (m, one
+ *  sigma). Judgement: no source gives how often pros leave one, only that they do. What's still played meets the glass 3-30 cm up,
+ *  a ball landing on the line to anyone's eye; before this rule the AI played 15% of out-bound balls and won 56% of those points. */
+const OUT_ABOVE = 0.3, OUT_READ = 0.35;
 const READ_LAG = 0.12;
 /** The ball's speed (m/s) and spin (rad/s) between which that error comes in: 50-70 km/h, 900-1300 rpm. Volleys (45 km/h,
  * 660 rpm) and slow slices are read; a bandeja (70, 1300) or a víbora (79, 2150) isn't. A smash carries too little spin
@@ -1320,6 +1351,13 @@ function offGlassLow(pr: Prediction, side: number, halfL: number): number {
 }
 const CLIMBS = -2;
 
+/** A doubles lob's aim, from the net (m): up to LOB_DEEPEST and LOB_GLASS (+ LOB_GLASS_LOW at level 0) short of the back glass, less
+ * up to LOB_SPREAD (LOB_SPREAD_TOP less at the top level): 7.4-8.4 m at the top level, 6.4-7.6 at level 0 as before. Review round 33
+ * (the pro's #5) found a third of the AI's lobs inside the service line against a tight hand. Aimed at "excellent" depth (an overhead met
+ * 8.61 ± 0.37 m out, Ramón-Llin et al. 2019) AI doubles lost a third of its smashes (in 25.7% of points, WPT 37-41) and errors rose to
+ * 36%; this half way, over 3000 points, is nearer the pros than before on smash winners (42.3 v 51.8, pros 43) and the serving pair
+ * (63.9 v 65.3, pros 62), with short lobs 2.7% from 3.3% and the overhead met 6.41 m out from 6.26. */
+const LOB_DEEPEST = 8.4, LOB_GLASS = 1.6, LOB_GLASS_LOW = 0.8, LOB_SPREAD = 1.2, LOB_SPREAD_TOP = 0.2;
 /** A lob's landing x, kept so that its line crosses the net near the middle (the hitter at `from`). */
 function lobX(from: number, x: number): number {
   return clamp(x, -2 * LOB_NET_X - from, 2 * LOB_NET_X - from);
