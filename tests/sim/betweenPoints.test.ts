@@ -59,8 +59,9 @@ describe('the walk back', () => {
       if (m.walking > 0 && m.walking < 3 && was === 0) walks++;
       m.players.forEach((p, i) => {
         const d = Math.abs(Math.atan2(Math.sin(p.facing - f0[i]!), Math.cos(p.facing - f0[i]!)));
-        // (but the cut at a change of ends, where they come on from the post on the other side)
-        if (was !== 3 && ((m.walking > 0 && m.walking < 3) || was > 0)) most = Math.max(most, d);
+        // (but the cut at a change of ends, where they come on from the post on the other side, and the walk's first tick, which
+        // ends the dead time: a player turning there at its 7 rad/s, 0.058 a tick, went on for that one tick on seed 5602)
+        if (was > 0 && was < 3) most = Math.max(most, d);
         f0[i] = p.facing;
       });
       was = m.walking;
