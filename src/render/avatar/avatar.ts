@@ -574,6 +574,8 @@ const READY_TURN_MAX = 1.6;
 const READY_TURN_EASE = 0.09;
 /** A run's free hand from its shoulder, in arm's lengths: out, up the trunk, forward, and its swing fore and aft. */
 const RUN_HAND_OUT = 0.16, RUN_HAND_UP = -0.56, RUN_HAND_FWD = 0.22, RUN_HAND_SWING = 0.3;
+/** And its elbow's pole, straight behind the shoulder and this far down (arm's lengths, for each one back). */
+const RUN_POLE_DOWN = 0.3;
 /** An ankle's range from flat on a square shin, up and pointed (rad). */
 const ANKLE_UP = (34 * Math.PI) / 180, ANKLE_DOWN = (50 * Math.PI) / 180;
 /** How far (m) a volley's way out bows on through the ball. */
@@ -4830,6 +4832,7 @@ export class Avatar {
     // with the shoulder (a low slice's crouch had brought the shoulder down onto the hand's key).
     const mf = ul.matrixWorld.elements;
     const fx = mf[12]! - this.freeSh.x, fy = mf[13]! - this.freeSh.y, fz = mf[14]! - this.freeSh.z;
+    const runW = this.gaitRun > 0 ? this.gaitW * smoothstep(RUN_V0, RUN_V1, this.sp) : 0;
     if (this.ready > 0) {
       this.toWorld(ready.off, v2);
       v2.x += fx; v2.y += fy; v2.z += fz;
@@ -4840,7 +4843,6 @@ export class Avatar {
       v2.z += this.stanceC * sw;
       // A run's free arm pumps beside the body. From its place in front of the belly it went straight back through the
       // hips, 7% of a run's frames with the forearm inside the pelvis.
-      const runW = this.gaitRun > 0 ? this.gaitW * smoothstep(RUN_V0, RUN_V1, this.sp) : 0;
       if (runW > 0) {
         this.chestAxes(ul, ua);
         const O = this.chestOut, U = this.chestUp, F = this.chestFwd, a = this.armLen, fw = RUN_HAND_FWD - (this.handed * Math.cos(2 * Math.PI * this.gaitPhase) * RUN_HAND_SWING);
@@ -4878,6 +4880,15 @@ export class Avatar {
       bendDir(ul, fl, hl, DOWN, bendF);
       v2.setFromMatrixPosition(fl.matrixWorld).addScaledVector(bendF, 0.5);
       BL.u = 1 - ikF;
+      lerpV(this.pole, v2);
+    }
+    // A run's free elbow is behind the shoulder. Down and back off the chest, the pole lay along the arm with the hand at the back of
+    // the swing, and the elbow swung out like a wing: the upper arm over 45 degrees out in 14% of fast-run frames (review round 33, #9).
+    if (runW > 0 && w < 1) {
+      this.chestAxes(ul, ua);
+      const F = this.chestFwd, U = this.chestUp, a = this.armLen;
+      v2.set(mf[12]! - (F.x + U.x * RUN_POLE_DOWN) * a, mf[13]! - (F.y + U.y * RUN_POLE_DOWN) * a, mf[14]! - (F.z + U.z * RUN_POLE_DOWN) * a);
+      BL.u = runW * this.ready * (1 - w);
       lerpV(this.pole, v2);
     }
     this.chestAxes(ul, ua);
