@@ -3475,3 +3475,13 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **Angles stay continuous where the walk sets them.** `facing` is never wrapped, and the render treats a change of 2*pi as a turn. Any new write to `facing` should add a wrapped difference, not assign.
 - **The render's walk turn unwinds the way it went.** Walking straight back the way reads +180 and -180 on alternate frames. It wasn't the cause of #1, but it would chase the wrong side, so it stays fixed.
 - **The contrapared's facing is the stroke's, not the family's.** The family outlives the stroke.
+
+## Medium and Low findings, first batch (2026-11-03)
+
+The owner: "fix all the small and medium issues". Worked most-important first, alone, to stop at 95% of the week's usage.
+
+- **The AI's lobs land half a metre deeper at the top level, not a metre.** Aimed at 7.4-8.4 m from the net (was 7.0-8.2). Over 3000 points at level 1: smash winners 42.3% (was 51.8, pros 43), serving pair 63.9% (65.3, pros 62), unforced errors 33.1% (32.8, pros 29-33), lobs short of the service line 2.7% of AI lobs (3.3), the overhead met 6.41 m out (6.26). An aim at "excellent" depth (8.6 m, the overhead met 8.61 m out: Ramón-Llin et al. 2019) went too far: smashes in 25.7% of points against WPT's 37-41, and errors 36%.
+- **The AI lets a ball go that meets its glass on the full more than 0.3 m up,** read with an error that grows at lower levels, never when the ball is coming at it. At level 1 it played 57 such balls in 24 matches and won 32 of those points, against 40 and 26 now. What's still played meets the glass 3-30 cm up, a ball on the line to anyone's eye. 0.3 m is judgement: no source gives how often pros leave one.
+- **A person's smash is no steadier than a pro's** (`proMotor`): at a Perfect the spread was half the top level's. It changed little. A stand-in timing within ±20 ms still won 24 sets to 0 against Pro, with smash errors near zero either way, because the smash's margin over the tape does most of the work. How much timing counts for other shots, and Pro's headroom, stay the owner's call.
+- **Partners' racket tap makes a sound:** the softest frame knock, pitched up, once per tap (`Avatar.tapSeq`, `Soundscape.tapOf`, tests/render/racketTap.test.ts). A tap at a change of ends is allowed but seldom happens: partners came within 2.85 m at the nearest in the 2.4 s walk off, so it needs the walk off changed.
+- **Two tests read longer:** the crowd's clapping test over 600 s (17 points gave 8 claps against 8.5), and the walk-turn test from the walk's second tick (the first ends the dead time, where a player turning at 7 rad/s went on for one tick).
