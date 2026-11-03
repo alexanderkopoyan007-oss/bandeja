@@ -86,6 +86,8 @@ All on one Mac, with bots playing, in separate browser windows. Lag and loss are
 | Final build, 4 players, 40 ms, queue, host quits | round trip 129-149 ms, delay 6, deepest 16. New host, AI takes the seat, hashes agree, ticks 1644 to 3364 in 15 s |
 | Final build, 2 players, queue, host quits | the one left plays on, ticks 1648 to 3376 |
 | Final build, 3 players, 80 ms, relayed, last player quits | round trip 246-265 ms, delay 8, deepest 19, longest replay 6.3 ms, hashes agree, ticks 1640 to 3361 |
+| Live site, 3 players, real queue, no fake lag, host quits | round trip 17 ms, delay 3, 28 hashes agree, new host, ticks 1711 to 3421 in 15 s |
+| Live site, 2 players, menus and a typed code, one quits | round trip 17 ms, delay 3, 21 hashes agree, the one left plays on |
 
 Round-trip times read 40 to 60 ms above twice the fake lag.
 
