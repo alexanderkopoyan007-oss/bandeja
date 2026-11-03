@@ -1040,6 +1040,8 @@ export class Avatar {
   private readonly legLen: number;
   /** How far a jump's legs have come in under the body (scissor, AIR_*). */
   private airK = 0;
+  /** How far the legs reach out to AIR_REACH in the air (0 to 1): all of it up to a smash's ball, none once the kick opens. */
+  private airLong = 0;
   /** A run has ended: no new step (held only with a foot up, the frame it landed took the next one, and they stepped on the spot). */
   private gaitStop = false;
   /** ... and with a foot in the air, the gait stays until it's down. */
@@ -3303,6 +3305,7 @@ export class Avatar {
     const back = rear === 1 ? this.footR : this.footL, front = rear === 1 ? this.footL : this.footR;
     const con = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
     this.airK = 0;
+    this.airLong = 0;
     if (this.jumpT0 < 0 || this.jumpT <= 0) {
       const name = rightFamily(this.fam).name;
       if (con >= 0 && (name === 'overhead' || name === 'vibora')) {
@@ -3331,6 +3334,8 @@ export class Avatar {
     const air = 4 * u * (1 - u);
     const lift = this.jumpH * air;
     this.airK = smoothstep(0.02, SCISSOR_FULL, lift);
+    // Long legs up to the ball, let go as the kick opens after it.
+    this.airLong = con < 0 ? 0 : this.airK * (1 - smoothstep(SCISSOR_FROM, SCISSOR_OPEN, this.lastT - con));
     if (lift < 0.02) return;
     const k = Math.min(1, lift / SCISSOR_FULL), kick = k * (con < 0 ? 1 : smoothstep(SCISSOR_FROM, SCISSOR_OPEN, this.lastT - con));
     const fx = this.stanceS, fz = this.stanceC;
@@ -3614,6 +3619,13 @@ export class Avatar {
           A.x = mh[12]! + (gx * far) / d;
           A.y = mh[13]! + (gy * far) / d;
           A.z = mh[14]! + (gz * far) / d;
+        } else if (this.airLong > 0 && d > 1e-3) {
+          // And as long as that at the ball, under the body: the jump clip's crouched legs came up with the lift, knees 42-59 at the hit
+          // against 27 and 23 on the footage (review round 33, #11). No ankle under its standing height.
+          const to = (d + (far - d) * this.airLong) / d;
+          A.x = mh[12]! + gx * to;
+          A.y = Math.max(ANKLE_MIN, mh[13]! + gy * to);
+          A.z = mh[14]! + gz * to;
         }
       }
       const minD = this.legLen * LEG_FOLD;
