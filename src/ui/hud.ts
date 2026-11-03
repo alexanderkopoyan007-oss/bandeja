@@ -457,7 +457,8 @@ export class Hud {
     // (HTML of our own strings and key names escaped by cap())
     if (hint) this.set(this.hint, hint, true);
     if (!!hint !== this.hintOn) { this.hintOn = !!hint; this.toggle(this.hint, 'on', this.hintOn); }
-    if (human >= 0 && sim.phase === PH_SETUP && sim.score.serverPlayer() === human && now > this.callUntil) {
+    // (once they're in their places: a key in the walk back skips it, and drops nothing)
+    if (human >= 0 && sim.phase === PH_SETUP && sim.walking === 0 && sim.score.serverPlayer() === human && now > this.callUntil) {
       this.showCall('Your serve', this.serveSub, '#ffd84a', now, 0.05);
     }
   }

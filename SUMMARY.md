@@ -887,6 +887,29 @@ One High, confirmed and fixed: the ball jumped from the floor to the hand at the
 | Women, 6000 points | 11.3, 15.0, 34.7/28.5/36.8 | 11.2, 15.0, 34.2/29.5/36.3 |
 | Frame p99, Medium at 4x throttle, loaded machine | 14.2 | 14.2 |
 
+| Round 26 | Before | After |
+|---|---|---|
+| Lobs landing 7-8.5 m, taken in the air by you at the net | 22 | 62 |
+| The same by your partner | 76 | 73 |
+| Overhead plan flipped off the air, per 100 points | 12-16 | 2-3 |
+| Ring jumps with O held, 30 matches | 223-414 | 14-19 |
+| Won from in the air, 7.25-7.5 m then 7.5-8 m | 76, 47 (review's trial) | 65, 68 |
+| A key in the walk, furthest jump | 8.8 m, no dip | under the dip |
+| The jump on the real build, seed 5130003 | 4.66 m, dip 0 | 4.30 m, dip .85 |
+| Serve prompt during the walk | 4.8 s a point | none |
+| Server's partner, chest off the net at the toss | 130/134/141 | 0/0/0 |
+| Net player with the ball behind, not on it | 95/116/142 | 60/70/70 |
+| Stand-in at Pro, two seeds | 52.7, 20-10; 55.4, 20-10 | 55.0, 24-6; 57.5, 27-3 |
+| Stand-in at Advanced, two seeds | 62.3, 30-0; 62.8, 29-1 | 66.3, 30-0; 66.5, 30-0 |
+| Pops a minute, twelve seeds | 13.3 | 12.75 |
+| Match, 6000 points: shots, s, W/FE/UE | 9.9, 12.7, 42.9/25.0/32.1 | 10.1, 13.0, 42.4/26.2/31.4 |
+| Women, 6000 points | 11.1, 15.0, 34.4/27.7/37.9 | 10.7, 14.5, 33.9/29.9/36.3 |
+| Back-wall unforced errors, men, women | 9.0, 7.7 | 8.0, 7.5 |
+| Serving pair, men, women | 64.8, 61.7 | 65.2, 61.9 |
+| Frame p99, Medium at 4x throttle | 11.5 | 10.8 |
+| High, fps | 186 | 210 |
+| High paced at 120 Hz, fps, p99 ms | | 120.5, 8.3 |
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

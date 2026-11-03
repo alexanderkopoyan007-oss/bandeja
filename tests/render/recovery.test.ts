@@ -16,7 +16,7 @@ describe('after the ball and at it', () => {
   const past = new THREE.Vector3();
   // The racket elbow through time, each player, and the balls to read it round.
   const bends: { t: number; e: number }[][] = [[], [], [], []], struck: { p: number; t: number; a: number }[] = [];
-  runAnimQa(p, { seed: 3, seconds: 240, lefty: [], onFrame: (m, av) => {
+  runAnimQa(p, { seed: 3, seconds: 420, lefty: [], onFrame: (m, av) => {
     held = av[1];
     (held as { predAt(s: unknown, t: number, o: THREE.Vector3): void }).predAt(m, m.pred.start + 99, past);
     pastEnd += Number.isNaN(past.x + past.y + past.z) ? 1 : 0;

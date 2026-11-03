@@ -3455,3 +3455,14 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **The run gait between points starts at 3 m/s.** The rally's 0.45 m/s switched it on under people settling for the serve. A real run is what flung the leg.
 - **A step's height and time follow its distance** (`STEP_RISE`, `STEP_SPEED`). Both are judgements, and footage has no row for them.
 - **Not done on purpose:** Pro's headroom and how much timing counts. Those are the owner's call, and they need a hand on the keys.
+
+## Round 26: arrive moving, a cut for a jump, and the net partner faces the net (2026-11-03)
+
+- **The overshoot check braked to a stop and everything else braked to 1.5 m/s.** Two lines apart in one function. I fixed the check, not the arrival speed: the arrival is Round 24's cure for a real fault, and a person's plan re-reads every 8 ticks, so one wrong line showed up as a flip.
+- **The lobbers' read is three steps, not one.** Inside 7 m they stay back, from 8 m they come in, and between they step to 6 m. That's the transition zone they already used while reading a lob, so nothing new is drawn. 7 and 8 are judgements with no source. LOB_DECIDE_HELD stays 0.9 although it was tuned while plans flipped: the band took the cliff away and I had no reason to move it.
+- **A key in the walk is a cut.** Review round 2 made the skip deliberate and took out a teleport dipped to black in favour of walking, so a jump in plain sight was never the intent. It reuses `ENDS_CUT` and the existing dip, and `cutComing` asks `walkUntil`, so there's no new state for rollback to carry, and a walk that runs out of time is covered by the same rule. The first tap skips and doesn't toss: the prompt comes up after the cut and says what to do next.
+- **The prompt waits for the walk.** Not new words: "skip" is still unsaid, a Low, because cues and HUD don't change without showing the owner.
+- **Facing, in the sim, not the render.** `facing` also sets forward and backward speed, so a body that only looked right would move wrong. The reviewer's render cap held the chest at 57 degrees at every serve. Square to the net at a serve, 70 degrees in a rally: real net players do look back, and the sceptic wouldn't pass "never".
+- **Only inside 5.5 m, and not for whoever is on the ball.** A player at the back keeps their eye on it, and the taker turns as they always did.
+- **Between points people look where they walk.** They were watching the ball in the server's hand all the way, walking backwards to the net.
+- **Left alone:** the ball going small at the end of the dead time, Low. A change of ends isn't known until the score takes the point, after the fade, so fixing the double fade means moving the score, for a few pixels.
