@@ -3506,4 +3506,10 @@ The owner: "fix all the small and medium issues". Worked most-important first, a
   - On the generated woman, with your stand-in (fixlab/ohchest2.ts, 6 seeds x 240 s), forearm 6 cm or more inside, before to after: forehand slices 59% to 10%, backhand volleys 32% to 13%, lobs 17% to 4%, bandejas 9% to 0%.
   - On p1, slices 33% to 0%.
   - Bots on her body (tests/render/elbowChest.test.ts): 39 of 175 strokes to 8. Half of those 8 are within two frames of the contact, which is the forward swing's and is left alone.
+- **Set at the ball** (`SET_*` in avatar.ts). From 0.22 s before a stroke's contact to 0.1 s after it, a planted foot steps only when the leg can't reach it or it's left 0.7 m behind. A step already under way is quickened to be down 0.1 s before the ball. The jump smash is left alone. The stroke clips step the front foot in late, and the foot lock followed them with a forced step (drift past 13 cm) that landed at the ball or lifted off at it.
+  - Slow groundstrokes and volleys, seats p1 seeds 3-4 (tests/render/setFeet.test.ts): front foot off the floor at the ball 39% to 15%; down before the ball at the median 50 ms to 142 ms.
+  - By stroke on p1 (fixlab/plant.ts), off the floor: forehands 43% to 14%, lobs 62% to 23%, backhand volleys 35% to 10%, serves 57% to 9%.
+  - The front toe moving more than 15 cm in the last 0.15 s fell less, from 44-71% to 22-57%. The step now happens before the ball rather than at it, and at the serve that count rose (28% to 89%) for the same reason.
+  - Left: a low slice's lunge past the leg's reach still steps at the ball, 5 of 9 on the generated woman. Those steps are allowed on purpose.
+  - The only plant time published is the back glass's, 0.37 s (Espino 2015, five elite players).
 

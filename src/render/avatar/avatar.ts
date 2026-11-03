@@ -869,6 +869,14 @@ const STEP_RISE = 0.2;
 const STEP_SPEED = 2.6;
 const STEP_SNAP = 0.7;
 /**
+ * Set at the ball: from SET_BEFORE (s) before a stroke's contact to SET_AFTER after it, a planted foot steps only when the leg can't reach it or it is
+ * left STEP_SNAP behind, and a step under way is quickened to be down SET_LAND before the ball (no quicker than SET_LEFT for what is left of it). The
+ * stroke clips step the front foot in late, and the lock followed: at a slow stroke the front toe went 15 cm or more in the last 0.15 s on 44-71% of
+ * groundstrokes and was off the floor at the ball on 24-62% (review round 27). The plant before an elite player's ball is 0.37 s off the back glass
+ * (Espino 2015, five players), and nobody has published one for a groundstroke.
+ */
+const SET_BEFORE = 0.22, SET_AFTER = 0.1, SET_LAND = 0.1, SET_LEFT = 0.04;
+/**
  * Foot locks while moving: a clip's stance foot drifts over the floor (its stride doesn't match the body's speed
  * exactly, the blend of two directions shortens it, the body turns over it), so a foot whose sole comes within
  * LOCK_ON (m) of the floor stays where it was put down, at the yaw it had, until the clip lifts it past LOCK_OFF,
@@ -3808,6 +3816,8 @@ export class Avatar {
     // Held through the stroke's fade as its weight goes (dropped at the fade's first frame, a foot mid-step jumped
     // 0.55 m back), and each foot's offset moves no faster than LUNGE_RATE.
     const LO = this.lungeOff;
+    const tc = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1, now = this.lastT;
+    const setAt = tc >= 0 && rightFamily(this.fam) !== SMASH && now > tc - SET_BEFORE && now < tc + SET_AFTER;
     let wlx = 0, wlz = 0, wrx = 0, wrz = 0;
     // (a stroke is met at walking pace or less as often as not, and its feet are set then too)
     const sp = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
@@ -3894,7 +3904,7 @@ export class Avatar {
         const turned = Math.abs(wrapAngle(yaw - this.lockYaw[f]!));
         // (out of reach is no reason to step to where the foot already is: a player standing tall has the leg at 0.986
         // of its length, and tapped on the spot six times a second; review round 9, the critic's #2)
-        const forced = far > drift * drift || turned > turnMax || (d2 > reach * reach && far > STEP_MIN * STEP_MIN);
+        const forced = (!setAt && (far > drift * drift || turned > turnMax)) || (d2 > reach * reach && far > STEP_MIN * STEP_MIN);
         // Standing, one foot steps at a time (the other waits, still held), unless it is being left far behind.
         const o = 1 - f;
         const waits = !lifted && s > 0.5 && this.relLift[o] === 1 && this.relT[o]! >= 0 && turned < WAIT_TURN_MAX;
@@ -3926,6 +3936,10 @@ export class Avatar {
           const go = Math.hypot(A.x - this.relFrom[f]!.x, A.z - this.relFrom[f]!.z);
           this.relUp[f] = go * STEP_RISE > STEP_LIFT ? go * STEP_RISE : STEP_LIFT;
           if (this.relLift[f] === 1 && go / STEP_SPEED > this.relDur[f]!) this.relDur[f] = go / STEP_SPEED;
+        }
+        if (setAt && now < tc && this.relLift[f] === 1 && this.relT[f]! < 1) {
+          const left = (1 - this.relT[f]!) * this.relDur[f]!, want = Math.max(SET_LEFT, tc - SET_LAND - now);
+          if (left > want) this.relDur[f] = want / (1 - this.relT[f]!);
         }
         let t = this.relT[f]! + this.dt / this.relDur[f]!;
         if (t >= 1) t = -1;
