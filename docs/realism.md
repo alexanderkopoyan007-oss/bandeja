@@ -157,7 +157,7 @@ measured against published data, and lands with tests that check the model again
   than Head. (Gea García et al. 2021, *Int. J. Perf. Analysis in Sport*, doi 10.1080/24748668.2021.1875778)
 
 ### Following a lob in
-- **The lob is how a pair takes the net:** 60.6% of net takes (Muñoz et al. 2017), and an excellent lob is returned from 8.61 ± .37 m. So the lobbers read where the overhead will be met: in the air inside 7.5 m they stay back, and off the bounce or deeper they come in. 7.5 m is a judgement, and no source says where lobbers stand at the overhead. On 8 m both watched a bandeja from the back glass, and it won three points in four from the worst place on court (Round 25).
+- **The lob is how a pair takes the net:** 60.6% of net takes (Muñoz et al. 2017), and an excellent lob is returned from 8.61 ± .37 m. So the lobbers read where the overhead will be met: in the air inside 7 m they stay back, from 7 to 8 m they step in to the service line's edge, and off the bounce or deeper they come in. 7 and 8 m are judgements, and no source says where lobbers stand at the overhead. On 8 m both watched a bandeja from the back glass, and it won three points in four from the worst place on court (Round 25).
 
 ### Bounce of a felt ball (tennis data; nothing padel-specific is published)
 - Sliding friction: clay up to 0.9 at low angles, grass 0.5–0.6. Vertical COR about 0.75 on hard courts,

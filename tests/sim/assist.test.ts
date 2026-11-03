@@ -107,7 +107,7 @@ describe('aiming', () => {
       const xs: number[] = [];
       let seen = 0;
       let mine = false;
-      play(5, 200, [dir, 0], (m) => {
+      play(5, 260, [dir, 0], (m) => {
         for (; seen < m.eventSeq; seen++) {
           const e = m.events[seen % m.events.length]!;
           if (e.kind === E_HIT) mine = e.team === 0;

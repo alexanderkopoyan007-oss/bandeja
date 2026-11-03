@@ -185,6 +185,10 @@ const MEET_MAX = 1.2;
 const WALK_SPEED = 1.5;
 const WALK_MAX = 7;
 const WALK_DONE = 0.06;
+/** Over this speed between points a player looks where they walk (m/s). */
+const WALK_FACE = 0.5;
+/** Nearer the net than this a player not on the ball turns no further than NET_WATCH_* off the net for one behind them (m; 70 degrees). */
+const NET_WATCH = 5.5, NET_WATCH_SIN = 0.94, NET_WATCH_COS = 0.342;
 /**
  * After match point (PH_OVER, MatchSim.overStage): the ball is left to fall and everyone reacts where they stand for
  * OVER_REACT s (1); then both pairs walk to the net (2) at WALK_SPEED, each to their lane (OVER_LANE m off the middle
@@ -331,7 +335,12 @@ export class MatchSim {
    * off): presentation cuts away over it (ui/transitions.ts).
    */
   get cutComing(): boolean {
-    return this.phase === PH_DEAD && (this.cfg.walkBack === false || this.endsCut !== 0);
+    if (this.phase === PH_DEAD) return this.cfg.walkBack === false || this.endsCut !== 0;
+    return this.phase === PH_SETUP && this.walking > 0 && this.walkUntil - this.time <= ENDS_CUT;
+  }
+  /** How long until it comes (s). */
+  get cutIn(): number {
+    return this.phase === PH_DEAD ? this.phaseUntil - this.time : this.walkUntil - this.time;
   }
   /** Distance left from walkDrive (a field: a returned double would be boxed). */
   private walkD = -0;
@@ -1148,8 +1157,15 @@ export class MatchSim {
     else if (this.phase === PH_DEAD) { p.driveX = 0; p.driveZ = 0; p.move(); }
 
     // Face the ball while preparing, otherwise the direction of travel / the net.
-    const b = this.ball.pos;
-    p.faceTowards(b);
+    const b = this.ball.pos, at = this.overAt, end = this.side(p.team);
+    const serve = this.phase === PH_SETUP || this.phase === PH_TOSS;
+    if (this.walking > 0 && p.vel.x * p.vel.x + p.vel.z * p.vel.z > WALK_FACE * WALK_FACE) p.faceTowards(at.set(p.pos.x + p.vel.x, 0, p.pos.z + p.vel.z));
+    else if ((serve || this.phase === PH_RALLY) && abs(p.pos.z) < NET_WATCH && (b.z - p.pos.z) * end > 0 && p.swing === SW_IDLE && this.taker[p.team] !== i) {
+      // A partner at the net leaves a ball behind them to whoever is playing it. Turned to their own server, chest to the back glass, they spent 3.7 s of a
+      // point with their back to the net and spun round at the serve (review round 32).
+      const off = b.x < p.pos.x ? -1 : 1;
+      p.faceTowards(serve ? at.set(p.pos.x, 0, 0) : at.set(p.pos.x + off * NET_WATCH_SIN, 0, p.pos.z - end * NET_WATCH_COS));
+    } else p.faceTowards(b);
   }
 
   /** How much a human's balls have been going to one place (0..1; READ_WIDE), and that place, on their own side's terms. */
@@ -1607,8 +1623,11 @@ export class MatchSim {
       return;
     }
     if (this.phase === PH_SETUP) {
-      // A human's key skips the walk back.
-      if (this.walking > 0) { if (!this.ai[i]) this.endWalk(); return; }
+      // A human's key skips the walk back, under a dip (cutComing): put there in that frame, four people jumped up to 8.8 m in plain sight (review round 32).
+      if (this.walking > 0) {
+        if (!this.ai[i] && this.time + ENDS_CUT < this.walkUntil) this.walkUntil = this.walkStage = this.time + ENDS_CUT;
+        return;
+      }
       if (i !== this.score.serverPlayer() || t < this.phaseUntil) return;
       // In one of the server's bounces: the serve goes when the ball is back up.
       if (!this.ai[i] && this.routineLeft(t) > 0) { this.tossDue = shot + 1; return; }

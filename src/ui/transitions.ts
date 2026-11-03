@@ -72,7 +72,7 @@ export class Transitions {
     const dead = sim.cutComing;
     let a = 0;
     if (dead) {
-      const rem = sim.phaseUntil - sim.time;
+      const rem = sim.cutIn;
       if (rem < DIP_IN) a = DIP_PEAK * Math.min(1, (DIP_IN - rem) / DIP_IN);
     } else {
       if (this.wasDead) this.liftAt = sim.time;

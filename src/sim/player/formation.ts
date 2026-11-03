@@ -214,15 +214,17 @@ function lobFollow(m: MatchSim, s: number, team: number): number {
   const plan = ai ? ai.standPlan : m.stand[k]!;
   const planned = plan.valid && plan.version === pr.version;
   // Pushed this deep the lob has done its work, overhead or not: on 8 m both lobbers watched a bandeja from the back glass, and it won three points in four
-  // from the worst place on court (review round 31).
-  if (planned && plan.volley && plan.inTime && abs(plan.bz) < LOB_DEEP) return LOB_NO;
+  // from the worst place on court (review round 31). Not all at once: one line at 7.5 m was worth 14-25 points a step deeper (review round 32).
+  const near = planned && plan.volley && plan.inTime ? (abs(plan.bz) < LOB_NEAR ? LOB_NO : abs(plan.bz) < LOB_DEEP ? LOB_WATCH : LOB_BEATEN) : LOB_BEATEN;
+  if (near !== LOB_BEATEN) return near;
   // A person's plan says what key is down, and at the lob's first tick none is. Read as beaten then, both lobbers ran in on six in ten of a human's bandejas
   // and volleyed them chest high, and an AI's never (review round 30). If they can get there, the lobbers wait in the middle for what they do about it.
   if (!ai) {
     if (m.canOverhead(k) < 0) return LOB_BEATEN;
     // (a held plan can start off the bounce and turn into one in the air as they run back, and a read of beaten stays: taken at once, both lobbers came in on 45 of 46 bandejas met in the air)
     const held = m.goingOverhead(m.players[k]!);
-    if (held && (!planned || (plan.volley && abs(plan.bz) < LOB_DEEP))) return LOB_NO;
+    if (held && !planned) return LOB_NO;
+    if (held && plan.volley && abs(plan.bz) < LOB_DEEP) return abs(plan.bz) < LOB_NEAR ? LOB_NO : LOB_WATCH;
     return m.time < lands - (held ? LOB_DECIDE_HELD : LOB_DECIDE) ? LOB_WATCH : LOB_BEATEN;
   }
   return planned ? LOB_BEATEN : LOB_WATCH;
@@ -238,7 +240,8 @@ const LOB_LAND_SHY = 8.0;
 const LOB_DECIDE = 0.5;
 /** The same with the overhead key down, as the plan shows it sooner (s). Left at 0.5 the lobbers were 4.9 m from the net at the contact, and an overhead from 8 m still won 63. */
 const LOB_DECIDE_HELD = 0.9;
-/** An overhead met this far from the net or further is no threat: the lobbers come in as if it were beaten (m). An excellent lob is returned from 8.61 ± .37 (shots-movement-feel.md). */
-const LOB_DEEP = 7.5;
+/** An overhead met in the air nearer the net than LOB_NEAR leaves the lobbers back, one from LOB_DEEP or deeper brings them in, and in between they step in to LOB_MID_Z (m from the net). Judgements: no source says where lobbers stand. */
+const LOB_NEAR = 7.0;
+const LOB_DEEP = 8.0;
 /** The transition zone the lobbers step to while the lob is read (m from the net). */
 const LOB_MID_Z = 6.0;

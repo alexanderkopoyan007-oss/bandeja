@@ -227,12 +227,13 @@ export function planStand(
       // Running in faster than they can stop short of the spot (braking at 0.8 of the limit), a player is there at
       // ti only by passing through it then (a volley on the move) or by stopping beyond it and coming back. (A
       // server running in at 4.7 m/s planned a volley 1 m ahead, needed 1.4 m to stop and was passed by the ball.)
+      // (down to va, as above: asking for a full stop took a person under an overhead off the air with 0.7 s to go, one point in eight, review round 32)
       const v0 = p.vel.x * p.runX + p.vel.z * p.runZ;
-      const sd = v0 > 0 ? v0 * v0 / (1.6 * t.brake) : 0;
+      const sd = v0 > va ? (v0 * v0 - va * va) / (1.6 * t.brake) : 0;
       if (sd > dist + OVERSHOOT_OK) {
         const through = (v0 - sqrt(max(0, v0 * v0 - 1.6 * t.brake * dist))) / (0.8 * t.brake);
         if (!(volleyKey && ti - now <= through + 0.05)) {
-          need = max(need, v0 / (0.8 * t.brake) + sqrt(2 * (sd - dist) / t.accel) + 0.1);
+          need = max(need, (v0 - va) / (0.8 * t.brake) + sqrt(2 * (sd - dist) / t.accel) + 0.1);
         }
       }
     }

@@ -878,3 +878,34 @@ Two of mine worth keeping. A read of "beaten" latches until the pair's next stri
 Tests that moved, all read first. **lobRead:** split in two, kept in the air and off the bounce from deep. **input:** a sample of 8 reached its floor of 8, so it runs ten seeds, not six. **clothFit overSkin:** 46.08 against 46 on one seed; two other seeds read 26-31 on both builds, so the limit is 47.
 
 Pops on the twelve seeds: 13.3 a minute (12.5). The build just before the filter came out read 12.9 with leg pops level, 260 to 264, so I put the difference down to the matches changing, not proved. Frame p99 14.2 ms on both builds, read on a machine under load 10-27, so it says only that nothing is obviously worse.
+
+## Round 26 (2026-11-03, on f281a96; "review round 32" in the code's comments)
+
+Three reviewers and a sceptic: 19 findings, three of them High and all three confirmed. None of the three was new work going wrong except the first, which Round 24 caused and Round 25 measured around. The other two have been there for many rounds, and nobody looked: a body at the net at a serve, and what a key does in the walk.
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | High | **A person's overhead in the air is given up as they arrive.** With O held the plan flipped to off the bounce about 0.7 s before contact, the ring moved 0.6 s later, and the player was dragged 2 m past the ball. On lobs landing 7-8.5 m you took 17-22% in the air, the partner 71-74%. Round 24's #5 ("Better, unsettled") was this, and that round's change caused it: it read 43-46% before. | **Fixed.** The overshoot check asked for a full stop while the line above it allowed for arriving at 1.5 m/s. In the air 22 to 62% (partner 73), inside 7 m 57 to 79, past 8.5 m 15 to 41. Flips per 100 points 12-16 to 2-3. Ring jumps with O held, 30 matches a level, 223-414 to 14-19. |
+| 2 | High | **The serve prompt comes up in the walk back, and doing what it says teleports all four players with no cut.** Up to 8.8 m, one frame, nothing dropped. The prompt is up for three-quarters of the wait. | **Fixed.** The prompt waits until they're placed, and a key cuts the walk under the same dip as a change of ends, 0.35 s later. A walk that runs out of time gets the dip too. Read on the real build below. |
+| 3 | High | **The server's partner stands with their back to the net at every serve, then spins round.** Chest 130/135/139 off the net at the toss, on every body, for 3.7 s a point. | **Fixed.** A player inside 5.5 m leaves a ball behind them to whoever is playing it: square to the net at a serve, 70 degrees at most in a rally. Between points they look where they walk. Toss 130/134/141 to 0/0/0; rally 95/116/142 to 60/70/70. A person's own player is the same. The standard is from memory, with no footage row. |
+| 4 | Medium | The 7.5 m line is a 25-point cliff, hidden by #1. | **Fixed.** It showed as soon as #1 was fixed, about 14 points here. In the air from 7 to 8 m the lobbers now step in to 6 m. Won by depth: 77.7 (6.5-7 m), 71.2 (7-7.25), 65.0 (7.25-7.5), 68.1 (7.5-8), 57.6 (8-8.5). |
+| 5 | Medium | Against a pair at the net the lob is the only shot: lob 52, anything else 34-36, and a lob-only plan beats the mix. | Open. Part of the gap is depth: yours lands 8.1 m, the AI's 7.4. |
+| 6 | Medium | Defenders stand on a painted line, both on 8.00 m for every overhead. | **Better, open.** On 7-8 m they now step in. Inside 7 m it's unchanged. |
+| 7 | Medium | At Advanced the overhead off the bounce from your own glass still beats your average point, 70-72 against 65. | Open. Met 0.35 s after the bounce it catches the lobbers half way in. |
+| 8 | Medium | From the camera you can barely hear the ball land or anyone move. | Open. Nobody has listened: the reviewer measured levels, not a mix. |
+| 9 | Medium | Starts and stops lean a third of what the acceleration needs. | Open. |
+| 10 | Medium | The walk between points runs on locked knees. | Open. |
+| 11 | Medium | The rear heel stays flat through ground strokes and the serve. | Open. |
+| 12 | Low | Eight more: the receiver's partner backing to the glass through the serve; points under the band on fresh seeds; the last ball going small in play and twice at a change of ends; the serve chosen silently by the key; about half of Round 25's pop rise being its own render; H, M and P beside the shot keys; a band under the run gait flinging a rear leg; a step's distance read on its first frame only. | Open, bar the pops and the points, which read 12.75 a minute and 10.1 shots on this build. |
+
+Attacked and empty, so nobody need re-run them: baiting the lobbers doesn't pay, they aren't running onto smashes, never using the overhead costs 3-4 points, and `roundPartner` moves 0.7% of untouched hits, never past 4 m.
+
+The sceptic's corrections: "bandeja 46-52 mostly describes flipped balls" goes too far, since most off-the-bounce bandejas are met from 7.5 m or deeper; flips drag that figure down. Per-ball gaps between in the air and off the bounce are likely flattered, because easier balls are the ones taken in the air. The rally half of #3 isn't proven: real net players do look back at a ball behind them. I capped it rather than removing it, for that reason.
+
+A cost I took on purpose: with the overhead working again the stand-in wins more. Pro 52.7 and 55.4 to 55.0 and 57.5, 20-10 twice to 24-6 and 27-3. Advanced 62.3 and 62.8 to 66.3 and 66.5. That was a broken shot being mended, not the AI getting worse, and it makes Round 25's open question about Pro's headroom harder. It's the owner's call, with a hand on the keys.
+
+On the real build, seed 5130003, a key 1.0 s into the walk: the one drawn jump, 4.30 m, falls on a frame with the dip at its peak of 0.85, and the prompt no longer shows in the walk. That peak isn't black, as at a change of ends, so the jump is hidden rather than removed. Frame p99 10.8 ms against 11.5, 210 fps against 186, both builds at load 4-8.
+
+Online, on this build through the deployed rooms: two windows, 40 ms, 2% loss, 20 s, 36 state hashes agreed on each side through 9-12 rewinds, no stall. Short, and bots: it shows the changes hash alike, not how a skip feels online.
+
+Tests that moved, all read first. **soundscape, contrapared, assist:** short samples that reached their floors; the walk is unchanged, 5.07 s against 5.08 at the median, so they run longer. **recovery:** 1.83 against 1.8 on one seed; three seeds read 1.83, 1.48, 1.68 against 1.51, 1.45, 1.61, and the bug reads 3.8, so it runs 420 s.

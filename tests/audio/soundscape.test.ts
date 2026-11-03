@@ -89,7 +89,7 @@ function run(secs: number, arena: string, fps = 60, soles = false): Run {
 
 describe('soundscape', () => {
   // 300 s: at level 1 points run long (review round 3's AI: 7 points in 240 s, one short of the clapping check).
-  const r = run(300, 'stadium');
+  const r = run(420, 'stadium');
   const count = (fam: string, rr: Run = r): number => rr.rec.plays.filter((p) => p.fam === fam && Math.abs(p.x) < 10).length;
 
   it('every hit, bounce and glass impact is heard', () => {

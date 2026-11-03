@@ -9,7 +9,7 @@ import { InputFrame, BTN_DRIVE, BTN_OVERHEAD } from '../../src/sim/input.ts';
 
 describe('a lob over a person', () => {
   // What the lobbers did as each overhead was struck, by how it met the ball.
-  const up = { airNear: 0, airNearUp: 0, deep: 0, deepUp: 0 };
+  const up = { airNear: 0, airNearUp: 0, deep: 0, deepUp: 0, all: 0, air: 0 };
   for (let i = 0; i < 12; i++) {
     const m = new MatchSim({ seed: 190101 + i, doubles: true, human: [true, false, false, false], aiLevel: [1, 1], aiStyle: [],
       timingScale: 1.5, assist: 0.45, autoTiming: false, format: { mode: 1, setsToWin: 1, gamesPerSet: 6, finalSet: 0 } } as never);
@@ -38,7 +38,9 @@ describe('a lob over a person', () => {
         if (e.player === 0 && held) { f.clear(); f.push(false, held, m.time); held = 0; }
         if (e.player === 0 && (e.a === SHOT_BANDEJA || e.a === SHOT_SMASH) && Math.abs(e.z) > 6) {
           const both = Math.abs(m.players[1]!.pos.z) < 4 && Math.abs(m.players[3]!.pos.z) < 4 ? 1 : 0;
-          if (!floor && Math.abs(e.z) < 7.5) { up.airNear++; up.airNearUp += both; }
+          up.all++;
+          if (!floor) up.air++;
+          if (!floor && Math.abs(e.z) < 7) { up.airNear++; up.airNearUp += both; }
           else if (floor && Math.abs(e.z) >= 7.5) { up.deep++; up.deepUp += both; }
         }
         floor = false;
@@ -50,6 +52,11 @@ describe('a lob over a person', () => {
     expect(up.airNear).toBeGreaterThan(12);
     // (65 in a hundred before; 98 with a read of beaten taken as soon as the held plan was off the bounce, review round 31)
     expect(up.airNearUp / up.airNear).toBeLessThan(0.35);
+  });
+
+  it('lets a person who has got under it take it in the air', () => {
+    // (an overhead may be met moving, and the plan asked for a full stop: arriving at 3.6 m/s it went off the bounce with 0.7 s to go; review round 32)
+    expect(up.air / up.all).toBeGreaterThan(0.5);
   });
 
   it('brings them in on an overhead played off the bounce from the back', () => {
