@@ -83,11 +83,13 @@ All on one Mac, with bots playing, in separate browser windows. Lag and loss are
 | 3 players, 150 ms | round trip 341-365 ms, delay 9, deepest 24, longest replay 7.2 ms |
 | Whole public match to the result, 2 and 3 players (local server) | every player has the same score, then all re-queue and the second match stays in sync |
 | Final build, 2 players, menus and a typed code | window minimised 12 s: sim keeps going, no stalls. Either player cut for 3 s: note shown, recovers, hashes agree. Forged seat message: ignored. Cut for good: both sides play on with the AI |
-| Final build, 4 players, queue, host quits | new host, AI takes the seat, hashes agree, ticks 1650 to 3362 in 15 s |
+| Final build, 4 players, 40 ms, queue, host quits | round trip 129-149 ms, delay 6, deepest 16. New host, AI takes the seat, hashes agree, ticks 1644 to 3364 in 15 s |
 | Final build, 2 players, queue, host quits | the one left plays on, ticks 1648 to 3376 |
-| Final build, 3 players, 80 ms, relayed, last player quits | round trip 266-376 ms, delay 8, deepest 42, longest replay 8.3 ms, hashes agree |
+| Final build, 3 players, 80 ms, relayed, last player quits | round trip 246-265 ms, delay 8, deepest 19, longest replay 6.3 ms, hashes agree, ticks 1640 to 3361 |
 
 Round-trip times read 40 to 60 ms above twice the fake lag.
+
+Offline play was compared with the build before it, five 20 s runs of each, alternated, while other sessions loaded the machine. Medians were 14.0 v 12.4 ms on the laptop stand-in and 5.9 v 5.3 ms at High, with the ranges overlapping (9.3-14.8 v 10.0-14.8), and both held 120 Hz paced at the median. The offline frame only gains a few checks for an online match, so this reads as noise, but it hasn't been measured on a quiet machine. The memory check fails its 10-collection budget by one on the avatars run, 11 on both builds.
 
 ## Not tested
 
