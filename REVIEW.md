@@ -935,3 +935,23 @@ Found while tracing #1, not in the review: a server whose last ball of the previ
 
 What I checked and how. The sceptic's spin.ts on four seed groups, on Round 25, Round 26 and this build. Round 26's own walk13 recordings, 4 seeds by 240 s each, on all three. The sim's turn a tick, at most 2 rad/s through every walk and its ends, is a test now. The walk is still 5.1 s at the median. Pops on twelve seeds 12.38 a minute, from 12.75. Men's 6000 points 10.0 shots, 42.2/26.1/31.7, serving pair 65.3, from 9.9, 42.2/25.9/31.9 and 66.4 on the same seeds.
 Online through the deployed rooms, 20 s at 40 ms and 2% loss: 36 hashes agreed on each side through 4-10 rewinds, no stall.
+
+## Round 28 (2026-11-03, on c12c3db; "review round 34" in the code's comments)
+
+Three reviewers: 9 findings, none rated High or Critical, so the sceptic didn't run. **This is the end of Phase 9's loop: a fresh review found nothing new at High or above.** What it did find:
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | Medium | Nobody lets a ball go out. The AI at the net plays three in four out-bound balls within reach, and gives back about 1.6 points per 100. No call says "out" or "leave it". | Open. No source for how often pros leave one; that they do is player judgement. |
+| 2 | Medium | After a contrapared the body whips round 150-200 degrees in a third of a second. Two reports. About a dozen a set from your seat. | Open. Long-standing: 67a4c8e reads the same or worse. |
+| 3 | Medium | On the Meshy bodies the racket forearm passes through the chest after the ball, worst on the body seated as you. | Open. Measured on capsules, not confirmed by eye. |
+| 4 | Low | The server walks in square, then pivots 83 degrees into the address in 0.38 s, every serve. | Open. Square arrival is Round 27's; the address turn is the stance's. |
+| 5 | Low | One walk in eleven ends with someone turning the long way round at their place. | **Half.** The drawn walk turn wound past 180 degrees on 62 of 228 walks and is now kept inside half a turn, 0 of 228. Long way by over 90 degrees in the last approach: 5 on c12c3db, 6 now and 6 on Round 25's build, so what's left is older than these rounds. |
+| 6 | Low | A key during the racket tap leaves the tap's turn on after the cut, about one player-cut in a hundred. | **Fixed in code:** the tap's weight starts afresh at a cut, like the others. Not measured separately. |
+| 7 | Low | A key in the walk's first second places the pair still turned to each other for the tap. | **Same fix as #6.** |
+| 8 | Low | No racket tap after the point that wins a game at a change of ends. | Open. |
+| 9 | Low | Partners touching rackets make no sound. | Open, as in Round 27. |
+
+Checked and clean, so nobody need re-run them: no walk spins on p1 or p7 (0 of 17 and 0 of 27; 67a4c8e 21 of 25), walk length 5.15 s against 5.12, a real build at 60 fps with and without a key (no turn over 120 degrees in 0.25 s), servers in at 4.8 m by the return, the return mix, poaching, men's and women's statistics as in Round 27.
+
+Not covered by this review: sound, online, left-handers, singles, the change of ends' cut-away by eye. Nobody played by hand.

@@ -2580,6 +2580,10 @@ export class Avatar {
       const dv = (wish > WALK_TURN_RATE ? WALK_TURN_RATE : wish < -WALK_TURN_RATE ? -WALK_TURN_RATE : wish) - this.walkTurnV;
       this.walkTurnV = cut ? 0 : this.walkTurnV + (dv > lim ? lim : dv < -lim ? -lim : dv);
       this.walkTurn = cut ? 0 : this.walkTurn + this.walkTurnV * dt;
+      // (inside half a turn either way, so the way back to the net is the shorter: on a curving walk it passed 180 and was eased back through the back glass,
+      // 250-280 degrees where 80-100 would do, one walk in eleven; review round 34. The yaw filter wraps, so the whole turn taken off is no jump.)
+      if (this.walkTurn > Math.PI) this.walkTurn -= 2 * Math.PI;
+      else if (this.walkTurn < -Math.PI) this.walkTurn += 2 * Math.PI;
       this.yaw += this.walkTurn;
       const gait = this.gaitW > 0 ? WALK_GAIT_V * 0.5 : WALK_GAIT_V;
       // Running in a rally, up to the last steps before a contact (a backswing is begun on the run).
@@ -2911,7 +2915,8 @@ export class Avatar {
       if (sim.time - this.moodAt < MOOD_TIME && want === 0) { want = 1; this.tapKey = this.moodKey; }
       else if (sim.time - this.moodAt >= MOOD_TIME) this.moodKey = null;
     }
-    this.tapW += (want - this.tapW) * (dt > 0 ? 1 - Math.exp(-dt / 0.12) : 0);
+    // (a cut starts it afresh, as it does the other weights: a key in the tap left them turned to where their partner had been, review round 34)
+    this.tapW += (want - this.tapW) * (this.cutNow === 2 ? 1 : dt > 0 ? 1 - Math.exp(-dt / 0.12) : 0);
     if (this.tapW < 0.001) this.tapW = 0;
     this.bowW += (bow - this.bowW) * (dt > 0 ? 1 - Math.exp(-dt / 0.3) : 0);
     if (this.bowW < 0.001) this.bowW = 0;

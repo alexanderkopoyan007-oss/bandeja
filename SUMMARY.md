@@ -920,6 +920,10 @@ One High, confirmed and fixed: the ball jumped from the floor to the hand at the
 | Pops a minute, twelve seeds | | 12.75 | 12.38 |
 | Men, 6000 points: shots, W/FE/UE, serving pair | | 9.9, 42.2/25.9/31.9, 66.4 | 10.0, 42.2/26.1/31.7, 65.3 |
 
+### Phase 9's loop, closed
+
+Round 28 (review of c12c3db) found nothing new at High or above. Rounds 25-27 each fixed the Highs of the review before: the lobbers on 8 m (Round 25), an overhead given up in the air, a key teleporting four players and the net partner's back to the net (Round 26), and the walk's end spin that Round 26 caused (Round 27). Round 28 kept the walk turn inside half a turn and reset the racket tap at a cut. What's left is Medium or Low, listed in REVIEW.md's Round 25-28 tables. The biggest open questions are the owner's: Pro's headroom, how much timing counts, and whether staying back should cost more.
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.
