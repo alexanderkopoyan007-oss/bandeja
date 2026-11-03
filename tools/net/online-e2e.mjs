@@ -140,8 +140,11 @@ for (const [n, lag, loss, relay] of runs) {
     await new Promise((r) => setTimeout(r, 15000));
     const b = await Promise.all(stay.map((p) => p.evaluate(`(() => { const a = window.__app; return { menu: a.menu.showing ?? null, taken: a.current.sim.aiTaken, tick: a.current.sim.tick, hashes: a.net?.stats.hashesChecked, stalled: a.net?.stats.stalled, host: a.online?.isHost, note: a.net?.note }; })()`)));
     console.log(` seat left (${QUIT}): ${JSON.stringify(b)}, ticks were ${was.map((x) => x.tick)}`);
-    if (b.some((x) => x.menu || !x.taken || x.tick < was[0].tick + 1000)) bad++;
-    if (stay.length > 1 && (b.some((x) => x.hashes <= was[0].net.hashesChecked) || b.filter((x) => x.host).length !== 1)) bad++;
+    if (b.some((x) => x.menu || !x.taken || x.tick < was[0].tick + 1000)) { bad++; console.log(' PROBLEM: a menu, no AI in the seat, or the ticks stopped'); }
+    if (stay.length > 1 && b.some((x) => x.hashes <= was[0].net.hashesChecked)) { bad++; console.log(' PROBLEM: no hashes compared since'); }
+    // (once the room has been cut, who is host means nothing: a player without it still thinks they are, and nobody needs one until the
+    // next match, which needs the room anyway)
+    if (stay.length > 1 && !ROOMCUT && b.filter((x) => x.host).length !== 1) { bad++; console.log(' PROBLEM: hosts'); }
   }
   // A window minimised: the sim must keep going with no animation frames, or everyone else stops.
   if (HIDE && n > 1) {
