@@ -379,6 +379,13 @@ const FOREARM_ROOM = -0.03;
 const FOREARM_AFTER = 0.25;
 /** How far off a trunk capsule's surface the elbow's joint stays (m): the arm's own thickness, less the give of the flank and a capsule that is the body's median. */
 const ELBOW_ROOM = 0.02;
+/**
+ * After the ball the racket elbow and forearm out of the trunk. The follow-through's keys are placed for the mannequin's 11 cm of chest, and on a person's 14 the
+ * elbow finished on the sternum, 6-11 cm inside it: half the forehand slices, a third of the backhand volleys, a sixth of the lobs on the generated woman (review
+ * round 28). Its circle round the shoulder-to-hand line had no clear place on a bandeja or a backhand volley and was 50-145 degrees round on a slice, so it is the hand
+ * that goes out: by ELBOW_OUT_GAIN of the depth found on the arm as solved, no faster than ELBOW_OUT_RATE (m/s), the push let go over ELBOW_OUT_EASE (s).
+ */
+const ELBOW_OUT_GAIN = 1.5, ELBOW_OUT_RATE = 2.5, ELBOW_OUT_EASE = 0.15;
 /** guardCaps' first ones, the pelvis and the chest: the trunk. */
 const TRUNK_CAPS = 2;
 /** Pelvis, chest and head capsules per asset (fitted once): bone pairs, and radii. */
@@ -1419,6 +1426,9 @@ export class Avatar {
   private readonly kpWas = new THREE.Vector3();
   /** The racket's push out of the body last frame (world, m), let go over CLEAR_EASE. */
   private readonly clearOff = new THREE.Vector3();
+  /** The racket hand's push out after the ball (world, m) and where it is going (ELBOW_OUT_GAIN). */
+  private readonly elbowPush = new THREE.Vector3();
+  private readonly elbowPushTo = new THREE.Vector3();
   /** How much of the racket's push out of the body the arm's weight allows this frame (0 as the arms switch off). */
   private clearW = 1;
   /** Last frame's racket rotation (world), for RACKET_TURN_RATE; racketQOk false: none yet (a cut, arms off). */
@@ -2865,6 +2875,7 @@ export class Avatar {
       this.elbowR.side.set(0, 0, 0); this.elbowL.side.set(0, 0, 0); this.elbowR.dir.set(0, 0, 0); this.elbowL.dir.set(0, 0, 0);
       this.outReady.set(0, 0, 0, 0); this.outKey.set(0, 0, 0, 0);
       this.clearOff.set(0, 0, 0);
+      this.elbowPush.set(0, 0, 0); this.elbowPushTo.set(0, 0, 0);
       this.racketQOk = false;
       // (the next fade starts afresh, not from a frame long gone)
       this.fadeOk.fill(0);
@@ -3062,6 +3073,7 @@ export class Avatar {
     this.elbowR.dir.set(0, 0, 0);
     this.elbowL.dir.set(0, 0, 0);
     this.clearOff.set(0, 0, 0);
+    this.elbowPush.set(0, 0, 0); this.elbowPushTo.set(0, 0, 0);
     this.outReady.set(0, 0, 0, 0);
     this.outKey.set(0, 0, 0, 0);
     this.outAddr.set(0, 0, 0, 0);
@@ -4244,6 +4256,33 @@ export class Avatar {
     target.z = e[14]! + dir.z * r;
   }
 
+  /**
+   * How far the racket elbow and the forearm's first two thirds are inside the trunk, as solved: adds the way out at the deepest, ELBOW_OUT_GAIN times its depth,
+   * to `to` (at most CLEAR_MAX).
+   */
+  private elbowDepth(fa: THREE.Bone, hand: THREE.Bone, to: THREE.Vector3): void {
+    const G = this.guardBones, Rr = this.guardR, B = this.bones, me = fa.matrixWorld.elements, mw = hand.matrixWorld.elements;
+    let best = 0, nx = 0, ny = 0, nz = 0;
+    for (let r = 0; r < 3; r++) {
+      const along = r * 0.35, room = r === 0 ? ELBOW_ROOM : FOREARM_ROOM;
+      const px = me[12]! + (mw[12]! - me[12]!) * along, py = me[13]! + (mw[13]! - me[13]!) * along, pz = me[14]! + (mw[14]! - me[14]!) * along;
+      for (let k = 0; k < TRUNK_CAPS; k++) {
+        const ea = B[G[2 * k]!]!.matrixWorld.elements, eb = B[G[2 * k + 1]!]!.matrixWorld.elements;
+        const ax = ea[12]!, ay = ea[13]!, az = ea[14]!, sx = eb[12]! - ax, sy = eb[13]! - ay, sz = eb[14]! - az;
+        const l2 = sx * sx + sy * sy + sz * sz;
+        let u = l2 > 1e-12 ? ((px - ax) * sx + (py - ay) * sy + (pz - az) * sz) / l2 : 0;
+        u = u < 0 ? 0 : u > 1 ? 1 : u;
+        const dx = px - ax - sx * u, dy = py - ay - sy * u, dz = pz - az - sz * u, d = Math.sqrt(dx * dx + dy * dy + dz * dz), pen = Rr[k]! + room - d;
+        if (pen > best && d > 1e-6) { best = pen; nx = dx / d; ny = dy / d; nz = dz / d; }
+      }
+    }
+    if (best <= 0) return;
+    const g = ELBOW_OUT_GAIN * best;
+    to.x += nx * g; to.y += ny * g; to.z += nz * g;
+    const l = to.length();
+    if (l > CLEAR_MAX) to.multiplyScalar(CLEAR_MAX / l);
+  }
+
   /** The free forearm out of the torso, as racketClear does the racket's. */
   private freeClear(ul: THREE.Bone, fl: THREE.Bone, hl: THREE.Bone): void {
     const G = this.guardBones, Rr = this.guardR, B = this.bones, me = fl.matrixWorld.elements, mw = hl.matrixWorld.elements;
@@ -4829,6 +4868,12 @@ export class Avatar {
     if (cl0 > cap0) { const r = cl0 > 1e-9 ? cap0 / cl0 : 0; co.x *= r; co.y *= r; co.z *= r; }
     const t0x = this.tgt.x, t0y = this.tgt.y, t0z = this.tgt.z;
     this.tgt.x += co.x; this.tgt.y += co.y; this.tgt.z += co.z;
+    const ep = this.elbowPush, et = this.elbowPushTo, past = (this.st === ST_SWING && this.lastT >= this.tCon) || this.st === ST_FADE;
+    if (!past) et.set(0, 0, 0);
+    else if (this.dt > 0) et.multiplyScalar(Math.exp(-this.dt / ELBOW_OUT_EASE));
+    const ex = et.x - ep.x, ey = et.y - ep.y, ez = et.z - ep.z, el = Math.sqrt(ex * ex + ey * ey + ez * ez), es = ELBOW_OUT_RATE * this.dt;
+    if (el > es) { const r = es / el; ep.x += ex * r; ep.y += ey * r; ep.z += ez * r; } else ep.copy(et);
+    this.tgt.add(ep);
     this.outOfTrunk(this.tgt);
     this.elbowOut(this.armRacket, this.tgt, this.pole);
     IK_TURN[0] = this.racketSideLimit();
@@ -4838,6 +4883,7 @@ export class Avatar {
     setWorldQuat(hand, q3);
     hand.updateMatrixWorld(true);
     this.racketClear(ua, fa, hand);
+    if (past) this.elbowDepth(fa, hand, et);
     co.x = this.tgt.x - t0x; co.y = this.tgt.y - t0y; co.z = this.tgt.z - t0z;
     const cl = Math.sqrt(co.x * co.x + co.y * co.y + co.z * co.z);
     if (cl > CLEAR_MAX) { const r = CLEAR_MAX / cl; co.x *= r; co.y *= r; co.z *= r; }
