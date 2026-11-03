@@ -130,7 +130,7 @@ export function formationSpot(m: MatchSim, i: number, coming: boolean, out: Spot
   // were struck below the tape).
   const breathe = up ? upDepth(m, team) : 0;
   const stagger = up ? (((out.x - m.ball.pos.x) * (mate.pos.x - m.ball.pos.x) < 0 || abs(p.pos.x - m.ball.pos.x) <= abs(mate.pos.x - m.ball.pos.x)) ? -UP_STAGGER : UP_STAGGER) : 0;
-  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close + breathe + stagger : mid ? LOB_MID_Z : read ? BACK_Z - READ_IN : BACK_Z);
+  out.z = s * (up ? UP_Z + UP_Z_WEAK * weak - close + breathe + stagger : mid ? LOB_MID_Z : read ? BACK_Z - READ_IN : BACK_Z + backDepth(m, team, out.x));
 }
 
 /**
@@ -148,6 +148,27 @@ function upDepth(m: MatchSim, team: number): number {
   if (plan.afterWall || plan.by < UP_PRESSED_Y) return -UP_IN;
   return plan.by > UP_FREE_Y && !plan.overhead ? UP_OUT : 0;
 }
+
+/**
+ * How far behind BACK_Z a pair at the back stands for the opponents' coming overhead (m): the nearer the net it's met, the further back
+ * towards the glass, for the time to see it off the floor, and the one on its side of the court OH_STAGGER further than the other. Both
+ * stood on 8.00 m for three overheads in four met inside 7 m, 1 cm apart at the median (review round 32, #6). Judgements: no source says
+ * where defenders stand against a smash, beyond deep and near the glass.
+ */
+function backDepth(m: MatchSim, team: number, x: number): number {
+  if (m.rally.hitter !== team) return 0;
+  const k = m.taker[1 - team]!;
+  if (k < 0) return 0;
+  const ai = m.ai[k];
+  const plan = ai ? ai.standPlan : m.stand[k]!;
+  if (!plan.valid || plan.version !== m.pred.version || !plan.overhead || !plan.volley) return 0;
+  const near = abs(plan.bz);
+  if (near >= LOB_NEAR) return 0;
+  const g = near <= OH_CLOSE ? 1 : (LOB_NEAR - near) / (LOB_NEAR - OH_CLOSE);
+  return g * (OH_BACK + (x * plan.bx > 0 ? OH_STAGGER : -OH_STAGGER));
+}
+/** At an overhead met OH_CLOSE (m) from the net or nearer, the pair at the back is OH_BACK further back, give or take OH_STAGGER. */
+const OH_CLOSE = 5, OH_BACK = 0.5, OH_STAGGER = 0.2;
 
 /** The ball's next bounce on the floor is more than SWITCH_BACK_T away. (A boolean: a double returned from a call
  * V8 doesn't inline is boxed.) */
