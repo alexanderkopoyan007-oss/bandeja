@@ -609,6 +609,8 @@ const HUG_NEAR = 0.85;
 const BOW_AFTER = 1.1;
 const BOW_ANGLE = 0.62;
 const TAP_HOLD = 0.75;
+/** How fast the body turns back from its own glass after a contrapared (rad/s): 180 degrees in 0.57 s, a pivot on the spot. */
+const GLASS_BACK = 5.5;
 /** When into the tap the rackets touch (s; the pose is nine-tenths there), and at what height (m). */
 const TAP_TOUCH = 0.3, TAP_TOUCH_Y = 1.3;
 const TAP_TURN = 0.8;
@@ -1329,6 +1331,10 @@ export class Avatar {
   private lagK = 1;
   /** The sim was going for a contrapared at the last held frame. */
   private contraHeld = false;
+  /** A contrapared's turn to the own glass: the drawn yaw while it lasts and as it is let go of at GLASS_BACK, and the stroke's weight. */
+  private glassOn = false;
+  private glassYaw = 0;
+  private glassW = 0;
   private hand = 1;
   /** Weight of watching the ball with the head. */
   private look = 0;
@@ -2555,8 +2561,21 @@ export class Avatar {
     const sq = Math.max(this.w, this.ready * this.addrW);
     // (a contrapared is played facing the player's own back glass: while it's being played, as the family stays set after it, and a server whose last ball of the
     // point was one turned to their own glass to serve, 180 degrees in 0.3 s; review round 33)
-    const face = this.fam.glass && this.w > 0 ? net + Math.PI : net;
-    this.yaw = p.facing + wrapAngle(face - p.facing) * sq;
+    let yaw = p.facing + wrapAngle(net - p.facing) * sq;
+    // Into a contrapared at the stroke's own pace; out of it, turned back from the glass no faster than a person pivots. It followed the
+    // stroke's weight out while the sim's facing chased the ball back over them, 150-200 degrees in a third of a second, about a dozen a
+    // set from your seat (review round 34, #2).
+    const glass = this.fam.glass && this.w > 0;
+    if (glass && (cut || !this.glassOn || this.w >= this.glassW)) {
+      this.glassYaw = p.facing + wrapAngle(net + Math.PI - p.facing) * sq;
+      this.glassOn = true;
+    } else if (this.glassOn) {
+      const d = wrapAngle((glass ? p.facing + wrapAngle(net + Math.PI - p.facing) * sq : yaw) - this.glassYaw), step = GLASS_BACK * dt;
+      if (cut || (!glass && Math.abs(d) <= step)) this.glassOn = false;
+      else this.glassYaw += d > step ? step : d < -step ? -step : d;
+    }
+    this.glassW = glass ? this.w : 0;
+    this.yaw = this.glassOn ? this.glassYaw : yaw;
     {
       // Going back with the ball going past: side-on, the stance turned so the hands and the racket go with it, into
       // the overhead's own turn as the stroke's weight comes in.
