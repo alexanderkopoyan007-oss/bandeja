@@ -6,6 +6,8 @@ import { evTime, TIME_GRID, type Frame, type Packet } from './rollback.ts';
 export const P_INPUT = 1;
 export const P_PING = 2;
 export const P_PONG = 3;
+/** A seat given to the AI, on the data channels as well as through the room: an input packet whose `tick` is the tick it happens. */
+export const P_SEAT = 4;
 
 export interface InputPacket extends Packet { tick: number; hashTick: number; hash: number }
 
@@ -17,8 +19,8 @@ const F_EV = 2;
 const sameFrame = (a: Frame, b: Frame): boolean => a === b
   || (a.x === b.x && a.y === b.y && a.held === b.held && a.aim === b.aim && a.tx === b.tx && a.tz === b.tz && a.ev.length === 0 && b.ev.length === 0);
 
-export function encodeInput(p: InputPacket): ArrayBuffer {
-  W.setUint8(0, P_INPUT);
+export function encodeInput(p: InputPacket, kind = P_INPUT): ArrayBuffer {
+  W.setUint8(0, kind);
   W.setUint8(1, p.seat);
   W.setUint16(2, p.frames.length, true);
   W.setUint32(4, p.first, true);

@@ -8,7 +8,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 
-const dist = process.argv[2], SECS = Number(process.env.SECS ?? 40), WHOLE = !!process.env.WHOLE, MENUS = !!process.env.MENUS, HIDE = !!process.env.HIDE, DROP = !!process.env.DROP, FIND = !!process.env.FIND, QUIT = process.env.QUIT ?? '';
+const dist = process.argv[2], SECS = Number(process.env.SECS ?? 40), ROOMCUT = !!process.env.ROOMCUT, WHOLE = !!process.env.WHOLE, MENUS = !!process.env.MENUS, HIDE = !!process.env.HIDE, DROP = !!process.env.DROP, FIND = !!process.env.FIND, QUIT = process.env.QUIT ?? '';
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
 const server = createServer(async (req, res) => {
@@ -115,6 +115,20 @@ for (const [n, lag, loss, relay] of runs) {
   for (const x of r) {
     console.log(` seat ${x.seat}: tick ${x.tick}, menu ${x.menu}, links ${JSON.stringify(x.links)}, delay ${x.net?.delay}, hashes checked ${x.net?.hashesChecked}, rewinds ${x.net?.rollbacks}, depth max ${x.net?.depthMax}, replay max ${x.net?.replayMax?.toFixed(1)} ms, stalled ${x.net?.stalled}, sent ${x.net?.sent}, got ${x.net?.got}, events ${x.feed}/${x.sim}`);
     if (!x.net || x.menu || !x.net.hashesChecked) bad++;
+  }
+  // ROOMCUT=1: the server's connection goes from under one player, then everyone (a Worker deploy drops them all). Nobody's match
+  // ends and nobody's seat goes, and with QUIT=last after this a seat still passes on over the data channels alone.
+  if (ROOMCUT && n > 1) {
+    const state = `(() => { const a = window.__app; return { menu: a.menu.showing ?? null, taken: a.current.sim.aiTaken, tick: a.current.sim.tick, hashes: a.net?.stats.hashesChecked, lost: a.online.roomLost }; })()`;
+    let was = await Promise.all(pages.map((p) => p.evaluate(state)));
+    for (const [what, who] of [['one', pages.slice(-1)], ['all', pages]]) {
+      await Promise.all(who.map((p) => p.evaluate('window.__app.online.room.ws.close()')));
+      await new Promise((r) => setTimeout(r, 8000));
+      const now = await Promise.all(pages.map((p) => p.evaluate(state)));
+      console.log(` room gone from ${what}: ${JSON.stringify(now)}, ticks were ${was.map((x) => x.tick)}`);
+      if (now.some((x) => x.menu || x.taken || x.tick < was[0].tick + 700 || x.hashes <= was[0].hashes)) bad++;
+      was = now;
+    }
   }
   // QUIT=host|last: someone closes their window: the AI takes the seat on one tick and the rest play on.
   if (QUIT && n > 1) {

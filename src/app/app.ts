@@ -15,7 +15,7 @@ import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
 import { keepStyles, optionsFromSetup } from './options.ts';
-import { OnlineSession, SEATS, type OnlineStart } from '../net/session.ts';
+import { OnlineSession, ROOM_LOST, SEATS, type OnlineStart } from '../net/session.ts';
 import { NetMatch } from '../net/netMatch.ts';
 import { validCode } from '../net/room.ts';
 import { TEST_SHORT } from '../net/config.ts';
@@ -467,6 +467,7 @@ export class App {
       // (not the title screen's match, if this is a code that didn't work)
       if (this.playing) this.game.setMenuPaused(true);
     }
+    room &&= !this.online?.roomLost;
     if (room) this.online?.backToLobby();
     else this.closeRoom();
     const pub = this.publicMatch;
@@ -481,6 +482,7 @@ export class App {
   }
 
   private backToRoom(): void {
+    if (this.online?.roomLost) { this.onlineBroke(ROOM_LOST, false); return; }
     this.net?.end();
     this.net = null;
     if (this.game) this.game.online = null;

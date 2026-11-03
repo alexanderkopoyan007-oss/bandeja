@@ -36,6 +36,10 @@ Someone leaving doesn't end the match. The AI takes their seat on the same tick 
 
 If the host leaves, the room makes the lowest remaining player the host.
 
+**The room isn't needed once a match is running.** It finds the players and starts the match, and after that the players have each other, so losing the room's connection doesn't end anything. That covers one player's Wi-Fi blip and a Worker deploy, which drops every socket at once. The others hear from the room that the player left, but packets still arriving after 0.5 s keep the seat theirs, and the link stays open until the seat really goes. The word that a seat has gone travels through the room and over the data channels, repeated for a second because those drop what they like. Afterwards "Back to the room" says the connection was lost.
+
+A client doesn't reconnect. A player whose packets were all going through the room is cut off when they lose it, so the AI takes their seat and they play on with the AI in the others'.
+
 **The serve clock** is for someone who stays connected but has walked away. A person's serve needs a press, so they'd stop the match for everyone. `MatchConfig.serveClock` (20 s in public matches, 60 s with friends) gives the server's seat to the AI, and the HUD tells them why. It's in the sim, so it happens on the same tick everywhere. Offline it's off.
 
 ## The queue
@@ -63,7 +67,7 @@ The reviewer's 12 faults that led to these rules are listed in `DECISIONS.md`.
 
 The Worker `bandeja-rooms` runs at `bandeja-rooms.alexander-kopoyan007-721.workers.dev` on Cloudflare's free plan, with one Durable Object per room and one for the queue. `worker/wrangler.toml` holds the bindings. It accepts connections only from the Pages site and localhost. Deploy from `worker/` with `CI=1 npx --yes wrangler@4.156.2 deploy`.
 
-The free plan allows 100,000 requests a day on Workers and on Durable Objects, and 13,000 GB-seconds a day. Past a limit, new rooms fail until 00:00 UTC. Matches already connected directly carry on, because inputs don't go through the server, but handing on a seat does, so a player leaving could then end one.
+The free plan allows 100,000 requests a day on Workers and on Durable Objects, and 13,000 GB-seconds a day. Past a limit, new rooms fail until 00:00 UTC. Matches already connected directly carry on, seats handed on included, because none of that needs the server.
 
 - **Direct matches cost almost nothing.** A room sleeps once the match is running, and an open socket costs nothing while it sleeps.
 - **Relayed matches are the expensive ones.** By the arithmetic, four players relayed all the time would use the day's requests in 73 to 90 minutes. This is the case when a pair of players' networks refuse a direct path. Cloudflare's free STUN server is used, and there's no TURN.
@@ -86,12 +90,13 @@ All on one Mac, with bots playing, in separate browser windows. Lag and loss are
 | Final build, 4 players, 40 ms, queue, host quits | round trip 129-149 ms, delay 6, deepest 16. New host, AI takes the seat, hashes agree, ticks 1644 to 3364 in 15 s |
 | Final build, 2 players, queue, host quits | the one left plays on, ticks 1648 to 3376 |
 | Final build, 3 players, 80 ms, relayed, last player quits | round trip 246-265 ms, delay 8, deepest 19, longest replay 6.3 ms, hashes agree, ticks 1640 to 3361 |
+| Room connection cut in real browsers, 3 players, 40 ms, queue | from one player, then from all: nobody's match ends, nobody's seat goes, hashes agree. A player then leaves: the AI takes the seat over the data channels alone, hashes agree, ticks 2741 to 3877 |
 | Live site, 3 players, real queue, no fake lag, host quits | round trip 17 ms, delay 3, 28 hashes agree, new host, ticks 1711 to 3421 in 15 s |
 | Live site, 2 players, menus and a typed code, one quits | round trip 17 ms, delay 3, 21 hashes agree, the one left plays on |
 
 Round-trip times read 40 to 60 ms above twice the fake lag.
 
-Offline play was compared with the build before it, five 20 s runs of each, alternated, while other sessions loaded the machine. Medians were 14.0 v 12.4 ms on the laptop stand-in and 5.9 v 5.3 ms at High, with the ranges overlapping (9.3-14.8 v 10.0-14.8), and both held 120 Hz paced at the median. The offline frame only gains a few checks for an online match, so this reads as noise, but it hasn't been measured on a quiet machine. The memory check fails its 10-collection budget by one on the avatars run, 11 on both builds.
+Offline play was compared with the build before it, alternating 20 s runs. On a quieter machine (load 8-18), three runs each: medians 8.0-8.7 ms before and 8.1-8.9 ms after on the laptop stand-in, p99 12.3-13.3 ms on both, 4.3-4.5 ms at High, and both hold 120 Hz paced. An earlier set, taken while other sessions loaded the machine, spread from 9 to 15 ms on both. The memory check fails its 10-collection budget by one on the avatars run, 11 on both builds.
 
 ## Not tested
 
@@ -102,11 +107,11 @@ Offline play was compared with the build before it, five 20 s runs of each, alte
 
 ## Running the tests
 
-`tests/net/` covers packets, the event feed, rewinds, dropped seats and the serve clock. `tools/net/online-e2e.mjs` plays real matches in real browser windows, through the one-Chrome lock:
+`tests/net/` covers packets, the event feed, rewinds, dropped seats, the serve clock, and a session's behaviour with the room (with fake sockets). `tools/net/online-e2e.mjs` plays real matches in real browser windows, through the one-Chrome lock:
 
 ```bash
 npx vite build --outDir /tmp/dist-live --emptyOutDir
 START_S=100 SECS=15 FIND=1 QUIT=host LINKS='[[4,40,0.02,0]]' REMOTE=1 bash tools/one-chrome.sh node tools/net/online-e2e.mjs /tmp/dist-live
 ```
 
-`LINKS` is a list of `[players, lag ms, loss, relay]`. Other options: `WHOLE` (to the result and on to another match), `MENUS` (through the menus with a typed code), `FIND` (the public queue), `QUIT=host|last`, `HIDE` (minimise a window), `DROP` (cut connections), `REMOTE=1` (the deployed server, not a local wrangler), `BASE=<url>` (a deployed site, not a local build).
+`LINKS` is a list of `[players, lag ms, loss, relay]`. Other options: `WHOLE` (to the result and on to another match), `MENUS` (through the menus with a typed code), `FIND` (the public queue), `QUIT=host|last`, `HIDE` (minimise a window), `DROP` (cut connections), `ROOMCUT` (close the room's socket under one player, then all), `REMOTE=1` (the deployed server, not a local wrangler), `BASE=<url>` (a deployed site, not a local build).

@@ -4,7 +4,7 @@ import { PH_RALLY, type MatchSim } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import type { InputFrame } from '../sim/input.ts';
 import { NetFeed } from './feed.ts';
-import { MAX_FRAMES, P_INPUT, decodeInput, encodeInput, type InputPacket } from './packet.ts';
+import { MAX_FRAMES, P_INPUT, P_SEAT, decodeInput, encodeInput, type InputPacket } from './packet.ts';
 import { RollbackClient } from './rollback.ts';
 import type { OnlineSession, OnlineStart, SeatHandover } from './session.ts';
 import { now } from './links.ts';
@@ -18,6 +18,10 @@ const GONE_MS = 6000;
  *  so that whoever decides the tick knows it all, and nobody has to rewind further than a rewind can reach. */
 const PASS_ON_MS = 1000;
 const PASS_EVERY_MS = 100;
+/** How long a player's last packets can still be on their way once the room says they've left (ms). */
+const IN_FLIGHT_MS = 500;
+/** How long the word on a seat is repeated over the data channels, which drop what they like (ms). */
+const SAY_FOR_MS = 1000;
 /** Ticks of a gone player's hands passed round. */
 const TAIL = 64;
 /** How long a word on the screen stays (ms). */
@@ -84,11 +88,13 @@ export class NetMatch implements NetHooks {
   private readonly heardAt = new Map<number, number>();
   /** Seats whose player has gone, and when the seat is to pass to the AI. */
   private readonly going = new Map<number, number>();
-  /** Seats whose player the room says has left: nothing brings them back. */
-  private readonly leftRoom = new Set<number>();
+  /** When the room said a seat's player left. The room can lose someone who is still playing, so that alone doesn't settle it. */
+  private readonly leftRoom = new Map<number, number>();
   /** Word from others about seats we haven't seen go. */
   private readonly told = new Map<number, { h: SeatHandover; at: number }>();
   private passedAt = 0;
+  /** Seats this client has given away, repeated to the others. */
+  private readonly words: Array<{ out: ArrayBuffer; next: number; until: number }> = [];
   private hashFrom = 0;
   private noteText = '';
   private noteUntil = 0;
@@ -127,7 +133,8 @@ export class NetMatch implements NetHooks {
       }
     };
     session.onGamePacket = (from, data) => {
-      if (new DataView(data).getUint8(0) === P_INPUT) this.inbox.push({ from, data });
+      const kind = new DataView(data).getUint8(0);
+      if (kind === P_INPUT || kind === P_SEAT) this.inbox.push({ from, data });
     };
     session.onHandover = (from, h) => this.heardHandover(from, h);
     // (what happened while this client was still loading)
@@ -177,7 +184,7 @@ export class NetMatch implements NetHooks {
   /** The room says this seat's player has left. */
   seatLeft(seat: number): void {
     if (![...this.seatOf.values()].includes(seat) || this.over) return;
-    this.leftRoom.add(seat);
+    this.leftRoom.set(seat, now());
     const at = now() + PASS_ON_MS;
     if ((this.going.get(seat) ?? Infinity) > at) this.going.set(seat, at);
   }
@@ -206,6 +213,7 @@ export class NetMatch implements NetHooks {
       const c = this.client, tick = c.lastKnown[seat]! + 1, first = Math.max(0, tick - TAIL);
       const h: SeatHandover = { seat, at: tick, first, tail: c.packet(seat, first).frames };
       this.session.handover(h);
+      this.words.push({ out: encodeInput({ seat, first, frames: h.tail, ack: -1, tick, hashTick: 0, hash: 0 }, P_SEAT), next: 0, until: t + SAY_FOR_MS });
       this.giveSeat(h);
       return;
     }
@@ -238,7 +246,12 @@ export class NetMatch implements NetHooks {
 
   private giveSeat(h: SeatHandover): void {
     if (![...this.seatOf.values()].includes(h.seat)) return;
-    for (const [id, s] of this.seatOf) if (s === h.seat) { this.seatOf.delete(id); this.behind.delete(id); }
+    for (const [id, s] of this.seatOf) {
+      if (s !== h.seat) continue;
+      this.seatOf.delete(id);
+      this.behind.delete(id);
+      this.session.released(id);
+    }
     this.going.delete(h.seat);
     // Hashes either side of this may come from different histories.
     this.theirHash.clear();
@@ -255,6 +268,10 @@ export class NetMatch implements NetHooks {
     if (seat === undefined) return;
     let p: InputPacket;
     try { p = decodeInput(data); } catch { return; }
+    if (new DataView(data).getUint8(0) === P_SEAT) {
+      this.heardHandover(from, { seat: p.seat, at: p.tick, first: p.first, tail: p.frames });
+      return;
+    }
     this.stats.got++;
     if (p.seat !== seat) {
       if (this.going.has(p.seat)) this.give(p);
@@ -263,8 +280,8 @@ export class NetMatch implements NetHooks {
     this.heardAt.set(from, now());
     const known = this.client.lastKnown[seat]!;
     if (!this.give(p)) return;
-    // (back from a silence: their seat stays theirs)
-    if (this.client.lastKnown[seat]! > known && !this.leftRoom.has(seat)) this.going.delete(seat);
+    // (back from a silence, or lost by the room and plainly still here: their seat stays theirs)
+    if (this.client.lastKnown[seat]! > known && now() - (this.leftRoom.get(seat) ?? -Infinity) > IN_FLIGHT_MS) this.going.delete(seat);
     this.heardAck(from, p.ack);
     const flight = ((this.session.links?.rtt(from) ?? 0) / 2000) / DT;
     const lag = p.tick + flight - this.sim.tick, was = this.behind.get(from) ?? 0;
@@ -306,6 +323,12 @@ export class NetMatch implements NetHooks {
     const links = this.session.links;
     if (!links) return;
     const t = now();
+    for (const w of this.words) {
+      if (t < w.next) continue;
+      w.next = t + PASS_EVERY_MS;
+      for (const id of this.seatOf.keys()) links.send(id, w.out);
+    }
+    if (this.words.length > 0 && t > this.words[0]!.until) this.words.shift();
     for (const [id, seat] of this.seatOf) {
       if (t - this.sentAt.get(id)! < (links.direct(id) ? SEND_MS : SEND_RELAY_MS)) continue;
       if (this.over && this.acked.get(id)! >= this.client.lastKnown[this.seat]!) continue;

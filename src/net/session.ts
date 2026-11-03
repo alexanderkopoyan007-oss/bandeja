@@ -42,13 +42,15 @@ const READY_WAIT_MS = 30000;
 /** The input delay for a link: 60% of the slowest one-way time, 3 to 9 ticks (docs/net-proof.md). */
 export const delayFor = (rttMs: number): number => Math.max(MIN_DELAY, Math.min(MAX_DELAY, Math.round((rttMs / 2) * 0.6 * 0.12)));
 
+export const ROOM_LOST = 'The connection to the match server was lost.';
+
 const REFUSED: Record<RoomRefusal | 'lost', string> = {
   taken: 'That code is in use. Try again.',
   none: 'No match with that code. It may have ended.',
   full: 'That match is full.',
   version: 'That match is on another version of the game. Reload the page, both of you.',
   network: 'Could not reach the match server. Check your connection.',
-  lost: 'The connection to the match server was lost.',
+  lost: ROOM_LOST,
 };
 
 export class OnlineSession {
@@ -83,6 +85,10 @@ export class OnlineSession {
   private amReady = false;
   /** This player became the host before go was said, so nobody has told it who is ready. */
   private tookOver = false;
+  /** The room's connection went during a match. The players have each other, so it goes on; afterwards there's no room to go back to. */
+  roomLost = false;
+  /** Left the room during a match. Their link stays until their seat goes: the room can lose someone who is still playing. */
+  private readonly lostPeers = new Set<number>();
 
   /** `code` null: a new room. */
   constructor(code: string | null, o: RoomOptions = {}) {
@@ -104,7 +110,8 @@ export class OnlineSession {
       },
       left: (id) => {
         const seat = this.seats.indexOf(id);
-        this.links?.remove(id);
+        if (this.goTime !== null) this.lostPeers.add(id);
+        else this.links?.remove(id);
         if (seat >= 0) this.seats[seat] = -1;
         if (this.you === this.host) this.shareSeats();
         if (seat >= 0) { this.leftSeats.add(seat); this.onLeft?.(seat); }
@@ -120,7 +127,10 @@ export class OnlineSession {
       },
       message: (from, d) => this.message(from, d as Msg),
       packet: (from, d) => this.links?.packet(from, d),
-      closed: (why) => this.onClosed?.(REFUSED[why]),
+      closed: (why) => {
+        if (why === 'lost' && this.goTime !== null) this.roomLost = true;
+        else this.onClosed?.(REFUSED[why]);
+      },
     });
   }
 
@@ -143,7 +153,7 @@ export class OnlineSession {
     if ('rtc' in m) this.links?.signal(from, m.rtc).catch(() => undefined);
     else if ('side' in m) this.swapSide(from);
     else if ('ready' in m) this.readied(from);
-    else if ('handover' in m) { this.handovers.push({ from, h: m.handover }); this.onHandover?.(from, m.handover); }
+    else if ('handover' in m) { if (this.handovers.length < SEATS * 2) this.handovers.push({ from, h: m.handover }); this.onHandover?.(from, m.handover); }
     else if (from !== this.host) return;
     else if ('seats' in m) { if (validSeats(m.seats)) { this.seats = m.seats; this.onChange?.(); } }
     else if ('start' in m) this.heardStart(m.start);
@@ -235,9 +245,17 @@ export class OnlineSession {
     this.room.send(-1, { handover: h });
   }
 
+  /** A player's seat has gone to the AI: nothing more is needed from them. */
+  released(id: number): void {
+    if (this.lostPeers.delete(id)) this.links?.remove(id);
+  }
+
   /** The match is over; the room stays for another. */
   backToLobby(): void {
     this.started = null;
+    this.newMatch();
+    for (const id of this.lostPeers) this.links?.remove(id);
+    this.lostPeers.clear();
     if (this.readyTimer !== null) clearTimeout(this.readyTimer);
     this.readyTimer = null;
     this.readyFrom.clear();
