@@ -534,6 +534,14 @@ const REAR_OFF = 0.05, REAR_OFF_FROM = -0.08, REAR_OFF_AT = -0.01, REAR_OFF_LAND
  */
 const REAR_ROLL = 0.6, REAR_ROLL_FROM = -0.24, REAR_ROLL_AT = -0.03, REAR_DOWN_FROM = 0.1, REAR_DOWN_AT = 0.3;
 /**
+ * A drive's (and a slice's and a lob's) and the serve's rear foot the same, less far: the heel comes up as the weight goes onto the front foot
+ * through the ball, and down in the finish (rad, s about the ball). The rear foot is the racket side's on a forehand and the serve, the other on a
+ * backhand. It stayed flat, 2-7 degrees up at a drive, 0 at the serve (review round 32, #11; the serve's standard is
+ * docs/research/serve-and-strokes-motion.md K5, a drive's from coaching text, no footage row).
+ */
+const DRIVES = /^(forehand|backhand)(-slice|-lob)?$/, DRIVE_ROLL_RATE = 3.5;
+const DRIVE_ROLL = 0.35, SERVE_ROLL = 0.45, DRIVE_ROLL_FROM = -0.18, DRIVE_ROLL_AT = 0.02, DRIVE_DOWN_FROM = 0.2, DRIVE_DOWN_AT = 0.45;
+/**
  * In the air the legs come in under the body: AIR_IN of the feet's width across the stance goes, and neither leg reaches past AIR_REACH of its length (1 -
  * cos(13.5), knees 27 on video). Left to a stance measured on the floor the feet stayed 0.52-0.65 m apart, and on a longer body the front knee locked at 2 degrees.
  */
@@ -1349,6 +1357,9 @@ export class Avatar {
   private reachZ = 0;
   private reachV = 0;
   private dropV = 0;
+  /** The rear heel's roll at a drive or the serve as shown (rad), and which foot it is on. */
+  private driveRoll = 0;
+  private driveRollF = 0;
   /** The weight's tilt (rad, towards world x and z) and its rate; last frame's filtered velocity. */
   private tiltX = 0;
   private tiltZ = 0;
@@ -3016,6 +3027,7 @@ export class Avatar {
     this.wI.reset();
     this.dropI.reset();
     this.dropShown = 0;
+    this.driveRoll = 0;
     this.jumpT0 = -1;
     this.landAt = -1;
     this.upNeed = 0;
@@ -3299,6 +3311,19 @@ export class Avatar {
         if (roll > 0.001) this.rollOver(rear, back, rear === 1 ? this.footQR : this.footQL, roll);
         back.y += REAR_OFF * smoothstep(REAR_OFF_FROM, REAR_OFF_AT, T) * (1 - smoothstep(REAR_OFF_LAND_FROM, REAR_OFF_LAND_AT, T));
       }
+      let want = 0, f = this.driveRollF;
+      if (con >= 0 && (name === 'serve' || DRIVES.test(name))) {
+        const T = this.lastT - con;
+        f = name.startsWith('backhand') ? 1 - rear : rear;
+        want = (name === 'serve' ? SERVE_ROLL : DRIVE_ROLL) * smoothstep(DRIVE_ROLL_FROM, DRIVE_ROLL_AT, T) * (1 - smoothstep(DRIVE_DOWN_FROM, DRIVE_DOWN_AT, T));
+      }
+      // (no faster than DRIVE_ROLL_RATE, and down before it changes feet: the serve's contact moves when its swing starts, and the heel
+      // jumped with it, serve pops 7 a minute to 42)
+      if (f !== this.driveRollF) { if (this.driveRoll > 0.001) want = 0; else this.driveRollF = f; }
+      const step = DRIVE_ROLL_RATE * this.dt, d = want - this.driveRoll;
+      this.driveRoll += d > step ? step : d < -step ? -step : d;
+      const g = this.driveRollF;
+      if (this.driveRoll > 0.001) this.rollOver(g, g === 1 ? this.footR : this.footL, g === 1 ? this.footQR : this.footQL, this.driveRoll);
       return;
     }
     const u = (this.lastT - this.jumpT0) / this.jumpT;
