@@ -188,7 +188,13 @@ export class BallView {
     if (sim.phase === PH_DEAD) this.dealAt = -1;
     else if (this.dealAt === -1) this.dealAt = t;
     // (nothing is dealt after the last point; a replay's clock runs behind the deal it would otherwise wait for)
-    const out = sim.phase === PH_DEAD ? (sim.phaseUntil - t) / DEAL_FADE : sim.phase === PH_OVER ? 0 : t < this.dealAt ? 1 : (t - this.dealAt) / DEAL_FADE;
+    let out = sim.phase === PH_DEAD ? (sim.phaseUntil - t) / DEAL_FADE : sim.phase === PH_OVER ? 0 : t < this.dealAt ? 1 : (t - this.dealAt) / DEAL_FADE;
+    // Gone is gone until the deal: a change of ends puts the dead time's end 2.4 s on, and the ball came back full size in a frame, rolled on and
+    // went small a second time (review round 26). A clock going back (a replay) starts afresh.
+    if (sim.phase === PH_DEAD) {
+      if (this.deadT >= 0 && t >= this.deadT && out > this.deadOut) out = this.deadOut;
+      this.deadOut = out; this.deadT = t;
+    } else this.deadT = -1;
     const k = out >= 1 ? 1 : out <= 0 ? 0 : out;
     if (k !== this.dealK) {
       this.dealK = k;
@@ -198,6 +204,9 @@ export class BallView {
   }
   private dealAt = 0;
   private dealK = 1;
+  /** In the dead time, last frame's fade and its time (-1: not in it). */
+  private deadOut = 1;
+  private deadT = -1;
 
   private placeShadow(x: number, y: number, z: number): void {
     const h = Math.max(0, y - this.radius);
