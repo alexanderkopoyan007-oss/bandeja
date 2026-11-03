@@ -609,6 +609,8 @@ const HUG_NEAR = 0.85;
 const BOW_AFTER = 1.1;
 const BOW_ANGLE = 0.62;
 const TAP_HOLD = 0.75;
+/** When into the tap the rackets touch (s; the pose is nine-tenths there), and at what height (m). */
+const TAP_TOUCH = 0.3, TAP_TOUCH_Y = 1.3;
 const TAP_TURN = 0.8;
 /**
  * Walking back between points. There is no walk clip (docs/mixamo.md), so the jog is drawn WALK_UP of the way to the
@@ -1480,6 +1482,9 @@ export class Avatar {
    * the right foot. The soundscape hears a step where one comes down onto the floor.
    */
   readonly feet = new Float64Array(6);
+  /** The racket tap's touch, for the soundscape: counted at each, at this point (x, y, z). One of the two counts it. */
+  tapSeq = 0;
+  readonly tapAt = new Float64Array(3);
   private readonly footA = new THREE.Vector3();
   private readonly footQ = new THREE.Quaternion();
 
@@ -2900,12 +2905,21 @@ export class Avatar {
         this.tapKey = this.handed > 0 ? TRIUMPH : TRIUMPH_LEFT;
         this.tapYaw = this.yaw;
       }
-    } else if ((sim.doubles && sim.walking === 1) || net) {
+    } else if ((sim.doubles && (sim.walking === 1 || sim.walking === 3)) || net) {
+      // (walking 3 too, off to the post at a change of ends, when they come close enough. They seldom do in its 2.4 s: 2.85 m apart at
+      // the nearest in the one measured, so a game won at a change of ends still mostly has no tap: review round 34, #8, open)
       this.tapKey = null;
-      const q = sim.players[net ? sim.overMate[idx]! : idx ^ 2]!;
+      const qi = net ? sim.overMate[idx]! : idx ^ 2, q = sim.players[qi]!;
       const mx = q.pos.x - p.pos.x, mz = q.pos.z - p.pos.z;
       if (mx * mx + mz * mz < TAP_NEAR * TAP_NEAR) {
+        const was = this.tapT;
         this.tapT += dt;
+        if (idx < qi && was < TAP_TOUCH && this.tapT >= TAP_TOUCH) {
+          this.tapSeq++;
+          this.tapAt[0] = (p.pos.x + q.pos.x) * 0.5;
+          this.tapAt[1] = TAP_TOUCH_Y;
+          this.tapAt[2] = (p.pos.z + q.pos.z) * 0.5;
+        }
         want = this.tapT < TAP_HOLD ? 1 : 0;
         // (facing f looks along (-sin f, -cos f))
         this.tapYaw = Math.atan2(-mx, -mz);

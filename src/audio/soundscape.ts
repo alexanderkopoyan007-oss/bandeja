@@ -44,6 +44,8 @@ const GAIN_TOP = 2.7;
 const GRUNT_WOMEN = 4, GRUNT_WOMEN_GAIN = 0.56;
 /** The next courts: under the far pair of your own court, on the Crowd slider, and a rest of NEXT_REST to twice that between points. Played at the level of your own match they ran a false tick under the ball you were timing, 46 impacts a minute a court where the survey has 18. */
 const NEXT_GAIN = 0.4, NEXT_REST = 12;
+/** Partners' rackets touching after a point: the softest frame knock, a little higher (lighter) than a shot's. */
+const TAP_GAIN = 0.3, TAP_RATE = 1.4;
 /** A sole this high (m) is off the floor; this low, on it. */
 const FOOT_UP = 0.03, FOOT_DOWN = 0.012;
 /** Under this speed (m/s) a foot set down is the stance settling, not a step: a third of all landings in a real match. */
@@ -94,7 +96,12 @@ function racketKind(shot: number): number {
 }
 
 /** A player's feet as the soundscape reads them: soles (x, height, z for left and right), or null (capsules). */
-export interface FeetSource { feet: Float64Array | null }
+export interface FeetSource {
+  feet: Float64Array | null;
+  /** The racket tap (avatar.ts): counted up at each touch, at tapAt (x, y, z). */
+  tapSeq?: number;
+  tapAt?: Float64Array;
+}
 
 export class Soundscape {
   private readonly out: AudioSink;
@@ -103,6 +110,7 @@ export class Soundscape {
   private readonly neighbours: number[];
   private sim: MatchSim | null = null;
   private seen = 0;
+  private readonly tapsHeard = [0, 0, 0, 0];
   /** In a replay: its own place in its sim's events, and the pitch of what it plays. */
   private replaying = false;
   private seenReplay = 0;
@@ -197,6 +205,7 @@ export class Soundscape {
     if (this.birds) this.birdsSing(renderTime);
     if (dt > 0) {
       for (let i = 0; i < sim.players.length; i++) this.feetOf(sim, i, feet[i]?.feet ?? null, renderTime, dt);
+      for (let i = 0; i < sim.players.length; i++) this.tapOf(i, feet[i]);
     }
     this.neighbourCourts(renderTime);
   }
@@ -502,6 +511,15 @@ export class Soundscape {
    * the bounce between, then a pause between points. Club padel is about 88 impacts in 5 minutes (Higgins, via The
    * Padel Paper), counting the pauses.
    */
+  /** Partners' rackets touching after a point. It made no sound, in close-up, after every point (review rounds 33 and 34). */
+  private tapOf(i: number, src: FeetSource | undefined): void {
+    const n = src?.tapSeq ?? 0;
+    if (n === this.tapsHeard[i]) return;
+    this.tapsHeard[i] = n;
+    const at = src!.tapAt!;
+    this.out.play('racket', racketBin(RK_DRIVE, 0, RQ_FRAME), at[0]!, at[1]!, at[2]!, TAP_GAIN, TAP_RATE, 0, BUS_PLAYERS);
+  }
+
   private neighbourCourts(t: number): void {
     if (this.neighbours.length === 0) return;
     if (this.lastTime >= 0 && t < this.lastTime - 1) for (let i = 0; i < this.nNext.length; i++) this.nNext[i] = t + 2 + i;

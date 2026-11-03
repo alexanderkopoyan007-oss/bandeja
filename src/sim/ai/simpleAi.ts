@@ -73,6 +73,15 @@ export function humanMotor(grade: number, pressure: number): number {
   return SKILL.human.motor * SKILL.human.grade[grade]! * (1 + SKILL.pressure * pressure * pressure);
 }
 
+/**
+ * The top level's motor spread at this pressure. However well a person times a smash it is no steadier than a pro's: at a Perfect a
+ * person's spread was half the top level's, with full effort against its 0.88, and a well-timed smash almost never went wrong (half
+ * winners, nearly no errors, the AI partner one in sixteen: review round 33, #6). Other shots keep the timing's say.
+ */
+export function proMotor(pressure: number): number {
+  return byLevel(SKILL.motor, 1) * (1 + SKILL.pressure * pressure * pressure);
+}
+
 /** The share of a ball's pressure that reaches a volley met at this height (SimpleAi.steadied, and a human's). */
 export function blockShare(height: number): number {
   const u = clamp((height - BLOCK_FROM) / (BLOCK_TO - BLOCK_FROM), 0, 1);

@@ -25,7 +25,7 @@ import { formationSpot, bounceIsFar, roundPartner, SWITCH_X, type Spot } from '.
 import { styleOf } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
 import { smashLanding } from './contact/smashAim.ts';
-import { SimpleAi, WOMENS_SPEED, blockShare, humanMotor, volleyControl } from './ai/simpleAi.ts';
+import { SimpleAi, WOMENS_SPEED, blockShare, humanMotor, proMotor, volleyControl } from './ai/simpleAi.ts';
 import { makeWorld, makeNetCloth, type WorldOptions } from './setup.ts';
 import type { NetCloth } from './court/netCloth.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
@@ -1997,6 +1997,7 @@ export class MatchSim {
     const read = ai && by >= 0 && !this.ai[by] && this.players[by]!.team !== team ? this.readOn[by]! * ai.level : 0;
     r.motor = ai ? ai.motor(this.lastPressure * ai.steadied(b.pos.y)) * (1 - READ_CUT * read)
       : humanMotor(p.grade, this.lastPressure * (shot === SHOT_VOLLEY ? blockShare(b.pos.y) : 1));
+    if (!ai && shot === SHOT_SMASH) r.motor = max(r.motor, proMotor(this.lastPressure));
     if (!ai && !serving && !feed) {
       // (the way across as seen from where they stand, + down the line: the same ball from the other corner is the same
       // ball, and one aim across the court read as two places; review round 17, the pro's #1)
