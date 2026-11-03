@@ -40,6 +40,8 @@ export class Transitions {
   private readonly names: [string, string];
   private wasDead = false;
   private liftAt = -1;
+  /** How dark the dip got before it lifts. */
+  private reached = 0;
   private shown = -1;
   private seen = 0;
   /** A game or set ended: show the card once the next point is set up. */
@@ -74,11 +76,13 @@ export class Transitions {
     if (dead) {
       const rem = sim.cutIn;
       if (rem < DIP_IN) a = DIP_PEAK * Math.min(1, (DIP_IN - rem) / DIP_IN);
+      this.reached = a;
     } else {
       if (this.wasDead) this.liftAt = sim.time;
       if (this.liftAt >= 0) {
         const t = sim.time - this.liftAt;
-        a = t < DIP_OUT ? DIP_PEAK * (1 - t / DIP_OUT) : 0;
+        // (from as dark as it got: a walk that ended itself in the 0.35 s after a key went from 0.4 to 0.85 in a frame with nothing to hide, review round 33)
+        a = t < DIP_OUT ? this.reached * (1 - t / DIP_OUT) : 0;
         if (t >= DIP_OUT) this.liftAt = -1;
         // The players are in their new places: the card for the game just won.
         if (this.cardDue && t >= DIP_OUT * 0.5) this.showCard(sim, team, now);

@@ -3466,3 +3466,12 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **Only inside 5.5 m, and not for whoever is on the ball.** A player at the back keeps their eye on it, and the taker turns as they always did.
 - **Between points people look where they walk.** They were watching the ball in the server's hand all the way, walking backwards to the net.
 - **Left alone:** the ball going small at the end of the dead time, Low. A change of ends isn't known until the score takes the point, after the fade, so fixing the double fade means moving the score, for a few pixels.
+
+## Round 27: the walk's facing goes back to the render (2026-11-03)
+
+- **Round 26's "look where they walk" belonged in the render, and was already there.** avatar.ts's walkTurn turns the body to the walk and back to the net near the place, on a sim that faces the net. Putting the walk direction in the sim fought that, so I took it out rather than tune either side.
+- **The sim turns to the place's way at 2 rad/s, not at once.** The walk's start had written the place's facing over the point's in one tick. The render's walk turn follows up to 4.5 rad/s, so 2 leaves it room.
+- **A walk isn't done until everyone faces their place.** The alternative was a snap at the end of a short walk.
+- **Angles stay continuous where the walk sets them.** `facing` is never wrapped, and the render treats a change of 2*pi as a turn. Any new write to `facing` should add a wrapped difference, not assign.
+- **The render's walk turn unwinds the way it went.** Walking straight back the way reads +180 and -180 on alternate frames. It wasn't the cause of #1, but it would chase the wrong side, so it stays fixed.
+- **The contrapared's facing is the stroke's, not the family's.** The family outlives the stroke.

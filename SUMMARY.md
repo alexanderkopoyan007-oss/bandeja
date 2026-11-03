@@ -910,6 +910,16 @@ One High, confirmed and fixed: the ball jumped from the floor to the hand at the
 | High, fps | 186 | 210 |
 | High paced at 120 Hz, fps, p99 ms | | 120.5, 8.3 |
 
+| Round 27 | Round 25 | Round 26 | After |
+|---|---|---|---|
+| Walks with a spin over 90 degrees in 0.25 s, four seed groups | 2 of 53 | 36 of 48 | 0 of 48 |
+| Peak chest turn a walk, p50/p90/max deg/s | 292/405/2058 | 449/704/1885 | 259/305/920 |
+| The same in the walk's first 0.8 s | 228/343/867 | 364/538/853 | 140/282/453 |
+| Time over 300 deg/s a walk, p90 s | 0.10 | 0.62 | 0.03 |
+| Walk length, p50 s | 5.0 | 5.1 | 5.1 |
+| Pops a minute, twelve seeds | | 12.75 | 12.38 |
+| Men, 6000 points: shots, W/FE/UE, serving pair | | 9.9, 42.2/25.9/31.9, 66.4 | 10.0, 42.2/26.1/31.7, 65.3 |
+
 ### Bugs found and fixed in Phase 9 (outside the review rounds)
 - **The owner's contrapared bug.** A human's contrapared plan was charged its turn again on every re-plan, so it
   always ran out of time and fell back to a stroke facing the net, which whiffed.

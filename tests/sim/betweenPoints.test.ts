@@ -47,22 +47,38 @@ describe('a key in the walk back', () => {
   });
 });
 
+describe('the walk back', () => {
+  it('turns nobody faster than a walk turns, at either end', () => {
+    // (facing along the walk, they arrived back to their place and were set square in a tick, 150-210 degrees; review round 33)
+    const m = new MatchSim({ seed: 5602, doubles: true, human: [false, false, false, false], aiLevel: [1, 1] });
+    const none = [null, null, null, null];
+    let most = 0, walks = 0, was = 0;
+    const f0 = m.players.map((p) => p.facing);
+    for (let t = 0; t < 120 * 600 && m.phase !== PH_OVER; t++) {
+      m.step(none);
+      if (m.walking > 0 && m.walking < 3 && was === 0) walks++;
+      m.players.forEach((p, i) => {
+        const d = Math.abs(Math.atan2(Math.sin(p.facing - f0[i]!), Math.cos(p.facing - f0[i]!)));
+        // (but the cut at a change of ends, where they come on from the post on the other side)
+        if (was !== 3 && ((m.walking > 0 && m.walking < 3) || was > 0)) most = Math.max(most, d);
+        f0[i] = p.facing;
+      });
+      was = m.walking;
+    }
+    expect(walks).toBeGreaterThan(20);
+    // (the walk's own 2 rad/s, a tick at a time)
+    expect(most).toBeLessThan(0.05);
+  });
+});
+
 describe('the server\'s partner', () => {
-  it('faces the opponents at the serve, and looks where they walk', () => {
+  it('faces the opponents at the serve', () => {
     const m = new MatchSim({ seed: 5601, doubles: true, human: [false, false, false, false], aiLevel: [1, 1] });
     const none = [null, null, null, null];
     const M = m as never as { score: { serverPlayer(): number } };
-    let n = 0, away = 0, walked = 0, back = 0;
+    let n = 0, away = 0;
     for (let t = 0; t < 120 * 900 && m.phase !== PH_OVER; t++) {
       m.step(none);
-      for (const p of m.players) {
-        const v = Math.hypot(p.vel.x, p.vel.z);
-        if (m.phase === PH_SETUP && m.walking > 0 && m.walking < 3 && v > 1) {
-          const a = p.facing - Math.atan2(-p.vel.x, -p.vel.z);
-          walked++;
-          if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) > 1.2) back++;
-        }
-      }
       if (m.phase !== PH_TOSS) continue;
       const i = M.score.serverPlayer() ^ 2, p = m.players[i]!;
       n++;
@@ -71,7 +87,5 @@ describe('the server\'s partner', () => {
     expect(n).toBeGreaterThan(200);
     // (135 degrees, every serve, before)
     expect(away / n).toBeLessThan(0.02);
-    expect(walked).toBeGreaterThan(2000);
-    expect(back / walked).toBeLessThan(0.05);
   });
 });

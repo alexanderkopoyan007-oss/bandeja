@@ -185,8 +185,8 @@ const MEET_MAX = 1.2;
 const WALK_SPEED = 1.5;
 const WALK_MAX = 7;
 const WALK_DONE = 0.06;
-/** Over this speed between points a player looks where they walk (m/s). */
-const WALK_FACE = 0.5;
+/** How fast the sim's facing goes round to a player's place between points (rad/s); the render's walk turn follows up to 4.5. */
+const WALK_TURN = 2;
 /** Nearer the net than this a player not on the ball turns no further than NET_WATCH_* off the net for one behind them (m; 70 degrees). */
 const NET_WATCH = 5.5, NET_WATCH_SIN = 0.94, NET_WATCH_COS = 0.342;
 /**
@@ -501,6 +501,8 @@ export class MatchSim {
       const p = this.players[i]!;
       this.walkHomeX[i] = turned ? this.walkHomeX[i]! : p.pos.x;
       this.walkHomeZ[i] = turned ? -this.walkHomeZ[i]! : p.pos.z;
+      // (and the way they face, as the places' facings are set over it: set at once, all four turned in a tick as the walk began)
+      this.walkHomeF[i] = turned ? Math.PI - p.facing : p.facing;
       if (this.walkHomeZ[i]! * this.side(p.team) <= 0) walk = false;
     }
     for (const p of this.players) p.setHalf(this.side(p.team), c.halfW, c.halfL);
@@ -574,10 +576,11 @@ export class MatchSim {
       // The places are the walk's ends: back to where everyone was.
       for (let i = 0; i < this.players.length; i++) {
         const p = this.players[i]!;
-        const x = this.walkHomeX[i]!, z = this.walkHomeZ[i]!;
+        const x = this.walkHomeX[i]!, z = this.walkHomeZ[i]!, f = this.walkHomeF[i]!;
         this.walkHomeX[i] = p.pos.x;
         this.walkHomeZ[i] = p.pos.z;
         this.walkHomeF[i] = p.facing;
+        p.facing = f;
         p.pos.x = clamp(x, p.minX, p.maxX);
         p.pos.z = clamp(z, p.minZ, p.maxZ);
       }
@@ -622,7 +625,11 @@ export class MatchSim {
       const p = this.players[i]!;
       p.pos.x = this.walkHomeX[i]!;
       p.pos.z = this.walkHomeZ[i]!;
-      p.facing = this.walkHomeF[i]!;
+      // (the same way round as they face now: facing isn't wrapped, and set to 0 from -360 the body was drawn spinning a full turn into the serve; review round 33)
+      let d = this.walkHomeF[i]! - p.facing;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      p.facing += d;
       p.vel.set(0, 0, 0);
     }
     this.walking = 0;
@@ -639,7 +646,11 @@ export class MatchSim {
       this.walkDrive(i, meet);
       p.clock = this.time;
       p.move();
-      if (this.walkD > (meet ? 0.25 : WALK_DONE)) far++;
+      // There is turned to their place as well: a short walk ended with the turn half done, and they were set square in a tick (review round 33).
+      let d = this.walkHomeF[i]! - p.facing;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      if (this.walkD > (meet ? 0.25 : WALK_DONE) || (!meet && abs(d) > WALK_TURN * DT)) far++;
     }
     // (walking off at a change of ends, the hold's end takes them on)
     if (this.walking === 3) return;
@@ -1159,8 +1170,14 @@ export class MatchSim {
     // Face the ball while preparing, otherwise the direction of travel / the net.
     const b = this.ball.pos, at = this.overAt, end = this.side(p.team);
     const serve = this.phase === PH_SETUP || this.phase === PH_TOSS;
-    if (this.walking > 0 && p.vel.x * p.vel.x + p.vel.z * p.vel.z > WALK_FACE * WALK_FACE) p.faceTowards(at.set(p.pos.x + p.vel.x, 0, p.pos.z + p.vel.z));
-    else if ((serve || this.phase === PH_RALLY) && abs(p.pos.z) < NET_WATCH && (b.z - p.pos.z) * end > 0 && p.swing === SW_IDLE && this.taker[p.team] !== i) {
+    if (this.walking > 0) {
+      // Between points the sim's facing goes round to their place's at WALK_TURN, and the body turns to where they walk over it (avatar.ts walkTurn). Faced
+      // along the walk in the sim, they arrived with their back to their place and were set square in a tick: 150-210 degrees in 0.2 s, every walk (review round 33).
+      let d = this.walkHomeF[i]! - p.facing;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      p.facing += clamp(d, -WALK_TURN * DT, WALK_TURN * DT);
+    } else if (this.doubles && (serve || this.phase === PH_RALLY) && abs(p.pos.z) < NET_WATCH && (b.z - p.pos.z) * end > 0 && p.swing === SW_IDLE && this.taker[p.team] !== i) {
       // A partner at the net leaves a ball behind them to whoever is playing it. Turned to their own server, chest to the back glass, they spent 3.7 s of a
       // point with their back to the net and spun round at the serve (review round 32).
       const off = b.x < p.pos.x ? -1 : 1;

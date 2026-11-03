@@ -909,3 +909,29 @@ On the real build, seed 5130003, a key 1.0 s into the walk: the one drawn jump, 
 Online, on this build through the deployed rooms: two windows, 40 ms, 2% loss, 20 s, 36 state hashes agreed on each side through 9-12 rewinds, no stall. Short, and bots: it shows the changes hash alike, not how a skip feels online.
 
 Tests that moved, all read first. **soundscape, contrapared, assist:** short samples that reached their floors; the walk is unchanged, 5.07 s against 5.08 at the median, so they run longer. **recovery:** 1.83 against 1.8 on one seed; three seeds read 1.83, 1.48, 1.68 against 1.51, 1.45, 1.61, and the bug reads 3.8, so it runs 420 s.
+
+## Round 27 (2026-11-03, on 67a4c8e; "review round 33" in the code's comments)
+
+Three reviewers and a sceptic: 16 findings, four rated High, one confirmed High, and that one was mine. Round 26 had walkers face where they walked, and the render was built on the sim facing the net through the walk.
+
+| # | Rank | Finding | Status |
+|---|---|---|---|
+| 1 | High | **After the walk back, players spin 150-210 degrees on the spot in about 0.2 s, as the wide shot returns.** Two reports, merged. 13 of 16 walks on the sceptic's seeds, f281a96 0 of 14. | **Fixed, and three causes under it.** (a) The sim faces their place's way through the walk again, turned there at 2 rad/s from wherever the point left them, and the render turns the body to the walk as it was built to. The walk's start had set every facing in one tick too. (b) A walk ends when everyone is turned as well as there. (c) `facing` isn't wrapped, and the walk's end wrote 0 over -360, which the render eased out as a full turn. Walks with a spin over 90 degrees in 0.25 s, four seed groups: 36 of 48, Round 25 2 of 53, now 0 of 48. |
+| 2 | Medium | Strokes are met from a squat on a narrow base; the lunge sits back. Lowered from High. | Open. Long-standing; the knees are off on one body, p1, and the standard is a code comment. |
+| 3 | Medium | Nobody is set when they hit: the front foot is still stepping at the ball. Lowered from High. | Open. Long-standing, about 100 ms round the contact. |
+| 4 | Medium | Everyone whips round at the start of the walk back. | **Fixed with #1.** Peak chest turn a walk p50/p90/max 449/704/1885 deg/s, Round 25 292/405/2058, now 259/305/920; time over 300 deg/s p90 0.62 s, now 0.03. |
+| 5 | Medium | Pro can't stop a tight hand: 130 sets to 8 on fresh seeds; a third of the AI's lobs land inside the service line. | Open, the owner's call. The AI's lob aim is the lever the reviewer names. |
+| 6 | Medium | A well-timed smash can no longer go wrong: half winners, almost no errors, against the partner's one in sixteen. | Open, the owner's call: how much timing should count. |
+| 7 | Medium | A player who never leaves the back glass still wins 19 sets in 24 at Pro; the net is worth about 4 points. | Open. Round 17 #15 and Round 20 #12 under another name, and worse than Round 18's recheck. |
+| 8 | Medium | The body falls into a stroke faster than gravity. | Open. |
+| 9 | Medium | The elbow flies round a still hand in fast runs and after forehand volleys. | Open. |
+| 10 | Medium | Legs pass through each other, and the thigh swings across the body in the first strides. | Open. |
+| 11 | Medium | Jump smash: the legs are tucked at the ball. | Open, worse than the Round 23 table says. |
+| 12 | Low | The dip blinks dark with nothing to hide when a walk ends itself in the 0.35 s after a key, or on its 7 s limit. Two reports. | **Fixed.** It lifts from as dark as it got. |
+| 13 | Low | In singles the net rule turned away the only player who can play the ball. | **Fixed.** The rule is doubles only: in singles nobody else is on it. |
+| 14 | Low | Partners touching rackets make no sound, in close-up, after every point. | Open. |
+
+Found while tracing #1, not in the review: a server whose last ball of the previous point was a contrapared turned to face their own back glass for the serve, 180 degrees in 0.3 s, because the stroke family stays set and the contrapared's facing applied to the address too. It now applies only during the stroke. Long-standing.
+
+What I checked and how. The sceptic's spin.ts on four seed groups, on Round 25, Round 26 and this build. Round 26's own walk13 recordings, 4 seeds by 240 s each, on all three. The sim's turn a tick, at most 2 rad/s through every walk and its ends, is a test now. The walk is still 5.1 s at the median. Pops on twelve seeds 12.38 a minute, from 12.75. Men's 6000 points 10.0 shots, 42.2/26.1/31.7, serving pair 65.3, from 9.9, 42.2/25.9/31.9 and 66.4 on the same seeds.
+Online through the deployed rooms, 20 s at 40 ms and 2% loss: 36 hashes agreed on each side through 4-10 rewinds, no stall.

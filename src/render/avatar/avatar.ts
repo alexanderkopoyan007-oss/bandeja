@@ -2548,8 +2548,9 @@ export class Avatar {
     if (this.tapW > 0.001) this.mixKey(this.tapMix, this.tapKey ?? (this.handed > 0 ? TAP : TAP_LEFT), this.tapW, this.outTap);
     else this.outTap.set(0, 0, 0, 0);
     const sq = Math.max(this.w, this.ready * this.addrW);
-    // (a contrapared is played facing the player's own back glass)
-    const face = this.fam.glass ? net + Math.PI : net;
+    // (a contrapared is played facing the player's own back glass: while it's being played, as the family stays set after it, and a server whose last ball of the
+    // point was one turned to their own glass to serve, 180 degrees in 0.3 s; review round 33)
+    const face = this.fam.glass && this.w > 0 ? net + Math.PI : net;
     this.yaw = p.facing + wrapAngle(face - p.facing) * sq;
     {
       // Going back with the ball going past: side-on, the stance turned so the hands and the racket go with it, into
@@ -2568,9 +2569,14 @@ export class Avatar {
       // The last of the way with the net back in front of them: the serve is half a second after they get there.
       const hx = sim.walkHomeX[idx]! - p.pos.x, hz = sim.walkHomeZ[idx]! - p.pos.z;
       const near = sim.walking === 2 ? smoothstep(WALK_NEAR0, WALK_NEAR1, Math.sqrt(hx * hx + hz * hz)) : 1;
-      const to = !going ? 0 : sp > WALK_GAIT_V ? wrapAngle(Math.atan2(-this.vx, -this.vz) - this.yaw) * near : this.walkTurn * near;
+      // (on the side of the turn already made: walking straight back, the way read +180 one frame and -180 the next, the turn back to the net chased the
+      // wrong side and they arrived with their back to it, then spun 250 degrees in 0.4 s; review round 33. Unwound the way it went, not wrapped.)
+      let way = sp > WALK_GAIT_V ? wrapAngle(Math.atan2(-this.vx, -this.vz) - this.yaw) : this.walkTurn;
+      if (way - this.walkTurn > Math.PI) way -= 2 * Math.PI;
+      else if (way - this.walkTurn < -Math.PI) way += 2 * Math.PI;
+      const to = !going ? 0 : way * near;
       // (eased into the turn: from standing to 4.5 rad/s in a frame popped both arms)
-      const e = wrapAngle(to - this.walkTurn), wish = e * WALK_TURN_GAIN, lim = WALK_TURN_ACC * dt;
+      const e = to - this.walkTurn, wish = e * WALK_TURN_GAIN, lim = WALK_TURN_ACC * dt;
       const dv = (wish > WALK_TURN_RATE ? WALK_TURN_RATE : wish < -WALK_TURN_RATE ? -WALK_TURN_RATE : wish) - this.walkTurnV;
       this.walkTurnV = cut ? 0 : this.walkTurnV + (dv > lim ? lim : dv < -lim ? -lim : dv);
       this.walkTurn = cut ? 0 : this.walkTurn + this.walkTurnV * dt;
