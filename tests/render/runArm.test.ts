@@ -26,7 +26,7 @@ describe('the free arm in a fast run', () => {
   } });
 
   it('keeps the free upper arm within 45 degrees of the trunk nearly always', () => {
-    const s = out.slice().sort((x, y) => x - y), wide = out.filter((x) => x > 45).length / out.length;
+    const wide = out.filter((x) => x > 45).length / out.length;
     // (here out p10/p50/p90 3/13/22 degrees, over 45 in 0.9% of frames; with the pole down and back off the chest 13/23/50 and 14.1%)
     expect(out.length).toBeGreaterThan(300);
     expect(wide).toBeLessThan(0.05);
