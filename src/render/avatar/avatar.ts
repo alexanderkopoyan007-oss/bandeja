@@ -751,8 +751,10 @@ const STEP_TIME = 0.15;
  */
 const RUN_V_ON = 0.45;
 const RUN_V_OFF = 0.3;
-/** Between points the run gait takes over at this speed and a half metre a second more (m/s). */
-const RUN_V_BREAK = 2.5;
+/** Between points the run gait takes over at this speed and a half metre a second more (m/s). At 2.5 a body at 2.5-2.8 m/s was still on a stroke
+ * clip and flung its rear foot up and far behind for 70 ms, about twice a minute for a moving seat; the reviewer's trial at 1.8 cut that to a third
+ * with the pops unchanged (review round 26). The rally's gait takes over from 0.45, so jogging on it is nothing new. */
+const RUN_V_BREAK = 1.8;
 const RUN_PLANT = 0.3;
 /** The run is back on this long after a contact (s). */
 const RUN_AFTER = 0.08;
