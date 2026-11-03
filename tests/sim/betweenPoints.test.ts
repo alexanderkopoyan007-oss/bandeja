@@ -23,7 +23,7 @@ describe('a key in the walk back', () => {
         const under = m.cutComing;
         if (m.phase === PH_SETUP && m.walking > 0 && m.walking < 3) {
           if (start < 0) start = m.time;
-          if (m.time > start + 1 && !under && (m.walkUntil - m.time) > 1) {
+          if (m.time > start + 1 && !under && m.cutIn > 1) {
             f.clear();
             f.push(true, BTN_DRIVE, m.time);
             f.held = BTN_DRIVE;
