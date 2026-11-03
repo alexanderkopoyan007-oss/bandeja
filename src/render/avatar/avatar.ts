@@ -3931,10 +3931,11 @@ export class Avatar {
         Q.copy(this.lockQ[f]!);
         toe.quaternion.copy(this.lockToe[f]!);
       } else if (this.relT[f]! >= 0) {
-        if (this.relT[f] === 0) {
+        {
           // A step is as long and as high as the way it has to go: over a fixed 0.15 s, 5 cm up, a foot handed on from the run skated 30-50 cm on its toes (review round 31).
-          const go = Math.hypot(A.x - this.relFrom[f]!.x, A.z - this.relFrom[f]!.z);
-          this.relUp[f] = go * STEP_RISE > STEP_LIFT ? go * STEP_RISE : STEP_LIFT;
+          // Read every frame, the target going on with the body: read on the first, a 0.6-0.8 m step still took 0.14 s, the foot at 9 m/s (review round 26).
+          const go = Math.hypot(A.x - this.relFrom[f]!.x, A.z - this.relFrom[f]!.z), up = go * STEP_RISE > STEP_LIFT ? go * STEP_RISE : STEP_LIFT;
+          if (this.relT[f] === 0 || up > this.relUp[f]!) this.relUp[f] = up;
           if (this.relLift[f] === 1 && go / STEP_SPEED > this.relDur[f]!) this.relDur[f] = go / STEP_SPEED;
         }
         if (setAt && now < tc && this.relLift[f] === 1 && this.relT[f]! < 1) {
