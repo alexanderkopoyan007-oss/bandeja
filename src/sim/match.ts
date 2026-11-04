@@ -18,7 +18,7 @@ import {
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, SHOT_CONTRAPARED, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
 } from './contact/shots.ts';
 import { gradeTiming, gradeQuality, G_GOOD, G_LATE, G_PERFECT, G_TOO_EARLY, G_TOO_LATE, type TimingWindows } from './contact/timing.ts';
-import { findWindows, BEHIND_MAX, makeWindows, OH_BANDEJA, OH_SMASH, OH_VIBORA, reachAt, type ContactWindow } from './contact/windows.ts';
+import { findWindows, BEHIND_MAX, makeWindows, OH_BANDEJA, OH_SMASH, OH_VIBORA, reachAt, stretchReach, jumpTop, STRETCH_DIVE, STRETCH_JUMP, STRETCH_NONE, type ContactWindow } from './contact/windows.ts';
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { holdBack, holdShort, makeStandPlan, planStand, type Hold, type StandPlan } from './player/positioning.ts';
 import { formationSpot, bounceIsFar, roundPartner, SWITCH_X, type Spot } from './player/formation.ts';
@@ -67,8 +67,12 @@ export const CALL_YOURS = 1;
 export const CALL_SWITCH = 2;
 /** The ball touched a player's body (not the racket): the point ends on it (player = who was hit). */
 export const E_BODY = 18;
+/** A player takes off for a ball out of reach (a: STRETCH_DIVE or STRETCH_JUMP; windows.ts). */
+export const E_STRETCH = 20;
 /** A held swing goes this long before the ball leaves its window (s), and before it would hit the body (s). */
 const LAST_SWING = 0.02;
+/** A stretch window counts for the contact being gone for if it is this close to it (s). */
+const STRETCH_SAME = 0.2;
 const BODY_LEAD = 0.03;
 /** Lowest a ball at the body is met by a reflex (m): under this it is a ball at the feet, too low to get a racket to. */
 const REFLEX_ABOVE = 0.3;
@@ -114,6 +118,11 @@ const EVENT_RING = 64;
 
 export interface MatchConfig {
   seed: number;
+  /**
+   * Dives and jumps for a ball out of reach (windows.ts STRETCH_*; default on). Off, a match is the one from before they
+   * existed, to the bit: the animation QA runs so until the dive is animated.
+   */
+  stretch?: boolean;
   world?: WorldOptions;
   format?: MatchFormat;
   /** Two players a side. Players are numbered team + 2 * slot: 0 and 1 face each other, 2 and 3 are partners. */
@@ -411,6 +420,7 @@ export class MatchSim {
 
   constructor(cfg: MatchConfig) {
     this.cfg = cfg;
+    this.stretchOn = cfg.stretch ?? true;
     this.doubles = cfg.doubles === true;
     const n = this.doubles ? 4 : 2;
     this.walkHomeX = new Float64Array(n);
@@ -899,6 +909,10 @@ export class MatchSim {
     for (let i = 0; i < n; i++) {
       const p = this.players[i]!;
       if (p.swing === SW_RECOVER && this.time >= p.recoverUntil) p.swing = SW_IDLE;
+      if (this.stretchOn && p.stretchKind === STRETCH_NONE && this.time >= p.stretchUntil) {
+        if (p.swing === SW_COMMITTED && p.stretchPlan !== STRETCH_NONE) this.stretchFor(i);
+        else if (p.swing === SW_CHARGE && this.phase === PH_RALLY) this.chargeStretch(i);
+      }
     }
 
     if (this.rally.result !== R_NONE && (this.phase === PH_RALLY || this.phase === PH_TOSS)) this.endRally();
@@ -1763,8 +1777,9 @@ export class MatchSim {
     // Rally: judge against the window whose ideal moment is nearest the release.
     const s = this.side(team);
     const mustBounce = this.rally.isServe;
+    // (nothing in normal reach: the windows a dive or a jump would reach, taken by itself; windows.ts STRETCH_*)
     const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
-      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY, this.ai[i] ? this.ai[i].ohKind : this.ohHuman[i]!, this.contraGlass(i));
+      p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY, this.ai[i] ? this.ai[i].ohKind : this.ohHuman[i]!, this.contraGlass(i), this.stretchOn);
     let w: ContactWindow | null = null;
     for (let k = 0; k < n; k++) {
       const c = this.windows[k]!;
@@ -1803,6 +1818,7 @@ export class MatchSim {
     p.contactTime = delta < 0 ? w.ideal : max(t, w.ideal);
     if (p.contactTime < this.time) p.contactTime = this.time;
     p.contra = w.contra;
+    p.stretchPlan = w.stretch;
     p.swing = SW_COMMITTED;
     this.emitP(E_SWING, i, p.shot, p.grade, delta, this.heldLast ? SWING_HELD : 0);
   }
@@ -1885,12 +1901,70 @@ export class MatchSim {
     return base * k;
   }
 
+  /**
+   * A committed swing planned as a stretch (released against a dive's or a jump's window): at the take-off moment
+   * (diveLead before the contact, or a jump's rise), go if where the ball will be is still out of normal reach from
+   * where the run will have the body, else the run got there and it is a normal stroke.
+   */
+  private stretchFor(i: number): void {
+    const p = this.players[i]!;
+    if (!this.goStretch(i, p.stretchPlan, p.contactTime)) p.stretchPlan = STRETCH_NONE;
+  }
+
+  /**
+   * A shot key held for a ball only a dive or a jump reaches (the nearest window to come is a stretch's): take off on
+   * time for it, as the key is still held. Releases come at the contact, too late for a take-off.
+   */
+  private chargeStretch(i: number): void {
+    // Only for the contact being gone for (the AI's timed contact, a human's plan): a ball passing near on its way to a
+    // contact planned off the glass is no ball to dive at.
+    const ai = this.ai[i], st = this.stand[i]!;
+    const aim = ai ? ai.idealT : st.valid ? st.t : -1;
+    if (aim < this.time) return;
+    const n = this.windowsFor(i, this.stretchWins);
+    let w: ContactWindow | null = null;
+    for (let k = 0; k < n; k++) {
+      const c = this.stretchWins[k]!;
+      const gap = aim < c.start ? c.start - aim : aim > c.end ? aim - c.end : 0;
+      if (c.ideal >= this.time && gap <= STRETCH_SAME && (!w || c.ideal < w.ideal)) w = c;
+    }
+    if (w && w.stretch !== STRETCH_NONE && this.goStretch(i, w.stretch, w.ideal)) this.players[i]!.stretchPlan = w.stretch;
+  }
+
+  /**
+   * Take off for a stretch of `kind` meeting the ball at `at`, if it is take-off time (diveLead before, or a jump's rise)
+   * and where the ball will be is still out of normal reach from where the run will have the body. True if launched,
+   * false if not yet or not needed (then the run gets there and it is a normal stroke).
+   */
+  private goStretch(i: number, kind: number, at: number): boolean {
+    const p = this.players[i]!, t = p.tune;
+    const lead = kind === STRETCH_JUMP ? sqrt((2 * t.jumpHeight) / 9.81) : t.diveLead;
+    const left = at - this.time;
+    if (left > lead) return false;
+    // (a dive only when the run is too late: the planner, which knows the body's acceleration, says whether it gets there)
+    const plan = this.ai[i] ? this.ai[i]!.standPlan : this.stand[i]!;
+    if (kind === STRETCH_DIVE && plan.valid && plan.inTime && abs(plan.t - at) <= STRETCH_SAME) return false;
+    const k = this.pred.indexAt(at);
+    if (k < 0) return false;
+    const bx = this.pred.x[k]!, by = this.pred.y[k]!, bz = this.pred.z[k]!;
+    const ex = bx - (p.pos.x + p.vel.x * left), ez = bz - (p.pos.z + p.vel.z * left);
+    if (sqrt(ex * ex + ez * ez) <= reachAt(by, t) + 0.25 && by <= t.contactMaxHeight + 0.15) return false;
+    p.launchStretch(kind, this.time, bx, bz, at);
+    this.emitP(E_STRETCH, i, kind);
+    return true;
+  }
+
+  private readonly stretchWins = makeWindows();
+  /** MatchConfig.stretch. */
+  readonly stretchOn: boolean = true;
+
   /** `reach` > 0: the swing was on time but the ball was this far away (out of reach). `kind`: WHIFF_*. */
   private whiff(i: number, t: number, reach = 0, kind = WHIFF_TIMING): void {
     const p = this.players[i]!;
     p.swing = SW_RECOVER;
     p.contra = false;
-    p.recoverUntil = t + p.tune.recoverTime;
+    p.stretchPlan = STRETCH_NONE;
+    p.recoverUntil = max(t + p.tune.recoverTime, p.stretchUntil);
     p.lastContactTime = t;
     if (p.grade < 0) p.grade = p.timingDelta < 0 ? G_TOO_EARLY : G_TOO_LATE;
     if (!this.ai[i]) this.takerVersion[p.team] = -1;
@@ -1919,10 +1993,11 @@ export class MatchSim {
     // (a ball gone more than BEHIND_MAX past the hips, away from the net, is past the stroke: the same margin as reach)
     // (a contrapared is met behind the hips by design, facing the glass)
     const past = !serving && !p.contra && s * (b.pos.z - p.pos.z) > BEHIND_MAX + 0.25;
-    // (a high ball reaches less far out: reachAt, the same envelope the windows use)
-    const reach = reachAt(b.pos.y, t) + 0.25;
+    // (a high ball reaches less far out: reachAt, the same envelope the windows use; a dive or a jump under way reaches further)
+    const sk = serving ? STRETCH_NONE : p.stretchKind;
+    const reach = (sk !== STRETCH_NONE ? stretchReach(b.pos.y, t, sk) : reachAt(b.pos.y, t)) + 0.25;
     if (past && legal && d <= reach) p.grade = G_TOO_LATE;
-    if (!legal || d > reach || past || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > t.contactMaxHeight + 0.15
+    if (!legal || d > reach || past || b.pos.y < t.contactMinHeight * 0.5 || b.pos.y > (sk === STRETCH_JUMP ? jumpTop(t) : t.contactMaxHeight) + 0.15
       || this.rally.over) {
       // The server swung and missed (out of reach, or before or after the one bounce): a fault (6.6, 7.1.b).
       if (serving) this.rally.onServeMissed();
@@ -1981,9 +2056,9 @@ export class MatchSim {
     // (facing the glass for a contrapared, the forehand is on the other side)
     r.handSide = (dx * s * p.handed >= 0) !== (shot === SHOT_CONTRAPARED) ? 1 : -1;
     r.moving = clamp(p.speed() / t.maxSpeed, 0, 1);
-    r.stretch = clamp((d - t.reachComfort) / (t.reachMax - t.reachComfort), 0, 1);
+    r.stretch = sk !== STRETCH_NONE ? 1 : clamp((d - t.reachComfort) / (t.reachMax - t.reachComfort), 0, 1);
     const ai0 = this.ai[i];
-    r.power = !ai0 ? 1 : shot === SHOT_SMASH ? ai0.smashEffort() : shot === SHOT_SERVE ? ai0.serveEffort() : 1;
+    r.power = (!ai0 ? 1 : shot === SHOT_SMASH ? ai0.smashEffort() : shot === SHOT_SERVE ? ai0.serveEffort() : 1) * (sk === STRETCH_DIVE ? t.divePower : 1);
     r.control = 1;
     // Serve spin follows the key (slice, kick, flat); it is solved with, so the serve still lands on its target.
     r.spinScale = serving && !feed ? (p.shot === SHOT_TOPSPIN ? -0.9 : p.shot === SHOT_DRIVE ? 0.15 : 1) : 1;
@@ -2009,12 +2084,16 @@ export class MatchSim {
     // (a human's low volley hurts as an AI's does. Not the sitter's bonus: control divides all of a shot's error, and most of a
     // human's is their timing, so with it 950 chest-high volleys in a row went in, however badly timed)
     r.control = ai ? ai.control(b.pos.y) : shot === SHOT_VOLLEY ? min(1, volleyControl(b.pos.y, abs(b.pos.z))) : shot === SHOT_DROP && this.rally.bounces === 0 ? min(DROP_VOLLEY_CONTROL, volleyControl(b.pos.y, abs(b.pos.z))) : 1;
+    // (a dive's flat body and a jump's lack of footing cost control, a human's as an AI's)
+    if (sk === STRETCH_DIVE) r.control *= t.diveControl;
+    else if (sk === STRETCH_JUMP) r.control *= t.jumpControl;
     const contactY = b.pos.y;
     strike(this.solver, b, r, this.rng, this.res);
 
     p.swing = SW_RECOVER;
     p.contra = false;
-    p.recoverUntil = this.time + t.recoverTime;
+    p.stretchPlan = STRETCH_NONE;
+    p.recoverUntil = max(this.time + t.recoverTime, p.stretchUntil);
     p.lastContact.copy(b.pos);
     p.lastContactTime = this.time;
     this.lastStrikeTeam = team;
@@ -2195,7 +2274,7 @@ export class MatchSim {
     // Same look-back as the release is judged with: windows must include the moments just gone, or the ideal
     // of a window you are already in slides forward with the clock and the cue never closes.
     return findWindows(this.pred, p.pos.x, p.pos.z, this.side(team), this.rally.isServe, 1, p.tune, out, this.time - RELEASE_LOOKBACK,
-      this.goingOverhead(p), this.goingVolley(p), this.ai[i] ? this.ai[i].ohKind : this.ohHuman[i]!, this.contraGlass(i));
+      this.goingOverhead(p), this.goingVolley(p), this.ai[i] ? this.ai[i].ohKind : this.ohHuman[i]!, this.contraGlass(i), this.stretchOn);
   }
 
   /** Fingerprint of the full sim state (determinism checks). */
@@ -2235,6 +2314,8 @@ export class MatchSim {
     for (const p of this.players) {
       h.num(p.pos.x).num(p.pos.z).num(p.vel.x).num(p.vel.z).num(p.swing).num(p.contactTime).num(p.aimX).num(p.aimZ)
         .num(p.aimTouched ? 1 : 0).num(p.reflex ? 1 : 0).num(p.steerFrom).num(p.steerFromX).num(p.restY).num(p.restX).num(p.heldShot).num(p.coverFor).num(p.coverSince).num(p.canAt).num(p.canFor).num(p.heldMod).num(p.splitAt).num(p.pushFrom).num(p.contra ? 1 : 0);
+      // (only once a stretch has been planned: matches without one hash as before)
+      if (p.stretchPlan !== 0 || p.stretchUntil !== 0) h.num(p.stretchPlan).num(p.stretchKind).num(p.stretchAt).num(p.stretchLand).num(p.stretchUntil);
     }
     h.num(this.taker[0]!).num(this.taker[1]!).num(this.intentUp[0]!).num(this.intentUp[1]!);
     h.num(this.homeLane[0]!).num(this.homeLane[1]!).num(this.homeLane[2]!).num(this.homeLane[3]!).num(this.called[0]!).num(this.called[1]!);

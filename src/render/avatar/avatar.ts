@@ -8,6 +8,7 @@ import { routineHand, routineHeight, routineTime } from '../routine.ts';
 import { SW_CHARGE, SW_COMMITTED, SW_RECOVER, type Player } from '../../sim/player/player.ts';
 import { MOD_POWER, MOD_PRECISION, SHOT_BANDEJA, SHOT_DRIVE, SHOT_DROP, SHOT_LOB, SHOT_SLICE, SHOT_SMASH, SHOT_TOPSPIN, SHOT_VIBORA } from '../../sim/contact/shots.ts';
 import type { StandPlan } from '../../sim/player/positioning.ts';
+import { STRETCH_DIVE, STRETCH_JUMP } from '../../sim/contact/windows.ts';
 import { DT } from '../../sim/core/constants.ts';
 import { personMeshes, type Clip, type PlayerAsset } from './asset.ts';
 import { FaceDriver, type FaceInput } from './face.ts';
@@ -512,6 +513,9 @@ const qWalk2 = new THREE.Quaternion();
 const qWalk3 = new THREE.Quaternion();
 /** Most the hips drop for a low or wide ball (crouch, lunge and reach together; m). */
 const DROP_MAX = 0.55;
+/** A dive's simple motion (stretchMotion): the hips' drop at the floor (m) and the time it takes to get back up (s). */
+const DIVE_DROP = 0.3;
+const DIVE_RISE = 0.35;
 /**
  * The smash is hit in the air, both feet off before the contact (Espino et al. 2015 via
  * docs/research/serve-and-strokes-motion.md 4.2; contact 2.30-2.50 m at full reach): a ballistic hop peaking at the
@@ -2751,6 +2755,7 @@ export class Avatar {
     this.locomote(p);
     this.reaction(sim, idx, t);
     this.splitStep(p, t);
+    this.stretchMotion(p, t);
     this.smashJump(t);
     this.root.position.y = this.lift;
     this.dress(sim, cut, dt, rx, rz, yRoot);
@@ -3291,6 +3296,22 @@ export class Avatar {
     if (u < 0 || u >= len) return;
     if (u < air) this.lift = 4.905 * u * (air - u);
     else this.splitDrop = 0.05 * Math.sin((Math.PI * (u - air)) / (len - air));
+  }
+
+  /**
+   * The sim's dive or jump for a ball out of reach (windows.ts STRETCH_*). A jump is drawn as the overhead's hop is, on
+   * the sim's own take-off and landing. A dive, until it is animated (owner, 2026-11-04: gameplay first), only drops the
+   * body towards the floor through its flight, holds it there and rises at the end; the reach leans it to the ball.
+   */
+  private stretchMotion(p: Player, t: number): void {
+    if (p.stretchKind === STRETCH_JUMP && t >= p.stretchAt && t < p.stretchLand && this.jumpT0 !== p.stretchAt) {
+      this.jumpT0 = p.stretchAt;
+      this.jumpT = p.stretchLand - p.stretchAt;
+      this.jumpH = (9.81 * this.jumpT * this.jumpT) / 8;
+      this.landAt = -1;
+    } else if (p.stretchKind === STRETCH_DIVE) {
+      this.splitDrop += DIVE_DROP * smoothstep(p.stretchAt, p.stretchLand, t) * (1 - smoothstep(p.stretchUntil - DIVE_RISE, p.stretchUntil, t));
+    }
   }
 
   /**

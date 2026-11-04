@@ -209,7 +209,9 @@ interface Hit { player: number; shot: string; t: number; ball: THREE.Vector3; ou
 export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
   const doubles = opts.doubles ?? true;
   const np = doubles ? 4 : 2;
-  const m = new MatchSim({ seed: opts.seed, doubles, human: new Array(np).fill(false), lefty: opts.lefty, ...opts.match });
+  // (no dives or jumps for a ball out of reach unless asked: their motion is not animated yet, owner 2026-11-04, so the thresholds
+  // judge the matches they were set on; the dive's animation must turn this on)
+  const m = new MatchSim({ seed: opts.seed, doubles, human: new Array(np).fill(false), lefty: opts.lefty, stretch: false, ...opts.match });
   const av: Avatar[] = [];
   const scene = new THREE.Scene();
   for (let i = 0; i < np; i++) { const a = new Avatar(asset, 0xffffff); a.inertial = opts.inertial ?? true; av.push(a); scene.add(a.root); }

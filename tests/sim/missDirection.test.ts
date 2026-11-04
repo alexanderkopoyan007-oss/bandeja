@@ -20,7 +20,8 @@ describe('a miss', () => {
           m.step(NONE);
           for (; seen < m.eventSeq; seen++) {
             const e = m.events[seen % m.events.length]!;
-            if (e.kind !== E_HIT || e.a === SHOT_CONTRAPARED || e.a === SHOT_SERVE || res.frame) continue;
+            // (a dive or a jump for a ball out of reach is no clean contact: its control is cut on purpose, windows.ts STRETCH_*)
+            if (e.kind !== E_HIT || e.a === SHOT_CONTRAPARED || e.a === SHOT_SERVE || res.frame || m.players[e.player]!.stretchKind !== 0) continue;
             const v = m.ball.vel;
             if (Math.hypot(v.x, v.z) < 3) continue;
             let d = Math.abs(Math.atan2(res.idealX - e.x, res.idealZ - e.z) - Math.atan2(v.x, v.z)) * 57.3;

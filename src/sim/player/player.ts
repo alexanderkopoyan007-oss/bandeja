@@ -74,6 +74,17 @@ export class Player {
   canAt = -1;
   canFor = -1;
 
+  /**
+   * A stretch for a ball out of reach (windows.ts STRETCH_*, data/tuning.json //stretch): the kind planned at the release
+   * (`stretchPlan`), and once under way its kind, take-off, landing and the moment the player can move again. Starts
+   * at fractions and -0 so the fields never change representation mid-match.
+   */
+  stretchPlan = 0;
+  stretchKind = 0;
+  stretchAt = -10.5;
+  stretchLand = -10.5;
+  stretchUntil = -0;
+
   /** Split-step: take-off time, and the end of it (hop and landing; the avatar draws it). */
   splitAt = -10;
   splitUntil = 0;
@@ -160,7 +171,12 @@ export class Player {
     const fv = t.fvSpeed / t.maxSpeed;
     // In the air during the split-step's hop: no grip, so no push, braking or turning; the feet land loaded.
     const land = this.splitAt + air;
-    const flying = now >= this.splitAt && now < land;
+    // A dive or a jump: in the air until it lands, then (a dive) sliding to a stop on the floor and getting up, or (a
+    // jump) landing; the keys don't move the body until stretchUntil.
+    const stretching = this.stretchKind !== 0 && now < this.stretchUntil;
+    if (this.stretchKind !== 0 && !stretching) this.stretchKind = 0;
+    const flying = (now >= this.splitAt && now < land) || (stretching && now < this.stretchLand);
+    const slide = t.diveSlide;
     // Force builds over startRamp from a standstill (startFrom of it at once); not when already on the move or
     // within splitPreload of a split-step landing (the hop lands loaded).
     if (flying) this.pushFrom = -1e9;
@@ -171,6 +187,12 @@ export class Player {
       // Ballistic: the velocity is kept.
       ax = 0;
       az = 0;
+    } else if (stretching) {
+      // On the floor or landing: friction stops the body, nothing pushes it.
+      const dec = sp > 1e-9 ? (sp < slide * dt ? sp / dt : slide) / sp : 0;
+      ax = -this.vel.x * dec;
+      az = -this.vel.z * dec;
+      this.pushFrom = -1;
     } else if (sp > 0.05) {
       const ux = this.vel.x / sp;
       const uz = this.vel.z / sp;
@@ -348,10 +370,39 @@ export class Player {
    * Mecheri et al. 2019); landing loads the legs, so the first step after it needs no build-up.
    */
   trySplitStep(now: number): boolean {
-    if (this.speed() > this.tune.splitStepMaxSpeed) return false;
+    if (this.speed() > this.tune.splitStepMaxSpeed || now < this.stretchUntil) return false;
     this.splitAt = now;
     this.splitUntil = now + this.tune.splitStepTime;
     return true;
+  }
+
+  /**
+   * Take off for a stretch at `now` (STRETCH_DIVE towards (tx, tz), where the ball will be; STRETCH_JUMP straight up,
+   * peaking at the contact `peak`). A dive keeps the run's speed towards the ball if that is faster than its launch.
+   */
+  launchStretch(kind: number, now: number, tx: number, tz: number, peak: number): void {
+    const t = this.tune;
+    this.stretchKind = kind;
+    this.stretchAt = now;
+    if (kind === 1) {
+      let dx = tx - this.pos.x, dz = tz - this.pos.z;
+      const d = sqrt(dx * dx + dz * dz);
+      if (d > 1e-6) { dx /= d; dz /= d; }
+      const along = this.vel.x * dx + this.vel.z * dz;
+      const v = along > t.diveSpeed ? along : t.diveSpeed;
+      this.vel.x = dx * v;
+      this.vel.z = dz * v;
+      this.stretchLand = now + t.diveAir;
+      this.stretchUntil = this.stretchLand + t.diveUp;
+    } else {
+      // Rise time to the top of a jumpHeight jump, sqrt(2h/g); taken off late, it peaks lower on time.
+      const rise = sqrt((2 * t.jumpHeight) / 9.81);
+      const up = peak - now < rise ? (peak - now > 0.05 ? peak - now : 0.05) : rise;
+      this.stretchAt = peak - up;
+      if (this.stretchAt < now) this.stretchAt = now;
+      this.stretchLand = this.stretchAt + 2 * up;
+      this.stretchUntil = this.stretchLand + t.jumpLand;
+    }
   }
 
   writeState(out: number[]): void {
@@ -359,7 +410,7 @@ export class Player {
       this.chargeStart, this.release, this.contactTime, this.timingDelta, this.grade, this.recoverUntil,
       this.handSide, this.splitUntil, this.lastContactTime, this.lastContact.x, this.lastContact.y, this.lastContact.z,
       this.aimX, this.aimZ, this.aiming ? 1 : 0, this.aimTouched ? 1 : 0, this.reflex ? 1 : 0, this.steerFrom, this.steerFromX, this.restY, this.restX, this.heldShot, this.coverFor, this.coverSince, this.canAt, this.canFor, this.heldMod, this.splitAt, this.pushFrom,
-      this.contra ? 1 : 0);
+      this.contra ? 1 : 0, this.stretchPlan, this.stretchKind, this.stretchAt, this.stretchLand, this.stretchUntil);
   }
 
   readState(s: number[], i: number): number {
@@ -374,6 +425,7 @@ export class Player {
     this.splitAt = s[i++]!;
     this.pushFrom = s[i++]!;
     this.contra = s[i++]! === 1;
+    this.stretchPlan = s[i++]!; this.stretchKind = s[i++]!; this.stretchAt = s[i++]!; this.stretchLand = s[i++]!; this.stretchUntil = s[i++]!;
     return i;
   }
 }

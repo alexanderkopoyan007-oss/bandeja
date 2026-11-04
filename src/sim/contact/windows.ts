@@ -17,14 +17,21 @@ export interface ContactWindow {
   height: number;
   /** A contrapared window: met facing the hitter's own back glass (findWindows with `contraGlass`). */
   contra: boolean;
+  /** Only in reach with a dive or a jump (STRETCH_*; findWindows with `stretch`), else STRETCH_NONE. */
+  stretch: number;
 }
+
+/** Reach kinds: normal, a dive for a low ball, a jump for a high one (data/tuning.json //stretch). */
+export const STRETCH_NONE = 0;
+export const STRETCH_DIVE = 1;
+export const STRETCH_JUMP = 2;
 
 export const MAX_WINDOWS = 4;
 
 export function makeWindows(): ContactWindow[] {
   const w: ContactWindow[] = [];
   for (let i = 0; i < MAX_WINDOWS; i++) {
-    w.push({ start: 0, end: 0, ideal: 0, idealIdx: 0, volley: false, afterWall: false, height: 0, contra: false });
+    w.push({ start: 0, end: 0, ideal: 0, idealIdx: 0, volley: false, afterWall: false, height: 0, contra: false, stretch: STRETCH_NONE });
   }
   return w;
 }
@@ -94,6 +101,24 @@ export function reachAt(y: number, t: PlayerTuning): number {
 }
 
 /**
+ * How far from the body's centre a ball at height y can be met at the contact with a stretch of `kind` (STRETCH_*):
+ * a dive's flat body puts the hand diveLean further out (its launch has already carried the body diveLead of the
+ * way), a jump lifts the shoulder by the rest of jumpHeight over the hop reachAt already allows.
+ */
+export function stretchReach(y: number, t: PlayerTuning, kind: number): number {
+  if (kind === STRETCH_DIVE) return t.reachMax + t.diveLean;
+  if (kind !== STRETCH_JUMP) return reachAt(y, t);
+  const over = y - t.reachShoulder - t.jumpHeight;
+  if (!(over > 0)) return t.reachMax;
+  return min(t.reachMax, t.reachLean + sqrt(max(0, t.reachArm * t.reachArm - over * over)));
+}
+
+/** The highest contact a jump reaches (m). */
+export function jumpTop(t: PlayerTuning): number {
+  return t.contactMaxHeight + t.jumpHeight - t.reachJump;
+}
+
+/**
  * `contraGlass` > 0: the player is going for a contrapared (positioning.ts CONTRA_*): windows are where the ball,
  * after its bounce, is behind the player (further from the net) and in reach facing the glass, which is at
  * |z| = contraGlass; the ball at least CONTRA_ROOM from it.
@@ -104,7 +129,18 @@ const CONTRA_TOP = 1.8;
 export function findWindows(
   pred: Prediction, px: number, pz: number, side: number, mustBounce: boolean, bouncesAllowed: number,
   t: PlayerTuning, out: ContactWindow[], fromTime: number, overhead = false, volley = false, ohKind = OH_ANY,
-  contraGlass = 0,
+  contraGlass = 0, stretch = false,
+): number {
+  const n = scanWindows(pred, px, pz, side, mustBounce, bouncesAllowed, t, out, fromTime, overhead, volley, ohKind, contraGlass, false);
+  // `stretch`: with no window in normal reach, the ones a dive or a jump would reach (a contrapared has none).
+  if (n > 0 || !stretch || contraGlass > 0) return n;
+  return scanWindows(pred, px, pz, side, mustBounce, bouncesAllowed, t, out, fromTime, overhead, volley, ohKind, 0, true);
+}
+
+function scanWindows(
+  pred: Prediction, px: number, pz: number, side: number, mustBounce: boolean, bouncesAllowed: number,
+  t: PlayerTuning, out: ContactWindow[], fromTime: number, overhead: boolean, volley: boolean, ohKind: number,
+  contraGlass: number, ext: boolean,
 ): number {
   const contra = contraGlass > 0;
   let count = 0;
@@ -113,6 +149,9 @@ export function findWindows(
   const riseOff = t.riseMaxOffWall;
   // reachAt, by hand: above `top` the reach shrinks to a sphere about the shoulder.
   const top = t.reachShoulder + t.reachJump, arm2 = t.reachArm * t.reachArm, lean = t.reachLean, rMax = t.reachMax;
+  // The stretched envelope (`ext`): a jump's raised shoulder and top, a dive's launch and flat body out across the floor.
+  const topJ = t.reachShoulder + t.jumpHeight, maxJ = t.contactMaxHeight + t.jumpHeight - t.reachJump;
+  const rDive = rMax + t.diveSpeed * t.diveLead + t.diveLean, diveTop = t.diveTop;
   for (let i = 0; i < pred.n; i++) {
     if (pred.t[i]! < fromTime) continue;
     const x = pred.x[i]!;
@@ -134,9 +173,17 @@ export function findWindows(
         && contraGlass - abs(z) >= CONTRA_ROOM
       : legal && d <= r && y >= t.contactMinHeight && y <= t.contactMaxHeight
         && !(y > riseOff && pred.walls[i]! > 0 && pred.vy[i]! > 0) && side * (z - pz) <= BEHIND_MAX;
-    if (ok) {
+    let kind = STRETCH_NONE;
+    if (ext && legal && y >= t.contactMinHeight && side * (z - pz) <= BEHIND_MAX && !(y > riseOff && pred.walls[i]! > 0 && pred.vy[i]! > 0)) {
+      if (y > top) {
+        const o2 = y - topJ;
+        if (y <= maxJ && d <= (o2 > 0 ? min(rMax, lean + sqrt(max(0, arm2 - o2 * o2))) : rMax)) kind = STRETCH_JUMP;
+      } else if (y <= diveTop && d <= rDive) kind = STRETCH_DIVE;
+    }
+    if (ok || kind !== STRETCH_NONE) {
       // A ball touching the floor or glass right now is not where anyone means to hit it.
-      const cost = contra ? abs(d - t.reachComfort) + heightCost(y, t.overheadHeight) + (nearImpact(pred, i) ? 0.5 : 0)
+      // (a stretch is best where the ball passes nearest)
+      const cost = kind !== STRETCH_NONE ? d + (nearImpact(pred, i) ? 0.5 : 0) : contra ? abs(d - t.reachComfort) + heightCost(y, t.overheadHeight) + (nearImpact(pred, i) ? 0.5 : 0)
         : (overhead ? abs(d - t.overheadReach) + overheadCost(y, t, ohKind)
         : abs(d - (b === 0 ? t.volleyReach : t.reachComfort)) + (volley && b === 0 ? volleyCost(y) : heightCost(y, t.overheadHeight))
           // Met in front of the body, not beside or behind it (a ball off the back glass passes the comfortable
@@ -154,6 +201,7 @@ export function findWindows(
         w.afterWall = pred.walls[i]! > 0;
         w.height = y;
         w.contra = contra;
+        w.stretch = kind;
         open = true;
         bestCost = cost;
       } else {
@@ -165,6 +213,7 @@ export function findWindows(
           w.idealIdx = i;
           w.afterWall = pred.walls[i]! > 0;
           w.height = y;
+          w.stretch = kind;
         }
       }
       // A bounce or wall contact inside a run starts a new window (a different ball to read).

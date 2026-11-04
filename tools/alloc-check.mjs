@@ -33,9 +33,11 @@ if (process.argv[2] === '--child') {
       for (let i = 0; i < 4; i++) av[i].update(m, m.players[i], i, 1, m.time);
     };
   }
+  // (ALLOC_STRETCH=0: no dives or jumps, the matches from before them, to compare)
+  const stretch = process.env.ALLOC_STRETCH !== '0';
   const make = (seed) => doubles
-    ? new MatchSim({ seed, doubles, human: [false, false, false, false] })
-    : new MatchSim({ seed, human: [false, false] });
+    ? new MatchSim({ seed, doubles, human: [false, false, false, false], stretch })
+    : new MatchSim({ seed, human: [false, false], stretch });
   let m = make(Number(process.env.ALLOC_SEED ?? 1));
   const inputs = doubles ? [null, null, null, null] : [null, null];
   // Warm-up: let V8 optimise every path (serves, rallies, faults, games, sets).

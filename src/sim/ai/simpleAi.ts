@@ -515,8 +515,9 @@ export class SimpleAi {
   /** Watch the ball come in from where we actually are, and time the release off that window. */
   private trackRelease(m: MatchSim, s: number): void {
     const p = m.players[this.index]!;
+    // (a ball only a dive or a jump reaches is gone for too: the human's rules, windows.ts STRETCH_*)
     const n = findWindows(m.pred, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, m.time - 0.3, p.shot === SHOT_BANDEJA, false, this.ohKind,
-      this.contra ? m.world.court.halfL : 0);
+      this.contra ? m.world.court.halfL : 0, m.stretchOn);
     let best = -1;
     for (let i = 0; i < n; i++) {
       if (best < 0 || abs(this.wins[i]!.ideal - this.idealT) < abs(this.wins[best]!.ideal - this.idealT)) best = i;
@@ -784,7 +785,19 @@ export class SimpleAi {
       // off the wall, or it beats them. Blocked on the rise, smashes drew 19.1 forced errors in 100 to WPT's 0.8: review
       // round 5, the pro's #1)
       const n = findWindows(pr, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, now, false);
-      if (n > 0 && this.wins[0]!.ideal < st.t + 0.09 && (hit >= 0 || !this.tooHot(m, this.wins[0]!.ideal))) {
+      // Nothing in reach from here: a dive or a jump for it (windows.ts STRETCH_*), on the way to the least-late spot, unless it
+      // is a hard ball going on to the glass. The sim takes off by itself at the release, as it does for a human.
+      // A last resort: the partner takes it if they can get to it (handOver), and only then is it a dive.
+      if (n === 0 && !st.inTime) m.handOver(this.index);
+      const mine = m.taker[p.team] === this.index || !m.doubles;
+      const ns = n > 0 || !mine || !m.stretchOn ? 0 : findWindows(pr, p.pos.x, p.pos.z, s, m.rally.isServe, 1, p.tune, this.wins, now, false, false, OH_ANY, 0, true);
+      if (ns > 0 && (hit >= 0 || !this.tooHot(m, this.wins[0]!.ideal))) {
+        const w = this.wins[0]!;
+        this.contra = false;
+        t = w.ideal;
+        height = w.height;
+        volley = w.volley;
+      } else if (n > 0 && this.wins[0]!.ideal < st.t + 0.09 && (hit >= 0 || !this.tooHot(m, this.wins[0]!.ideal))) {
         const w = this.wins[0]!;
         this.contra = false;
         sx = p.pos.x;
