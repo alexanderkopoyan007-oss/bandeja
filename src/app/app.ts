@@ -8,6 +8,7 @@ import { loadPeople, loadPlayerAsset, peopleWanted, type PlayerAsset } from '../
 import { castParam, dealCast } from '../game/cast.ts';
 import practiceData from '../../data/practice.json';
 import { LoadingScreen } from '../ui/loading.ts';
+import type { BackendGuard } from '../render/backend.ts';
 import { Menu, type Item, type Screen, type Choice } from '../ui/menu/menu.ts';
 import { setSafeColours } from '../ui/palette.ts';
 import { resetHints } from '../ui/hud.ts';
@@ -73,6 +74,8 @@ export class App {
   private readonly params: URLSearchParams;
   private readonly settings: Settings;
   private readonly loading: LoadingScreen;
+  /** WebGPU's failures: restarts on WebGL 2 while a build is under way (render/backend.ts). */
+  private readonly guard: BackendGuard | null;
   private readonly menu: Menu;
   private asset: PlayerAsset | null = null;
   private game: Game | null = null;
@@ -87,6 +90,8 @@ export class App {
   private cupRound = -1;
   /** A match start or a return to the title is under way (repeat presses are ignored). */
   private busy = false;
+  /** A build is under way (from its start until its game starts; a failed build leaves it set: nothing is at stake). */
+  private inBuild = false;
   /** The title's AI match being built again after it ended (a match start waits for it). */
   private rebuilding: Promise<void> | null = null;
   /** The frame-rate setting as last applied (F3 toggles the meter in a game; only a change of the setting overrides it). */
@@ -107,11 +112,13 @@ export class App {
   private searchFrom = 0;
   private searching = 1;
 
-  constructor(renderer: THREE.WebGPURenderer, hud: HTMLElement, params: URLSearchParams, loading: LoadingScreen) {
+  constructor(renderer: THREE.WebGPURenderer, hud: HTMLElement, params: URLSearchParams, loading: LoadingScreen, guard: BackendGuard | null = null) {
     this.renderer = renderer;
     this.hud = hud;
     this.params = params;
     this.loading = loading;
+    this.guard = guard;
+    if (guard) guard.canRestart = () => this.inBuild || !this.playing;
     this.settings = loadSettings();
     // The menu first: the look (reduced motion among it) is applied to it too.
     this.menu = new Menu(document.body);
@@ -159,6 +166,7 @@ export class App {
 
   /** Build a game (the title screen's AI match, or the player's) and start it. */
   private async build(attract: boolean, stage: (name: string, f: number) => void): Promise<void> {
+    this.inBuild = true;
     this.game?.dispose();
     this.game = null;
     await frame();
@@ -204,7 +212,14 @@ export class App {
     }
     stage('Compiling shaders', 0.55);
     await frame();
-    await g.warmUp();
+    try {
+      await g.warmUp();
+    } catch (err) {
+      // WebGPU gave up under the warm-up (Safari's lost device shows as a RangeError out of three's buffer upload):
+      // the page is starting again on WebGL 2, so this build stops here.
+      if (this.guard?.failed(`the warm-up failed on WebGPU: ${readable(err)}`)) await new Promise<never>(() => undefined);
+      throw err;
+    }
     stage('Ready', 1);
     g.onMenu = () => { if (this.playing && !this.menu.isOpen) this.pause(); };
     g.onMatchOver = (st) => {
@@ -215,6 +230,7 @@ export class App {
     g.start();
     if (attract) this.fetchAhead();
     this.playing = !attract;
+    this.inBuild = false;
     if (this.settings.showFps && !attract) g.debug.toggle();
     // The window was left while the match was loading (the blur came before there was a match to pause).
     if (!attract && !on && (document.hidden || !document.hasFocus())) g.onMenu();

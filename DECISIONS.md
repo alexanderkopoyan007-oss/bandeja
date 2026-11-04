@@ -3525,3 +3525,16 @@ The owner: "fix all the small and medium issues". Worked most-important first, a
   - An acceleration limit on the whole fall (an earlier trial) holds late strokes 12 cm above the pose.
   - Both halves need the fall planned from the contact, the clip's included.
 
+
+## Safari's lost WebGPU device: start again on WebGL 2 (2026-11-04)
+- **What friends saw** (the owner's report, Mac Safari, the plain link): the loading screen at "Compiling shaders", then "Range consisting of offset and length are out of bounds". That wording is JavaScriptCore's, from `TypedArray.prototype.set`.
+- **Why.** Safari's WebGPU lost its device during the warm-up. three carries on with a lost device. In Safari, a buffer made with `mappedAtCreation` on a lost device maps to an empty range, so the first vertex buffer three fills (`new array.constructor(buffer.getMappedRange()).set(array)` in createAttribute) throws that RangeError.
+  - Reproduced in Safari 27 on the M1 Max: a lost device's mapped range read 0 bytes and `.set` threw the same words.
+  - With the device destroyed before the warm-up, the real build showed friends' exact message.
+  - Not reproduced without that. The live build reached Ready in Safari 27 on WebGPU and on WebGL 2, and in Chrome on every preset and size. Why the device is lost on their Macs is not known: no stack or lost reason came back from them.
+- **What changed** (src/render/backend.ts `BackendGuard`, `wantWebGL`):
+  - **While nothing is at stake** (a build under way, the title's match), a WebGPU failure starts the page again on WebGL 2 by itself. A failure is a lost device, or an error out of the warm-up while on WebGPU. The page stores the failure in localStorage under this browser's user agent, so later visits start on WebGL 2 until the browser updates. With nowhere to store it, the restart adds `?backend=webgl` to the URL instead, so it can't loop.
+  - **During a match,** a lost device stops three drawing. The loading screen says so, and Try again starts on WebGL 2.
+  - `?backend=webgl` still forces WebGL 2. `?backend=webgpu` tries WebGPU whatever is stored, and never falls back.
+  - Measured in Safari 27 with the device destroyed at the warm-up: the failure, the restart, and Ready on WebGL 2 took 22 s in all. WebGL 2's compile is the slow part.
+- `tests/app/backend.test.ts` holds the choice and the guard: the restart happens once, there's no restart on WebGL 2 or under `?backend=webgpu`, and a match isn't thrown away.
