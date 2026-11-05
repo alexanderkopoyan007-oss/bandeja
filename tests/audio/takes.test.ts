@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { peak, rms } from '../../src/audio/dsp.ts';
-import { AUDIO, APPLAUSE_BIG, APPLAUSE_SMALL, activeRms, buildBank, parseTakes, wantsTakes } from '../../src/audio/bank.ts';
+import { AUDIO, APPLAUSE_BIG, APPLAUSE_SMALL, activeRms, buildBank, clapBed, parseTakes, wantsTakes } from '../../src/audio/bank.ts';
 import { FL_TURF, LO_SR } from '../../src/audio/voices.ts';
 
 const file = readFileSync(new URL('../../public/' + AUDIO.takes.file, import.meta.url));
@@ -52,5 +52,21 @@ describe('recorded applause', () => {
     expect(20 * Math.log10(top)).toBeGreaterThan(AUDIO.rms.applause - 6);
     const club = buildBank({ floor: FL_TURF, arena: 'club-day', takes }).get('applause')!;
     expect(club[APPLAUSE_BIG]![0]!.ch[0]!.length).not.toBe(takes.takes[APPLAUSE_BIG]![0]![0]!.length);
+  });
+
+  it('nobody talks between points: the stadium\'s bed is clapping from the takes that loops without a seam, a club\'s is quiet', () => {
+    const bed = clapBed(takes);
+    expect(bed.length).toBe(2);
+    expect(bed[0]!.length / LO_SR).toBeGreaterThan(8);
+    // steady (no 250 ms window 10 dB under the bed), and the wrap no bigger a step than the bed's own
+    const w = Math.round(0.25 * LO_SR), all = rms(bed[0]!);
+    for (let i = 0; i + w <= bed[0]!.length; i += w) expect(rms(bed[0]!.subarray(i, i + w))).toBeGreaterThan(all * 0.316);
+    let step = 0;
+    for (let i = 1; i < bed[0]!.length; i++) step = Math.max(step, Math.abs(bed[0]![i]! - bed[0]![i - 1]!));
+    expect(Math.abs(bed[0]![0]! - bed[0]![bed[0]!.length - 1]!)).toBeLessThanOrEqual(step);
+    const stadium = buildBank({ floor: FL_TURF, arena: 'stadium', takes }).get('murmur')![0]![0]!;
+    expect(20 * Math.log10(rms(stadium.ch[0]!))).toBeGreaterThan(AUDIO.rms.murmur - 3);
+    const club = buildBank({ floor: FL_TURF, arena: 'club-day', takes }).get('murmur')![0]![0]!;
+    expect(peak(club.ch[0]!)).toBe(0);
   });
 });

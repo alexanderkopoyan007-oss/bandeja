@@ -50,6 +50,8 @@ describe('bank', () => {
           }
         }
         const want = def.rms ?? def.peak!;
+        // (no recording here: nobody talks between points, so the bed is silent; with it, takes.test.ts checks its level)
+        if (def.name === 'murmur') { expect(pk, `${a} murmur`).toBe(0); continue; }
         if (def.peakCap !== undefined && dB(pk) > def.peakCap - 0.05) {
           expect(dB(pk), `${a} ${def.name} cap`).toBeCloseTo(def.peakCap, 1);
           expect(dB(top), `${a} ${def.name}`).toBeLessThan(want + 0.05);

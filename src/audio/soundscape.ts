@@ -31,10 +31,11 @@ const WHOOSH_LEAD = 0.02;
 /** Scuffs are judged over this much sim time (a frame's difference is frame-rate dependent). */
 const SCUFF_WINDOW = 0.1;
 const RING = 32;
-/** How likely each way of grunting (voices.ts GRUNT_LONG, GRUNT_CLIPPED) is to come on a hard shot. */
-const GRUNTER = [0.9, 0.7];
-/** A shot's effort to the chance of a grunt: a usual drive (effort 0.4) brings one about every other time. */
-const GRUNT_KEEN = 1.6;
+/** How likely each way of grunting (voices.ts GRUNT_LONG, GRUNT_CLIPPED, GRUNT_FALL) is to come on a hard shot. */
+const GRUNTER = [1, 0.95, 1];
+/** A shot's effort to the chance of a grunt: a usual drive (effort 0.4) brings one nearly every time, a soft block about every other
+ * (the owner, 5 Nov 2026: "they should be grunting more"; was 1.6). */
+const GRUNT_KEEN = 2.6;
 /** A well struck ball is firmer and a little tighter than a mistimed one (a player hears their own timing). */
 const SWEET_GAIN = 1.26, SWEET_RATE = 1.02;
 const MISTIMED_GAIN = 0.84, MISTIMED_RATE = 0.985;
@@ -157,7 +158,9 @@ export class Soundscape {
 
   constructor(out: AudioSink, arena: string, neighbours: number[], voices: number[] = [0, 1, 2, 3], tones: number[] = [1, 1, 1, 1]) {
     this.out = out;
-    this.voices = voices;
+    // No two players on court share a voice (the owner: "each player should have different grunts"): a voice already
+    // taken goes to the next free one of the same sex (men 0-3, women 4-7).
+    this.voices = distinctVoices(voices);
     this.tones = tones;
     const a = arenaAudio(arena);
     this.crowdSize = a.crowd;
@@ -553,4 +556,16 @@ export class Soundscape {
 
   /** Crowd size (for the debug overlay). */
   get crowd(): number { return this.crowdSize; }
+}
+
+/** Each player's voice, none shared: a voice already taken goes to the next free one of the same sex. */
+export function distinctVoices(voices: readonly number[]): number[] {
+  const out: number[] = [];
+  for (const v of voices) {
+    const base = v >= GRUNT_WOMEN ? GRUNT_WOMEN : 0, n = GRUNT_WOMEN;
+    let w = v;
+    for (let k = 0; k < n && out.includes(w); k++) w = base + ((w - base + 1) % n);
+    out.push(w);
+  }
+  return out;
 }

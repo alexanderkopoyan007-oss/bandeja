@@ -552,7 +552,7 @@ const GLOTTIS = (() => {
 })();
 
 /** How someone grunts: a long effort climbing through the ball, or one short clipped bark. */
-export const GRUNT_LONG = 0, GRUNT_CLIPPED = 1;
+export const GRUNT_LONG = 0, GRUNT_CLIPPED = 1, GRUNT_FALL = 2;
 
 /**
  * The players' voices, four men's then four women's (data/people.json gives each person one). A grunt is not the
@@ -561,12 +561,21 @@ export const GRUNT_LONG = 0, GRUNT_CLIPPED = 1;
  * here is the forehand's grunt, a little under the top of those players' range (312 and 616 Hz). The tract is still
  * the speaker's: a woman's about 15% shorter.
  */
-export const PLAYER_VOICES: (VoiceSpec & { style: number })[] = [
+export const PLAYER_VOICES: GruntVoice[] = [
   { f0: 300, tract: 1.0, style: GRUNT_LONG }, { f0: 315, tract: 0.95, style: GRUNT_CLIPPED },
-  { f0: 285, tract: 1.05, style: GRUNT_LONG }, { f0: 330, tract: 0.93, style: GRUNT_CLIPPED },
-  { f0: 590, tract: 0.85, style: GRUNT_LONG }, { f0: 625, tract: 0.81, style: GRUNT_CLIPPED },
-  { f0: 555, tract: 0.89, style: GRUNT_LONG }, { f0: 660, tract: 0.79, style: GRUNT_CLIPPED },
+  { f0: 285, tract: 1.05, style: GRUNT_FALL },
+  { f0: 330, tract: 0.93, style: GRUNT_CLIPPED, vowel: 'uh', len: 1.4 },
+  { f0: 590, tract: 0.85, style: GRUNT_LONG }, { f0: 625, tract: 0.81, style: GRUNT_CLIPPED, vowel: 'eh' },
+  { f0: 555, tract: 0.89, style: GRUNT_FALL, vowel: 'uh', len: 1.1 },
+  { f0: 660, tract: 0.79, style: GRUNT_CLIPPED, vowel: 'uh', len: 1.3 },
 ];
+
+/**
+ * A player's grunt: the voice, its way of grunting, and what makes it theirs (the owner, 5 Nov 2026: "each player should
+ * have different grunts"; no two on court share a voice, soundscape.ts distinctVoices): the vowel (default "ah"), its
+ * length, how deep the hold pulses and how rough the onset is, each against the reference's (1).
+ */
+export interface GruntVoice extends VoiceSpec { style: number; vowel?: string; len?: number; pulse?: number; onset?: number }
 
 /**
  * The study's pitch by shot against the forehand's: males 325.0 on the serve, 297.5 on the backhand, 311.8 here. A tennis
@@ -581,6 +590,16 @@ const HOLD_RISE = 0.18, HOLD_PULSE = [6, 8], HOLD_DEPTH = 0.2, STRAIN_ON = 0.06,
 /** The owner, hearing the first match to the clips: "should sound more clear, a little more long as well". So the held
  * grunt is 20% longer than the reference's, its breath and onset noise are cut, and its pulse is shallower. */
 const HOLD_LEN = 1.2, HOLD_BREATH = [0.06, 0.2];
+/** GRUNT_CLIPPED from the owner's first clip (four grunts): its length (s, light to full effort); the bark (s) at its
+ * pitch over the voice's (they started 350-390 Hz against the held grunt's 327-333); when the second push comes (s
+ * after the start, 70-100 ms there), its level against the bark (8-10 dB under at the dip, the push about 5 under) and
+ * how far it falls (20-25% by the end). */
+/** GRUNT_FALL from the owner's third clip (5.28 PM, the first clip's player again): its length (s, light to full); the
+ * rough burst on the ball (s) and the push after the dip (when, s); when the held "aah" comes in (s after the ball:
+ * 0.12-0.13 there), its pitch over the voice's at the start and how far it falls (356 to 314 Hz), and its level
+ * against the burst (about 5 dB under). */
+const FALL_LEN = [0.2, 0.24], FALL_BURST = 0.035, FALL_PUSH = 0.065, FALL_AT = 0.12, FALL_TOP = 1.08, FALL_DROP = 0.13, FALL_TONE = 0.6;
+const BARK_LEN = [0.14, 0.12], BARK_ONE = 0.05, BARK_TOP = 1.15, BARK_AGAIN = 0.075, BARK_SECOND = 0.55, BARK_FALL = 0.2;
 /** "You sort of cut the grunt off" (the owner, 5 Nov): the voice fades over its last 30% and falls 10%, then the breath
  * left goes on this long (s), softly. */
 const HOLD_TAIL = 0.16;
@@ -592,24 +611,24 @@ const HOLD_TAIL = 0.16;
  * reference, 5 Nov 2026): it breaks out on the ball with a rough, breathy edge (60-100 ms, periodicity 0.3-0.6),
  * reaches its pitch within about 100 ms and holds it flat and clean (within 2%, 327-333 Hz there, periodicity 0.93-0.98:
  * the roughness is all in the onset) while the level pulses about 5 dB some seven times a second, then stops about half
- * a second after the ball. GRUNT_CLIPPED starts on the glottis at
- * the top of its pitch and falls, stopped dead in under a fifth of a second (one falling example in the clips, rough:
- * 390 to 300 Hz). The mean pitch is from Raine et al. Shouts and grunts carry more sound power in real padel than the
+ * a second after the ball. GRUNT_CLIPPED is the owner's first clip's (another
+ * professional, measured the same way): a rough bark on the ball (30-60 ms, periodicity 0.35-0.57, bright) at 350-390 Hz,
+ * a dip of 8-10 dB, a weaker second push 70-100 ms in, and a fall of 20-25% that is over within 0.15-0.3 s. The mean pitch is from Raine et al. Shouts and grunts carry more sound power in real padel than the
  * impacts do (Piana et al.: +1.9 dB(A) overall with them), so they matter in the mix, but the game keeps them a step
  * under the racket.
  */
-export function grunt(rng: Rng, v: VoiceSpec & { style: number }, effort: number): Float32Array {
+export function grunt(rng: Rng, v: GruntVoice, effort: number): Float32Array {
   const e = clamp01(effort);
   const top = 0.9 + 0.2 * e;
   const breath = e < 0.3 ? 0.9 : 0.12 + 0.3 * (1 - e);
   const amp = 0.25 + 0.75 * e, rough = e < 0.3 ? 0 : 0.35 * e;
   if (v.style === GRUNT_LONG) {
-    const len = (0.26 + 0.3 * e) * HOLD_LEN * rng.range(0.9, 1.1);
+    const len = (0.26 + 0.3 * e) * HOLD_LEN * (v.len ?? 1) * rng.range(0.9, 1.1);
     const out = buf(len + HOLD_TAIL + 0.05, LO_SR);
     // The onset: breath forced through a closing glottis, rough, on the ball (hard shots only).
-    const on = e > 0.5 ? STRAIN_ON * e * rng.range(0.7, 1) : 0;
+    const on = e > 0.5 ? STRAIN_ON * e * (v.onset ?? 1) * rng.range(0.7, 1) : 0;
     if (on > 0) vocal(out, rng, 0.002, on + 0.03, v, 'uh', 'ah', (u) => top * (0.84 + 0.1 * u), 0.35, amp * 0.8, 0.003, 0.03, LO_SR, 0.5);
-    const vowel = e > 0.4 ? 'ah' : 'uh', at = on > 0 ? on * 0.6 : 0.004, hold = len - at;
+    const vowel = e > 0.4 ? v.vowel ?? 'ah' : 'uh', at = on > 0 ? on * 0.6 : 0.004, hold = len - at;
     const open = { f0: v.f0, tract: v.tract / (1 + STRAIN_OPEN * e) };
     vocal(out, rng, at, hold, open, vowel, vowel,
       (u) => top * (u < HOLD_RISE ? 0.86 + (0.14 * u) / HOLD_RISE : u < 0.75 ? 1 : 1 - 0.1 * ((u - 0.75) / 0.25) ** 1.5),
@@ -617,7 +636,7 @@ export function grunt(rng: Rng, v: VoiceSpec & { style: number }, effort: number
     // It dies away on the breath that is left, a little lower, rather than stopping.
     vocal(out, rng, at + hold - HOLD_TAIL * 0.5, HOLD_TAIL * 1.5, open, vowel, 'uh', (u) => top * (0.9 - 0.06 * u), 0.8, amp * 0.3, 0.06, HOLD_TAIL, LO_SR);
     // The hold pulses.
-    const f = rng.range(HOLD_PULSE[0]!, HOLD_PULSE[1]!), ph = rng.next() * 2 * Math.PI, d = HOLD_DEPTH * e;
+    const f = rng.range(HOLD_PULSE[0]!, HOLD_PULSE[1]!), ph = rng.next() * 2 * Math.PI, d = HOLD_DEPTH * (v.pulse ?? 1) * e;
     const s0 = Math.round((at + hold * HOLD_RISE) * LO_SR), w = (2 * Math.PI * f) / LO_SR;
     for (let i = s0; i < out.length; i++) out[i] = out[i]! * (1 + d * Math.sin(w * (i - s0) + ph));
     // A strained voice is brighter: its closure is sharper, so more of it is up where the ear is keenest.
@@ -626,9 +645,32 @@ export function grunt(rng: Rng, v: VoiceSpec & { style: number }, effort: number
     dcBlock(out, LO_SR);
     return fadeTail(out, 0.02, LO_SR);
   }
-  const len = (0.1 + 0.1 * e) * rng.range(0.9, 1.1);
+  if (v.style === GRUNT_FALL) {
+    // A rough burst on the ball, a dip, a push, then a held "aah" sliding down (the owner: "use this grunt").
+    const len = (FALL_LEN[0]! + FALL_LEN[1]! * e) * (v.len ?? 1) * rng.range(0.9, 1.1);
+    const out = buf(len + 0.05, LO_SR);
+    const vowel = e > 0.4 ? v.vowel ?? 'ah' : 'uh', hard = e > 0.4;
+    if (hard) {
+      vocal(out, rng, 0.003, FALL_BURST * rng.range(0.8, 1.2), v, vowel, vowel, () => top, 0.45, amp, 0.003, 0.012, LO_SR, 0.7);
+      vocal(out, rng, FALL_PUSH * rng.range(0.9, 1.1), 0.025, v, vowel, vowel, () => top * FALL_TOP, 0.4, amp * 0.65, 0.005, 0.01, LO_SR, 0.6);
+    }
+    const at = hard ? FALL_AT * rng.range(0.85, 1.15) : 0.004;
+    vocal(out, rng, at, len - at, v, vowel, 'uh', (u) => top * (FALL_TOP - FALL_DROP * u), Math.max(breath, 0.2), amp * (hard ? FALL_TONE : 1),
+      0.03, (len - at) * 0.35, LO_SR, Math.max(rough * 0.6, 0.25));
+    const pres = Biquad.make('peak', STRAIN_F, 0.8, STRAIN_DB * e, LO_SR);
+    for (let i = 0; i < out.length; i++) out[i] = pres.run(out[i]!);
+    dcBlock(out, LO_SR);
+    return fadeTail(out, 0.02, LO_SR);
+  }
+  // GRUNT_CLIPPED, as the owner's first reference clip measures (another professional's grunts, 5 Nov 2026; analysed,
+  // nothing copied): a rough bark on the ball, then a weaker second push that falls away.
+  const len = (BARK_LEN[0]! + BARK_LEN[1]! * e) * (v.len ?? 1) * rng.range(0.9, 1.1);
   const out = buf(len + 0.05, LO_SR);
-  vocal(out, rng, 0.004, len, v, e > 0.5 ? 'ah' : 'uh', 'uh', (u) => top * (1.1 - 0.2 * u), breath, amp, 0.004, 0.018, LO_SR, rough);
+  const vowel = e > 0.5 ? v.vowel ?? 'ah' : 'uh', bark = BARK_ONE * rng.range(0.85, 1.15), again = BARK_AGAIN * rng.range(0.85, 1.2);
+  vocal(out, rng, 0.003, bark, v, vowel, vowel, (u) => top * (BARK_TOP - 0.07 * u), Math.max(breath, 0.3), amp, 0.003, 0.02, LO_SR, Math.max(rough, 0.5));
+  vocal(out, rng, again, len - again, v, vowel, 'uh', (u) => top * (BARK_TOP - 0.1 - BARK_FALL * u), Math.max(breath, 0.25), amp * BARK_SECOND, 0.012, (len - again) * 0.45, LO_SR, Math.max(rough * 0.8, 0.4));
+  const pres = Biquad.make('peak', STRAIN_F, 0.8, STRAIN_DB * e, LO_SR);
+  for (let i = 0; i < out.length; i++) out[i] = pres.run(out[i]!);
   dcBlock(out, LO_SR);
   return fadeTail(out, 0.02, LO_SR);
 }

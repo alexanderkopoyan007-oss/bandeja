@@ -85,6 +85,36 @@ export async function fetchTakes(url: string | undefined): Promise<CrowdTakes | 
   }
 }
 
+/** How much of each big take the bed keeps (s cut off its start and end: the onset and the fade) and the crossfade (s). */
+const BED_CUT = [0.8, 0.9], BED_X = 0.4;
+
+/**
+ * A loop of steady clapping from the big takes' middles, joined by equal-power crossfades, the last into the first so
+ * it loops without a seam: the stadium's bed between points.
+ */
+export function clapBed(t: CrowdTakes): Float32Array[] {
+  const sr = t.sr, x = Math.round(BED_X * sr);
+  const segs = t.takes[APPLAUSE_BIG]!.map((ch) => ch.map((c) => c.subarray(Math.round(BED_CUT[0]! * sr), c.length - Math.round(BED_CUT[1]! * sr))));
+  const total = segs.reduce((n, s) => n + s[0]!.length - x, 0);
+  const chn = segs[0]!.length, out: Float32Array[] = [];
+  for (let c = 0; c < chn; c++) out.push(new Float32Array(total));
+  let at = 0;
+  for (const s of segs) {
+    const n = s[0]!.length;
+    for (let c = 0; c < chn; c++) {
+      const src = s[Math.min(c, s.length - 1)]!, dst = out[c]!;
+      for (let i = 0; i < n; i++) {
+        // in over the first x, out over the last x (which lands on the next one's in, wrapping at the end)
+        const g = i < x ? Math.sin((0.5 * Math.PI * i) / x) : i >= n - x ? Math.cos((0.5 * Math.PI * (i - (n - x))) / x) : 1;
+        const k = (at + i) % total;
+        dst[k] = dst[k]! + src[i]! * g;
+      }
+    }
+    at += n - x;
+  }
+  return out;
+}
+
 /** Does this arena's applause come from the recording? (The stadium's thousands: a club's few keep the synthesis.) */
 export function wantsTakes(arena: string): boolean {
   return arenaAudio(arena).crowd >= spec.crowd.big;
@@ -196,7 +226,11 @@ export function families(env: BankEnv): FamilyDef[] {
         return take ? take.map((c) => c.slice()) : V.applause(r, a.crowd, b === APPLAUSE_BIG ? 4.5 : 2.2, b === APPLAUSE_BIG);
       },
     },
-    { name: 'murmur', bins: 1, variants: 1, sr: V.LO_SR, rms: rm.murmur, render: (r) => V.murmur(r, a.talkers, 12) },
+    // The bed between points: the stadium's is clapping from the recording; nobody talks (data/audio.json //crowd).
+    {
+      name: 'murmur', bins: 1, variants: 1, sr: V.LO_SR, rms: rm.murmur,
+      render: (_r, _b, e) => (e.takes && a.crowd >= spec.crowd.big ? clapBed(e.takes) : [new Float32Array(V.LO_SR), new Float32Array(V.LO_SR)]),
+    },
   ];
   for (const k of a.ambience) {
     out.push({ name: k, bins: 1, variants: 1, sr: V.LO_SR, rms: rm[k], render: (r) => V.ambience(r, k as 'wind', k === 'wind' ? 17 : 10) });

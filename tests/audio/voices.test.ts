@@ -140,19 +140,20 @@ describe('feet', () => {
 
 describe('voices', () => {
   /** Fundamental by autocorrelation over a window. */
-  // Autocorrelation, taking the shortest period that is a peak within 90% of the best: a level rising through the window
-  // (a pulsing grunt) otherwise favours a multiple of the period and reads an octave or more low.
+  // Normalised autocorrelation (each lag against the energy of the two stretches it compares, so a level rising
+  // through the window, a pulsing grunt, favours no lag), the best with a slight preference for shorter lags (a period's
+  // multiples correlate as well as the period). NaN where it is unvoiced (the breath a grunt dies on, which rings at its
+  // first formant and correlates about 0.5 there).
   function f0(b: Float32Array, from: number, len: number, sr: number): number {
-    const lo = Math.round(sr / 900), hi = Math.round(sr / 70), r = new Float64Array(hi + 1);
-    let best = 0;
+    const lo = Math.round(sr / 900), hi = Math.round(sr / 70);
+    let best = -1, bestLag = lo, bestR = 0;
     for (let lag = lo; lag <= hi; lag++) {
-      let s = 0;
-      for (let i = 0; i < len; i++) s += b[from + i]! * b[from + i + lag]!;
-      r[lag] = s;
-      best = Math.max(best, s);
+      let s = 0, ea = 0, eb = 0;
+      for (let i = 0; i < len; i++) { const x = b[from + i]!, y = b[from + i + lag]!; s += x * y; ea += x * x; eb += y * y; }
+      const r = s / Math.sqrt(ea * eb + 1e-30), score = r - 0.001 * lag;
+      if (score > best) { best = score; bestLag = lag; bestR = r; }
     }
-    for (let lag = lo + 1; lag < hi; lag++) if (r[lag]! >= best * 0.9 && r[lag]! >= r[lag - 1]! && r[lag]! >= r[lag + 1]!) return sr / lag;
-    return sr / hi;
+    return bestR < 0.65 ? NaN : sr / bestLag;
   }
 
   // Raine, Pisanski & Reby 2017: men 297-325 Hz, women 574-650 Hz, very little overlap, against 100-130 and 190-210 spoken.
@@ -165,7 +166,9 @@ describe('voices', () => {
       let w = 0;
       for (let k = 0; k < 1200; k++) w += g[i + k]! * g[i + k]!;
       if (w < (e / g.length) * 1200 * 0.25) continue;
-      sum += f0(g, i, 1200, V.LO_SR) * w;
+      const p = f0(g, i, 1200, V.LO_SR);
+      if (Number.isNaN(p)) continue;
+      sum += p * w;
       wt += w;
     }
     return sum / wt;
@@ -174,12 +177,14 @@ describe('voices', () => {
   it('a grunt sits at the pitch measured on professionals, three times speaking pitch, and sex hardly overlaps', () => {
     const at = (i: number): number => mean(many(6, (r) => V.grunt(r, V.PLAYER_VOICES[i]!, 0.6)).map(meanPitch));
     const men = [0, 1, 2, 3].map(at), women = [4, 5, 6, 7].map(at);
-    for (const p of men) { expect(p).toBeGreaterThan(260); expect(p).toBeLessThan(350); }
-    for (const p of women) { expect(p).toBeGreaterThan(520); expect(p).toBeLessThan(700); }
+    // (men up to 400: the owner's first clip's barks measured 350-390 Hz, over the study's 297-325)
+    for (const p of men) { expect(p).toBeGreaterThan(260); expect(p).toBeLessThan(400); }
+    // (women's up to 780, the same 20% over the study's top the first clip's barks put the men)
+    for (const p of women) { expect(p).toBeGreaterThan(520); expect(p).toBeLessThan(780); }
     expect(Math.max(...men)).toBeLessThan(Math.min(...women));
   });
 
-  it('there are two ways of grunting: a long one that rises fast and holds (as the owner\'s reference measures), a short one that starts high and falls', () => {
+  it('there are two ways of grunting: a long one that rises fast and holds (as the owner\'s reference measures), a short one, from the first clip, that barks high and falls', () => {
     const long = V.PLAYER_VOICES[0]!, clipped = V.PLAYER_VOICES[1]!;
     expect(long.style).toBe(V.GRUNT_LONG);
     expect(clipped.style).toBe(V.GRUNT_CLIPPED);

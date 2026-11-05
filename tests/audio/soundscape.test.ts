@@ -112,7 +112,7 @@ describe('soundscape', () => {
   it('players grunt on some shots, not all; every swing swishes, misses too, peaking just before the contact', () => {
     const g = count('grunt');
     expect(g).toBeGreaterThan(0.05 * r.hits);
-    expect(g).toBeLessThan(0.6 * r.hits);
+    expect(g).toBeLessThan(0.95 * r.hits);
     expect(count('whoosh')).toBeGreaterThanOrEqual((r.hits + r.whiffs) * 0.9);
     // Each hit's swish: its peak against the contact (sim time), within 45 ms before to 20 ms after (a contact is
     // seen the frame after it happens: an AI's release is its contact, so its swish can't start earlier).
@@ -212,5 +212,15 @@ describe('events that used to play nothing', () => {
     fire(m, E_BODY, 0, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0);
     fire(m, E_ROOF, 0, -1, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0);
     expect(rec.plays.map((p) => p.fam)).toEqual(['body', 'metal']);
+  });
+});
+
+describe('voices on court', () => {
+  it('no two players share a voice: a taken one goes to the next free voice of the same sex', async () => {
+    const { distinctVoices } = await import('../../src/audio/soundscape.ts');
+    expect(distinctVoices([2, 1, 0, 2])).toEqual([2, 1, 0, 3]);
+    expect(distinctVoices([0, 0, 0, 0])).toEqual([0, 1, 2, 3]);
+    expect(distinctVoices([4, 4, 1, 1])).toEqual([4, 5, 1, 2]);
+    expect(distinctVoices([7, 7])).toEqual([7, 4]);
   });
 });
