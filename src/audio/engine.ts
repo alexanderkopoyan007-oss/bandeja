@@ -4,7 +4,7 @@
 // camera each frame. Browsers start audio only from a user gesture (`unlock`); until then, and until the bank's
 // family has arrived from the worker, plays are dropped.
 import * as THREE from 'three/webgpu';
-import { AUDIO, AMB_SEND, BED_SEND, CROWD_SEND, arenaAudio, families, renderFamily, renderRoom, widthLevel, type BankEnv, type Sample } from './bank.ts';
+import { AUDIO, AMB_SEND, BED_SEND, CROWD_SEND, arenaAudio, families, fetchTakes, renderFamily, renderRoom, wantsTakes, widthLevel, type BankEnv, type Sample } from './bank.ts';
 import { resample } from './dsp.ts';
 import { BUS_CROWD, BUS_AMB, type AudioSink } from './sink.ts';
 
@@ -69,6 +69,8 @@ export class AudioEngine implements AudioSink {
   /** Start rendering the bank (in a worker where there is one). Call at load. */
   load(): void {
     if (!this.enabled || this.worker || this.raw.size > 0) return;
+    // The page's base, not the worker's: the worker's own URL sits in assets/.
+    if (wantsTakes(this.env.arena)) this.env.takesUrl = new URL(AUDIO.takes.file, document.baseURI).href;
     try {
       this.worker = new Worker(new URL('./bankWorker.ts', import.meta.url), { type: 'module' });
       this.worker.onmessage = (ev: MessageEvent): void => this.receive(ev.data);
@@ -83,20 +85,22 @@ export class AudioEngine implements AudioSink {
     // No worker: render on the main thread, one family per task after the first frames, so no single frame
     // carries the whole bank (171-532 ms in node).
     const defs = families(this.env);
+    const takes = fetchTakes(this.env.takesUrl);
     let i = 0;
-    const next = (): void => {
+    const next = async (): Promise<void> => {
       // The game was torn down: stop synthesising.
       if (this.closed) return;
       if (i < defs.length) {
         const d = defs[i++]!;
+        if (d.name === 'applause') this.env.takes = (await takes) ?? undefined;
         this.receive({ name: d.name, samples: renderFamily(d, this.env) });
-        setTimeout(next, 30);
+        setTimeout(() => void next(), 30);
       } else {
         this.receive({ room: renderRoom(this.env.arena) });
         this.receive({ done: true });
       }
     };
-    setTimeout(next, 1500);
+    setTimeout(() => void next(), 1500);
   }
 
   private receive(m: { name?: string; samples?: Sample[][]; room?: Sample; done?: boolean }): void {

@@ -30,6 +30,64 @@ export interface BankEnv {
   floor: number;
   /** data/audio.json arenas key. */
   arena: string;
+  /** Where the recorded applause is (an absolute URL: the worker fetches it); unset where the arena's crowd is small. */
+  takesUrl?: string;
+  /** The recorded applause, once fetched (parseTakes). */
+  takes?: CrowdTakes;
+}
+
+/** The stadium's recorded applause: [bin][variant] channels at LO_SR (data/audio.json takes). */
+export interface CrowdTakes { sr: number; takes: Float32Array[][][] }
+
+/**
+ * The recorded applause out of its WAV (16-bit PCM, data/audio.json takes): APPLAUSE_SMALL's takes then APPLAUSE_BIG's,
+ * each its channels. Null if the file is not what the manifest says (the synthesis plays instead).
+ */
+export function parseTakes(buf: ArrayBuffer): CrowdTakes | null {
+  const d = new DataView(buf);
+  if (buf.byteLength < 44 || d.getUint32(0, false) !== 0x52494646 || d.getUint32(8, false) !== 0x57415645) return null;
+  let off = 12, sr = 0, chn = 0, bits = 0, data = -1, len = 0;
+  while (off + 8 <= buf.byteLength) {
+    const id = d.getUint32(off, false), sz = d.getUint32(off + 4, true);
+    if (id === 0x666d7420) { chn = d.getUint16(off + 10, true); sr = d.getUint32(off + 12, true); bits = d.getUint16(off + 22, true); }
+    if (id === 0x64617461) { data = off + 8; len = Math.min(sz, buf.byteLength - data); break; }
+    off += 8 + sz + (sz & 1);
+  }
+  if (data < 0 || bits !== 16 || chn < 1 || chn > 2 || sr !== V.LO_SR) return null;
+  const frames = Math.floor(len / (2 * chn));
+  const cut = (list: number[][]): Float32Array[][] | null => {
+    const out: Float32Array[][] = [];
+    for (const [at, secs] of list) {
+      const s0 = Math.round(at! * sr), n = Math.round(secs! * sr);
+      if (s0 + n > frames) return null;
+      const ch: Float32Array[] = [];
+      for (let c = 0; c < chn; c++) {
+        const x = new Float32Array(n);
+        for (let i = 0; i < n; i++) x[i] = d.getInt16(data + ((s0 + i) * chn + c) * 2, true) / 32768;
+        ch.push(x);
+      }
+      out.push(ch);
+    }
+    return out;
+  };
+  const small = cut(spec.takes.small), big = cut(spec.takes.big);
+  return small && big ? { sr, takes: [small, big] } : null;
+}
+
+/** Fetch and parse the recorded applause; null when there is none to fetch or it fails (the synthesis plays). */
+export async function fetchTakes(url: string | undefined): Promise<CrowdTakes | null> {
+  if (!url) return null;
+  try {
+    const r = await fetch(url);
+    return r.ok ? parseTakes(await r.arrayBuffer()) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Does this arena's applause come from the recording? (The stadium's thousands: a club's few keep the synthesis.) */
+export function wantsTakes(arena: string): boolean {
+  return arenaAudio(arena).crowd >= spec.crowd.big;
 }
 
 /** One render: sample rate and one or two channels. */
@@ -58,7 +116,7 @@ export interface FamilyDef {
   name: string;
   bins: number;
   variants: number;
-  render(rng: Rng, bin: number, env: BankEnv): Float32Array | Float32Array[];
+  render(rng: Rng, bin: number, env: BankEnv, variant: number): Float32Array | Float32Array[];
   sr: number;
   peak?: number;
   rms?: number;
@@ -132,7 +190,11 @@ export function families(env: BankEnv): FamilyDef[] {
     },
     {
       name: 'applause', bins: 2, variants: va.applause!, sr: V.LO_SR, rms: rm.applause! + crowdDb(a.crowd), active: true, peakCap: -9,
-      render: (r, b) => V.applause(r, a.crowd, b === APPLAUSE_BIG ? 4.5 : 2.2, b === APPLAUSE_BIG),
+      // The stadium's from the recording (copies: the levelling scales them in place), else synthesised.
+      render: (r, b, e, v) => {
+        const take = a.crowd >= spec.crowd.big ? e.takes?.takes[b]?.[v % (e.takes.takes[b]?.length || 1)] : undefined;
+        return take ? take.map((c) => c.slice()) : V.applause(r, a.crowd, b === APPLAUSE_BIG ? 4.5 : 2.2, b === APPLAUSE_BIG);
+      },
     },
     { name: 'murmur', bins: 1, variants: 1, sr: V.LO_SR, rms: rm.murmur, render: (r) => V.murmur(r, a.talkers, 12) },
   ];
@@ -161,7 +223,7 @@ function renderRows(def: FamilyDef, env: BankEnv): Sample[][] {
   for (let b = 0; b < def.bins; b++) {
     const row: Sample[] = [];
     for (let v = 0; v < def.variants; v++) {
-      const r = def.render(new Rng(seed(def.name, b, v, env)), b, env);
+      const r = def.render(new Rng(seed(def.name, b, v, env)), b, env, v);
       row.push({ sr: def.sr, ch: Array.isArray(r) ? r : [r] });
     }
     out.push(row);

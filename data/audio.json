@@ -37,6 +37,8 @@
       "wet": -1, "trim": -3, "crowdSend": 0.15, "bedSend": 0.1, "crowd": 10, "talkers": 8, "ambience": ["wind", "crickets", "hum"], "neighbours": 2
     }
   },
+  "takes": { "file": "assets/audio/crowd-applause.wav", "big": [[0, 4.25], [4.25, 4.5], [8.75, 4.25], [13, 4.2]], "small": [[17.2, 2.2], [19.4, 2.2], [21.6, 2.2], [23.8, 2.2]] },
+  "//takes": "The stadium's applause is recorded, not synthesised: eight takes cut from a CC0 recording of a tennis crowd (Freesound 819358, CREDITS.md) by tools/audio/cut-crowd.mjs into one 24 kHz stereo WAV, [start, length] s each, the big point's four and the ordinary point's four (the variants). Levelled like the synthesis (rms.applause). Crowds under crowd.big keep the synthesised clappers; without the file (no network, tests) the stadium does too.",
   "crowd": { "chatter": 0, "hush": -16, "tensionGain": 13, "big": 50 },
   "//crowd": "The murmur bed's level (dB from its rms) between points (chatter), from the server's set-up through the point (hush: 'silence, please'), and how much it rises over a long rally (tension: back to near chatter level by about 22 shots, the buzz of a crowd on the edge of its seats). Crowds under `big` don't cheer or gasp as one; they clap. The stadium has its air handling under the play (the hall bed)."
 }
