@@ -3,7 +3,7 @@
 // never stalls a frame, the tests render it directly. Each family is rendered whole and then scaled so its loudest
 // render sits at the family's level (peak or rms, data/audio.json); bins keep their levels relative to each other.
 import spec from '../../data/audio.json' with { type: 'json' };
-import { Rng, SR, peak, rms } from './dsp.ts';
+import { Rng, SR, peak, resample, rms } from './dsp.ts';
 import { BUS_AMB, BUS_CROWD } from './sink.ts';
 import * as V from './voices.ts';
 
@@ -34,6 +34,65 @@ export interface BankEnv {
   takesUrl?: string;
   /** The recorded applause, once fetched (parseTakes). */
   takes?: CrowdTakes;
+  /** Where the recorded grunts are (an absolute URL). */
+  gruntsUrl?: string;
+  /** The recorded grunts, once fetched (parseGrunts): voice -> nine takes (effort bin * 3 + variant). */
+  grunts?: Map<number, Float32Array[]>;
+}
+
+/** A recorded voice's pitch against its recording (another voice is cut from the same person), and each variant's on
+ * top for a voice whose nine takes are one grunt (the one woman's). */
+export const GRUNT_PITCH: Record<number, number> = { 1: 1.08, 3: 0.9, 4: 1, 6: 1.12 };
+const ONE_TAKE_SPREAD = [0.95, 1, 1.05];
+
+/** The recorded grunts out of their WAV (16-bit mono at LO_SR, data/audio.json gruntTakes), or null. */
+export function parseGrunts(buf: ArrayBuffer): Map<number, Float32Array[]> | null {
+  const d = new DataView(buf);
+  if (buf.byteLength < 44 || d.getUint32(0, false) !== 0x52494646) return null;
+  let off = 12, sr = 0, chn = 0, data = -1, len = 0;
+  while (off + 8 <= buf.byteLength) {
+    const id = d.getUint32(off, false), sz = d.getUint32(off + 4, true);
+    if (id === 0x666d7420) { chn = d.getUint16(off + 10, true); sr = d.getUint32(off + 12, true); }
+    if (id === 0x64617461) { data = off + 8; len = Math.min(sz, buf.byteLength - data); break; }
+    off += 8 + sz + (sz & 1);
+  }
+  if (data < 0 || chn !== 1 || sr !== V.LO_SR) return null;
+  const frames = len >> 1, out = new Map<number, Float32Array[]>();
+  for (const [v, slots] of Object.entries(spec.gruntTakes.voices as Record<string, number[][]>)) {
+    const list: Float32Array[] = [];
+    for (const [at, secs] of slots) {
+      const s0 = Math.round(at! * sr), n = Math.round(secs! * sr);
+      if (s0 + n > frames) return null;
+      const x = new Float32Array(n);
+      for (let i = 0; i < n; i++) x[i] = d.getInt16(data + (s0 + i) * 2, true) / 32768;
+      list.push(x);
+    }
+    out.set(Number(v), list);
+  }
+  return out;
+}
+
+/** Fetch and parse the recorded grunts; null when there are none or it fails (the synthesis plays). */
+export async function fetchGrunts(url: string | undefined): Promise<Map<number, Float32Array[]> | null> {
+  if (!url) return null;
+  try {
+    const r = await fetch(url);
+    return r.ok ? parseGrunts(await r.arrayBuffer()) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A recorded grunt for this voice, effort bin and variant, at its pitch and the effort's level; null if not recorded. */
+export function recordedGrunt(grunts: Map<number, Float32Array[]> | undefined, voice: number, bin: number, variant: number): Float32Array | null {
+  const t = grunts?.get(voice)?.[bin * 3 + variant];
+  if (!t) return null;
+  const one = grunts!.get(voice)!.every((x) => x.length === t.length);
+  const f = (GRUNT_PITCH[voice] ?? 1) * (one ? ONE_TAKE_SPREAD[variant % 3]! : 1);
+  const x = f !== 1 ? resample(t, Math.round(V.LO_SR * f), V.LO_SR) : t.slice();
+  const g = 0.25 + 0.75 * GRUNT_E[bin]!;
+  for (let i = 0; i < x.length; i++) x[i] = x[i]! * g;
+  return x;
 }
 
 /** The stadium's recorded applause: [bin][variant] channels at LO_SR (data/audio.json takes). */
@@ -216,7 +275,8 @@ export function families(env: BankEnv): FamilyDef[] {
     { name: 'scuff', bins: 1, variants: va.scuff!, sr: SR, peak: pk.scuff, render: (r, _b, e) => V.scuff(r, e.floor, r.range(0.5, 1)), floorRef: true },
     {
       name: 'grunt', bins: 24, variants: va.grunt!, sr: V.LO_SR, peak: pk.grunt,
-      render: (r, b) => V.grunt(r, V.PLAYER_VOICES[Math.floor(b / 3)]!, GRUNT_E[b % 3]!),
+      // Recorded where there is a recording of the voice (data/audio.json gruntTakes), else synthesised.
+      render: (r, b, e, v) => recordedGrunt(e.grunts, Math.floor(b / 3), b % 3, v) ?? V.grunt(r, V.PLAYER_VOICES[Math.floor(b / 3)]!, GRUNT_E[b % 3]!),
     },
     {
       name: 'applause', bins: 2, variants: va.applause!, sr: V.LO_SR, rms: rm.applause! + crowdDb(a.crowd), active: true, peakCap: -9,

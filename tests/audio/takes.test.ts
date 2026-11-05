@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { peak, rms } from '../../src/audio/dsp.ts';
-import { AUDIO, APPLAUSE_BIG, APPLAUSE_SMALL, activeRms, buildBank, clapBed, parseTakes, wantsTakes } from '../../src/audio/bank.ts';
+import { AUDIO, APPLAUSE_BIG, APPLAUSE_SMALL, activeRms, buildBank, clapBed, parseGrunts, parseTakes, recordedGrunt, wantsTakes } from '../../src/audio/bank.ts';
 import { FL_TURF, LO_SR } from '../../src/audio/voices.ts';
 
 const file = readFileSync(new URL('../../public/' + AUDIO.takes.file, import.meta.url));
@@ -68,5 +68,25 @@ describe('recorded applause', () => {
     expect(20 * Math.log10(rms(stadium.ch[0]!))).toBeGreaterThan(AUDIO.rms.murmur - 3);
     const club = buildBank({ floor: FL_TURF, arena: 'club-day', takes }).get('murmur')![0]![0]!;
     expect(peak(club.ch[0]!)).toBe(0);
+  });
+
+  it('the players\' recorded grunts: every listed voice has nine sounding takes, louder with effort, and the bank plays them', () => {
+    const g = readFileSync(new URL('../../public/' + AUDIO.gruntTakes.file, import.meta.url));
+    const grunts = parseGrunts(g.buffer.slice(g.byteOffset, g.byteOffset + g.byteLength))!;
+    expect(grunts).not.toBeNull();
+    for (const v of Object.keys(AUDIO.gruntTakes.voices).map(Number)) {
+      const list = grunts.get(v)!;
+      expect(list.length).toBe(9);
+      for (const x of list) { expect(peak(x)).toBeGreaterThan(0.5); expect(Math.abs(x[0]!)).toBeLessThan(0.05); }
+      const soft = recordedGrunt(grunts, v, 0, 0)!, hard = recordedGrunt(grunts, v, 2, 0)!;
+      expect(peak(hard)).toBeGreaterThan(peak(soft) * 1.5);
+    }
+    // a voice cut from the same person as another is set apart by pitch (shorter when higher)
+    expect(recordedGrunt(grunts, 1, 2, 0)!.length).toBeLessThan(grunts.get(1)![6]!.length);
+    const bank = buildBank({ floor: FL_TURF, arena: 'club-day', grunts }).get('grunt')!;
+    expect(bank[0 * 3 + 2]![0]!.ch[0]!.length).toBe(grunts.get(0)![6]!.length);
+    // voices with no recording keep the synthesis
+    expect(recordedGrunt(grunts, 5, 1, 0)).toBeNull();
+    expect(recordedGrunt(grunts, 7, 1, 0)).toBeNull();
   });
 });
