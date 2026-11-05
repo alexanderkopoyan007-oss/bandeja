@@ -1,7 +1,8 @@
-// Made-up players for a match (review round 3, critic High #7: four AIs named only by their playing style read as an
-// exhibition, "YOU · Martillo"). Each AI player is dealt a first name, a surname and a nation from the match's seed,
-// from common names of that nation. No surname of a well-known professional padel player is ever dealt
-// (PRO_SURNAMES), and the names are paired at random, so nobody is anybody. The playing style stays as the
+// Players' names for a match (review round 3, critic High #7: four AIs named only by their playing style read as an
+// exhibition, "YOU · Martillo"). A men's match deals from the owner's own roster (OWNER_ROSTER, 5 Nov 2026), real
+// people included at the owner's insistence (told the public game and repo then carry those names). A women's match
+// deals made-up players: a first name, a surname and a nation from the match's seed, from common names of that
+// nation, never the surname of a well-known professional padel player (PRO_SURNAMES). The playing style stays as the
 // player's nickname, shown beside the name.
 
 import { seeded } from './cast.ts';
@@ -68,6 +69,17 @@ export const PRO_SURNAMES = [
   'Hernández', 'Pérez', 'Gómez', 'Ramírez', 'Torres', 'Romero', 'Domínguez', 'Ramos', 'Muñoz', 'Álvarez', 'Llobet',
 ];
 
+/** The owner's roster for men's matches, in their words (5 Nov 2026); a name with no first name is shown as it is. */
+export const OWNER_ROSTER: readonly PlayerName[] = [
+  { first: '', last: 'Boris', nation: '' },
+  { first: 'Nick', last: 'Kyrgios', nation: 'AUS' },
+  { first: 'Ben', last: 'Shelton', nation: 'USA' },
+  { first: 'Max', last: 'Fleisher', nation: 'USA' },
+  { first: 'Bibi', last: 'Netanyahu', nation: 'ISR' },
+  { first: 'Saddam', last: 'Hussein', nation: 'IRQ' },
+  { first: 'Patrick', last: 'Mouratoglou', nation: 'FRA' },
+];
+
 /**
  * Names for a match's `n` players from `seed` (each a different surname); the same seed deals the same names. `cast`:
  * each player's name comes from the nations their face fits (a Japanese name on a European face was the critic's point
@@ -77,7 +89,14 @@ export function dealNames(seed: number, n: number, cast?: { nations: string[][];
   const rnd = seeded(seed, 0x5bd1e995);
   const out: PlayerName[] = [];
   const used = new Set<string>();
+  // A men's match: the owner's roster, shuffled by the seed (made-up names only past its end).
+  const roster = cast?.women ? [] : OWNER_ROSTER.map((p) => ({ p, k: rnd() })).sort((x, y) => x.k - y.k).map((x) => ({ ...x.p }));
   for (let i = 0; i < n; i++) {
+    if (i < roster.length) {
+      out.push(roster[i]!);
+      used.add(roster[i]!.last);
+      continue;
+    }
     const nations = WEIGHTS.filter((w) => !cast || cast.nations[i]!.includes(w[0]));
     let r = rnd() * nations.reduce((s, w) => s + w[1], 0);
     let nation = nations[0]![0];
@@ -98,5 +117,6 @@ export function dealNames(seed: number, n: number, cast?: { nations: string[][];
 
 /** "D. Campos" (the score rows) or "Diego Campos". */
 export function nameOf(p: PlayerName, short: boolean): string {
+  if (!p.first) return p.last;
   return short ? `${p.first[0]}. ${p.last}` : `${p.first} ${p.last}`;
 }

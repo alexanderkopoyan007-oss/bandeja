@@ -506,7 +506,7 @@ export class Game {
   start(): void {
     if (!this.opts.autoplay) {
       // Who you are playing (and with): the names dealt, their nations, and their playing styles as nicknames.
-      const name = (i: number): string => `${nameOf(this.names[i]!, false)} (${this.names[i]!.nation})`;
+      const name = (i: number): string => nameOf(this.names[i]!, false) + (this.names[i]!.nation ? ` (${this.names[i]!.nation})` : '');
       const style = (i: number): string => this.sim.ai[i]?.style.name ?? '';
       const them = 1 - this.team;
       const mate = this.opts.human ^ 2;
