@@ -140,14 +140,19 @@ describe('feet', () => {
 
 describe('voices', () => {
   /** Fundamental by autocorrelation over a window. */
+  // Autocorrelation, taking the shortest period that is a peak within 90% of the best: a level rising through the window
+  // (a pulsing grunt) otherwise favours a multiple of the period and reads an octave or more low.
   function f0(b: Float32Array, from: number, len: number, sr: number): number {
-    let best = 0, bestLag = 0;
-    for (let lag = Math.round(sr / 900); lag < Math.round(sr / 70); lag++) {
+    const lo = Math.round(sr / 900), hi = Math.round(sr / 70), r = new Float64Array(hi + 1);
+    let best = 0;
+    for (let lag = lo; lag <= hi; lag++) {
       let s = 0;
       for (let i = 0; i < len; i++) s += b[from + i]! * b[from + i + lag]!;
-      if (s > best) { best = s; bestLag = lag; }
+      r[lag] = s;
+      best = Math.max(best, s);
     }
-    return sr / bestLag;
+    for (let lag = lo + 1; lag < hi; lag++) if (r[lag]! >= best * 0.9 && r[lag]! >= r[lag - 1]! && r[lag]! >= r[lag + 1]!) return sr / lag;
+    return sr / hi;
   }
 
   // Raine, Pisanski & Reby 2017: men 297-325 Hz, women 574-650 Hz, very little overlap, against 100-130 and 190-210 spoken.
@@ -174,7 +179,7 @@ describe('voices', () => {
     expect(Math.max(...men)).toBeLessThan(Math.min(...women));
   });
 
-  it('there are two ways of grunting: a long one that climbs to past half way, a short one that starts high and falls', () => {
+  it('there are two ways of grunting: a long one that rises fast and holds (as the owner\'s reference measures), a short one that starts high and falls', () => {
     const long = V.PLAYER_VOICES[0]!, clipped = V.PLAYER_VOICES[1]!;
     expect(long.style).toBe(V.GRUNT_LONG);
     expect(clipped.style).toBe(V.GRUNT_CLIPPED);
@@ -188,7 +193,13 @@ describe('voices', () => {
     expect(mean(many(6, (r) => V.grunt(r, clipped, 0.95)).map(span))).toBeLessThan(0.24);
     const part = (g: Float32Array, a: number, b: number): number => f0(g, Math.round(a * V.LO_SR), Math.round(b * V.LO_SR), V.LO_SR);
     const g = V.grunt(new Rng(5), long, 0.95);
-    expect(part(g, 0.28, 0.05)).toBeGreaterThan(part(g, 0.05, 0.05) * 1.1);
+    // Up to its pitch within about 100 ms, then flat (the reference held within 2%)...
+    expect(part(g, 0.2, 0.05)).toBeGreaterThan(part(g, 0.06, 0.04) * 1.05);
+    expect(Math.abs(part(g, 0.4, 0.05) / part(g, 0.2, 0.05) - 1)).toBeLessThan(0.03);
+    // ...while its level pulses (the reference: about 5 dB, some seven times a second).
+    const lv: number[] = [];
+    for (let t = 0.15; t < 0.45; t += 0.01) lv.push(rms(g.subarray(Math.round(t * V.LO_SR), Math.round((t + 0.02) * V.LO_SR))));
+    expect(20 * Math.log10(Math.max(...lv) / Math.min(...lv))).toBeGreaterThan(3);
     const c = V.grunt(new Rng(5), clipped, 0.95);
     expect(part(c, 0.01, 0.05)).toBeGreaterThan(part(c, 0.12, 0.05) * 1.05);
   });

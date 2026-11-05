@@ -574,12 +574,27 @@ export const PLAYER_VOICES: (VoiceSpec & { style: number })[] = [
  */
 export const GRUNT_OVERHEAD = 1.042, GRUNT_BACKHAND = 0.954;
 
+/** GRUNT_LONG as the owner's reference clips measure (two broadcast grunts, 5 Nov 2026; analysed, nothing copied): the
+ * first part of its length the pitch rises in, the hold's pulse (times a second, depth at full effort), the strained
+ * onset's length at full effort (s), and the presence lift of a strained voice (Hz, dB at full effort) and how much wider its mouth is (formants up, at full effort). */
+const HOLD_RISE = 0.18, HOLD_PULSE = [6, 8], HOLD_DEPTH = 0.2, STRAIN_ON = 0.06, STRAIN_F = 2500, STRAIN_DB = 6, STRAIN_OPEN = 0.15;
+/** The owner, hearing the first match to the clips: "should sound more clear, a little more long as well". So the held
+ * grunt is 20% longer than the reference's, its breath and onset noise are cut, and its pulse is shallower. */
+const HOLD_LEN = 1.2, HOLD_BREATH = [0.06, 0.2];
+/** "You sort of cut the grunt off" (the owner, 5 Nov): the voice fades over its last 30% and falls 10%, then the breath
+ * left goes on this long (s), softly. */
+const HOLD_TAIL = 0.16;
+
 /**
  * A grunt with a shot (`effort` 0..1), from a voice of PLAYER_VOICES. Players exhale through hard strokes; past a
- * point it is voiced and strained, higher with the effort. Light efforts are mostly breath. GRUNT_LONG opens from
- * "uh" to "ah" and climbs for over half its length, a third of a second to over half of one. GRUNT_CLIPPED starts on
- * the glottis at the top of its pitch and falls, stopped dead in under a fifth of a second. Only the mean pitch is
- * measured: the two shapes and lengths are reasoned. Shouts and grunts carry more sound power in real padel than the
+ * point it is voiced and strained, higher with the effort. Light efforts are mostly breath. GRUNT_LONG is a held
+ * "ah", 0.3 s to 0.65 s (the owner asked for it a little longer than the reference), measured on a professional's grunts in a broadcast (the owner's
+ * reference, 5 Nov 2026): it breaks out on the ball with a rough, breathy edge (60-100 ms, periodicity 0.3-0.6),
+ * reaches its pitch within about 100 ms and holds it flat and clean (within 2%, 327-333 Hz there, periodicity 0.93-0.98:
+ * the roughness is all in the onset) while the level pulses about 5 dB some seven times a second, then stops about half
+ * a second after the ball. GRUNT_CLIPPED starts on the glottis at
+ * the top of its pitch and falls, stopped dead in under a fifth of a second (one falling example in the clips, rough:
+ * 390 to 300 Hz). The mean pitch is from Raine et al. Shouts and grunts carry more sound power in real padel than the
  * impacts do (Piana et al.: +1.9 dB(A) overall with them), so they matter in the mix, but the game keeps them a step
  * under the racket.
  */
@@ -589,11 +604,25 @@ export function grunt(rng: Rng, v: VoiceSpec & { style: number }, effort: number
   const breath = e < 0.3 ? 0.9 : 0.12 + 0.3 * (1 - e);
   const amp = 0.25 + 0.75 * e, rough = e < 0.3 ? 0 : 0.35 * e;
   if (v.style === GRUNT_LONG) {
-    const len = (0.26 + 0.3 * e) * rng.range(0.9, 1.1);
-    const out = buf(len + 0.05, LO_SR);
-    const peak = rng.range(0.55, 0.68);
-    vocal(out, rng, 0.004, len, v, 'uh', e > 0.5 ? 'ah' : 'uh',
-      (u) => top * (u < peak ? 0.84 + (0.3 * u) / peak : 1.14 - (0.26 * (u - peak)) / (1 - peak)), breath, amp, 0.04, 0.12, LO_SR, rough);
+    const len = (0.26 + 0.3 * e) * HOLD_LEN * rng.range(0.9, 1.1);
+    const out = buf(len + HOLD_TAIL + 0.05, LO_SR);
+    // The onset: breath forced through a closing glottis, rough, on the ball (hard shots only).
+    const on = e > 0.5 ? STRAIN_ON * e * rng.range(0.7, 1) : 0;
+    if (on > 0) vocal(out, rng, 0.002, on + 0.03, v, 'uh', 'ah', (u) => top * (0.84 + 0.1 * u), 0.35, amp * 0.8, 0.003, 0.03, LO_SR, 0.5);
+    const vowel = e > 0.4 ? 'ah' : 'uh', at = on > 0 ? on * 0.6 : 0.004, hold = len - at;
+    const open = { f0: v.f0, tract: v.tract / (1 + STRAIN_OPEN * e) };
+    vocal(out, rng, at, hold, open, vowel, vowel,
+      (u) => top * (u < HOLD_RISE ? 0.86 + (0.14 * u) / HOLD_RISE : u < 0.75 ? 1 : 1 - 0.1 * ((u - 0.75) / 0.25) ** 1.5),
+      e < 0.3 ? breath : HOLD_BREATH[0]! + HOLD_BREATH[1]! * (1 - e), amp, on > 0 ? 0.03 : 0.012, hold * 0.3, LO_SR);
+    // It dies away on the breath that is left, a little lower, rather than stopping.
+    vocal(out, rng, at + hold - HOLD_TAIL * 0.5, HOLD_TAIL * 1.5, open, vowel, 'uh', (u) => top * (0.9 - 0.06 * u), 0.8, amp * 0.3, 0.06, HOLD_TAIL, LO_SR);
+    // The hold pulses.
+    const f = rng.range(HOLD_PULSE[0]!, HOLD_PULSE[1]!), ph = rng.next() * 2 * Math.PI, d = HOLD_DEPTH * e;
+    const s0 = Math.round((at + hold * HOLD_RISE) * LO_SR), w = (2 * Math.PI * f) / LO_SR;
+    for (let i = s0; i < out.length; i++) out[i] = out[i]! * (1 + d * Math.sin(w * (i - s0) + ph));
+    // A strained voice is brighter: its closure is sharper, so more of it is up where the ear is keenest.
+    const pres = Biquad.make('peak', STRAIN_F, 0.8, STRAIN_DB * e, LO_SR);
+    for (let i = 0; i < out.length; i++) out[i] = pres.run(out[i]!);
     dcBlock(out, LO_SR);
     return fadeTail(out, 0.02, LO_SR);
   }

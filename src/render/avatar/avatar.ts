@@ -71,7 +71,7 @@ const RING_JUMP = 0.2;
 const BY_HAND_OUT = 0.14;
 /** The arm OverArm's curves are drawn for (m), when the chest's curves start giving way to the ball (progress), the trunk's ease (s). */
 /** How long the mouth stays with a grunt (s): the clipped voice's is 0.1-0.2, the long one's 0.26-0.56. */
-const GRUNT_MOUTH = 0.35;
+const GRUNT_MOUTH = 0.65; // the held grunt lasts up to about 0.65 s (voices.ts GRUNT_LONG)
 /** How far through a follow-through (Family.way) the racket is at its way round. */
 const WAY_AT = 0.45;
 /** The hand goes through the ball first, then to its chest-frame place (OverArm.under) over these times after it (s). */

@@ -91,7 +91,8 @@ export class FaceDriver {
     const post = f.sinceContact >= 0 && f.sinceContact < 0.35 ? 1 - f.sinceContact / 0.35 : 0;
     let e = (pre > post ? pre : post) * f.strain;
     e = e * e * (3 - 2 * e);
-    const g = f.grunt ? (f.sinceContact >= 0 && f.sinceContact < 0.3 ? 1 - f.sinceContact / 0.3 : f.toContact < 0.08 ? 1 - f.toContact / 0.08 : 0) : 0;
+    // (open through the held grunt, closing over its last quarter second)
+    const g = f.grunt ? (f.sinceContact >= 0 && f.sinceContact < 0.65 ? (f.sinceContact < 0.4 ? 1 : 1 - (f.sinceContact - 0.4) / 0.25) : f.toContact < 0.08 ? 1 - f.toContact / 0.08 : 0) : 0;
     // ---- breathing through the mouth after running (about 0.45 Hz at rest after a rally)
     const breath = f.puff * (0.55 + 0.45 * Math.sin(t * 2.8));
     // ---- the point's end
