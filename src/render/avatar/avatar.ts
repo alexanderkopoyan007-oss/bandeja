@@ -449,6 +449,9 @@ const FALL_PLAN = 2.6;
 /** How long after the ball a stroke's fall is planned (s): the hips go on down into a lunge's finish. */
 const FALL_AFTER = 0.2;
 const FALL_EARLY = 0.03;
+/** How fast what the follower leaves at the end of a stroke goes (rad/s, critically damped): put straight back, a low stroke's hips
+ * left 7 cm under a rising pose jumped up in one frame 0.2 s after the ball, and the planted knee with them. */
+const FALL_LET = 12;
 /** Time before the contact (s) the hips start leaning towards it, and lean fully. */
 const LEAN_FROM = 0.4;
 const LEAN_FULL = 0.1;
@@ -1087,6 +1090,12 @@ export class Avatar {
   private fallY = -1;
   private fallV = 0;
   private fallLift = 0;
+  /** What the follower left when a stroke ended (m above the pose) and its speed, let go at FALL_LET; whether it was following
+   * last frame, and the pose's height then. */
+  private fallR = 0;
+  private fallRV = 0;
+  private fallIn = false;
+  private fallWant = 0;
   /** What FALL_G took off the drop this frame (m; minus: the hips higher than the pose wants). */
   private fallOff = 0;
   /** The drop the stroke wants at its contact (m), and the crouch it will have then (see FALL_PLAN). */
@@ -3335,14 +3344,16 @@ export class Avatar {
   private governFall(drop: number): number {
     const lift = this.root.position.y, clip = this.hips.matrixWorld.elements[13]! - lift, want = clip - drop, dt = this.dt;
     if (!Avatar.fallOn) { this.fallY = -1; return drop; }
-    if (this.fallY < 0) { this.fallY = want; this.fallV = 0; this.fallLift = lift; return drop; }
+    if (this.fallY < 0) { this.fallY = this.fallWant = want; this.fallV = this.fallR = this.fallRV = 0; this.fallIn = false; this.fallLift = lift; return drop; }
     if (dt <= 0) return clip - this.fallY;
     // In the air the lift is the fall, ballistic already, and the legs under it are free: followed exactly, the hips' speed kept.
     // Landed, the hips go on from where they were at that speed, and the legs brake it.
     if (lift > 0) {
       this.fallV = (want + lift - this.fallY - this.fallLift) / dt;
-      this.fallY = want;
+      this.fallY = this.fallWant = want;
       this.fallLift = lift;
+      this.fallR = this.fallRV = 0;
+      this.fallIn = false;
       return drop;
     }
     if (this.fallLift > 0) { this.fallY += this.fallLift; this.fallLift = 0; }
@@ -3352,10 +3363,26 @@ export class Avatar {
     // held there only as far as the feet reach, the hips jumped at the limit and pops doubled. Out of a stroke the hips are the
     // pose's, at its speed, so a stroke's fall starts from the body's own; the run's bob and landings are a body's themselves.
     if (tc < 0 || this.lastT > tc + FALL_AFTER) {
-      this.fallV = (want - this.fallY) / dt;
-      this.fallY = want;
-      return drop;
+      // (what the stroke left goes on a spring of its own, over the pose as it moves, FALL_LET)
+      if (this.fallIn) {
+        this.fallR = this.fallY - want;
+        this.fallRV = this.fallV - (want - this.fallWant) / dt;
+        this.fallIn = false;
+      }
+      if (this.fallR !== 0 || this.fallRV !== 0) {
+        this.fallRV += (-FALL_LET * FALL_LET * this.fallR - 2 * FALL_LET * this.fallRV) * dt;
+        this.fallR += this.fallRV * dt;
+        if ((this.fallR < 0 ? -this.fallR : this.fallR) < 1e-4 && (this.fallRV < 0 ? -this.fallRV : this.fallRV) < 1e-3) this.fallR = this.fallRV = 0;
+      }
+      const y = want + this.fallR;
+      this.fallV = (y - this.fallY) / dt;
+      this.fallY = y;
+      this.fallWant = want;
+      return clip - y;
     }
+    this.fallIn = true;
+    this.fallR = this.fallRV = 0;
+    this.fallWant = want;
     let to = want;
     if (tc > this.lastT) {
       const tau = tc - this.lastT - FALL_EARLY;
