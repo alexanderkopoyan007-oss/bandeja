@@ -26,7 +26,8 @@ for n in "$@"; do
   # (the person as data/players has them now, made afresh by MPFB: the old builds' files predate their faces and builds)
   BLENDER_USER_RESOURCES=${BLENDER_USER_RESOURCES:-$HOME/bandeja/assets-src/blender-user} "$BLENDER" -b --python tools/assets/mpfb/make-player.py \
     -- data/players/$n.json "$YB" "$CAST/$n/mpfb" --blend-only </dev/null 2>&1 | grep -E "^PLAYER|Error|Traceback" | cut -c1-200 || true
-  "$BLENDER" -b "$CAST/$n/mpfb/$n.blend" --python tools/assets/metahuman/cast-export.py -- "$CAST/$n" </dev/null 2>&1 | grep -E "^CAST (height|wrote)|Error" || true
+  "$BLENDER" -b "$CAST/$n/mpfb/$n.blend" --python tools/assets/metahuman/cast-export.py -- "$CAST/$n" \
+    "$(node -e "console.log(require('./data/players/$n.json').height)")" </dev/null 2>&1 | grep -E "^CAST (scaled|height|wrote)|Error" || true
   [ -f "$CAST/$n/portrait.png" ] || { echo "$n: no portrait"; continue; }
   q $n conform_cast || continue
   q $n finish_cast "HAIR = '$HAIR'

@@ -501,11 +501,13 @@ if KIT.get('bottom') in ('pleated', 'aline'):
     pleated = KIT['bottom'] == 'pleated'
     shirt_co = coords(shirt)
     shirt_hem = shirt_co[:, 2].min()
-    top, hem = shirt_hem + pk.SKIRT_TUCK, KIT['skirt']
+    # (kit.skirt and shorts_hem are the MPFB player's heights over the shoes' soles; here the bare feet stand at 0)
+    sole_z = float(new_co[:, 2].min())
+    top, hem = shirt_hem + pk.SKIRT_TUCK, KIT['skirt'] + sole_z
     # (the shorts' top came through the shirt's back in a bend, and the skirt covers it)
     bisect(shorts, Vector((0, 0, shirt_hem - 0.03)), Vector((0, 0, 1)), outer=True)
     if spec.get('shorts_hem'):
-        bisect(shorts, Vector((0, 0, spec['shorts_hem'])), Vector((0, 0, 1)), inner=True)
+        bisect(shorts, Vector((0, 0, spec['shorts_hem'] + sole_z)), Vector((0, 0, 1)), inner=True)
     shorts_co = coords(shorts)
     say('skirt over shorts from', round(float(shorts_co[:, 2].min()), 3), 'to', round(float(shorts_co[:, 2].max()), 3))
     # (the outline it hangs round: the body without its arms, and the shorts, which stand off MetaHuman's legs as MPFB's
@@ -526,7 +528,7 @@ if KIT.get('bottom') in ('pleated', 'aline'):
         if w > 0:
             skirt.vertex_groups[P + 'LeftUpLeg'].add([i], w * s, 'REPLACE')
             skirt.vertex_groups[P + 'RightUpLeg'].add([i], w * (1 - s), 'REPLACE')
-    say('skirt', KIT['bottom'], 'top', round(top, 3), 'hem', hem, 'shirt hem', round(float(shirt_hem), 3), 'radius at the hem',
+    say('skirt', KIT['bottom'], 'top', round(top, 3), 'hem', round(hem, 3), 'over the soles', KIT['skirt'], 'shirt hem', round(float(shirt_hem), 3), 'radius at the hem',
         round(float(R[-1].min()), 3), '..', round(float(R[-1].max()), 3), 'faces', len(sme.polygons), 'wrong way', bad)
 
 head_piece, head_shade = None, None

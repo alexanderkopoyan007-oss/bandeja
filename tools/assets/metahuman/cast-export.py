@@ -1,8 +1,9 @@
 # A current player (MPFB, assets-src/people/<name>/<name>.blend) as the target a MetaHuman is conformed to
 # (mh-scripts/conform_cast.py, Epic's example_conform_from_custom_mesh): their body and head as one mesh, without
 # clothes, and a front portrait for MetaHuman's face-landmark tracker, with the camera that took it in Unreal's units.
-#   Blender -b <name>.blend --python tools/assets/metahuman/cast-export.py -- <out-dir>
-# Writes <out-dir>/target.fbx, portrait.png, camera.json.
+#   Blender -b <name>.blend --python tools/assets/metahuman/cast-export.py -- <out-dir> [height]
+# Writes <out-dir>/target.fbx, portrait.png, camera.json. With `height` (data/players' height), the person is first
+# scaled to it as finish-player.py scales the game's (soles of the shoes to the top of the skin), about the bare feet.
 #
 # Axes: Blender's metres, z up, the person facing -y. The FBX importer brings that into Unreal as centimetres with
 # y flipped, so the person faces +y as a MetaHuman does; the camera here, looking along +y, is Unreal's yaw -90.
@@ -10,7 +11,9 @@ import bpy, json, math, os, sys
 import numpy as np
 from mathutils import Vector
 
-OUT = sys.argv[sys.argv.index('--') + 1]
+ARGS = sys.argv[sys.argv.index('--') + 1:]
+OUT = ARGS[0]
+WANT = float(ARGS[1]) if len(ARGS) > 1 else None
 os.makedirs(OUT, exist_ok=True)
 SIZE = 1024
 FOV = 30.0  # degrees, the square image's both ways
@@ -21,6 +24,27 @@ human = bpy.data.objects['Human']
 for m in human.modifiers:
     if m.type == 'MASK' and m.name != 'Hide helpers':
         m.show_viewport = m.show_render = False
+
+
+def z_range(o):
+    ev = o.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    m = ev.to_mesh()
+    zs = [(ev.matrix_world @ v.co).z for v in m.vertices]
+    ev.to_mesh_clear()
+    return min(zs), max(zs)
+
+
+if WANT:
+    # (MPFB makes the body at its macro's size; finish-player.py then scales everyone to their height. Exported unscaled,
+    # p7 came out 1.61 m for her 1.71, and the men a few centimetres off.)
+    rig = human.parent
+    lo = min(z_range(o)[0] for o in bpy.data.objects if o.type == 'MESH')  # the soles (the shoes)
+    feet, hi = z_range(human)
+    k = WANT / (hi - lo)
+    rig.scale = (k, k, k)
+    rig.location = (0, 0, feet * (1 - k))
+    bpy.context.view_layer.update()
+    print('CAST scaled', round(hi - lo, 4), '->', WANT, 'by', round(k, 4), 'about the feet at', round(feet, 4))
 dg = bpy.context.evaluated_depsgraph_get()
 me = bpy.data.meshes.new_from_object(human.evaluated_get(dg))
 me.transform(human.matrix_world)
