@@ -1,0 +1,39 @@
+{
+ "name": "p9mh",
+ "src": "~/bandeja-people-src/cast/p9",
+ "body": "full/SKM_MHC_p9_BodyMesh.fbx",
+ "body_lod": 1,
+ "face": "full/SKM_MHC_p9_FaceMesh.fbx",
+ "face_lod": 2,
+ "teeth_decimate": 0.35,
+ "outfit": "export/MHC_p9_Outfits.fbx",
+ "outfit_lod": 1,
+ "hair": [
+  "export/Hair_L_Straight_CardsMesh_Group0_LOD3.fbx",
+  "export/Hair_L_Straight_CardsMesh_Group1_LOD3.fbx"
+ ],
+ "hair_atlas": "export/tex/Hair_L_Straight_CardsAtlas_Attribute.png",
+ "hair_rgb": [
+  0.073,
+  0.04,
+  0.03
+ ],
+ "helmet": "export/Hair_L_Straight_Helmet_LOD5.fbx",
+ "maps": "dcc/MHC_p9/Maps",
+ "head_bc": "export/tex/T_Head_LOD3_BC.png",
+ "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
+ "body_bc": "export/tex/T_Body_BC.png",
+ "shoes_from": "~/bandeja-p9/assets-src/people/p1/p1.blend",
+ "shorts_hem": 0.71,
+ "top_hem": "hips",
+ "kit": {
+  "shoes": "#63b4c6",
+  "sole": "#f0ece4",
+  "top": "tee",
+  "bottom": "aline",
+  "skirt": 0.665,
+  "mark": 0,
+  "head": "visor",
+  "collar": "own"
+ }
+}

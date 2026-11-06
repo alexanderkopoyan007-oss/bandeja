@@ -1,0 +1,36 @@
+{
+ "name": "p10mh",
+ "src": "~/bandeja-people-src/cast/p10",
+ "body": "full/SKM_MHC_p10_BodyMesh.fbx",
+ "body_lod": 1,
+ "face": "full/SKM_MHC_p10_FaceMesh.fbx",
+ "face_lod": 2,
+ "teeth_decimate": 0.35,
+ "outfit": "export/MHC_p10_Outfits.fbx",
+ "outfit_lod": 1,
+ "hair": [
+  "export/Hair_M_BobBangs_CardsMesh_Group0_LOD3.fbx"
+ ],
+ "hair_atlas": "export/tex/Hair_M_BobBangs_CardsAtlas_Attribute.png",
+ "hair_rgb": [
+  0.094,
+  0.077,
+  0.063
+ ],
+ "helmet": "export/Hair_M_BobBangs_Helmet_LOD5.fbx",
+ "maps": "dcc/MHC_p10/Maps",
+ "head_bc": "export/tex/T_Head_LOD3_BC.png",
+ "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
+ "body_bc": "export/tex/T_Body_BC.png",
+ "shoes_from": "~/bandeja-p9/assets-src/people/p1/p1.blend",
+ "shorts_hem": 0.725,
+ "top_hem": "hips",
+ "kit": {
+  "shoes": "#e2664e",
+  "sole": "#f0ece4",
+  "top": "tank",
+  "bottom": "pleated",
+  "skirt": 0.685,
+  "mark": 1
+ }
+}

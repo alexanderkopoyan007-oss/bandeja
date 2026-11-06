@@ -1,0 +1,35 @@
+{
+ "name": "p8mh",
+ "src": "~/bandeja-people-src/cast/p8",
+ "body": "full/SKM_MHC_p8_BodyMesh.fbx",
+ "body_lod": 1,
+ "face": "full/SKM_MHC_p8_FaceMesh.fbx",
+ "face_lod": 2,
+ "teeth_decimate": 0.35,
+ "outfit": "export/MHC_p8_Outfits.fbx",
+ "outfit_lod": 1,
+ "hair": "export/Hair_L_AfroCurly_CardsMesh_Group0_LOD3.fbx",
+ "hair_atlas": "export/tex/Hair_L_AfroCurly_CardsAtlas_Attribute.png",
+ "hair_rgb": [
+  0.058,
+  0.02,
+  0.019
+ ],
+ "helmet": "export/Hair_L_AfroCurly_Helmet_LOD5.fbx",
+ "helmet_cov": "export/tex/Hair_L_AfroCurly_RootUVSeedCoverage.png",
+ "maps": "dcc/MHC_p8/Maps",
+ "head_bc": "export/tex/T_Head_LOD3_BC.png",
+ "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
+ "body_bc": "export/tex/T_Body_BC.png",
+ "shoes_from": "~/bandeja-p9/assets-src/people/p1/p1.blend",
+ "top_hem": "hips",
+ "kit": {
+  "shoes": "#d6dc4e",
+  "sole": "#2a2b2e",
+  "top": "tee",
+  "bottom": "shorts",
+  "mark": 3,
+  "head": "band",
+  "collar": "own"
+ }
+}

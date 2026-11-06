@@ -1,0 +1,35 @@
+{
+ "name": "p3mh",
+ "src": "~/bandeja-people-src/cast/p3",
+ "body": "full/SKM_MHC_p3_BodyMesh.fbx",
+ "body_lod": 1,
+ "face": "full/SKM_MHC_p3_FaceMesh.fbx",
+ "face_lod": 2,
+ "teeth_decimate": 0.35,
+ "outfit": "export/MHC_p3_Outfits.fbx",
+ "outfit_lod": 1,
+ "hair": [
+  "export/Hair_S_Clean_CardsMesh_Group0_LOD3.fbx"
+ ],
+ "hair_atlas": "export/tex/Hair_S_Clean_CardsAtlas_Attribute.png",
+ "hair_rgb": [
+  0.11,
+  0.105,
+  0.1
+ ],
+ "helmet": "export/Hair_S_Clean_Helmet_LOD5.fbx",
+ "helmet_cov": "export/tex/Hair_S_Clean_RootUVSeedCoverage.png",
+ "maps": "dcc/MHC_p3/Maps",
+ "head_bc": "export/tex/T_Head_LOD3_BC.png",
+ "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
+ "body_bc": "export/tex/T_Body_BC.png",
+ "shoes_from": "~/bandeja-p9/assets-src/people/p1/p1.blend",
+ "kit": {
+  "shoes": "#868b93",
+  "sole": "#2a2b2e",
+  "top": "polo",
+  "bottom": "shorts",
+  "mark": 2,
+  "collar": "own"
+ }
+}

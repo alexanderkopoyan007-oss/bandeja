@@ -935,6 +935,9 @@ HELMET_COV = os.path.join(SRC, spec['helmet_cov']) if spec.get('helmet_cov') els
 if helmet and not (HELMET_COV and os.path.exists(HELMET_COV)):
     cov_px = np.ones((512, 512, 4), dtype=np.float32)
     cov_px[..., 3] = rim_feather(helmet, (512, 512), HELMET_FEATHER)
+    # (its green, the strand seed the shade comes from, at none: the shell in the darkest strand shade, the mass in shadow
+    # under the cards; in one even lighter shade, p10's bob read as a shiny helmet)
+    cov_px[..., 1] = 0
     HELMET_COV = os.path.join(OUT, 'helmet-cov.png')
     im = bpy.data.images.new('helmet_cov', 512, 512, alpha=True)
     im.pixels.foreach_set(cov_px.ravel())
