@@ -893,7 +893,7 @@ Three reviewers and a sceptic: 19 findings, three of them High and all three con
 | 6 | Medium | Defenders stand on a painted line, both on 8.00 m for every overhead. | **Better, open.** On 7-8 m they now step in. Inside 7 m it's unchanged. |
 | 7 | Medium | At Advanced the overhead off the bounce from your own glass still beats your average point, 70-72 against 65. | Open. Met 0.35 s after the bounce it catches the lobbers half way in. |
 | 8 | Medium | From the camera you can barely hear the ball land or anyone move. | Open. Nobody has listened: the reviewer measured levels, not a mix. |
-| 9 | Medium | Starts and stops lean a third of what the acceleration needs. | Open. |
+| 9 | Medium | Starts and stops lean a third of what the acceleration needs. | **Open, investigated** (6 Nov). Feet placed where the floor pushes from lean 0.26 to 0.34 of the physics, but cost stance time (0.158 to 0.133 s, short of real already) or legs crossing, inside the run's reach. Needs a run gait whose stances cover a real stride; DECISIONS.md, branch `lean-carry`. |
 | 10 | Medium | The walk between points runs on locked knees. | Open. |
 | 11 | Medium | The rear heel stays flat through ground strokes and the serve. | Open. |
 | 12 | Low | Eight more: the receiver's partner backing to the glass through the serve; points under the band on fresh seeds; the last ball going small in play and twice at a change of ends; the serve chosen silently by the key; about half of Round 25's pop rise being its own render; H, M and P beside the shot keys; a band under the run gait flinging a rear leg; a step's distance read on its first frame only. | Open, bar the pops and the points, which read 12.75 a minute and 10.1 shots on this build. |
