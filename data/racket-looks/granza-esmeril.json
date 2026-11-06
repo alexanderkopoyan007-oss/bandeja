@@ -1,0 +1,44 @@
+{
+  "//": "GRANZA Esmeril: the look of data/rackets.json \"granza-esmeril\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"ember\"), copying no real racket.",
+  "name": "granza-esmeril",
+  "maker": "GRANZA",
+  "model": "ESMERIL",
+  "line": "CARBON 12K  ·  EVA MEDIUM  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "triangle",
+  "balance": 0.265,
+  "weight": 0.352,
+  "art": "ember",
+  "colours": {
+    "base": "#1f2a24",
+    "a": "#3fae6b",
+    "b": "#1b5e3a",
+    "c": "#c9e86a",
+    "text": "#ffffff",
+    "frame": "#1f2a24",
+    "accent": "#c9e86a"
+  },
+  "finish": "sand",
+  "frameFinish": "matte",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#c9e86a",
+    "clear": 0,
+    "span": 0.28
+  },
+  "grip": "#1b1c1f",
+  "tape": "#3fae6b",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.013,
+    "pitch": 0.0245,
+    "rings": 2,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": 0.057, "a": 0.0868, "b": 0.0165, "rot": 0 },
+      { "x": 0, "y": -0.05, "a": 0.052, "b": 0.017, "rot": 0 }
+    ]
+  }
+}

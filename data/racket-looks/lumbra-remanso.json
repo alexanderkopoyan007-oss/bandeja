@@ -1,0 +1,44 @@
+{
+  "//": "LUMBRA Remanso: the look of data/rackets.json \"lumbra-remanso\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"tide\"), copying no real racket.",
+  "name": "lumbra-remanso",
+  "maker": "LUMBRA",
+  "model": "REMANSO",
+  "line": "FIBERGLASS  ·  EVA SOFT  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.258,
+  "weight": 0.355,
+  "art": "tide",
+  "colours": {
+    "base": "#eef3ef",
+    "a": "#1f5f52",
+    "b": "#5fb39c",
+    "c": "#e8b04a",
+    "text": "#1f5f52",
+    "frame": "#1f5f52",
+    "accent": "#e8b04a"
+  },
+  "finish": "matte",
+  "frameFinish": "gloss",
+  "foam": "#f4f4f1",
+  "skin": "#e2e4e6",
+  "bumper": {
+    "colour": "#e8b04a",
+    "clear": 0.85,
+    "span": 0.3
+  },
+  "grip": "#f1f1ee",
+  "tape": "#e8b04a",
+  "cap": "#1f5f52",
+  "cord": "#1f5f52",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": 0.086, "a": 0.052, "b": 0.009, "rot": 0 },
+      { "x": 0, "y": -0.051, "a": 0.0891, "b": 0.0125, "rot": 0 }
+    ]
+  }
+}

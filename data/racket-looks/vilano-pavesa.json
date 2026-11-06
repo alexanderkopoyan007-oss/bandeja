@@ -1,0 +1,44 @@
+{
+  "//": "VILANO Pavesa: the look of data/rackets.json \"vilano-pavesa\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"split\"), copying no real racket.",
+  "name": "vilano-pavesa",
+  "maker": "VILANO",
+  "model": "PAVESA",
+  "line": "CARBON 3K  ·  EVA SOFT  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.257,
+  "weight": 0.34,
+  "art": "split",
+  "colours": {
+    "base": "#fafafa",
+    "a": "#ff5fa2",
+    "b": "#7a3cff",
+    "c": "#ffd23f",
+    "text": "#ffffff",
+    "frame": "#fafafa",
+    "accent": "#7a3cff"
+  },
+  "finish": "sand",
+  "frameFinish": "gloss",
+  "foam": "#f4f4f1",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#fafafa",
+    "clear": 0.85,
+    "span": 0.28
+  },
+  "grip": "#f1f1ee",
+  "tape": "#7a3cff",
+  "cap": "#fafafa",
+  "cord": "#fafafa",
+  "holes": {
+    "d": 0.013,
+    "pitch": 0.0245,
+    "rings": 2,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.0445, "a": 0.0699, "b": 0.0135, "rot": 0 },
+      { "x": 0, "y": -0.0645, "a": 0.05, "b": 0.0085, "rot": 0 }
+    ]
+  }
+}

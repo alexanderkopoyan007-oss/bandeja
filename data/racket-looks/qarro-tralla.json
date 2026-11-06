@@ -1,0 +1,44 @@
+{
+  "//": "QARRO Tralla: the look of data/rackets.json \"qarro-tralla\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"ember\"), copying no real racket.",
+  "name": "qarro-tralla",
+  "maker": "QARRO",
+  "model": "TRALLA",
+  "line": "CARBON 18K  ·  EVA HARD  ·  3D  ·  38 MM",
+  "shape": "diamond",
+  "throat": "triangle",
+  "balance": 0.276,
+  "weight": 0.365,
+  "art": "ember",
+  "colours": {
+    "base": "#1a1a1d",
+    "a": "#ffd21f",
+    "b": "#c01d1d",
+    "c": "#ffffff",
+    "text": "#ffffff",
+    "frame": "#1a1a1d",
+    "accent": "#ffffff"
+  },
+  "finish": "sand",
+  "frameFinish": "matte",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#ffffff",
+    "clear": 0,
+    "span": 0.3
+  },
+  "grip": "#1b1c1f",
+  "tape": "#ffd21f",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": 0.057, "a": 0.0833, "b": 0.0165, "rot": 0 },
+      { "x": 0, "y": -0.05, "a": 0.052, "b": 0.017, "rot": 0 }
+    ]
+  }
+}

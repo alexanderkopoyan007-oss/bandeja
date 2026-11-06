@@ -7,9 +7,10 @@
 //   piecewise along it (`sideLayout`) so the type along each side and the protector's print over the tip get about
 //   8 and 4 px/mm and the plain runs between them less.
 //
-// Generic, original designs only: the maker's mark is the game's own (BANDEJA, a ball over a tilted tray), the model
-// names are made up, and the four graphics (teal chevrons, a tide wave, a split panel, orbit rings) copy no real
-// racket. Type is the system's sans-serif (nothing downloaded), drawn upright and slanted by a skew of our own, so it
+// Generic, original designs only: the maker's mark is the game's own (BANDEJA, a ball over a tilted tray) or one of
+// the made-up makers' (data/rackets.json: their name and a monogram of its first letter), the model names are made
+// up, and the eight graphics (chevrons, a tide wave, a split panel, orbit rings, racing stripes, a faceted gem,
+// map contours, colour blocks) copy no real racket. Type is the system's sans-serif (nothing downloaded), drawn upright and slanted by a skew of our own, so it
 // is the same slant on every system (a synthesised italic would differ).
 import * as THREE from 'three/webgpu';
 import type { RacketLook } from './racket.ts';
@@ -241,12 +242,49 @@ function emblem(ctx: Ctx, x: number, y: number, s: number, fill: string, cut?: s
   ctx.restore();
 }
 
-/** The wordmark: BANDEJA, wide and heavy, tracked out; `h`: cap height (m). */
-function wordmark(ctx: Ctx, x: number, y: number, h: number, fill: string, rot = 0): void {
+/** The wordmark: the maker's name (BANDEJA unless the look names another), wide and heavy, tracked out; `h`: cap height (m). */
+function wordmark(ctx: Ctx, x: number, y: number, h: number, fill: string, rot = 0, text = 'BANDEJA'): void {
   ctx.fillStyle = fill;
   ctx.font = `800 ${Math.round(mm(h) * 1.38)}px ${SANS}`;
-  spaced(ctx, 'BANDEJA', px(x), py(y), mm(h) * 0.42, rot);
+  spaced(ctx, text, px(x), py(y), mm(h) * 0.42, rot);
 }
+
+/** Who made it: the game's own name, or a made-up maker's (data/racket-looks/<id>.json `maker`). */
+const makerOf = (look: RacketLook): string => look.maker ?? 'BANDEJA';
+
+/**
+ * The maker's mark: the game's emblem, or for another maker a monogram (its first letter, heavy, in a ring). `s`:
+ * its width (px).
+ */
+function mark(ctx: Ctx, look: RacketLook, x: number, y: number, s: number, fill: string, cut?: string): void {
+  if (!look.maker) { emblem(ctx, x, y, s, fill, cut); return; }
+  ctx.save();
+  ctx.strokeStyle = fill;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = s * 0.07;
+  ctx.beginPath();
+  ctx.arc(x, y, s * 0.42, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.font = `900 ${Math.round(s * 0.62)}px ${SANS}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText([...look.maker][0]!, x, y + s * 0.03);
+  ctx.restore();
+}
+
+/**
+ * Sets a heavy font for the model's name at `size` px, smaller if the name with its tracking would be wider than
+ * `maxW` px (the made-up makers' names run to nine letters; the game's own four fit as they are).
+ */
+function fitFont(ctx: Ctx, text: string, weight: number, size: number, track: number, maxW: number): void {
+  ctx.font = `${weight} ${Math.round(size)}px ${SANS}`;
+  const chars = [...text];
+  const w = chars.reduce((a, ch) => a + ctx.measureText(ch).width, 0) + track * (chars.length - 1);
+  if (w > maxW) ctx.font = `${weight} ${Math.round((size * maxW) / w)}px ${SANS}`;
+}
+
+/** Widest the model's name may print on the face (m). */
+const MODEL_MAX = 0.19;
 
 /** A carbon twill (2/2, tows about 2 mm) as a pattern of shaded tows. */
 function twill(ctx: Ctx, dark: string, light: string): CanvasPattern | string {
@@ -330,9 +368,9 @@ const ember: Style = {
     // Type: the model large in the open carbon above the chevron, the maker above it, the spec line under the point.
     p.both((ctx, m) => {
       ctx.fillStyle = m ? maskCol(1, 0) : c.text;
-      ctx.font = `900 ${Math.round(mm(0.033))}px ${SANS}`;
+      fitFont(ctx, look.model, 900, mm(0.033), mm(0.0016), mm(MODEL_MAX * 0.85));
       spaced(ctx, look.model, px(0), py(0.057), mm(0.0016), 0, false, SLANT);
-      wordmark(ctx, 0, -0.043, 0.0072, m ? maskCol(1, 0) : c.text);
+      wordmark(ctx, 0, -0.043, 0.0072, m ? maskCol(1, 0) : c.text, 0, makerOf(look));
       ctx.fillStyle = m ? maskCol(1, 1) : c.c;
       ctx.font = `600 ${Math.round(mm(0.0034))}px ${SANS}`;
       spaced(ctx, look.line, px(0), py(-0.0585), mm(0.0006));
@@ -388,12 +426,12 @@ const tide: Style = {
       poly(ctx, waveLine(0.0145, 0.0008));
     });
     p.both((ctx, m) => {
-      wordmark(ctx, 0, 0.0905, 0.0078, m ? maskCol(1, 0) : c.a);
+      wordmark(ctx, 0, 0.0905, 0.0078, m ? maskCol(1, 0) : c.a, 0, makerOf(look));
       ctx.fillStyle = m ? maskCol(1, 0) : c.b;
       ctx.font = `600 ${Math.round(mm(0.0032))}px ${SANS}`;
       spaced(ctx, look.line, px(0), py(0.0795), mm(0.0006));
       ctx.fillStyle = m ? maskCol(1, 0) : '#ffffff';
-      ctx.font = `900 ${Math.round(mm(0.03))}px ${SANS}`;
+      fitFont(ctx, look.model, 900, mm(0.03), mm(0.0018), mm(MODEL_MAX));
       spaced(ctx, look.model, px(0), py(-0.05), mm(0.0018), 0, false, SLANT);
     });
   },
@@ -454,9 +492,9 @@ const split: Style = {
       ctx.strokeStyle = m ? maskCol(1, 0) : c.b;
       ctx.lineWidth = mm(0.0012);
       ctx.lineJoin = 'round';
-      ctx.font = `900 ${Math.round(mm(0.027))}px ${SANS}`;
+      fitFont(ctx, look.model, 900, mm(0.027), mm(0.0016), mm(MODEL_MAX));
       spaced(ctx, look.model, px(0), py(-0.0445), mm(0.0016), 0, !m, SLANT);
-      wordmark(ctx, 0, -0.0605, 0.0058, m ? maskCol(1, 0) : '#ffffff');
+      wordmark(ctx, 0, -0.0605, 0.0058, m ? maskCol(1, 0) : '#ffffff', 0, makerOf(look));
       ctx.fillStyle = m ? maskCol(1, 1) : c.c;
       ctx.font = `600 ${Math.round(mm(0.0026))}px ${SANS}`;
       spaced(ctx, look.line, px(0), py(-0.0685), mm(0.0004));
@@ -508,18 +546,232 @@ const orbit: Style = {
     });
     p.both((ctx, m) => {
       ctx.fillStyle = m ? maskCol(1, 0) : c.text;
-      ctx.font = `900 ${Math.round(mm(0.029))}px ${SANS}`;
+      fitFont(ctx, look.model, 900, mm(0.029), mm(0.0017), mm(MODEL_MAX));
       spaced(ctx, look.model, px(-0.004), py(-0.03), mm(0.0017), 0, false, SLANT);
-      wordmark(ctx, 0, -0.0605, 0.0062, m ? maskCol(1, 0) : c.text);
+      wordmark(ctx, 0, -0.0605, 0.0062, m ? maskCol(1, 0) : c.text, 0, makerOf(look));
       ctx.fillStyle = m ? maskCol(1, 1) : c.c;
       ctx.font = `600 ${Math.round(mm(0.003))}px ${SANS}`;
       spaced(ctx, look.line, px(0), py(-0.072), mm(0.0006));
-      emblem(ctx, px(-0.075), py(0.06), mm(0.016), m ? maskCol(1, 0) : c.b);
+      mark(ctx, look, px(-0.075), py(0.06), mm(0.016), m ? maskCol(1, 0) : c.b);
     });
   },
 };
 
-const STYLES: Record<string, Style> = { ember, tide, split, orbit };
+/** Mix of two '#rrggbb' colours (t 0: a, 1: b), as an rgb() string. */
+function mixHex(a: string, b: string, t: number): string {
+  const ha = parseInt(a.slice(1), 16), hb = parseInt(b.slice(1), 16);
+  const ch = (sh: number): number => Math.round(((ha >> sh) & 255) * (1 - t) + ((hb >> sh) & 255) * t);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
+/** A fixed pseudo-random number in [0, 1) for integer cell (i, j): the same print every time it is drawn. */
+function cellRand(i: number, j: number, salt = 0): number {
+  let x = Math.imul(i + 31 * salt, 73856093) ^ Math.imul(j, 19349663);
+  x = Math.imul(x ^ (x >>> 13), 0x5bd1e995);
+  return ((x ^ (x >>> 15)) >>> 0) / 4294967296;
+}
+
+/** The model, the maker and the spec line stacked under the graphic (model at `y`, m), as orbit sets them. */
+function typeStack(p: Painter, look: RacketLook, y: number, text: string, line: string, stroke?: string): void {
+  p.both((ctx, m) => {
+    ctx.fillStyle = m ? maskCol(1, 0) : text;
+    if (stroke) {
+      ctx.strokeStyle = m ? maskCol(1, 0) : stroke;
+      ctx.lineWidth = mm(0.0012);
+      ctx.lineJoin = 'round';
+    }
+    fitFont(ctx, look.model, 900, mm(0.028), mm(0.0017), mm(MODEL_MAX));
+    spaced(ctx, look.model, px(0), py(y), mm(0.0017), 0, !!stroke && !m, SLANT);
+    wordmark(ctx, 0, y - 0.0285, 0.006, m ? maskCol(1, 0) : text, 0, makerOf(look));
+    ctx.fillStyle = m ? maskCol(1, 1) : line;
+    ctx.font = `600 ${Math.round(mm(0.003))}px ${SANS}`;
+    spaced(ctx, look.line, px(0), py(y - 0.0405), mm(0.0006));
+  });
+}
+
+/** Racing stripes: three bands of falling width rising across the upper face, hairlines between, the last in foil. */
+const stripe: Style = {
+  face(p, look, s, fg) {
+    const c = C(look);
+    const th = 0.55, dx = Math.cos(th), dy = Math.sin(th);
+    // A band `w` wide whose lower edge is `off` from the face centre, measured square to the stripes.
+    const band = (off: number, w: number): V2[] => {
+      const at = (t: number, o: number): V2 => [dx * t - dy * o, dy * t + dx * o];
+      return [at(-0.3, off), at(0.3, off), at(0.3, off + w), at(-0.3, off + w)];
+    };
+    p.both((ctx, m) => {
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.base;
+      path(ctx, s.face);
+      ctx.fill();
+      if (!m) {
+        const g = ctx.createLinearGradient(0, py(0.15), 0, py(-0.12));
+        g.addColorStop(0, 'rgba(255,255,255,0.10)');
+        g.addColorStop(1, 'rgba(0,0,0,0.16)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, py(-0.12));
+      }
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.a;
+      poly(ctx, band(0.03, 0.034));
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.b;
+      poly(ctx, band(0.0705, 0.012));
+      ctx.fillStyle = m ? maskCol(1, 1) : c.c;
+      poly(ctx, band(0.0875, 0.005));
+      if (!m) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        poly(ctx, band(0.0665, 0.0011));
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        poly(ctx, band(0.0255, 0.0007));
+        // The leading band's edge in shade: it reads as a raised tape.
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        poly(ctx, band(0.03, 0.0035));
+      }
+    });
+    typeStack(p, look, -0.03, c.text, c.c);
+  },
+};
+
+/** A faceted gem: a jittered triangle lattice over the top of the face, shaded between two colours as if lit from the upper left. */
+const facet: Style = {
+  face(p, look, s, fg) {
+    const c = C(look);
+    const R = 9, Cn = 11, dx = 0.028, dy = 0.024;
+    const pt = (i: number, j: number): V2 => [
+      -0.155 + i * dx + (j & 1) * dx * 0.5 + (cellRand(i, j, 1) - 0.5) * dx * 0.5,
+      0.165 - j * dy + (cellRand(i, j, 2) - 0.5) * dy * 0.5,
+    ];
+    // Facets end on a slanting line above the type, edged in foil.
+    const cut = (x: number): number => -0.006 + 0.22 * x;
+    p.both((ctx, m) => {
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.base;
+      path(ctx, s.face);
+      ctx.fill();
+      for (let j = 0; j < R; j++) {
+        for (let i = 0; i < Cn; i++) {
+          const a = pt(i, j), b = pt(i + 1, j), d = pt(i, j + 1), e = pt(i + 1, j + 1);
+          const tris: V2[][] = (j & 1) ? [[a, b, e], [a, e, d]] : [[a, b, d], [b, e, d]];
+          tris.forEach((t, k) => {
+            const cx = (t[0]![0] + t[1]![0] + t[2]![0]) / 3, cy = (t[0]![1] + t[1]![1] + t[2]![1]) / 3;
+            if (cy < cut(cx)) return;
+            if (m) ctx.fillStyle = maskCol(fg, 0);
+            else {
+              const lit = 0.5 + 0.5 * Math.min(1, Math.max(-1, (cy - cx) / 0.2)) + (cellRand(i, j, 3 + k) - 0.5) * 0.35;
+              ctx.fillStyle = mixHex(c.b, c.a, Math.min(1, Math.max(0, lit)));
+            }
+            ctx.beginPath();
+            ctx.moveTo(px(t[0]![0]), py(t[0]![1]));
+            ctx.lineTo(px(t[1]![0]), py(t[1]![1]));
+            ctx.lineTo(px(t[2]![0]), py(t[2]![1]));
+            ctx.closePath();
+            ctx.fill();
+            if (!m) {
+              ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+              ctx.lineWidth = mm(0.0004);
+              ctx.stroke();
+            }
+          });
+        }
+      }
+      // The cut: the base again below it (a clean edge across the facets), then the foil line.
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.base;
+      poly(ctx, [[-0.16, cut(-0.16)], [0.16, cut(0.16)], [0.16, -0.2], [-0.16, -0.2]]);
+      ctx.fillStyle = m ? maskCol(1, 1) : c.c;
+      poly(ctx, [[-0.16, cut(-0.16)], [0.16, cut(0.16)], [0.16, cut(0.16) + 0.0016], [-0.16, cut(-0.16) + 0.0016]]);
+    });
+    typeStack(p, look, -0.036, c.text, c.c);
+  },
+};
+
+/** Map contours: wavy rings round a summit in the upper face (every fourth line heavier), a legend panel for the type. */
+const contour: Style = {
+  face(p, look, s, fg) {
+    const c = C(look);
+    const cx = 0.03, cy = 0.055;
+    // Ring k: 10.5 mm apart, their wobble growing with the radius and turning slowly from one to the next, so no two
+    // lines ever cross (as contours never do).
+    const ring = (k: number): V2[] => {
+      const out: V2[] = [];
+      const r0 = 0.006 + k * 0.0105, w = r0 / 0.17;
+      for (let q = 0; q < 120; q++) {
+        const t = (q / 120) * Math.PI * 2;
+        const r = r0 * (1 + w * (0.22 * Math.sin(3 * t + k * 0.12) + 0.14 * Math.sin(5 * t - k * 0.08) + 0.08 * Math.sin(2 * t + 1.3)));
+        out.push([cx + r * Math.cos(t) * 1.15, cy + r * Math.sin(t)]);
+      }
+      return out;
+    };
+    p.both((ctx, m) => {
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.base;
+      path(ctx, s.face);
+      ctx.fill();
+      // The summit: a small triangle, as a map marks one.
+      ctx.fillStyle = m ? maskCol(1, 0) : c.c;
+      poly(ctx, [[cx - 0.0045, cy - 0.003], [cx + 0.0045, cy - 0.003], [cx, cy + 0.0048]]);
+      for (let k = 1; k < 16; k++) {
+        const major = k % 4 === 0;
+        ctx.strokeStyle = m ? maskCol(fg, 0) : major ? c.a : c.b;
+        ctx.lineWidth = mm(major ? 0.0019 : 0.0008);
+        path(ctx, ring(k));
+        ctx.stroke();
+      }
+    });
+    // The legend: a panel in the base colour with a ruled border, the type inside it.
+    p.both((ctx, m) => {
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.base;
+      ctx.strokeStyle = m ? maskCol(1, 0) : c.a;
+      ctx.lineWidth = mm(0.0009);
+      ctx.beginPath();
+      ctx.roundRect(px(-0.082), py(-0.02), mm(0.164), mm(0.062), mm(0.004));
+      ctx.fill();
+      ctx.stroke();
+      ctx.lineWidth = mm(0.0004);
+      ctx.beginPath();
+      ctx.roundRect(px(-0.0795), py(-0.0225), mm(0.159), mm(0.057), mm(0.003));
+      ctx.stroke();
+    });
+    typeStack(p, look, -0.037, c.text, c.a);
+  },
+};
+
+/** Colour blocks: a large disc, a tilted bar and a thin rule over the upper face, a small dot in the third colour. */
+const bloc: Style = {
+  face(p, look, s, fg) {
+    const c = C(look);
+    p.both((ctx, m) => {
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.base;
+      path(ctx, s.face);
+      ctx.fill();
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.a;
+      ctx.beginPath();
+      ctx.arc(px(-0.04), py(0.065), mm(0.068), 0, Math.PI * 2);
+      ctx.fill();
+      // The bar over the disc, its overlap darker (the two inks printed over each other).
+      ctx.save();
+      ctx.translate(px(0.045), py(0.07));
+      ctx.rotate(0.32);
+      ctx.fillStyle = m ? maskCol(fg, 0) : c.b;
+      ctx.fillRect(-mm(0.032), -mm(0.075), mm(0.064), mm(0.15));
+      ctx.restore();
+      if (!m) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(px(-0.04), py(0.065), mm(0.068), 0, Math.PI * 2);
+        ctx.clip();
+        ctx.translate(px(0.045), py(0.07));
+        ctx.rotate(0.32);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(-mm(0.032), -mm(0.075), mm(0.064), mm(0.15));
+        ctx.restore();
+      }
+      ctx.fillStyle = m ? maskCol(1, 1) : c.c;
+      poly(ctx, [[-0.16, 0.003], [0.16, 0.019], [0.16, 0.0225], [-0.16, 0.0065]]);
+      ctx.beginPath();
+      ctx.arc(px(0.082), py(0.112), mm(0.011), 0, Math.PI * 2);
+      ctx.fill();
+    });
+    typeStack(p, look, -0.042, c.text, c.c);
+  },
+};
+
+const STYLES: Record<string, Style> = { ember, tide, split, orbit, stripe, facet, contour, bloc };
 
 /** Perceived lightness of a colour (0..1). */
 function lum(hex: string): number {
@@ -560,11 +812,11 @@ function sides(ctx: Ctx, look: RacketLook, s: ArtShape, lay: SideLayout): void {
     ctx.fillStyle = lum(c.frame) < 0.4 ? '#ffffff' : c.accent;
     const cap = 0.0085 * across;
     if (half === 0) {
-      ctx.font = `900 ${Math.round(cap / 0.72)}px ${SANS}`;
+      fitFont(ctx, look.model, 900, cap / 0.72, cap * 0.1, lay.win * across * 0.92);
       spaced(ctx, look.model, 0, cap * 0.04, cap * 0.1, 0, false, SLANT);
     } else {
       ctx.font = `800 ${Math.round(cap / 0.72)}px ${SANS}`;
-      spaced(ctx, 'BANDEJA', 0, cap * 0.04, cap * 0.32);
+      spaced(ctx, makerOf(look), 0, cap * 0.04, cap * 0.32);
     }
     ctx.restore();
     // The protector over the tip (the frame under it is never seen, so its print is the protector's).
@@ -592,7 +844,7 @@ function sides(ctx: Ctx, look: RacketLook, s: ArtShape, lay: SideLayout): void {
     ctx.fillStyle = solid ? (lum(b.colour) < 0.55 ? '#ffffff' : c.frame) : c.a;
     const capB = 0.0045 * across;
     ctx.font = `800 ${Math.round(capB / 0.72)}px ${SANS}`;
-    spaced(ctx, 'BANDEJA', 0, capB * 0.04, capB * 0.35);
+    spaced(ctx, makerOf(look), 0, capB * 0.04, capB * 0.35);
     ctx.restore();
   }
 }
@@ -610,7 +862,7 @@ function trims(p: Painter, look: RacketLook): void {
     ctx.fillRect(r.x - 8, r.y + 10, r.w + 16, 4);
     ctx.fillRect(r.x - 8, r.y + r.h - 14, r.w + 16, 4);
     ctx.font = `800 ${Math.round(r.h * 0.32)}px ${SANS}`;
-    for (let k = 0; k < 3; k++) spaced(ctx, 'BANDEJA', r.x + ((k + 0.5) * r.w) / 3, r.y + r.h * 0.52, r.h * 0.07);
+    for (let k = 0; k < 3; k++) spaced(ctx, makerOf(look), r.x + ((k + 0.5) * r.w) / 3, r.y + r.h * 0.52, r.h * 0.07);
   });
   // Cap logo: a ring in the accent colour round the mark, the cord's eyelet in the middle.
   p.both((ctx, m) => {
@@ -623,7 +875,7 @@ function trims(p: Painter, look: RacketLook): void {
     ctx.beginPath();
     ctx.arc(cx, cy, r.w * 0.42, 0, Math.PI * 2);
     ctx.stroke();
-    emblem(ctx, cx, cy + r.h * 0.06, r.w * 0.5, m ? maskCol(1, 1) : '#e8e8ea');
+    mark(ctx, look, cx, cy + (look.maker ? 0 : r.h * 0.06), r.w * 0.5, m ? maskCol(1, 1) : '#e8e8ea');
     ctx.fillStyle = m ? maskCol(0, 0) : '#050506';
     ctx.beginPath();
     ctx.arc(cx, cy, r.w * 0.07, 0, Math.PI * 2);
@@ -698,7 +950,7 @@ export function racketArt(look: RacketLook, s: ArtShape, lay: SideLayout): Racke
     ctx.beginPath();
     ctx.roundRect(px(-0.0128), py(yc + 0.0035), mm(0.0256), mm(0.007), mm(0.0032));
     ctx.stroke();
-    emblem(ctx, px(-0.0062), py(yc - 0.0002), mm(0.0085), mk ? maskCol(1, 1) : '#d8d8dc');
+    mark(ctx, look, px(-0.0062), py(yc - 0.0002), mm(0.0085), mk ? maskCol(1, 1) : '#d8d8dc');
     ctx.fillStyle = mk ? maskCol(1, 1) : '#d8d8dc';
     ctx.font = `800 ${Math.round(mm(0.0028))}px ${SANS}`;
     spaced(ctx, 'PRO', px(0.0055), py(yc), mm(0.0005));

@@ -5,15 +5,23 @@ import { describe, expect, it } from 'vitest';
 import { MatchSim, E_HIT, E_POINT, E_FAULT, E_WHIFF } from '../../src/sim/match.ts';
 import { SHOT_BANDEJA, SHOT_KEYS, SHOT_VIBORA } from '../../src/sim/contact/shots.ts';
 import { STYLE_KEYS } from '../../src/sim/ai/styles.ts';
+import { RACKET_IDS } from '../../src/sim/contact/racket.ts';
 
 const NONE = [null, null, null, null];
 
-/** AI doubles at one level until `points` points: shots per point, first-serve faults, whiffs per shot. */
-function ladder(level: number, points: number) {
+/** The made-up makers' rackets (data/rackets.json after `standard`). */
+const MADE = RACKET_IDS.filter((id) => id !== 'standard');
+
+/**
+ * AI doubles at one level until `points` points: shots per point, first-serve faults, whiffs per shot. `mixed`: each
+ * match deals the four players four different rackets, round all 24.
+ */
+function ladder(level: number, points: number, mixed = false) {
   // First serves per toss: a struck fault sends both E_HIT and E_FAULT; count it once.
   let shots = 0, pts = 0, firsts = 0, faults1 = 0, whiffs = 0, struck = false;
   for (let sd = 1; pts < points; sd++) {
-    const m = new MatchSim({ seed: sd * 104729, doubles: true, human: [false, false, false, false], aiLevel: [level, level] });
+    const rackets = mixed ? [0, 1, 2, 3].map((k) => MADE[(sd * 4 + k * 7) % MADE.length]!) : undefined;
+    const m = new MatchSim({ seed: sd * 104729, doubles: true, human: [false, false, false, false], aiLevel: [level, level], rackets });
     let seen = 0;
     for (let k = 0; k < 120 * 600 && pts < points; k++) {
       m.step(NONE);
@@ -35,8 +43,8 @@ function ladder(level: number, points: number) {
 }
 
 describe('AI difficulty', () => {
-  it('rallies lengthen with level, on the amateur-to-pro ladder, and beginners still rally', () => {
-    const lo = ladder(0, 150), mid = ladder(0.5, 150), top = ladder(1, 150);
+  it.each([false, true])('rallies lengthen with level, on the amateur-to-pro ladder, and beginners still rally (mixed rackets: %s)', (mixed) => {
+    const lo = ladder(0, 150, mixed), mid = ladder(0.5, 150, mixed), top = ladder(1, 150, mixed);
     // Measured at the end of Phase 4 (300-1,000 matches): 5.2 / 7.1 / 10.9 shots a point. Novices about 5.6 and
     // trained recreational players about 7.3 (derived from the serve's share of their shots; docs/ai.md), pros
     // 10-11 (docs/research §1, §5).

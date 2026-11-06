@@ -1,0 +1,44 @@
+{
+  "//": "PALIQUE Verbena: the look of data/rackets.json \"palique-verbena\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"split\"), copying no real racket.",
+  "name": "palique-verbena",
+  "maker": "PALIQUE",
+  "model": "VERBENA",
+  "line": "FIBERGLASS  ·  EVA MEDIUM  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "triangle",
+  "balance": 0.268,
+  "weight": 0.366,
+  "art": "split",
+  "colours": {
+    "base": "#e9e4f2",
+    "a": "#ff4f9a",
+    "b": "#1b1f3b",
+    "c": "#2fd1c4",
+    "text": "#ffffff",
+    "frame": "#1b1f3b",
+    "accent": "#2fd1c4"
+  },
+  "finish": "sand",
+  "frameFinish": "satin",
+  "foam": "#f4f4f1",
+  "skin": "#e2e4e6",
+  "bumper": {
+    "colour": "#2fd1c4",
+    "clear": 0,
+    "span": 0.3
+  },
+  "grip": "#f1f1ee",
+  "tape": "#2fd1c4",
+  "cap": "#1b1f3b",
+  "cord": "#1b1f3b",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.0445, "a": 0.0807, "b": 0.0135, "rot": 0 },
+      { "x": 0, "y": -0.0645, "a": 0.05, "b": 0.0085, "rot": 0 }
+    ]
+  }
+}

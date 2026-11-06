@@ -1,0 +1,44 @@
+{
+  "//": "ORZA Quilla: the look of data/rackets.json \"orza-quilla\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"facet\"), copying no real racket.",
+  "name": "orza-quilla",
+  "maker": "ORZA",
+  "model": "QUILLA",
+  "line": "CARBON 24K  ·  EVA HARD  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "triangle",
+  "balance": 0.274,
+  "weight": 0.378,
+  "art": "facet",
+  "colours": {
+    "base": "#f2f2ee",
+    "a": "#3a6ea5",
+    "b": "#0e1a2b",
+    "c": "#d8b25a",
+    "text": "#0e1a2b",
+    "frame": "#0e1a2b",
+    "accent": "#d8b25a"
+  },
+  "finish": "sand",
+  "frameFinish": "satin",
+  "foam": "#f4f4f1",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#d8b25a",
+    "clear": 0,
+    "span": 0.28
+  },
+  "grip": "#f1f1ee",
+  "tape": "#d8b25a",
+  "cap": "#0e1a2b",
+  "cord": "#0e1a2b",
+  "holes": {
+    "d": 0.013,
+    "pitch": 0.0245,
+    "rings": 2,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.036, "a": 0.0724, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.07, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

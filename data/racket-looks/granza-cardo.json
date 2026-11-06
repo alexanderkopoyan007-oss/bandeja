@@ -1,0 +1,44 @@
+{
+  "//": "GRANZA Cardo: the look of data/rackets.json \"granza-cardo\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"bloc\"), copying no real racket.",
+  "name": "granza-cardo",
+  "maker": "GRANZA",
+  "model": "CARDO",
+  "line": "CARBON 12K  ·  EVA SOFT  ·  3D  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.261,
+  "weight": 0.355,
+  "art": "bloc",
+  "colours": {
+    "base": "#efe9f5",
+    "a": "#6a3d8f",
+    "b": "#a8c256",
+    "c": "#2b2b2b",
+    "text": "#3b2452",
+    "frame": "#6a3d8f",
+    "accent": "#2b2b2b"
+  },
+  "finish": "sand",
+  "frameFinish": "matte",
+  "foam": "#f4f4f1",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#2b2b2b",
+    "clear": 0,
+    "span": 0.32
+  },
+  "grip": "#f1f1ee",
+  "tape": "#2b2b2b",
+  "cap": "#6a3d8f",
+  "cord": "#6a3d8f",
+  "holes": {
+    "d": 0.012,
+    "pitch": 0.0245,
+    "rings": 3,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.042, "a": 0.0612, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.076, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

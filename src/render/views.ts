@@ -237,7 +237,8 @@ export class PlayerView {
   private readonly racket: THREE.Group | null = null;
   private readonly ready = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null, cast?: Cast) {
+  /** `racket`: the racket this player plays (MatchConfig.rackets), drawn as its own look. */
+  constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null, cast?: Cast, racket?: string) {
     if (asset) {
       // Dressed as the person dealt to them (game/cast.ts) when they loaded, else the mannequin.
       const person = cast ? asset.people.find((p) => p.look!.name === cast.people[idx]) : asset.people[idx];
@@ -245,7 +246,7 @@ export class PlayerView {
       const body = cast?.bodies?.[idx];
       this.avatar = new Avatar(body ? reproportion(person ?? asset, body) : person ?? asset, kitFor(idx, cast?.kits));
       // Each player's own racket (data/racket-looks/).
-      dressRacket(this.avatar.racket, racketLookFor(idx));
+      dressRacket(this.avatar.racket, racketLookFor(idx, racket));
       this.root = this.avatar.root;
       scene.add(this.root);
       return;
@@ -269,7 +270,7 @@ export class PlayerView {
     nose.position.set(0, 1.7, -0.12);
     this.root.add(nose);
     scene.add(this.root);
-    this.racket = makeRacketModel(racketLookFor(idx));
+    this.racket = makeRacketModel(racketLookFor(idx, racket));
     scene.add(this.racket);
   }
 

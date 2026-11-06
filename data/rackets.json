@@ -1,12 +1,252 @@
 {
-  "//": "Padel rackets as rigid bodies for the ball impact (src/sim/contact/racket.ts). Sources in docs/realism.md. FIP limits: 45.5 cm long, 26 cm wide, 38 mm thick. mass (kg), balance from the butt (m), iCm: moment of inertia about the centre of mass across the face (kg m^2), iPolar: about the long axis (twist). Both fitted so the free-racket apparent COR surface reproduces Viollaz & Viollaz (ISBS 2008): curvature -1.0e-5/mm^2 along the face (iCm 0.0075) and -4e-5/mm^2 across it (iPolar 0.0018) for a 360 g racket. e17: ball-racket COR at 17 m/s relative impact speed and eSlope its loss per m/s (ACOR 0.50 at 17 m/s and 0.39 at 29 m/s at its best point, conventional rackets), clamped to eMin..eMax. friction: sliding friction of the face (static COF of padel faces 0.14-0.93, TWU); tangentialE: how much of the contact point's slip reverses when the ball grips (tuning, tennis-ball order). dwell: contact time (s). twist: fraction of the face's rotation by the end of the contact that turns the ball (tuning). headLength/headWidth: the hitting face as an ellipse from the tip (m).",
+  "//": "Padel rackets as rigid bodies for the ball impact (src/sim/contact/racket.ts). Sources in docs/realism.md. FIP limits: 45.5 cm long, 26 cm wide, 38 mm thick. mass (kg), balance from the butt (m), iCm: moment of inertia about the centre of mass across the face (kg m^2), iPolar: about the long axis (twist). Both fitted so the free-racket apparent COR surface reproduces Viollaz & Viollaz (ISBS 2008): curvature -1.0e-5/mm^2 along the face (iCm 0.0075) and -4e-5/mm^2 across it (iPolar 0.0018) for a 360 g racket. e17: ball-racket COR at 17 m/s relative impact speed and eSlope its loss per m/s (ACOR 0.50 at 17 m/s and 0.39 at 29 m/s at its best point, conventional rackets), clamped to eMin..eMax. friction: sliding friction of the face (static COF of padel faces 0.14-0.93, TWU); tangentialE: how much of the contact point's slip reverses when the ball grips (tuning, tennis-ball order). dwell: contact time (s). twist: fraction of the face's rotation by the end of the contact that turns the ball (tuning). headLength/headWidth: the hitting face as an ellipse from the tip (m). The 24 rackets after `standard` are made-up makers' (QARRO, LUMBRA, VILANO, GRANZA, PALIQUE, ORZA: no real brand; their looks are data/racket-looks/<id>.json), each built from six choices by fixed rules, so any number can be recomputed: (1) mass 340-385 g and (2) balance 255-285 mm from the butt, the range makers declare (padel rackets 340-390 g, most 350-375 g, balance about 255-285 mm; a declared spec sheet reads 355 g +-10 g, balance 265 mm, profile 38 mm, frame 45.5 cm, handle 12 cm: racketpedia.com); (3) head shape sets the face ellipse and the radii of gyration, iCm = M kc^2 and iPolar = M kp^2: round 290 x 260 mm, kc 0.14434 m, kp 0.07071 m (the standard's fitted values, Viollaz); teardrop 284 x 256 mm, kc 0.146, kp 0.0696; diamond 276 x 252 mm, kc 0.1478, kp 0.0685 (a diamond's mass sits further up the head and its hitting area is the smaller, narrower one: makers' descriptions, an assumption in OPEN_QUESTIONS.md); (4) core hardness sets the COR line, all through the standard's value 0.67245 at 23.5 m/s: eSlope soft 0.0135, medium 0.0107 (the standard: Viollaz's 25% ACOR loss from 17 to 29 m/s), hard 0.0085, extra hard 0.0068, e17 = 0.67245 + 6.5 eSlope; a soft core returns slow balls faster and full swings slower than a hard one (makers' descriptions; the crossing speed and slopes are an assumption, OPEN_QUESTIONS.md), and every core stays inside Viollaz's measured ACOR at the best point (0.36-0.55 at 16-30 m/s); (5) face: friction gloss 0.22, matte 0.30, sand 0.45, rough (3D) 0.62, inside TWU's measured 0.14-0.93; (6) thickness 38 mm, the FIP's most (as every racket is drawn). Length 45.5 cm (FIP's most) and eMin/eMax, tangentialE, dwell and twist as the standard. Stats (src/sim/contact/racketStats.ts, data/racket-stats.json) are measured from these numbers, never typed.",
   "standard": {
     "name": "All-round (round head, 360 g)",
-    "mass": 0.360, "length": 0.455, "balance": 0.265,
+    "mass": 0.36, "length": 0.455, "balance": 0.265,
     "iCm": 0.0075, "iPolar": 0.0018,
     "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
     "friction": 0.35, "tangentialE": 0.1,
     "dwell": 0.0045, "twist": 0.35,
     "headLength": 0.29, "headWidth": 0.26
+  },
+  "qarro-yunque": {
+    "name": "QARRO Yunque (diamond, 375 g)",
+    "brand": "QARRO", "shape": "diamond", "core": "xhard", "face": "sand", "thickness": 0.038,
+    "mass": 0.375, "length": 0.455, "balance": 0.28,
+    "iCm": 0.00819, "iPolar": 0.00176,
+    "e17": 0.7167, "eSlope": 0.0068, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.45, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.276, "headWidth": 0.252
+  },
+  "qarro-tralla": {
+    "name": "QARRO Tralla (diamond, 365 g)",
+    "brand": "QARRO", "shape": "diamond", "core": "hard", "face": "rough", "thickness": 0.038,
+    "mass": 0.365, "length": 0.455, "balance": 0.276,
+    "iCm": 0.00797, "iPolar": 0.00171,
+    "e17": 0.7277, "eSlope": 0.0085, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.62, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.276, "headWidth": 0.252
+  },
+  "qarro-forja": {
+    "name": "QARRO Forja (teardrop, 370 g)",
+    "brand": "QARRO", "shape": "teardrop", "core": "hard", "face": "sand", "thickness": 0.038,
+    "mass": 0.37, "length": 0.455, "balance": 0.272,
+    "iCm": 0.00789, "iPolar": 0.00179,
+    "e17": 0.7277, "eSlope": 0.0085, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.45, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.284, "headWidth": 0.256
+  },
+  "qarro-martinete": {
+    "name": "QARRO Martinete (diamond, 355 g)",
+    "brand": "QARRO", "shape": "diamond", "core": "medium", "face": "matte", "thickness": 0.038,
+    "mass": 0.355, "length": 0.455, "balance": 0.271,
+    "iCm": 0.00775, "iPolar": 0.00167,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.3, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.276, "headWidth": 0.252
+  },
+  "lumbra-remanso": {
+    "name": "LUMBRA Remanso (round, 355 g)",
+    "brand": "LUMBRA", "shape": "round", "core": "soft", "face": "matte", "thickness": 0.038,
+    "mass": 0.355, "length": 0.455, "balance": 0.258,
+    "iCm": 0.0074, "iPolar": 0.00177,
+    "e17": 0.7602, "eSlope": 0.0135, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.3, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "lumbra-sosiego": {
+    "name": "LUMBRA Sosiego (round, 368 g)",
+    "brand": "LUMBRA", "shape": "round", "core": "soft", "face": "gloss", "thickness": 0.038,
+    "mass": 0.368, "length": 0.455, "balance": 0.255,
+    "iCm": 0.00767, "iPolar": 0.00184,
+    "e17": 0.7602, "eSlope": 0.0135, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.22, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "lumbra-candil": {
+    "name": "LUMBRA Candil (round, 362 g)",
+    "brand": "LUMBRA", "shape": "round", "core": "medium", "face": "sand", "thickness": 0.038,
+    "mass": 0.362, "length": 0.455, "balance": 0.262,
+    "iCm": 0.00754, "iPolar": 0.00181,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.45, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "lumbra-albada": {
+    "name": "LUMBRA Albada (round, 346 g)",
+    "brand": "LUMBRA", "shape": "round", "core": "soft", "face": "matte", "thickness": 0.038,
+    "mass": 0.346, "length": 0.455, "balance": 0.257,
+    "iCm": 0.00721, "iPolar": 0.00173,
+    "e17": 0.7602, "eSlope": 0.0135, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.3, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "vilano-vencejo": {
+    "name": "VILANO Vencejo (teardrop, 342 g)",
+    "brand": "VILANO", "shape": "teardrop", "core": "medium", "face": "matte", "thickness": 0.038,
+    "mass": 0.342, "length": 0.455, "balance": 0.262,
+    "iCm": 0.00729, "iPolar": 0.00166,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.3, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.284, "headWidth": 0.256
+  },
+  "vilano-pavesa": {
+    "name": "VILANO Pavesa (round, 340 g)",
+    "brand": "VILANO", "shape": "round", "core": "soft", "face": "sand", "thickness": 0.038,
+    "mass": 0.34, "length": 0.455, "balance": 0.257,
+    "iCm": 0.00708, "iPolar": 0.0017,
+    "e17": 0.7602, "eSlope": 0.0135, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.45, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "vilano-alcotan": {
+    "name": "VILANO Alcotán (diamond, 348 g)",
+    "brand": "VILANO", "shape": "diamond", "core": "hard", "face": "matte", "thickness": 0.038,
+    "mass": 0.348, "length": 0.455, "balance": 0.268,
+    "iCm": 0.0076, "iPolar": 0.00163,
+    "e17": 0.7277, "eSlope": 0.0085, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.3, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.276, "headWidth": 0.252
+  },
+  "vilano-cometa": {
+    "name": "VILANO Cometa (teardrop, 345 g)",
+    "brand": "VILANO", "shape": "teardrop", "core": "medium", "face": "rough", "thickness": 0.038,
+    "mass": 0.345, "length": 0.455, "balance": 0.265,
+    "iCm": 0.00735, "iPolar": 0.00167,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.62, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.284, "headWidth": 0.256
+  },
+  "granza-lija": {
+    "name": "GRANZA Lija (teardrop, 360 g)",
+    "brand": "GRANZA", "shape": "teardrop", "core": "medium", "face": "rough", "thickness": 0.038,
+    "mass": 0.36, "length": 0.455, "balance": 0.268,
+    "iCm": 0.00767, "iPolar": 0.00174,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.62, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.284, "headWidth": 0.256
+  },
+  "granza-pedernal": {
+    "name": "GRANZA Pedernal (diamond, 368 g)",
+    "brand": "GRANZA", "shape": "diamond", "core": "hard", "face": "rough", "thickness": 0.038,
+    "mass": 0.368, "length": 0.455, "balance": 0.276,
+    "iCm": 0.00804, "iPolar": 0.00173,
+    "e17": 0.7277, "eSlope": 0.0085, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.62, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.276, "headWidth": 0.252
+  },
+  "granza-cardo": {
+    "name": "GRANZA Cardo (round, 355 g)",
+    "brand": "GRANZA", "shape": "round", "core": "soft", "face": "rough", "thickness": 0.038,
+    "mass": 0.355, "length": 0.455, "balance": 0.261,
+    "iCm": 0.0074, "iPolar": 0.00177,
+    "e17": 0.7602, "eSlope": 0.0135, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.62, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "granza-esmeril": {
+    "name": "GRANZA Esmeril (teardrop, 352 g)",
+    "brand": "GRANZA", "shape": "teardrop", "core": "medium", "face": "sand", "thickness": 0.038,
+    "mass": 0.352, "length": 0.455, "balance": 0.265,
+    "iCm": 0.0075, "iPolar": 0.00171,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.45, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.284, "headWidth": 0.256
+  },
+  "palique-tertulia": {
+    "name": "PALIQUE Tertulia (round, 362 g)",
+    "brand": "PALIQUE", "shape": "round", "core": "medium", "face": "matte", "thickness": 0.038,
+    "mass": 0.362, "length": 0.455, "balance": 0.265,
+    "iCm": 0.00754, "iPolar": 0.00181,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.3, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "palique-sobremesa": {
+    "name": "PALIQUE Sobremesa (teardrop, 358 g)",
+    "brand": "PALIQUE", "shape": "teardrop", "core": "medium", "face": "gloss", "thickness": 0.038,
+    "mass": 0.358, "length": 0.455, "balance": 0.266,
+    "iCm": 0.00763, "iPolar": 0.00173,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.22, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.284, "headWidth": 0.256
+  },
+  "palique-recreo": {
+    "name": "PALIQUE Recreo (round, 350 g)",
+    "brand": "PALIQUE", "shape": "round", "core": "soft", "face": "gloss", "thickness": 0.038,
+    "mass": 0.35, "length": 0.455, "balance": 0.26,
+    "iCm": 0.00729, "iPolar": 0.00175,
+    "e17": 0.7602, "eSlope": 0.0135, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.22, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "palique-verbena": {
+    "name": "PALIQUE Verbena (teardrop, 366 g)",
+    "brand": "PALIQUE", "shape": "teardrop", "core": "medium", "face": "sand", "thickness": 0.038,
+    "mass": 0.366, "length": 0.455, "balance": 0.268,
+    "iCm": 0.0078, "iPolar": 0.00177,
+    "e17": 0.742, "eSlope": 0.0107, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.45, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.284, "headWidth": 0.256
+  },
+  "orza-proa": {
+    "name": "ORZA Proa (diamond, 380 g)",
+    "brand": "ORZA", "shape": "diamond", "core": "xhard", "face": "sand", "thickness": 0.038,
+    "mass": 0.38, "length": 0.455, "balance": 0.282,
+    "iCm": 0.0083, "iPolar": 0.00178,
+    "e17": 0.7167, "eSlope": 0.0068, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.45, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.276, "headWidth": 0.252
+  },
+  "orza-quilla": {
+    "name": "ORZA Quilla (teardrop, 378 g)",
+    "brand": "ORZA", "shape": "teardrop", "core": "hard", "face": "sand", "thickness": 0.038,
+    "mass": 0.378, "length": 0.455, "balance": 0.274,
+    "iCm": 0.00806, "iPolar": 0.00183,
+    "e17": 0.7277, "eSlope": 0.0085, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.45, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.284, "headWidth": 0.256
+  },
+  "orza-timon": {
+    "name": "ORZA Timón (round, 372 g)",
+    "brand": "ORZA", "shape": "round", "core": "hard", "face": "matte", "thickness": 0.038,
+    "mass": 0.372, "length": 0.455, "balance": 0.264,
+    "iCm": 0.00775, "iPolar": 0.00186,
+    "e17": 0.7277, "eSlope": 0.0085, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.3, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.29, "headWidth": 0.26
+  },
+  "orza-galerna": {
+    "name": "ORZA Galerna (diamond, 385 g)",
+    "brand": "ORZA", "shape": "diamond", "core": "xhard", "face": "rough", "thickness": 0.038,
+    "mass": 0.385, "length": 0.455, "balance": 0.285,
+    "iCm": 0.00841, "iPolar": 0.00181,
+    "e17": 0.7167, "eSlope": 0.0068, "eMin": 0.45, "eMax": 0.84,
+    "friction": 0.62, "tangentialE": 0.1,
+    "dwell": 0.0045, "twist": 0.35,
+    "headLength": 0.276, "headWidth": 0.252
   }
 }

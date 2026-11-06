@@ -1,0 +1,43 @@
+{
+  "//": "GRANZA Lija: the look of data/rackets.json \"granza-lija\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"contour\"), copying no real racket.",
+  "name": "granza-lija",
+  "maker": "GRANZA",
+  "model": "LIJA",
+  "line": "CARBON 12K  ·  EVA MEDIUM  ·  3D  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "teardrop",
+  "balance": 0.268,
+  "weight": 0.36,
+  "art": "contour",
+  "colours": {
+    "base": "#d9c9a8",
+    "a": "#3d4a2a",
+    "b": "#a8462c",
+    "c": "#1d1d1b",
+    "text": "#2c2a22",
+    "frame": "#3d4a2a",
+    "accent": "#1d1d1b"
+  },
+  "finish": "sand",
+  "frameFinish": "matte",
+  "foam": "#f4f4f1",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#1d1d1b",
+    "clear": 0,
+    "span": 0.28
+  },
+  "grip": "#f1f1ee",
+  "tape": "#1d1d1b",
+  "cap": "#3d4a2a",
+  "cord": "#3d4a2a",
+  "holes": {
+    "d": 0.013,
+    "pitch": 0.0245,
+    "rings": 2,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.051, "a": 0.082, "b": 0.031, "rot": 0 }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "//": "ORZA Proa: the look of data/rackets.json \"orza-proa\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"stripe\"), copying no real racket.",
+  "name": "orza-proa",
+  "maker": "ORZA",
+  "model": "PROA",
+  "line": "CARBON 24K  ·  EVA PRO HARD  ·  38 MM",
+  "shape": "diamond",
+  "throat": "triangle",
+  "balance": 0.282,
+  "weight": 0.38,
+  "art": "stripe",
+  "colours": {
+    "base": "#0e1a2b",
+    "a": "#d8b25a",
+    "b": "#f2f2ee",
+    "c": "#c43a2f",
+    "text": "#ffffff",
+    "frame": "#0e1a2b",
+    "accent": "#c43a2f"
+  },
+  "finish": "sand",
+  "frameFinish": "satin",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#c43a2f",
+    "clear": 0,
+    "span": 0.32
+  },
+  "grip": "#1b1c1f",
+  "tape": "#c43a2f",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.012,
+    "pitch": 0.0245,
+    "rings": 3,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.03, "a": 0.05, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.064, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

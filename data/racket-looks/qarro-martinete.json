@@ -1,0 +1,44 @@
+{
+  "//": "QARRO Martinete: the look of data/rackets.json \"qarro-martinete\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"split\"), copying no real racket.",
+  "name": "qarro-martinete",
+  "maker": "QARRO",
+  "model": "MARTINETE",
+  "line": "CARBON 18K  ·  EVA MEDIUM  ·  38 MM",
+  "shape": "diamond",
+  "throat": "triangle",
+  "balance": 0.271,
+  "weight": 0.355,
+  "art": "split",
+  "colours": {
+    "base": "#f0efe9",
+    "a": "#d6261e",
+    "b": "#1b1b1d",
+    "c": "#ffffff",
+    "text": "#ffffff",
+    "frame": "#1b1b1d",
+    "accent": "#ff8a1e"
+  },
+  "finish": "matte",
+  "frameFinish": "matte",
+  "foam": "#f4f4f1",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#ff8a1e",
+    "clear": 0,
+    "span": 0.28
+  },
+  "grip": "#f1f1ee",
+  "tape": "#ff8a1e",
+  "cap": "#1b1b1d",
+  "cord": "#1b1b1d",
+  "holes": {
+    "d": 0.013,
+    "pitch": 0.0245,
+    "rings": 2,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.0445, "a": 0.101, "b": 0.0135, "rot": 0 },
+      { "x": 0, "y": -0.0645, "a": 0.05, "b": 0.0085, "rot": 0 }
+    ]
+  }
+}

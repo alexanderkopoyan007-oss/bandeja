@@ -1,0 +1,43 @@
+{
+  "//": "LUMBRA Sosiego: the look of data/rackets.json \"lumbra-sosiego\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"contour\"), copying no real racket.",
+  "name": "lumbra-sosiego",
+  "maker": "LUMBRA",
+  "model": "SOSIEGO",
+  "line": "FIBERGLASS  ·  EVA SOFT  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.255,
+  "weight": 0.368,
+  "art": "contour",
+  "colours": {
+    "base": "#f5efe6",
+    "a": "#3b5b8c",
+    "b": "#a9c3e6",
+    "c": "#d98c5f",
+    "text": "#2b3f63",
+    "frame": "#2b3f63",
+    "accent": "#d98c5f"
+  },
+  "finish": "gloss",
+  "frameFinish": "gloss",
+  "foam": "#f4f4f1",
+  "skin": "#e2e4e6",
+  "bumper": {
+    "colour": "#d98c5f",
+    "clear": 0.85,
+    "span": 0.32
+  },
+  "grip": "#f1f1ee",
+  "tape": "#d98c5f",
+  "cap": "#2b3f63",
+  "cord": "#2b3f63",
+  "holes": {
+    "d": 0.012,
+    "pitch": 0.0245,
+    "rings": 3,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.051, "a": 0.082, "b": 0.031, "rot": 0 }
+    ]
+  }
+}

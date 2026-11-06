@@ -1,0 +1,44 @@
+{
+  "//": "VILANO Alcotán: the look of data/rackets.json \"vilano-alcotan\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"stripe\"), copying no real racket.",
+  "name": "vilano-alcotan",
+  "maker": "VILANO",
+  "model": "ALCOTÁN",
+  "line": "CARBON 3K  ·  EVA HARD  ·  38 MM",
+  "shape": "diamond",
+  "throat": "triangle",
+  "balance": 0.268,
+  "weight": 0.348,
+  "art": "stripe",
+  "colours": {
+    "base": "#1c2230",
+    "a": "#39e0ff",
+    "b": "#ffffff",
+    "c": "#ff3b6b",
+    "text": "#ffffff",
+    "frame": "#1c2230",
+    "accent": "#ff3b6b"
+  },
+  "finish": "matte",
+  "frameFinish": "gloss",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#ff3b6b",
+    "clear": 0.85,
+    "span": 0.3
+  },
+  "grip": "#1b1c1f",
+  "tape": "#ff3b6b",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.03, "a": 0.0836, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.064, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "//": "GRANZA Pedernal: the look of data/rackets.json \"granza-pedernal\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"facet\"), copying no real racket.",
+  "name": "granza-pedernal",
+  "maker": "GRANZA",
+  "model": "PEDERNAL",
+  "line": "CARBON 12K  ·  EVA HARD  ·  3D  ·  38 MM",
+  "shape": "diamond",
+  "throat": "triangle",
+  "balance": 0.276,
+  "weight": 0.368,
+  "art": "facet",
+  "colours": {
+    "base": "#2b2b29",
+    "a": "#b8b8ae",
+    "b": "#4a4a46",
+    "c": "#d1462a",
+    "text": "#ffffff",
+    "frame": "#2b2b29",
+    "accent": "#d1462a"
+  },
+  "finish": "sand",
+  "frameFinish": "matte",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#d1462a",
+    "clear": 0,
+    "span": 0.3
+  },
+  "grip": "#1b1c1f",
+  "tape": "#d1462a",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.036, "a": 0.0948, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.07, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

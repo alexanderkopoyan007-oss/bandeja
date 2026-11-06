@@ -1,0 +1,44 @@
+{
+  "//": "PALIQUE Recreo: the look of data/rackets.json \"palique-recreo\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"bloc\"), copying no real racket.",
+  "name": "palique-recreo",
+  "maker": "PALIQUE",
+  "model": "RECREO",
+  "line": "FIBERGLASS  ·  EVA SOFT  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.26,
+  "weight": 0.35,
+  "art": "bloc",
+  "colours": {
+    "base": "#fff8e7",
+    "a": "#ff7f11",
+    "b": "#2b59c3",
+    "c": "#ffcf00",
+    "text": "#2b59c3",
+    "frame": "#2b59c3",
+    "accent": "#ffcf00"
+  },
+  "finish": "gloss",
+  "frameFinish": "satin",
+  "foam": "#f4f4f1",
+  "skin": "#e2e4e6",
+  "bumper": {
+    "colour": "#ffcf00",
+    "clear": 0,
+    "span": 0.28
+  },
+  "grip": "#f1f1ee",
+  "tape": "#ffcf00",
+  "cap": "#2b59c3",
+  "cord": "#2b59c3",
+  "holes": {
+    "d": 0.013,
+    "pitch": 0.0245,
+    "rings": 2,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.042, "a": 0.0724, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.076, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

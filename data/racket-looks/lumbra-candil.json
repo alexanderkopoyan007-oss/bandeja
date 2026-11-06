@@ -1,0 +1,45 @@
+{
+  "//": "LUMBRA Candil: the look of data/rackets.json \"lumbra-candil\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"orbit\"), copying no real racket.",
+  "name": "lumbra-candil",
+  "maker": "LUMBRA",
+  "model": "CANDIL",
+  "line": "FIBERGLASS  ·  EVA MEDIUM  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.262,
+  "weight": 0.362,
+  "art": "orbit",
+  "colours": {
+    "base": "#1d2738",
+    "a": "#f2b84b",
+    "b": "#c8652a",
+    "c": "#f7e1a6",
+    "text": "#ffffff",
+    "frame": "#1d2738",
+    "accent": "#f7e1a6"
+  },
+  "finish": "sand",
+  "frameFinish": "gloss",
+  "foam": "#ecebe6",
+  "skin": "#e2e4e6",
+  "bumper": {
+    "colour": "#f7e1a6",
+    "clear": 0.85,
+    "span": 0.28
+  },
+  "grip": "#1b1c1f",
+  "tape": "#f2b84b",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.013,
+    "pitch": 0.0245,
+    "rings": 2,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.027, "a": 0.0746, "b": 0.0155, "rot": 0 },
+      { "x": 0, "y": -0.066, "a": 0.05, "b": 0.011, "rot": 0 },
+      { "x": 0.075, "y": 0.06, "a": 0.013, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

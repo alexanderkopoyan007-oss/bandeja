@@ -3,7 +3,8 @@
 // Mode 'avatars' also animates the four player bodies (src/render/avatar: the people, as the game dresses the
 // players) once every two ticks (60 fps).
 // Usage: node tools/alloc-check.mjs [ticks] [singles|doubles|avatars]   (all three when left out)
-// ALLOC_PROFILE=1 lists the top allocation sites of the measured stretch, garbage included.
+// ALLOC_PROFILE=1 lists the top allocation sites of the measured stretch, garbage included. ALLOC_RACKETS=id,id,..
+// gives the players those rackets (data/rackets.json; default `standard` for all).
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -33,11 +34,13 @@ if (process.argv[2] === '--child') {
       for (let i = 0; i < 4; i++) av[i].update(m, m.players[i], i, 1, m.time);
     };
   }
-  // (ALLOC_STRETCH=0: no dives or jumps, the matches from before them, to compare)
+  // (ALLOC_STRETCH=0: no dives or jumps, the matches from before them, to compare; ALLOC_RACKETS=id,id,..: rackets by
+  // player number, data/rackets.json)
   const stretch = process.env.ALLOC_STRETCH !== '0';
+  const rackets = process.env.ALLOC_RACKETS ? process.env.ALLOC_RACKETS.split(',') : undefined;
   const make = (seed) => doubles
-    ? new MatchSim({ seed, doubles, human: [false, false, false, false], stretch })
-    : new MatchSim({ seed, human: [false, false], stretch });
+    ? new MatchSim({ seed, doubles, human: [false, false, false, false], stretch, rackets })
+    : new MatchSim({ seed, human: [false, false], stretch, rackets });
   let m = make(Number(process.env.ALLOC_SEED ?? 1));
   const inputs = doubles ? [null, null, null, null] : [null, null];
   // Warm-up: let V8 optimise every path (serves, rallies, faults, games, sets).

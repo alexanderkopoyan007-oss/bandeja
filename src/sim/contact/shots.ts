@@ -183,16 +183,28 @@ function apexOf(h0: number, dn: number, dist: number, want: number, r: number): 
 
 export class ShotSolver {
   readonly world: BallWorld;
+  /** The `standard` racket (data/rackets.json). */
   readonly racket: Racket;
+  /**
+   * Each player's racket, by player number (MatchConfig.rackets; `standard` for a missing or unknown id). Every
+   * `standard` entry is `racket` itself, so a match without rackets strikes exactly as before.
+   */
+  readonly rackets: Racket[];
   // Results of the last fly().
   landX = 0;
   landZ = 0;
   landT = 0;
   netY = NaN;
 
-  constructor(world: BallWorld) {
+  constructor(world: BallWorld, rackets?: readonly string[], players = 4) {
     this.world = world;
     this.racket = new Racket(RACKETS.standard!, world.spec.mass, world.spec.radius, world.spec.inertiaFactor);
+    this.rackets = [];
+    for (let i = 0; i < players; i++) {
+      const id = rackets?.[i] ?? 'standard';
+      const spec = id !== 'standard' && id !== '//' ? RACKETS[id] : undefined;
+      this.rackets.push(spec ? new Racket(spec, world.spec.mass, world.spec.radius, world.spec.inertiaFactor) : this.racket);
+    }
   }
 
   /**
@@ -671,14 +683,13 @@ const axis = new V3();
 const hor = new V3();
 
 /**
- * Contact model: the face speed the swing can reach (shape, modifier, timing, body position), the ball speed
+ * Contact model: the face speed the swing can reach (shape, racket, modifier, timing, body position), the ball speed
  * that gives off this incoming ball, the clean shot within it, the swing that makes it, the swing's errors,
- * and the impact. Writes the ball's new velocity and spin.
+ * and the impact. Writes the ball's new velocity and spin. `rk`: the hitter's racket (ShotSolver.rackets).
  */
-export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rng, out: ShotResult): void {
+export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rng, out: ShotResult, rk: Racket = solver.racket): void {
   const shape = SHAPES[req.shot]!;
   const mod = MODS[req.mod]!;
-  const rk = solver.racket;
   const q = req.quality;
   const bad = 1 - q;
   vin.copy(ball.vel);
@@ -705,9 +716,10 @@ export function strike(solver: ShotSolver, ball: Ball, req: ShotRequest, rng: Rn
     axis.set(lx, -clamp((0.95 - ball.pos.y) * 0.9, 0, 0.8), lz);
   }
 
-  // Face speed the swing can reach, and the ball speed that gives head on off this ball at the planned point.
+  // Face speed the swing can reach (a lighter swing weight swings faster: Racket.faceK, exactly 1 for `standard`), and
+  // the ball speed that gives head on off this ball at the planned point.
   const lowBall = ball.pos.y < 0.45 ? 0.75 + 0.55 * ball.pos.y : 1;
-  const vCap = shape.racketMax * mod.speed * req.power * (0.7 + 0.3 * q) * lowBall
+  const vCap = shape.racketMax * rk.faceK * mod.speed * req.power * (0.7 + 0.3 * q) * lowBall
     * (1 - 0.18 * req.moving) * (1 - 0.25 * req.stretch);
   const along = tdl > 1e-6 ? max(0, -(vin.x * tdx + vin.z * tdz) / tdl) : 0;
   const ea0 = rk.acor(vCap + along, shape.impact, 0);

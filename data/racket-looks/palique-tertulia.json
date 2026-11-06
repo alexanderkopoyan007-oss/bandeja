@@ -1,0 +1,44 @@
+{
+  "//": "PALIQUE Tertulia: the look of data/rackets.json \"palique-tertulia\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"bloc\"), copying no real racket.",
+  "name": "palique-tertulia",
+  "maker": "PALIQUE",
+  "model": "TERTULIA",
+  "line": "FIBERGLASS  ·  EVA MEDIUM  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.265,
+  "weight": 0.362,
+  "art": "bloc",
+  "colours": {
+    "base": "#ffffff",
+    "a": "#e63946",
+    "b": "#1d3557",
+    "c": "#f1c40f",
+    "text": "#1d3557",
+    "frame": "#1d3557",
+    "accent": "#f1c40f"
+  },
+  "finish": "matte",
+  "frameFinish": "satin",
+  "foam": "#f4f4f1",
+  "skin": "#e2e4e6",
+  "bumper": {
+    "colour": "#f1c40f",
+    "clear": 0,
+    "span": 0.3
+  },
+  "grip": "#f1f1ee",
+  "tape": "#f1c40f",
+  "cap": "#1d3557",
+  "cord": "#1d3557",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.042, "a": 0.0948, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.076, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

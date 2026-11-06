@@ -1,0 +1,44 @@
+{
+  "//": "PALIQUE Sobremesa: the look of data/rackets.json \"palique-sobremesa\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"tide\"), copying no real racket.",
+  "name": "palique-sobremesa",
+  "maker": "PALIQUE",
+  "model": "SOBREMESA",
+  "line": "FIBERGLASS  ·  EVA MEDIUM  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "triangle",
+  "balance": 0.266,
+  "weight": 0.358,
+  "art": "tide",
+  "colours": {
+    "base": "#fdf6e3",
+    "a": "#264653",
+    "b": "#2a9d8f",
+    "c": "#e9c46a",
+    "text": "#264653",
+    "frame": "#264653",
+    "accent": "#e9c46a"
+  },
+  "finish": "gloss",
+  "frameFinish": "satin",
+  "foam": "#f4f4f1",
+  "skin": "#e2e4e6",
+  "bumper": {
+    "colour": "#e9c46a",
+    "clear": 0,
+    "span": 0.32
+  },
+  "grip": "#f1f1ee",
+  "tape": "#e9c46a",
+  "cap": "#264653",
+  "cord": "#264653",
+  "holes": {
+    "d": 0.012,
+    "pitch": 0.0245,
+    "rings": 3,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": 0.086, "a": 0.052, "b": 0.009, "rot": 0 },
+      { "x": 0, "y": -0.051, "a": 0.101, "b": 0.0125, "rot": 0 }
+    ]
+  }
+}

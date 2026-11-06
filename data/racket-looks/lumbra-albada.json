@@ -1,0 +1,43 @@
+{
+  "//": "LUMBRA Albada: the look of data/rackets.json \"lumbra-albada\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"contour\"), copying no real racket.",
+  "name": "lumbra-albada",
+  "maker": "LUMBRA",
+  "model": "ALBADA",
+  "line": "FIBERGLASS  ·  EVA SOFT  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.257,
+  "weight": 0.346,
+  "art": "contour",
+  "colours": {
+    "base": "#fbf3f0",
+    "a": "#c9604a",
+    "b": "#f0b9a8",
+    "c": "#5a6b8c",
+    "text": "#5a3a33",
+    "frame": "#e7826b",
+    "accent": "#5a6b8c"
+  },
+  "finish": "matte",
+  "frameFinish": "gloss",
+  "foam": "#f4f4f1",
+  "skin": "#e2e4e6",
+  "bumper": {
+    "colour": "#e7826b",
+    "clear": 0.85,
+    "span": 0.3
+  },
+  "grip": "#f1f1ee",
+  "tape": "#e7826b",
+  "cap": "#e7826b",
+  "cord": "#e7826b",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.051, "a": 0.082, "b": 0.031, "rot": 0 }
+    ]
+  }
+}

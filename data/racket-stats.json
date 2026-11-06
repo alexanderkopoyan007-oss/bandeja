@@ -1,0 +1,19 @@
+{
+  "//": "How a racket's stats are measured (src/sim/contact/racketStats.ts): the game's own impact model (racket.ts) at fixed swings, so the bars always match how the racket plays. swingSpeed: full-effort swing speed falls with swing weight (the moment of inertia about the butt) as V = C / I0^n, n = 0.27 for I0 above 0.03 kg m^2 (Cross & Bower, 'Effects of swing-weight on swing speed and racket power', J Sports Sci 24(1) 2006: six rods, four players; softball bats 0.25, golf clubs 0.26); every padel racket here is 0.030-0.041 kg m^2 about the butt. The reference racket swings at the shapes' racketMax (data/shots.json); the others at (I_ref / I0)^n of it, and their timing windows scale by the square root of the inverse (data/shots.json timing: a contact's tolerance goes with the face's angular speed, softened by a square root). incoming: the ball met by every test swing (m/s, head on). drive: a full drive's swing (data/shots.json drive racketMax and impact point), the face 2 degrees up and moving along its normal; smash: a full smash (smash racketMax, impact point 83 mm) on a ball falling at smashIn (m/s: [up, along], here down and towards the hitter), the face 10 degrees down. power: the mean ball speed of the two (km/h). brush: the topspin shot's full face speed brushing up a slow ball (incoming, m/s, head on: a chiquita's or a víbora's kind of ball) at these angles from the face normal (degrees: the ball meets the face 32, 24 and 14 degrees off it); spin: the mean topspin they give (rpm). Only a ball that slides on the face feels its roughness (TWU: a ball grips above about 37-62 degrees from the face, by its COF, and in the grip range every face gives the same spin), so the brushes are glancing ones. control: the drive a player plays with it (drive: a ball out at speed m/s and elevation degrees with the drive's topspin; the swing solved for it by the racket, as strike() solves it), met where the game's swing errors spread the contact (data/shots.json swing contactAlong/contactAcross at contact.bad timing badness and contact.moving running speed; 5x5 Gauss-Hermite points); the RMS distance (m) of those balls' landings from the centre hit's, in a vacuum flight from launchHeight (m): enough to rank rackets, as every racket sends the same ball. sweetSpot: the face's area (cm^2, on a sweetGrid m grid) where that drive's swing keeps at least sweetShare of its best ball speed on that face. manoeuvrability: the swing weight (kg cm^2 about the butt). scale: each raw number to 0-100, linear and clamped, [value at 0, value at 100] (lower is better for control and manoeuvrability, so their 0 is the larger number); fixed numbers, so adding a racket never moves the others' bars.",
+  "swingSpeed": { "exponent": 0.27, "reference": "standard" },
+  "incoming": 12,
+  "drive": { "speed": 25, "elevation": 4 },
+  "smashIn": [-9, -4],
+  "brush": { "incoming": 5, "angles": [70, 80, 90] },
+  "contact": { "bad": 0.5, "moving": 0.5 },
+  "launchHeight": 1.0,
+  "sweetGrid": 0.002,
+  "sweetShare": 0.95,
+  "scale": {
+    "power": [119, 126],
+    "control": [2.15, 1.85],
+    "sweetSpot": [76, 85],
+    "spin": [1200, 3700],
+    "manoeuvrability": [410, 290]
+  }
+}

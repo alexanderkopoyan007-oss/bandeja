@@ -89,6 +89,15 @@ measured against published data, and lands with tests that check the model again
   ([TWU padel spin](https://twu.tennis-warehouse.com/learning_center/padel/padelspin.php),
   [comparison tool](https://twu.tennis-warehouse.com/learning_center/padel/padelspincomparison.php))
 
+- **Swing weight and swing speed.** Maximum-effort swing speed falls with the moment of inertia about the end of
+  the handle as V = C / I0^n, n = 0.27 for I0 above 0.03 kg m² (four players, six rods; softball bats 0.25, golf
+  clubs 0.26), while mass at a fixed swing weight barely matters. A later paper notes some of the fits rest on two
+  or three points. (Cross & Bower, *Effects of swing-weight on swing speed and racket power*, J Sports Sci 24(1),
+  2006.) Padel rackets of 340-385 g at 255-285 mm balance are 0.030-0.040 kg m² about the butt, inside the fit.
+- **Makers' declared specs.** Padel rackets are sold at 340-390 g, most 350-375 g; a declared spec sheet reads
+  355 g ±10 g, balance 265 mm, 38 mm profile, 45.5 cm frame, 12 cm handle (racketpedia.com spec pages; retailers'
+  buying guides). No lab publishes padel swing weights or core rebound curves that were found.
+
 ### Shot speeds
 - **Smash speed (radar).** Semi-professionals average 133.1 km/h unopposed and 120.7 km/h with an opponent.
   Amateurs average 124.6 and 104.5 km/h. (Rivilla-García et al. 2019, *Kinesiology*,

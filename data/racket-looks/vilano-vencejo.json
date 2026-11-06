@@ -1,0 +1,44 @@
+{
+  "//": "VILANO Vencejo: the look of data/rackets.json \"vilano-vencejo\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"stripe\"), copying no real racket.",
+  "name": "vilano-vencejo",
+  "maker": "VILANO",
+  "model": "VENCEJO",
+  "line": "CARBON 3K  ·  EVA MEDIUM  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "teardrop",
+  "balance": 0.262,
+  "weight": 0.342,
+  "art": "stripe",
+  "colours": {
+    "base": "#f4f6f8",
+    "a": "#00a3ff",
+    "b": "#0a2a4a",
+    "c": "#b6ff3b",
+    "text": "#0a2a4a",
+    "frame": "#f4f6f8",
+    "accent": "#00a3ff"
+  },
+  "finish": "matte",
+  "frameFinish": "gloss",
+  "foam": "#f4f4f1",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#f4f6f8",
+    "clear": 0.85,
+    "span": 0.32
+  },
+  "grip": "#f1f1ee",
+  "tape": "#00a3ff",
+  "cap": "#f4f6f8",
+  "cord": "#f4f6f8",
+  "holes": {
+    "d": 0.012,
+    "pitch": 0.0245,
+    "rings": 3,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.03, "a": 0.0836, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.064, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

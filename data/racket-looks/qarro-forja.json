@@ -1,0 +1,44 @@
+{
+  "//": "QARRO Forja: the look of data/rackets.json \"qarro-forja\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"facet\"), copying no real racket.",
+  "name": "qarro-forja",
+  "maker": "QARRO",
+  "model": "FORJA",
+  "line": "CARBON 18K  ·  EVA HARD  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "teardrop",
+  "balance": 0.272,
+  "weight": 0.37,
+  "art": "facet",
+  "colours": {
+    "base": "#2a2622",
+    "a": "#e2702a",
+    "b": "#4a1d0e",
+    "c": "#f2c48a",
+    "text": "#ffffff",
+    "frame": "#2a2622",
+    "accent": "#f2c48a"
+  },
+  "finish": "sand",
+  "frameFinish": "matte",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#f2c48a",
+    "clear": 0,
+    "span": 0.32
+  },
+  "grip": "#1b1c1f",
+  "tape": "#f2c48a",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.012,
+    "pitch": 0.0245,
+    "rings": 3,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.036, "a": 0.0612, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.07, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

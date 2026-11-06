@@ -19,8 +19,9 @@
 // spin: the impulse is fixed by the change of velocity, and the spin it can give fixes how the face is tilted
 // against that impulse (spin change = -(1 / (alpha r)) n x dv), within the friction cone.
 import { V3 } from '../core/v3.ts';
-import { clamp, max, sqrt } from '../core/smath.ts';
+import { clamp, max, pow, sqrt } from '../core/smath.ts';
 import racketData from '../../../data/rackets.json' with { type: 'json' };
+import statData from '../../../data/racket-stats.json' with { type: 'json' };
 
 export interface RacketSpec {
   name: string;
@@ -39,9 +40,37 @@ export interface RacketSpec {
   twist: number;
   headLength: number;
   headWidth: number;
+  /** What it is (descriptive; the physics is in the numbers above): maker, head shape, core, face and profile (m). */
+  brand?: string;
+  shape?: string;
+  core?: string;
+  face?: string;
+  thickness?: number;
 }
 
+/** The rackets by id ("//" is the file's notes, not a racket). */
 export const RACKETS = racketData as unknown as Record<string, RacketSpec>;
+/** Every racket id in the file's order (`standard` first). */
+export const RACKET_IDS: string[] = Object.keys(racketData).filter((k) => k !== '//');
+
+/** Swing speed against swing weight (data/racket-stats.json `swingSpeed`). */
+const SWING = (statData as unknown as { swingSpeed: { exponent: number; reference: string } }).swingSpeed;
+
+/**
+ * Swing weight: the moment of inertia about the butt (kg m^2), the axis Cross & Bower's swing-speed law is measured
+ * about: I_cm + M balance^2.
+ */
+export function swingWeight(spec: RacketSpec): number {
+  return spec.iCm + spec.mass * spec.balance * spec.balance;
+}
+
+/**
+ * Full-effort face speed against the reference racket's: V = C / I0^n (Cross & Bower 2006), so (I_ref / I0)^n.
+ * Exactly 1 for the reference racket (pow(1, n) is 1), so `standard` plays to the bit as before.
+ */
+export function faceSpeedScale(spec: RacketSpec): number {
+  return pow(swingWeight(RACKETS[SWING.reference]!) / swingWeight(spec), SWING.exponent);
+}
 
 const xh = new V3();
 const ax = new V3();
@@ -62,6 +91,14 @@ export class Racket {
   readonly spec: RacketSpec;
   /** Centre of mass, measured from the tip (m). */
   readonly comFromTip: number;
+  /**
+   * The shape's full-effort face speed is scaled by this (a lighter swing weight swings faster: faceSpeedScale), and
+   * the timing windows by timingK = 1 / sqrt(faceK): a contact's tolerance is how far the face turns per millisecond,
+   * which goes with the face's angular speed, softened by a square root (data/shots.json `timing`). Both are exactly 1
+   * for `standard`.
+   */
+  readonly faceK: number = 1;
+  readonly timingK: number = 1;
   private readonly m: number;
   private readonly R: number;
   private readonly alpha: number;
@@ -90,6 +127,8 @@ export class Racket {
   constructor(spec: RacketSpec, ballMass: number, ballRadius: number, alpha: number) {
     this.spec = spec;
     this.comFromTip = spec.length - spec.balance;
+    this.faceK = faceSpeedScale(spec);
+    this.timingK = 1 / sqrt(this.faceK);
     this.m = ballMass;
     this.R = ballRadius;
     this.alpha = alpha;

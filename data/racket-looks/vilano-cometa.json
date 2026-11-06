@@ -1,0 +1,45 @@
+{
+  "//": "VILANO Cometa: the look of data/rackets.json \"vilano-cometa\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"orbit\"), copying no real racket.",
+  "name": "vilano-cometa",
+  "maker": "VILANO",
+  "model": "COMETA",
+  "line": "CARBON 3K  ·  EVA MEDIUM  ·  3D  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "triangle",
+  "balance": 0.265,
+  "weight": 0.345,
+  "art": "orbit",
+  "colours": {
+    "base": "#141a2e",
+    "a": "#7a3cff",
+    "b": "#19c2a8",
+    "c": "#ff8a3d",
+    "text": "#ffffff",
+    "frame": "#141a2e",
+    "accent": "#ff8a3d"
+  },
+  "finish": "sand",
+  "frameFinish": "gloss",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#ff8a3d",
+    "clear": 0.85,
+    "span": 0.32
+  },
+  "grip": "#1b1c1f",
+  "tape": "#ff8a3d",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.012,
+    "pitch": 0.0245,
+    "rings": 3,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.027, "a": 0.0746, "b": 0.0155, "rot": 0 },
+      { "x": 0, "y": -0.066, "a": 0.05, "b": 0.011, "rot": 0 },
+      { "x": 0.075, "y": 0.06, "a": 0.013, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

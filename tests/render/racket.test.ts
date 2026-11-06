@@ -8,6 +8,8 @@ import {
   CAP_TOP, FACE_T2, GRIP_PITCH, HANDLE_R, HANDLE_TOP, HOLE_SIDES, PROFILE_LEN, RACKET_BUTT, RACKET_LOOKS, RACKET_TIP, RacketLod,
   TAPE_Y0, TAPE_Y1, dressRacket, makeRacketModel, makeWristCord, racketCost, racketLookFor, racketShape,
 } from '../../src/render/avatar/racket.ts';
+import { LOOKS_BY_RACKET } from '../../src/render/avatar/racketLooks.ts';
+import { RACKETS } from '../../src/sim/contact/racket.ts';
 import { sideLayout } from '../../src/render/avatar/racketArt.ts';
 import { FRAME_FINISH } from '../../src/render/avatar/racketMaterial.ts';
 import { disposeTree } from '../../src/render/dispose.ts';
@@ -78,7 +80,25 @@ describe('rackets as drawn', () => {
     expect(new Set(RACKET_LOOKS.map((l) => l.shape))).toEqual(new Set(['round', 'teardrop', 'diamond']));
   });
 
-  for (const look of RACKET_LOOKS) {
+  it('draws each made-up racket as its own look, and `standard` (or none) as the player\'s own', () => {
+    const ids = Object.keys(RACKETS).filter((k) => k !== '//' && k !== 'standard');
+    expect(Object.keys(LOOKS_BY_RACKET).sort()).toEqual([...ids].sort());
+    for (const id of ids) {
+      const look = racketLookFor(2, id), s = RACKETS[id]!;
+      expect(look).toBe(LOOKS_BY_RACKET[id]);
+      // The look says what the sim plays: maker, shape, weight and balance.
+      expect([look.name, look.maker, look.shape, look.weight, look.balance]).toEqual([id, s.brand, s.shape, s.mass, s.balance]);
+      expect(look.line).toContain(s.core === 'soft' ? 'EVA SOFT' : s.core === 'medium' ? 'EVA MEDIUM' : s.core === 'hard' ? 'EVA HARD' : 'EVA PRO HARD');
+    }
+    expect(racketLookFor(1, 'standard')).toBe(RACKET_LOOKS[1]);
+    expect(racketLookFor(3)).toBe(RACKET_LOOKS[3]);
+    expect(racketLookFor(0, 'no-such-racket')).toBe(RACKET_LOOKS[0]);
+    // All eight graphics in use, each look's one of them.
+    const arts = new Set(Object.values(LOOKS_BY_RACKET).map((l) => l.art));
+    expect([...arts].sort()).toEqual(['bloc', 'contour', 'ember', 'facet', 'orbit', 'split', 'stripe', 'tide']);
+  });
+
+  for (const look of [...RACKET_LOOKS, ...Object.values(LOOKS_BY_RACKET)]) {
     describe(`${look.name} (${look.model}, ${look.shape})`, () => {
       const g = makeRacketModel(look);
       const s = racketShape(look);

@@ -3,8 +3,9 @@
 //
 // Built to the FIP limits (Rules of Padel, Annex: 45.5 cm long at most, 26 cm wide, 38 mm thick, holes 9-13 mm) and to
 // how a current racket is made: two thin carbon or glass skins over an EVA core inside a tubular frame. The tip is
-// 14.5 cm above the face centre and the butt 31 cm below it (as rackets.json has them) for every shape. Each player
-// has their own racket (data/racket-looks/p*.json): shape (round, teardrop, diamond), throat, holes and graphics.
+// 14.5 cm above the face centre and the butt 31 cm below it (as rackets.json has them) for every shape. Each racket of
+// data/rackets.json has its own look (data/racket-looks/<id>.json, racketLooks.ts) and a player playing `standard` has
+// their own (p*.json): shape (round, teardrop, diamond), throat, holes, graphics and the maker's name.
 //
 // One racket is one mesh (one draw call) plus the wrist cord, with a level of detail for the broadcast camera:
 // - the frame's tube: a rounded profile swept round the outline (cut open where the neck goes into the finishing
@@ -28,6 +29,7 @@ import p3 from '../../../data/racket-looks/p3.json' with { type: 'json' };
 import p4 from '../../../data/racket-looks/p4.json' with { type: 'json' };
 import { racketArt, sideLayout, ART, type ArtShape } from './racketArt.ts';
 import { racketMaterial, cordMaterial } from './racketMaterial.ts';
+import { LOOKS_BY_RACKET } from './racketLooks.ts';
 
 /** Distances along the racket (m, from the face centre). */
 export const RACKET_TIP = 0.145;
@@ -96,6 +98,8 @@ export const HOLE_SIDES = 14;
 
 export interface RacketLook {
   name: string;
+  /** The maker on the print (a made-up maker's name; the game's own, BANDEJA, when missing). */
+  maker?: string;
   model: string;
   line: string;
   shape: string;
@@ -117,10 +121,16 @@ export interface RacketLook {
   holes: { d: number; pitch: number; rings: number; margin: number; blank: Array<{ x: number; y: number; a: number; b: number; rot: number }> };
 }
 
-/** The players' rackets, by player number (as the people are: data/players/p*.json). */
+/** The players' rackets, by player number (as the people are: data/players/p*.json), when they play `standard`. */
 export const RACKET_LOOKS: RacketLook[] = [p1, p2, p3, p4] as RacketLook[];
 
-export function racketLookFor(idx: number): RacketLook {
+/**
+ * Player idx's racket as drawn: the look of the racket they play (`racket`, a data/rackets.json id, as
+ * MatchConfig.rackets gives it), or for `standard` (or none) their own of the four by player number.
+ */
+export function racketLookFor(idx: number, racket?: string): RacketLook {
+  const own = racket !== undefined ? LOOKS_BY_RACKET[racket] : undefined;
+  if (own) return own;
   return RACKET_LOOKS[((idx % RACKET_LOOKS.length) + RACKET_LOOKS.length) % RACKET_LOOKS.length]!;
 }
 

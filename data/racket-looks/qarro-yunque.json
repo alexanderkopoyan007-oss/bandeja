@@ -1,0 +1,44 @@
+{
+  "//": "QARRO Yunque: the look of data/rackets.json \"qarro-yunque\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"facet\"), copying no real racket.",
+  "name": "qarro-yunque",
+  "maker": "QARRO",
+  "model": "YUNQUE",
+  "line": "CARBON 18K  ·  EVA PRO HARD  ·  38 MM",
+  "shape": "diamond",
+  "throat": "triangle",
+  "balance": 0.28,
+  "weight": 0.375,
+  "art": "facet",
+  "colours": {
+    "base": "#141416",
+    "a": "#ff4a1c",
+    "b": "#7a1206",
+    "c": "#ffc23a",
+    "text": "#ffffff",
+    "frame": "#141416",
+    "accent": "#ffc23a"
+  },
+  "finish": "sand",
+  "frameFinish": "matte",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#ffc23a",
+    "clear": 0,
+    "span": 0.28
+  },
+  "grip": "#1b1c1f",
+  "tape": "#ffc23a",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.013,
+    "pitch": 0.0245,
+    "rings": 2,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": -0.036, "a": 0.0724, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.07, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

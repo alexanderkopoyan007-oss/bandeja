@@ -21,7 +21,7 @@ import { type MatchSetup, type Settings, LEVEL_AI, PARTNER_AI, TIMING_SCALE, ASS
 const GAME_PARAMS = new Set([
   'autoplay', 'mode', 'seed', 'styles', 'scoring', 'court', 'floor', 'temp', 'alt', 'windx', 'windz', 'sets', 'games',
   'ai', 'lefty', 'timing', 'assist', 'autotime', 'tap', 'server', 'pro', 'gfx', 'aim', 'runahead', 'sound', 'arena',
-  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'people', 'ball', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot',
+  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'people', 'ball', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot', 'rackets',
 ]);
 
 /** Does the URL ask for a game straight away (tools and links from before the menus)? */
@@ -87,6 +87,8 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
       aiStyle: styles,
       // Left-handers by player number: ?lefty=0,3
       lefty: Array.from({ length: n }, (_, i) => (params.get('lefty') ?? '').split(',').includes(String(i))),
+      // Rackets by player number (data/rackets.json ids): ?rackets=qarro-yunque,lumbra-sosiego (missing: standard)
+      rackets: params.get('rackets')?.split(','),
       // Defaults are forgiving; ?timing=1 is the strict "pro" window, ?autotime=1 fires a held swing for you.
       timingScale: num('timing', 1.5),
       assist: num('assist', 0.45),

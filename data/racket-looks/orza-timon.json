@@ -1,0 +1,44 @@
+{
+  "//": "ORZA Timón: the look of data/rackets.json \"orza-timon\" (the sim's numbers are there; balance and weight here repeat them). Made-up maker and model, generic graphic (racketArt.ts \"ember\"), copying no real racket.",
+  "name": "orza-timon",
+  "maker": "ORZA",
+  "model": "TIMÓN",
+  "line": "CARBON 24K  ·  EVA HARD  ·  38 MM",
+  "shape": "round",
+  "throat": "teardrop",
+  "balance": 0.264,
+  "weight": 0.372,
+  "art": "ember",
+  "colours": {
+    "base": "#13171d",
+    "a": "#b0b7c2",
+    "b": "#3a6ea5",
+    "c": "#ffffff",
+    "text": "#ffffff",
+    "frame": "#13171d",
+    "accent": "#ffffff"
+  },
+  "finish": "matte",
+  "frameFinish": "satin",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#ffffff",
+    "clear": 0,
+    "span": 0.3
+  },
+  "grip": "#1b1c1f",
+  "tape": "#b0b7c2",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.012,
+    "blank": [
+      { "x": 0, "y": 0.057, "a": 0.0703, "b": 0.0165, "rot": 0 },
+      { "x": 0, "y": -0.05, "a": 0.052, "b": 0.017, "rot": 0 }
+    ]
+  }
+}

@@ -143,6 +143,12 @@ export interface MatchConfig {
   aiStyle?: string[];
   /** Left-handed players, by player number. */
   lefty?: boolean[];
+  /**
+   * Each player's racket (ids in data/rackets.json), by player number; missing or unknown ids play `standard`, so a
+   * match without this is the one from before rackets differed, to the bit. A racket's swing weight scales its
+   * full-effort face speed and its timing windows (sim/contact/racket.ts faceK, timingK).
+   */
+  rackets?: string[];
   /** A women's match: they move and hit as women do, and play it differently (data/ai-skill.json `women`). */
   women?: boolean;
   /** Widens timing windows (accessibility). */
@@ -442,7 +448,7 @@ export class MatchSim {
     this.net = makeNetCloth(this.world);
     this.ball.cloth = this.net;
     this.ball.wears = true;
-    this.solver = new ShotSolver(this.world);
+    this.solver = new ShotSolver(this.world, cfg.rackets, n);
     this.score = new Score(cfg.format ?? DEFAULT_FORMAT, cfg.firstServer ?? 0, this.doubles);
     this.rng = new Rng(cfg.seed);
     this.aiRng = new Rng(cfg.seed ^ 0x5bd1e995);
@@ -1760,6 +1766,7 @@ export class MatchSim {
 
     if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) {
       scale *= SHAPES[SHOT_SERVE]!.timing ?? 1;
+      scale *= this.solver.rackets[i]!.timingK;
       const delta = t - this.tossIdeal;
       p.timingDelta = delta;
       p.grade = gradeTiming(delta, TIMING, scale);
@@ -1830,6 +1837,8 @@ export class MatchSim {
     this.shotMod = p.mod;
     this.shotContra = w.contra;
     scale *= SHAPES[this.shotFor(p, w.volley)]!.timing ?? 1;
+    // (and the racket's: a heavier swing turns the face slower, so its windows are a little wider; 1 for `standard`)
+    scale *= this.solver.rackets[i]!.timingK;
     this.shotContra = false;
     const delta = t - w.ideal;
     p.timingDelta = delta;
@@ -1920,19 +1929,21 @@ export class MatchSim {
 
   /**
    * The timing-window scale for the swing player i is holding: the timing setting (humans) times the shot's own
-   * windows (`timing` in data/shots.json), for the contact the cue is showing. Call after focusIdeal(i).
+   * windows (`timing` in data/shots.json) and the racket's (Racket.timingK), for the contact the cue is showing. Call after
+   * focusIdeal(i).
    */
   windowScale(i: number): number {
     const p = this.players[i]!;
     const base = this.ai[i] ? 1 : this.cfg.timingScale ?? 1;
-    if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) return base * (SHAPES[SHOT_SERVE]!.timing ?? 1);
+    const rk = this.solver.rackets[i]!.timingK;
+    if (this.phase === PH_TOSS && i === this.score.serverPlayer() && this.rally.hitter < 0) return base * (SHAPES[SHOT_SERVE]!.timing ?? 1) * rk;
     if (p.swing !== SW_CHARGE) return base;
     this.shotHeight = this.focusHeight;
     this.shotMod = p.heldMod;
     this.shotContra = this.focusContra;
     const k = SHAPES[this.shotFor(p, this.focusVolley)]!.timing ?? 1;
     this.shotContra = false;
-    return base * k;
+    return base * k * rk;
   }
 
   /**
@@ -2124,7 +2135,7 @@ export class MatchSim {
     if (sk === STRETCH_DIVE) r.control *= t.diveControl;
     else if (sk === STRETCH_JUMP) r.control *= t.jumpControl;
     const contactY = b.pos.y;
-    strike(this.solver, b, r, this.rng, this.res);
+    strike(this.solver, b, r, this.rng, this.res, this.solver.rackets[i]!);
 
     p.swing = SW_RECOVER;
     p.contra = false;
@@ -2155,7 +2166,7 @@ export class MatchSim {
     {
       // How the ball met the face (the sound reads it): impact speed, and where from the face's centre.
       const e = this.events[(this.eventSeq - 1) % EVENT_RING]!;
-      const rs = this.solver.racket.spec;
+      const rs = this.solver.rackets[i]!.spec;
       const hl = rs.headLength / 2;
       e.d = this.res.impactSpeed ?? 0;
       const al = ((this.res.fromTip ?? hl) - hl) / hl, ac = (this.res.across ?? 0) / (rs.headWidth / 2);
