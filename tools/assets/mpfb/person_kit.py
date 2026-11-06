@@ -256,14 +256,18 @@ SKIRT_V = 0.92
 
 
 def _skirt_shape(body, rig, shirt, top, hem, flare, cols):
-    """Rings (nrings, cols) of radii about the pelvis's centre, and that centre; the body's outline as a support function. Up
-    under the shirt (`shirt`, its vertices) a ring stays inside it, or the skirt's top comes through the hem as dark blocks."""
     co = _body_co(body)
     dom = _dominant_bones(body)
     keep = np.array([not ('Arm' in d or 'Hand' in d) for d in dom])
-    pts = co[keep]
+    return skirt_rings(co[keep], shirt, top, hem, flare, cols)
+
+
+def skirt_rings(pts, shirt, top, hem, flare, cols, cx=0.0):
+    """Rings (nrings, cols) of radii about the pelvis's centre, and that centre; the outline of `pts` (the body without its
+    arms, and anything the skirt must go over) as a support function. Up under the shirt (`shirt`, its vertices) a ring stays
+    inside it, or the skirt's top comes through the hem as dark blocks. (mh-player.py builds MetaHumans' skirts with it.)"""
     pelvis = pts[np.abs(pts[:, 2] - (top + hem) / 2) < 0.04]
-    c = np.array([0.0, (pelvis[:, 1].min() + pelvis[:, 1].max()) / 2])
+    c = np.array([cx, (pelvis[:, 1].min() + pelvis[:, 1].max()) / 2])
     th = np.arange(cols) * 2 * math.pi / cols
     dirs = np.stack([np.cos(th), np.sin(th)], axis=1)
     zs = [top + (hem - top) * u for u in SKIRT_RINGS]
@@ -309,6 +313,32 @@ def make_skirt(body, suit, rig, spec, women):
     cols = PLEATS if pleated else ALINE_COLS
     shirt = np.array([suit.data.vertices[i].co for i in top_piece])
     R, c, th, zs = _skirt_shape(body, rig, shirt, top, hem, 0.15 if pleated else 0.11, cols)
+    me, verts, hang, bad = skirt_mesh(R, c, th, zs, pleated, cols)
+    o = bpy.data.objects.new('Skirt', me)
+    for coll in body.users_collection:
+        coll.objects.link(o)
+    hips_g = o.vertex_groups.new(name=P + 'Hips')
+    lg = o.vertex_groups.new(name=P + 'LeftUpLeg')
+    rg = o.vertex_groups.new(name=P + 'RightUpLeg')
+    lx = rig.data.bones[P + 'LeftUpLeg'].head_local.x
+    for i, (co, h) in enumerate(zip(verts, hang)):
+        w = 0.85 * max(0.0, min(1.0, (h - 0.1) / 0.75)) ** 1.2
+        s = max(0.0, min(1.0, 0.5 + co[0] * (1 if lx > 0 else -1) / 0.13))
+        hips_g.add([i], 1 - w, 'REPLACE')
+        if w > 0:
+            lg.add([i], w * s, 'REPLACE')
+            rg.add([i], w * (1 - s), 'REPLACE')
+    m = o.modifiers.new('Armature', 'ARMATURE')
+    m.object = rig
+    print('SKIRT', style, 'top', round(top, 3), 'hem', hem, 'shirt hem', round(shirt_hem, 3), 'radius at the hem', round(float(R[-1].min()), 3), '..', round(float(R[-1].max()), 3),
+          'faces', len(me.polygons), 'wrong way', bad)
+    return o
+
+
+def skirt_mesh(R, c, th, zs, pleated, cols):
+    """The skirt from its rings (skirt_rings): knife pleats or an A-line's soft folds outside, the lining in, its UVs (u round,
+    v down to SKIRT_V; the lining at LINING_V) and 'hang' (0 at the top, 1 at the hem). Returns the mesh, its vertices, their
+    hang and how many faces wind the wrong way."""
     nr = len(zs)
     verts, faces, uvs, hang, leg_w = [], [], [], [], []
 
@@ -383,26 +413,7 @@ def make_skirt(body, suit, rig, spec, women):
         uvl.data[lo.index].uv = uvs[lo.vertex_index]
     at = me.attributes.new('hang', 'FLOAT', 'POINT')
     at.data.foreach_set('value', np.array(hang, dtype=np.float32))
-    o = bpy.data.objects.new('Skirt', me)
-    for coll in body.users_collection:
-        coll.objects.link(o)
-    hips_g = o.vertex_groups.new(name=P + 'Hips')
-    lg = o.vertex_groups.new(name=P + 'LeftUpLeg')
-    rg = o.vertex_groups.new(name=P + 'RightUpLeg')
-    lx = rig.data.bones[P + 'LeftUpLeg'].head_local.x
-    for i, (co, h) in enumerate(zip(verts, hang)):
-        w = 0.85 * max(0.0, min(1.0, (h - 0.1) / 0.75)) ** 1.2
-        s = max(0.0, min(1.0, 0.5 + co[0] * (1 if lx > 0 else -1) / 0.13))
-        hips_g.add([i], 1 - w, 'REPLACE')
-        if w > 0:
-            lg.add([i], w * s, 'REPLACE')
-            rg.add([i], w * (1 - s), 'REPLACE')
-    m = o.modifiers.new('Armature', 'ARMATURE')
-    m.object = rig
-    print('SKIRT', style, 'top', round(top, 3), 'hem', hem, 'shirt hem', round(shirt_hem, 3), 'radius at the hem', round(float(R[-1].min()), 3), '..', round(float(R[-1].max()), 3),
-          'faces', len(faces), 'wrong way', bad)
-    return o
-
+    return me, verts, hang, bad
 
 def skirt_ao(size, pleated):
     """The skirt's shading in the atlas (grey): darker up under the shirt, in each pleat's valley and on the lining."""
@@ -442,18 +453,15 @@ def _shirt_verts(suit, women):
 # ---------------------------------------------------------------------------------------------------------------
 # A headband or a visor: a band round the head above the brows, low at the back, on the skin or the hair that lies on it; a
 # visor's bill is a curved peak out of the band's lower edge. Bound to the head alone.
-def make_head_piece(body, hair, rig, eye_pts, style):
-    from mathutils.bvhtree import BVHTree
-    dg = bpy.context.evaluated_depsgraph_get()
-    skin = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices],
-                                [tuple(p.vertices) for p in body.data.polygons if max(p.vertices) < N_BODY])
-    hair_tree = BVHTree.FromPolygons([v.co.copy() for v in hair.data.vertices], [tuple(p.vertices) for p in hair.data.polygons]) if hair else None
-    eye = Vector((0, sum(c.y for c in eye_pts) / len(eye_pts), sum(c.z for c in eye_pts) / len(eye_pts)))
-    head = rig.data.bones[P + 'Head'].head_local
+def head_piece_mesh(skin, hair_tree, eye_pts, style, cx=0.0):
+    """A band's or a visor's vertices, faces (quads) and shade, round the head whose skin is the BVH tree `skin` (and hair, if
+    any, `hair_tree`), from the eyes' points; `cx` the head's middle across. Also the band's radii. (mh-player.py uses it for
+    MetaHumans.)"""
+    eye = Vector((cx, sum(c.y for c in eye_pts) / len(eye_pts), sum(c.z for c in eye_pts) / len(eye_pts)))
     # The band's plane: from the upper forehead to under the back of the crown.
     front_z, back_z = eye.z + 0.052, eye.z + 0.02
     cy = eye.y + 0.095
-    centre = Vector((0, cy, (front_z + back_z) / 2))
+    centre = Vector((cx, cy, (front_z + back_z) / 2))
     tilt = math.atan2(front_z - back_z, 0.18)
     ey = Vector((0, -math.cos(tilt), math.sin(tilt)))   # forward (the model faces -y) and up the slope
     ex = Vector((1, 0, 0))
@@ -538,6 +546,15 @@ def make_head_piece(body, hair, rig, eye_pts, style):
         lt, lb = tops[-1]
         for j in range(n):
             faces.append((lt[j], lt[j + 1], lb[j + 1], lb[j]))
+    return verts, faces, shade, rad
+
+
+def make_head_piece(body, hair, rig, eye_pts, style):
+    from mathutils.bvhtree import BVHTree
+    skin = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices],
+                                [tuple(p.vertices) for p in body.data.polygons if max(p.vertices) < N_BODY])
+    hair_tree = BVHTree.FromPolygons([v.co.copy() for v in hair.data.vertices], [tuple(p.vertices) for p in hair.data.polygons]) if hair else None
+    verts, faces, shade, rad = head_piece_mesh(skin, hair_tree, eye_pts, style)
     me = bpy.data.meshes.new('HeadPiece')
     me.from_pydata(verts, [], faces)
     me.update()

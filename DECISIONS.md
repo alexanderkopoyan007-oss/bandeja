@@ -3717,4 +3717,14 @@ Matching:
 - **Hair colour.** Measured from the player's alpha atlas.
 - **Scalp.** As finish-player.py does for the MPFB scalps, the scalp under the hair is painted in the hair's colour. Cycles bakes the helmet's coverage onto the head's UVs (selected to active, 3 cm reach). The ears' own triangles are kept clear: the sideburns lie within reach of their rims.
 
-p1mh: 40.3k triangles. The women (tank tops, skirts, visor and cap) wait for the owner: MetaHuman's wardrobe has one garment, a tee and shorts.
+p1mh: 40.3k triangles.
+
+### The women, and the bodies they are fitted to (2026-11-06)
+The owner asked for the women "with skirts like before". MetaHuman's wardrobe has one garment, a tee and shorts, so what it lacks is made as finish-player.py makes it for the MPFB players, from the same code:
+- `person_kit.py`'s skirt and band/visor geometry now sit in functions both pipelines call: `skirt_rings`, `skirt_mesh` and `head_piece_mesh`. Run old and new on the current p9, the MPFB output was identical: the A-line skirt's vertices, UVs and weights, and the visor's and band's vertices and shade.
+- **Tank.** `mh-player.py` cuts the T-shirt's sleeves along the plane the shader draws the armhole's binding on (kit.ts `tankCut`, from the LeftArm joint) and lays the armhole on the skin, as `hug_armholes` does. The arm's skin outside the plane all stays: from the inner arm, the ray test reached the torso's shirt. The skin inside stays 6 cm in, within the band the shader's skin cut covers. At 3.5 cm the skin ended a few millimetres in, in places: a removed vertex takes its triangles with it.
+- **Skirt.** `skirt_rings` hangs the skirt round the body without its arms and round the shorts, which stand off MetaHuman's legs as MPFB's fitted ones didn't. The shorts lose their top and end where the old inner shorts did (`shorts_hem`, from data/players).
+- **Atlas.** The shader tells a skirt's outside from its lining by atlas v alone (`SKIRT_OUT_V`), so it takes a 256 x 512 strip at the bottom right, and the body's 768 square moves down to the bottom.
+- **Hair.** p7 S_LowPonytail; p8 L_AfroCurly; p9 L_Straight; p10 S_PulledBack, nearest to her braid (MetaHuman has no single braid).
+
+The bodies were stale. `cast-batch.sh` had been exporting from the .blend files in the old p9 worktree, saved on 30 Oct at 11:54. That was before each player got their own face targets and body builds (that evening), and p9 still had a bob there. The batch now makes the person afresh from data/players first (`make-player.py --blend-only`, the MPFB part before finishing), so the men are being redone from their current bodies too. The p1mh still sent earlier was fitted to the old p1.

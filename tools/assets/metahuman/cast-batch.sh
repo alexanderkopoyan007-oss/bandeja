@@ -1,5 +1,6 @@
 #!/bin/sh
-# The current cast as MetaHumans, one name after another: MPFB body and portrait out (cast-export.py), then in the open
+# The current cast as MetaHumans, one name after another: the MPFB person made afresh (make-player.py --blend-only), its
+# body and portrait out (cast-export.py), then in the open
 # MHPilot editor (the queue watcher unreal/mhwatch.py running; the owner signed in to Epic for the cloud steps) conform,
 # rig + textures + wardrobe + Optimized build (finish), DCC maps, the outfit-less full build; then the game's body
 # (mh-player.py) and the pack (build-people.mjs) as <name>mh. Settings per name in cast.json.
@@ -21,7 +22,11 @@ for n in "$@"; do
   set -- $(node -e "const c=require('./tools/assets/metahuman/cast.json')['$n'];console.log(c.hair,c.brows,c.skin.join(','))")
   HAIR=$1 BROWS=$2 SKIN=$3
   mkdir -p "$CAST/$n"
-  "$BLENDER" -b "$HOME/bandeja-p9/assets-src/people/$n/$n.blend" --python tools/assets/metahuman/cast-export.py -- "$CAST/$n" </dev/null 2>&1 | grep -E "^CAST (height|wrote)|Error" || true
+  rm -f "$CAST/$n/portrait.png" "$CAST/$n/target.fbx"
+  # (the person as data/players has them now, made afresh by MPFB: the old builds' files predate their faces and builds)
+  BLENDER_USER_RESOURCES=${BLENDER_USER_RESOURCES:-$HOME/bandeja/assets-src/blender-user} "$BLENDER" -b --python tools/assets/mpfb/make-player.py \
+    -- data/players/$n.json "$YB" "$CAST/$n/mpfb" --blend-only </dev/null 2>&1 | grep -E "^PLAYER|Error|Traceback" | cut -c1-200 || true
+  "$BLENDER" -b "$CAST/$n/mpfb/$n.blend" --python tools/assets/metahuman/cast-export.py -- "$CAST/$n" </dev/null 2>&1 | grep -E "^CAST (height|wrote)|Error" || true
   [ -f "$CAST/$n/portrait.png" ] || { echo "$n: no portrait"; continue; }
   q $n conform_cast || continue
   q $n finish_cast "HAIR = '$HAIR'

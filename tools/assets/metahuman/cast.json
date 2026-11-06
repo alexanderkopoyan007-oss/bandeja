@@ -5,5 +5,9 @@
   "p3": {"hair": "WI_Hair_S_Clean", "brows": "WI_Eyebrows_M_Natural", "skin": [0.08, 0.30], "hair_rgb": [0.11, 0.105, 0.1]},
   "p4": {"hair": "WI_Hair_S_SlickBack", "brows": "WI_Eyebrows_M_Natural", "skin": [0.12, 0.50], "hair_rgb": [0.13, 0.13, 0.13]},
   "p5": {"hair": "WI_Hair_S_Casual", "brows": "WI_Eyebrows_M_Full", "skin": [0.13, 0.55], "hair_rgb": [0.13, 0.08, 0.06]},
-  "p6": {"hair": "WI_Hair_S_BrushCut", "brows": "WI_Eyebrows_M_Thick", "skin": [0.06, 0.20], "hair_rgb": [0.1, 0.1, 0.1]}
+  "p6": {"hair": "WI_Hair_S_BrushCut", "brows": "WI_Eyebrows_M_Thick", "skin": [0.06, 0.20], "hair_rgb": [0.1, 0.1, 0.1]},
+  "p7": {"hair": "WI_Hair_S_LowPonytail", "brows": "WI_Eyebrows_M_SlightArch", "skin": [0.0, 0.55], "hair_rgb": [0.335, 0.228, 0.16]},
+  "p8": {"hair": "WI_Hair_L_AfroCurly", "brows": "WI_Eyebrows_M_Fine", "skin": [0.73, 0.85], "hair_rgb": [0.058, 0.02, 0.019]},
+  "p9": {"hair": "WI_Hair_L_Straight", "brows": "WI_Eyebrows_S_FlatThin", "skin": [0.04, 0.25], "hair_rgb": [0.073, 0.04, 0.03]},
+  "p10": {"hair": "WI_Hair_S_PulledBack", "brows": "WI_Eyebrows_M_Thin", "skin": [0.0, 0.5], "hair_rgb": [0.094, 0.077, 0.063]}
 }

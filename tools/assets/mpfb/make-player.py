@@ -2,9 +2,9 @@
 # a body from macro settings on MPFB's Mixamo rig, a skin, eyes, brows, lashes, hair, clothes and shoes.
 #
 #   BLENDER_USER_RESOURCES=<repo>/../bandeja/assets-src/blender-user \
-#     blender -b --python tools/assets/mpfb/make-player.py -- <player.json> <ybot-rest.json> <out-dir> [--preview]
+#     blender -b --python tools/assets/mpfb/make-player.py -- <player.json> <ybot-rest.json> <out-dir> [--preview] [--blend-only]
 #
-# then finish-player.py's finish() puts it on the game skeleton and exports it (same session).
+# then finish-player.py's finish() puts it on the game skeleton and exports it (same session); --blend-only stops at <name>.blend.
 #
 # The add-on and the asset packs live in that isolated Blender profile (assets-src/, gitignored), never in the
 # owner's own Blender settings. player.json: {"name", "macro": {...}, "skin", "eyes", "eyebrows", "eyelashes",
@@ -67,6 +67,9 @@ for o in bpy.data.objects:
 
 print('PLAYER', spec['name'], 'meshes', [(o.name, len(o.data.vertices)) for o in bpy.data.objects if o.type == 'MESH'])
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out, spec['name'] + '.blend'))
+if '--blend-only' in args:
+    # (the person as made, unfinished: what tools/assets/metahuman/cast-batch.sh conforms a MetaHuman to)
+    sys.exit(0)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import importlib

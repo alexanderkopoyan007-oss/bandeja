@@ -11,9 +11,12 @@
 #   by pose, as finish-player.py does (arms, hands, fingers, legs straight), and bound in the modelled pose.
 # - Shoes: p1's trainers (MPFB shoes05 with its crew sock), each fitted to a foot by the box round it.
 # - Skin under the shirt, the shorts and the shoes is removed (it pokes through when the body moves).
+# - Tank, skirt, band or visor as the MPFB players have them (spec kit; the geometry is person_kit.py's): the T-shirt's
+#   sleeves off along the shader's armhole plane, a skirt over the shorts, a band round the head.
 # - Atlases as finish-player.py's RECT, which the body shader reads: skin's square at the left (the head at the
 #   source's 2048; the body, mostly under the kit, smaller beside it), the kit's rectangle at the top right (shirt
-#   over shorts, each MetaHuman UV square squeezed into half of it), hair at the left of the alpha atlas.
+#   over shorts, each MetaHuman UV square squeezed into half of it), a skirt's shading in a strip at the bottom right,
+#   hair at the left of the alpha atlas.
 # - Not yet: face expressions and gaze (MetaHuman moves the face with joints; none are baked yet, so the face is
 #   still), ambient occlusion (atlas alpha is 1), the garment's own fold normals (a flat cloth map for now).
 import bpy, bmesh, json, math, os, sys
@@ -21,6 +24,9 @@ import numpy as np
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mpfb'))
+import person_kit as pk  # the skirt's and the band's geometry, shared with the MPFB players
 
 args = sys.argv[sys.argv.index('--') + 1:]
 spec = json.load(open(args[0]))
@@ -37,10 +43,12 @@ ALPHA_PARTS = ('hair', 'brow', 'lash')
 OPAQUE_SIZE = (3072, 2048)
 ALPHA_SIZE = (2560, 2048)
 # x, y, w, h in pixels from the bottom left. The kit's rectangle (u > 2/3, v > 1/2) is fixed by kit.ts (suitUv).
-RECT = {'head': (0, 0, 2048, 2048), 'body': (2048, 256, 768, 768), 'eye': (2816, 768, 256, 256),
-        'teeth': (2816, 512, 256, 256), 'shirt': (2048, 1536, 1024, 512), 'shorts': (2048, 1024, 1024, 512),
-        'hair': (0, 0, 2048, 2048), 'brow': (2048, 1024, 512, 512), 'lash': (2048, 512, 512, 512),
-        'helmet': (2048, 1536, 512, 512)}
+# A skirt's outside and its lining are told apart by atlas v alone (kit.ts SKIRT_OUT_V: its local v x 512/2048, as
+# finish-player.py's 512-high rectangle), so it takes the strip at the right, narrower across than the MPFB one.
+RECT = {'head': (0, 0, 2048, 2048), 'body': (2048, 0, 768, 768), 'eye': (2816, 768, 256, 256),
+        'teeth': (2816, 512, 256, 256), 'skirt': (2816, 0, 256, 512), 'shirt': (2048, 1536, 1024, 512),
+        'shorts': (2048, 1024, 1024, 512), 'hair': (0, 0, 2048, 2048), 'brow': (2048, 1024, 512, 512),
+        'lash': (2048, 512, 512, 512), 'helmet': (2048, 1536, 512, 512)}
 SIDES = (('Left', 'l'), ('Right', 'r'))
 FINGERS = (('Thumb', 'thumb'), ('Index', 'index'), ('Middle', 'middle'), ('Ring', 'ring'), ('Pinky', 'pinky'))
 BONES = list(YB)
@@ -394,6 +402,159 @@ for i, c in enumerate(new_co):
     for n, w in bw[j].items():
         vg[n].add([i], w, 'REPLACE')
 
+# ---------------------------------------------------------------- tank, skirt, band or visor ------------------------------------
+# The kit the MPFB players have and MetaHuman's garment hasn't (spec kit, as person_kit.py makes it there; the game draws the
+# rest in kit.ts):
+# - a tank: the T-shirt's sleeves off along kit.ts's tankCut plane (from the LeftArm joint), its armhole laid on the skin;
+# - a skirt: person_kit's rings round the body from under the shirt's hem down to kit.skirt, over MetaHuman's shorts with
+#   their top off and their legs cut where the old inner shorts ended (spec shorts_hem);
+# - a band or a visor: person_kit's, round the head on the skin or on the hair's helmet.
+KIT = spec.get('kit', {})
+# How far inside the armhole's plane the skin stays (person_kit's TANK_SKIN): the shader cuts it 2 cm in (kit.ts
+# UNDER_ARMHOLE), and a vertex removed takes its triangles with it, so at 3.5 cm the skin ended a few millimetres in, in
+# places, and the armpit showed a dark gap under the edge.
+TANK_SKIN = 0.06
+chest_x = J['Spine2'].x
+arm_j = J['LeftArm']
+arm_x0 = abs(arm_j.x - chest_x)
+ARMHOLE_FROM = arm_j.z - 0.25  # the sleeve and the armpit are above this; the shirt's sides and hem below it
+dominant = [max(w, key=w.get) if w else '' for w in bw]
+on_arm = np.array([('Arm' in d or 'Hand' in d) for d in dominant])  # (person_kit's test: upper arm, forearm, hand)
+
+
+def bisect(o, co, no, inner=False, outer=False, lowest=None):
+    """o cut by a plane, the side its normal points to (outer) or the other (inner) cleared; only geometry above `lowest`."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    vs = lambda g: [g] if isinstance(g, bmesh.types.BMVert) else g.verts
+    geom = [g for g in list(bm.verts) + list(bm.edges) + list(bm.faces) if lowest is None or all(v.co.z > lowest for v in vs(g))]
+    bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no, clear_inner=inner, clear_outer=outer)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(o.data)
+    bm.free()
+    o.data.update()
+
+
+tank_planes = []
+if KIT.get('top') == 'tank':
+    n0 = len(shirt.data.polygons)
+    for side in (1, -1):
+        a = Vector((chest_x + side * (arm_x0 - 0.035), 0, arm_j.z + 0.07))
+        b = Vector((chest_x + side * (arm_x0 - 0.01), 0, arm_j.z - 0.15))
+        no = Vector((0, 1, 0)).cross((b - a).normalized()) * side
+        if no.x * side < 0:
+            no = -no
+        tank_planes.append((a, no))
+        bisect(shirt, a, no, outer=True, lowest=ARMHOLE_FROM)
+    say('tank: sleeves off, shirt faces', n0, '->', len(shirt.data.polygons))
+    # The armhole on the skin (person_kit.hug_armholes): the tee stood off the shoulder and the torso is hollow under it, so
+    # the cut edge goes to ARMHOLE_LIFT off the skin, in the cut's plane (where the shader's binding and skin cut are), with
+    # the nearest skin's weights; the shirt eases to it over ARMHOLE_REACH.
+    ARMHOLE_LIFT, ARMHOLE_REACH = 0.002, 0.04
+    skin_tree = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices], [tuple(p.vertices) for p in body.data.polygons])
+    me = shirt.data
+    uses = {}
+    for p in me.polygons:
+        for k in p.edge_keys:
+            uses[k] = uses.get(k, 0) + 1
+    rim = {i for k, c in uses.items() if c == 1 for i in k}
+    moved, gap = {}, []
+    for a, no in tank_planes:
+        for i in rim:
+            co = me.vertices[i].co
+            if co.z < ARMHOLE_FROM or abs((co - a).dot(no)) > 0.012:
+                continue
+            p = co.copy()
+            for _ in range(4):
+                q, n, _, _ = skin_tree.find_nearest(p)
+                step = q + n * ARMHOLE_LIFT - p
+                p = p + step - no * step.dot(no)
+            gap.append((p - co).length)
+            moved[i] = p - co
+    ids = list(moved)
+    kd_rim = KDTree(len(ids))
+    for k, i in enumerate(ids):
+        kd_rim.insert(me.vertices[i].co, k)
+    kd_rim.balance()
+    ease = {}
+    for v in me.vertices:
+        if v.index in moved:
+            continue
+        _, k, d = kd_rim.find(v.co)
+        if d < ARMHOLE_REACH:
+            ease[v.index] = moved[ids[k]] * (1 - d / ARMHOLE_REACH) ** 2
+    for i, dv in list(moved.items()) + list(ease.items()):
+        me.vertices[i].co += dv
+    svg = {n: shirt.vertex_groups[P + n] for n in BONES}
+    for i in ids:
+        _, j, _ = kd.find(me.vertices[i].co)
+        for g in svg.values():
+            g.remove([i])
+        for n, w in bw[j].items():
+            svg[n].add([i], w, 'REPLACE')
+    me.update()
+    say('tank: armhole on the skin,', len(ids), 'vertices, moved up to', round(max(gap) * 1000, 1), 'mm, median',
+        round(float(np.median(gap)) * 1000, 1), 'mm')
+
+skirt, skirt_hang = None, None
+if KIT.get('bottom') in ('pleated', 'aline'):
+    pleated = KIT['bottom'] == 'pleated'
+    shirt_co = coords(shirt)
+    shirt_hem = shirt_co[:, 2].min()
+    top, hem = shirt_hem + pk.SKIRT_TUCK, KIT['skirt']
+    # (the shorts' top came through the shirt's back in a bend, and the skirt covers it)
+    bisect(shorts, Vector((0, 0, shirt_hem - 0.03)), Vector((0, 0, 1)), outer=True)
+    if spec.get('shorts_hem'):
+        bisect(shorts, Vector((0, 0, spec['shorts_hem'])), Vector((0, 0, 1)), inner=True)
+    shorts_co = coords(shorts)
+    say('skirt over shorts from', round(float(shorts_co[:, 2].min()), 3), 'to', round(float(shorts_co[:, 2].max()), 3))
+    # (the outline it hangs round: the body without its arms, and the shorts, which stand off MetaHuman's legs as MPFB's
+    # fitted ones didn't)
+    cols = pk.PLEATS if pleated else pk.ALINE_COLS
+    R, c, th, zs = pk.skirt_rings(np.concatenate([bco[~on_arm], shorts_co]), shirt_co, top, hem, 0.15 if pleated else 0.11,
+                                  cols, cx=J['Hips'].x)
+    sme, sverts, skirt_hang, bad = pk.skirt_mesh(R, c, th, zs, pleated, cols)
+    skirt = bpy.data.objects.new('skirt', sme)
+    bpy.context.scene.collection.objects.link(skirt)
+    rigid(skirt, None)
+    # (person_kit's weighting: the hips at the top, more and more the thigh on its side by the hem)
+    hx, side = J['Hips'].x, (1 if J['LeftUpLeg'].x > J['Hips'].x else -1)
+    for i, (co, h) in enumerate(zip(sverts, skirt_hang)):
+        w = 0.85 * max(0.0, min(1.0, (h - 0.1) / 0.75)) ** 1.2
+        s = max(0.0, min(1.0, 0.5 + (co[0] - hx) * side / 0.13))
+        skirt.vertex_groups[P + 'Hips'].add([i], 1 - w, 'REPLACE')
+        if w > 0:
+            skirt.vertex_groups[P + 'LeftUpLeg'].add([i], w * s, 'REPLACE')
+            skirt.vertex_groups[P + 'RightUpLeg'].add([i], w * (1 - s), 'REPLACE')
+    say('skirt', KIT['bottom'], 'top', round(top, 3), 'hem', hem, 'shirt hem', round(float(shirt_hem), 3), 'radius at the hem',
+        round(float(R[-1].min()), 3), '..', round(float(R[-1].max()), 3), 'faces', len(sme.polygons), 'wrong way', bad)
+
+head_piece, head_shade = None, None
+if KIT.get('head'):
+    hb = bmesh.new()
+    hb.from_mesh(head_skin.data)
+    head_tree = BVHTree.FromBMesh(hb)
+    hb.free()
+    on = helmet or hair
+    hair_tree = BVHTree.FromPolygons([v.co.copy() for v in on.data.vertices], [tuple(p.vertices) for p in on.data.polygons])
+    hverts, hfaces, head_shade, rad = pk.head_piece_mesh(head_tree, hair_tree, [v.co.copy() for v in eyes.data.vertices],
+                                                         KIT['head'], cx=J['Head'].x)
+    hme = bpy.data.meshes.new('head_piece')
+    hme.from_pydata(hverts, [], hfaces)
+    hme.update()
+    hbm = bmesh.new()
+    hbm.from_mesh(hme)
+    bmesh.ops.recalc_face_normals(hbm, faces=hbm.faces)
+    hbm.to_mesh(hme)
+    hbm.free()
+    # (one UV everywhere: a new layer's default gives each face its own corners, which splits every vertex in the export)
+    for d in hme.uv_layers.new(name='uv').data:
+        d.uv = (0, 0)
+    head_piece = bpy.data.objects.new('head_piece', hme)
+    bpy.context.scene.collection.objects.link(head_piece)
+    rigid(head_piece, 'Head')
+    say('head piece', KIT['head'], 'band radius', round(float(rad.min()), 3), '..', round(float(rad.max()), 3), 'faces', len(hfaces))
+
 # ---------------------------------------------------------------- skin under the kit out ---------------------------------------------
 # Skin that sees cloth within 3 cm straight out from it goes, except a 2.5 cm band next to skin that stays: looking into a
 # sleeve or a leg of the shorts never shows a hole. Inside the shoes and socks everything goes below the sock's top.
@@ -429,6 +590,17 @@ nk = J['Neck']
 behind_collar = ((np.abs(bco[:, 0] - nk.x) < 0.16) & (-bco[:, 1] > -nk.y - 0.1) & (-bco[:, 1] < -nk.y + 0.2)
                  & (bco[:, 2] > nk.z - 0.16) & (bco[:, 2] < nk.z + 0.025))
 covered &= ~behind_collar
+if tank_planes:
+    # A tank: the arms are bare, and the skin under the armhole stays TANK_SKIN in (the shader cuts it at 2 cm), in the band
+    # the shader's skin cut covers (kit.ts kitDetail: out from armX - 0.09, from the plane's top down to over the hem).
+    # (outside the plane the arm's skin all stays: from the inside of the arm the torso's shirt is within the ray's reach)
+    ax = np.abs(bco[:, 0] - chest_x)
+    hem_z = coords(shirt)[:, 2].min()
+    for a, no in tank_planes:
+        d = (bco[:, 0] - a.x) * no.x + (bco[:, 2] - a.z) * no.z
+        this_side = (bco[:, 0] - chest_x) * no.x > 0
+        cut_band = (bco[:, 2] < a.z + 0.005) & (bco[:, 2] > hem_z + 0.06) & (ax > arm_x0 - 0.09)
+        covered &= ~(this_side & (((d > 0) & on_arm) | ((d > -TANK_SKIN) & cut_band)))
 in_shoe = bco[:, 2] < sock_top - 0.015
 say('skin removed: under the kit', int(covered.sum()), 'in the shoes', int((in_shoe & ~covered).sum()), 'of', len(bco))
 delete_verts(body, covered | in_shoe)
@@ -455,7 +627,7 @@ for n in BONES:
         eb[P + n].parent = eb[P + PARENT[n]]
 bpy.ops.object.mode_set(mode='OBJECT')
 
-skinned = [body, head_skin, eyes, teeth, lashes, shirt, shorts, shoes, hair] + [o for o in (brows, helmet) if o]
+skinned = [body, head_skin, eyes, teeth, lashes, shirt, shorts, shoes, hair] + [o for o in (brows, helmet, skirt, head_piece) if o]
 for o in skinned:
     o.parent = rig
     m = o.modifiers.new('rig', 'ARMATURE')
@@ -706,6 +878,11 @@ paste(op, RECT['teeth'], load_px(os.path.join(MAPS, 'Teeth_Color.png'), RECT['te
 for k in ('shirt', 'shorts'):
     x, y, w, h = RECT[k]
     op[y:y + h, x:x + w] = 1.0  # the kit's occlusion: none baked yet
+if skirt:
+    # (person_kit's: darker up under the shirt, in each pleat's valley and on the lining; drawn square and halved across)
+    sao = pk.skirt_ao(RECT['skirt'][3], KIT['bottom'] == 'pleated')
+    w = RECT['skirt'][2]
+    paste(op, RECT['skirt'], sao.reshape(sao.shape[0], w, -1, 4).mean(2))
 op[..., 3] = 1
 save(op, os.path.join(OUT, 'opaque.webp'), 'opaque')
 
@@ -808,7 +985,8 @@ say('neck seam vertices', len(seam) // 2, 'closest body-to-head distances (mm)',
 bone_ix = {n: i for i, n in enumerate(BONES)}
 KINDS = [(body, 'skin', 'body'), (head_skin, 'skin', 'head'), (eyes, 'eye', 'eye'), (teeth, 'teeth', 'teeth'),
          (shirt, 'shirt', 'shirt'), (shorts, 'shorts', 'shorts'), (shoes, None, None), (lashes, 'lash', 'lash'),
-         (hair, 'hair', 'hair'), (brows, 'brow', 'brow'), (helmet, 'hair', 'helmet')]
+         (hair, 'hair', 'hair'), (brows, 'brow', 'brow'), (helmet, 'hair', 'helmet'), (skirt, 'shorts', 'skirt'),
+         (head_piece, 'sock', None)]
 
 
 def uv_to(rect, size, u, v):
@@ -851,6 +1029,8 @@ for o, part, rect in KINDS:
             vert = me.vertices[vi]
             if o is shoes:
                 pt, uv = ('sock' if shoe_sock[vi] else 'shoe'), (0.0, 0.0)
+            elif o is head_piece:
+                pt, uv = 'sock', (0.0, 0.0)  # (kit.ts: a sock above the hips takes the trim colour)
             else:
                 pt, uv = part, uv_to(RECT[rect], size, u, v)
             ws = sorted(((g.weight, gname[g.group]) for g in vert.groups if g.weight > 1e-4), reverse=True)[:4]
@@ -868,8 +1048,9 @@ for o, part, rect in KINDS:
             B['si'] += si
             B['sw'] += sw
             B['part'].append(PART[pt])
-            B['ao'].append(1.0)
-            B['mask'] += [0.0, 0.0, 0.0, 0.0]
+            B['ao'].append(float(head_shade[vi]) if o is head_piece else 1.0)
+            # (a skirt's hang, 0 at its top to 1 at the hem, in the mask's x: kit.ts swings it and keeps it off the thighs)
+            B['mask'] += [float(skirt_hang[vi]) if o is skirt else 0.0, 0.0, 0.0, 0.0]
             B['index'].append(seen[key])
     say('mesh', o.name, len(seen), 'vertices', len(me.loop_triangles), 'triangles')
 
@@ -931,6 +1112,10 @@ if PREVIEW:
         looks[brows] = mat('br', (0.08, 0.06, 0.04, 1))
     if helmet:
         looks[helmet] = mat('hm', (0.12, 0.08, 0.05, 1))
+    if skirt:
+        looks[skirt] = mat('sk', (0.08, 0.1, 0.2, 1))
+    if head_piece:
+        looks[head_piece] = mat('hp', (0.9, 0.9, 0.88, 1))
     for o, m in looks.items():
         o.data.materials.clear()
         o.data.materials.append(m)
