@@ -3683,3 +3683,17 @@ The approved M5 plan's phase B, on branch `m5-rackets` (not merged: the owner de
 | ORZA Quilla | teardrop, 378 g, 274 mm | hard, sand | 75 | 90 | 82 | 66 | 38 | 124.3 | 1.88 | 83.4 | 2857 | 364 | 0.972 | 1.014 |
 | ORZA Timón | round, 372 g, 264 mm | hard, matte | 75 | 90 | 78 | 32 | 61 | 124.3 | 1.88 | 83.0 | 2002 | 337 | 0.993 | 1.004 |
 | ORZA Galerna | diamond, 385 g, 285 mm | xhard, rough | 86 | 89 | 92 | 84 | 11 | 125.1 | 1.88 | 84.3 | 3301 | 397 | 0.950 | 1.026 |
+
+## MetaHuman players: the pilot (2026-11-06)
+The owner chose MetaHuman for the players' bodies ("very boxy", "no detail" below a face they like). A pilot, `mh1`, now plays:
+- **The pipeline.** The owner's MHC_Test1 is built in Unreal 5.8 (UE Optimized, Medium) and exported to FBX and PNG. `tools/assets/metahuman/mh-player.py` (Blender) turns it into the same `body.json`/`body.bin` that `finish-player.py` writes, and `build-people.mjs` packs that. MetaHuman's 341 body and 874 face joints fold onto the game's 65. The rig is posed to the game's T-pose with finish-player's AIM table, and p1's trainers are fitted to the feet.
+- **Traps.**
+  - MetaHuman's body UVs sit in the next UDIM tile (u 1-2). Clamped, the whole body sampled one column of the atlas: an orange cast and a red band at the knee from the gums' tile next to it. Each mesh is now brought back by its median tile.
+  - The DCC export's Head_Basecolor can be a placeholder checker, so the build's baked `T_Head_LOD3_BC` is used.
+  - Eyelashes_Color is one colour with the lashes in its alpha.
+  - The brow cards use an atlas the build doesn't export, so the brows are painted from the far LODs' head texture, in the hair's colour.
+- **Hair.** The cards alone are thin strands (bald from a metre away), so the groom's helmet shell (LOD5) goes under them. Its own coverage map is the alpha, feathered over 14 texels in from the shell's open rim, the hairline. Vertices within 4 mm under the skin stand 3 mm out of it; deeper ones are the rim Unreal tucks in on purpose.
+- **Collar.** The MakeHuman suit is cut to a scoop 6.5 cm under the neck joint, with the skin under it kept. A MetaHuman garment has its own crew neck 1.4-2.7 cm under it and stands 6-10 mm off the chest. The scoop opened over that gap and showed the shirt's dark inside in jagged pieces. `KitCut.collar: 'own'` fits the neckline to the garment's own hole (a parabola through its tops), just inside its edge. The MakeHuman people are unchanged.
+- **Size.** 38.3k triangles with outfit LOD1, hair cards LOD3 and teeth decimated to 35% (the current people are 36-41k). The full LOD0/LOD2 build was 61.9k and looks the same at match distances.
+- **Not yet:** face expressions (MetaHuman's face moves by joints; none baked), AO, the garment's own normal maps, an athletic body (the test character is heavy), and faces matched to the current cast.
+- **Licence, unresolved.** The engine EULA (UE 5.6 and later) counts character models made with the engine as Non-Engine Products "even if included in Products that use or rely on other video game engines", and metahuman.com says MetaHumans work in any engine. The Epic Content License's MetaHuman Content Addendum says MetaHuman Content "that you download" may only be used as UE-Only Content. Our characters are made in the editor, not downloaded, but Epic's stock hair and garment sit between the two. The owner decides. Until then the packed `public/assets/people/mh*` files are git-ignored, `mh1` stays local, and nothing MetaHuman is deployed.

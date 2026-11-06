@@ -87,6 +87,9 @@ export interface KitCut {
   /** Which of the kit's small marks (kit.ts). */
   mark?: number;
   seam?: 'raglan';
+  /** 'own': the shirt has a neck hole of its own (a MetaHuman garment, tools/assets/metahuman/), and the neckline follows it
+   * just inside its edge instead of opening the lower scoop the MakeHuman suit is cut to (kit.ts personFrame). */
+  collar?: 'own';
   /** Their own shoes' upper and sole (CSS hex): MakeHuman has one trainer, so a colour per person. */
   shoes?: string;
   sole?: string;

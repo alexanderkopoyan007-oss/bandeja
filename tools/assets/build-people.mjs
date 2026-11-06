@@ -181,6 +181,8 @@ for (const name of names) {
   copyFileSync(dir + 'opaque.webp', OUT + header.textures.opaque);
   copyFileSync(dir + 'alpha.webp', OUT + header.textures.alpha);
   for (const f of ['suit-normal.webp', 'suit-normal-f.webp']) if (existsSync(SRC + f)) copyFileSync(SRC + f, OUT + f);
+  // A cloth map of the person's own (a MetaHuman's garment, tools/assets/metahuman/mh-player.py) sits beside its body.
+  if (existsSync(dir + header.textures.cloth)) copyFileSync(dir + header.textures.cloth, OUT + header.textures.cloth);
   const kb = (f) => (readFileSync(OUT + f).byteLength / 1024).toFixed(0);
   console.log(name, 'triangles', tris, 'soles lifted', (-sole * 1000).toFixed(1), 'mm, hips x', hips.toFixed(3), 'skeleton fit', (worst * 1000).toFixed(3), 'mm;',
     (gz.byteLength / 1024).toFixed(0), 'KB +', kb(header.textures.opaque), '+', kb(header.textures.alpha), 'KB textures');

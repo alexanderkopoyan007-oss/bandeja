@@ -11,3 +11,6 @@ scratch/
 reference/photos/
 __pycache__/
 .wrangler/
+# MetaHuman players (tools/assets/metahuman/): packed locally, not published until the owner has settled the licence
+# question (Epic Content License's MetaHuman addendum vs the engine EULA's Non-Engine Products; see DECISIONS.md)
+public/assets/people/mh*

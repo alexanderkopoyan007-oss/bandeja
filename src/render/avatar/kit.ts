@@ -48,7 +48,7 @@ export function hemPush(lag: THREE.Vector3, sway: number, n: THREE.Vector3): THR
 }
 
 export interface KitFrame {
-  chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; sleeveX?: number; neck?: THREE.Vector3; collarDrop?: number; neckUv?: THREE.Vector2;
+  chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; sleeveX?: number; neck?: THREE.Vector3; collarDrop?: number; collarCurve?: number; neckUv?: THREE.Vector2;
   floorY: number; footX?: number; footZ?: number;
   /** The wrist and the forearm's direction in the modelled pose, the arm on its +x side (the arms are lower there than in the rest pose). */
   wrist?: THREE.Vector3; foreDir?: THREE.Vector3;
@@ -484,7 +484,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   // across the shirt's big triangles), and a ribbed band 8 mm wide along it.
   const nk = frame.neck ?? frame.chest;
   const collarX = p.x.sub(nk.x);
-  const collarY = p.y.sub(nk.y - (frame.collarDrop ?? COLLAR_DROP)).sub(collarX.mul(collarX).mul(COLLAR_CURVE));
+  const collarY = p.y.sub(nk.y - (frame.collarDrop ?? COLLAR_DROP)).sub(collarX.mul(collarX).mul(frame.collarCurve ?? COLLAR_CURVE));
   const neckline = float(COLLAR_MID).add(min(collarY, p.z.sub(nk.z - 0.01)).mul(COLLAR_SCALE)).mul(shirtW);
   // The skin the build keeps for the neckline stops at it: below, on a close-fitting shirt, it came through in jagged pieces.
   // (down to the chest only: left open below, it took a slice out of the inside of every leg)
@@ -821,11 +821,11 @@ const edge = (lo: number, hi: number, x: number): number => { const t = Math.min
  */
 export function personCut(asset: PlayerAsset): (x: number, y: number, z: number, shirtW: number, skinW: number) => boolean {
   const frame = personFrame(asset);
-  const nk = frame.neck ?? frame.chest, drop = frame.collarDrop ?? COLLAR_DROP;
+  const nk = frame.neck ?? frame.chest, drop = frame.collarDrop ?? COLLAR_DROP, curve = frame.collarCurve ?? COLLAR_CURVE;
   const tank = asset.look!.kit.top === 'tank' ? tankCut(frame) : null;
   const armX = frame.armX ?? 0.2;
   return (x, y, z, shirtW, skinW) => {
-    const cx = x - nk.x, cy = y - (nk.y - drop) - cx * cx * COLLAR_CURVE;
+    const cx = x - nk.x, cy = y - (nk.y - drop) - cx * cx * curve;
     if ((COLLAR_MID + Math.min(cy, z - (nk.z - 0.01)) * COLLAR_SCALE) * shirtW >= COLLAR_MID) return true;
     const under = edge(-UNDER_NECKLINE, -UNDER_NECKLINE - 0.0005, cy) * edge(nk.z - 0.01, nk.z - 0.005, z) * edge(0.1, 0.09, Math.abs(cx)) * edge(nk.y - 0.3, nk.y - 0.28, y) * skinW;
     if (under >= 0.5) return true;
@@ -914,18 +914,31 @@ function personFrame(asset: PlayerAsset): KitFrame {
     const b = Math.floor(Math.abs(x) / COLLAR_BIN);
     if (y > top[b]!) top[b] = y;
   }
-  let collarDrop = COLLAR_DROP;
+  // A shirt with a neck hole of its own (`KitCut.collar`): the neckline is that hole's shape, a parabola fitted to the bins'
+  // tops (least squares in dx squared), and no deeper than it needs to be to stay inside it.
+  let collarDrop = COLLAR_DROP, collarCurve = COLLAR_CURVE;
+  if (asset.look?.kit.collar === 'own') {
+    let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let b = 0; b < COLLAR_BINS; b++) {
+      if (top[b] === -Infinity) continue;
+      const x = ((b + 0.5) * COLLAR_BIN) ** 2, y = neck.y - top[b]!;
+      n++; sx += x; sy += y; sxx += x * x; sxy += x * y;
+    }
+    const den = n * sxx - sx * sx;
+    if (n >= 2 && den > 0) collarCurve = Math.max(0, -(n * sxy - sx * sy) / den);
+    collarDrop = 0;
+  }
   for (let b = 0; b < COLLAR_BINS; b++) {
     if (top[b] === -Infinity) continue;
     const dx = (b + 0.5) * COLLAR_BIN;
-    collarDrop = Math.max(collarDrop, neck.y + COLLAR_CURVE * dx * dx - top[b]! + COLLAR_EDGE);
+    collarDrop = Math.max(collarDrop, neck.y + collarCurve * dx * dx - top[b]! + COLLAR_EDGE);
   }
   collarDrop = Math.min(collarDrop, COLLAR_MAX);
   const uvA = g.getAttribute('uv');
   const neckUv = neckV >= 0 ? new THREE.Vector2(uvA.getX(neckV), uvA.getY(neckV)) : new THREE.Vector2(0.25, 0.5);
   const inCollar = (v: number): number => {
     const dx = rest[v * 3]! - neck.x;
-    return Math.min(rest[v * 3 + 1]! - (neck.y - collarDrop + COLLAR_CURVE * dx * dx), rest[v * 3 + 2]! - (neck.z - 0.01));
+    return Math.min(rest[v * 3 + 1]! - (neck.y - collarDrop + collarCurve * dx * dx), rest[v * 3 + 2]! - (neck.z - 0.01));
   };
   for (let i = 0; i < n; i++) if (A[i * 4]! > 0.5) X[i * 4 + 1] = Math.min(1, Math.max(0, COLLAR_MID + inCollar(i) * COLLAR_SCALE));
   const gone = (v: number): boolean => A[v * 4]! > 0.5 && inCollar(v) > 0.04;
@@ -998,7 +1011,7 @@ function personFrame(asset: PlayerAsset): KitFrame {
     chest: chest.clone(), hips: hips.clone(), hemY: Number.isFinite(hemY) ? hemY : hips.y - 0.02,
     shortsHemY: Number.isFinite(shortsHemY) ? shortsHemY : hips.y - 0.3,
     sideZ: [midZ(hemY + 0.04), midZ(armJ.y - 0.12)],
-    armSpan: halfSpan * 2, sleeveX, neck: neck.clone(), collarDrop, neckUv,
+    armSpan: halfSpan * 2, sleeveX, neck: neck.clone(), collarDrop, collarCurve, neckUv,
     floorY, footX: Math.abs(at(asset, 'LeftFoot').x), footZ: at(asset, 'LeftFoot').z,
     wrist, foreDir: wrist.clone().sub(elbow).normalize(),
     armX: Math.abs(armJ.x - chest.x), armY: armJ.y, armZ: armJ.z, legX: Math.abs(legJ.x), legZ: legJ.z,
