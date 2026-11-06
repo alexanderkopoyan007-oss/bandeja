@@ -410,6 +410,32 @@ for i, c in enumerate(new_co):
 #   their top off and their legs cut where the old inner shorts ended (spec shorts_hem);
 # - a band or a visor: person_kit's, round the head on the skin or on the hair's helmet.
 KIT = spec.get('kit', {})
+# The garment off the skin first, as finish-player.py puts the MPFB suit 3 mm out: Epic's tee lies on the skin over the
+# shoulders, and in places under it (a tenth of it within 1 mm, by the armholes), where nothing showed while the skin under it
+# was cut away. Where the skin stays under the cloth (behind the collar, round a tank's armholes) it came through in a jagged
+# line. Every vertex nearer than GARMENT_OFF, or under the skin by less than GARMENT_DEEP (deeper is the far side of a limb),
+# goes out along the skin's normal to GARMENT_OFF.
+GARMENT_OFF, GARMENT_DEEP = 0.003, 0.03
+# (the skin is the body and the head: MetaHuman's head mesh comes down over the neck to the collar line, and measured from the
+# body alone the shirt's shoulders by the neck were 6-9 cm from any skin)
+nb = len(body.data.vertices)
+skin_tree = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices] + [v.co.copy() for v in head_skin.data.vertices],
+                                 [tuple(p.vertices) for p in body.data.polygons] + [tuple(i + nb for i in p.vertices) for p in head_skin.data.polygons])
+for o in (shirt, shorts):
+    out = set()
+    # (a few passes: in a hollow, the shoulder into the neck, out along one triangle's normal is nearer the next one)
+    for _ in range(4):
+        for v in o.data.vertices:
+            q, n, _, _ = skin_tree.find_nearest(v.co)
+            if q is None:
+                continue
+            s = (v.co - q).dot(n)
+            if -GARMENT_DEEP < s < GARMENT_OFF - 1e-4:
+                v.co = v.co + n * (GARMENT_OFF - s)
+                out.add(v.index)
+    out = len(out)
+    o.data.update()
+    say('garment off the skin:', o.name, out, 'of', len(o.data.vertices), 'vertices out to', GARMENT_OFF * 1000, 'mm')
 # How far inside the armhole's plane the skin stays (person_kit's TANK_SKIN): the shader cuts it 2 cm in (kit.ts
 # UNDER_ARMHOLE), and a vertex removed takes its triangles with it, so at 3.5 cm the skin ended a few millimetres in, in
 # places, and the armpit showed a dark gap under the edge.
@@ -435,6 +461,13 @@ def bisect(o, co, no, inner=False, outer=False, lowest=None):
     o.data.update()
 
 
+# The women's tops end where the MPFB women's did, level with the Hips joint (theirs 1-3 mm under it): Epic's tee hangs 4 cm
+# lower, and the skirt, which starts SKIRT_TUCK above the top's hem, sat on the hips with its waist 3 cm over the thigh joint.
+TOP_HEM_UNDER_HIPS = 0.002
+if spec.get('top_hem') == 'hips':
+    bisect(shirt, Vector((0, 0, J['Hips'].z - TOP_HEM_UNDER_HIPS)), Vector((0, 0, 1)), inner=True)
+    say('top cut level with the hips at', round(J['Hips'].z - TOP_HEM_UNDER_HIPS, 3))
+
 tank_planes = []
 if KIT.get('top') == 'tank':
     n0 = len(shirt.data.polygons)
@@ -451,7 +484,6 @@ if KIT.get('top') == 'tank':
     # the cut edge goes to ARMHOLE_LIFT off the skin, in the cut's plane (where the shader's binding and skin cut are), with
     # the nearest skin's weights; the shirt eases to it over ARMHOLE_REACH.
     ARMHOLE_LIFT, ARMHOLE_REACH = 0.002, 0.04
-    skin_tree = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices], [tuple(p.vertices) for p in body.data.polygons])
     me = shirt.data
     uses = {}
     for p in me.polygons:
@@ -482,9 +514,23 @@ if KIT.get('top') == 'tank':
             continue
         _, k, d = kd_rim.find(v.co)
         if d < ARMHOLE_REACH:
-            ease[v.index] = moved[ids[k]] * (1 - d / ARMHOLE_REACH) ** 2
-    for i, dv in list(moved.items()) + list(ease.items()):
+            ease[v.index] = (moved[ids[k]] * (1 - d / ARMHOLE_REACH) ** 2, d / ARMHOLE_REACH)
+    for i, dv in moved.items():
         me.vertices[i].co += dv
+    # (each eased vertex stays off the skin by its own measure, from ARMHOLE_LIFT at the edge to ARMHOLE_EASE at the reach: the
+    # edge moves up to 2.5 cm in on MetaHuman's loose tee, and the shirt next to it, dragged as far, went into the body and the
+    # skin came through it in a jagged line round the shoulder)
+    ARMHOLE_EASE = 0.006
+    pushed = 0
+    for i, (dv, t) in ease.items():
+        p = me.vertices[i].co + dv
+        q, n, _, _ = skin_tree.find_nearest(p)
+        floor = ARMHOLE_LIFT + (ARMHOLE_EASE - ARMHOLE_LIFT) * t
+        s = (p - q).dot(n)
+        if s < floor:
+            p = p + n * (floor - s)
+            pushed += 1
+        me.vertices[i].co = p
     svg = {n: shirt.vertex_groups[P + n] for n in BONES}
     for i in ids:
         _, j, _ = kd.find(me.vertices[i].co)
@@ -493,8 +539,18 @@ if KIT.get('top') == 'tank':
         for n, w in bw[j].items():
             svg[n].add([i], w, 'REPLACE')
     me.update()
+    def near_plane(co):
+        return max(((co.x - a.x) * no.x + (co.z - a.z) * no.z) if (co.x - chest_x) * no.x > 0 else -1 for a, no in tank_planes)
+    offs = [((lambda q, n: (v.co - q).dot(n))(*skin_tree.find_nearest(v.co)[:2]), near_plane(v.co), v.co.z) for v in me.vertices]
+    inside = sum(1 for o, _, _ in offs if o < 0.001)
+    band = [o for o, d, z in offs if d > -TANK_SKIN and z > arm_j.z - 0.25]
+    say('tank: shirt offsets in the kept-skin band (mm) by percentile', [round(float(np.percentile(band, q)) * 1000, 1) for q in (0, 5, 10, 25, 50)],
+        'of', len(band), '; under 3 mm', sum(1 for o in band if o < 0.003))
+    lows = [(round(z - arm_j.z, 2), round(d, 3)) for o, d, z in offs if o < 0.001]
+    say('tank: where the shirt is on the skin (z from the arm joint, plane distance) sample', lows[::max(1, len(lows) // 25)])
     say('tank: armhole on the skin,', len(ids), 'vertices, moved up to', round(max(gap) * 1000, 1), 'mm, median',
-        round(float(np.median(gap)) * 1000, 1), 'mm')
+        round(float(np.median(gap)) * 1000, 1), 'mm;', pushed, 'eased vertices kept off the skin;', inside,
+        'shirt vertices within 1 mm of the skin or under it')
 
 skirt, skirt_hang = None, None
 if KIT.get('bottom') in ('pleated', 'aline'):

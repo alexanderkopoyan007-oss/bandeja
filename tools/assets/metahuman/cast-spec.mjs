@@ -11,6 +11,7 @@ const kit = JSON.parse(s.slice(at + 6, s.indexOf('}', at) + 1));
 const h = c.hair.replace(/^WI_/, '');
 // (under a skirt, MetaHuman's shorts end where the old inner shorts did: data/players' shorts, the MPFB legs' cut)
 const skirt = kit.bottom === 'pleated' || kit.bottom === 'aline';
+const women = JSON.parse(readFileSync('data/people.json', 'utf8')).women.map((w) => w.name);
 const shortsHem = skirt ? JSON.parse(readFileSync(`data/players/${n}.json`, 'utf8')).shorts : undefined;
 console.log(JSON.stringify({
   name: `${n}mh`, src: `~/bandeja-people-src/cast/${n}`,
@@ -23,5 +24,8 @@ console.log(JSON.stringify({
   head_bc: 'export/tex/T_Head_LOD3_BC.png', head_brows: 'export/tex/T_Head_LOD5to7_BC.png', body_bc: 'export/tex/T_Body_BC.png',
   shoes_from: '~/bandeja-p9/assets-src/people/p1/p1.blend',
   ...(shortsHem ? { shorts_hem: shortsHem } : {}),
-  kit: { ...kit, collar: 'own' },
+  // (the women's tops ended level with the hips: mh-player cuts the tee's hem there)
+  ...(women.includes(n) ? { top_hem: 'hips' } : {}),
+  // (a tank keeps the scoop the shader cuts, as the MPFB women had it; tees and polos the garment's own crew neck)
+  kit: kit.top === 'tank' ? kit : { ...kit, collar: 'own' },
 }, null, 1));
