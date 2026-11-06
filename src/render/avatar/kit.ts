@@ -329,9 +329,14 @@ const COLLAR_BINS = 6;
 const COLLAR_MAX = 0.11;
 const COLLAR_BIN = 0.01;
 const COLLAR_EDGE = 0.006;
-/** How far the skin goes on under the neckline and under a tank's armhole before the shader cuts it (m). */
+/**
+ * How far the skin goes on under the neckline and under a tank's armhole before the shader cuts it (m). At 1 cm under the armhole,
+ * a free arm brought across in a quick prep (spine 11 degrees more, the hips held over a late fall) showed the cut skin through
+ * the armhole from above (kit.test, 6 Nov). The second centimetre comes out through the shirt in play no more than the first
+ * (fixlab pokearm.ts, 240 poses: p7 1.5 mm at the median against 4.8, p10 3.1 against 3.3).
+ */
 const UNDER_NECKLINE = 0.005;
-const UNDER_ARMHOLE = 0.01;
+const UNDER_ARMHOLE = 0.02;
 /** Hem stitching this far in from the edge (m); the wristband's centre in from the wrist and half width (m); hair's swing
  * as a multiple of the hems' lag. */
 const HEM_STITCH = 0.018;

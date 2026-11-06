@@ -431,6 +431,24 @@ const BEND_UP_T = 0.3;
 const HIP_RISE = 1.5;
 /** Fastest the hips drop (m/s): into a lunge, about 0.3 m in 0.15 s. */
 const HIP_FALL = 2;
+/**
+ * The hips' height is a body's, not a key's (review round 33, #8: into a ground stroke they fell at 1.8 g at the median,
+ * 3 g at p90; feet on the floor can't pull a body down faster than gravity). The height the pose wants is followed with
+ * the hips' own speed: gaining speed downwards (or stopping a rise) at no more than FALL_G, braking a fall (or setting off
+ * up) at no more than FALL_BRAKE, the legs pushing.
+ */
+const FALL_G = 0.85 * 9.81;
+const FALL_BRAKE = 2 * 9.81;
+/**
+ * And planned from the contact: the hips are no higher than the stroke's height at the ball plus what a fall from rest
+ * covers in the time left, FALL_PLAN t² (from FALL_EARLY s before the ball). A fall at FALL_G braked at FALL_BRAKE covers
+ * 3.2 t²; this leaves the follower room to catch the curve from rest. The key's own drop comes in over the last 0.3 s, so
+ * without the plan the hips set off late and fell at twice gravity, or (only limited) met the ball 12 cm above the pose.
+ */
+const FALL_PLAN = 2.6;
+/** How long after the ball a stroke's fall is planned (s): the hips go on down into a lunge's finish. */
+const FALL_AFTER = 0.2;
+const FALL_EARLY = 0.03;
 /** Time before the contact (s) the hips start leaning towards it, and lean fully. */
 const LEAN_FROM = 0.4;
 const LEAN_FULL = 0.1;
@@ -807,12 +825,11 @@ const RUN_HIP_IN = 0.12;
  */
 const RUN_SOFT = 0.03;
 /**
- * The most of a leg's reach a foot on the floor is asked for; how far through its swing a foot starts to count, and how
- * much room it is left then (m); how fast the hips may go up or down for all that (m/s).
+ * The most of a leg's reach a foot on the floor is asked for (a foot in the air: at its landing, FALL_PLAN); how far through its
+ * swing a foot lands soon enough that the other may not leave; how fast the hips may go up or down for all that (m/s).
  */
 const RUN_STRETCH = 0.975;
 const RUN_LANDS = 0.6;
-const RUN_LOOSE = 0.3;
 const RUN_HIP_RATE = 1.2;
 const RUN_HIP_EASE = 0.03;
 /** The most a run's hips sink for a foot (m): they followed one left behind, hips 0.68 m at 2 m/s, feet over a metre apart. */
@@ -821,6 +838,15 @@ const RUN_SINK = 0.13;
 const RUN_STEP_SINK = 0.07;
 /** How much of the way to under the hips a run's foot goes in the middle of a swing: from a foot left out to the side the straight line to its landing held the thigh out 55 degrees in the air. */
 const RUN_UNDER = 0.6;
+/** By how much of the swing a run's foot has turned to its landing's heading. */
+const RUN_YAW_BY = 0.35;
+/**
+ * A planted foot more than RUN_PIVOT_FROM off the run's heading pivots on its ball towards it, at up to RUN_PIVOT_RATE (rad/s): a
+ * run set off from a ready stance with both feet still pointing the old way, 75-140 degrees off the hips for up to 1.4 s until
+ * the first step, the stance knee twisted in and the thigh across the body (review round 33, #10).
+ */
+const RUN_PIVOT_FROM = 0.5;
+const RUN_PIVOT_RATE = 8;
 /** How far past the trunk's rim (`k`, the share of the way out) a hand is taken right round the front. */
 const TRUNK_ROUND = 0.25;
 /** How fast the hips follow a stroke's `weight` (s). */
@@ -1057,6 +1083,15 @@ export class Avatar {
   private downAt = 0;
   /** The hips' drop shown last frame (m; see HIP_RISE). */
   private dropShown = 0;
+  /** The hips' height above the root as shown (m; -1 starts afresh), its speed (m/s) and the lift last frame (see FALL_G). */
+  private fallY = -1;
+  private fallV = 0;
+  private fallLift = 0;
+  /** What FALL_G took off the drop this frame (m; minus: the hips higher than the pose wants). */
+  private fallOff = 0;
+  /** The drop the stroke wants at its contact (m), and the crouch it will have then (see FALL_PLAN). */
+  private dropC = 0;
+  private crouchC = 0;
   /** Planted feet (left, right): weight, where each is (world), its yaw, and a step under way (-1: none). */
   private plantW = 0;
   private sp = 0;
@@ -1098,6 +1133,8 @@ export class Avatar {
   private readonly relToe = [new THREE.Quaternion(), new THREE.Quaternion()];
   /** Bits: 1 foot locks, 2 soles kept above the floor (for comparisons). */
   static feetMask = 3;
+  /** The hips' fall at a body's pace (FALL_G; governFall), off for A/B checks. */
+  static fallOn = true;
   private readonly cycleW = new Float64Array(5);
   private readonly cycleTo = new Float64Array(5);
   private cycleOk = false;
@@ -2338,7 +2375,8 @@ export class Avatar {
     const toBall = this.st === ST_SWING ? this.tCon - t : this.st === ST_PREP ? (this.hasCon ? this.tPlan - t : HOLD_FAR) : 0;
     const nearOff = (sim.phase !== PH_RALLY || f.over ? 1 : smoothstep(LEAN_FROM, LEAN_FULL, toBall)) - this.nearW, nearLim = NEAR_RATE * this.dt;
     this.nearW += nearOff > nearLim ? nearLim : nearOff < -nearLim ? -nearLim : nearOff;
-    this.crouch = (f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) + (f.sit ?? 0)) * this.w * this.nearW;
+    this.crouchC = (f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) + (f.sit ?? 0)) * this.w;
+    this.crouch = this.crouchC * this.nearW;
     this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w * this.nearW : 0;
     // Up out of it after the ball: with the whole body tipping into the run the trunk was at 42 degrees at +0.24 s.
     if (this.st === ST_SWING || this.st === ST_FADE) this.bendW *= 1 - BEND_UP * smoothstep(0, BEND_UP_T, t - this.tCon);
@@ -3070,6 +3108,8 @@ export class Avatar {
     this.wI.reset();
     this.dropI.reset();
     this.dropShown = 0;
+    this.fallY = -1;
+    this.fallOff = 0;
     this.driveRoll = 0;
     this.jumpT0 = -1;
     this.landAt = -1;
@@ -3287,6 +3327,55 @@ export class Avatar {
    * The split step: a ballistic hop for the sim's airborne time (g T^2 / 8 high: 2.5 cm for 142 ms), then a 5 cm
    * knee bend as the landing loads the legs.
    */
+  /**
+   * The drop that puts the hips where a body can be (FALL_G, FALL_PLAN): the pose's height above the root followed with a
+   * speed of its own. In the air (a split step's hop, a jump) the lift is ballistic already: followed exactly, and its speed
+   * carried into the landing, which the legs then brake.
+   */
+  private governFall(drop: number): number {
+    const lift = this.root.position.y, clip = this.hips.matrixWorld.elements[13]! - lift, want = clip - drop, dt = this.dt;
+    if (!Avatar.fallOn) { this.fallY = -1; return drop; }
+    if (this.fallY < 0) { this.fallY = want; this.fallV = 0; this.fallLift = lift; return drop; }
+    if (dt <= 0) return clip - this.fallY;
+    // In the air the lift is the fall, ballistic already, and the legs under it are free: followed exactly, the hips' speed kept.
+    // Landed, the hips go on from where they were at that speed, and the legs brake it.
+    if (lift > 0) {
+      this.fallV = (want + lift - this.fallY - this.fallLift) / dt;
+      this.fallY = want;
+      this.fallLift = lift;
+      return drop;
+    }
+    if (this.fallLift > 0) { this.fallY += this.fallLift; this.fallLift = 0; }
+    const tc = this.st === ST_SWING || this.st === ST_FADE ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
+    // Only into a stroke and through its ball: elsewhere the walk and the run set the hips' height by what the feet on the floor
+    // reach. Held above that, the legs fell short and planted feet slid after the hips (p8 16 cm/s on a fifth of her frames);
+    // held there only as far as the feet reach, the hips jumped at the limit and pops doubled. Out of a stroke the hips are the
+    // pose's, at its speed, so a stroke's fall starts from the body's own; the run's bob and landings are a body's themselves.
+    if (tc < 0 || this.lastT > tc + FALL_AFTER) {
+      this.fallV = (want - this.fallY) / dt;
+      this.fallY = want;
+      return drop;
+    }
+    let to = want;
+    if (tc > this.lastT) {
+      const tau = tc - this.lastT - FALL_EARLY;
+      const plan = clip - this.dropC + (tau > 0 ? FALL_PLAN * tau * tau : 0);
+      if (plan < to) to = plan;
+    }
+    const lo = -FALL_G * dt, hi = FALL_BRAKE * dt;
+    const e = this.fallY - to;
+    const vd = e > 0 ? -Math.sqrt(2 * FALL_BRAKE * e) : Math.sqrt(2 * FALL_G * -e);
+    let dv = vd - this.fallV;
+    if (dv < lo) dv = lo;
+    else if (dv > hi) dv = hi;
+    this.fallV += dv;
+    let y = this.fallY + this.fallV * dt;
+    // (a fall arriving within the step is there: stopping it is the legs braking; a rise goes over and comes back at under g)
+    if (e > 0 && y < to) { y = to; this.fallV = (y - this.fallY) / dt; }
+    this.fallY = y;
+    return clip - y;
+  }
+
   private splitStep(p: Player, t: number): void {
     const u = t - p.splitAt;
     const len = p.tune.splitStepTime;
@@ -3487,7 +3576,14 @@ export class Avatar {
     }
     this.reachX = rx;
     this.reachZ = rz;
-    let down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * ((this.fam.wrist ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y)) : 0;
+    const share = (this.fam.wrist ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y);
+    let down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * share : 0;
+    if (before) {
+      // (the same at the ball, the lean whole: what the fall is planned towards)
+      const sc = len > 1e-3 ? Math.max(0, len - armTo) * this.w : 0;
+      this.dropC = Math.min(DROP_MAX, this.crouchC + (dh > 1e-3 ? Math.min(0.4, (sc * dh) / len) : 0) * 0.15 + (dy < 0 ? Math.min(0.3, (sc * -dy) / len) * share : 0))
+        - (dy > 0 ? Math.min(0.12, (sc * dy) / len) : 0);
+    }
     // A volley's finish stays down where it met the ball, and the hips went on following that key: lowest 0.3 s after
     // the ball, back 0.55 s after it, and four volleys in ten ran off still sitting. The drop was for the ball. A serve the same: 7 cm down and back
     // in a quarter of a second after every ball (review round 27).
@@ -3546,16 +3642,23 @@ export class Avatar {
       // (on the feet's own clock, the time since the last landing: gaitPhase is the arms' and lags the landings, and on it the hips rode
       // highest with a foot under them and lowest as it left, a walk's wave on a run's legs)
       const step = 2 * this.gaitHz * this.gaitSince;
-      let want = low + RUN_BOB * 0.5 * (1 - Math.cos(2 * Math.PI * ((step < 1 ? step : 1) - 2 * RUN_LOW * stance)));
+      // (no more bob than the body can come down from at FALL_G at this cadence: half of it times (2 pi f)^2 is the fall at its top, and a
+      // fixed 6 cm at four steps a second came down at 1.9 g; runners bob less the quicker their steps)
+      const fs = 2 * this.gaitHz, top0 = (2 * FALL_G) / (4 * Math.PI * Math.PI * fs * fs), bob = top0 < RUN_BOB ? top0 : RUN_BOB;
+      let want = low + bob * 0.5 * (1 - Math.cos(2 * Math.PI * ((step < 1 ? step : 1) - 2 * RUN_LOW * stance)));
       // No higher than the feet on the floor can reach, and the one about to be: a leg at full stretch is where a knee pops.
       const r2 = this.legLen * this.legLen * RUN_STRETCH * RUN_STRETCH, ox = this.root.position.x + hipX, oz = this.root.position.z + hipZ;
+      // The one in the air, planned from its landing as a stroke's fall is from the ball (FALL_PLAN): no higher than its leg reaches
+      // there from where the hips will be, plus what a fall covers in the time left. Judged from the hips as they are, and only
+      // in the last of the swing, a braking foot put out in front pulled them down 9 cm in 0.08 s, at 2 g (review round 33, #8).
+      const swingT = (1 - (RUN_DUTY0 + (RUN_DUTY1 - RUN_DUTY0) * fast)) / (this.gaitHz > 0 ? this.gaitHz : 1);
       for (let f = 0; f < 2; f++) {
         const u = this.gaitSwing[f]!;
-        if (u >= 0 && u < RUN_LANDS) continue;
+        const left = u < 0 ? 0 : (1 - u) * swingT;
         const P = u < 0 ? (f === 0 ? this.footL : this.footR) : this.gaitTo[f]!;
-        const gx = P.x - ox, gz = P.z - oz, room = r2 - gx * gx - gz * gz;
+        const gx = P.x - ox - this.vx * left, gz = P.z - oz - this.vz * left, room = r2 - gx * gx - gz * gz;
         if (room > 0) {
-          const top = (u < 0 ? P.y : this.ankleY + RUN_LOOSE * (1 - smoothstep(RUN_LANDS, 1, u))) + Math.sqrt(room);
+          const top = (u < 0 ? P.y : this.ankleY) + Math.sqrt(room) + FALL_PLAN * left * left;
           if (top < want) want = top;
         }
       }
@@ -3567,6 +3670,9 @@ export class Avatar {
       this.runHipY += to > this.runHipY + lim ? lim : to < this.runHipY - lim ? -lim : to - this.runHipY;
       drop += (y - this.runHipY) * this.gaitRunH;
     } else this.runHipY = -1;
+    const wanted = drop;
+    drop = this.governFall(drop);
+    this.fallOff = drop - wanted;
     this.hipOutX = hipX;
     this.hipOutZ = hipZ;
     const plant = this.plantW >= 0.01;
@@ -3891,7 +3997,7 @@ export class Avatar {
       if (a > 1e-8) {
         // From the hip as it will be, after the drop and the reach.
         const hip = (f === 0 ? this.legL : this.legR)[0]!.matrixWorld.elements;
-        const px = A.x - hip[12]! - this.reachX, py = A.y - hip[13]! + this.dropShown, pz = A.z - hip[14]! - this.reachZ;
+        const px = A.x - hip[12]! - this.reachX, py = A.y - hip[13]! + this.dropShown + this.fallOff, pz = A.z - hip[14]! - this.reachZ;
         // The largest share of the lunge that keeps the foot within R, or no further than the clip has it when
         // that is further (k = 0 there instead jumped the foot back the whole lunge as the clip's foot crossed R).
         const p2 = px * px + py * py + pz * pz;
@@ -3919,7 +4025,7 @@ export class Avatar {
         // away from the back foot, which stays planted as the body leans (released, it stepped mid-lunge and the
         // knee spun round over the next frames).
         const hip = (f === 0 ? this.legL : this.legR)[0]!.matrixWorld.elements;
-        const hx = L.x - hip[12]!, hy = A.y - hip[13]! + this.dropShown, hz = L.z - hip[14]!;
+        const hx = L.x - hip[12]!, hy = A.y - hip[13]! + this.dropShown + this.fallOff, hz = L.z - hip[14]!;
         const hx2 = hx - this.reachX, hz2 = hz - this.reachZ;
         const d2 = Math.min(hx * hx + hz * hz, hx2 * hx2 + hz2 * hz2) + hy * hy;
         const reach = this.legLen * 0.985;
@@ -4107,6 +4213,16 @@ export class Avatar {
       let pitch: number, x: number, z: number, y = h, fy: number, bend = 1;
       if (u < 0) {
         const tl = this.gaitDown[f] = this.gaitDown[f]! + dt;
+        if (run) {
+          // A foot down while the hips turn onto a run pivots on its ball towards the way it goes (RUN_PIVOT_*).
+          const d = wrapAngle(yaw + sign * WALK_TOE - this.gaitYaw[f]!), ad = d < 0 ? -d : d;
+          if (ad > RUN_PIVOT_FROM) {
+            const y0 = this.gaitYaw[f]!, top = RUN_PIVOT_RATE * dt, y1 = y0 + (d > 0 ? 1 : -1) * (ad - RUN_PIVOT_FROM < top ? ad - RUN_PIVOT_FROM : top);
+            Pf.x += b * (Math.sin(y0) - Math.sin(y1));
+            Pf.z += b * (Math.cos(y0) - Math.cos(y1));
+            this.gaitYaw[f] = y1;
+          }
+        }
         // (from where it is now: on the frame it lands, rel0 and rel1 still have it where it took off, and the roll stepped)
         const dx = Pf.x - rx - sign * c * off, dz = Pf.z - rz + sign * s * off, rel = dx * ux + dz * uz, sg = stay > 1e-3 ? (ahead - rel) / stay : 0;
         pitch = run ? RUN_ROLL * smoothstep(0.45, 1, sg) * (1 - backW) + RUN_BACK_ROLL * backW * (1 - smoothstep(0, 0.6, sg)) : WALK_ROLL * smoothstep(0.5, 1, sg) - WALK_HEEL * (1 - smoothstep(0, 0.1 / hz, tl));
@@ -4140,8 +4256,11 @@ export class Avatar {
           z += (rz + wz - z) * k;
         }
         // (from where it is, not from where it took off: half way round, the short way flips)
-        const YN = this.gaitYawFrom;
-        YN[f] = YN[f]! + (wrapAngle(YT[f]! - YN[f]!) * dt) / (left > dt ? left : dt);
+        // (a run's, by RUN_YAW_BY of the swing: the leg turns back under the hips once the foot is off the floor; turned over the
+        // whole swing, a foot that took off still pointing the way it was put down before the body turned held the knee 40-85
+        // degrees in, and the thigh swung across the body in the first strides; review round 33, #10)
+        const YN = this.gaitYawFrom, by = run ? (RUN_YAW_BY - u) * swingT : left, T = by < left ? by : left;
+        YN[f] = YN[f]! + (wrapAngle(YT[f]! - YN[f]!) * dt) / (T > dt ? T : dt);
         fy = YN[f]!;
         pitch = this.gaitPitch[f]! * (1 - smoothstep(0, 0.45, u));
         if (run) {

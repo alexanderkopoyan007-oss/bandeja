@@ -923,9 +923,9 @@ Three reviewers and a sceptic: 16 findings, four rated High, one confirmed High,
 | 5 | Medium | Pro can't stop a tight hand: 130 sets to 8 on fresh seeds; a third of the AI's lobs land inside the service line. | Open, the owner's call. The AI's lob aim is the lever the reviewer names. |
 | 6 | Medium | A well-timed smash can no longer go wrong: half winners, almost no errors, against the partner's one in sixteen. | Open, the owner's call: how much timing should count. |
 | 7 | Medium | A player who never leaves the back glass still wins 19 sets in 24 at Pro; the net is worth about 4 points. | Open. Round 17 #15 and Round 20 #12 under another name, and worse than Round 18's recheck. |
-| 8 | Medium | The body falls into a stroke faster than gravity. | Open. |
+| 8 | Medium | The body falls into a stroke faster than gravity. | **Better, open** (6 Nov). The hips follow the pose at under 0.85 g down, planned from the contact; the run's bob and landings are a body's. Hip joints 2.04/3.14 g to 0.90/1.39 at p50/p90. Left: stops whose braking foot lands far out in front (#9 of Round 26). |
 | 9 | Medium | The elbow flies round a still hand in fast runs and after forehand volleys. | Open. |
-| 10 | Medium | Legs pass through each other, and the thigh swings across the body in the first strides. | Open. |
+| 10 | Medium | Legs pass through each other, and the thigh swings across the body in the first strides. | **Better** (6 Nov). A swinging foot turns to its heading by a third of the swing; a planted foot pivots on its ball as the hips turn onto a run. Thigh past 28° across: 2.5% of forward running to 0.6%, 3.65 to 1.75 times a player-minute. |
 | 11 | Medium | Jump smash: the legs are tucked at the ball. | Open, worse than the Round 23 table says. |
 | 12 | Low | The dip blinks dark with nothing to hide when a walk ends itself in the 0.35 s after a key, or on its 7 s limit. Two reports. | **Fixed.** It lifts from as dark as it got. |
 | 13 | Low | In singles the net rule turned away the only player who can play the ball. | **Fixed.** The rule is doubles only: in singles nobody else is on it. |
