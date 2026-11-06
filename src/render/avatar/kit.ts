@@ -8,10 +8,11 @@ import * as THREE from 'three/webgpu';
 import {
   vec2, step, sin, select,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
-  mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, diffuseColor, frontFacing, faceDirection, positionViewDirection,
+  mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, normalGeometry, diffuseColor, frontFacing, faceDirection, positionViewDirection,
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import type { KitCut, PlayerAsset } from './asset.ts';
+import { armWeight, patternAt, type Paint } from './paint.ts';
 
 export const R_SHIRT = 0, R_SHORTS = 1, R_SKIN = 2, R_HAIR = 3, R_SOCK = 4, R_SHOE = 5;
 
@@ -404,7 +405,7 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
  * The second material is the hair, brows and lashes: alpha to coverage over the MSAA samples (soft strands instead
  * of a hard alpha-tested edge), darker where cards lie near the scalp (baked per vertex), a soft sheen.
  */
-export function personMaterial(asset: PlayerAsset, look: KitLook): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
+export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
   const body = asset.look!;
   if (body.kit.baked) return bakedMaterial(asset, look);
   const frame = personFrame(asset);
@@ -438,7 +439,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
   const wet = smoothstep(0.02, 0.12, X.x.mul(shirtW).add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
 
-  const { shirtC, shortsC, sockC, skinCut } = kitDetail(look, body.kit, frame, p, X);
+  const { shirtC, shortsC, sockC, skinCut } = kitDetail(look, body.kit, frame, p, X, paint?.pattern, asset);
   const hang = X.x.mul(shortsW);
 
   const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
@@ -449,9 +450,12 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   const lace = smoothstep(0.024, 0.02, footX.abs()).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top)
     .mul(smoothstep(0.34, 0.2, toe.mul(1 / 0.0135).fract().sub(0.5).abs()));
   const heel = smoothstep(-0.03, -0.045, toe).mul(0.8);
-  const shoe = new THREE.Color(body.kit.shoes ?? look.shoes);
-  const upper = mix(mix(color(shoe).mul(float(1).add(knit)), color(look.shirt), stripe.mul(0.9).add(heel).min(1)), color(shoe.getHSL({ h: 0, s: 0, l: 0 }).l > 0.5 ? 0x8b9098 : 0xe8e8e8), lace);
-  const shoeC = mix(upper, color(new THREE.Color(body.kit.sole ?? 0x8a8378)), sole);
+  // (a pair chosen in the locker: its upper, sole, and an accent on the laces, the heel and the stripe)
+  const shoe = new THREE.Color(paint?.shoes?.upper ?? body.kit.shoes ?? look.shoes);
+  const accent = paint?.shoes ? new THREE.Color(paint.shoes.accent) : null;
+  const tab = accent ?? new THREE.Color(look.shirt), laces = accent ?? new THREE.Color(shoe.getHSL({ h: 0, s: 0, l: 0 }).l > 0.5 ? 0x8b9098 : 0xe8e8e8);
+  const upper = mix(mix(color(shoe).mul(float(1).add(knit)), color(tab), stripe.mul(0.9).add(heel).min(1)), color(laces), lace);
+  const shoeC = mix(upper, color(new THREE.Color(paint?.shoes?.sole ?? body.kit.sole ?? 0x8a8378)), sole);
   // Albedo: the skin a little darker in its deepest creases, the eyeball under the lids, the mouth's inside.
   // (dark skin lifted a little: under the same floodlights its faces read as masks beside the others', mean luminance
   // 23 of 255 against 68 and 99)
@@ -719,7 +723,7 @@ function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>)
  * to the body's modelled pose (`p`); on the arm, where that is lower than the rest pose, X.zw (the rest pose) hold them.
  * Anything finer than a pixel can show fades to its average, or it would shimmer at the TV camera's distance.
  */
-function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'vec3'>, X: THREE.Node<'vec4'>):
+function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'vec3'>, X: THREE.Node<'vec4'>, pattern?: Paint['pattern'], asset?: PlayerAsset):
 { shirtC: THREE.Node<'vec3'>; shortsC: THREE.Node<'vec3'>; sockC: THREE.Node<'vec3'>; skinCut: THREE.Node<'float'> } {
   const rgb = (c: number): THREE.Node<'vec3'> => { const k = new THREE.Color(c); return vec3(k.r, k.g, k.b); };
   const trim = rgb(look.trim), shirt = rgb(look.shirt);
@@ -735,8 +739,11 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   const below = smoothstep(armY - 0.075, armY - 0.095, p.y).mul(smoothstep(armX + 0.015, armX - 0.01, tx)).mul(smoothstep(0.05, 0.07, ax));
   const panel = smoothstep(panelW.add(0.0025), panelW, dz).mul(below);
   const panelEdge = line(dz.sub(panelW).sub(0.006)).mul(below);
-  let s = mix(shirt, trim, panel);
-  s = s.mul(float(1).sub(panelEdge.mul(0.18)));
+  // A chosen pattern instead of the side panels (paint.ts patternAt; a chest band and a chevron stay off the sleeves).
+  const pat = patternAt(pattern, p, normalGeometry, frame.chest.x, frame.chest.y, frame.hemY,
+    asset && (pattern === 'band' || pattern === 'chevron') ? armWeight(asset) : float(0));
+  let s = pat ? mix(shirt, trim, pat) : mix(shirt, trim, panel);
+  if (!pat) s = s.mul(float(1).sub(panelEdge.mul(0.18)));
   // Seams: over the shoulder, and round the sleeve's root or, on a raglan, from the neck to the armpit.
   const shoulder = line(p.z.sub(nk.z - 0.016)).mul(step(armY - 0.01, p.y)).mul(step(0.05, ax));
   let seams: THREE.Node<'float'> = float(0);

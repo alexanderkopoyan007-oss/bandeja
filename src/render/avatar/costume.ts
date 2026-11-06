@@ -13,6 +13,7 @@ import type { PlayerAsset } from './asset.ts';
 import type { KitLook } from './kit.ts';
 import { lathe, mergeParts, roundedBox, surface, tube, type Part } from '../geom.ts';
 import { fabric, lens, metal, plastic, printed, stitched } from './clothTex.ts';
+import type { Paint } from './paint.ts';
 
 /** A worn piece: the mesh, the bone it hangs on, and for a one-sided piece which arm it follows. */
 export interface Piece {
@@ -793,6 +794,9 @@ export interface Wear {
   wrist?: string | null;
   /** On the courtside bench, not on the player (game.ts placeBags). */
   bag?: string;
+  /** What the suit is painted as (paint.ts; the Avatar's material is built with it) and the overgrip's colour (CSS hex). */
+  paint?: Paint;
+  grip?: string;
 }
 
 /**

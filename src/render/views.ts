@@ -10,7 +10,7 @@ import { decal, makeSpotTexture } from './decals.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 import { Avatar } from './avatar/avatar.ts';
 import { reproportion } from './avatar/proportions.ts';
-import { dressRacket, makeRacketModel, racketLookFor } from './avatar/racket.ts';
+import { dressRacket, makeRacketModel, racketLookFor, type RacketLook } from './avatar/racket.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
 import { worn, type Wear } from './avatar/costume.ts';
@@ -18,6 +18,9 @@ import type { Cast } from '../game/cast.ts';
 import { makeBall, spinBall } from './ballLook.ts';
 import { DT } from '../sim/core/constants.ts';
 import { routineBounceOf, routineHeight, routineTime, routineUp } from './routine.ts';
+
+/** A racket's look with the overgrip a player chose (the looks are shared: a copy). */
+const gripped = (look: RacketLook, grip?: string): RacketLook => (grip ? { ...look, grip } : look);
 
 const TIMING = tuning.timing;
 const BALL_COLOR = 0xdff23b;
@@ -248,9 +251,9 @@ export class PlayerView {
       const body = cast?.bodies?.[idx];
       const who = body ? reproportion(person ?? asset, body) : person ?? asset;
       const kit = kitFor(idx, cast?.kits);
-      this.avatar = new Avatar(who, kit);
-      // Each player's own racket (data/racket-looks/).
-      dressRacket(this.avatar.racket, racketLookFor(idx, racket));
+      this.avatar = new Avatar(who, kit, wear?.paint);
+      // Each player's own racket (data/racket-looks/), in their own overgrip if they chose one.
+      dressRacket(this.avatar.racket, gripped(racketLookFor(idx, racket), wear?.grip));
       if (wear) this.avatar.wear(worn(who, wear, kit, this.avatar.mesh.geometry.index));
       this.root = this.avatar.root;
       scene.add(this.root);
@@ -275,7 +278,7 @@ export class PlayerView {
     nose.position.set(0, 1.7, -0.12);
     this.root.add(nose);
     scene.add(this.root);
-    this.racket = makeRacketModel(racketLookFor(idx, racket));
+    this.racket = makeRacketModel(gripped(racketLookFor(idx, racket), wear?.grip));
     scene.add(this.racket);
   }
 

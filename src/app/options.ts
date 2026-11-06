@@ -12,7 +12,7 @@ import { qualityPreset } from '../render/quality.ts';
 import type { CameraPreset } from '../render/views.ts';
 import { type MatchSetup, type Settings, LEVEL_AI, PARTNER_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
 import type { Wear } from '../render/avatar/costume.ts';
-import { COSMETIC_BY_ID } from './unlocks.ts';
+import { COSMETIC_BY_ID, paintOf } from './unlocks.ts';
 
 /**
  * URL parameters that name a game (what optionsFromUrl and main.ts read to set one up): any of them launches it
@@ -223,11 +223,16 @@ export function wearParam(params: URLSearchParams): Array<Wear | undefined> | un
   return s.split(',').map((one) => {
     const w: Wear = {};
     // (a + in a query reads as a space)
-    for (const id of one.split(/[+ ]/)) {
+    const ids = one.split(/[+ ]/);
+    for (const id of ids) {
       if (id === 'nohead') w.head = null;
       const slot = COSMETIC_BY_ID.get(id)?.slot;
       if (slot === 'head' || slot === 'eyes' || slot === 'wrist' || slot === 'bag') w[slot] = id;
     }
+    // (the suit's paint and the overgrip: shirt cuts, patterns, tights, sock lengths, shoes)
+    const { paint, grip } = paintOf(ids);
+    if (Object.keys(paint).length) w.paint = paint;
+    if (grip) w.grip = grip;
     return Object.keys(w).length ? w : undefined;
   });
 }

@@ -22,6 +22,7 @@ import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import type { Dressing, Piece } from './costume.ts';
+import type { Paint } from './paint.ts';
 import MANNERS from '../../../data/manners.json' with { type: 'json' };
 import { type OverArm,
   BACKHAND, TRIUMPH, TRIUMPH_LEFT, FIST, FIST_LEFT, HIP, HIP_LEFT, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
@@ -1626,7 +1627,7 @@ export class Avatar {
   private readonly eyeInHead = new THREE.Vector3();
   private puff = 0;
 
-  constructor(asset: PlayerAsset, look: number | KitLook) {
+  constructor(asset: PlayerAsset, look: number | KitLook, paint?: Paint) {
     this.nb = asset.bones.length;
     this.pose = new Pose(this.nb);
     this.tmp = new Pose(this.nb);
@@ -1646,7 +1647,7 @@ export class Avatar {
       mat = new THREE.MeshStandardMaterial({ color: look, vertexColors: true, roughness: 0.55, metalness: 0.05 });
       if (asset.look) hairMat = new THREE.MeshStandardMaterial({ color: look, roughness: 0.6, metalness: 0 });
     } else if (asset.look) {
-      const k = personMaterial(asset, look);
+      const k = personMaterial(asset, look, paint);
       mat = k.material;
       hairMat = k.hair;
       this.kit = k.state;

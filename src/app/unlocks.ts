@@ -4,6 +4,7 @@
 import data from '../../data/cosmetics.json';
 import practiceData from '../../data/practice.json';
 import type { MatchSetup } from './settings.ts';
+import type { Paint, PaintPattern, PaintSocks, PaintTop } from '../render/avatar/paint.ts';
 
 export type Level = MatchSetup['level'];
 export const LEVELS: readonly Level[] = ['novice', 'club', 'advanced', 'pro'];
@@ -36,6 +37,27 @@ export interface Cosmetic {
 }
 
 export const COSMETICS = data.items as Cosmetic[];
+
+/**
+ * What a set of worn items paints on the suit (render/avatar/paint.ts), and the overgrip's colour: each `paint` item by its
+ * slot and the last word of its id (`top-tank` is a tank). Garments (a polo, the skirts, a dress) wait for their meshes.
+ */
+export function paintOf(ids: Iterable<string>): { paint: Paint; grip?: string } {
+  const paint: Paint = {};
+  let grip: string | undefined;
+  for (const id of ids) {
+    const c = COSMETIC_BY_ID.get(id);
+    if (!c || c.kind !== 'paint') continue;
+    const word = id.slice(id.indexOf('-') + 1);
+    if (c.slot === 'top') paint.top = word as PaintTop;
+    else if (c.slot === 'pattern') paint.pattern = word as PaintPattern;
+    else if (c.slot === 'bottom') paint.bottom = word as 'shorts' | 'tights';
+    else if (c.slot === 'socks') paint.socks = word as PaintSocks;
+    else if (c.slot === 'shoes' && c.look) paint.shoes = { upper: c.look.upper!, sole: c.look.sole!, accent: c.look.accent! };
+    else if (c.slot === 'grip' && c.look) grip = c.look.colour;
+  }
+  return { paint, grip };
+}
 export const COSMETIC_BY_ID: ReadonlyMap<string, Cosmetic> = new Map(COSMETICS.map((c) => [c.id, c]));
 export const SLOT_INFO = data.slots as Record<Slot, { name: string; required: boolean }>;
 export const DRILL_NAMES: readonly string[] = practiceData.drills.map((d) => d.name);
