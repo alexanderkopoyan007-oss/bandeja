@@ -16,6 +16,8 @@ import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
 import { keepStyles, optionsFromSetup } from './options.ts';
+import { Store } from './store.ts';
+import type { Cosmetic } from './unlocks.ts';
 import { OnlineSession, ROOM_LOST, SEATS, type OnlineStart } from '../net/session.ts';
 import { NetMatch } from '../net/netMatch.ts';
 import { validCode } from '../net/room.ts';
@@ -88,6 +90,13 @@ export class App {
   /** What the next game is: a drill of data/practice.json, or a round of the knock-out; -1 for neither. */
   private drill = -1;
   private cupRound = -1;
+  /** Progress and cosmetics (app/store.ts), opened in the background at start: null until it is. */
+  private store: Store | null = null;
+  /** The game on court's drill (-1: not a drill), and its points already in the progress. */
+  private gameDrill = -1;
+  private drillLogged = 0;
+  /** What the last finished match earned (the results screen lists it). */
+  private earnedNow: Cosmetic[] = [];
   /** A match start or a return to the title is under way (repeat presses are ignored). */
   private busy = false;
   /** A build is under way (from its start until its game starts; a failed build leaves it set: nothing is at stake). */
@@ -126,6 +135,9 @@ export class App {
     this.menu.onChange = () => { saveSettings(this.settings); this.applyLook(); this.game?.applyPrefs(this.prefs()); };
     this.menu.onSound = (k) => this.uiSound(k);
     addEventListener('resize', () => this.game?.resize());
+    void Store.open().then((s) => { this.store = s; });
+    // A drill's points are logged as it's left, the page being closed among the ways out.
+    addEventListener('pagehide', () => this.logDrill());
     (window as unknown as { __app: App }).__app = this;
   }
 
@@ -167,6 +179,7 @@ export class App {
   /** Build a game (the title screen's AI match, or the player's) and start it. */
   private async build(attract: boolean, stage: (name: string, f: number) => void): Promise<void> {
     this.inBuild = true;
+    this.logDrill();
     this.game?.dispose();
     this.game = null;
     await frame();
@@ -204,6 +217,8 @@ export class App {
     const g = new Game(opts, this.renderer, this.hud);
     (window as unknown as { __bandeja: Game }).__bandeja = g;
     this.game = g;
+    this.gameDrill = attract ? -1 : this.drill;
+    this.drillLogged = 0;
     if (on && this.online && this.online === this.buildingFor) {
       const net = new NetMatch(g.sim, this.online, on);
       net.onDesync = () => this.onlineBroke('The players’ games stopped matching, so the match had to end.', true);
@@ -315,9 +330,33 @@ export class App {
   }
 
   private results(st: MatchStats): void {
+    this.earnedNow = this.logMatch(st);
     this.game?.setMenuPaused(true);
     this.menu.open(this.resultsScreen(st), true);
     this.fetchAhead();
+  }
+
+  /** A finished match into the progress (drills are logged as they're left); what it earned. */
+  private logMatch(st: MatchStats): Cosmetic[] {
+    const g = this.game;
+    if (!g || !this.store || this.gameDrill >= 0 || g.opts.autoplay) return [];
+    const me = st.player[g.opts.human];
+    return this.store.recordMatch({
+      level: this.online ? null : this.gameSetup().level,
+      won: g.sim.score.winner === g.team,
+      cupRound: this.online ? -1 : this.cupRound,
+      aces: me?.aces ?? 0, porTres: me?.outOfCourt ?? 0, fastest: me?.fastest ?? 0,
+      longestRally: st.longestRally,
+    });
+  }
+
+  /** Points won off the coach in the drill on court since they were last logged. */
+  private logDrill(): void {
+    const g = this.game;
+    if (!g || !this.store || this.gameDrill < 0) return;
+    const won = g.stats.team[g.team]!.points;
+    if (won > this.drillLogged) this.store.recordDrill(practiceData.drills[this.gameDrill]!.name, won - this.drillLogged);
+    this.drillLogged = won;
   }
 
   // ---- online ----------------------------------------------------------------------------------------------
@@ -866,7 +905,10 @@ export class App {
     ];
     // The opponents by the surnames dealt them (game/names.ts).
     const them = sim.doubles ? `${g.names[1]?.last ?? ''} · ${g.names[3]?.last ?? ''}` : (g.names[1]?.last ?? 'Opponent');
-    const side = `<div class="card"><h2>${mins} min · longest rally ${st.longestRally} shots</h2><table>`
+    // What the match earned (the locker comes with the creator: behind ?creator=1 until the owner has seen it).
+    const earnedNow = this.params.get('creator') === '1' && this.earnedNow.length
+      ? `<div class="card"><h2>New in your locker</h2><p>${this.earnedNow.map((c) => c.name).join(' · ')}</p></div>` : '';
+    const side = earnedNow + `<div class="card"><h2>${mins} min · longest rally ${st.longestRally} shots</h2><table>`
       + `<tr><td class="l"></td><td class="w">${sim.doubles ? 'Your pair' : 'You'}</td><td class="w">${them}</td></tr>`
       + rows.map((r) => `<tr><td class="l">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('') + '</table></div>';
     const round = this.cupRound;

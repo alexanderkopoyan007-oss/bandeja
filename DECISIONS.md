@@ -2284,7 +2284,6 @@ now, flipped there because WebGL can't flip an ImageBitmap at upload, with strai
 occlusion. Measured at CPU 4x, fetched ahead: 3.5-3.7 s over eight casts. The swings of 5-9 s seen first were other sessions'
 Chromes on the machine; shader builds were 151 before and after, and the shader text only 4% longer.
 
-
 ## Review round 5's Highs (2026-10-30)
 
 **Felt grips less the harder it is pressed.** A smash climbed the back glass because a hard bounce reached rolling, and rolling
@@ -2374,7 +2373,6 @@ smashes are aimed, not in the glass.
 
 **The knees load before a smash's jump.** On video 93 and 67 degrees about 0.65 s before the hit, then straight. Added as a dip of the
 hips in the 0.34 s before take-off, smashes only (a bandeja's knees bend most at contact).
-
 
 ## Review round 7's Highs (2026-10-30)
 
@@ -2893,7 +2891,6 @@ The fold in the same strip: the finish keys were out of the arm's reach and the 
 
 Measured, wrist p5 by stroke before / after, seeds 5301: forehand 66 / 97, backhand 74 / 97, volleys 67-71 / 97, serve 57 / 95 (the 'before' with the elbow rule already in), overhead 106 and smash 101 after, from 57 at the drop by median. Arm-held frames with the wrist under 90: 1.3%; free arm or racket arm raised and over 50 behind the chest: 0.3%, 0.2%. Smash, trophy to ball: elbow 100-110 until the last 80 ms, hand 13-22 cm above the shoulder all the way down (was 18 cm under it), elbow level with the shoulder or above from -0.16 s. Not measured: the forearm's roll, which nothing limits yet; the racket arm crossing the body stays over 130 degrees on 5% of serve frames (the follow-through across the body, which is real). These are a person's general joint limits and the overhead's general positions, not measured on padel players, and the strips were judged by eye from two angles.
 
-
 ## The owner played it: "straight ass" (2026-10-31)
 
 Twelve review rounds had reported steady progress. The owner then played one match and listed what was wrong: the partner hits into their own fence, the serve motion is wrong, the people look bad, the sounds are wrong. Every one of those lived somewhere the rounds never looked: bots played bots at level 1, nobody sat in the human's seat with an AI partner at the menu's Club 0.55, nobody looked at the default view as shipped, and nobody listened. From here the owner's seat is the test (`tools/out/owner-seat.ts`, `owner-view.mjs`), and absurd events are counted, not just averages.
@@ -3348,7 +3345,6 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **Glass level left alone.** The 3 dB shortfall on Wadman's reading compares unknown speeds; at the top bins it was reasoned
   at +0.5 dB, and it is now about +1 dB.
 
-
 ## Round 18, after the review (2026-11-02)
 
 - **A shared voice gets a person's own pitch, not a new voice.** Rendering more voices costs bank time and memory on every load. `tone` in `data/people.json` moves a person ±5%, about a semitone, inside the study's spread.
@@ -3359,7 +3355,6 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **The serve's chest turn is -0.4 at the ball, not -0.8.** The ball stood 27 degrees to the free side of the chest's line, so the hand had to whip across it. The video's hand is in front of the shoulder.
 - **The depth of a low volley came up on reasoning.** No footage has one. A ball at 0.8 m needs 15-25 cm off the body once the arm reaches down and the racket tilts, and the game gave 30 cm. The elbow stayed inside the video's 53-79 on p1 at .55.
 - **Crossed feet in a walk: the fix is not known.** Two tries did nothing and both were taken out.
-
 
 ## Round 19: what a key is for, and whose clock the hips are on (2026-11-02)
 
@@ -3443,7 +3438,6 @@ The `fit` in `setHanded` was meant to bend everybody's elbow alike, and it could
 - **A running match doesn't need the room.** Closing a socket told everyone the player had left, so a Wi-Fi blip threw out a player whose data channels were fine, and a Worker deploy would have ended every match at once. Nobody could have seen this on loopback. Now losing the room ends nothing, the room's "left" holds only until 0.5 s passes with packets still arriving (shorter and a player's last packets in the air would make a real leaver wait out the 6 s silence), and word of a seat goes over the data channels too. No reconnection: it needs a secret per player and a server that can rebuild a room, and it would only help players on the relay.
 - **Go is accepted once.** A host made mid-match took the match for one that hadn't started and said go again, and every client's clock jumped back. The last end-to-end run caught it: ticks stopped for 15 s with no error. `wentAt` is now set on every client that hears go, and a repeat is ignored.
 - **A reviewer read the code cold before it shipped,** one agent, the budget's limit. It found 12 faults that a match on one machine couldn't: -0 on a gamepad's axis splitting the sims, a seat lost if someone left during loading, anyone being able to throw anyone out, 1.5 KB claiming 65,535 frames, and others. All are fixed; the list is in `docs/online.md`.
-
 
 ## Round 25: where an overhead meets the ball decides the lobbers (2026-11-02)
 
@@ -3554,7 +3548,6 @@ The owner: "fix all the small and medium issues". Worked most-important first, a
   - **Why not shipped.** Every way of getting the lean puts the feet off the hips, and the run's stances are already capped by the leg's reach from the hips well short of real ones (at 3 m/s a real stance covers 0.6-0.75 m). Stances ended by each rule (scratchpad fixlab/stance.test.ts, 3 seeds × 150 s; median s): shipped stride 0.133 (220), reach 0.167 (374); with the patch the run's hip step 0.092 (289), stride 0.092 (236). Without the run's hip step, legs cross 0.9% of forward running (planted 91 frames). With a smaller carry and no hip step: 0.3 leans 0.32, crosses 0.7%, stance 0.150 (one frame short of the guard); 0.2 leans 0.29, crosses 0.6%, stance 0.150. So the lean, legs crossing and stance time pull against each other within the run's geometry, and the best gain is a third of the physics, from a quarter.
   - **What would settle it:** a run whose stances cover a real stride (touchdown ahead of the hips and toe-off further behind, the knee taking the length), so feet can be off the hips for the lean and still stay down 0.2 s. That's a redesign of the run gait.
   - Also dropped on the way: no sideways carry, carry on forward running only, landings clamped into the hip's range (feet leave it during the stance, not at landing), a low swinging foot pushed out from the hip, less landing room (lean 0.24), no landing reach limit (hip falls p90 1.62 g, legs crossing 0.8%), the hip step only after a minimum push (crossing 0.8%).
-
 
 ## Safari's lost WebGPU device: start again on WebGL 2 (2026-11-04)
 - **What friends saw** (the owner's report, Mac Safari, the plain link): the loading screen at "Compiling shaders", then "Range consisting of offset and length are out of bounds". That wording is JavaScriptCore's, from `TypedArray.prototype.set`.
@@ -3739,3 +3732,13 @@ The owner asked for the women "with skirts like before". MetaHuman's wardrobe ha
 - **Checks.** p7mh passes kit.test.ts's armhole, see-through and waist checks, run on her pack. It fails "skirt top over the thigh joint + 5 cm", only because MetaHuman's thigh joint sits 2.6 cm higher than MPFB's.
 
 The bodies were stale. `cast-batch.sh` had been exporting from the .blend files in the old p9 worktree, saved on 30 Oct at 11:54. That was before each player got their own face targets and body builds (that evening), and p9 still had a bob there. The batch now makes the person afresh from data/players first (`make-player.py --blend-only`, the MPFB part before finishing), so the men are being redone from their current bodies too. The p1mh still sent earlier was fitted to the old p1. They were also unscaled. MPFB makes a body at its macro's size, and finish-player.py then scales everyone to their `height`, from the shoes' soles to the top of the skin. The export skipped that step: p7 came out 1.61 m for her 1.71, and p2mh was 1.89 for his 1.84. `cast-export.py` now scales the person as finish-player does, through the rig and about the bare feet, so the portrait's camera fits the target. `mh-player.py` measures kit.skirt and shorts_hem from the shoes' soles.
+
+## M5 phase C, step 1: cosmetics, unlocks and the store (2026-11-06)
+The approved M5 plan's phase C starts with what needs no drawing: the catalogue, the rules that earn it and the store that keeps it. Nothing is drawn or worn yet (steps 2-5: accessories on bones, garments as runtime shader cuts, the five costumes, the skirt and dress meshes), and the locker's screen comes with the creator (phase D).
+- **Catalogue** (`data/cosmetics.json`): 60 items in 11 slots (shirt, pattern, shorts and skirts, socks, shoes, head, sunglasses, wristbands, overgrip, bag, costume), each with a kind that says how it will be drawn (paint = the kit shader's masks, garment = a mesh built per body, attachment = a code mesh on a bone or the bench, costume = paint plus attachments) and what it covers (a dress the bottom; a costume the shirt, pattern and bottom, some the head and eyes). Every name and look is ours.
+- **Starters are what the players already wear**: the tee, polo and tank, shorts and both skirts, headband and visor, ankle and crew socks, two shoes, a wristband, white and black overgrips and a holdall (18). Every slot that must be filled has one, so a new player's default loadout is complete.
+- **Earned by playing only** (`src/app/unlocks.ts`): matches played or won at a level or harder, the knock-out (a round reached, cups won), points won off the coach in a drill (all visits together, or so many in every drill), and the player's own feats (aces, balls out of the court, a long rally, a fast ball). No money anywhere. Rules are data; `describeRule` says each in the locker's words, `ruleProgress` gives have/need for a bar. The test proves every item can be earned and none but the starters is owned at the start.
+- **Your own feats, not your pair's.** `MatchStats` keeps aces, por tres and fastest ball by player as well as by team (the last E_HIT's player is an ace's server and a por tres's hitter), so a doubles partner's ace earns nothing for the human. Per-player sums equal the team's over 60k ticks of AI play (singles and doubles).
+- **The store** (`src/app/store.ts`): IndexedDB (database `bandeja`, one key-value store) for progress, owned items and the loadout; characters join in phase D. If IndexedDB is missing, throws or doesn't open in 3 s, it runs in memory for the visit (`persistent` false) and the game goes on. As in settings.ts nothing stored is trusted: counts must be whole, finite and in range, wins can't outnumber matches, unknown levels, drills and item ids are dropped, and a loadout keeps only owned items in their own slot. Items stay owned once earned, even if a later version makes their rule harder or the progress is lost. Records change memory at once and save in the background, in order.
+- **Recording** (app.ts): a finished match against the AI by its level (a knock-out round at its round's level), an online match apart (it has no level, and no cup); `?autoplay` matches aren't recorded. A drill's points are logged when it's left (another game built, or the page hidden), as the points won since the last log. With `?creator=1` the results screen lists what the match earned.
+- **Checked in a browser** (the Claude app's own Chromium, on the dev server): IndexedDB opened (`persistent` true); two recorded matches and a worn cap read back after a reload; garbage written straight into the database (a string list, NaN, negative and string counts, a costume in the head slot) loaded as defaults, with wins capped at matches played. Node has no IndexedDB, so the tests run the same code on the memory backend and a throwing one.

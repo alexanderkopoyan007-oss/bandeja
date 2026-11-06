@@ -1,0 +1,88 @@
+{
+  "//": "Cosmetics (M5 phase C): what a player can wear, all of it drawn or built by the game (no real brand's anything), and earned by playing only: no money anywhere. slots: each slot's menu name, and whether it must hold an item (an optional slot can be left empty). items: id, slot, name, kind (how it is drawn: paint = the kit shader's masks on the suit, garment = a mesh built per body by tools/assets (person_kit.py), attachment = a small mesh made in code on a bone or on the bench, costume = paint plus attachments), covers (other slots it replaces while worn), look (the numbers it is drawn with), unlock (the rule, src/app/unlocks.ts). Rules: \"starter\" (owned from the start); played / won: finished matches against the AI at that level or harder (level left out: any); cupReached: the knock-out's furthest round (0 quarter-final, 1 semi-final, 2 final); cupWins: knock-outs won; drill + points: points won off the coach in that practice drill (data/practice.json, by name), all visits together; drills: that many points in every drill; aces / porTres: the player's own aces and balls out of the court after a good bounce, every finished match together; rally: a rally of that many shots in a finished match; speed: the player's own fastest ball off the racket, km/h (a full smash from a lob is about 137, data/shots.json).",
+  "slots": {
+    "top": { "name": "Shirt", "required": true },
+    "pattern": { "name": "Pattern", "required": true },
+    "bottom": { "name": "Shorts and skirts", "required": true },
+    "socks": { "name": "Socks", "required": true },
+    "shoes": { "name": "Shoes", "required": true },
+    "head": { "name": "Head", "required": false },
+    "eyes": { "name": "Sunglasses", "required": false },
+    "wrist": { "name": "Wristbands", "required": false },
+    "grip": { "name": "Overgrip", "required": true },
+    "bag": { "name": "Bag", "required": true },
+    "costume": { "name": "Costume", "required": false }
+  },
+  "items": [
+    { "id": "top-tee", "slot": "top", "name": "Crew tee", "kind": "paint", "unlock": "starter" },
+    { "id": "top-polo", "slot": "top", "name": "Polo", "kind": "garment", "unlock": "starter" },
+    { "id": "top-tank", "slot": "top", "name": "Tank top", "kind": "paint", "unlock": "starter" },
+    { "id": "top-vneck", "slot": "top", "name": "V-neck tee", "kind": "paint", "unlock": { "played": 3 } },
+    { "id": "top-raglan", "slot": "top", "name": "Raglan tee", "kind": "paint", "unlock": { "played": 10 } },
+    { "id": "top-long", "slot": "top", "name": "Long-sleeve top", "kind": "paint", "unlock": { "won": 3, "level": "club" } },
+    { "id": "top-sleeveless", "slot": "top", "name": "Sleeveless tee", "kind": "paint", "unlock": { "won": 5, "level": "advanced" } },
+    { "id": "top-dress", "slot": "top", "name": "Court dress", "kind": "garment", "covers": ["bottom"], "unlock": { "won": 3, "level": "advanced" } },
+
+    { "id": "pat-plain", "slot": "pattern", "name": "Plain", "kind": "paint", "unlock": "starter" },
+    { "id": "pat-panels", "slot": "pattern", "name": "Side panels", "kind": "paint", "unlock": "starter" },
+    { "id": "pat-band", "slot": "pattern", "name": "Chest band", "kind": "paint", "unlock": { "played": 5 } },
+    { "id": "pat-hoops", "slot": "pattern", "name": "Hoops", "kind": "paint", "unlock": { "won": 5, "level": "club" } },
+    { "id": "pat-pinstripe", "slot": "pattern", "name": "Pinstripe", "kind": "paint", "unlock": { "won": 3, "level": "advanced" } },
+    { "id": "pat-split", "slot": "pattern", "name": "Diagonal split", "kind": "paint", "unlock": { "aces": 10 } },
+    { "id": "pat-dots", "slot": "pattern", "name": "Dots", "kind": "paint", "unlock": { "porTres": 5 } },
+    { "id": "pat-fade", "slot": "pattern", "name": "Fade", "kind": "paint", "unlock": { "drill": "Volleys", "points": 20 } },
+    { "id": "pat-chevron", "slot": "pattern", "name": "Chevron", "kind": "paint", "unlock": { "cupReached": 1 } },
+    { "id": "pat-check", "slot": "pattern", "name": "Check", "kind": "paint", "unlock": { "won": 3, "level": "pro" } },
+
+    { "id": "bot-shorts", "slot": "bottom", "name": "Shorts", "kind": "paint", "unlock": "starter" },
+    { "id": "bot-pleated", "slot": "bottom", "name": "Pleated skirt", "kind": "garment", "unlock": "starter" },
+    { "id": "bot-aline", "slot": "bottom", "name": "A-line skirt", "kind": "garment", "unlock": "starter" },
+    { "id": "bot-tights", "slot": "bottom", "name": "Knee tights", "kind": "paint", "unlock": { "played": 15 } },
+
+    { "id": "socks-ankle", "slot": "socks", "name": "Ankle socks", "kind": "paint", "unlock": "starter" },
+    { "id": "socks-crew", "slot": "socks", "name": "Crew socks", "kind": "paint", "unlock": "starter" },
+    { "id": "socks-noshow", "slot": "socks", "name": "No-show socks", "kind": "paint", "unlock": { "played": 5 } },
+    { "id": "socks-knee", "slot": "socks", "name": "Knee socks", "kind": "paint", "unlock": { "won": 5, "level": "advanced" } },
+    { "id": "socks-stripe", "slot": "socks", "name": "Striped crew socks", "kind": "paint", "unlock": { "porTres": 10 } },
+
+    { "id": "shoes-white", "slot": "shoes", "name": "Court whites", "kind": "paint", "look": { "upper": "#f2f2ee", "sole": "#e6e2d8", "accent": "#8a8f98" }, "unlock": "starter" },
+    { "id": "shoes-navy", "slot": "shoes", "name": "Navy two-tone", "kind": "paint", "look": { "upper": "#1d2a44", "sole": "#f2f2ee", "accent": "#e8e8e8" }, "unlock": "starter" },
+    { "id": "shoes-gum", "slot": "shoes", "name": "Gum soles", "kind": "paint", "look": { "upper": "#ece8de", "sole": "#b5803f", "accent": "#3b3b3b" }, "unlock": { "played": 10 } },
+    { "id": "shoes-black", "slot": "shoes", "name": "All black", "kind": "paint", "look": { "upper": "#1b1b1d", "sole": "#232326", "accent": "#5b5b60" }, "unlock": { "drill": "Back glass", "points": 20 } },
+    { "id": "shoes-volt", "slot": "shoes", "name": "High-vis", "kind": "paint", "look": { "upper": "#d8f23a", "sole": "#1b1b1d", "accent": "#1b1b1d" }, "unlock": { "won": 3, "level": "pro" } },
+
+    { "id": "head-band", "slot": "head", "name": "Headband", "kind": "attachment", "unlock": "starter" },
+    { "id": "head-visor", "slot": "head", "name": "Visor", "kind": "attachment", "unlock": "starter" },
+    { "id": "head-cap", "slot": "head", "name": "Cap", "kind": "attachment", "unlock": { "played": 2 } },
+    { "id": "head-capback", "slot": "head", "name": "Cap, backwards", "kind": "attachment", "unlock": { "rally": 20 } },
+    { "id": "head-bandana", "slot": "head", "name": "Bandana", "kind": "attachment", "unlock": { "aces": 25 } },
+    { "id": "head-bucket", "slot": "head", "name": "Bucket hat", "kind": "attachment", "unlock": { "drill": "Side glass", "points": 20 } },
+
+    { "id": "eyes-wrap", "slot": "eyes", "name": "Wrap sunglasses", "kind": "attachment", "unlock": { "won": 10, "level": "advanced" } },
+    { "id": "eyes-round", "slot": "eyes", "name": "Round sunglasses", "kind": "attachment", "unlock": { "porTres": 25 } },
+    { "id": "eyes-shield", "slot": "eyes", "name": "Shield sunglasses", "kind": "attachment", "unlock": { "cupWins": 2 } },
+
+    { "id": "wrist-single", "slot": "wrist", "name": "Wristband", "kind": "attachment", "unlock": "starter" },
+    { "id": "wrist-pair", "slot": "wrist", "name": "Pair of wristbands", "kind": "attachment", "unlock": { "played": 8 } },
+    { "id": "wrist-long", "slot": "wrist", "name": "Long sweatbands", "kind": "attachment", "unlock": { "drill": "Lobs and overheads", "points": 20 } },
+
+    { "id": "grip-white", "slot": "grip", "name": "White overgrip", "kind": "paint", "look": { "colour": "#f4f4f0" }, "unlock": "starter" },
+    { "id": "grip-black", "slot": "grip", "name": "Black overgrip", "kind": "paint", "look": { "colour": "#1c1c1e" }, "unlock": "starter" },
+    { "id": "grip-coral", "slot": "grip", "name": "Coral overgrip", "kind": "paint", "look": { "colour": "#ff6f5e" }, "unlock": { "played": 4 } },
+    { "id": "grip-lime", "slot": "grip", "name": "Lime overgrip", "kind": "paint", "look": { "colour": "#b6e83a" }, "unlock": { "won": 2, "level": "club" } },
+    { "id": "grip-sky", "slot": "grip", "name": "Sky overgrip", "kind": "paint", "look": { "colour": "#5fb8f0" }, "unlock": { "aces": 5 } },
+    { "id": "grip-violet", "slot": "grip", "name": "Violet overgrip", "kind": "paint", "look": { "colour": "#8a5cf0" }, "unlock": { "cupReached": 2 } },
+    { "id": "grip-gold", "slot": "grip", "name": "Gold overgrip", "kind": "paint", "look": { "colour": "#d9a93a" }, "unlock": { "cupWins": 1 } },
+
+    { "id": "bag-holdall", "slot": "bag", "name": "Holdall", "kind": "attachment", "unlock": "starter" },
+    { "id": "bag-thermo", "slot": "bag", "name": "Thermo racket bag", "kind": "attachment", "unlock": { "won": 5, "level": "club" } },
+    { "id": "bag-backpack", "slot": "bag", "name": "Backpack", "kind": "attachment", "unlock": { "drills": 10 } },
+    { "id": "bag-tour", "slot": "bag", "name": "Tour bag", "kind": "attachment", "unlock": { "cupWins": 3 } },
+
+    { "id": "costume-banana", "slot": "costume", "name": "Banana", "kind": "costume", "covers": ["top", "pattern", "bottom"], "unlock": { "porTres": 15 } },
+    { "id": "costume-tuxedo", "slot": "costume", "name": "Tuxedo", "kind": "costume", "covers": ["top", "pattern", "bottom"], "unlock": { "cupWins": 1 } },
+    { "id": "costume-astronaut", "slot": "costume", "name": "Astronaut", "kind": "costume", "covers": ["top", "pattern", "bottom", "head", "eyes"], "unlock": { "speed": 130 } },
+    { "id": "costume-dino", "slot": "costume", "name": "Dinosaur onesie", "kind": "costume", "covers": ["top", "pattern", "bottom", "head"], "unlock": { "rally": 30 } },
+    { "id": "costume-chef", "slot": "costume", "name": "Chef's whites", "kind": "costume", "covers": ["top", "pattern", "bottom", "head"], "unlock": { "drills": 20 } }
+  ]
+}

@@ -24,16 +24,28 @@ export interface TeamStats {
   servesWon: number;
 }
 
+/** One player's own, for the cosmetics' unlocks (app/unlocks.ts): in doubles a partner's ace isn't yours. */
+export interface PlayerFeats {
+  aces: number;
+  outOfCourt: number;
+  /** km/h */
+  fastest: number;
+}
+
 function blank(): TeamStats {
   return { points: 0, winners: 0, errors: 0, aces: 0, doubleFaults: 0, outOfCourt: 0, fastest: 0, serves: 0, servesWon: 0 };
 }
 
 export class MatchStats {
   readonly team: [TeamStats, TeamStats] = [blank(), blank()];
+  /** By player number. */
+  readonly player: PlayerFeats[] = [0, 1, 2, 3].map(() => ({ aces: 0, outOfCourt: 0, fastest: 0 }));
   longestRally = 0;
   /** Sim seconds played. */
   duration = 0;
   private seen = 0;
+  /** The player who struck the ball last: an ace's server, a por tres's hitter. */
+  private lastHitter = -1;
 
   update(sim: MatchSim): void {
     if (eventsOf(sim).eventSeq - this.seen > eventsOf(sim).events.length) this.seen = eventsOf(sim).eventSeq - eventsOf(sim).events.length;
@@ -45,6 +57,11 @@ export class MatchStats {
         const kmh = e.c * 3.6;
         const t = this.team[e.team]!;
         if (kmh > t.fastest) t.fastest = kmh;
+        const own = this.player[e.player];
+        if (own) {
+          this.lastHitter = e.player;
+          if (kmh > own.fastest) own.fastest = kmh;
+        }
       } else if (e.kind === E_POINT) {
         const won = this.team[e.team]!;
         const lost = this.team[1 - e.team]!;
@@ -57,9 +74,16 @@ export class MatchStats {
         const why = e.a;
         if (why === WHY_DOUBLE_BOUNCE || why === WHY_EXIT_AFTER_BOUNCE || why === WHY_HIT_BODY_OPP || why === WHY_ROOF_AFTER_BOUNCE) {
           won.winners++;
-          if (why === WHY_EXIT_AFTER_BOUNCE) won.outOfCourt++;
+          const by = sim.players[this.lastHitter]?.team === e.team ? this.player[this.lastHitter] : undefined;
+          if (why === WHY_EXIT_AFTER_BOUNCE) {
+            won.outOfCourt++;
+            if (by) by.outOfCourt++;
+          }
           // An ace: the serve itself was never returned.
-          if (shots <= 1 && e.team === server) won.aces++;
+          if (shots <= 1 && e.team === server) {
+            won.aces++;
+            if (by) by.aces++;
+          }
         } else if (why === WHY_OWN_SIDE || why === WHY_WALL_BEFORE_BOUNCE || why === WHY_OWN_MESH || why === WHY_OUT
           || why === WHY_HIT_BODY_OWN || why === WHY_WHIFF || why === WHY_ROOF) {
           lost.errors++;
