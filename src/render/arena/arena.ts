@@ -7,7 +7,7 @@ import floorLooks from '../../../data/floor-looks.json' with { type: 'json' };
 import type { Court } from '../../sim/court/court.ts';
 import { floorMaterial, type FloorLook } from '../turf.ts';
 import type { EnvProbe } from '../courtView.ts';
-import { buildStadium } from './stadium.ts';
+import { BENCH_TOP, BENCH_Z, BoxBatch, buildStadium } from './stadium.ts';
 import { buildOutdoor } from './outdoor.ts';
 import { buildHall } from './hall.ts';
 import { addArenaLights } from './lights.ts';
@@ -78,6 +78,8 @@ export class Arena {
   readonly group = new THREE.Group();
   readonly def: ArenaDef;
   readonly key: THREE.DirectionalLight;
+  /** The courtside benches' seats (the middle of each top), outside the side glass by the net: the bags go there. */
+  readonly benches: THREE.Vector3[] = [];
   private readonly parts: ArenaPart[] = [];
   /** The crowd follows the rally (game.ts sets it each frame). */
   readonly mood: CrowdState = { excite: 0, applause: 0, ovation: 0 };
@@ -115,6 +117,21 @@ export class Arena {
     if (def.kind === 'stadium') this.parts.push(buildStadium(this.group, def, court));
     else if (def.kind === 'hall') this.parts.push(buildHall(this.group, def, court));
     else this.parts.push(buildOutdoor(this.group, def, court, scene));
+    // The stadium's benches are its own (with the umpire's chair); a club or a hall gets a slatted bench on two legs.
+    const bx = court.halfW + (def.kind === 'stadium' ? 1.6 : 1.3);
+    for (const z of BENCH_Z) this.benches.push(new THREE.Vector3(-bx, BENCH_TOP, z));
+    if (def.kind !== 'stadium') {
+      const b = new BoxBatch();
+      const wood = def.kind === 'hall' ? '#7d828a' : '#8a6a48';
+      for (const z of BENCH_Z) {
+        for (const dx of [-0.15, 0, 0.15]) b.box(-bx + dx, BENCH_TOP - 0.02, z, 0.12, 0.04, 2.0, wood);
+        for (const dz of [-0.8, 0.8]) b.box(-bx, (BENCH_TOP - 0.04) / 2, z + dz, 0.42, BENCH_TOP - 0.04, 0.06, '#3a3d44');
+      }
+      const m = b.mesh();
+      m.castShadow = true;
+      m.receiveShadow = true;
+      this.group.add(m);
+    }
   }
 
   /**

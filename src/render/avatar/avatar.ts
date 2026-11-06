@@ -21,6 +21,7 @@ import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
+import type { Dressing, Piece } from './costume.ts';
 import MANNERS from '../../../data/manners.json' with { type: 'json' };
 import { type OverArm,
   BACKHAND, TRIUMPH, TRIUMPH_LEFT, FIST, FIST_LEFT, HIP, HIP_LEFT, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
@@ -1677,6 +1678,7 @@ export class Avatar {
     if (asset.look && hairMat) {
       // A person's hair, brows and lashes: alpha-tested, on the same skeleton.
       const hair = new THREE.SkinnedMesh(asset.look.alphaGeometry, hairMat);
+      this.hairMesh = hair;
       hair.bind(skeleton, new THREE.Matrix4());
       hair.castShadow = true;
       hair.frustumCulled = false;
@@ -1859,6 +1861,34 @@ export class Avatar {
   }
 
   /** Switch the racket hand (the sim's `handed`): racket, grip, arms and stroke keys all follow. */
+  /**
+   * Put on pieces made in code (costume.ts), each on its bone; a one-sided piece shows on the arm it belongs to as the
+   * player's hand changes. A modelled headband taken off, and hair pressed under a head piece, get geometry of this
+   * avatar's own over the shared attributes (another player may be dressed as the same person).
+   */
+  wear(d: Dressing): void {
+    const { pieces, bodyIndex, hair } = d;
+    for (const p of pieces) {
+      const b = this.bones.find((x) => x.name === p.bone);
+      if (!b) continue;
+      b.add(p.mesh);
+      if (p.arm) this.sided.push(p);
+    }
+    if (bodyIndex) this.mesh.geometry = ownGeometry(this.mesh.geometry, bodyIndex, null);
+    if (hair && this.hairMesh) this.hairMesh.geometry = ownGeometry(this.hairMesh.geometry, null, new THREE.BufferAttribute(hair, 3));
+    this.showSided();
+  }
+
+  /** The hair, brows and lashes (null for the mannequin). */
+  private hairMesh: THREE.SkinnedMesh | null = null;
+
+  private readonly sided: Piece[] = [];
+
+  private showSided(): void {
+    const racket = this.handed > 0 ? 'R' : 'L';
+    for (const p of this.sided) p.mesh.visible = (p.side === racket) === (p.arm === 'racket');
+  }
+
   /** Skin matrices are refreshed once per animation-loop frame; a render outside the loop calls this first. */
   refreshSkin(): void {
     this.root.updateMatrixWorld(true);
@@ -1870,6 +1900,7 @@ export class Avatar {
     this.handF.copy(this.handAxes[h > 0 ? 0 : 2]!);
     this.handK.copy(this.handAxes[h > 0 ? 1 : 3]!);
     this.grip = this.grips[h > 0 ? 0 : 1]!;
+    this.showSided();
     this.armRacket = h > 0 ? this.armR : this.armL;
     this.armFree = h > 0 ? this.armL : this.armR;
     this.elbowRacket = h > 0 ? this.elbowR : this.elbowL;
@@ -5327,4 +5358,16 @@ export class Avatar {
     }
     for (let j = 0; j < 3; j++) this.fadePrev[k + j]!.copy(arm[j]!.quaternion);
   }
+}
+
+/** A geometry sharing `s`'s attributes and morphs, with its own triangles or positions. */
+function ownGeometry(s: THREE.BufferGeometry, index: THREE.BufferAttribute | null, position: THREE.BufferAttribute | null): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  for (const k of Object.keys(s.attributes)) g.setAttribute(k, k === 'position' && position ? position : s.getAttribute(k));
+  g.morphAttributes = s.morphAttributes;
+  g.morphTargetsRelative = s.morphTargetsRelative;
+  g.setIndex(index ?? s.index);
+  for (const gr of s.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
+  g.boundingSphere = s.boundingSphere;
+  return g;
 }

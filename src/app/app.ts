@@ -15,7 +15,7 @@ import { resetHints } from '../ui/hud.ts';
 import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '../game/input/bindings.ts';
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
-import { keepStyles, optionsFromSetup } from './options.ts';
+import { keepStyles, optionsFromSetup, wearParam } from './options.ts';
 import { Store } from './store.ts';
 import type { Cosmetic } from './unlocks.ts';
 import { OnlineSession, ROOM_LOST, SEATS, type OnlineStart } from '../net/session.ts';
@@ -189,6 +189,7 @@ export class App {
     const opts = optionsFromSetup(attract ? this.settings.setup : this.gameSetup(), this.settings, seed, this.asset, attract, this.params);
     opts.people = castParam(this.params);
     opts.bodies = bodiesParam(this.params);
+    opts.wear = wearParam(this.params);
     // A rematch is the same four; a knock-out's next round the same pair against new opponents.
     if (attract || this.keep === KEEP_NONE) this.castSeed = seed;
     opts.castSeed = this.castSeed;

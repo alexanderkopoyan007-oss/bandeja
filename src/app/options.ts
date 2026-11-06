@@ -11,6 +11,8 @@ import { resolveKeys } from '../game/input/bindings.ts';
 import { qualityPreset } from '../render/quality.ts';
 import type { CameraPreset } from '../render/views.ts';
 import { type MatchSetup, type Settings, LEVEL_AI, PARTNER_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
+import type { Wear } from '../render/avatar/costume.ts';
+import { COSMETIC_BY_ID } from './unlocks.ts';
 
 /**
  * URL parameters that name a game (what optionsFromUrl and main.ts read to set one up): any of them launches it
@@ -21,7 +23,7 @@ import { type MatchSetup, type Settings, LEVEL_AI, PARTNER_AI, TIMING_SCALE, ASS
 const GAME_PARAMS = new Set([
   'autoplay', 'mode', 'seed', 'styles', 'scoring', 'court', 'floor', 'temp', 'alt', 'windx', 'windz', 'sets', 'games',
   'ai', 'lefty', 'timing', 'assist', 'autotime', 'tap', 'server', 'pro', 'gfx', 'aim', 'runahead', 'sound', 'arena',
-  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'people', 'ball', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot', 'rackets',
+  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'people', 'ball', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot', 'rackets', 'wear',
 ]);
 
 /** Does the URL ask for a game straight away (tools and links from before the menus)? */
@@ -98,6 +100,7 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     },
     human: 0,
     autoplay,
+    wear: wearParam(params),
     forceWebGL: params.get('backend') === 'webgl',
     pro: params.get('pro') === '1',
     gfx: params.get('gfx') ?? undefined,
@@ -207,4 +210,24 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
       pro: s.pro, mouseAim: s.mouseAim, camera: s.camera, replays: s.replays,
     },
   };
+}
+
+/**
+ * What each player wears beyond the suit, by player number: `?wear=head-cap+eyes-wrap,head-visor,,wrist-pair`
+ * (data/cosmetics.json ids, + between one player's; `nohead` takes a modelled headband or visor off). Undefined when
+ * the URL doesn't say.
+ */
+export function wearParam(params: URLSearchParams): Array<Wear | undefined> | undefined {
+  const s = params.get('wear');
+  if (!s) return undefined;
+  return s.split(',').map((one) => {
+    const w: Wear = {};
+    // (a + in a query reads as a space)
+    for (const id of one.split(/[+ ]/)) {
+      if (id === 'nohead') w.head = null;
+      const slot = COSMETIC_BY_ID.get(id)?.slot;
+      if (slot === 'head' || slot === 'eyes' || slot === 'wrist' || slot === 'bag') w[slot] = id;
+    }
+    return Object.keys(w).length ? w : undefined;
+  });
 }

@@ -13,6 +13,7 @@ import { reproportion } from './avatar/proportions.ts';
 import { dressRacket, makeRacketModel, racketLookFor } from './avatar/racket.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
+import { worn, type Wear } from './avatar/costume.ts';
 import type { Cast } from '../game/cast.ts';
 import { makeBall, spinBall } from './ballLook.ts';
 import { DT } from '../sim/core/constants.ts';
@@ -237,16 +238,20 @@ export class PlayerView {
   private readonly racket: THREE.Group | null = null;
   private readonly ready = new THREE.Vector3();
 
-  /** `racket`: the racket this player plays (MatchConfig.rackets), drawn as its own look. */
-  constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null, cast?: Cast, racket?: string) {
+  /** `racket`: the racket this player plays (MatchConfig.rackets), drawn as its own look; `wear`: what they wear
+   * beyond the suit (costume.ts). */
+  constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null, cast?: Cast, racket?: string, wear?: Wear) {
     if (asset) {
       // Dressed as the person dealt to them (game/cast.ts) when they loaded, else the mannequin.
       const person = cast ? asset.people.find((p) => p.look!.name === cast.people[idx]) : asset.people[idx];
       // In their own proportions, when they have them (proportions.ts: built once, at load).
       const body = cast?.bodies?.[idx];
-      this.avatar = new Avatar(body ? reproportion(person ?? asset, body) : person ?? asset, kitFor(idx, cast?.kits));
+      const who = body ? reproportion(person ?? asset, body) : person ?? asset;
+      const kit = kitFor(idx, cast?.kits);
+      this.avatar = new Avatar(who, kit);
       // Each player's own racket (data/racket-looks/).
       dressRacket(this.avatar.racket, racketLookFor(idx, racket));
+      if (wear) this.avatar.wear(worn(who, wear, kit, this.avatar.mesh.geometry.index));
       this.root = this.avatar.root;
       scene.add(this.root);
       return;

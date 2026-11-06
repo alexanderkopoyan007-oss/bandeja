@@ -10,7 +10,7 @@ import { NetView } from '../render/netView.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView, ReplayCamera, type CameraPreset } from '../render/views.ts';
 import { Replays, RP_IDLE, RP_PREP, RP_SHOW } from './replay.ts';
 import { dealNames, nameOf, type PlayerName } from './names.ts';
-import { dealCast } from './cast.ts';
+import { dealCast, type Cast } from './cast.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
 import { DEFAULT_KEYS } from './input/bindings.ts';
@@ -19,6 +19,7 @@ import { Soundscape, type FeetSource } from '../audio/soundscape.ts';
 import { FLOOR_NAMES } from '../audio/voices.ts';
 import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
+import { makeBag, type Wear } from '../render/avatar/costume.ts';
 import { Hud } from '../ui/hud.ts';
 import { TvGraphics } from '../ui/tv.ts';
 import { Post } from '../render/post.ts';
@@ -73,6 +74,8 @@ export interface GameOptions {
   mouseAim: boolean;
   /** The animated player body (M2); null: the M1 capsules. */
   avatar: PlayerAsset | null;
+  /** What each player wears beyond the suit, by player number (costume.ts; `?wear=`): looks only, never the sim. */
+  wear?: Array<Wear | undefined>;
   /**
    * Render the present instead of one tick behind it (the sim runs up to one tick ahead of the clock and the
    * render interpolates back to now). Saves one tick (8.3 ms) of input-to-screen latency; `?runahead=0` is the
@@ -284,8 +287,9 @@ export class Game {
     this.replays.enabled = opts.replays !== false && !opts.closeCam;
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
-    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, cast, opts.match.rackets?.[i]));
+    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, cast, opts.match.rackets?.[i], opts.wear?.[i]));
     if (!opts.autoplay) this.players[opts.human]!.markYou();
+    this.placeBags(cast);
     this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
     this.assists = new AssistView(this.scene);
     this.assists.enabled = !opts.pro;
@@ -659,6 +663,28 @@ export class Game {
   private draw(): void {
     if (this.post) this.post.render();
     else this.renderer.render(this.scene, this.cam.camera);
+  }
+
+  /**
+   * Each player's bag (costume.ts; their `wear.bag`, else a holdall) on the courtside bench at their end, in their kit's
+   * colours: partners' side by side along it.
+   */
+  private placeBags(cast: Cast | undefined): void {
+    const benches = this.arena.benches;
+    if (!benches.length) return;
+    const used = new Map<THREE.Vector3, number>();
+    for (let i = 0; i < this.sim.players.length; i++) {
+      const p = this.sim.players[i]!;
+      const bench = benches.reduce((a, b) => (Math.abs(b.z - p.pos.z) < Math.abs(a.z - p.pos.z) ? b : a));
+      const k = used.get(bench) ?? 0;
+      used.set(bench, k + 1);
+      const kit = kitFor(i, cast?.kits);
+      const bag = makeBag(this.opts.wear?.[i]?.bag ?? 'bag-holdall', kit.shorts, kit.trim);
+      // The bag lies along the bench; a backpack stands on it.
+      bag.rotation.y = Math.PI / 2;
+      bag.position.set(bench.x, bench.y, bench.z + (k === 0 ? -0.45 : 0.45) * Math.sign(bench.z || 1));
+      this.scene.add(bag);
+    }
   }
 
   /** The human's team (the camera's end); team 0 with autoplay. */
