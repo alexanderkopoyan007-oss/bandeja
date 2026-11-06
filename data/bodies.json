@@ -1,0 +1,10 @@
+{
+  "//": "Bodies by name: proportions (src/render/avatar/proportions.ts; a factor on the body as built, missing ones 1). The extreme ones are what the tests play and the owner looks at (?bodies=name,name,... by player number): the brief's ridiculous mode at its limits, one way at a time and all at once (the leg, height x legs, at both ends of LEG_SPAN).",
+  "giant-head": { "head": 2.0 },
+  "tiny-legs": { "legs": 0.65 },
+  "long-arms": { "arms": 1.6 },
+  "short-wide": { "height": 0.8, "build": 1.35, "shoulders": 1.3 },
+  "tall-thin": { "height": 1.3, "build": 0.75, "neck": 1.3 },
+  "long-legs": { "legs": 1.3 },
+  "everything": { "head": 1.8, "legs": 0.65, "arms": 1.5, "torso": 1.25, "hands": 1.6, "feet": 1.5, "build": 1.2, "neck": 0.6 }
+}

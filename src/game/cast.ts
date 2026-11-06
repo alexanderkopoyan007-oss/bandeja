@@ -5,6 +5,7 @@
 // same men under new names, so the rest of the court is the others. Nothing here touches the sim: looks and voices.
 import roster from '../../data/people.json';
 import { KIT_COUNT } from '../render/avatar/kit.ts';
+import { bodyNamed, isNeutral, type Proportions } from '../render/avatar/proportions.ts';
 
 export interface Cast {
   /** People by player number. */
@@ -18,6 +19,8 @@ export interface Cast {
   voices: number[];
   /** Each player's pitch on that voice: thirteen people share four, and two on one court were the same recording. */
   tones: number[];
+  /** Each player's proportions (proportions.ts), by player number; missing or null: as the person was built. */
+  bodies?: Array<Proportions | null>;
 }
 
 interface Person { name: string; nations: string[]; voice: number; tone: number; woman?: boolean; dealt?: boolean }
@@ -66,6 +69,13 @@ export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
   const firstWoman = roster.women.some((p) => p.name === only?.[0]) || guests.some((p) => p.woman && p.name === only?.[0]);
   const womens = only?.length ? firstWoman : women;
   return { people: picked.map((p) => p.name), women: womens, nations: picked.map((p) => p.nations), kits, voices: picked.map((p) => p.voice + (womens ? 4 : 0)), tones: picked.map((p) => p.tone) };
+}
+
+/** ?bodies=a,b,c,d by player number: a named body (data/bodies.json) or factors (`head:2+legs:0.7`, fitted to what the animation plays); empty for as built. */
+export function bodiesParam(params: URLSearchParams): Array<Proportions | null> | undefined {
+  const v = params.get('bodies');
+  if (!v) return undefined;
+  return v.split(',').map((s) => { const p = s ? bodyNamed(s) : null; return p && !isNeutral(p) ? p : null; });
 }
 
 /** ?people=a,b,c,d, or nothing (0 is the mannequin: asset.ts peopleWanted). */

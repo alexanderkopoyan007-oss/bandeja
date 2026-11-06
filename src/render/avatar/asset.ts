@@ -56,6 +56,10 @@ export interface PlayerAsset {
   people: PlayerAsset[];
   /** Where it was loaded from (people load from beside it, match by match). */
   url: string;
+  /** A reshaped body's legs over the modelled person's, measured hip joint to ankle (proportions.ts); absent means 1. */
+  legScale?: number;
+  /** A reshaped body's height (look.height) over the modelled person's; absent means 1. */
+  heightScale?: number;
 }
 
 /** Part codes of a person's vertices (tools/assets/mpfb/finish-player.py). */
@@ -271,7 +275,9 @@ export function parsePlayerAsset(buf: ArrayBuffer): PlayerAsset {
     });
   }
 
-  return assemble(h.bones, geometry, boneInverses, world, clips, null);
+  const asset = assemble(h.bones, geometry, boneInverses, world, clips, null);
+  SOURCES.set(asset, { buf, mannequin: null });
+  return asset;
 }
 
 function assemble(bones: BoneDef[], geometry: THREE.BufferGeometry, boneInverses: THREE.Matrix4[], restWorld: THREE.Matrix4[],
@@ -478,9 +484,55 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     for (let k = 0; k < hips.length; k++) hips[k] = hips[k]! * h.hips;
     clips.set(name, { ...c, hips, speed: c.speed * h.hips });
   }
-  return assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
+  const asset = assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
     name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, textures: h.textures, morphs, face,
   });
+  SOURCES.set(asset, { buf, mannequin });
+  return asset;
+}
+
+/**
+ * Each parsed asset's decoded file: an asset a match has used isn't as parsed any more (cupPalms moves the palms, the kit's
+ * personFrame cuts the neckline out of the index and fills bodyX from the rest pose), so a body built from it
+ * (proportions.ts) starts from a fresh parse of the same bytes.
+ */
+const SOURCES = new WeakMap<PlayerAsset, { buf: ArrayBuffer; mannequin: PlayerAsset | null }>();
+
+/** `asset` as it was parsed, with the textures it has loaded since. */
+export function pristineCopy(asset: PlayerAsset): PlayerAsset {
+  const src = SOURCES.get(asset);
+  if (!src) throw new Error('player asset: not parsed from a file');
+  const a = src.mannequin ? parseBodyAsset(src.buf, src.mannequin) : parsePlayerAsset(src.buf);
+  a.url = asset.url;
+  if (a.look && asset.look) {
+    a.look.opaqueMap = asset.look.opaqueMap;
+    a.look.alphaMap = asset.look.alphaMap;
+    a.look.clothNormal = asset.look.clothNormal;
+  }
+  return a;
+}
+
+/** The leg from hip joint to ankle at rest (m), as the avatar measures it. */
+export function legLength(a: PlayerAsset): number {
+  const p = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(a.restWorld[a.bone(n)]!);
+  return p('LeftUpLeg').distanceTo(p('LeftLeg')) + p('LeftLeg').distanceTo(p('LeftFoot'));
+}
+
+/**
+ * `src` on a new skeleton (proportions.ts): its bones, mesh (in the bind pose of `boneInverses`) and look, with every clip's
+ * hips and ground speed scaled by `hipScale` (the new hips' height over the old).
+ */
+export function rebodied(src: PlayerAsset, bones: BoneDef[], geometry: THREE.BufferGeometry, boneInverses: THREE.Matrix4[], look: BodyLook | null,
+  hipScale: number): PlayerAsset {
+  const clips = new Map<string, Clip>();
+  for (const [name, c] of CLIPS.get(src)!) {
+    const hips = c.hips.slice();
+    for (let k = 0; k < hips.length; k++) hips[k] = hips[k]! * hipScale;
+    clips.set(name, { ...c, hips, speed: c.speed * hipScale });
+  }
+  const a = assemble(bones, geometry, boneInverses, restOf(bones), clips, look);
+  a.url = src.url;
+  return a;
 }
 
 function setMorphs(g: THREE.BufferGeometry, names: string[], pos: Float32Array[], nrm: Float32Array[]): void {

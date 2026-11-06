@@ -1128,6 +1128,14 @@ export class Avatar {
   /** Sole points per foot, and hip-to-ankle length at rest. */
   private readonly soles: SolePoint[][];
   private readonly legLen: number;
+  /**
+   * This body's legs over the modelled person's (asset.legScale; 1 unless the creator reshaped it). The lower body's
+   * distances in metres (the hips' floor, drops and push, the run's bob and sink, steps, lunges, an overhead's feet, the
+   * hop and its landing) were tuned on the people as modelled and go with the leg: a 0.66 m hip floor over a 0.55 leg's 0.60 m hips left it
+   * no drop at all, and a knee spun round. Not the run's cadence (shorter, quicker strides doubled that leg's pops, and
+   * Froude's square root still added a quarter), nor a foot's clearance, which is the floor's (lower lifts read as sliding).
+   */
+  private legK = 1;
   /** How far a jump's legs have come in under the body (scissor, AIR_*). */
   private airK = 0;
   /** How far the legs reach out to AIR_REACH in the air (0 to 1): all of it up to a smash's ball, none once the kick opens. */
@@ -1727,6 +1735,7 @@ export class Avatar {
     v2.setFromMatrixPosition(asset.restWorld[asset.bone('LeftLeg')]!);
     v3.setFromMatrixPosition(asset.restWorld[asset.bone('LeftFoot')]!);
     this.legLen = v1.distanceTo(v2) + v2.distanceTo(v3);
+    this.legK = asset.legScale ?? 1;
     this.hipW = Math.abs(v1.x);
     this.ankleY = v3.y;
     this.ballLen = Math.abs(v3.z - v1.setFromMatrixPosition(asset.restWorld[asset.bone('LeftToeBase')]!).z);
@@ -1762,7 +1771,8 @@ export class Avatar {
     this.armLen = bp('RightArm').distanceTo(bp('RightForeArm')) + bp('RightForeArm').distanceTo(bp('RightHand'));
     this.shoulderUp = bp('RightArm').y - READY_SHOULDER;
     this.manner = (MANNERS as unknown as Record<string, Manner>)[asset.look?.name ?? ''] ?? PLAIN_MANNER;
-    this.jumpMore = Math.max(0, JUMP_HEIGHT - (asset.look?.height ?? JUMP_HEIGHT)) * JUMP_SHORT;
+    // (from the person as modelled: a body the creator shortened had the whole difference, a 0.65 m hop on a 0.43 m leg, the knee spun round)
+    this.jumpMore = Math.max(0, JUMP_HEIGHT - (asset.look?.height ?? JUMP_HEIGHT) / (asset.heightScale ?? 1)) * JUMP_SHORT;
     this.grips = [this.makeGrip(asset, 'Right'), this.makeGrip(asset, 'Left')];
     const lim = new Float64Array(this.nb);
     this.inertiaSkip = new Uint8Array(this.nb);
@@ -2405,7 +2415,7 @@ export class Avatar {
     const toBall = this.st === ST_SWING ? this.tCon - t : this.st === ST_PREP ? (this.hasCon ? this.tPlan - t : HOLD_FAR) : 0;
     const nearOff = (sim.phase !== PH_RALLY || f.over ? 1 : smoothstep(LEAN_FROM, LEAN_FULL, toBall)) - this.nearW, nearLim = NEAR_RATE * this.dt;
     this.nearW += nearOff > nearLim ? nearLim : nearOff < -nearLim ? -nearLim : nearOff;
-    this.crouchC = (f.crouch * CROUCH_SHARE * Math.min(0.18, Math.max(0, (0.95 - cy) * 0.4)) + (f.sit ?? 0)) * this.w;
+    this.crouchC = (f.crouch * CROUCH_SHARE * Math.min(0.18 * this.legK, Math.max(0, (0.95 * this.legK - cy) * 0.4)) + (f.sit ?? 0)) * this.w;
     this.crouch = this.crouchC * this.nearW;
     this.bendW = f.crouch > 0 ? smoothstep(1.25, 0.4, cy) * this.w * this.nearW : 0;
     // Up out of it after the ball: with the whole body tipping into the run the trunk was at 42 degrees at +0.24 s.
@@ -3448,7 +3458,7 @@ export class Avatar {
       this.jumpH = (9.81 * this.jumpT * this.jumpT) / 8;
       this.landAt = -1;
     } else if (p.stretchKind === STRETCH_DIVE) {
-      this.splitDrop += DIVE_DROP * smoothstep(p.stretchAt, p.stretchLand, t) * (1 - smoothstep(p.stretchUntil - DIVE_RISE, p.stretchUntil, t));
+      this.splitDrop += DIVE_DROP * this.legK * smoothstep(p.stretchAt, p.stretchLand, t) * (1 - smoothstep(p.stretchUntil - DIVE_RISE, p.stretchUntil, t));
     }
   }
 
@@ -3466,20 +3476,20 @@ export class Avatar {
     }
     if (this.landAt >= 0) {
       const v = (t - this.landAt) / LAND_TIME;
-      if (v >= 0 && v < 1) this.splitDrop += LAND_DROP * Math.sin(Math.PI * v);
+      if (v >= 0 && v < 1) this.splitDrop += LAND_DROP * this.legK * Math.sin(Math.PI * v);
       else this.landAt = -1;
     }
     const fam = rightFamily(this.fam);
     if (fam !== SMASH && fam !== OVERHEAD && fam !== VIBORA) return;
     const tc = this.st === ST_SWING ? this.tCon : this.st === ST_PREP && this.hasCon ? this.tPlan : -1;
     if (tc < 0 || t >= tc) return;
-    const h = Math.min((fam === SMASH ? JUMP_MAX : JUMP_MAX_OH) + this.jumpMore, this.upNeed - JUMP_TOES);
+    const h = Math.min(((fam === SMASH ? JUMP_MAX : JUMP_MAX_OH) + this.jumpMore) * this.legK, this.upNeed - JUMP_TOES);
     if (h < 0.03) return;
     const T = 2 * Math.sqrt((2 * h) / 9.81);
     if (t < tc - T / 2) {
       // The knees load before a smash's jump (on video 93 and 67 degrees about 0.65 s before the hit, then straight).
       const v = (t - (tc - T / 2 - JUMP_DIP_TIME)) / JUMP_DIP_TIME;
-      if (v > 0 && fam === SMASH) this.splitDrop += JUMP_DIP * Math.sin(Math.PI * v);
+      if (v > 0 && fam === SMASH) this.splitDrop += JUMP_DIP * this.legK * Math.sin(Math.PI * v);
       return;
     }
     const T2 = Math.min(T, 2 * (tc - t));
@@ -3608,7 +3618,7 @@ export class Avatar {
     // How far above the arm's reach the contact is, whole (the smash's hop is decided before the lean is in).
     this.upNeed = before && len > 1e-3 && dy > 0 ? (Math.max(0, len - armTo) * dy) / len : 0;
     const dh = Math.sqrt(dx * dx + dz * dz);
-    const push = dh > 1e-3 ? Math.min(0.4, (short * dh) / len) : 0;
+    const push = dh > 1e-3 ? Math.min(0.4 * this.legK, (short * dh) / len) : 0;
     let rx = dh > 1e-3 ? (dx / dh) * push : 0;
     let rz = dh > 1e-3 ? (dz / dh) * push : 0;
     // Before the contact the target is steady, and its limit only smooths a new plan in (the reach must be whole by
@@ -3626,12 +3636,13 @@ export class Avatar {
     this.reachX = rx;
     this.reachZ = rz;
     const share = (this.fam.wrist ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y);
-    let down = dy < 0 ? Math.min(0.3, (short * -dy) / len) * share : 0;
+    const K = this.legK;
+    let down = dy < 0 ? Math.min(0.3 * K, (short * -dy) / len) * share : 0;
     if (before) {
       // (the same at the ball, the lean whole: what the fall is planned towards)
       const sc = len > 1e-3 ? Math.max(0, len - armTo) * this.w : 0;
-      this.dropC = Math.min(DROP_MAX, this.crouchC + (dh > 1e-3 ? Math.min(0.4, (sc * dh) / len) : 0) * 0.15 + (dy < 0 ? Math.min(0.3, (sc * -dy) / len) * share : 0))
-        - (dy > 0 ? Math.min(0.12, (sc * dy) / len) : 0);
+      this.dropC = Math.min(DROP_MAX * K, this.crouchC + (dh > 1e-3 ? Math.min(0.4 * K, (sc * dh) / len) : 0) * 0.15 + (dy < 0 ? Math.min(0.3 * K, (sc * -dy) / len) * share : 0))
+        - (dy > 0 ? Math.min(0.12 * K, (sc * dy) / len) : 0);
     }
     // A volley's finish stays down where it met the ball, and the hips went on following that key: lowest 0.3 s after
     // the ball, back 0.55 s after it, and four volleys in ten ran off still sitting. The drop was for the ball. A serve the same: 7 cm down and back
@@ -3651,7 +3662,7 @@ export class Avatar {
       crouch = D.out[0]!;
     }
     // No lower than a deep lunge (hips about 0.4 m; crouch, reach and drop together reached 0.62).
-    let drop = Math.min(DROP_MAX, crouch + push * 0.15 + down + this.splitDrop) - (dy > 0 ? Math.min(0.12, (short * dy) / len) : 0);
+    let drop = Math.min(DROP_MAX * K, crouch + push * 0.15 + down + this.splitDrop) - (dy > 0 ? Math.min(0.12 * K, (short * dy) / len) : 0);
     // Up out of a low reach no faster than a body stands up from a lunge: the reach follows the stroke's key, which
     // swings up and in after the contact, and the hips came up 0.19 m in four frames.
     if (this.dt > 0 && drop < this.dropShown - HIP_RISE * this.dt) drop = this.dropShown - HIP_RISE * this.dt;
@@ -3666,7 +3677,7 @@ export class Avatar {
     }
     // Never lower than a deep lunge, thigh level (the drop and the reach together put the hip joints 0.28 m off the
     // floor, the legs folded flat and turning over).
-    const room = this.hips.matrixWorld.elements[13]! - HIP_FLOOR;
+    const room = this.hips.matrixWorld.elements[13]! - HIP_FLOOR * K;
     if (drop > room) drop = room > 0 ? room : drop < 0 ? drop : 0;
     this.dropShown = drop;
     // The weight from the ankles: the hips over the driving foot, behind a braking one.
@@ -3678,7 +3689,7 @@ export class Avatar {
       // The walk's hips: over the foot that is down, lowest with both down.
       const ph = this.gaitPhase, h = this.gaitH;
       const y = (this.legL[0]!.matrixWorld.elements[13]! + this.legR[0]!.matrixWorld.elements[13]!) * 0.5;
-      const want = this.legLen * WALK_HIP + this.ankleY - WALK_BOB * 0.5 * (1 + Math.cos(4 * Math.PI * (ph - (WALK_STANCE - 0.5) / 2)));
+      const want = this.legLen * WALK_HIP + this.ankleY - WALK_BOB * this.legK * 0.5 * (1 + Math.cos(4 * Math.PI * (ph - (WALK_STANCE - 0.5) / 2)));
       drop += (y - want) * h;
       const sway = WALK_SWAY * h * Math.cos(2 * Math.PI * (ph - WALK_STANCE / 2));
       hipX += this.stanceC * sway;
@@ -3693,7 +3704,7 @@ export class Avatar {
       const step = 2 * this.gaitHz * this.gaitSince;
       // (no more bob than the body can come down from at FALL_G at this cadence: half of it times (2 pi f)^2 is the fall at its top, and a
       // fixed 6 cm at four steps a second came down at 1.9 g; runners bob less the quicker their steps)
-      const fs = 2 * this.gaitHz, top0 = (2 * FALL_G) / (4 * Math.PI * Math.PI * fs * fs), bob = top0 < RUN_BOB ? top0 : RUN_BOB;
+      const fs = 2 * this.gaitHz, top0 = (2 * FALL_G) / (4 * Math.PI * Math.PI * fs * fs), bob = top0 < RUN_BOB * this.legK ? top0 : RUN_BOB * this.legK;
       let want = low + bob * 0.5 * (1 - Math.cos(2 * Math.PI * ((step < 1 ? step : 1) - 2 * RUN_LOW * stance)));
       // No higher than the feet on the floor can reach, and the one about to be: a leg at full stretch is where a knee pops.
       const r2 = this.legLen * this.legLen * RUN_STRETCH * RUN_STRETCH, ox = this.root.position.x + hipX, oz = this.root.position.z + hipZ;
@@ -3711,7 +3722,7 @@ export class Avatar {
           if (top < want) want = top;
         }
       }
-      if (want < low - RUN_SINK) want = low - RUN_SINK;
+      if (want < low - RUN_SINK * this.legK) want = low - RUN_SINK * this.legK;
       if (this.runHipY < 0) this.runHipY = this.runHipTo = want;
       // (eased first: each cap above comes and goes with a foot, and went straight to the limit, the head jumping 2 cm in a frame nine times a second)
       this.runHipTo += (want - this.runHipTo) * (this.dt > 0 ? 1 - Math.exp(-this.dt / RUN_HIP_EASE) : 0);
@@ -4038,7 +4049,7 @@ export class Avatar {
   private lockFeet(): void {
     const yaw = this.yRoot;
     const s = this.plantW;
-    const drift = LOCK_DRIFT + (STEP_DIST - LOCK_DRIFT) * s;
+    const drift = (LOCK_DRIFT + (STEP_DIST - LOCK_DRIFT) * s) * this.legK;
     const turnMax = LOCK_YAW + (STEP_YAW - LOCK_YAW) * s;
     // Lunge: a stroke's contact wide of the racket shoulder moves where the foot on that side wants to be. Only
     // with the feet planted (running, the gait does the reaching: a swinging foot sent 0.55 m out at a sprint came
@@ -4062,8 +4073,8 @@ export class Avatar {
       const fam = rightFamily(this.fam);
       const oh = fam === SMASH || fam === OVERHEAD || fam === VIBORA;
       const wide = Math.max(0, d - LUNGE_FROM) * 1.3;
-      const low = oh ? 0 : LUNGE_BASE + (LUNGE_LOW - LUNGE_BASE) * smoothstep(0.95, 0.45, this.conW.y);
-      const out = Math.min(LUNGE_MAX, wide > low ? wide : low) * set * (this.st === ST_FADE ? this.w : 1);
+      const low = oh ? 0 : (LUNGE_BASE + (LUNGE_LOW - LUNGE_BASE) * smoothstep(0.95 * this.legK, 0.45 * this.legK, this.conW.y)) * this.legK;
+      const out = Math.min(LUNGE_MAX * this.legK, wide > low ? wide : low) * set * (this.st === ST_FADE ? this.w : 1);
       if (out > 0.04) {
         // The model's left (+x) in world: which side of the body the ball is on, as a share.
         const lw = smoothstep(-0.35, 0.35, (dx * Math.cos(yaw) - dz * Math.sin(yaw)) / d);
@@ -4076,7 +4087,7 @@ export class Avatar {
       }
       if (oh) {
         const k = set * (this.st === ST_FADE ? this.w : 1), fx = this.stanceS * k, fz = this.stanceC * k;
-        const back = this.handed > 0 ? OH_FOOT_BACK : -OH_FOOT_FRONT, front = this.handed > 0 ? OH_FOOT_FRONT : -OH_FOOT_BACK;
+        const back = (this.handed > 0 ? OH_FOOT_BACK : -OH_FOOT_FRONT) * this.legK, front = (this.handed > 0 ? OH_FOOT_FRONT : -OH_FOOT_BACK) * this.legK;
         wlx += fx * front; wlz += fz * front;
         wrx -= fx * back; wrz -= fz * back;
       }
@@ -4120,7 +4131,7 @@ export class Avatar {
         const far = ex * ex + ez * ez;
         // Left this far behind (a body spinning into a stroke while this foot waited for the other): it steps at
         // once, as it would forced (it went there in a frame, 0.65 m; a cut between points resets the locks anyway).
-        const snap = far > STEP_SNAP * STEP_SNAP;
+        const snap = far > STEP_SNAP * STEP_SNAP * this.legK * this.legK;
         // From the hip as it will be, after the drop (measured from the clip's hip, standing taller, a held lunge was
         // always out of reach: the foot let go and stepped back to the same place, over and over), with or without the
         // reach towards the ball, whichever is nearer: the reach brings a lunging foot's hip over it, and takes it
@@ -4135,7 +4146,7 @@ export class Avatar {
         const turned = Math.abs(wrapAngle(yaw - this.lockYaw[f]!));
         // (out of reach is no reason to step to where the foot already is: a player standing tall has the leg at 0.986
         // of its length, and tapped on the spot six times a second; review round 9, the critic's #2)
-        const forced = (!setAt && (far > drift * drift || turned > turnMax)) || (d2 > reach * reach && far > STEP_MIN * STEP_MIN) || (this.st === ST_NONE && this.outOfHip(f, L.x, A.y, L.z));
+        const forced = (!setAt && (far > drift * drift || turned > turnMax)) || (d2 > reach * reach && far > STEP_MIN * STEP_MIN * this.legK * this.legK) || (this.st === ST_NONE && this.outOfHip(f, L.x, A.y, L.z));
         // Standing, one foot steps at a time (the other waits, still held), unless it is being left far behind.
         const o = 1 - f;
         const waits = !lifted && s > 0.5 && this.relLift[o] === 1 && this.relT[o]! >= 0 && turned < WAIT_TURN_MAX;
@@ -4167,7 +4178,7 @@ export class Avatar {
           // Read every frame, the target going on with the body: read on the first, a 0.6-0.8 m step still took 0.14 s, the foot at 9 m/s (review round 26).
           const go = Math.hypot(A.x - this.relFrom[f]!.x, A.z - this.relFrom[f]!.z), up = go * STEP_RISE > STEP_LIFT ? go * STEP_RISE : STEP_LIFT;
           if (this.relT[f] === 0 || up > this.relUp[f]!) this.relUp[f] = up;
-          if (this.relLift[f] === 1 && go / STEP_SPEED > this.relDur[f]!) this.relDur[f] = go / STEP_SPEED;
+          if (this.relLift[f] === 1 && go / (STEP_SPEED * this.legK) > this.relDur[f]!) this.relDur[f] = go / (STEP_SPEED * this.legK);
         }
         if (setAt && now < tc && this.relLift[f] === 1 && this.relT[f]! < 1) {
           const left = (1 - this.relT[f]!) * this.relDur[f]!, want = Math.max(SET_LEFT, tc - SET_LAND - now);
@@ -4255,7 +4266,7 @@ export class Avatar {
     if (hard >= 0 && run && G[1 - hard]! >= 0 && (G[1 - hard]! < RUN_TURNS || (this.st === ST_NONE && this.gaitUp < RUN_EARLY / hz && (hard === 0 ? far0 : far1) < r2 * RUN_STRANDED))) hard = -1;
     if (run) {
       // Further than the leg reaches with the hips a little down: it goes as the other comes down, half a stride behind it.
-      const fast = smoothstep(RUN_V0, RUN_V1, sp), low = (this.legLen + this.ankleY) * (RUN_HIP0 + (RUN_HIP1 - RUN_HIP0) * fast) - RUN_STEP_SINK - this.ankleY;
+      const fast = smoothstep(RUN_V0, RUN_V1, sp), low = (this.legLen + this.ankleY) * (RUN_HIP0 + (RUN_HIP1 - RUN_HIP0) * fast) - RUN_STEP_SINK * this.legK - this.ankleY;
       const stretch = this.legLen * RUN_STRETCH, reachIt = stretch * stretch - low * low, stride = back * RUN_BEHIND;
       // (and past where a stride's own foot gets to: at a run's pace that is further than a straight leg, the heel coming up for it, and
       // judged on reach alone every foot left early, landed beside the other and the run galloped)
@@ -4276,7 +4287,7 @@ export class Avatar {
       // (and only once it has pushed: a run's first strides took off 20 ms after they landed)
       if (G[f]! < 0 && this.gaitUp >= RUN_EARLY / hz && this.gaitDown[f]! >= (RUN_DOWN * stance) / hz) {
         const rel = f === 0 ? rel0 : rel1, far = f === 0 ? far0 : far1;
-        if ((rel < -back * RUN_BEHIND && G[1 - f]! < 0) || (this.gaitUp >= 0.5 / hz && far > RUN_STILL * RUN_STILL)) go = f;
+        if ((rel < -back * RUN_BEHIND && G[1 - f]! < 0) || (this.gaitUp >= 0.5 / hz && far > RUN_STILL * RUN_STILL * this.legK * this.legK)) go = f;
       }
     } else if (go < 0 && G[0]! < 0 && G[1]! < 0 && this.gaitSince >= 0.1 / hz) {
       // The one further behind, or the one further away when the walk has changed direction under them.

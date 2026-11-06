@@ -5,7 +5,7 @@ import * as THREE from 'three/webgpu';
 import { Game } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
 import { loadPeople, loadPlayerAsset, peopleWanted, type PlayerAsset } from '../render/avatar/asset.ts';
-import { castParam, dealCast } from '../game/cast.ts';
+import { bodiesParam, castParam, dealCast } from '../game/cast.ts';
 import practiceData from '../../data/practice.json';
 import { LoadingScreen } from '../ui/loading.ts';
 import type { BackendGuard } from '../render/backend.ts';
@@ -175,6 +175,7 @@ export class App {
     const seed = (this.seedBase = nextSeed(this.seedBase));
     const opts = optionsFromSetup(attract ? this.settings.setup : this.gameSetup(), this.settings, seed, this.asset, attract, this.params);
     opts.people = castParam(this.params);
+    opts.bodies = bodiesParam(this.params);
     // A rematch is the same four; a knock-out's next round the same pair against new opponents.
     if (attract || this.keep === KEEP_NONE) this.castSeed = seed;
     opts.castSeed = this.castSeed;

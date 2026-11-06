@@ -955,3 +955,10 @@ Three reviewers: 9 findings, none rated High or Critical, so the sceptic didn't 
 Checked and clean, so nobody need re-run them: no walk spins on p1 or p7 (0 of 17 and 0 of 27; 67a4c8e 21 of 25), walk length 5.15 s against 5.12, a real build at 60 fps with and without a key (no turn over 120 degrees in 0.25 s), servers in at 4.8 m by the return, the return mix, poaching, men's and women's statistics as in Round 27.
 
 Not covered by this review: sound, online, left-handers, singles, the change of ends' cut-away by eye. Nobody played by hand.
+
+## M5 phase A findings (2026-11-06, on the proportions work; not a review round)
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| 1 | Low | The racket elbow's side is rate-limited (`ELBOW_SIDE_RATE`) and swings round in stop-start steps as a serve starts: 12.5 degrees a frame at the limit, a stop, then another step as the pole moves on. p8 as modelled: two pops of 20-23 degrees in two minutes; reshaped short and wide: 28-45 pops a minute of serving, all 6-8 degrees. An acceleration limit on the side's turn (as the hips' reach has, `REACH_ACC`) would make it one smooth swing. | Open (the elbow item). bodiesQa2.test.ts allows short-wide 50 serve pops a minute until it's done. |
+| 2 | Low | p7's and the guest meshy's thighs as modelled pass through each other on 9.2% and 8.0% of frames (seed 1, 60 s), over the 7% bound that the shipped guard holds only on the mannequin. | Open. Not played by bodiesQa. |
+

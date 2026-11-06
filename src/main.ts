@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Game } from './game/game.ts';
 import { loadPlayerAsset, peopleWanted, type PlayerAsset } from './render/avatar/asset.ts';
-import { castParam, dealCast } from './game/cast.ts';
+import { bodiesParam, castParam, dealCast } from './game/cast.ts';
 import { findPhoto, PhotoOverlay } from './game/photoMatch.ts';
 import { App, applyRootLook } from './app/app.ts';
 import { LoadingScreen } from './ui/loading.ts';
@@ -103,6 +103,7 @@ async function start(): Promise<void> {
 
   const urlOptions = optionsFromUrl(params, await avatar);
   urlOptions.people = castParam(params);
+  urlOptions.bodies = bodiesParam(params);
   const game = new Game(urlOptions, renderer, document.getElementById('hud')!);
   // Exposed before the warm-up: tools that step the game themselves don't need it (and a hidden tab stalls it).
   (window as unknown as { __bandeja: Game }).__bandeja = game;

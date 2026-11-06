@@ -62,6 +62,8 @@ export interface GameOptions {
   castSeed?: number;
   /** A knock-out's later round: team 0 kept, opponents shuffled from this seed (cast.ts). */
   rivals?: number;
+  /** Each player's proportions by player number (cast.ts bodiesParam, the creator). */
+  bodies?: Array<import('../render/avatar/proportions.ts').Proportions | null>;
   closeCamPlayer?: number;
   /** The human's player number (team + 2 * slot); ignored with autoplay. */
   human: number;
@@ -255,6 +257,7 @@ export class Game {
     hudRoot = this.hudLayer;
     const castSeed = opts.castSeed ?? opts.match.seed ?? 0;
     const cast = dealCast(castSeed, opts.people, opts.rivals);
+    if (opts.bodies) cast.bodies = opts.bodies;
     opts.match.women = cast.women;
     this.sim = new MatchSim(opts.match);
     const court = this.sim.world.court;

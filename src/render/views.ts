@@ -9,6 +9,7 @@ import { SHOT_BANDEJA } from '../sim/contact/shots.ts';
 import { decal, makeSpotTexture } from './decals.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 import { Avatar } from './avatar/avatar.ts';
+import { reproportion } from './avatar/proportions.ts';
 import { dressRacket, makeRacketModel, racketLookFor } from './avatar/racket.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
@@ -240,7 +241,9 @@ export class PlayerView {
     if (asset) {
       // Dressed as the person dealt to them (game/cast.ts) when they loaded, else the mannequin.
       const person = cast ? asset.people.find((p) => p.look!.name === cast.people[idx]) : asset.people[idx];
-      this.avatar = new Avatar(person ?? asset, kitFor(idx, cast?.kits));
+      // In their own proportions, when they have them (proportions.ts: built once, at load).
+      const body = cast?.bodies?.[idx];
+      this.avatar = new Avatar(body ? reproportion(person ?? asset, body) : person ?? asset, kitFor(idx, cast?.kits));
       // Each player's own racket (data/racket-looks/).
       dressRacket(this.avatar.racket, racketLookFor(idx));
       this.root = this.avatar.root;
