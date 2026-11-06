@@ -151,5 +151,5 @@ describe('contrapared', () => {
     // (0.48-0.60 by group of 16 before round 6; some plans now go to a stroke on the run when one is in time)
     expect(contra / plans).toBeGreaterThan(0.3);
     expect(back / contra).toBeGreaterThanOrEqual(0.5);
-  });
+  }, 180_000); // (32 matches: about 55 s alone, past the 60 s default when the whole suite shares the machine)
 });
