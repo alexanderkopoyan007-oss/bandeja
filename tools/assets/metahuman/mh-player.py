@@ -424,7 +424,9 @@ for i in np.nonzero(covered)[0]:
 # dark inside in jagged pieces. (finish-player's box in this file's axes, z up and forward -y, but reaching the chest's
 # front: MetaHuman's neck joint stands further back in the neck than MPFB's, and 3 cm in front of it kept no chest)
 nk = J['Neck']
-behind_collar = ((np.abs(bco[:, 0] - nk.x) < 0.105) & (-bco[:, 1] > -nk.y - 0.1) & (-bco[:, 1] < -nk.y + 0.2)
+# (and out to where the shoulders start, 16 cm: a loose crew neck seen from above showed the void past 10.5 cm as a dark
+# wedge at the side of the neck)
+behind_collar = ((np.abs(bco[:, 0] - nk.x) < 0.16) & (-bco[:, 1] > -nk.y - 0.1) & (-bco[:, 1] < -nk.y + 0.2)
                  & (bco[:, 2] > nk.z - 0.16) & (bco[:, 2] < nk.z + 0.025))
 covered &= ~behind_collar
 in_shoe = bco[:, 2] < sock_top - 0.015
@@ -561,10 +563,110 @@ def save(atlas, path, name):
     bpy.data.images.remove(im)
 
 
+SCALP_REACH, SCALP_SHADE, SCALP_COVER = 0.03, 0.6, 0.9
+
+
+def scalp_mask(head_o, shell, cov_path, size):
+    """Per texel of `head_o`'s UV square (rows from the bottom): the coverage of `shell` found within SCALP_REACH out from it."""
+    scn = bpy.context.scene
+    engine = scn.render.engine
+    scn.render.engine = 'CYCLES'
+    scn.cycles.samples = 1
+    scn.cycles.device = 'CPU'
+    img = bpy.data.images.new('scalp', size[0], size[1], alpha=False, float_buffer=True)
+    cov_img = bpy.data.images.load(cov_path)
+    cov_img.colorspace_settings.name = 'Non-Color'
+    sm = bpy.data.materials.new('shell_bake')
+    sm.use_nodes = True
+    nt = sm.node_tree
+    nt.nodes.clear()
+    tx = nt.nodes.new('ShaderNodeTexImage')
+    tx.image = cov_img
+    em = nt.nodes.new('ShaderNodeEmission')
+    out = nt.nodes.new('ShaderNodeOutputMaterial')
+    nt.links.new(tx.outputs['Alpha'], em.inputs['Color'])
+    nt.links.new(em.outputs['Emission'], out.inputs['Surface'])
+    hm = bpy.data.materials.new('head_bake')
+    hm.use_nodes = True
+    ht = hm.node_tree.nodes.new('ShaderNodeTexImage')
+    ht.image = img
+    hm.node_tree.nodes.active = ht
+    saved = {o: list(o.data.materials) for o in (head_o, shell)}
+    for o, m in ((shell, sm), (head_o, hm)):
+        o.data.materials.clear()
+        o.data.materials.append(m)
+    # (the head's UVs as the export reads them: its own first layer)
+    head_o.data.uv_layers.active_index = 0
+    for o in bpy.data.objects:
+        o.select_set(o in (head_o, shell))
+    bpy.context.view_layer.objects.active = head_o
+    shell.hide_render = head_o.hide_render = False
+    bpy.ops.object.bake(type='EMIT', use_selected_to_active=True, cage_extrusion=SCALP_REACH, max_ray_distance=SCALP_REACH * 2,
+                        margin=4, use_clear=True)
+    px = np.empty(size[0] * size[1] * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    for o, ms in saved.items():
+        o.data.materials.clear()
+        for m in ms:
+            o.data.materials.append(m)
+    scn.render.engine = engine
+    return px.reshape(size[1], size[0], 4)[..., 0]
+
+
+EAR_X, EAR_FEATHER = 0.072, 6
+
+
+def ears_out(head_o, eyes_o, size):
+    """Per texel of the head's UV square: 0 on each ear's own triangles (skin more than EAR_X out from the eyes' middle,
+    between the jaw and the brow), rising to 1 over EAR_FEATHER texels round them. The helmet's sideburns lie within
+    reach of the ears' rims, and the bake painted them in the hair's colour."""
+    eco, hco = coords(eyes_o), coords(head_o)
+    ez, ex = float(eco[:, 2].mean()), float(eco[:, 0].mean())
+    ear = (hco[:, 2] > ez - 0.08) & (hco[:, 2] < ez + 0.03) & (np.abs(hco[:, 0] - ex) > EAR_X)
+    me = head_o.data
+    me.calc_loop_triangles()
+    uvl = me.uv_layers[0].data
+    w, h = size
+    hit = np.zeros((h, w), dtype=bool)
+    n = 0
+    for tri in me.loop_triangles:
+        if not all(ear[v] for v in tri.vertices):
+            continue
+        n += 1
+        p = np.array([(uvl[li].uv[0] * w, uvl[li].uv[1] * h) for li in tri.loops])
+        x0, y0 = np.floor(p.min(0)).astype(int)
+        x1, y1 = np.ceil(p.max(0)).astype(int)
+        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w - 1), min(y1, h - 1)
+        if x1 < x0 or y1 < y0:
+            continue
+        gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+        (ax, ay), (bx, by), (cx, cy) = p
+        d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(d) < 1e-12:
+            continue
+        l1 = ((by - cy) * (gx - cx) + (cx - bx) * (gy - cy)) / d
+        l2 = ((cy - ay) * (gx - cx) + (ax - cx) * (gy - cy)) / d
+        inside = (l1 >= -0.02) & (l2 >= -0.02) & (1 - l1 - l2 >= -0.02)
+        hit[y0:y1 + 1, x0:x1 + 1] |= inside
+    dist = np.full((h, w), float(EAR_FEATHER), dtype=np.float32)
+    cur = hit
+    for i in range(EAR_FEATHER):
+        dist[cur & (dist == EAR_FEATHER)] = i
+        grown = cur.copy()
+        grown[1:] |= cur[:-1]
+        grown[:-1] |= cur[1:]
+        grown[:, 1:] |= cur[:, :-1]
+        grown[:, :-1] |= cur[:, 1:]
+        cur = grown
+    say('ears kept clear of the scalp paint:', n, 'triangles,', int(hit.sum()), 'texels')
+    return np.clip(dist / EAR_FEATHER, 0, 1)
+
+
 MAPS = os.path.join(SRC, spec['maps'])
 op = np.zeros((OPAQUE_SIZE[1], OPAQUE_SIZE[0], 4), dtype=np.float32)
 op[..., 3] = 1
 # The skin from the build's baked textures: the DCC export's Head_Basecolor can come out as a placeholder checker.
+BROW_TINT, BROW_WEIGHT = 0.65, 0.8
 head_px = load_px(os.path.join(SRC, spec['head_bc']), RECT['head'][2:])
 if spec.get('head_brows'):
     # Brows painted in, from the far LODs' head texture (Unreal's brow cards use an atlas the build doesn't export):
@@ -579,10 +681,24 @@ if spec.get('head_brows'):
     # strokes keep their shading as the far texels' brightness over the brows' mean)
     brow_tone = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32)
     on = k > 0.5
+    # (toward that colour, not all the way, and at BROW_WEIGHT: a full brow groom painted solid in a dark hair's colour
+    # read as drawn on)
     if on.any():
-        far[..., :3] = far[..., :3] * (brow_tone / np.maximum(far[on][:, :3].mean(0), 1e-3))
+        far[..., :3] = far[..., :3] * (1 - BROW_TINT + BROW_TINT * brow_tone / np.maximum(far[on][:, :3].mean(0), 1e-3))
+    k = k * BROW_WEIGHT
     head_px[..., :3] = head_px[..., :3] * (1 - k[..., None]) + far[..., :3] * k[..., None]
     say('brows painted', int((k > 0.5).sum()), 'texels')
+if helmet:
+    # The scalp under the hair in the hair's colour, as finish-player.py paints the MakeHuman scalps: between thin cards
+    # the bare scalp showed as bright patches through a fringe. Where the helmet (its coverage) lies within SCALP_REACH
+    # out from the head, baked onto the head's UVs by Cycles (selected to active), darkened to the hair's shade in
+    # shadow, and feathered with the helmet's own coverage.
+    cov_mask = scalp_mask(head_skin, helmet, os.path.join(SRC, spec['helmet_cov']), RECT['head'][2:])
+    cov_mask *= ears_out(head_skin, eyes, RECT['head'][2:])
+    scalp = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32) * SCALP_SHADE
+    m = np.clip(cov_mask * SCALP_COVER, 0, 1)[..., None]
+    head_px[..., :3] = head_px[..., :3] * (1 - m) + scalp * m
+    say('scalp painted', int((cov_mask > 0.5).sum()), 'texels')
 paste(op, RECT['head'], head_px)
 paste(op, RECT['body'], load_px(os.path.join(SRC, spec['body_bc']), RECT['body'][2:]))
 paste(op, RECT['eye'], load_px(os.path.join(MAPS, 'Eyes_Color.png'), RECT['eye'][2:]))

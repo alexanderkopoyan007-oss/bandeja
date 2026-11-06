@@ -1,0 +1,9 @@
+{
+  "//": "The current cast as MetaHumans (tools/assets/metahuman/cast-batch.sh): MetaHuman's hair and brows nearest each player's MPFB ones as the game shows them, the skin-tone point fitted to their atlas's skin (MetaHuman's bias is the skin's mean linear colour x255), hair colour measured from their alpha atlas.",
+  "p1": {"hair": "WI_Hair_S_SideSweptFringe", "brows": "WI_Eyebrows_M_Full", "skin": [0.03, 0.0], "hair_rgb": [0.29, 0.235, 0.19]},
+  "p2": {"hair": "WI_Hair_S_Coil", "brows": "WI_Eyebrows_M_Thick", "skin": [0.76, 1.0], "hair_rgb": [0.07, 0.035, 0.03]},
+  "p3": {"hair": "WI_Hair_S_Clean", "brows": "WI_Eyebrows_M_Natural", "skin": [0.08, 0.30], "hair_rgb": [0.11, 0.105, 0.1]},
+  "p4": {"hair": "WI_Hair_S_SlickBack", "brows": "WI_Eyebrows_M_Natural", "skin": [0.12, 0.50], "hair_rgb": [0.13, 0.13, 0.13]},
+  "p5": {"hair": "WI_Hair_S_Casual", "brows": "WI_Eyebrows_M_Full", "skin": [0.13, 0.55], "hair_rgb": [0.13, 0.08, 0.06]},
+  "p6": {"hair": "WI_Hair_S_BrushCut", "brows": "WI_Eyebrows_M_Thick", "skin": [0.06, 0.20], "hair_rgb": [0.1, 0.1, 0.1]}
+}

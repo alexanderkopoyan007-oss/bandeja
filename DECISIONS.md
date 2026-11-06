@@ -3697,3 +3697,24 @@ The owner chose MetaHuman for the players' bodies ("very boxy", "no detail" belo
 - **Size.** 38.3k triangles with outfit LOD1, hair cards LOD3 and teeth decimated to 35% (the current people are 36-41k). The full LOD0/LOD2 build was 61.9k and looks the same at match distances.
 - **Not yet:** face expressions (MetaHuman's face moves by joints; none baked), AO, the garment's own normal maps, an athletic body (the test character is heavy), and faces matched to the current cast.
 - **Licence, unresolved.** The engine EULA (UE 5.6 and later) counts character models made with the engine as Non-Engine Products "even if included in Products that use or rely on other video game engines", and metahuman.com says MetaHumans work in any engine. The Epic Content License's MetaHuman Content Addendum says MetaHuman Content "that you download" may only be used as UE-Only Content. Our characters are made in the editor, not downloaded, but Epic's stock hair and garment sit between the two. The owner decides. Until then the packed `public/assets/people/mh*` files are git-ignored, `mh1` stays local, and nothing MetaHuman is deployed.
+
+## The cast as MetaHumans: the pipeline (2026-11-06)
+Each current player gets a MetaHuman fitted to them (`tools/assets/metahuman/cast-batch.sh <names>`, settings in `cast.json`):
+1. `cast-export.py` (Blender, on the player's MPFB .blend) writes:
+   - their body and head without clothes as `target.fbx`;
+   - a front portrait, lit flat;
+   - the camera that took it, in Unreal's centimetres with y flipped (the camera looks along Blender's +y, Unreal's yaw -90).
+2. In the MHPilot editor, through the file queue (`unreal/mhwatch.py`, `unreal/mhq.sh`):
+   - `conform_cast.py` (Epic's example_conform_from_custom_mesh) fits face and body: the face from the portrait's landmarks, the body from the mesh. It then commits the result as the A-pose.
+   - `finish_cast.py` sets the skin tone, asks Epic's cloud for the rig (joints and blend shapes) and the texture sources, puts on hair, brows, lashes and the default garment, and runs the Optimized build at Medium, exporting it.
+   - `dcc_cast.py` exports the eye, teeth and lash maps.
+   - `full_cast.py` runs the default build without the outfit, for every LOD of the face and the whole body. With an outfit on, the build drops the skin under the garment, and the collar then showed a void.
+3. `cast-spec.mjs` writes the converter's spec, keeping the player's current kit cut and shoes. Then `mh-player.py` and `build-people.mjs` make `<name>mh`.
+
+Matching:
+- **Skin tone.** MetaHuman's skin-tone point (u lightness, v undertone) is fitted to the player's atlas skin. The character's `body_bias` is the skin's mean linear colour x255; the fitted (0.5, 0.5) pilot measured as its texture.
+- **Hair and brows.** Nearest to each player as the game shows them.
+- **Hair colour.** Measured from the player's alpha atlas.
+- **Scalp.** As finish-player.py does for the MPFB scalps, the scalp under the hair is painted in the hair's colour. Cycles bakes the helmet's coverage onto the head's UVs (selected to active, 3 cm reach). The ears' own triangles are kept clear: the sideburns lie within reach of their rims.
+
+p1mh: 40.3k triangles. The women (tank tops, skirts, visor and cap) wait for the owner: MetaHuman's wardrobe has one garment, a tee and shorts.
