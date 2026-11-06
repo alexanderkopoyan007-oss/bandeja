@@ -601,6 +601,21 @@ const FOOT_OFF_HIPS = (65 * Math.PI) / 180, KNEE_OFF_HIPS = (42 * Math.PI) / 180
 /** Fastest a foot turns off the hips (rad/s): over what the hips turn on a planted foot, under a flip from limit to limit. */
 const FOOT_TURN_RATE = 20;
 const HIP_OUT = 0.68, HIP_ACROSS = 0.36;
+/**
+ * A planted foot steps once its leg is this much of the way to the hip's range (HIP_OUT, HIP_ACROSS): at the range the leg's limit
+ * moved the foot, and planted feet slid 130-170 cm/s on 3% of p8's planted frames as bodies turned over them. Standing and
+ * walking only: in a run it took off the foot due next a little early, before the other was down, and pops rose by a tenth.
+ */
+const HIP_STEP = 0.9;
+/**
+ * A foot on the floor keeps its lowest sole point where it is (PIN_*): within PIN_ON of the floor, held to one point until another
+ * is PIN_SWITCH lower, and let go (pinned again where it is) past PIN_MAX, which is a step's work, not a slide's. The run's roll
+ * onto the ball turns about the floor under the toe joint, 3.4-4.7 cm under it, and the strokes' heel rolls about the ball: the
+ * sole went along the floor 3-7 cm/s on a fifth of planted frames.
+ */
+const PIN_ON = 0.005;
+const PIN_SWITCH = 0.003;
+const PIN_MAX = 0.05;
 /** How far under the hips the trunk's ellipse goes (of the hips to the neck). */
 const TRUNK_BELOW = -0.08;
 /** The most the ready position follows the chest round (rad). */
@@ -865,7 +880,13 @@ const RUN_ARM = 0.2;
 /** Where in the swing the foot is highest, and how fast a planted foot rolls (rad/s). */
 const RUN_PEAK = 0.3;
 const RUN_FALL = 0.86;
+/** From where in a walk's swing its landing is held (its arc is a sine: within a centimetre of the floor from here). */
+const WALK_DOWN = 0.85;
 const RUN_ALONG = 0.02;
+/** By when a run's foot has gone along to its place, which is held from then: it comes straight down onto it. Along to the end of
+ * the swing, the last centimetre to the floor went at 1.4-1.7 m/s, on 6% of p8's frames on it. (Held from RUN_FALL, as it starts
+ * down, pops rose by 0.5 a minute for 0.2 cm/s less skating.) */
+const RUN_SET = 0.92;
 const RUN_THROUGH = 0.55;
 const RUN_LEVEL = 0.8;
 const RUN_ROLL_RATE = 9;
@@ -3119,6 +3140,7 @@ export class Avatar {
     this.dropShown = 0;
     this.fallY = -1;
     this.fallOff = 0;
+    this.pinOk.fill(0);
     this.driveRoll = 0;
     this.jumpT0 = -1;
     this.landAt = -1;
@@ -3727,6 +3749,7 @@ export class Avatar {
       }
     }
     this.scissor();
+    for (let f = 0; f < 2; f++) this.pinFoot(f);
     const moved = Math.abs(this.footL.x - fx0) + Math.abs(this.footL.z - fz0) + Math.abs(this.footR.x - gx0) + Math.abs(this.footR.z - gz0);
     if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant && !lifted && moved < 1e-4 && this.lockOn[0] === 0 && this.lockOn[1] === 0 && this.gaitW === 0) {
       // The clip's knees as they are: no side to carry on from next time.
@@ -3913,8 +3936,57 @@ export class Avatar {
     }
   }
 
-  /** soleLow's result (a field: a double returned from a call that isn't inlined is boxed). */
+  /**
+   * Whether an ankle at (x, y, z) is HIP_STEP of the way to the edge of foot f's hip's range (HIP_OUT, HIP_ACROSS), with the hips
+   * where they will be this frame (the clip's, moved by hipOut and down by the drop shown).
+   */
+  private outOfHip(f: number, x: number, y: number, z: number): boolean {
+    const ml = this.legL[0]!.matrixWorld.elements, mr = this.legR[0]!.matrixWorld.elements;
+    let ox = mr[12]! - ml[12]!, oz = mr[14]! - ml[14]!;
+    const ol = Math.sqrt(ox * ox + oz * oz) || 1;
+    ox /= ol;
+    oz /= ol;
+    const mh = f === 0 ? ml : mr, out = f === 0 ? -1 : 1;
+    const ax = x - mh[12]! - this.hipOutX, ay = y - mh[13]! + this.dropShown + this.fallOff, az = z - mh[14]! - this.hipOutZ;
+    const l = (ax * ox + az * oz) * out, d = Math.sqrt(ax * ax + ay * ay + az * az);
+    return l > d * HIP_OUT * HIP_STEP || l < -d * HIP_ACROSS * HIP_STEP;
+  }
+
+  /** A planted foot's sole stays where it is on the floor (PIN_*). Planted: not in a step, nor in the gait's swing. */
+  private pinFoot(f: number): void {
+    const A = f === 0 ? this.footL : this.footR, g = this.gaitW;
+    const planted = (g <= 0 || this.gaitSwing[f]! < 0) && (g >= 1 || this.relT[f]! < 0);
+    if (!planted) { this.pinOk[f] = 0; return; }
+    this.soleLow(f, A, f === 0 ? this.footQL : this.footQR);
+    if (this.low1 > PIN_ON) { this.pinOk[f] = 0; return; }
+    const P = this.soleP, k = this.pinK[f]!;
+    if (this.pinOk[f] === 1 && P[k * 3 + 1]! <= this.low1 + PIN_SWITCH) {
+      const dx = this.pinX[f]! - P[k * 3]!, dz = this.pinZ[f]! - P[k * 3 + 2]!;
+      if (dx * dx + dz * dz <= PIN_MAX * PIN_MAX) {
+        // (into where the foot is held, the lock's and the gait's, not only this frame's target: let go, the foot went back to them in a frame)
+        A.x += dx;
+        A.z += dz;
+        if (g < 1 && this.lockOn[f] === 1) { this.lockPos[f]!.x += dx; this.lockPos[f]!.z += dz; }
+        if (g > 0) { this.gaitPlant[f]!.x += dx; this.gaitPlant[f]!.z += dz; }
+        return;
+      }
+    }
+    const lk = this.lowK;
+    this.pinOk[f] = 1;
+    this.pinK[f] = lk;
+    this.pinX[f] = P[lk * 3]!;
+    this.pinZ[f] = P[lk * 3 + 2]!;
+  }
+
+  /** soleLow's result (a field: a double returned from a call that isn't inlined is boxed), which point it is, and where each was. */
   private low1 = 0;
+  private lowK = 0;
+  private readonly soleP = new Float64Array(24);
+  /** PIN_*: whether each foot's sole is held, by which point, and where. */
+  private readonly pinOk = new Uint8Array(2);
+  private readonly pinK = new Uint8Array(2);
+  private readonly pinX = new Float64Array(2);
+  private readonly pinZ = new Float64Array(2);
   /** The lowest point of foot f's sole with the ankle at A turned to Q (the toes as they are now), into low1. */
   private soleLow(f: number, A: THREE.Vector3, Q: THREE.Quaternion): void {
     const foot = (f === 0 ? this.legL : this.legR)[2]!;
@@ -3933,7 +4005,10 @@ export class Avatar {
         mt.premultiply(mf);
         vs.copy(sp.local).applyMatrix4(mt);
       }
-      if (vs.y < low) low = vs.y;
+      this.soleP[k * 3] = vs.x;
+      this.soleP[k * 3 + 1] = vs.y;
+      this.soleP[k * 3 + 2] = vs.z;
+      if (vs.y < low) { low = vs.y; this.lowK = k; }
     }
     this.low1 = low;
   }
@@ -4060,7 +4135,7 @@ export class Avatar {
         const turned = Math.abs(wrapAngle(yaw - this.lockYaw[f]!));
         // (out of reach is no reason to step to where the foot already is: a player standing tall has the leg at 0.986
         // of its length, and tapped on the spot six times a second; review round 9, the critic's #2)
-        const forced = (!setAt && (far > drift * drift || turned > turnMax)) || (d2 > reach * reach && far > STEP_MIN * STEP_MIN);
+        const forced = (!setAt && (far > drift * drift || turned > turnMax)) || (d2 > reach * reach && far > STEP_MIN * STEP_MIN) || (this.st === ST_NONE && this.outOfHip(f, L.x, A.y, L.z));
         // Standing, one foot steps at a time (the other waits, still held), unless it is being left far behind.
         const o = 1 - f;
         const waits = !lifted && s > 0.5 && this.relLift[o] === 1 && this.relT[o]! >= 0 && turned < WAIT_TURN_MAX;
@@ -4191,6 +4266,8 @@ export class Avatar {
         if (gx * gx + gz * gz > most) { hard = f; break; }
       }
     }
+    // (and a walk's planted foot the hip can't keep the leg over: HIP_STEP)
+    if (hard < 0 && !run) for (let f = 0; f < 2; f++) if (G[f]! < 0 && this.outOfHip(f, P[f]!.x, this.ankleY, P[f]!.z)) { hard = f; break; }
     let go = hard;
     if (go < 0 && run) {
       // By turns, half a stride apart, sooner if the foot has fallen behind: a foot goes while the other is in the air,
@@ -4261,19 +4338,23 @@ export class Avatar {
         const left = (1 - u) * swingT;
         const wd = sign * this.hipW * wide;
         const lean = run ? this.tiltX * ux + this.tiltZ * uz : 0, out = ahead - lean * (lean > 0 ? RUN_LEAN_STEP * 0.45 : RUN_LEAN_STEP);
-        To.x = rx + vx * left + ux * out + c * wd;
-        To.y = 0;
-        To.z = rz + vz * left + uz * out - s * wd;
-        // Going sideways the trailing foot closes up to the hips, and no further: a side step, not one leg through the
-        // other (over SIDE_RUN_ON the legs have turned onto the way, and it never comes to this).
-        const lat = sign * across * ahead + this.hipW * wide, least = this.hipW * wide * RUN_CLOSE;
-        if (lat < least) {
-          To.x += sign * c * (least - lat);
-          To.z -= sign * s * (least - lat);
+        // (put down where it was going once it comes down, from RUN_SET or WALK_DOWN of the swing: going on with the body, a run's foot
+        // went the last centimetre to the floor at 1.7 m/s, 6% of p8's frames on it)
+        if (u < (run ? RUN_SET : WALK_DOWN)) {
+          To.x = rx + vx * left + ux * out + c * wd;
+          To.y = 0;
+          To.z = rz + vz * left + uz * out - s * wd;
+          // Going sideways the trailing foot closes up to the hips, and no further: a side step, not one leg through the
+          // other (over SIDE_RUN_ON the legs have turned onto the way, and it never comes to this).
+          const lat = sign * across * ahead + this.hipW * wide, least = this.hipW * wide * RUN_CLOSE;
+          if (lat < least) {
+            To.x += sign * c * (least - lat);
+            To.z -= sign * s * (least - lat);
+          }
         }
         YT[f] = yaw + sign * WALK_TOE;
         // (a run's foot goes up before it goes along, and comes down onto its place: it skated the floor both ways)
-        const e = run ? smoothstep(RUN_ALONG, 1 - RUN_ALONG, u) : smoothstep(0, 1, u), F = this.gaitFrom[f]!;
+        const e = run ? smoothstep(RUN_ALONG, RUN_SET, u) : smoothstep(0, 1, u), F = this.gaitFrom[f]!;
         x = F.x + (To.x - F.x) * e;
         z = F.z + (To.z - F.z) * e;
         if (run) {

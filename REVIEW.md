@@ -834,7 +834,7 @@ Three reviewers and a sceptic on the shipped build, and one find of the owner's 
 | 13 | Medium | Timing barely pays: 20/60/120 ms win 41.5/41.2/40.1, a hold 31.6. | Open. The owner's call. |
 | 14 | Low | Your smash 20 km/h over the in-play figure, as hard from the back glass. | Open. |
 | 15 | Low | The jump smash lands on both feet and the rear foot stamps. | Open. |
-| 16 | Low | A rolled rear foot slides when a step is under way, and toes stay bent in the air. | Open. |
+| 16 | Low | A rolled rear foot slides when a step is under way, and toes stay bent in the air. | **Better in the code, not measured on its own** (6 Nov 2026): a planted foot's lowest sole point is held (`pinFoot`), the whole people.test run's skate 15.9 to 9.7 cm/s (DECISIONS.md, "Planted feet stay where they are"). Toes in the air open. |
 | 17 | Low | MIN_CAUGHT raises racket jumps over 25 m/s, 4.7 to 7.2%. | Open. |
 | 18 | Low | The cut at a change of ends lands on the wrong pair. | **Fixed in the code, not measured.** |
 | 19 | Low | Crowd hands against the sound: 87 games with no hands. | **Better.** A game now gets a hand. Hands in silence not re-measured. |

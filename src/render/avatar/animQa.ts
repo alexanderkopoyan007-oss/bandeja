@@ -41,6 +41,8 @@ export interface QaOptions {
   onFrame?: (m: MatchSim, av: Avatar[]) => void;
   /** Each frame with the legs through each other: who, which two capsules, how deep (m). */
   onLegs?: (player: number, where: string, deep: number) => void;
+  /** Each foot's frame on the floor (its lowest sole point within 1 cm of it): who, which foot, its speed (cm/s), when. */
+  onSlide?: (player: number, foot: number, cmPerS: number, t: number) => void;
 }
 
 /** A distribution: count, mean and quantiles. */
@@ -363,7 +365,7 @@ export function runAnimQa(asset: PlayerAsset, opts: QaOptions): QaReport {
         footFrames++;
         if (low < H_SKATE) { skateSum.s += lv * (2 - Math.pow(2, Math.max(0, low) / H_SKATE)); }
         skateSum.n++;
-        if (low < 0.01) { ground++; planted.push(lv * 100); }
+        if (low < 0.01) { ground++; planted.push(lv * 100); opts.onSlide?.(i, f, lv * 100, m.time); }
         if (low < -0.01) { below++; if (-low > belowMax) belowMax = -low; }
       }
 

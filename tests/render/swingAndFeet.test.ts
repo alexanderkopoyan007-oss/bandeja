@@ -204,8 +204,12 @@ describe('swings and feet', () => {
       // 40 ms out it was 3-4 m/s and it reached 15 only after the ball.
       expect(at(s, -5)).toBeGreaterThan(s === SHOT_SMASH ? 9 : 6);
       // And it's at its fastest at the ball, not after it: the swing used to come in going straight up, and turn round.
-      // (either side of the contact, which falls between frames)
-      expect(Math.max(at(s, -1), at(s, 0))).toBeGreaterThan(0.95 * at(s, 2));
+      // (either side of the contact, which falls between frames; each swing against itself, then the median: three seeds
+      // have six smashes, and the median at the ball against the median two frames on, taken from other swings, turned on
+      // one swing a metre a second slower. Each against itself: bandejas 1.02, smashes 1.40 here, and 1.00 and 1.24 over
+      // nine seeds, the same before and after the planted-feet change of 6 Nov 2026.)
+      const by = speed[s]!.map((r) => Math.max(r[11]!, r[12]!) / r[14]!).filter(Number.isFinite);
+      expect(med(by)).toBeGreaterThan(0.95);
     }
   });
 
