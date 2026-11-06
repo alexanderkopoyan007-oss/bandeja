@@ -14,6 +14,8 @@ const h = c.hair.replace(/^WI_/, '');
 const src = `${homedir()}/bandeja-people-src/cast/${n}`;
 const groups = readdirSync(`${src}/export`).filter((f) => f.startsWith(`${h}_CardsMesh_Group`) && f.endsWith('_LOD3.fbx')).sort().map((f) => `export/${f}`);
 const cov = `export/tex/${h}_RootUVSeedCoverage.png`;
+// (the far shell is <groom>_Helmet_LOD5 for most grooms, plain <groom>_LOD5 for S_PulledBack)
+const helmet = [`export/${h}_Helmet_LOD5.fbx`, `export/${h}_LOD5.fbx`].find((f) => existsSync(`${src}/${f}`));
 // (under a skirt, MetaHuman's shorts end where the old inner shorts did: data/players' shorts, the MPFB legs' cut)
 const skirt = kit.bottom === 'pleated' || kit.bottom === 'aline';
 const women = JSON.parse(readFileSync('data/people.json', 'utf8')).women.map((w) => w.name);
@@ -24,7 +26,7 @@ console.log(JSON.stringify({
   face: `full/SKM_MHC_${n}_FaceMesh.fbx`, face_lod: 2, teeth_decimate: 0.35,
   outfit: `export/MHC_${n}_Outfits.fbx`, outfit_lod: 1,
   hair: groups, hair_atlas: `export/tex/${h}_CardsAtlas_Attribute.png`, hair_rgb: c.hair_rgb,
-  helmet: `export/${h}_Helmet_LOD5.fbx`, ...(existsSync(`${src}/${cov}`) ? { helmet_cov: cov } : {}),
+  helmet, ...(existsSync(`${src}/${cov}`) ? { helmet_cov: cov } : {}),
   maps: `dcc/MHC_${n}/Maps`,
   head_bc: 'export/tex/T_Head_LOD3_BC.png', head_brows: 'export/tex/T_Head_LOD5to7_BC.png', body_bc: 'export/tex/T_Body_BC.png',
   shoes_from: '~/bandeja-p9/assets-src/people/p1/p1.blend',

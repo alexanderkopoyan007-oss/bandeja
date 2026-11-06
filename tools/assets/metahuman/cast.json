@@ -9,5 +9,5 @@
   "p7": {"hair": "WI_Hair_S_LowPonytail", "brows": "WI_Eyebrows_M_SlightArch", "skin": [0.0, 0.55], "hair_rgb": [0.335, 0.228, 0.16]},
   "p8": {"hair": "WI_Hair_L_AfroCurly", "brows": "WI_Eyebrows_M_Fine", "skin": [0.73, 0.85], "hair_rgb": [0.058, 0.02, 0.019]},
   "p9": {"hair": "WI_Hair_L_Straight", "brows": "WI_Eyebrows_S_FlatThin", "skin": [0.04, 0.25], "hair_rgb": [0.073, 0.04, 0.03]},
-  "p10": {"hair": "WI_Hair_S_PulledBack", "brows": "WI_Eyebrows_M_Thin", "skin": [0.0, 0.5], "hair_rgb": [0.094, 0.077, 0.063]}
+  "p10": {"hair": "WI_Hair_M_BobBangs", "brows": "WI_Eyebrows_M_Thin", "skin": [0.0, 0.5], "hair_rgb": [0.094, 0.077, 0.063]}
 }
