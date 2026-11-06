@@ -1,7 +1,8 @@
 // The mh-player.py spec for a cast member's MetaHuman (cast-batch.sh): its files under ~/bandeja-people-src/cast/<name>,
 // the hair and colours from cast.json, and the kit cut and shoes the player has now (their pack's header), with the
 // garment's own collar; under a skirt, the shorts' length the MPFB player had.  node tools/assets/metahuman/cast-spec.mjs <name>
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { gunzipSync } from 'node:zlib';
 const n = process.argv[2];
 const c = JSON.parse(readFileSync('tools/assets/metahuman/cast.json', 'utf8'))[n];
@@ -9,6 +10,10 @@ const s = gunzipSync(readFileSync(`public/assets/people/${n}.bnz`)).toString('la
 const at = s.indexOf('"kit":');
 const kit = JSON.parse(s.slice(at + 6, s.indexOf('}', at) + 1));
 const h = c.hair.replace(/^WI_/, '');
+// (every group of the groom's cards: L_Straight's come in two; and its coverage texture, which some builds don't write)
+const src = `${homedir()}/bandeja-people-src/cast/${n}`;
+const groups = readdirSync(`${src}/export`).filter((f) => f.startsWith(`${h}_CardsMesh_Group`) && f.endsWith('_LOD3.fbx')).sort().map((f) => `export/${f}`);
+const cov = `export/tex/${h}_RootUVSeedCoverage.png`;
 // (under a skirt, MetaHuman's shorts end where the old inner shorts did: data/players' shorts, the MPFB legs' cut)
 const skirt = kit.bottom === 'pleated' || kit.bottom === 'aline';
 const women = JSON.parse(readFileSync('data/people.json', 'utf8')).women.map((w) => w.name);
@@ -18,8 +23,8 @@ console.log(JSON.stringify({
   body: `full/SKM_MHC_${n}_BodyMesh.fbx`, body_lod: 1,
   face: `full/SKM_MHC_${n}_FaceMesh.fbx`, face_lod: 2, teeth_decimate: 0.35,
   outfit: `export/MHC_${n}_Outfits.fbx`, outfit_lod: 1,
-  hair: `export/${h}_CardsMesh_Group0_LOD3.fbx`, hair_atlas: `export/tex/${h}_CardsAtlas_Attribute.png`, hair_rgb: c.hair_rgb,
-  helmet: `export/${h}_Helmet_LOD5.fbx`, helmet_cov: `export/tex/${h}_RootUVSeedCoverage.png`,
+  hair: groups, hair_atlas: `export/tex/${h}_CardsAtlas_Attribute.png`, hair_rgb: c.hair_rgb,
+  helmet: `export/${h}_Helmet_LOD5.fbx`, ...(existsSync(`${src}/${cov}`) ? { helmet_cov: cov } : {}),
   maps: `dcc/MHC_${n}/Maps`,
   head_bc: 'export/tex/T_Head_LOD3_BC.png', head_brows: 'export/tex/T_Head_LOD5to7_BC.png', body_bc: 'export/tex/T_Body_BC.png',
   shoes_from: '~/bandeja-p9/assets-src/people/p1/p1.blend',

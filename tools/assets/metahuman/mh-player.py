@@ -221,7 +221,8 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 body_arm, body = keep_lod(imp(spec['body']), spec.get('body_lod', 1))
 face_arm, face = keep_lod(imp(spec['face']), spec.get('face_lod', 2))
 outfit_arm, outfit = keep_lod(imp(spec['outfit']), spec.get('outfit_lod', 0))
-hair = imp(spec['hair'])[0]
+# (a groom's cards can come in groups, L_Straight's two: all of them, as one mesh)
+hair = join([imp(h)[0] for h in (spec['hair'] if isinstance(spec['hair'], list) else [spec['hair']])], 'hair')
 brows = imp(spec['brows'])[0] if spec.get('brows') else None
 
 
@@ -892,63 +893,6 @@ def ears_out(head_o, eyes_o, size):
     return np.clip(dist / EAR_FEATHER, 0, 1)
 
 
-MAPS = os.path.join(SRC, spec['maps'])
-op = np.zeros((OPAQUE_SIZE[1], OPAQUE_SIZE[0], 4), dtype=np.float32)
-op[..., 3] = 1
-# The skin from the build's baked textures: the DCC export's Head_Basecolor can come out as a placeholder checker.
-BROW_TINT, BROW_WEIGHT = 0.65, 0.8
-head_px = load_px(os.path.join(SRC, spec['head_bc']), RECT['head'][2:])
-if spec.get('head_brows'):
-    # Brows painted in, from the far LODs' head texture (Unreal's brow cards use an atlas the build doesn't export):
-    # its texels that differ from the near head's, in the brows' band only, feathered.
-    far = load_px(os.path.join(SRC, spec['head_brows']), RECT['head'][2:])
-    diff = np.abs(far[..., :3] - head_px[..., :3]).sum(-1)
-    hh, ww = diff.shape
-    vv, uu = np.mgrid[0:hh, 0:ww]
-    band = ((vv / hh > 0.63) & (vv / hh < 0.75) & (uu / ww > 0.22) & (uu / ww < 0.78)).astype(np.float32)
-    k = np.clip((diff - 0.03) / 0.08, 0, 1) * band
-    # (in the hair's colour: the far texture paints this MetaHuman's own brows, lighter than the hair given here; the
-    # strokes keep their shading as the far texels' brightness over the brows' mean)
-    brow_tone = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32)
-    on = k > 0.5
-    # (toward that colour, not all the way, and at BROW_WEIGHT: a full brow groom painted solid in a dark hair's colour
-    # read as drawn on)
-    if on.any():
-        far[..., :3] = far[..., :3] * (1 - BROW_TINT + BROW_TINT * brow_tone / np.maximum(far[on][:, :3].mean(0), 1e-3))
-    k = k * BROW_WEIGHT
-    head_px[..., :3] = head_px[..., :3] * (1 - k[..., None]) + far[..., :3] * k[..., None]
-    say('brows painted', int((k > 0.5).sum()), 'texels')
-if helmet:
-    # The scalp under the hair in the hair's colour, as finish-player.py paints the MakeHuman scalps: between thin cards
-    # the bare scalp showed as bright patches through a fringe. Where the helmet (its coverage) lies within SCALP_REACH
-    # out from the head, baked onto the head's UVs by Cycles (selected to active), darkened to the hair's shade in
-    # shadow, and feathered with the helmet's own coverage.
-    cov_mask = scalp_mask(head_skin, helmet, os.path.join(SRC, spec['helmet_cov']), RECT['head'][2:])
-    cov_mask *= ears_out(head_skin, eyes, RECT['head'][2:])
-    scalp = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32) * SCALP_SHADE
-    m = np.clip(cov_mask * SCALP_COVER, 0, 1)[..., None]
-    head_px[..., :3] = head_px[..., :3] * (1 - m) + scalp * m
-    say('scalp painted', int((cov_mask > 0.5).sum()), 'texels')
-paste(op, RECT['head'], head_px)
-paste(op, RECT['body'], load_px(os.path.join(SRC, spec['body_bc']), RECT['body'][2:]))
-paste(op, RECT['eye'], load_px(os.path.join(MAPS, 'Eyes_Color.png'), RECT['eye'][2:]))
-paste(op, RECT['teeth'], load_px(os.path.join(MAPS, 'Teeth_Color.png'), RECT['teeth'][2:]))
-for k in ('shirt', 'shorts'):
-    x, y, w, h = RECT[k]
-    op[y:y + h, x:x + w] = 1.0  # the kit's occlusion: none baked yet
-if skirt:
-    # (person_kit's: darker up under the shirt, in each pleat's valley and on the lining; drawn square and halved across)
-    sao = pk.skirt_ao(RECT['skirt'][3], KIT['bottom'] == 'pleated')
-    w = RECT['skirt'][2]
-    paste(op, RECT['skirt'], sao.reshape(sao.shape[0], w, -1, 4).mean(2))
-op[..., 3] = 1
-save(op, os.path.join(OUT, 'opaque.webp'), 'opaque')
-
-al = np.zeros((ALPHA_SIZE[1], ALPHA_SIZE[0], 4), dtype=np.float32)
-cards = load_px(os.path.join(SRC, spec['hair_atlas']))
-tone = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32)
-
-
 HELMET_FEATHER = 14
 
 
@@ -985,6 +929,79 @@ def rim_feather(o, size, radius):
     return f * f * (3 - 2 * f)
 
 
+# The helmet's coverage: its own texture's alpha, or, for a groom whose build writes none (L_Straight), the whole shell, fading
+# in from its open rim (the hairline, sideburns and nape) as the texture's would.
+HELMET_COV = os.path.join(SRC, spec['helmet_cov']) if spec.get('helmet_cov') else None
+if helmet and not (HELMET_COV and os.path.exists(HELMET_COV)):
+    cov_px = np.ones((512, 512, 4), dtype=np.float32)
+    cov_px[..., 3] = rim_feather(helmet, (512, 512), HELMET_FEATHER)
+    HELMET_COV = os.path.join(OUT, 'helmet-cov.png')
+    im = bpy.data.images.new('helmet_cov', 512, 512, alpha=True)
+    im.pixels.foreach_set(cov_px.ravel())
+    im.filepath_raw = HELMET_COV
+    im.file_format = 'PNG'
+    im.save()
+    bpy.data.images.remove(im)
+    say('no coverage texture for the helmet: the whole shell, feathered at its rim')
+
+
+MAPS = os.path.join(SRC, spec['maps'])
+op = np.zeros((OPAQUE_SIZE[1], OPAQUE_SIZE[0], 4), dtype=np.float32)
+op[..., 3] = 1
+# The skin from the build's baked textures: the DCC export's Head_Basecolor can come out as a placeholder checker.
+BROW_TINT, BROW_WEIGHT = 0.65, 0.8
+head_px = load_px(os.path.join(SRC, spec['head_bc']), RECT['head'][2:])
+if spec.get('head_brows'):
+    # Brows painted in, from the far LODs' head texture (Unreal's brow cards use an atlas the build doesn't export):
+    # its texels that differ from the near head's, in the brows' band only, feathered.
+    far = load_px(os.path.join(SRC, spec['head_brows']), RECT['head'][2:])
+    diff = np.abs(far[..., :3] - head_px[..., :3]).sum(-1)
+    hh, ww = diff.shape
+    vv, uu = np.mgrid[0:hh, 0:ww]
+    band = ((vv / hh > 0.63) & (vv / hh < 0.75) & (uu / ww > 0.22) & (uu / ww < 0.78)).astype(np.float32)
+    k = np.clip((diff - 0.03) / 0.08, 0, 1) * band
+    # (in the hair's colour: the far texture paints this MetaHuman's own brows, lighter than the hair given here; the
+    # strokes keep their shading as the far texels' brightness over the brows' mean)
+    brow_tone = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32)
+    on = k > 0.5
+    # (toward that colour, not all the way, and at BROW_WEIGHT: a full brow groom painted solid in a dark hair's colour
+    # read as drawn on)
+    if on.any():
+        far[..., :3] = far[..., :3] * (1 - BROW_TINT + BROW_TINT * brow_tone / np.maximum(far[on][:, :3].mean(0), 1e-3))
+    k = k * BROW_WEIGHT
+    head_px[..., :3] = head_px[..., :3] * (1 - k[..., None]) + far[..., :3] * k[..., None]
+    say('brows painted', int((k > 0.5).sum()), 'texels')
+if helmet:
+    # The scalp under the hair in the hair's colour, as finish-player.py paints the MakeHuman scalps: between thin cards
+    # the bare scalp showed as bright patches through a fringe. Where the helmet (its coverage) lies within SCALP_REACH
+    # out from the head, baked onto the head's UVs by Cycles (selected to active), darkened to the hair's shade in
+    # shadow, and feathered with the helmet's own coverage.
+    cov_mask = scalp_mask(head_skin, helmet, HELMET_COV, RECT['head'][2:])
+    cov_mask *= ears_out(head_skin, eyes, RECT['head'][2:])
+    scalp = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32) * SCALP_SHADE
+    m = np.clip(cov_mask * SCALP_COVER, 0, 1)[..., None]
+    head_px[..., :3] = head_px[..., :3] * (1 - m) + scalp * m
+    say('scalp painted', int((cov_mask > 0.5).sum()), 'texels')
+paste(op, RECT['head'], head_px)
+paste(op, RECT['body'], load_px(os.path.join(SRC, spec['body_bc']), RECT['body'][2:]))
+paste(op, RECT['eye'], load_px(os.path.join(MAPS, 'Eyes_Color.png'), RECT['eye'][2:]))
+paste(op, RECT['teeth'], load_px(os.path.join(MAPS, 'Teeth_Color.png'), RECT['teeth'][2:]))
+for k in ('shirt', 'shorts'):
+    x, y, w, h = RECT[k]
+    op[y:y + h, x:x + w] = 1.0  # the kit's occlusion: none baked yet
+if skirt:
+    # (person_kit's: darker up under the shirt, in each pleat's valley and on the lining; drawn square and halved across)
+    sao = pk.skirt_ao(RECT['skirt'][3], KIT['bottom'] == 'pleated')
+    w = RECT['skirt'][2]
+    paste(op, RECT['skirt'], sao.reshape(sao.shape[0], w, -1, 4).mean(2))
+op[..., 3] = 1
+save(op, os.path.join(OUT, 'opaque.webp'), 'opaque')
+
+al = np.zeros((ALPHA_SIZE[1], ALPHA_SIZE[0], 4), dtype=np.float32)
+cards = load_px(os.path.join(SRC, spec['hair_atlas']))
+tone = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32)
+
+
 def hair_px(size):
     c = cards if (cards.shape[1], cards.shape[0]) == tuple(size) else None
     if c is None:
@@ -1006,7 +1023,7 @@ lash = load_px(os.path.join(MAPS, 'Eyelashes_Color.png'), RECT['lash'][2:])
 lash[..., :3] = np.minimum(lash[..., :3], 0.08)
 paste(al, RECT['lash'], lash)
 if helmet:
-    cov = load_px(os.path.join(SRC, spec['helmet_cov']), RECT['helmet'][2:])
+    cov = load_px(HELMET_COV, RECT['helmet'][2:])
     hp = np.zeros_like(cov)
     # (its alpha is coverage; its green, a seed per strand, gives the strand-to-strand shade the cards' atlas does)
     hp[..., :3] = tone * (0.75 + 0.35 * cov[..., 1:2] / max(float(cov[..., 1].max()), 1e-3))
