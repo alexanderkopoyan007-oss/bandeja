@@ -9,17 +9,23 @@ import { kitFor } from '../../src/render/avatar/kit.ts';
 import type { PlayerAsset } from '../../src/render/avatar/asset.ts';
 
 const base = mannequinWithPeople();
-const everyone: PlayerAsset[] = [...base.people, ...GUESTS.map((g) => guestAsset(g, base))];
+const guests = new Set(GUESTS.map((g) => guestAsset(g, base)));
+const everyone: PlayerAsset[] = [...base.people, ...guests];
 const nameOf = (p: PlayerAsset): string => p.look!.name;
 const look = kitFor(0);
 
-/** A body's vertices weighted at least `min` to these bones (bind pose). */
+/**
+ * A body's vertices weighted at least `min` to these bones (bind pose), without a modelled headband or visor (in the
+ * socks' part, high on the head: hidden whenever something else is worn on the head).
+ */
 function verts(p: PlayerAsset, bones: string[], min = 0.5): THREE.Vector3[] {
   const g = p.geometry;
   const pos = g.getAttribute('position'), si = g.getAttribute('skinIndex'), sw = g.getAttribute('skinWeight');
+  const partA = g.getAttribute('bodyA');
   const ids = bones.map((b) => p.bone(b));
   const out: THREE.Vector3[] = [];
   for (let i = 0; i < pos.count; i++) {
+    if (p.look?.kit.head && partA && partA.getW(i) > 0.5 && pos.getY(i) > 1.4) continue;
     let w = 0;
     for (let k = 0; k < 4; k++) if (ids.includes(si.getComponent(i, k))) w += sw.getComponent(i, k);
     if (w >= min) out.push(new THREE.Vector3().fromBufferAttribute(pos, i));
@@ -34,7 +40,8 @@ const polar = (f: HeadFit, v: THREE.Vector3): [number, number, number] => {
 
 /** A piece's vertices in the bind pose (its matrix is the bone's inverse bind matrix: undo it). */
 function bindVerts(m: THREE.Mesh, p: PlayerAsset, bone: string): THREE.Vector3[] {
-  const back = p.boneInverses[p.bone(bone)]!.clone().invert().multiply(m.matrix);
+  // (a skinned piece is in the bind pose as it is)
+  const back = (m as THREE.SkinnedMesh).isSkinnedMesh ? new THREE.Matrix4() : p.boneInverses[p.bone(bone)]!.clone().invert().multiply(m.matrix);
   const pos = m.geometry.getAttribute('position');
   return Array.from({ length: pos.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(back));
 }
@@ -155,14 +162,42 @@ describe('costume: fitting', () => {
         const band = bindVerts(piece.mesh, p, `${side}ForeArm`);
         const skin = verts(p, [`${side}ForeArm`, `${side}Hand`]).filter((v) => along(v) > 0.03 && along(v) < 0.085 && radial(v) < 0.08);
         expect(skin.length, nameOf(p)).toBeGreaterThan(20);
-        // Round the arm, angle by angle: no forearm vertex in the band's length further out than the band's inside there
-        // (give or take a millimetre), and the band within 2 cm of the arm's surface.
-        const near = (v: THREE.Vector3): number[] => band.filter((b) => Math.abs(Math.atan2(Math.sin(angle(b) - angle(v)), Math.cos(angle(b) - angle(v)))) < 0.2).map(radial);
+        // Round the arm, angle by angle and along it: no forearm vertex in the band's length further out than the band's
+        // inside there (give or take a millimetre).
+        const near = (v: THREE.Vector3): number[] => band.filter((b) => Math.abs(along(b) - along(v)) < 0.0045 && Math.abs(Math.atan2(Math.sin(angle(b) - angle(v)), Math.cos(angle(b) - angle(v)))) < 0.12).map(radial);
+        const gaps: number[] = [];
         for (const v of skin) {
           const inside = Math.min(...near(v));
           expect(radial(v), nameOf(p)).toBeLessThan(inside + 0.001);
-          expect(inside - radial(v), nameOf(p)).toBeLessThan(0.02);
+          gaps.push(inside - radial(v));
         }
+        // Hugging it: half the arm within 3 mm of the band's inside, none past 8 mm (a Meshy guest's lumpier arm 7 mm and
+        // 16 mm). One size for its whole length stood 2 cm off the wrist.
+        gaps.sort((a, b) => a - b);
+        const [half, most] = guests.has(p) ? [0.007, 0.016] : [0.003, 0.008];
+        expect(gaps[gaps.length >> 1]!, nameOf(p)).toBeLessThan(half);
+        expect(gaps[gaps.length - 1]!, nameOf(p)).toBeLessThan(most);
+        // Skinned as the arm is, so it turns with the wrist where the skin does: weights summing to one, on the forearm
+        // and the hand, the hand's share growing towards the wrist.
+        const m = piece.mesh as THREE.SkinnedMesh;
+        expect(m.isSkinnedMesh && piece.skinned).toBe(true);
+        const bi = m.geometry.getAttribute('skinIndex'), bw = m.geometry.getAttribute('skinWeight');
+        const fore = p.bone(`${side}ForeArm`), hand = p.bone(`${side}Hand`);
+        let handNear = 0, handFar = 0, nNear = 0, nFar = 0;
+        for (let i = 0; i < bi.count; i++) {
+          let sum = 0, h = 0, arm = 0;
+          for (let c = 0; c < 4; c++) {
+            const b = bi.getComponent(i, c), x = bw.getComponent(i, c);
+            sum += x;
+            if (b === hand) h += x;
+            if (b === hand || b === fore) arm += x;
+          }
+          expect(sum).toBeCloseTo(1, 4);
+          expect(arm, nameOf(p)).toBeGreaterThan(0.5);
+          const a = along(band[i]!);
+          if (a < 0.035) { handNear += h; nNear++; } else if (a > 0.075) { handFar += h; nFar++; }
+        }
+        expect(handNear / nNear, nameOf(p)).toBeGreaterThan(handFar / nFar);
       }
     }
   });
@@ -182,13 +217,21 @@ describe('costume: dressing', () => {
     expect(dress(base, { head: 'head-cap', eyes: 'eyes-wrap' }, look)).toEqual([]);
   });
 
+  it('the wristbands painted on the skin stay unless the wrist slot is chosen (a band to wear, or none)', () => {
+    const p = everyone[0]!;
+    expect(worn(p, {}, look, null).paintedWrists).toBe(true);
+    expect(worn(p, { head: 'head-cap' }, look, null).paintedWrists).toBe(true);
+    expect(worn(p, { wrist: 'wrist-single' }, look, null).paintedWrists).toBe(false);
+    expect(worn(p, { wrist: null }, look, null).paintedWrists).toBe(false);
+  });
+
   it('a modelled headband or visor stays when it is what is worn, and comes off for anything else', () => {
     const banded = everyone.filter((p) => p.look!.kit.head);
     expect(banded.length).toBeGreaterThan(0);
     for (const p of banded) {
       const own = `head-${p.look!.kit.head}`;
       const index = new THREE.BufferAttribute(p.look!.face ? p.look!.face.bodyIndex : (p.geometry.index!.array as Uint32Array), 1);
-      expect(worn(p, { head: own }, look, index)).toEqual({ pieces: [], bodyIndex: null, hair: null });
+      expect(worn(p, { head: own }, look, index)).toEqual({ pieces: [], bodyIndex: null, hair: null, paintedWrists: true });
       const { pieces, bodyIndex: cut } = worn(p, { head: 'head-cap' }, look, index);
       expect(pieces.length).toBe(1);
       expect(cut, nameOf(p)).not.toBeNull();
@@ -207,6 +250,14 @@ describe('costume: dressing', () => {
       const { pieces: none, bodyIndex: bare } = worn(p, { head: null }, look, index);
       expect(none).toEqual([]);
       expect(bare!.count).toBe(cut!.count);
+    }
+    // What goes on instead fits the head, not the one taken off: a headband on someone modelled with a visor once
+    // stood 9 cm off her forehead, round the visor's hidden brim.
+    for (const p of banded) {
+      const front = bindVerts(dress(p, { head: 'head-band' }, look)[0]!.mesh, p, 'Head').filter((v) => Math.abs(v.x) < 0.01);
+      const lo = Math.min(...front.map((v) => v.y)), hi = Math.max(...front.map((v) => v.y));
+      const skinZ = Math.max(...verts(p, ['Head']).filter((v) => Math.abs(v.x) < 0.01 && v.y > lo && v.y < hi).map((v) => v.z));
+      expect(Math.max(...front.map((v) => v.z)) - skinZ, nameOf(p)).toBeLessThan(0.02);
     }
     // Someone modelled bare-headed keeps every triangle.
     const plain = everyone.find((p) => !p.look!.kit.head && p.look!.face)!;

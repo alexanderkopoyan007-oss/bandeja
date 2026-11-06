@@ -19,7 +19,8 @@ import { Soundscape, type FeetSource } from '../audio/soundscape.ts';
 import { FLOOR_NAMES } from '../audio/voices.ts';
 import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
-import { makeBag, type Wear } from '../render/avatar/costume.ts';
+import type { Wear } from '../render/avatar/costume.ts';
+import { makeBag, makeBottle } from '../render/props.ts';
 import { Hud } from '../ui/hud.ts';
 import { TvGraphics } from '../ui/tv.ts';
 import { Post } from '../render/post.ts';
@@ -684,6 +685,10 @@ export class Game {
       bag.rotation.y = Math.PI / 2;
       bag.position.set(bench.x, bench.y, bench.z + (k === 0 ? -0.45 : 0.45) * Math.sign(bench.z || 1));
       this.scene.add(bag);
+      // Their bottle on the floor in front of the bench.
+      const bottle = makeBottle(kit.shirt);
+      bottle.position.set(bench.x + 0.38, 0, bag.position.z + 0.18);
+      this.scene.add(bottle);
     }
   }
 

@@ -162,6 +162,8 @@ export interface KitState {
   lag: { value: THREE.Vector3 };
   /** How far a stride throws long hair (m, model space): the mannequin has none. */
   sway?: { value: THREE.Vector3 };
+  /** x: 1 the towelling bands painted on a person's wrists show, 0 they don't (a worn one, or bare wrists, chosen). */
+  wrist?: { value: THREE.Vector2 };
 }
 
 export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THREE.MeshStandardNodeMaterial; state: KitState } {
@@ -504,8 +506,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   col = col.mul(float(1).sub(hems.mul(0.14)));
   const wristAt = frame.wrist!, fore = frame.foreDir!;
   const wristD = vec3(p.x.abs(), p.y, p.z).sub(vec3(wristAt.x, wristAt.y, wristAt.z)).dot(vec3(fore.x, fore.y, fore.z));
+  const wristU = uniform(new THREE.Vector2(1, 0));
   const band = smoothstep(0.003, 0, wristD.add(WRIST_IN).abs().sub(WRIST_W)).mul(skinW)
-    .mul(smoothstep(0.17, 0.15, vec3(p.x.abs(), p.y, p.z).sub(vec3(wristAt.x, wristAt.y, wristAt.z)).length()));
+    .mul(smoothstep(0.17, 0.15, vec3(p.x.abs(), p.y, p.z).sub(vec3(wristAt.x, wristAt.y, wristAt.z)).length())).mul(wristU.x);
   col = mix(col, color(look.shirt).mul(float(0.92).add(p.x.mul(2400).sin().mul(0.08))), band);
   const m = new PersonNodeMaterial();
   m.maskNode = neckline.lessThan(COLLAR_MID).and(underShirt.lessThan(0.5)).and(skinCut.mul(skinW).lessThan(0.5));
@@ -614,7 +617,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook): { material: P
   hair.specularColorNode = mix(vec3(1, 1, 1), base.mul(2.2), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
   hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);
-  return { material: m, hair, state: { sweat: sweatU, lag, sway } };
+  return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU } };
 }
 
 const BAKED_CLOTH_AMBIENT = 0.8;

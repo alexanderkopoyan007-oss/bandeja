@@ -7,7 +7,8 @@ import floorLooks from '../../../data/floor-looks.json' with { type: 'json' };
 import type { Court } from '../../sim/court/court.ts';
 import { floorMaterial, type FloorLook } from '../turf.ts';
 import type { EnvProbe } from '../courtView.ts';
-import { BENCH_TOP, BENCH_Z, BoxBatch, buildStadium } from './stadium.ts';
+import { BENCH_TOP, BENCH_Z, buildStadium } from './stadium.ts';
+import { makeBench } from '../props.ts';
 import { buildOutdoor } from './outdoor.ts';
 import { buildHall } from './hall.ts';
 import { addArenaLights } from './lights.ts';
@@ -117,20 +118,14 @@ export class Arena {
     if (def.kind === 'stadium') this.parts.push(buildStadium(this.group, def, court));
     else if (def.kind === 'hall') this.parts.push(buildHall(this.group, def, court));
     else this.parts.push(buildOutdoor(this.group, def, court, scene));
-    // The stadium's benches are its own (with the umpire's chair); a club or a hall gets a slatted bench on two legs.
+    // The benches by the net outside the side glass: the stadium's padded with a backrest, a club's or a hall's
+    // slatted wood (render/props.ts).
     const bx = court.halfW + (def.kind === 'stadium' ? 1.6 : 1.3);
-    for (const z of BENCH_Z) this.benches.push(new THREE.Vector3(-bx, BENCH_TOP, z));
-    if (def.kind !== 'stadium') {
-      const b = new BoxBatch();
-      const wood = def.kind === 'hall' ? '#7d828a' : '#8a6a48';
-      for (const z of BENCH_Z) {
-        for (const dx of [-0.15, 0, 0.15]) b.box(-bx + dx, BENCH_TOP - 0.02, z, 0.12, 0.04, 2.0, wood);
-        for (const dz of [-0.8, 0.8]) b.box(-bx, (BENCH_TOP - 0.04) / 2, z + dz, 0.42, BENCH_TOP - 0.04, 0.06, '#3a3d44');
-      }
-      const m = b.mesh();
-      m.castShadow = true;
-      m.receiveShadow = true;
-      this.group.add(m);
+    for (const z of BENCH_Z) {
+      this.benches.push(new THREE.Vector3(-bx, BENCH_TOP, z));
+      const b = makeBench(def.kind === 'stadium' ? 'stadium' : 'club', BENCH_TOP, def.kind === 'stadium' ? 2.2 : 2.0);
+      b.position.set(-bx, 0, z);
+      this.group.add(b);
     }
   }
 

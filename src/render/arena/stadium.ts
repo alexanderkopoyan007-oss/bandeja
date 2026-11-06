@@ -196,8 +196,7 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   side.box(cx, 1.5, 0, 0.6, 0.08, 0.6, '#c9ccd1');
   side.box(cx + 0.27, 1.85, 0, 0.06, 0.6, 0.6, '#1b2a63');
   side.box(cx - 0.35, 1.02, 0, 0.3, 0.05, 0.6, '#c9ccd1');
-  // (the players' bags on them: the game puts them there, game.ts placeBags)
-  for (const z of BENCH_Z) side.box(-cx, 0.23, z, 0.5, 0.46, 2.2, '#2b2f38');
+  // (the benches are the arena's, render/props.ts, with the players' bags on them: game.ts placeBags)
   side.box(-(court.halfW + 4), 0.6, court.halfL + 4, 1.4, 1.2, 1.4, '#1c2030');
   side.box(-(court.halfW + 4), 1.55, court.halfL + 4, 0.35, 0.3, 0.6, '#0f1115');
   const sideMesh = side.mesh();

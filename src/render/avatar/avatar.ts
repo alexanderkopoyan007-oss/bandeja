@@ -1867,11 +1867,20 @@ export class Avatar {
    * avatar's own over the shared attributes (another player may be dressed as the same person).
    */
   wear(d: Dressing): void {
-    const { pieces, bodyIndex, hair } = d;
+    const { pieces, bodyIndex, hair, paintedWrists } = d;
+    this.kit?.wrist?.value.setX(paintedWrists ? 1 : 0);
     for (const p of pieces) {
-      const b = this.bones.find((x) => x.name === p.bone);
-      if (!b) continue;
-      b.add(p.mesh);
+      if (p.skinned) {
+        // (on the skeleton, as the body is: bind pose, identity bind matrix)
+        const sm = p.mesh as THREE.SkinnedMesh;
+        sm.bind(this.mesh.skeleton, new THREE.Matrix4());
+        sm.frustumCulled = false;
+        this.root.add(sm);
+      } else {
+        const b = this.bones.find((x) => x.name === p.bone);
+        if (!b) continue;
+        b.add(p.mesh);
+      }
       if (p.arm) this.sided.push(p);
     }
     if (bodyIndex) this.mesh.geometry = ownGeometry(this.mesh.geometry, bodyIndex, null);
