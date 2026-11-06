@@ -71,6 +71,12 @@ export const E_BODY = 18;
 export const E_STRETCH = 20;
 /** A held swing goes this long before the ball leaves its window (s), and before it would hit the body (s). */
 const LAST_SWING = 0.02;
+/**
+ * A planned contact is in reach from where the player is if a window from there is within this of it (s); further, the
+ * player is still on the way, and the cue shows the plan's own moment (focusIdeal), which the release is then judged
+ * against too (releaseSwing).
+ */
+const FOCUS_GAP = 0.12;
 /** A stretch window counts for the contact being gone for if it is this close to it (s). */
 const STRETCH_SAME = 0.2;
 const BODY_LEAD = 0.03;
@@ -1785,12 +1791,36 @@ export class MatchSim {
     const n = findWindows(this.pred, p.pos.x, p.pos.z, s, mustBounce, 1, p.tune, this.windows, this.time - RELEASE_LOOKBACK,
       p.shot === SHOT_BANDEJA, p.shot === SHOT_VOLLEY, this.ai[i] ? this.ai[i].ohKind : this.ohHuman[i]!, this.contraGlass(i), this.stretchOn);
     let w: ContactWindow | null = null;
+    let planGap = 1e9;
+    const st = this.stand[i]!;
     for (let k = 0; k < n; k++) {
       const c = this.windows[k]!;
+      if (st.valid) {
+        const g = st.t < c.start ? c.start - st.t : st.t > c.end ? st.t - c.end : 0;
+        if (g < planGap) planGap = g;
+      }
       if (t > c.end + TIMING.miss * scale) continue;
       if (!w || abs(t - c.ideal) < abs(t - w.ideal)) w = c;
     }
+    // A person's planned contact still out of reach from where they are (on the way, or not getting there) is the moment
+    // the cue shows (focusIdeal), so it is one of the moments the release is judged against; whether the ball is reached
+    // is the contact's to say (Out of reach). Judged only against windows from where the body was, a release on a Perfect
+    // meter was graded against another window in reach from there: "Too early" or "Too late" by 200 ms (the owner, 6 Nov 2026).
+    if (!this.ai[i] && st.valid && planGap > FOCUS_GAP && (!this.doubles || this.taker[team] === i) && t <= st.t + TIMING.miss * scale
+      && (!w || abs(t - st.t) < abs(t - w.ideal))) {
+      const c = this.planWin;
+      c.start = c.end = c.ideal = st.t;
+      c.idealIdx = this.pred.indexAt(st.t);
+      c.volley = st.volley;
+      c.afterWall = st.afterWall;
+      c.height = st.by;
+      c.contra = st.contra;
+      c.stretch = STRETCH_NONE;
+      w = c;
+    }
     if (!w || this.rally.hitter === team) {
+      // (no timing to grade: the last swing's would be read as this one's)
+      p.timingDelta = 0;
       this.whiff(i, t, 0, WHIFF_NOTHING);
       return;
     }
@@ -1867,7 +1897,7 @@ export class MatchSim {
       }
     }
     // Not in reach of the planned contact yet (still running there): cue the planned moment itself.
-    this.focusInReach = !st.valid || (best >= 0 && bestGap <= 0.12);
+    this.focusInReach = !st.valid || (best >= 0 && bestGap <= FOCUS_GAP);
     if (!this.focusInReach) return st.t;
     return best;
   }
@@ -1959,6 +1989,8 @@ export class MatchSim {
   }
 
   private readonly stretchWins = makeWindows();
+  /** releaseSwing's window for a planned contact not yet in reach (FOCUS_GAP). */
+  private readonly planWin = makeWindows()[0]!;
   /** MatchConfig.stretch. */
   readonly stretchOn: boolean = true;
 
