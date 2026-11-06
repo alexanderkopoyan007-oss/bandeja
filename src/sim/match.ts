@@ -230,6 +230,9 @@ const POINT_DEAD_WALK = 1.2;
  * still (review round 29). A human's key shortens the hold to ENDS_CUT.
  */
 const ENDS_CUT = 0.35, ENDS_HOLD = 2.4, ENDS_TIE = 1.4, ENDS_POST_IN = 0.8, ENDS_POST_Z = 1.2, ENDS_POST_GAP = 1.1;
+/** At a change of ends, partners meet first (the racket tap: they never came within reach on the straight walk to the
+ * post, 2.85 m at the nearest, review round 34 #8) and set off for the post this long (s) before the hold's end. */
+const ENDS_TO_POST = 0.8;
 /**
  * A human's balls going to the same place again and again are read: a ball a player has seen coming five times is no
  * pressure, whatever its pace. How far apart two targets still count as one place (m), how much of the running figure
@@ -650,7 +653,8 @@ export class MatchSim {
   /** One tick of the walk back for every player (instead of their inputs' movement). */
   private walkStep(): void {
     let far = 0;
-    const meet = this.walking === 1;
+    // (meeting at a change of ends too, until ENDS_TO_POST before the hold's end: the clock is the phase's, so no state is added)
+    const meet = this.walking === 1 || (this.walking === 3 && this.doubles && this.time < this.phaseUntil - ENDS_TO_POST);
     for (let i = 0; i < this.players.length; i++) {
       const p = this.players[i]!;
       this.walkDrive(i, meet);

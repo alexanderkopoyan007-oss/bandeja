@@ -2993,8 +2993,8 @@ export class Avatar {
         this.tapYaw = this.yaw;
       }
     } else if ((sim.doubles && (sim.walking === 1 || sim.walking === 3)) || net) {
-      // (walking 3 too, off to the post at a change of ends, when they come close enough. They seldom do in its 2.4 s: 2.85 m apart at
-      // the nearest in the one measured, so a game won at a change of ends still mostly has no tap: review round 34, #8, open)
+      // (walking 3 too: at a change of ends the sim walks partners to meet first and sends them to the post ENDS_TO_POST before
+      // the hold ends, so a game won there gets its tap; review round 34, #8, closed 6 Nov)
       this.tapKey = null;
       const qi = net ? sim.overMate[idx]! : idx ^ 2, q = sim.players[qi]!;
       const mx = q.pos.x - p.pos.x, mz = q.pos.z - p.pos.z;

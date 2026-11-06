@@ -22,6 +22,11 @@ describe('the racket tap', () => {
     expect(by.walk).toBeGreaterThan(5);
   });
 
+  // At a change of ends partners meet before walking to their post (they never came within reach on the straight walk).
+  it('touches at the change of ends', () => {
+    expect(by.ends).toBeGreaterThan(1);
+  });
+
   it('one of each pair counts the touch, so it sounds once', () => {
     expect(far).toBe(0);
     expect(near).toBe(by.walk + by.ends);
