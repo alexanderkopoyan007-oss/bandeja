@@ -12,7 +12,7 @@ import {
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import { modelledVertices, type KitCut, type PlayerAsset } from './asset.ts';
-import { armWeight, cutFor, patternAt, type Paint } from './paint.ts';
+import { armWeight, cutFor, patternAt, printBottom, printShirt, type Paint } from './paint.ts';
 
 export const R_SHIRT = 0, R_SHORTS = 1, R_SKIN = 2, R_HAIR = 3, R_SOCK = 4, R_SHOE = 5;
 
@@ -445,7 +445,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
   const wet = smoothstep(0.02, 0.12, X.x.mul(shirtW).add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
 
-  const { shirtC, shortsC, sockC, skinCut } = kitDetail(look, cut, frame, p, X, paint?.pattern, asset);
+  const { shirtC, shortsC, sockC, skinCut } = kitDetail(look, cut, frame, p, X, paint, asset);
   const hang = X.x.mul(shortsW);
 
   const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
@@ -735,7 +735,7 @@ function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>)
  * to the body's modelled pose (`p`); on the arm, where that is lower than the rest pose, X.zw (the rest pose) hold them.
  * Anything finer than a pixel can show fades to its average, or it would shimmer at the TV camera's distance.
  */
-function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'vec3'>, X: THREE.Node<'vec4'>, pattern?: Paint['pattern'], asset?: PlayerAsset):
+function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'vec3'>, X: THREE.Node<'vec4'>, paint?: Paint, asset?: PlayerAsset):
 { shirtC: THREE.Node<'vec3'>; shortsC: THREE.Node<'vec3'>; sockC: THREE.Node<'vec3'>; skinCut: THREE.Node<'float'> } {
   const rgb = (c: number): THREE.Node<'vec3'> => { const k = new THREE.Color(c); return vec3(k.r, k.g, k.b); };
   const trim = rgb(look.trim), shirt = rgb(look.shirt);
@@ -751,11 +751,14 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   const below = smoothstep(armY - 0.075, armY - 0.095, p.y).mul(smoothstep(armX + 0.015, armX - 0.01, tx)).mul(smoothstep(0.05, 0.07, ax));
   const panel = smoothstep(panelW.add(0.0025), panelW, dz).mul(below);
   const panelEdge = line(dz.sub(panelW).sub(0.006)).mul(below);
-  // A chosen pattern instead of the side panels (paint.ts patternAt; a chest band and a chevron stay off the sleeves).
-  const pat = patternAt(pattern, p, normalGeometry, frame.chest.x, frame.chest.y, frame.hemY,
+  // A chosen pattern instead of the side panels (paint.ts patternAt; a chest band and a chevron stay off the sleeves), or
+  // a costume's print instead of both, and of the marks (paint.ts printShirt).
+  const pattern = paint?.pattern, print = paint?.print;
+  const pat = print ? null : patternAt(pattern, p, normalGeometry, frame.chest.x, frame.chest.y, frame.hemY,
     asset && (pattern === 'band' || pattern === 'chevron') ? armWeight(asset) : float(0));
-  let s = pat ? mix(shirt, trim, pat) : mix(shirt, trim, panel);
-  if (!pat) s = s.mul(float(1).sub(panelEdge.mul(0.18)));
+  let s = print ? printShirt(print, shirt, trim, p, { chest: frame.chest, neck: nk, hemY: frame.hemY }, asset ? armWeight(asset) : float(0))
+    : pat ? mix(shirt, trim, pat) : mix(shirt, trim, panel);
+  if (!pat && !print) s = s.mul(float(1).sub(panelEdge.mul(0.18)));
   // Seams: over the shoulder, and round the sleeve's root or, on a raglan, from the neck to the armpit.
   const shoulder = line(p.z.sub(nk.z - 0.016)).mul(step(armY - 0.01, p.y)).mul(step(0.05, ax));
   let seams: THREE.Node<'float'> = float(0);
@@ -765,8 +768,8 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
     const nx = 0.72, ny = 0.694; // the raglan's line (normal) in the rest pose's (out, up)
     seams = cut.seam === 'raglan' ? line(tx.sub(0.07).mul(nx).add(ty.sub(nk.y - 0.015).mul(ny))).mul(step(armY - 0.11, ty))
       : shoulder.add(line(tx.sub(armX + 0.02)));
-    // The cuff, in the kit's second colour.
-    s = mix(s, trim, smoothstep(float(frame.sleeveX ?? 9).sub(CUFF + 0.0015), float(frame.sleeveX ?? 9).sub(CUFF), tx));
+    // The cuff, in the kit's second colour (a costume's in its suit's, but for a tuxedo's shirt cuff and an astronaut's ring).
+    s = mix(s, print && print !== 'tux' && print !== 'astro' ? shirt : trim, smoothstep(float(frame.sleeveX ?? 9).sub(CUFF + 0.0015), float(frame.sleeveX ?? 9).sub(CUFF), tx));
   } else {
     // A tank's or a sleeveless shirt's armhole has a binding, along the cut (person_kit.py cut_tank, person_wear.py SLEEVELESS).
     const { a, no, floor } = hole;
@@ -802,7 +805,7 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   const sleeve = hole ? float(0) : word(vec2(tx.sub(armX + 0.085), p.z.sub(armZ)), 0.028, 0.0055, 0.7 + (cut.mark ?? 0))
     .mul(step(armY, ty)).mul(step(0, p.x));
   const marks = chestL.add(chestR).mul(front).add(back).add(sleeve).min(1).mul(fine).mul(smoothstep(armX + 0.2, armX + 0.15, tx));
-  s = mix(s, trim, marks);
+  if (!print) s = mix(s, trim, marks);
   // A polo's placket: a strip down from the neck with two buttons.
   if (cut.top === 'polo') {
     const nkLow = nk.y - (frame.collarDrop ?? COLLAR_DROP);
@@ -815,10 +818,17 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   // Shorts: the shirt's colour down the outside of the leg, a small mark over the hem; a skirt: the same colour round its hem.
   const legX = frame.legX ?? 0.09, legZ = frame.legZ ?? 0, hang = X.x;
   let b = rgb(look.shorts);
-  // Tights (on the ramp's UVs) in the shorts' colour, or near black under light shorts: white tights read as bare legs at a distance.
-  const sc = new THREE.Color(look.shorts);
-  if (sc.getHSL({ h: 0, s: 0, l: 0 }).l > 0.45) b = mix(b, rgb(0x1c1d22), onRamp());
-  if (cut.bottom === 'pleated' || cut.bottom === 'aline') {
+  if (print) {
+    // (a costume's tights are its suit's, whatever their colour: paint.ts printBottom)
+    const stripe = smoothstep(0.0145, 0.0125, p.z.sub(legZ).abs()).mul(smoothstep(legX + 0.015, legX + 0.03, p.x.abs()));
+    b = printBottom(print, b, trim, p, normalGeometry, stripe);
+  } else if (new THREE.Color(look.shorts).getHSL({ h: 0, s: 0, l: 0 }).l > 0.45) {
+    // Tights (on the ramp's UVs) in the shorts' colour, or near black under light shorts: white tights read as bare legs at a distance.
+    b = mix(b, rgb(0x1c1d22), onRamp());
+  }
+  if (print) {
+    // (no skirt, stripe or mark on a costume)
+  } else if (cut.bottom === 'pleated' || cut.bottom === 'aline') {
     // (the outside only: on the lining or the cloth's inside, under a lifted hem, it read as a torn flap)
     b = mix(b, shirt, smoothstep(float(SKIRT_BAND - 0.003), float(SKIRT_BAND), hang).mul(step(uv().y, SKIRT_OUT_V)).mul(float(frontFacing)));
   } else {
@@ -924,7 +934,7 @@ const SKIRT_OUT_V = 0.236;
  * A person's landmarks (rest pose) and per-vertex sweat weights (bodyX.x on the shirt: where a shirt gets wet first,
  * as the mannequin's kit), computed once per asset.
  */
-function personFrame(asset: PlayerAsset): KitFrame {
+export function personFrame(asset: PlayerAsset): KitFrame {
   let frame = PERSON_FRAMES.get(asset);
   if (frame) return frame;
   const g = asset.geometry;

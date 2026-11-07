@@ -32,8 +32,8 @@ export interface Piece {
 
 const NA = 64;
 const NE = 36;
-const E0 = (-55 * Math.PI) / 180;
-const E1 = Math.PI / 2;
+export const E0 = (-55 * Math.PI) / 180;
+export const E1 = Math.PI / 2;
 /** Hair further than this out from the skin is left outside a cap (m). */
 const HAIR_MAX = 0.028;
 
@@ -54,7 +54,7 @@ export interface HeadFit {
 }
 
 /** Bone weights of a vertex for one bone (0 when the bone isn't among its four). */
-function weightOf(si: THREE.BufferAttribute, sw: THREE.BufferAttribute, v: number, bone: number): number {
+export function weightOf(si: THREE.BufferAttribute, sw: THREE.BufferAttribute, v: number, bone: number): number {
   let w = 0;
   for (let k = 0; k < 4; k++) if (si.getComponent(v, k) === bone) w += sw.getComponent(v, k);
   return w;
@@ -203,16 +203,16 @@ export function radius(t: Float32Array, az: number, el: number): number {
   return (r(e0, a0) * (1 - ta) + r(e0, a1) * ta) * (1 - te) + (r(e0 + 1, a0) * (1 - ta) + r(e0 + 1, a1) * ta) * te;
 }
 
-const dirOf = (az: number, el: number, out: THREE.Vector3): THREE.Vector3 =>
+export const dirOf = (az: number, el: number, out: THREE.Vector3): THREE.Vector3 =>
   out.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
 
 /** The point `off` out from the table's surface in a direction. */
-function onHead(f: HeadFit, t: Float32Array, az: number, el: number, off: number, out = new THREE.Vector3()): THREE.Vector3 {
+export function onHead(f: HeadFit, t: Float32Array, az: number, el: number, off: number, out = new THREE.Vector3()): THREE.Vector3 {
   return dirOf(az, el, out).multiplyScalar(radius(t, az, el) + off).add(f.c);
 }
 
 /** The elevation at which the surface (plus `off`) is at height y, at this azimuth. */
-function elAt(f: HeadFit, t: Float32Array, az: number, y: number, off: number): number {
+export function elAt(f: HeadFit, t: Float32Array, az: number, y: number, off: number): number {
   let el = 0;
   for (let k = 0; k < 6; k++) el = Math.asin(Math.max(-1, Math.min(1, (y - f.c.y) / (radius(t, az, el) + off))));
   return el;
@@ -230,7 +230,7 @@ const angDiff = (a: number, b: number): number => Math.atan2(Math.sin(a - b), Ma
 const sp = (x: number, power: number): number => Math.sign(x) * Math.abs(x) ** (2 / power);
 
 /** Where a head piece's lower edge runs: `front` m above the eyes at the front, `back` at the back (cosine between). */
-function edgeY(f: HeadFit, front: number, back: number, az: number): number {
+export function edgeY(f: HeadFit, front: number, back: number, az: number): number {
   const eyeY = (f.eyeL.y + f.eyeR.y) / 2;
   return eyeY + lerp(front, back, (1 - Math.cos(az)) / 2);
 }
@@ -732,7 +732,7 @@ function wristband(asset: PlayerAsset, side: 'R' | 'L', from: number, to: number
  * pose), blended by inverse square distance, its four strongest bones kept. A wristband rigid on the forearm let the
  * wrist's skin, which turns with the hand, show a gap on one side and come through on the other.
  */
-function skinLike(g: THREE.BufferGeometry, asset: PlayerAsset, near: number[]): void {
+export function skinLike(g: THREE.BufferGeometry, asset: PlayerAsset, near: number[]): void {
   const src = asset.geometry;
   const pos = src.getAttribute('position') as THREE.BufferAttribute;
   const si = src.getAttribute('skinIndex') as THREE.BufferAttribute;
@@ -796,6 +796,8 @@ export interface Wear {
   wrist?: string | null;
   /** On the courtside bench, not on the player (game.ts placeBags). */
   bag?: string;
+  /** A novelty costume (costumes.ts): its suit, colours and pieces over everything it covers. */
+  costume?: string;
   /** What the suit is painted as (paint.ts; the Avatar's material is built with it) and the overgrip's colour (CSS hex). */
   paint?: Paint;
   grip?: string;
@@ -806,7 +808,11 @@ export interface Wear {
  * how far up it reaches (null: over the crown; `upBack` at the back, if it narrows), and how much hair it leaves under it (m): the cloth is that far off the
  * scalp at most, and the hair under it is pressed in to fit (pressHair).
  */
-export interface Headwear { front: number; back: number; up: number | null; upBack?: number; under: number }
+export interface Headwear {
+  front: number; back: number; up: number | null; upBack?: number; under: number;
+  /** The lower edge's height by azimuth, when it isn't front to back by a cosine (a hood's, round the face: costumes.ts). */
+  edge?: (f: HeadFit, az: number) => number;
+}
 export const HEADWEAR: Record<string, Headwear> = {
   'head-band': { front: 0.026, back: -0.006, up: 0.036, under: 0.004 },
   'head-visor': { front: 0.024, back: -0.008, up: 0.046, upBack: 0.024, under: 0.004 },
@@ -837,8 +843,8 @@ export function clothTable(f: HeadFit, under: number): Float32Array {
  * inside it), easing out over a centimetre past the cloth's edges so the hair that shows under it bulges as hair does;
  * null when nothing moves. Brows and lashes lie on the skin and never move.
  */
-export function pressHair(asset: PlayerAsset, id: string): Float32Array | null {
-  const hw = HEADWEAR[id];
+export function pressHair(asset: PlayerAsset, id: string | Headwear): Float32Array | null {
+  const hw = typeof id === 'string' ? HEADWEAR[id] : id;
   const f = fitHead(asset);
   const ag = asset.look?.alphaGeometry;
   if (!hw || !f || !ag) return null;
@@ -857,7 +863,7 @@ export function pressHair(asset: PlayerAsset, id: string): Float32Array | null {
     const dx = x - f.c.x, dy = y - f.c.y, dz = z - f.c.z, r = Math.hypot(dx, dy, dz);
     if (r < 1e-6) continue;
     const az = Math.atan2(dx, dz), el = Math.asin(Math.max(-1, Math.min(1, dy / r)));
-    const lo = edgeY(f, hw.front, hw.back, az);
+    const lo = hw.edge ? hw.edge(f, az) : edgeY(f, hw.front, hw.back, az);
     let k = smooth(lo - 0.012, lo, y);
     if (hw.up !== null) { const up = upAt(hw, az); k *= 1 - smooth(lo + up, lo + up + 0.012, y); }
     // (never closer to the scalp than 4 mm: what lies on it, the brows and lashes among it, stays)

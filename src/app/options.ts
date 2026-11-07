@@ -227,7 +227,7 @@ export function wearParam(params: URLSearchParams): Array<Wear | undefined> | un
     for (const id of ids) {
       if (id === 'nohead') w.head = null;
       const slot = COSMETIC_BY_ID.get(id)?.slot;
-      if (slot === 'head' || slot === 'eyes' || slot === 'wrist' || slot === 'bag') w[slot] = id;
+      if (slot === 'head' || slot === 'eyes' || slot === 'wrist' || slot === 'bag' || slot === 'costume') w[slot] = id;
     }
     // (the suit's paint and the overgrip: shirt cuts, patterns, tights, sock lengths, shoes)
     const { paint, grip } = paintOf(ids);

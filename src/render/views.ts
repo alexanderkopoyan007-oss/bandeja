@@ -13,7 +13,8 @@ import { reproportion } from './avatar/proportions.ts';
 import { dressRacket, makeRacketModel, racketLookFor, type RacketLook } from './avatar/racket.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
-import { worn, type Wear } from './avatar/costume.ts';
+import type { Wear } from './avatar/costume.ts';
+import { costumed, dressFor } from './avatar/costumes.ts';
 import type { Cast } from '../game/cast.ts';
 import { makeBall, spinBall } from './ballLook.ts';
 import { DT } from '../sim/core/constants.ts';
@@ -250,11 +251,12 @@ export class PlayerView {
       // In their own proportions, when they have them (proportions.ts: built once, at load).
       const body = cast?.bodies?.[idx];
       const who = body ? reproportion(person ?? asset, body) : person ?? asset;
-      const kit = kitFor(idx, cast?.kits);
-      this.avatar = new Avatar(who, kit, wear?.paint);
+      // (a costume puts on its own colours and suit: costumes.ts)
+      const { look: kit, wear: w } = costumed(kitFor(idx, cast?.kits), wear);
+      this.avatar = new Avatar(who, kit, w?.paint);
       // Each player's own racket (data/racket-looks/), in their own overgrip if they chose one.
-      dressRacket(this.avatar.racket, gripped(racketLookFor(idx, racket), wear?.grip));
-      if (wear) this.avatar.wear(worn(who, wear, kit, this.avatar.mesh.geometry.index));
+      dressRacket(this.avatar.racket, gripped(racketLookFor(idx, racket), w?.grip));
+      if (w) this.avatar.wear(dressFor(who, w, kit, this.avatar.mesh.geometry.index));
       this.root = this.avatar.root;
       scene.add(this.root);
       return;
