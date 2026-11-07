@@ -1394,6 +1394,65 @@ for key, part in (('head_n', 'head'), ('body_n', 'body')):
     say('skin normals', part, (w, h), 'slope sd', [round(float(v), 4) for v in (n[..., :2] / np.maximum(n[..., 2:], 0.2)).reshape(-1, 2).std(0)])
 save(skin_n, os.path.join(OUT, 'skin.webp'), 'skin', SKIN_QUALITY)
 
+# The hands at the sources' own resolution (owner, 7 Nov: "add knuckles, nails and skin detail on the hands"). In the opaque
+# atlas the body's 8192 colour is 768 across, 0.65 texels a millimetre on a hand, and skin.webp's normals half that: the nails'
+# edges and the knuckles' creases MetaHuman draws were gone. hands.webp is the body colour's rectangle round both hands' UVs
+# (the vertices weighted at least half to a hand's bones) HANDS_W across, the skin's occlusion in its alpha; hands-n.webp the
+# body normals' same rectangle (green flipped as skin.webp's). kit.ts samples them in place of the atlas inside that rectangle
+# (the header's handsBox, atlas UVs): the same pictures, sharper, so nothing shows where it hands over.
+HANDS_W, HANDS_MARGIN = 2048, 0.01
+
+
+def hands_box(o):
+    me = o.data
+    hand = {g.index for g in o.vertex_groups if g.name.startswith(P) and 'Hand' in g.name[len(P):]}
+    game = {g.index for g in o.vertex_groups if g.name.startswith(P)}
+    hw = np.zeros(len(me.vertices), dtype=np.float32)
+    for v in me.vertices:
+        tot = sum(g.weight for g in v.groups if g.group in game)
+        if tot > 0:
+            hw[v.index] = sum(g.weight for g in v.groups if g.group in hand) / tot
+    vi = np.empty(len(me.loops), dtype=np.int32)
+    me.loops.foreach_get('vertex_index', vi)
+    uv = np.empty(len(me.uv_layers[0].data) * 2, dtype=np.float32)
+    me.uv_layers[0].data.foreach_get('uv', uv)
+    uv = uv.reshape(-1, 2)
+    uv -= np.floor(np.median(uv, axis=0))
+    on = uv[hw[vi] >= 0.5]
+    lo = np.clip(on.min(0) - HANDS_MARGIN, 0, 1)
+    hi = np.clip(on.max(0) + HANDS_MARGIN, 0, 1)
+    return float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1]), int(len(on))
+
+
+hands = None
+if spec.get('body_n'):
+    u0, v0, u1, v1, n_on = hands_box(body)
+    full = int(round(HANDS_W / (u1 - u0)))
+    x0, x1, y0, y1 = (int(round(t * full)) for t in (u0, u1, v0, v1))
+    hh = int(round(HANDS_W * (y1 - y0) / (x1 - x0)))
+    def crop(px):
+        c = px[y0:y1, x0:x1]
+        if c.shape[:2] == (hh, HANDS_W):
+            return c
+        out = np.zeros((hh, HANDS_W, c.shape[2]), dtype=np.float32)
+        for k in range(c.shape[2]):
+            out[..., k] = resized(np.ascontiguousarray(c[..., k]), HANDS_W, hh)
+        return out
+    hc = crop(load_px(os.path.join(SRC, spec['body_bc']), (full, full)))
+    ao_full = resized(skin_ao['body'], full, full)
+    hc[..., 3] = ao_full[y0:y1, x0:x1] if ao_full[y0:y1, x0:x1].shape == (hh, HANDS_W) else resized(np.ascontiguousarray(ao_full[y0:y1, x0:x1]), HANDS_W, hh)
+    save(hc, os.path.join(OUT, 'hands.webp'), 'hands', 92)
+    hn = crop(load_px(os.path.join(SRC, spec['body_n']), (full, full)))[..., :3] * 2 - 1
+    hn[..., 1] *= -1
+    hn /= np.maximum(np.linalg.norm(hn, axis=-1, keepdims=True), 1e-6)
+    hn4 = np.ones((hh, HANDS_W, 4), dtype=np.float32)
+    hn4[..., :3] = hn * 0.5 + 0.5
+    save(hn4, os.path.join(OUT, 'hands-n.webp'), 'hands-n', SKIN_QUALITY)
+    bx, by, bw, bh = RECT['body']
+    hands = [round((bx + t * bw) / OPAQUE_SIZE[0], 6) if k % 2 == 0 else round((by + t * bh) / OPAQUE_SIZE[1], 6)
+             for k, t in enumerate((u0, v0, u1, v1))]
+    say('hands', n_on, 'uvs; box', [round(t, 4) for t in (u0, v0, u1, v1)], 'at', (HANDS_W, hh), 'from', full, 'atlas', hands)
+
 al = np.zeros((ALPHA_SIZE[1], ALPHA_SIZE[0], 4), dtype=np.float32)
 cards = load_px(os.path.join(SRC, spec['hair_atlas']))
 _seen = cards[..., 0] > 0.5
@@ -1693,7 +1752,9 @@ blob = bytearray()
 header = {'name': spec['name'], 'height': round(float(height), 4), 'bones': BONES,
           'joints': [[joints[n].x, joints[n].z, -joints[n].y] for n in BONES],
           'move': [game_m(move[n]) for n in BONES],
-          'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': spec['name'] + '-cloth.webp', 'skin': 'skin.webp'},
+          'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': spec['name'] + '-cloth.webp', 'skin': 'skin.webp',
+                       **({'hands': 'hands.webp', 'handsN': 'hands-n.webp'} if hands else {})},
+          **({'handsBox': hands} if hands else {}),
           'parts': PART, 'morphs': [], 'kit': spec.get('kit', {}), 'meshes': {}}
 for kind, B in buffers.items():
     ent = {'vertices': len(B['part']), 'indices': len(B['index'])}

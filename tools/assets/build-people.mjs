@@ -188,7 +188,10 @@ for (const name of names) {
     name, height: h.height, hips: +hips.toFixed(5), parts: h.parts, kit: h.kit ?? {},
     textures: { opaque: `${name}-opaque.webp`, alpha: `${name}-alpha.webp`, cloth: h.textures.cloth ?? 'suit-normal.webp',
       // (a MetaHuman's skin detail normals, on the opaque atlas's layout: mh-player.py)
-      ...(h.textures.skin ? { skin: `${name}-skin.webp` } : {}) },
+      ...(h.textures.skin ? { skin: `${name}-skin.webp` } : {}),
+      // (and its hands' colour and normals at the sources' resolution, over the atlas's handsBox)
+      ...(h.textures.hands ? { hands: `${name}-hands.webp`, handsN: `${name}-hands-n.webp` } : {}) },
+    ...(h.handsBox ? { handsBox: h.handsBox } : {}),
     bones, bind, meshes,
   };
   const json = new TextEncoder().encode(JSON.stringify(header));
@@ -207,6 +210,10 @@ for (const name of names) {
   // A cloth map of the person's own (a MetaHuman's garment, tools/assets/metahuman/mh-player.py) sits beside its body.
   if (existsSync(dir + header.textures.cloth)) copyFileSync(dir + header.textures.cloth, OUT + header.textures.cloth);
   if (header.textures.skin) copyFileSync(dir + h.textures.skin, OUT + header.textures.skin);
+  if (header.textures.hands) {
+    copyFileSync(dir + h.textures.hands, OUT + header.textures.hands);
+    copyFileSync(dir + h.textures.handsN, OUT + header.textures.handsN);
+  }
   const kb = (f) => (readFileSync(OUT + f).byteLength / 1024).toFixed(0);
   console.log(name, 'triangles', tris, 'soles lifted', (-sole * 1000).toFixed(1), 'mm, hips x', hips.toFixed(3), 'skeleton fit', (worst * 1000).toFixed(3), 'mm;',
     (gz.byteLength / 1024).toFixed(0), 'KB +', kb(header.textures.opaque), '+', kb(header.textures.alpha), 'KB textures');

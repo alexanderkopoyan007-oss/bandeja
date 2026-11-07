@@ -1,5 +1,5 @@
 // The mannequin's asset with the people (public/assets/people/) parsed onto it, as the game loads them (no textures).
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import * as THREE from 'three/webgpu';
 import { dressedIndex, parseBodyAsset, parsePlayerAsset, PEOPLE, type PlayerAsset } from '../../src/render/avatar/asset.ts';
@@ -15,6 +15,12 @@ export const GUESTS = ['meshy', 'meshy2', 'meshy3'];
 
 export function guestAsset(name: string, base: PlayerAsset): PlayerAsset {
   return parseBodyAsset(gz(`people/${name}.bnz`), base);
+}
+
+/** The MetaHuman people on this machine (their packs never leave it: no licence to ship them, so CI has none). */
+export function metaHumansHere(base: PlayerAsset): PlayerAsset[] {
+  return PEOPLE.map((n) => n + 'mh').filter((n) => existsSync(new URL('../../public/assets/people/' + n + '.bnz', import.meta.url)))
+    .map((n) => parseBodyAsset(gz(`people/${n}.bnz`), base));
 }
 
 export function mannequinWithPeople(): PlayerAsset {

@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
 import * as THREE from 'three/webgpu';
-import { drawnTriangles, mannequinWithPeople } from './people.ts';
+import { drawnTriangles, mannequinWithPeople, metaHumansHere } from './people.ts';
 import { PEOPLE, P_SHIRT, P_SHOE, P_SKIN } from '../../src/render/avatar/asset.ts';
 import { solveGrip } from '../../src/render/avatar/grip.ts';
 import { HANDLE_R } from '../../src/render/avatar/racket.ts';
@@ -33,6 +33,29 @@ describe('people', () => {
       // WebGPU binds at most 8 vertex buffers: skinning's 5 and the person's 3 (bodyA, bodyB, bodyX).
       const custom = Object.keys(p.geometry.attributes).filter((k) => !['position', 'normal', 'uv', 'skinIndex', 'skinWeight', 'color'].includes(k));
       expect(custom.sort()).toEqual(['bodyA', 'bodyB', 'bodyX']);
+    }
+  });
+
+  // The owner's realism list, 7 Nov (knuckles, nails): a MetaHuman's hands are drawn from hands.webp over handsBox, so every texel
+  // a hand uses must lie inside it, or that part of the hand falls back to the atlas's blur.
+  it('draws a MetaHuman\'s hands from their own sharper pictures, over all of each hand', () => {
+    for (const p of metaHumansHere(base)) {
+      const box = p.look!.handsBox;
+      if (!box) continue;  // (built before the hands had their own pictures)
+      expect(p.look!.textures.hands && p.look!.textures.handsN).toBeTruthy();
+      const uv = p.geometry.getAttribute('uv'), si = p.geometry.getAttribute('skinIndex'), sw = p.geometry.getAttribute('skinWeight');
+      const hand = p.bones.map((b) => b.name.includes('Hand'));
+      let n = 0, out = 0;
+      for (let v = 0; v < uv.count; v++) {
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (hand[si.getComponent(v, k)]) w += sw.getComponent(v, k);
+        if (w < 0.5) continue;
+        n++;
+        const x = uv.getX(v), y = uv.getY(v);
+        if (x < box[0] || x > box[2] || y < box[1] || y > box[3]) out++;
+      }
+      expect(n).toBeGreaterThan(1000);
+      expect(out).toBe(0);
     }
   });
 

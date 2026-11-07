@@ -54,14 +54,14 @@ export const SKIN_T = 0.0016;
 const CHAMFER = 0.0007;
 /** The frame seen from the face: the band from the outline to the face (m), and the rounded edge's share of it. */
 const RIM_W = 0.0135;
-const RC = 0.009;
+export const RC = 0.009;
 /** The arms either side of the throat's opening (m) and the opening's rounded edge. */
 const ARM_W = 0.0175;
-const RC_H = 0.006;
+export const RC_H = 0.006;
 /** The bridge (the frame across the bottom of the face, over the throat's opening). */
 const BRIDGE_W = 0.015;
 /** Superellipse exponent of the frame's profile (2 = an ellipse; higher is squarer). */
-const PROFILE_E = 2.4;
+export const PROFILE_E = 2.4;
 /** The neck where the arms meet the handle (half width, the bottom of the neck inside the finishing tape). */
 const NECK_W = 0.015;
 const NECK_Y = HANDLE_TOP - 0.004;

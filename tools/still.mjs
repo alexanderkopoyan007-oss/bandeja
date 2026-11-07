@@ -13,6 +13,7 @@ const browser = await puppeteer.launch({
 const page = await browser.newPage();
 await page.setViewport({ width: +w, height: +h, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
+page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log('[' + m.type() + ']', m.text().slice(0, 600)); });
 // Hold the game as it starts: start() runs, then its animation loop is taken away before a frame.
 await page.evaluateOnNewDocument(() => {
   const id = setInterval(() => {

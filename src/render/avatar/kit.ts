@@ -13,6 +13,7 @@ import {
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import { modelledVertices, type KitCut, type PlayerAsset } from './asset.ts';
 import { armWeight, cutFor, patternAt, printBottom, printShirt, type Paint } from './paint.ts';
+import { FACE_T2, HANDLE_R, HANDLE_TOP, PROFILE_E, RACKET_BUTT, RACKET_TIP, RC, RC_H } from './racket.ts';
 
 export const R_SHIRT = 0, R_SHORTS = 1, R_SKIN = 2, R_HAIR = 3, R_SOCK = 4, R_SHOE = 5;
 
@@ -336,6 +337,9 @@ const LUMA = vec3(0.2126, 0.7152, 0.0722);
 const FOLD_DEPTH = 1;
 /** The skin's detail normals at their own strength (a MetaHuman's map). */
 const SKIN_DETAIL = 0.6;
+/** The hands' at their full strength: at the sources' resolution (hands-n.webp) the knuckles' creases and the nails' edges are
+ * texels wide, not smeared, and at the face's 0.6 they read as smooth. */
+const HANDS_DETAIL = 1;
 const BIB_PLAIN = 0.9;
 /** The collar's bins across (count, m each), and how far inside the shirt's top its edge stays (m). */
 const COLLAR_BINS = 6;
@@ -461,7 +465,14 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const sweatU = uniform(new THREE.Vector2());
   const sweat = sweatU.x;
   const lag = uniform(new THREE.Vector3());
-  const tex = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
+  // A MetaHuman's hands at the sources' resolution (mh-player.py hands.webp, its skin's occlusion in the alpha as the atlas has
+  // it), in place of the atlas inside their rectangle of it: the same picture, sharper (the owner's realism list, 7 Nov: "add
+  // knuckles, nails and skin detail on the hands").
+  const hb = body.handsBox;
+  const inHands = hb && body.handsMap ? step(hb[0], uv().x).mul(step(uv().x, hb[2])).mul(step(hb[1], uv().y)).mul(step(uv().y, hb[3])) : null;
+  const handsUv = hb ? uv().sub(vec2(hb[0], hb[1])).div(vec2(hb[2] - hb[0], hb[3] - hb[1])) : uv();
+  const atlas = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
+  const tex = inHands ? mix(atlas, texture(body.handsMap!, handsUv), inHands) : atlas;
   // The clothes' ambient occlusion is the grey in their rectangle; the skin's, teeth's and tongue's is the alpha.
   const ao = float(0.32).add(tex.x.mul(0.68));
   // The skin under the shirt's collar was baked in the shirt's shadow, and the collar is cut lower than that shirt's:
@@ -631,7 +642,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // atlas is square in texels and the atlas is 3:2, so u is stretched by 3/2 for the frame: `uvNormal` scales both its axes by
   // the longer, which would have halved the creases running across the face.
   if (body.skinNormal) {
-    const detail = texture(body.skinNormal, uv()).xy.mul(2).sub(1).mul(SKIN_DETAIL);
+    const own = texture(body.skinNormal, uv()).xy;
+    const detail = inHands && body.handsNormal
+      ? mix(own.mul(2).sub(1).mul(SKIN_DETAIL), texture(body.handsNormal, handsUv).xy.mul(2).sub(1).mul(HANDS_DETAIL), inHands)
+      : own.mul(2).sub(1).mul(SKIN_DETAIL);
     bumped = bumped.add(uvNormal(detail, uv().mul(vec2(1.5, 1))).sub(normalView).mul(skinW)).normalize();
   }
   if (body.clothNormal) {
@@ -652,6 +666,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // over its length), and pushed only from 0.4 down, in a ready stance the thighs carried the shorts out through its top half)
   const lining = step(SKIRT_OUT_V, uv().y).mul(SKIRT_LINING_IN);
   m.positionNode = cut.bottom === 'pleated' || cut.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung, lining).mul(smoothstep(SKIRT_PUSH[0], SKIRT_PUSH[1], hang))) : hung;
+  // (and the arms off the racket: racketPush)
+  m.positionNode = (m.positionNode as THREE.Node<'vec3'>).add(racketPush(asset, m.positionNode as THREE.Node<'vec3'>));
 
   const hair = new PersonNodeMaterial();
   // A MetaHuman's grooms: cards whose strands run along v, over a helmet (`hasHelmet`). They take the fibre's shine and the
@@ -827,6 +843,109 @@ function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>,
   };
   return push(ends[0]!, ends[1]!).add(push(ends[2]!, ends[3]!));
 }
+
+/**
+ * The arms and hands out of the racket (the owner's realism list, 7 Nov, point 6: "the off-hand and forearm near the racket look
+ * disconnected or clipping; fix the mesh and skinning WITHOUT changing the pose or animation"). In the ready position the free
+ * hand is put on the throat by its wrist, and the throat ran through its palm. Nothing moves the bones: the skin of either
+ * forearm and hand that lies inside the racket is moved to its surface, in the racket's own frame (racket.ts: y along it,
+ * z through it): radially off the handle, and off the neck, the throat's arms and the head to the surface on the side its own
+ * hand is on, so a palm comes to rest on the racket rather than split round it. Bones, the pose and the racket don't move.
+ */
+function racketPush(asset: PlayerAsset, at: THREE.Node<'vec3'>): THREE.Node<'vec3'> {
+  const range = (side: string): [number, number] | null => {
+    const ids = asset.bones.map((b, i) => (b.name === side + 'ForeArm' || b.name.startsWith(side + 'Hand') ? i : -1)).filter((i) => i >= 0);
+    if (!ids.length) return null;
+    const lo = Math.min(...ids), hi = Math.max(...ids);
+    return hi - lo + 1 === ids.length ? [lo, hi] : null;
+  };
+  const L = range('Left'), R = range('Right');
+  if (!L || !R) return vec3(0, 0, 0);
+  const idx = vec4(attribute('skinIndex', 'uvec4')), w = attribute<'vec4'>('skinWeight', 'vec4');
+  const inRange = (b: THREE.Node<'float'>, [lo, hi]: [number, number]): THREE.Node<'float'> => step(lo - 0.5, b).mul(step(b, hi + 0.5));
+  const weightOf = (r: [number, number]): THREE.Node<'float'> =>
+    inRange(idx.x, r).mul(w.x).add(inRange(idx.y, r).mul(w.y)).add(inRange(idx.z, r).mul(w.z)).add(inRange(idx.w, r).mul(w.w));
+  const wl = weightOf(L), wr = weightOf(R);
+  // Mesh space to the racket's and back, and the side of the racket each hand is on (+-1 along its z), every frame.
+  const toRacket = uniform(new THREE.Matrix4()), fromRacket = uniform(new THREE.Matrix4()), sides = uniform(new THREE.Vector2(1, 1));
+  const hands = [asset.bone('LeftHand'), asset.bone('RightHand')];
+  toRacket.onObjectUpdate((f) => {
+    const mesh = f.object as THREE.SkinnedMesh;
+    const bones = mesh.skeleton.bones;
+    let racket: THREE.Object3D | null = null;
+    for (let h = 0; h < 2 && !racket; h++) {
+      const kids = bones[hands[h]!]!.children;
+      for (let k = 0; k < kids.length; k++) if (kids[k]!.name === 'racket') { racket = kids[k]!; break; }
+    }
+    const m = toRacket.value as THREE.Matrix4, back = fromRacket.value as THREE.Matrix4, sv = sides.value as THREE.Vector2;
+    if (!racket) { m.makeTranslation(0, 100, 0); return; }  // (no racket: everything far from it)
+    m.copy(racket.matrixWorld).invert().multiply(mesh.matrixWorld);
+    back.copy(m).invert();
+    for (let h = 0; h < 2; h++) {
+      RP_V.setFromMatrixPosition(bones[hands[h]!]!.matrixWorld);
+      RP_M.copy(racket.matrixWorld).invert();
+      RP_V.applyMatrix4(RP_M);
+      if (h === 0) sv.x = RP_V.z < 0 ? -1 : 1; else sv.y = RP_V.z < 0 ? -1 : 1;
+    }
+  });
+  const q = toRacket.mul(vec4(at, 1)).xyz;
+  const C = RACKET_CLEAR;
+  // The handle: off its axis to its radius.
+  const r = vec2(q.x, q.z).length().max(1e-4);
+  const radial = vec3(q.x, 0, q.z).mul(max(float(HANDLE_R + C).sub(r), 0).div(r))
+    .mul(step(RACKET_BUTT - C, q.y)).mul(float(1).sub(smoothstep(HANDLE_TOP - RACKET_JOIN, HANDLE_TOP + RACKET_JOIN, q.y)));
+  // The neck, the throat and the head, slice by slice across y, as the frame's own section (racket.ts): flat faces at +-FACE_T2,
+  // a superellipse edge RC deep round the outline and RC_H round the throat's opening, which is empty. Skin inside goes to the
+  // nearest point of the section on its own hand's side (a palm through the racket rests on its own face): flat on the face, out
+  // from the edge's centre in an edge. Only skin within about a finger's thickness of that surface: deeper skin is a finger
+  // wrapped round behind the frame, and pressed onto the near side it showed as flat slivers on the frame (and skin sent to the
+  // far side left a gap in the near side's skin, through which the racket showed as a dark crease).
+  const throatW = float(RACKET_NECK_W).add(q.y.sub(RACKET_NECK_TOP).max(0).mul(RACKET_ARM_SLOPE));
+  const e = q.y.sub(RACKET_HEAD_C).div(RACKET_HEAD_B);
+  const headW = float(RACKET_HEAD_A).mul(float(1).sub(e.mul(e)).max(0).sqrt());
+  const halfW = select(q.y.lessThan(RACKET_HEAD_Y), throatW, max(headW, throatW.mul(step(q.y, RACKET_HEAD_Y + 0.02))));
+  const xo = halfW.sub(RACKET_ARM_ACROSS).max(0).mul(step(q.y, RACKET_OPEN_TOP));
+  const rin = step(1e-5, xo).mul(RC_H), ci = xo.add(rin);
+  const edgeR = halfW.sub(ci).clamp(0, RC), co = halfW.sub(edgeR), ax = q.x.abs(), T = float(FACE_T2 + C);
+  const inY = smoothstep(HANDLE_TOP - RACKET_JOIN, HANDLE_TOP + RACKET_JOIN, q.y).mul(step(q.y, RACKET_TIP + C));
+  const s = wl.mul(sides.x).add(wr.mul(sides.y)).div(wl.add(wr).max(1e-4)).sign();
+  // flat: to the face; the edges: along the ray from the edge's centre (mirrored to the hand's side) to the superellipse with
+  // half axes (edge + C, T)
+  const outer = ax.greaterThan(co), inner = ax.lessThan(ci);
+  const capR = select(outer, edgeR, rin).add(C), capC = select(outer, co, ci);
+  const u = ax.sub(capC).abs().div(capR), vh = q.z.abs().div(T);
+  const f = u.pow(PROFILE_E).add(vh.pow(PROFILE_E)).max(1e-6), g = f.pow(-1 / PROFILE_E);
+  const capIn = step(f, 1);
+  const capDx = select(outer, co.add(u.mul(g).mul(capR)), ci.sub(u.mul(g).mul(capR))).sub(ax);
+  const capDz = s.mul(vh).mul(g).mul(T).sub(q.z);
+  const flatIn = step(q.z.abs(), T);
+  const isCap = outer.or(inner);
+  const dx = select(isCap, capDx.mul(capIn), float(0)), dz = select(isCap, capDz.mul(capIn), s.mul(T).sub(q.z).mul(flatIn));
+  const reach = float(1).sub(smoothstep(RACKET_PUSH_FULL, RACKET_PUSH_MAX, vec2(dx, dz).length()));
+  const plate = vec3(q.x.sign().mul(dx), 0, dz).mul(reach).mul(inY);
+  const push = fromRacket.mul(vec4(radial.add(plate), 0)).xyz;
+  return push.mul(wl.add(wr).min(1));
+}
+const RP_V = new THREE.Vector3();
+const RP_M = new THREE.Matrix4();
+/** How far outside the racket the skin is kept (m). */
+const RACKET_CLEAR = 0.002;
+/** Half the span over y where the handle's round hands over to the neck's section (m). */
+const RACKET_JOIN = 0.004;
+/** The throat (racket.ts outerDense, measured on the four looks): the neck's half width straight up to RACKET_NECK_TOP, then the
+ * arms widening this much per metre up; the arms' width across (25-29 mm), and the top of the opening under the bridge (y, m). */
+const RACKET_NECK_W = 0.0155;
+const RACKET_NECK_TOP = -0.151;
+const RACKET_ARM_SLOPE = 1.29;
+const RACKET_ARM_ACROSS = 0.027;
+const RACKET_OPEN_TOP = -0.105;
+/** Skin pushed out by up to RACKET_PUSH_FULL goes all the way; by RACKET_PUSH_MAX or more it stays (m). */
+const RACKET_PUSH_FULL = 0.008;
+const RACKET_PUSH_MAX = 0.014;
+/** Where the arms leave the head (y, racket.ts headHalf's last points), and the round head's ellipse (racket.ts: a, b and its
+ * centre; the teardrop and the diamond are within a centimetre of it). */
+const RACKET_HEAD_Y = -0.095;
+const RACKET_HEAD_A = 0.13, RACKET_HEAD_B = 0.14, RACKET_HEAD_C = RACKET_TIP - 0.0009 - 0.14;
 
 /**
  * The kit's detail, all in the kit's own colours: side panels and seams, a cuff, small invented marks on the chest, sleeve,

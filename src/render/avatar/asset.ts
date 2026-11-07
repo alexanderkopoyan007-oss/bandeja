@@ -139,7 +139,12 @@ export interface BodyLook {
   clothNormal: THREE.Texture | null;
   /** The skin's detail normals (pores, creases), tangent space on the opaque atlas's UVs: a MetaHuman's only. */
   skinNormal: THREE.Texture | null;
-  textures: { opaque: string; alpha: string; cloth?: string; skin?: string };
+  /** A MetaHuman's hands at the sources' resolution: colour (occlusion in alpha) and detail normals over `handsBox` (atlas UVs
+   * u0, v0, u1, v1), which the shader samples in place of the atlas there (mh-player.py). */
+  handsMap: THREE.Texture | null;
+  handsNormal: THREE.Texture | null;
+  handsBox: [number, number, number, number] | null;
+  textures: { opaque: string; alpha: string; cloth?: string; skin?: string; hands?: string; handsN?: string };
   /** The face's keys by name, in the order of every morphed mesh's influences (empty for a version-2 person). */
   morphs: string[];
   face: FaceData | null;
@@ -225,8 +230,10 @@ async function loadPerson(base: PlayerAsset, name: string, progress?: (frac: num
   try {
     const p = parseBodyAsset(await fetchGz(dir + name + '.bnz', progress), base);
     const look = p.look!;
-    [look.opaqueMap, look.alphaMap, look.clothNormal, look.skinNormal] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha),
-      suitNormal(texture, look.textures.cloth ?? 'suit-normal.webp'), look.textures.skin ? texture(look.textures.skin).then(linear) : null]);
+    const tx = look.textures;
+    [look.opaqueMap, look.alphaMap, look.clothNormal, look.skinNormal, look.handsMap, look.handsNormal] = await Promise.all([
+      texture(tx.opaque), texture(tx.alpha), suitNormal(texture, tx.cloth ?? 'suit-normal.webp'), tx.skin ? texture(tx.skin).then(linear) : null,
+      tx.hands && look.handsBox ? texture(tx.hands) : null, tx.handsN && look.handsBox ? texture(tx.handsN).then(linear) : null]);
     base.people.push(p);
   } catch (err) {
     console.warn(`person ${name} not loaded, that player is the mannequin:`, err);
@@ -429,7 +436,8 @@ interface BodyHeader {
   height: number;
   /** The body's hips height over the mannequin's: the clips' hips travel is scaled by it. */
   hips: number;
-  textures: { opaque: string; alpha: string; cloth?: string };
+  textures: { opaque: string; alpha: string; cloth?: string; skin?: string; hands?: string; handsN?: string };
+  handsBox?: [number, number, number, number];
   kit?: KitCut;
   bones: BoneDef[];
   /** Inverse bind matrices, 16 per bone (column-major). */
@@ -524,7 +532,8 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     hide: new Uint16Array(buf, base + wh.hide[0]!, h.meshes.opaque.vertices).slice(),
   } : null;
   const asset = assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
-    name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, skinNormal: null, textures: h.textures, morphs, face,
+    name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, skinNormal: null,
+    handsMap: null, handsNormal: null, handsBox: h.handsBox ?? null, textures: h.textures, morphs, face,
     wardrobe,
   });
   SOURCES.set(asset, { buf, mannequin });
@@ -549,6 +558,8 @@ export function pristineCopy(asset: PlayerAsset): PlayerAsset {
     a.look.alphaMap = asset.look.alphaMap;
     a.look.clothNormal = asset.look.clothNormal;
     a.look.skinNormal = asset.look.skinNormal;
+    a.look.handsMap = asset.look.handsMap;
+    a.look.handsNormal = asset.look.handsNormal;
   }
   return a;
 }
