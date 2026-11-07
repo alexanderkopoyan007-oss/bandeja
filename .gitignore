@@ -16,3 +16,4 @@ __pycache__/
 public/assets/people/mh*
 public/assets/people/*mh.bnz
 public/assets/people/*mh-*
+public/assets/mocap-local/
