@@ -1,7 +1,8 @@
 // A short clip of an autoplay match, the same frames every run: held at its start as still.mjs holds it, stepped by hand
 // to T0, then rendered every 1/30 s for SECS and joined into an MP4 (for motion that stills can't show, such as hair).
 //   bash tools/one-chrome.sh node tools/clip.mjs <url> <out.mp4> <T0 s> [secs] [w] [h]
-// VIEW=behind:N follows player N's head from behind and a little to one side (hair); VIEW=waist:N / chest:N as still.mjs.
+// VIEW=behind:N follows player N's head from behind and a little to one side (hair), VIEW=side:N from their left at head
+// height (hair against the back); VIEW=waist:N / chest:N as still.mjs.
 // FFMPEG= the ffmpeg binary (default: the mocap venv's imageio-ffmpeg one). The frames stay beside the MP4 in <out>-frames/.
 import puppeteer from 'puppeteer-core';
 import { execFileSync } from 'node:child_process';
@@ -50,11 +51,12 @@ await page.evaluate(() => {
       const [kind, n] = view.split(':');
       const pl = g.players[+n], c = g.cam.camera;
       const r = pl.root, fx = Math.sin(r.rotation.y), fz = Math.cos(r.rotation.y);
-      if (kind === 'behind') {
+      if (kind === 'behind' || kind === 'side') {
         const hd = pl.avatar.root.getObjectByName('Head');
         const at = hd.getWorldPosition(c.position.clone());
-        c.position.set(at.x - fx * 1.1 + fz * 0.45, at.y + 0.05, at.z - fz * 1.1 - fx * 0.45);
-        c.lookAt(at.x, at.y - 0.12, at.z);
+        if (kind === 'side') c.position.set(at.x + fz * 1.1 - fx * 0.15, at.y - 0.05, at.z - fx * 1.1 - fz * 0.15);
+        else c.position.set(at.x - fx * 1.1 + fz * 0.45, at.y + 0.05, at.z - fz * 1.1 - fx * 0.45);
+        c.lookAt(at.x, at.y - 0.15, at.z);
       } else {
         const y = kind === 'chest' ? 1.3 : 0.95;
         c.position.set(r.position.x + fx * 1.2 + fz * 0.35, y + 0.1, r.position.z + fz * 1.2 - fx * 0.35);

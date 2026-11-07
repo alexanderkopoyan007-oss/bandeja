@@ -6,9 +6,9 @@
 // turns shinier as it sweats. Shirt and shorts hems lag the body when it accelerates.
 import * as THREE from 'three/webgpu';
 import {
-  vec2, step, sin, cos, cross, select,
+  vec2, step, sin, cos, asin, cross, select,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
-  mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, normalGeometry, diffuseColor, frontFacing, faceDirection, positionViewDirection,
+  mx_noise_float, texture, uv, max, min, dot, exp, normalView, normalWorld, normalLocal, normalGeometry, diffuseColor, frontFacing, faceDirection, positionViewDirection,
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import { modelledVertices, type KitCut, type PlayerAsset } from './asset.ts';
@@ -212,6 +212,165 @@ export function hairHang(asset: PlayerAsset): HairHang | null {
 /** The back hairline under the head joint, and the band either side of a height that a strand counts in (m). */
 const HANG_BELOW_HEAD = 0.02;
 const HANG_BAND = 0.015;
+
+/**
+ * Long hair's body: the upper back (Spine1 to Spine2 to the neck's base) and each shoulder (its joint to the arm's), capsules in
+ * the modelled pose (model space, `a` to `b`), their radius `r` measured from the body's own surface (the 80th percentile, the
+ * shirt over the skin) at HAIR_STATIONS points along them. A shoulder is round, measured above and behind it. The back is
+ * measured at HAIR_ANGLES out from straight behind the spine, either side, for its shape: much flatter than round, it is
+ * 9 cm behind the spine and 15 cm out at 60 degrees (round, a strand lying off the middle came to rest 1-2 cm inside the
+ * shirt); past the last angle it keeps that radius (the arms are next). `r[k][station][angle]`. `hairPush` keeps the hair
+ * out of them: weights alone can't, and a head thrown back for a lob swung long hair through the upper back, a shrug or an
+ * overhead lifted the shoulders through what lay on them (p9mh). Null for hair that ends above the neck's base, which never
+ * reaches them.
+ * (Measured only at the ends, the depth ran 13 mm inside the upper back halfway up, which bulges: the hair came through
+ * the shirt there in black patches.)
+ */
+export interface HairBody {
+  bones: [number, number][]; a: THREE.Vector3[]; b: THREE.Vector3[]; r: number[][][];
+  /** Across the back (unit, square to the capsule), which the angles are measured from straight behind towards; null for a round one. */
+  across: (THREE.Vector3 | null)[];
+}
+export function hairBody(asset: PlayerAsset): HairBody | null {
+  if (!hairHang(asset)) return null;
+  const pos = asset.geometry.getAttribute('position');
+  const UP = new THREE.Vector3(0, 0.8, -0.6);
+  const segs: [string, string, boolean][] = [['Spine1', 'Spine2', true], ['Spine2', 'Neck', true], ['LeftShoulder', 'LeftArm', false], ['RightShoulder', 'RightArm', false]];
+  const out: HairBody = { bones: [], a: [], b: [], r: [], across: [] };
+  const v = new THREE.Vector3(), d = new THREE.Vector3(), half = 0.5 / (HAIR_STATIONS - 1), neckY = at(asset, 'Neck').y;
+  const p80 = (ls: number[]): number => (ls.length < 3 ? NaN : ls.sort((x, y) => x - y)[Math.floor(0.8 * ls.length)]!);
+  // (a station with too few points takes its nearest measured neighbour's)
+  const fill = (r: number[]): number[] => {
+    for (let k = 0; k < r.length; k++) for (let j = 1; Number.isNaN(r[k]!); j++) r[k] = Number.isNaN(r[k - j] ?? NaN) ? r[k + j] ?? NaN : r[k - j]!;
+    return r;
+  };
+  for (const [n0, n1, back] of segs) {
+    const a = at(asset, n0), b = at(asset, n1), ab = b.clone().sub(a);
+    const angles = back ? HAIR_ANGLES : [0];
+    const near: number[][][] = angles.map(() => Array.from({ length: HAIR_STATIONS }, () => []));
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).sub(a);
+      const t = v.dot(ab) / ab.lengthSq();
+      const k = Math.round(t * (HAIR_STATIONS - 1));
+      if (k < 0 || k >= HAIR_STATIONS || Math.abs(t - k / (HAIR_STATIONS - 1)) > half) continue;
+      d.copy(v).addScaledVector(ab, -t);
+      const l = d.length();
+      if (back) {
+        const g = Math.atan2(Math.abs(d.x), -d.z);
+        angles.forEach((ang, j) => { if (l < HAIR_BODY_FAR && Math.abs(g - ang) < HAIR_BODY_ANGLE) near[j]![k]!.push(l); });
+      // (a shoulder's own: the neck and the head stand above its inner end, and made it 19 cm round there)
+      } else if (l < HAIR_BODY_REACH && d.dot(UP) > HAIR_BODY_SIDE * l && v.y + a.y < neckY) near[0]![k]!.push(l);
+    }
+    const byAngle = near.map((st) => st.map(p80));
+    if (byAngle[0]!.every((x) => Number.isNaN(x))) continue;
+    byAngle.forEach((rs, j) => { if (rs.every((x) => Number.isNaN(x))) byAngle[j] = byAngle[j - 1]!.slice(); else fill(rs); });
+    out.bones.push([asset.bone(n0), asset.bone(n1)]);
+    out.a.push(a);
+    out.b.push(b);
+    out.r.push(Array.from({ length: HAIR_STATIONS }, (_, k) => byAngle.map((rs) => rs[k]!)));
+    const axis = ab.clone().normalize();
+    out.across.push(back ? new THREE.Vector3(1, 0, 0).addScaledVector(axis, -axis.x).normalize() : null);
+  }
+  return out.bones.length ? out : null;
+}
+/** Radii along each capsule: how many points they are measured at; the back's angles out from straight behind (radians), and
+ * how near one (radians) and how far out (m) a point must be to count; how far out (m) and how squarely above and behind a
+ * shoulder (the cosine) a point must be to count. */
+const HAIR_STATIONS = 5;
+const HAIR_ANGLES = [0, Math.PI / 6, Math.PI / 3];
+const HAIR_BODY_ANGLE = 0.17;
+const HAIR_BODY_FAR = 0.3;
+const HAIR_BODY_REACH = 0.12;
+const HAIR_BODY_SIDE = 0.85;
+/** How far off the body hair stops (m), and the depth (m) over which it eases onto that: hair inside goes to between CLEAR
+ * and CLEAR + SOFT off it, the deepest least far, so the layers keep their order (all put on one surface, the deepest helmet
+ * and the cards would fight there). Hair as modelled never moves: the easing narrows (to SOFT_MIN) for a strand modelled
+ * nearer the body than SOFT, and one modelled inside it stops where it was modelled (a capsule is round and a shoulder isn't:
+ * over the shoulders' fronts and tops a plain push lifted hair 2 cm off where it lay; held SOFT inside where it was
+ * modelled instead, hair modelled near the shirt was left under it in an overhead). */
+const HAIR_CLEAR = 0.003;
+const HAIR_SOFT = 0.01;
+const HAIR_SOFT_MIN = 0.002;
+/** How far (a share of the radius) a strand may have moved sideways off its own line out from the capsule before the push
+ * lets it go, from all of it to none. */
+const HAIR_SIDE: [number, number] = [0.8, 1.2];
+
+/**
+ * `hairPush` for one capsule in plain numbers, for a test: in the capsule's bone's modelled frame, where the point `q` of a
+ * strand modelled at `rest` is put.
+ */
+export function hairOut(body: HairBody, k: number, q: THREE.Vector3, rest: THREE.Vector3): THREE.Vector3 {
+  const a = body.a[k]!, ab = body.b[k]!.clone().sub(a), rs = body.r[k]!, len2 = ab.lengthSq(), across = body.across[k];
+  const t = THREE.MathUtils.clamp(q.clone().sub(a).dot(ab) / len2, 0, 1);
+  const t0 = THREE.MathUtils.clamp(rest.clone().sub(a).dot(ab) / len2, 0, 1);
+  const home = rest.clone().sub(a).addScaledVector(ab, -t0);
+  const modelled = home.length(), way = home.divideScalar(Math.max(modelled, 1e-4));
+  const d = q.clone().sub(a).addScaledVector(ab, -t), out = d.dot(way), side = d.clone().addScaledVector(way, -out).length();
+  const lerp = (xs: number[], u: number, at: (i: number) => number): number => {
+    let x = xs[0]!;
+    for (let i = 1; i < xs.length; i++) x += THREE.MathUtils.clamp((u - at(i - 1)) / (at(i) - at(i - 1)), 0, 1) * (xs[i]! - xs[i - 1]!);
+    return x;
+  };
+  const byAngle = rs[0]!.map((_, j) => lerp(rs.map((st) => st[j]!), t, (i) => i / (rs.length - 1)));
+  const ang = across ? Math.asin(Math.min(1, Math.abs(way.dot(across)))) : 0;
+  const r = lerp(byAngle, ang, (i) => HAIR_ANGLES[i]!);
+  const target = Math.min(r + HAIR_CLEAR, modelled - HAIR_SOFT_MIN);
+  const soft = THREE.MathUtils.clamp(modelled - target, HAIR_SOFT_MIN, HAIR_SOFT);
+  const to = Math.max(out, target + Math.exp(Math.min(out - target - soft, 0) / soft) * soft);
+  const ss = (e0: number, e1: number, x: number): number => { const u = THREE.MathUtils.clamp((x - e0) / (e1 - e0), 0, 1); return u * u * (3 - 2 * u); };
+  const keep = ss(target * HAIR_SIDE[1], target * HAIR_SIDE[0], side);
+  return q.clone().addScaledVector(way, (to - out) * keep);
+}
+
+/**
+ * Hair out of the back and the shoulders (`hairBody`). Each capsule works in its first bone's modelled pose: the skinned point
+ * taken back by that bone's skinning is set against the capsule there, and pushed out along its own way out of it in the
+ * modelled pose (from the capsule's axis to where the strand was modelled), never the nearest way: hair thrown more than the
+ * back's depth in (a head back for a lob swings long hair 10 cm and more) passed the axis and a radial push sent it on out
+ * of the chest. A strand that has moved sideways off that line (HAIR_SIDE) is beside the body, not in it, and is let go.
+ * Hair as modelled is never moved (HAIR_CLEAR), so the round end of the upper back's capsule at the neck's base leaves the
+ * nape's hair, which lies closer in, where it lies.
+ */
+function hairPush(body: HairBody, at: THREE.Node<'vec3'>): THREE.Node<'vec3'> {
+  const n = body.bones.length;
+  const toRest = body.bones.map(() => uniform(new THREE.Matrix4()));
+  const fromRest = body.bones.map(() => uniform(new THREE.Matrix4()));
+  const s = new THREE.Matrix4();
+  toRest[0]!.onObjectUpdate((f) => {
+    const mesh = f.object as THREE.SkinnedMesh, sk = mesh.skeleton;
+    for (let k = 0; k < n; k++) {
+      const i = body.bones[k]![0];
+      s.multiplyMatrices(sk.bones[i]!.matrixWorld, sk.boneInverses[i]!);
+      const m = (fromRest[k]!.value as THREE.Matrix4).multiplyMatrices(mesh.bindMatrixInverse, s).multiply(mesh.bindMatrix);
+      (toRest[k]!.value as THREE.Matrix4).copy(m).invert();
+    }
+  });
+  let p = at;
+  for (let k = 0; k < n; k++) {
+    const a = body.a[k]!, ab = body.b[k]!.clone().sub(a), rs = body.r[k]!, across = body.across[k];
+    const A = vec3(a.x, a.y, a.z), AB = vec3(ab.x, ab.y, ab.z), len2 = ab.lengthSq();
+    const q = toRest[k]!.mul(vec4(p, 1)).xyz;
+    const t = q.sub(A).dot(AB).div(len2).clamp();
+    const home = positionGeometry.sub(A.add(AB.mul(positionGeometry.sub(A).dot(AB).div(len2).clamp())));
+    const way = home.div(home.length().max(1e-4));
+    const d = q.sub(A.add(AB.mul(t))), out = d.dot(way), side = d.sub(way.mul(out)).length();
+    // (the radius between the stations along it and the angles round it, a straight line from one to the next)
+    const lerp = (xs: THREE.Node<'float'>[], u: THREE.Node<'float'>, at: (i: number) => number): THREE.Node<'float'> => {
+      let x = xs[0]!;
+      for (let i = 1; i < xs.length; i++) x = x.add(u.sub(at(i - 1)).div(at(i) - at(i - 1)).clamp().mul(xs[i]!.sub(xs[i - 1]!)));
+      return x;
+    };
+    const byAngle = rs[0]!.map((_, j) => lerp(rs.map((st) => float(st[j]!)), t, (i) => i / (rs.length - 1)));
+    const ang = across ? asin(way.dot(vec3(across.x, across.y, across.z)).abs().min(1)) : float(0);
+    const r = lerp(byAngle, ang, (i) => HAIR_ANGLES[i]!);
+    const modelled = home.length(), target = min(r.add(HAIR_CLEAR), modelled.sub(HAIR_SOFT_MIN));
+    const soft = modelled.sub(target).clamp(HAIR_SOFT_MIN, HAIR_SOFT);
+    const to = max(out, target.add(exp(min(out.sub(target).sub(soft), 0).div(soft)).mul(soft)));
+    const keep = smoothstep(target.mul(HAIR_SIDE[1]), target.mul(HAIR_SIDE[0]), side);
+    p = p.add(fromRest[k]!.mul(vec4(way.mul(to.sub(out).mul(keep)), 0)).xyz);
+  }
+  return p;
+}
 
 export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THREE.MeshStandardNodeMaterial; state: KitState } {
   const { frame } = kitRegions(asset);
@@ -717,6 +876,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // helmet's fading below; MPFB hair, whose cards run every way, is drawn as it was.
   const shell = hasHelmet(body.alphaGeometry);
   if (shell) {
+    cardTangents(body.alphaGeometry);
     // (anisotropy in its lighting: PersonNodeMaterial's model leaves it off, for the skin)
     const hairLighting = hair.setupLightingModel.bind(hair);
     hair.setupLightingModel = (): THREE.PhysicalLightingModel => {
@@ -745,7 +905,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
     const c = cos(turn);
     held = ponyAt.add(rel.mul(c)).add(cross(axis, rel).mul(sin(turn))).add(axis.mul(dot(axis, rel).mul(float(1).sub(c))));
   } else held = positionLocal.add(lag.mul(below.mul(HAIR_SWING).mul(clump)));
-  hair.positionNode = held.add(sway.mul(below.mul(below).mul(clump)));
+  const swung = held.add(sway.mul(below.mul(below).mul(clump)));
+  // (and out of the back and the shoulders it lies on: hairPush)
+  const onBody = hairBody(asset);
+  hair.positionNode = onBody ? hairPush(onBody, swung) : swung;
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
   const hAO = body.alphaGeometry.hasAttribute('bodyAO') ? attribute<'float'>('bodyAO', 'float') : float(1);
   // Strands, not a cap: brightness varies across the cards (fine) and along them (slowly); pale texels at the edge of a
@@ -799,6 +962,29 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
 }
 
 /** Whether a person's hair mesh has a helmet (a MetaHuman groom's shell, at u past HAIR_U and v past HAIR_HELMET_V of the atlas). */
+/**
+ * Tangents for a MetaHuman's cards, along +u as three's own frame from screen derivatives has them, so the anisotropic
+ * highlight runs the same way. That frame comes out zero on a card pressed nearly flat (`hairPush` lays hair thrown into the
+ * back onto it), and the anisotropic lighting's bent normal then normalised a zero: a NaN the bloom spread into a white glare
+ * over the shoulder. The mesh's own tangents are skinned with it and never vanish; where a triangle's UVs give none (a
+ * degenerate one), any direction across the normal stands in. Once per geometry.
+ */
+function cardTangents(g: THREE.BufferGeometry): void {
+  if (g.hasAttribute('tangent') || !g.index || !g.hasAttribute('normal') || !g.hasAttribute('uv')) return;
+  g.computeTangents();
+  const t = g.getAttribute('tangent') as THREE.BufferAttribute, nr = g.getAttribute('normal');
+  const a = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let i = 0; i < t.count; i++) {
+    a.fromBufferAttribute(t, i);
+    if (Number.isFinite(a.x + a.y + a.z + t.getW(i)) && a.lengthSq() > 1e-8) continue;
+    n.fromBufferAttribute(nr, i);
+    a.set(1, 0, 0).addScaledVector(n, -n.x);
+    if (a.lengthSq() < 1e-4) a.set(0, 1, 0).addScaledVector(n, -n.y);
+    a.normalize();
+    t.setXYZW(i, a.x, a.y, a.z, 1);
+  }
+}
+
 function hasHelmet(g: THREE.BufferGeometry): boolean {
   const uv = g.getAttribute('uv') as THREE.BufferAttribute | undefined;
   if (!uv) return false;

@@ -3,9 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import * as THREE from 'three/webgpu';
-import { drawnTriangles, mannequinWithPeople } from './people.ts';
+import { drawnTriangles, mannequinWithPeople, metaHumansHere } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
-import { hairHang, kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
+import { hairBody, hairHang, hairOut, kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
 import { PEOPLE, modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
 import type { Paint } from '../../src/render/avatar/paint.ts';
@@ -432,6 +432,78 @@ describe('kit', () => {
     const settled = deg();
     for (let i = 0; i < 60; i++) av.swingHair(false, dt);
     expect(Math.abs(deg() - settled)).toBeLessThan(0.2);
+  });
+
+  // The owner's realism list, 7 Nov, point 5: long hair went through the back and the shoulders (p9mh: a black band across the
+  // shirt as the head went back for a lob, the hair gone into the back on an overhead). `hairBody` measures the upper back and
+  // the shoulders as capsules and `hairPush` (`hairOut` in plain numbers) puts hair out of them along its own way out.
+  it('keeps long hair out of the back and the shoulders, and leaves it where it was modelled', () => {
+    const base = mannequinWithPeople();
+    let deep = 0;
+    for (const p of [...base.people, ...metaHumansHere(base)]) {
+      const body = hairBody(p);
+      expect(body !== null).toBe(hairHang(p) !== null);
+      if (!body) continue;
+      expect(body.bones.length).toBe(4);
+      // (the back flatter than round: deeper out to the sides than behind the spine)
+      body.r.forEach((rs, k) => rs.flat().forEach((r) => expect(r, `${p.look!.name} capsule ${k}`).toBeGreaterThan(0.025)));
+      body.r.forEach((rs, k) => rs.flat().forEach((r) => expect(r, `${p.look!.name} capsule ${k}`).toBeLessThan(k < 2 ? 0.25 : 0.08)));
+      for (const st of [...body.r[0]!, ...body.r[1]!.slice(0, 3)]) expect(st[2]!).toBeGreaterThan(st[0]! + 0.02);
+      const pos = p.look!.alphaGeometry.getAttribute('position');
+      const v = new THREE.Vector3();
+      const a = body.a[1]!, ab = body.b[1]!.clone().sub(a);
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        // as modelled: not moved at all
+        let q = v.clone();
+        for (let k = 0; k < body.bones.length; k++) q = hairOut(body, k, q, v);
+        expect(q.distanceTo(v)).toBeLessThan(1e-6);
+        // lying on the middle of the upper back, then thrown 12 cm in, through the spine's line: out again behind it
+        const t = v.clone().sub(a).dot(ab) / ab.lengthSq();
+        const home = v.clone().sub(a).addScaledVector(ab, -t);
+        if (t < 0.1 || t > 0.8 || home.z > -0.05 || Math.abs(home.x) > 0.05) continue;
+        const way = home.clone().normalize();
+        const out = hairOut(body, 1, v.clone().addScaledVector(way, -0.12), v);
+        expect(out.sub(a).addScaledVector(ab, -t).dot(way)).toBeGreaterThan(0.03);
+        deep++;
+      }
+    }
+    expect(deep).toBeGreaterThan(0);
+  });
+
+  // The anisotropic highlight's frame, from screen derivatives, came out zero on a card the push pressed flat, and the lighting
+  // normalised it: a NaN the bloom spread into a white glare. A MetaHuman's cards carry their own tangents (on this machine only:
+  // the packs never leave it).
+  it("gives a MetaHuman's hair cards their own tangents, the way u grows, and never a zero one", () => {
+    const base = mannequinWithPeople();
+    for (const p of metaHumansHere(base)) {
+      personMaterial(p, kitFor(0));
+      const g = p.look!.alphaGeometry, t = g.getAttribute('tangent'), nr = g.getAttribute('normal'), uv = g.getAttribute('uv'), pos = g.getAttribute('position'), idx = g.index!;
+      expect(t, p.look!.name).toBeDefined();
+      const a = new THREE.Vector3(), n = new THREE.Vector3();
+      let bad = 0;
+      for (let i = 0; i < t.count; i++) {
+        a.fromBufferAttribute(t, i);
+        n.fromBufferAttribute(nr, i).normalize();
+        if (!Number.isFinite(a.x + a.y + a.z) || Math.abs(a.length() - 1) > 1e-3 || Math.abs(a.dot(n)) > 0.02) bad++;
+      }
+      expect(bad, p.look!.name).toBe(0);
+      // on its triangles, the tangent at a corner points the way u grows across the triangle
+      const P = [0, 1, 2].map(() => new THREE.Vector3()), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+      let agree = 0, tris = 0;
+      for (let f = 0; f + 2 < idx.count; f += 3 * 7) {
+        const ids = [idx.getX(f), idx.getX(f + 1), idx.getX(f + 2)];
+        ids.forEach((v, j) => P[j]!.fromBufferAttribute(pos, v));
+        const du1 = uv.getX(ids[1]!) - uv.getX(ids[0]!), dv1 = uv.getY(ids[1]!) - uv.getY(ids[0]!);
+        const du2 = uv.getX(ids[2]!) - uv.getX(ids[0]!), dv2 = uv.getY(ids[2]!) - uv.getY(ids[0]!);
+        const det = du1 * dv2 - du2 * dv1;
+        if (Math.abs(det) < 1e-10) continue;
+        e1.subVectors(P[1]!, P[0]!).multiplyScalar(dv2).addScaledVector(e2.subVectors(P[2]!, P[0]!), -dv1).divideScalar(det);
+        tris++;
+        if (e1.dot(a.fromBufferAttribute(t, ids[0]!)) > 0) agree++;
+      }
+      expect(agree / tris, p.look!.name).toBeGreaterThan(0.9);
+    }
   });
 
   it('gives each person their own head of hair and their own shoes', () => {
