@@ -48,6 +48,7 @@ The motion has to come from real people playing padel. Pro footage stays what it
 The captured motion is our own asset. The people captured agree in writing that their movement is used (only movement, never their look). Best is one right-hander and one left-hander who play well; a club coach would be ideal. Dives aren't captured (injury risk): the dive stays procedural, or gets done later on a gym mat.
 
 **The shot list comes from the sim, not a guess.** I run a few hundred AI doubles points and record every contact: family, hand, height, how far out to the side and in front, and run-in speed. The list covers the cells that hold 95% of real in-game contacts. Expect about 200-300 takes plus about 15 minutes of footwork.
+- **Made 7 Nov 2026:** [`docs/mocap-shotlist.md`](mocap-shotlist.md), from `node tools/shot-list.ts`. 926 points and 7619 contacts give 121 cells holding 95% of contacts, and 244 takes. Volleys are 28% of contacts, drives 14%, serves 14%, shots off the glass about 15%, lobs 8% and overheads 10%.
 
 ## Phases
 Each one ends with tests, a review sheet or clip for you, and nothing live until you've seen it (behind `?motion=2`).
