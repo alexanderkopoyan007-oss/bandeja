@@ -3733,6 +3733,21 @@ The owner asked for the women "with skirts like before". MetaHuman's wardrobe ha
 
 The bodies were stale. `cast-batch.sh` had been exporting from the .blend files in the old p9 worktree, saved on 30 Oct at 11:54. That was before each player got their own face targets and body builds (that evening), and p9 still had a bob there. The batch now makes the person afresh from data/players first (`make-player.py --blend-only`, the MPFB part before finishing), so the men are being redone from their current bodies too. The p1mh still sent earlier was fitted to the old p1. They were also unscaled. MPFB makes a body at its macro's size, and finish-player.py then scales everyone to their `height`, from the shoes' soles to the top of the skin. The export skipped that step: p7 came out 1.61 m for her 1.71, and p2mh was 1.89 for his 1.84. `cast-export.py` now scales the person as finish-player does, through the rig and about the bare feet, so the portrait's camera fits the target. `mh-player.py` measures kit.skirt and shorts_hem from the shoes' soles.
 
+### MetaHuman hands, wrists and ankles: the skeleton isn't the body's (2026-11-07)
+The first ten-player sheet showed every MetaHuman free hand as a claw of loose pieces with black tips, and the racket hand open on the handle. Measured, not guessed:
+- **The exported skeleton isn't refitted after conform.** In both the full and the optimized builds, from the elbow and the knee out it keeps the template's limbs. On p3:
+  - the forearm is 29 cm where the skin's own is 25 (the MPFB body it was conformed to: 25.4)
+  - the wrist sits 10 cm off the skin, every finger joint 11-12 cm, the ankle 6.5 cm
+  - the elbow is within 1.4 cm and the knee within 4 cm
+
+  Turned about those joints, fingers came off their knuckles, the hand swung round a point in the air, and the grip solve saw "fingers" 12 cm thick and closed none of them (curls of 1 degree).
+- **The fix: joints from the wrist and the ankle out come from the skin's own weights.** Each is the ring where the joint's two bones share the skin, its centre weighted by the lesser share (`crease` in mh-player.py). The shoulder, elbow, hip and knee keep the skeleton's: they're close, and their rings lean (the knee's sits 4 cm high).
+  - After: the finger radii the grip sees are 6-12 mm, as on the MPFB bodies (7-18), and every racket hand wraps 2.1-3.1 rad round the handle, as p1's does (2.2-3.0).
+  - p3mh's forearm is 24.5 cm.
+- **Helpers split across their joint.** A finger's `_half_` joints and the bones under a `correctiveRoot` (elbow, knee, shoulder, hip) are turned by Unreal's rig logic, about halfway. With no rig logic in the export, their skin now goes half to each side of the joint instead of all to the bone below. Twist bones lie along one bone and stay with it.
+- **Black fingertips:** the fingertips lie at the top of the body's texture, under an unused strip of the atlas, and as the texture shrank with distance they took its black. Unused texels are now grown out from their neighbours (`fill_gutters`, 64 texels, the rest the mean).
+- **Check before the sheet goes out:** `solveGrip` on every pack, wrap and radii as above.
+
 ## M5 phase C, step 1: cosmetics, unlocks and the store (2026-11-06)
 The approved M5 plan's phase C starts with what needs no drawing: the catalogue, the rules that earn it and the store that keeps it. Nothing is drawn or worn yet (steps 2-5: accessories on bones, garments as runtime shader cuts, the five costumes, the skirt and dress meshes), and the locker's screen comes with the creator (phase D).
 - **Catalogue** (`data/cosmetics.json`): 60 items in 11 slots (shirt, pattern, shorts and skirts, socks, shoes, head, sunglasses, wristbands, overgrip, bag, costume), each with a kind that says how it will be drawn (paint = the kit shader's masks, garment = a mesh built per body, attachment = a code mesh on a bone or the bench, costume = paint plus attachments) and what it covers (a dress the bottom; a costume the shirt, pattern and bottom, some the head and eyes). Every name and look is ours.

@@ -121,25 +121,43 @@ def bake_world(o):
         o.modifiers.remove(m)
 
 
-def game_of(arm, name):
+# MetaHuman's joint helpers (a finger's `_half_` joints, the bones under a `correctiveRoot` at the elbow, knee, shoulder
+# and hip) sit on a joint and are turned by Unreal's rig logic, about halfway between the two bones there. The export has
+# no rig logic, so the skin they carry goes half to each side of the joint. Going all to the bone below (up the chain),
+# a finger's knuckles stayed with the next segment and every bent finger came apart at them (6 Nov sheet: the free hand
+# a claw of loose pieces). Twist bones lie along one bone and stay with it.
+HELPER_KEYS = ('_half_', 'correctiveRoot')
+
+
+def game_shares(arm, name):
+    """[(game bone, share)] for a MetaHuman group: its own game bone, or half each across the joint for a helper."""
     b = arm.data.bones.get(name)
+    helper = False
     while b is not None:
         if b.name in DIRECT:
-            return DIRECT[b.name]
+            g = DIRECT[b.name]
+            if not helper:
+                return [(g, 1.0)]
+            p = b.parent
+            while p is not None and (p.name not in DIRECT or DIRECT[p.name] == g):
+                p = p.parent
+            return [(g, 0.5), (DIRECT[p.name], 0.5)] if p is not None else [(g, 1.0)]
+        helper = helper or any(k in b.name for k in HELPER_KEYS)
         b = b.parent
-    return 'Hips'
+    return [('Hips', 1.0)]
 
 
 def remap(o, arm):
-    """MetaHuman's groups summed onto the game bones (up each joint's chain), the four largest kept, normalised."""
-    gmap = {g.index: game_of(arm, g.name) for g in o.vertex_groups}
+    """MetaHuman's groups summed onto the game bones (up each joint's chain, a helper's split across its joint), the four
+    largest kept, normalised."""
+    gmap = {g.index: game_shares(arm, g.name) for g in o.vertex_groups}
     acc = []
     for v in o.data.vertices:
         d = {}
         for g in v.groups:
             if g.weight > 1e-5 and g.group in gmap:
-                n = gmap[g.group]
-                d[n] = d.get(n, 0.0) + g.weight
+                for n, s in gmap[g.group]:
+                    d[n] = d.get(n, 0.0) + g.weight * s
         acc.append(d)
     rigid(o, None)
     vg = {n: o.vertex_groups[P + n] for n in BONES}
@@ -306,6 +324,36 @@ for g, mh in JOINT_OF.items():
     J[g] = MHJ[mh].copy()
 bw = weights(body)
 bco = coords(body)
+
+# The exported skeleton isn't refitted to the body after conform: from the elbow and knee out it has the template's
+# limbs (p3: the forearm 29 cm where its skin's is 25, as the MPFB body it was conformed to; the wrist 10 cm and every
+# finger joint 11-12 cm off the skin, the ankle 6.5 cm). Turned about those joints, each finger came off its knuckle
+# and the hand swung round a point in the air (6 Nov sheet). So the joints from the wrist and the ankle out come from
+# the skin's own weights instead: the ring where a joint's two bones share the skin, its centre weighted by the lesser
+# share. The shoulder, elbow, hip and knee stay: within 1.5-4 cm, and their rings lean (the knee's sits 4 cm high).
+CREASE_MIN, CREASE_VERTS = 0.15, 6
+
+
+def crease(a, b):
+    w = np.array([min(d.get(a, 0.0), d.get(b, 0.0)) for d in bw])
+    on = w > CREASE_MIN
+    if on.sum() < CREASE_VERTS:
+        return None
+    return Vector((bco[on] * w[on, None]).sum(0) / w[on].sum())
+
+
+moved_joints = []
+for s, _ in SIDES:
+    pairs = [(s + 'ForeArm', s + 'Hand'), (s + 'Leg', s + 'Foot'), (s + 'Foot', s + 'ToeBase')]
+    for F, _ in FINGERS:
+        pairs += [(s + 'Hand', f'{s}Hand{F}1'), (f'{s}Hand{F}1', f'{s}Hand{F}2'), (f'{s}Hand{F}2', f'{s}Hand{F}3')]
+    for a, b in pairs:
+        c = crease(a, b)
+        if c is None:
+            raise ValueError(f'no crease between {a} and {b} to place {b} on')
+        moved_joints.append(((c - J[b]).length, b))
+        J[b] = c
+say('joints from the skin: moved (cm)', [(n, round(d * 100, 1)) for d, n in sorted(moved_joints, reverse=True)[:8]])
 
 
 def tip(bone, frm, to, inset):
@@ -783,6 +831,42 @@ def paste(atlas, rect, px):
     atlas[y:y + h, x:x + w] = px
 
 
+GUTTER_REACH = 64
+
+
+def fill_gutters(atlas, rects):
+    """The atlas's unused texels in the colour of the nearest used ones (grown out GUTTER_REACH texels, the rest the mean).
+    Left black, they bled into a picture at its rectangle's edge as the texture shrank with distance: MetaHuman's
+    fingertips lie at the top of the body's, under an unused strip, and every hand in the 6 Nov sheet had black tips."""
+    H, W = atlas.shape[:2]
+    used = np.zeros((H, W), dtype=bool)
+    for x, y, w, h in rects:
+        used[y:y + h, x:x + w] = True
+    if used.all():
+        return
+    ys, xs = np.nonzero(~used)
+    y0, y1 = max(0, ys.min() - GUTTER_REACH), min(H, ys.max() + 1 + GUTTER_REACH)
+    x0, x1 = max(0, xs.min() - GUTTER_REACH), min(W, xs.max() + 1 + GUTTER_REACH)
+    on = used[y0:y1, x0:x1].copy()
+    col = atlas[y0:y1, x0:x1, :3] * on[..., None]
+    for _ in range(GUTTER_REACH):
+        if on.all():
+            break
+        s = np.zeros_like(col)
+        n = np.zeros(on.shape, dtype=np.float32)
+        for d, ax in ((1, 0), (-1, 0), (1, 1), (-1, 1)):
+            s += np.roll(col, d, ax)
+            n += np.roll(on, d, ax)
+        new = ~on & (n > 0)
+        col[new] = s[new] / n[new][:, None]
+        on |= new
+    if not on.all():
+        col[~on] = col[on].mean(0)
+    gap = ~used[y0:y1, x0:x1]
+    atlas[y0:y1, x0:x1, :3][gap] = col[gap]
+    say('gutters filled', int(gap.sum()), 'texels')
+
+
 def save(atlas, path, name):
     h, w = atlas.shape[:2]
     im = bpy.data.images.new(name, w, h, alpha=True)
@@ -998,6 +1082,7 @@ if skirt:
     w = RECT['skirt'][2]
     paste(op, RECT['skirt'], sao.reshape(sao.shape[0], w, -1, 4).mean(2))
 op[..., 3] = 1
+fill_gutters(op, [RECT[k] for k in ('head', 'body', 'eye', 'teeth', 'shirt', 'shorts')] + ([RECT['skirt']] if skirt else []))
 save(op, os.path.join(OUT, 'opaque.webp'), 'opaque')
 
 al = np.zeros((ALPHA_SIZE[1], ALPHA_SIZE[0], 4), dtype=np.float32)
