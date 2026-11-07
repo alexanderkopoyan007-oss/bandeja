@@ -368,6 +368,13 @@ const HAIR_SHEEN = 0.012;
  * three's anisotropy, across the cards' u (their strands run along v, tangents from the UVs' derivatives); and the
  * roughness along a strand.
  */
+/**
+ * A shoe's relief (m): the laces' pitch along the instep and how far they stand up; the eyelets' distance out from the
+ * foot's line and their depth; the stitching's height over the floor and its rise; the midsole's ridges (spacing, depth);
+ * the outsole's herringbone (spacing, groove depth).
+ */
+const SHOE_LACE_PITCH = 0.0135, SHOE_LACE_H = 0.0016, SHOE_EYELET_X = 0.027, SHOE_EYELET_D = 0.0008;
+const SHOE_STITCH_Y = 0.036, SHOE_STITCH_H = 0.0003, SHOE_RIDGE = 0.005, SHOE_RIDGE_H = 0.0003, SHOE_TREAD = 0.008, SHOE_TREAD_D = 0.0012;
 const HAIR_ANISO = 0.85;
 const HAIR_ROUGH = 0.4;
 /** Near, the helmet's (and brows' and lashes') roughness and its highlight's share. */
@@ -475,7 +482,27 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const accent = paint?.shoes ? new THREE.Color(paint.shoes.accent) : null;
   const tab = accent ?? new THREE.Color(look.shirt), laces = accent ?? new THREE.Color(shoe.getHSL({ h: 0, s: 0, l: 0 }).l > 0.5 ? 0x8b9098 : 0xe8e8e8);
   const upper = mix(mix(color(shoe).mul(float(1).add(knit)), color(tab), stripe.mul(0.9).add(heel).min(1)), color(laces), lace);
-  const shoeC = mix(upper, color(new THREE.Color(paint?.shoes?.sole ?? body.kit.sole ?? 0x8a8378)), sole);
+  // Relief (the owner's realism list, 7 Nov: "shoes are black blobs"): laces standing off the tongue, an eyelet either side of each
+  // crossing, a line of stitching round the upper over the sole, the midsole's wall in ridges, and a herringbone outsole
+  // underneath (seen as the heel lifts); all of it gone where a pixel covers more than a few millimetres.
+  const laceRow = toe.mul(1 / SHOE_LACE_PITCH).fract().sub(0.5).abs();
+  const laceBand = smoothstep(0.024, 0.02, footX.abs()).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top);
+  const eyeR = vec2(footX.abs().sub(SHOE_EYELET_X), laceRow.mul(SHOE_LACE_PITCH)).length();
+  const eyelet = smoothstep(0.0032, 0.0022, eyeR).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top);
+  const aboveSole = smoothstep(frame.floorY + 0.03, frame.floorY + 0.034, p.y);
+  const stitch = smoothstep(0.0009, 0.0004, p.y.sub(frame.floorY + SHOE_STITCH_Y).abs())
+    .mul(step(0.2, toe.add(footX).mul(2 * Math.PI / 0.0045).sin()));
+  const wall = smoothstep(frame.floorY + 0.004, frame.floorY + 0.007, p.y).mul(float(1).sub(smoothstep(frame.floorY + 0.024, frame.floorY + 0.028, p.y)));
+  const under = float(1).sub(smoothstep(frame.floorY + 0.002, frame.floorY + 0.005, p.y));
+  const chevron = toe.add(footX.abs()).mul(1 / SHOE_TREAD).fract();
+  const shoeRelief = laceBand.mul(smoothstep(0.34, 0.12, laceRow)).mul(SHOE_LACE_H)
+    .sub(eyelet.mul(SHOE_EYELET_D))
+    .add(stitch.mul(aboveSole).mul(SHOE_STITCH_H))
+    .add(wall.mul(p.y.mul(2 * Math.PI / SHOE_RIDGE).sin()).mul(SHOE_RIDGE_H))
+    .sub(under.mul(smoothstep(0.3, 0.2, chevron)).mul(SHOE_TREAD_D))
+    .mul(shoeW).mul(footprintKeep(0.003));
+  const shoeC = mix(upper, color(new THREE.Color(paint?.shoes?.sole ?? body.kit.sole ?? 0x8a8378)), sole)
+    .mul(float(1).sub(eyelet.mul(0.45)));
   // Albedo: the skin a little darker in its deepest creases, the eyeball under the lids, the mouth's inside.
   // (dark skin lifted a little: under the same floodlights its faces read as masks beside the others', mean luminance
   // 23 of 255 against 68 and 99)
@@ -583,7 +610,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const pores = mx_noise_float(p.mul(1900)).mul(0.6).add(poreFine.mul(0.4))
     .mul(0.00003).mul(skinW).mul(float(1).sub(lips.mul(0.7)).sub(lids.mul(0.5))).mul(footprintKeep(0.0012));
   // The suit's sculpted folds, MakeHuman's own normal map, over the suit's rectangle of the atlas (finish-player.py RECT).
-  const bumped = heightBump(folds.mul(body.clothNormal ? sockW : fabric).mul(0.0025).add(pores), 0.023);
+  const bumped = heightBump(folds.mul(body.clothNormal ? sockW : fabric).mul(0.0025).add(pores).add(shoeRelief), 0.023);
   if (body.clothNormal) {
     const suitUv = vec2(uv().x.sub(2 / 3).mul(3), uv().y.sub(0.5).mul(2));
     // (the suit's rectangle only: a skirt has pleats of its own)

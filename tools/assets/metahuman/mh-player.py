@@ -18,7 +18,7 @@
 #   over shorts, each MetaHuman UV square squeezed into half of it), a skirt's shading in a strip at the bottom right,
 #   hair at the left of the alpha atlas.
 # - Not yet: face expressions and gaze (MetaHuman moves the face with joints; none are baked yet, so the face is
-#   still), ambient occlusion (atlas alpha is 1), the garment's own fold normals (a flat cloth map for now).
+#   still), ambient occlusion (atlas alpha is 1). The garments' cloth map is drawn from their own meshes (folds, seams, hems).
 import bpy, bmesh, json, math, os, sys
 import numpy as np
 from mathutils import Vector, Matrix
@@ -1212,10 +1212,157 @@ if helmet:
     hp[..., 3] = np.clip(cov[..., 3] * 1.15, 0, 1) * rim_feather(helmet, RECT['helmet'][2:], HELMET_FEATHER)
     paste(al, RECT['helmet'], hp)
 save(al, os.path.join(OUT, 'alpha.webp'), 'alpha')
-flat = np.zeros((256, 256, 4), dtype=np.float32)
-flat[..., 0] = flat[..., 1] = 0.5
-flat[..., 2] = flat[..., 3] = 1
-save(flat, os.path.join(OUT, 'cloth-flat.webp'), 'cloth')
+# ---------------------------------------------------------------- the garments' folds, seams and hems -------------------------------
+# The owner's realism list, 7 Nov: "clothes painted on". kit.ts reads the cloth map over the kit's rectangle (shirt over shorts, as
+# RECT) as a tangent-space normal map along each garment's u and v; it was flat, so a MetaHuman's shirt and shorts had no fold at all.
+# Now each garment's own mesh draws it, at its UVs:
+# - folds: wrinkles mostly across the body (crests level, a few slanting), CLOTH_FOLD deep, from waves over the garment in
+#   space, so they run on across its UV panels;
+# - seams: where two of its UV panels meet (the pattern's sewing lines): a groove with a line of stitching beside it;
+# - hems: along its open edges (neck, armholes, sleeves, waist, legs): a turned-up band, raised, stitched near its inner edge.
+CLOTH_GRID = 1024
+CLOTH_FOLD = 0.0022
+CLOTH_WAVES = ((0.06, 0.0, 1.0, 0.0, 0.0, 0.40), (0.085, 0.25, 1.0, 0.1, 1.3, 0.30), (0.05, -0.3, 1.0, 0.2, 2.1, 0.25),
+               (0.12, 0.15, 1.0, -0.2, 0.7, 0.35), (0.035, 0.6, 1.0, 0.4, 2.9, 0.12), (0.02, -0.1, 1.0, 0.5, 4.0, 0.06),
+               (0.07, 0.9, 0.6, 0.3, 5.1, 0.15), (0.045, -0.8, 0.7, -0.4, 0.4, 0.12))
+# (the folds come in patches: two slow waves, about a hand and a forearm long, scale them between CLOTH_PATCH and 1)
+CLOTH_ENVELOPE = ((0.22, 0.7, 0.3, 0.6, 0.9), (0.31, -0.4, 0.8, 0.5, 2.3))
+CLOTH_PATCH = 0.15
+SEAM_W, SEAM_DEPTH, STITCH_AT, STITCH_W, STITCH_H = 0.0015, 0.0005, 0.004, 0.0006, 0.00025
+HEM_W, HEM_H = 0.02, 0.0005
+
+
+def uv_lines(o, n):
+    """`o`'s hems (its open edges) and seams (edges its UV panels split along), drawn on an n x n grid of its UV square."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    uvl = bm.loops.layers.uv[0]
+    allu = np.array([l[uvl].uv[:] for f in bm.faces for l in f.loops], dtype=np.float32)
+    tile = np.floor(np.median(allu, axis=0))
+    hem = np.zeros((n, n), dtype=bool)
+    seam = np.zeros((n, n), dtype=bool)
+
+    def draw(mask, a, b):
+        a, b = (a[0] - tile[0], a[1] - tile[1]), (b[0] - tile[0], b[1] - tile[1])
+        for t in np.linspace(0, 1, int(max(abs(a[0] - b[0]), abs(a[1] - b[1])) * n) + 2):
+            x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            mask[min(max(int(y * n), 0), n - 1), min(max(int(x * n), 0), n - 1)] = True
+    # (the garment's panels come as separate pieces of mesh, split where their UVs are: an open edge lying on another open edge,
+    # midpoint within 0.5 mm, is a seam; one with no partner is a real hem)
+    opens = [e for e in bm.edges if e.is_boundary]
+    kd = KDTree(len(opens))
+    for i, e in enumerate(opens):
+        kd.insert((e.verts[0].co + e.verts[1].co) / 2, i)
+    kd.balance()
+    for i, e in enumerate(opens):
+        lp = e.link_loops[0]
+        near = kd.find_n((e.verts[0].co + e.verts[1].co) / 2, 2)
+        sewn = any(j != i and d < 0.0005 for _, j, d in near)
+        draw(seam if sewn else hem, lp[uvl].uv[:], lp.link_loop_next[uvl].uv[:])
+    for e in bm.edges:
+        if e.is_boundary:
+            continue
+        elif len(e.link_loops) == 2:
+            l0, l1 = e.link_loops
+            a0, b0 = l0[uvl].uv, l0.link_loop_next[uvl].uv
+            a1, b1 = l1.link_loop_next[uvl].uv, l1[uvl].uv  # (the other face runs the edge the other way)
+            if (a0 - a1).length > 1e-4 or (b0 - b1).length > 1e-4:
+                draw(seam, a0[:], b0[:])
+                draw(seam, a1[:], b1[:])
+    bm.free()
+    return hem, seam, tile
+
+
+def grow_dist(mask, reach):
+    """Texels from the nearest set texel (4-neighbour steps), up to `reach`."""
+    dist = np.full(mask.shape, float(reach), dtype=np.float32)
+    cur = mask
+    for i in range(reach):
+        dist[cur & (dist == reach)] = i
+        grown = cur.copy()
+        grown[1:] |= cur[:-1]
+        grown[:-1] |= cur[1:]
+        grown[:, 1:] |= cur[:, :-1]
+        grown[:, :-1] |= cur[:, 1:]
+        cur = grown
+    return dist
+
+
+def garment_normals(o, w, h):
+    """`o`'s folds, seams and hems as a tangent-space normal map (RGBA, w x h, rows from the bottom) of its UV square."""
+    n = CLOTH_GRID
+    hem, seam, tile = uv_lines(o, n)
+    me = o.data
+    me.calc_loop_triangles()
+    uvl = me.uv_layers[0].data
+    co = np.array([(v.co.x, v.co.z, -v.co.y) for v in me.vertices], dtype=np.float64)
+    pos = np.zeros((n, n, 3), dtype=np.float64)
+    hit = np.zeros((n, n), dtype=bool)
+    area3 = areauv = 0.0
+    for tri in me.loop_triangles:
+        P = co[list(tri.vertices)]
+        U = np.array([uvl[li].uv[:] for li in tri.loops], dtype=np.float64) - tile
+        area3 += np.linalg.norm(np.cross(P[1] - P[0], P[2] - P[0])) / 2
+        d = (U[1, 0] - U[0, 0]) * (U[2, 1] - U[0, 1]) - (U[2, 0] - U[0, 0]) * (U[1, 1] - U[0, 1])
+        areauv += abs(d) / 2
+        if abs(d) < 1e-12:
+            continue
+        x0, x1 = max(int(U[:, 0].min() * n), 0), min(int(U[:, 0].max() * n) + 1, n - 1)
+        y0, y1 = max(int(U[:, 1].min() * n), 0), min(int(U[:, 1].max() * n) + 1, n - 1)
+        if x1 < x0 or y1 < y0:
+            continue
+        gx, gy = np.meshgrid((np.arange(x0, x1 + 1) + 0.5) / n, (np.arange(y0, y1 + 1) + 0.5) / n)
+        l1 = ((gx - U[0, 0]) * (U[2, 1] - U[0, 1]) - (U[2, 0] - U[0, 0]) * (gy - U[0, 1])) / d
+        l2 = ((U[1, 0] - U[0, 0]) * (gy - U[0, 1]) - (gx - U[0, 0]) * (U[1, 1] - U[0, 1])) / d
+        inside = (l1 >= -0.002) & (l2 >= -0.002) & (l1 + l2 <= 1.002)
+        if not inside.any():
+            continue
+        l0 = 1 - l1 - l2
+        p = l0[..., None] * P[0] + l1[..., None] * P[1] + l2[..., None] * P[2]
+        sub = (slice(y0, y1 + 1), slice(x0, x1 + 1))
+        pos[sub][inside] = p[inside]
+        hit[sub] |= inside
+    px_m = math.sqrt(area3 / max(areauv, 1e-9)) / n  # (metres a texel of the UV square covers)
+    # Folds: waves through space (wavelength, then the direction's x, y, z, a phase and a weight), crests mostly level.
+    H = np.zeros((n, n), dtype=np.float64)
+    for lam, kx, ky, kz, ph, a in CLOTH_WAVES:
+        k = np.array([kx, ky, kz]) / np.linalg.norm([kx, ky, kz]) * (2 * math.pi / lam)
+        H += a * np.sin(pos @ k + ph)
+    env = np.ones((n, n), dtype=np.float64)
+    for lam, kx, ky, kz, ph in CLOTH_ENVELOPE:
+        k = np.array([kx, ky, kz]) / np.linalg.norm([kx, ky, kz]) * (2 * math.pi / lam)
+        env *= 0.5 + 0.5 * np.sin(pos @ k + ph)
+    H *= CLOTH_FOLD / sum(a for *_, a in CLOTH_WAVES) * (CLOTH_PATCH + (1 - CLOTH_PATCH) * np.sqrt(env)) * 1.6
+    # Seams: a groove, and stitching STITCH_AT to one side (both sides of the line: the panel either side has it).
+    ds = grow_dist(seam, int(STITCH_AT * 2 / px_m) + 2) * px_m
+    H -= SEAM_DEPTH * np.exp(-(ds / SEAM_W) ** 2)
+    H += STITCH_H * np.exp(-((ds - STITCH_AT) / STITCH_W) ** 2)
+    # Hems: raised over HEM_W from the edge (rounded at the edge itself), stitched near its inner side.
+    dh = grow_dist(hem, int(HEM_W * 1.5 / px_m) + 2) * px_m
+    band = np.clip(dh / 0.002, 0, 1) * np.clip((HEM_W - dh) / 0.002, 0, 1)
+    H += HEM_H * band
+    H -= STITCH_H * 1.5 * np.exp(-((dh - (HEM_W - 0.004)) / STITCH_W) ** 2)
+    # Slopes along u and v (metres over metres), then to the garment's rectangle's size.
+    gy_, gx_ = np.gradient(H, px_m)
+    nrm = np.stack([-gx_, -gy_, np.ones_like(H)], -1)
+    nrm /= np.linalg.norm(nrm, axis=-1, keepdims=True)
+    nrm[~hit] = (0, 0, 1)
+    img = np.ones((n, n, 4), dtype=np.float32)
+    img[..., :3] = nrm * 0.5 + 0.5
+    ys = (np.arange(h) * n / h).astype(int)
+    xs = (np.arange(w) * n / w).astype(int)
+    say('cloth', o.name, 'texel', round(px_m * 1000, 2), 'mm; hems', int(hem.sum()), 'seams', int(seam.sum()), 'texels; covered', round(float(hit.mean()), 3))
+    return img[ys][:, xs]
+
+
+# (the kit's rectangle of the opaque atlas, shirt over shorts as RECT, at the cloth map's own size)
+cloth = np.zeros((CLOTH_GRID, CLOTH_GRID, 4), dtype=np.float32)
+cloth[..., 0] = cloth[..., 1] = 0.5
+cloth[..., 2] = cloth[..., 3] = 1
+half = CLOTH_GRID // 2
+cloth[half:, :] = garment_normals(shirt, CLOTH_GRID, half)
+cloth[:half, :] = garment_normals(shorts, CLOTH_GRID, half)
+save(cloth, os.path.join(OUT, 'cloth.webp'), 'cloth')
 
 # ---------------------------------------------------------------- neck seam normals --------------------------------------------------
 # Head and body are two meshes meeting at the neck; each one's normals stop at the seam. Coinciding seam vertices get one.
@@ -1336,7 +1483,7 @@ for kind, B in buffers.items():
     header['meshes'][kind] = ent
 open(os.path.join(OUT, 'body.bin'), 'wb').write(bytes(blob))
 json.dump(header, open(os.path.join(OUT, 'body.json'), 'w'))
-os.replace(os.path.join(OUT, 'cloth-flat.webp'), os.path.join(OUT, spec['name'] + '-cloth.webp'))
+os.replace(os.path.join(OUT, 'cloth.webp'), os.path.join(OUT, spec['name'] + '-cloth.webp'))
 say('wrote', OUT, 'height', round(float(height), 3), {k: v['vertices'] for k, v in header['meshes'].items()}, 'vertices')
 
 # ---------------------------------------------------------------- preview (T-pose, Eevee) -------------------------------------------

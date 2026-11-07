@@ -3839,3 +3839,18 @@ The owner sent eight points from a still of a MetaHuman woman and asked for, in 
   - **Scope:** MPFB hair, whose cards run every way, is unchanged (a fixed-frame A/B matches it to the run-to-run noise). The broadcast-distance look is unchanged.
 - **Still open from the list:** the ponytail still swings only by the hem lag below the nape; p10's bob is still a dense mass (the groom); points 3 and 6 need a close look.
 - **Fixed-frame stills:** `tools/still.mjs` holds the game at its start and steps it 1/60 s a frame to an exact sim time, so two builds can be compared at the same frame.
+- **Item 3, clothes (MetaHumans):** their cloth map was flat, so shirts and shorts had no fold at all ("painted on"). The outfit export has no textures of its own, so `mh-player.py` now draws the map from each garment's mesh at its UVs (`garment_normals`):
+  - **Folds:** waves through space with level crests and a few slanting, in patches, 2.2 mm deep.
+  - **Seams:** the outfit's panels come as separate pieces of mesh, so an open edge lying on another (midpoints within 0.5 mm) is a sewing line. It gets a groove and stitching beside it.
+  - **Hems:** an open edge with no partner is a hem: a raised 2 cm band, stitched.
+  - **Where it shows:** kit.ts already reads the map over the kit's rectangle, so no shader change.
+  - **Checked:** p8's tee shows soft folds and a ribbed collar edge, and her shorts a stitched centre seam and waistband at fixed frames.
+- **Item 3, shoes (every player):** they had painted laces, knit and a stripe but no relief, so they read as smooth blobs. kit.ts now adds, in the shoe's foot frame (`floorY`, `footX`, `footZ`; the SHOE_* constants), relief that fades out where a pixel covers more than about 3 mm:
+  - raised laces across the instep;
+  - an eyelet either side of each crossing;
+  - a dashed line of stitching round the upper 36 mm up;
+  - ridges along the midsole's wall;
+  - a herringbone outsole.
+
+  Checked at fixed frames on the MPFB women: the stitching and the midsole ridges show.
+  - **Not done:** the shoe's shape itself (MPFB shoes05, a soft slipper-like form); the laces only show from in front.
