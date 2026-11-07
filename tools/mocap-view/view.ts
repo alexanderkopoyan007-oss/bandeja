@@ -34,7 +34,8 @@ floor.receiveShadow = true;
 scene.add(floor);
 scene.add(new THREE.GridHelper(12, 24, 0x5a6a5c, 0x4a5a4c));
 
-const base = await loadPlayerAsset('/assets/player.bnz', undefined, who ? [who] : []);
+// (absolute: people load from beside it, by new URL('people/', url))
+const base = await loadPlayerAsset(new URL('/assets/player.bnz', location.href).href, undefined, who ? [who] : []);
 const person = who ? base.people.find((p) => p.look!.name === who) ?? base : base;
 const av = new Avatar(person, 0xb8bcc4);
 scene.add(av.root);
