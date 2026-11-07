@@ -12,6 +12,7 @@ import {
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import { modelledVertices, type KitCut, type PlayerAsset } from './asset.ts';
+import { backBody, hairOnBack } from './hairBack.ts';
 import { armWeight, cutFor, patternAt, printBottom, printShirt, type Paint } from './paint.ts';
 import { FACE_T2, HANDLE_R, HANDLE_TOP, PROFILE_E, RACKET_BUTT, RACKET_TIP, RC, RC_H } from './racket.ts';
 
@@ -1033,9 +1034,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
     held = ponyAt.add(rel.mul(c)).add(cross(axis, rel).mul(sin(turn))).add(axis.mul(dot(axis, rel).mul(float(1).sub(c))));
   } else held = positionLocal.add(lag.mul(below.mul(HAIR_SWING).mul(clump)));
   const swung = held.add(sway.mul(below.mul(below).mul(clump)));
-  // (and out of the back and the shoulders it lies on: hairPush)
+  // (and out of the back and the shoulders it lies on: hairPush; then onto the back as it is posed: hairBack.ts)
   const onBody = hairBody(asset);
-  hair.positionNode = onBody ? hairPush(onBody, swung) : swung;
+  const pushed = onBody ? hairPush(onBody, swung) : swung;
+  const back = onBody ? backBody(asset, longHair) : null;
+  hair.positionNode = back ? hairOnBack(back, pushed, body.alphaGeometry) : pushed;
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
   const hAO = body.alphaGeometry.hasAttribute('bodyAO') ? attribute<'float'>('bodyAO', 'float') : float(1);
   // Strands, not a cap: brightness varies across the cards (fine) and along them (slowly); pale texels at the edge of a
