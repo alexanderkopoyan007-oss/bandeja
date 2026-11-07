@@ -7,6 +7,8 @@ import { parsePlayerAsset } from '../src/render/avatar/asset.ts';
 import { runAnimQa, bodyModel, type QaReport } from '../src/render/avatar/animQa.ts';
 import { Avatar } from '../src/render/avatar/avatar.ts';
 if (process.env.INERT_MASK) Avatar.inertMask = Number(process.env.INERT_MASK);
+// MOTION=2: locomotion by motion matching (matcher.ts).
+if (process.env.MOTION) Avatar.motion = Number(process.env.MOTION);
 
 const tag = process.argv[2] ?? 'now';
 const seconds = Number(process.argv[3] ?? 120);

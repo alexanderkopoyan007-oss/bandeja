@@ -5,6 +5,7 @@
 // Usage: node tools/alloc-check.mjs [ticks] [singles|doubles|avatars]   (all three when left out)
 // ALLOC_PROFILE=1 lists the top allocation sites of the measured stretch, garbage included. ALLOC_RACKETS=id,id,..
 // gives the players those rackets (data/rackets.json; default `standard` for all).
+// ALLOC_MOTION=2 animates them by motion matching (render/avatar/matcher.ts, ?motion=2).
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -20,6 +21,7 @@ if (process.argv[2] === '--child') {
     const THREE = await import('three/webgpu');
     const { parsePlayerAsset, parseBodyAsset, PEOPLE } = await import('../src/render/avatar/asset.ts');
     const { Avatar } = await import('../src/render/avatar/avatar.ts');
+    if (process.env.ALLOC_MOTION) Avatar.motion = Number(process.env.ALLOC_MOTION);
     const { kitFor } = await import('../src/render/avatar/kit.ts');
     const gz = (f) => { const raw = gunzipSync(readFileSync(new URL('../public/assets/' + f, import.meta.url))); return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength); };
     const asset = parsePlayerAsset(gz('player.bnz'));

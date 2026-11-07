@@ -19,6 +19,7 @@ import { makeRacketModel, makeWristCord } from './racket.ts';
 import { solveGrip, cupPalms } from './grip.ts';
 import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
+import { Matcher, WARP_REACH } from './matcher.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import type { Dressing, Piece } from './costume.ts';
@@ -980,6 +981,9 @@ const CON_LOW = 0.25;
 const CON_TOP = 2.7;
 /** Locomotion: how close to halfway between two directions (a quarter turn = 1) their clips cross-fade. */
 const WARP_BAND = 0.1;
+/** Motion matching (Avatar.motion 2): the most the legs of the cycle playing are turned onto the way of travel, as far
+ * as the search may pick a clip from it (matcher.ts WARP_REACH). */
+const MATCH_WARP_MAX = WARP_REACH;
 /**
  * Side-on run: across faster than SIDE_RUN_ON (m/s) the legs turn onto the way the body is going and run (the
  * forward run, warped up to SIDE_RUN_MAX quarter turns), back to the strafes below SIDE_RUN_OFF. The strafe clips
@@ -1556,6 +1560,10 @@ export class Avatar {
   inertial = true;
   /** Which filters run (QA only): 1 clip pose, 2 head, 4 facing, 8 key, 16 weight, 32 hips. */
   static inertMask = 63;
+  /** Locomotion: 0 the sector blend; 2 motion matching (matcher.ts, ?motion=2, until the owner has seen it). */
+  static motion = 0;
+  /** The motion matcher over the five cycles (Avatar.motion 2 only). */
+  private readonly matcher: Matcher | null;
   private readonly inertia: Inertializer;
   private readonly inertiaSkip: Uint8Array;
   private readonly headInertia: Inertializer;
@@ -1764,6 +1772,7 @@ export class Avatar {
       celebrate: asset.clip('celebrate'),
       dejected: asset.clip('dejected'),
     };
+    this.matcher = Avatar.motion === 2 ? new Matcher(asset, this.clips.cycle) : null;
     this.standPose.t = 0;
     sampleClip(this.clips.celebrate, this.standPose);
     this.upper = new Uint8Array(this.nb);
@@ -2537,11 +2546,40 @@ export class Avatar {
     const qd = sp > 1e-3 ? Math.atan2(mx, mz) / (Math.PI / 2) : 0;
     const aq = qd < 0 ? -qd : qd;
     const was = this.sideRun;
+    const mt = this.matcher;
+    // (motion matching: the cycle the search picked, -1 without it or in a side-on run; its legs' warp onto the way of
+    // travel)
+    let si = -1, mw = 0;
+    if (mt !== null) {
+      // The search picks the cycle and its frame from the sim's velocity and the path towards its movement wish
+      // (matcher.ts); its legs are turned onto the way the body is really going, as the sector blend's are.
+      const wxw = p.driveX * p.qTop, wzw = p.driveZ * p.qTop;
+      mt.vx = mx; mt.vz = mz;
+      mt.wx = wxw * c - wzw * s; mt.wz = wxw * s + wzw * c;
+      mt.accel = p.tune.accel; mt.brake = p.tune.brake;
+      mt.dt = dt; mt.sp = sp; mt.cadence = 1 + WALK_CADENCE * this.walkUp;
+      mt.step();
+      // A jump to another frame is the inertializer's to blend (only seen once the cycle has weight).
+      if (mt.jumped && move > 0.05) this.inertia.force = true;
+      const cl = this.clips.cycle[mt.src]!;
+      let d = sp > 1e-3 ? Math.atan2(mx, mz) - Math.atan2(cl.dirX, cl.dirZ) : 0;
+      d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+      mw = (d > MATCH_WARP_MAX ? MATCH_WARP_MAX : d < -MATCH_WARP_MAX ? -MATCH_WARP_MAX : d) * move;
+    }
+    // (with matching too: the library has no side-on run yet, and its strafes cross the legs at speed, so the blend's
+    // side-on run stands in until captured footwork brings one)
     if (this.sideRun) { if (sp < SIDE_RUN_OFF || aq < 0.4 || aq > SIDE_RUN_MAX + 0.1) this.sideRun = false; }
     else if (sp > SIDE_RUN_ON && aq > 0.5 && aq < SIDE_RUN_MAX) this.sideRun = true;
+    if (mt !== null && !this.sideRun) {
+      si = mt.src;
+      wf = si <= 1 ? 1 : 0; wl = si === 2 ? 1 : 0; wb = si === 3 ? 1 : 0; wr = si === 4 ? 1 : 0;
+      this.warp = mw;
+    }
     // The side-on run's warp: the forward run (jog or run by speed, below), its legs turned onto the way it goes.
     const sideWarp = qd * (Math.PI / 2) * move;
-    if (this.sideRun) {
+    if (si >= 0) {
+      // (matched: set above)
+    } else if (this.sideRun) {
       this.warp = sideWarp;
     } else if (sp > 1e-3) {
       const q = qd;
@@ -2561,7 +2599,7 @@ export class Avatar {
     // A switch turns the legs from one warp to the other no faster than WARP_SWITCH_RATE (the clip itself changes
     // at once: its pose's jump is the inertialization's).
     if (was !== this.sideRun) {
-      this.warpOff += this.sideRun ? sideWarp - this.strafeWarp(qd, move) : this.warp - sideWarp;
+      this.warpOff += this.sideRun ? sideWarp - (mt !== null ? mw : this.strafeWarp(qd, move)) : this.warp - sideWarp;
       // The run's posture differs from the strafe's by a few degrees in every joint, under the limits: carried over.
       this.inertia.force = true;
     }
@@ -2584,7 +2622,8 @@ export class Avatar {
     // Eased: the way of travel can swing through a clip's edge in two frames at a shuffle, and the chest of one clip
     // isn't the chest of the next (the shoulders jumped 6 cm in a frame, both elbows 15-26 degrees).
     const W = this.cycleW, Wt = this.cycleTo;
-    Wt[0] = wf * (1 - run); Wt[1] = wf * run; Wt[2] = wl; Wt[3] = wb; Wt[4] = wr;
+    if (si >= 0) for (let i = 0; i < 5; i++) Wt[i] = i === si ? 1 : 0;
+    else { Wt[0] = wf * (1 - run); Wt[1] = wf * run; Wt[2] = wl; Wt[3] = wb; Wt[4] = wr; }
     const ease = this.cycleOk && dt > 0 ? 1 - Math.exp(-dt / CYCLE_EASE) : 1;
     this.cycleOk = true;
     for (let i = 0; i < 5; i++) W[i] = W[i]! + (Wt[i]! - W[i]!) * ease;
@@ -2594,11 +2633,13 @@ export class Avatar {
     for (let i = 0; i < 5; i++) { dist += W[i]! * cy[i]!.speed * cy[i]!.duration; per += W[i]! * cy[i]!.duration; }
     // (a walk's step is shorter than the jog's it is drawn from: more of them)
     const freq = Math.min(sp / Math.max(dist, 1e-3), 1.7 / Math.max(per, 1e-3)) * (1 + WALK_CADENCE * this.walkUp);
-    this.phase = (this.phase + freq * dt) % 1;
+    // (matched: the clip's own time, carried on by the matcher at the ground speed)
+    this.phase = mt !== null && si >= 0 ? mt.ph : (this.phase + freq * dt) % 1;
     // The arms and hips in time with the feet: the clips' left foot comes down at phase 0, as gaitPhase's does.
     if (this.gaitRun > 0 && this.gaitW > 0) {
       const d = ((this.gaitPhase - this.phase + 1.5) % 1) - 0.5, pull = dt > 0 ? 1 - Math.exp(-dt / 0.04) : 0;
       this.phase = (this.phase + d * pull * this.gaitW + 1) % 1;
+      if (mt !== null && si >= 0) { mt.ph = this.phase; mt.applyPhase(); }
     }
     this.idleClock += dt;
 
@@ -2619,7 +2660,8 @@ export class Avatar {
       accumulate(acc, tmp);
     }
     for (let i = 0; i < 5; i++) {
-      const w = W[i]! * move;
+      // (matched: the one cycle playing; the jump from the last is the inertializer's)
+      const w = (si >= 0 ? (i === si ? 1 : 0) : W[i]!) * move;
       if (w < 0.002) continue;
       tmp.t = this.phase;
       sampleCycle(cy[i]!, tmp);

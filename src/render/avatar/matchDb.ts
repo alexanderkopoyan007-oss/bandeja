@@ -131,14 +131,16 @@ export class MatchDb {
    * The library row nearest `query` (raw features, FEATURES long). `keep`: the row playing now, or -1; it wins over a
    * better one unless that one is nearer by more than `slack` (squared scaled distance), so near-ties don't flicker
    * between clips. (A share of the best cost doesn't do: a query the library matches well has a best cost near 0.)
+   * `allow` (by source; null: all): sources the search may pick from (a kept row from another counts as gone).
    */
-  search(query: Float32Array, keep = -1, slack = 0.5): number {
-    const q = this.qs, x = this.feat, n = this.n;
+  search(query: Float32Array, keep = -1, slack = 0.5, allow: Uint8Array | null = null): number {
+    const q = this.qs, x = this.feat, n = this.n, so = this.sourceOf;
     for (let k = 0; k < FEATURES; k++) q[k] = (query[k]! - this.mean[k]!) * this.scale[k]!;
     // (the distance written out in the loop, not through cost(): a double returned from a call V8 doesn't inline is
     // a heap number, and this runs over every frame of the library)
     let best = -1, bestD = Infinity, keepD = Infinity;
     for (let r = 0; r < n; r++) {
+      if (allow !== null && allow[so[r]!] === 0) continue;
       let d = 0;
       const o = r * FEATURES;
       for (let k = 0; k < FEATURES; k++) { const e = x[o + k]! - q[k]!; d += e * e; }
