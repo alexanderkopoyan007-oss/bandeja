@@ -62,7 +62,9 @@ def probe(path):
         w, h = h, w
     fps = re.search(r'([\d.]+) fps', v)
     made = re.search(r'creation_time\s*:\s*(\S+)', s)
-    return {'w': w, 'h': h, 'fps': float(fps[1]) if fps else None, 'sound': 'Audio:' in s, 'created': made[1] if made else None}
+    dur = re.search(r'Duration: (\d+):(\d+):([\d.]+)', s)
+    return {'w': w, 'h': h, 'fps': float(fps[1]) if fps else None, 'sound': 'Audio:' in s, 'created': made[1] if made else None,
+            'duration': int(dur[1]) * 3600 + int(dur[2]) * 60 + float(dur[3]) if dur else None}
 
 
 def frame_times(path):
@@ -250,14 +252,15 @@ def timeline_pops(S, Z, maps, ref, T0, src_kind=None, e=None):
     return out
 
 
-def cut(rec, videos, fps=None, av=None):
+def cut(rec, videos, fps=None, av=None, names=None):
+    """names: each phone's name (its folder, cam1..camN), which the calibration knows it by; by order if not given."""
     os.makedirs(os.path.join(rec, 'audio'), exist_ok=True)
     infos = [probe(v) for v in videos]
     for v, inf in zip(videos, infos):
         if not inf['sound']:
             raise SystemExit(f'{v} has no sound to line it up by')
     fps = fps or round(min(i['fps'] for i in infos))
-    names = [f'cam{k + 1}' for k in range(len(videos))]
+    names = names or [f'cam{k + 1}' for k in range(len(videos))]
     sounds = []
     for v, n in zip(videos, names):
         wav = os.path.join(rec, 'audio', n + '.wav')
@@ -432,6 +435,7 @@ def refine(rec, toml):
     if changed:
         cut_videos(rec, S, Z, fps)
         print('  the cut changed: synchronized_videos rewritten; run FreeMoCap (and racket.py) on', rec, 'again')
+    return changed
 
 
 # ---- self-tests ------------------------------------------------------------------------------------------------------

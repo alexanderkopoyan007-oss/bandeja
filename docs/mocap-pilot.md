@@ -84,12 +84,15 @@ I check each item once the videos are on the Mac.
 If the body passes but the racket doesn't, phones still do all the footwork, and the strokes get a studio day (route B).
 
 ## Processing (on the Mac, `PY=~/bandeja-mocap/venv/bin/python`, each with `-I`; every tool has a `--selftest`)
-For each recording, with the phones' files that were recorded together:
+All of it in one go, resumable (a step whose output exists is skipped): `tools/assets/mocap/process.py ~/bandeja-mocap/sessions/pilot <square mm>`. It matches each phone's files into recordings by their creation times, calibrates on the first, then for every recording runs the steps below and prints its gate (`gate.py`). Run end to end on FreeMoCap's own sample (with claps added as its sound) on 7 Nov.
+
+The steps, for each recording (the phones' files that were recorded together):
 1. `tools/assets/mocap/sync.py cut <rec> cam1.mov cam2.mov cam3.mov cam4.mov`: the phones on one clock by the claps' and balls' sound, cut to FreeMoCap's synchronized videos (ffmpeg from imageio-ffmpeg).
 2. On the calibration recording only, `tools/assets/mocap/calibrate.py <rec> <square mm>`: each phone's lens from its own views first, then where the phones stand. Gate: corners' reprojection error.
 3. `tools/assets/mocap/run_headless.py <rec> <calibration.toml>`: FreeMoCap's bodies.
 4. `tools/assets/mocap/racket.py <toml> <rec>/racket.npz <rec>/synchronized_videos/cam*.mp4`: the racket, each phone's dots moved to the frame's own moment, and each phone's picture delay against its sound. Gate: dots and shape at contact.
 5. `tools/assets/mocap/sync.py refine <rec> <toml>`: the clocks again, each pop's travel to each phone taken off (its source the racket's face, else the hitting hand), with the picture delays. If it re-cuts the videos, 3-5 once more.
-6. `tools/assets/mocap/retarget.py <rec>/output_data <out.json>` (with `FPS=120`): onto the game's skeleton, up from the floor the feet stood on. Gate: limb lengths.
+6. `tools/assets/mocap/retarget.py <rec>/output_data <out.json>` (with `FPS=120`): onto the game's skeleton, up from the floor the feet stood on.
+7. `tools/assets/mocap/gate.py <rec> <calibration rec>/calibration_check.json`: the table above, measured. Limb wobble is each limb's length's standard deviation over its median; the contact check is the spread of the racket's fastest moment around the sound.
 
 Self-tests (7 Nov 2026, synthetic): clocks to 0.07 ms after refine (5.3 ms by sound alone); frames exact through a video round trip; the racket at 23 m/s within 1 mm once retimed with picture delays (30 mm as cut); the calibration with four phones round half a court: lenses within 0.4%, 0.5 m sticks anywhere in the hitting area 2.1% at the 95th percentile (7.0% without the lens step); the floor from footsteps within 0.05 degrees.

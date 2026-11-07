@@ -84,6 +84,9 @@ def calibrate(rec, square):
     views = (np.isfinite(d2[..., 0]).sum(2) >= 4).sum(1)  # frames each phone read the board in
     print('CALIBRATED', toml, '| corners reprojection error px median %.2f (gate: under about 1.5)' % px,
           '| frames each phone read the board in', views.tolist())
+    import json
+    with open(os.path.join(rec, 'calibration_check.json'), 'w') as f:  # for gate.py
+        json.dump({'toml': str(toml), 'px': px, 'views': views.tolist()}, f)
     return str(toml), px, d2
 
 
