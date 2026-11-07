@@ -485,6 +485,84 @@ for o in (shirt, shorts):
     out = len(out)
     o.data.update()
     say('garment off the skin:', o.name, out, 'of', len(o.data.vertices), 'vertices out to', GARMENT_OFF * 1000, 'mm')
+
+# The shirt hangs from the chest. Epic's tee follows the body in under the pectorals and in at the waist, and lit from
+# above the men read as having a bust and a waist (7 Nov sheet: p1, p4, p5). Cloth bridges a hollow: below the armpits
+# the shirt, round the trunk, may come in no faster than DRAPE_SLOPE (m in per m down) from where it is widest above.
+# Seen on p1 from fixed angles (tools/mocap-view): without it the tee pinches in towards the hem and dips under the chest;
+# at 0.08 it hangs straight and boxy, as the MPFB players' plumb line (slope 0) did; 0.15 reads as a fitted sports tee.
+# The men only (spec 'drape', cast-spec.mjs): the women's tops are cut to the body, as women's padel tops are.
+if spec.get('drape'):
+    DRAPE_SLOPE, DRAPE_BINS, DRAPE_FROM, DRAPE_MIN_R, DRAPE_FACING, DRAPE_SMOOTH = 0.15, 72, 0.08, 0.04, 0.2, 8
+    trunk_bones = ('Hips', 'Spine', 'Spine1', 'Spine2')
+    sw_ = weights(shirt)
+    sco = coords(shirt)
+    ax, ay = J['Spine1'].x, J['Spine1'].y
+    top = J['LeftArm'].z - DRAPE_FROM
+    on_trunk = np.array([bool(w) and max(w, key=w.get) in trunk_bones for w in sw_]) & (sco[:, 2] < top)
+    th = np.arctan2(sco[:, 1] - ay, sco[:, 0] - ax)
+    r = np.hypot(sco[:, 0] - ax, sco[:, 1] - ay)
+    b = ((th + np.pi) / (2 * np.pi) * DRAPE_BINS).astype(int) % DRAPE_BINS
+    want = r.copy()
+    # Only cloth facing out from the trunk is judged (the rest follows it, below). The fan that closes the hem inside the
+    # body has its centre on the axis, where 'out' has no direction (it was flung 13 cm sideways): within DRAPE_MIN_R it
+    # stays where it is.
+    nrm = np.array([v.normal[:] for v in shirt.data.vertices])
+    radial = (nrm[:, 0] * (sco[:, 0] - ax) + nrm[:, 1] * (sco[:, 1] - ay)) / np.maximum(r, 1e-6)
+    idx = np.nonzero(on_trunk & (r > DRAPE_MIN_R) & (radial > DRAPE_FACING))[0]
+    for k in range(DRAPE_BINS):
+        # this bearing only, highest first. (With its neighbours' bins too, the waist's section, which isn't round, came
+        # in: its radius changes 5-8 mm over 8 degrees, so a hem vertex just under a wider neighbour went out 7 mm and the
+        # one above it not at all, and the hem crinkled into teeth. The bins' edges are evened out below instead.)
+        mine = idx[b[idx] == k]
+        if not len(mine):
+            continue
+        order = mine[np.argsort(-sco[mine, 2])]
+        reach = r[order] - DRAPE_SLOPE * sco[order, 2]  # r(z') - slope (z' - z) = reach(z') + slope z
+        best = np.maximum.accumulate(reach)
+        zs = -sco[order, 2]
+        for v in mine:
+            j = np.searchsorted(zs, -sco[v, 2], side='right') - 1  # the highest-first prefix down to this height
+            if j >= 0:
+                want[v] = max(r[v], best[j] + DRAPE_SLOPE * sco[v, 2])
+    # The push (not the radius) evened out over the cloth's edges, DRAPE_SMOOTH rounds of half its own and half its
+    # neighbours' mean, so neighbouring bearings move together and no bin's edge shows as a step.
+    out_ = np.zeros(len(r), bool); out_[idx] = True
+    ev = np.array([e.vertices[:] for e in shirt.data.edges])
+    ev = ev[out_[ev[:, 0]] & out_[ev[:, 1]]]
+    pu = np.where(out_, want - r, 0.0)
+    deg = np.zeros(len(r)); np.add.at(deg, ev[:, 0], 1); np.add.at(deg, ev[:, 1], 1)
+    for _ in range(DRAPE_SMOOTH):
+        acc = np.zeros(len(r)); np.add.at(acc, ev[:, 0], pu[ev[:, 1]]); np.add.at(acc, ev[:, 1], pu[ev[:, 0]])
+        pu = np.where(out_ & (deg > 0), 0.5 * pu + 0.5 * acc / np.maximum(deg, 1), pu)
+    want[idx] = r[idx] + pu[idx]
+    # The tee's hem is a turned-up band: its inside faces in (377 vertices on p3, all within a few mm of the hem) and its
+    # bottom edge down. Each goes out by as much as the nearest outward-facing cloth, so the band keeps its thickness;
+    # left where it was, the band opened under the moved outside and the hem showed teeth.
+    lining = np.nonzero(on_trunk & (r > DRAPE_MIN_R) & ~(radial > DRAPE_FACING))[0]
+    if len(lining) and len(idx):
+        tree = KDTree(len(idx))
+        for n_, v in enumerate(idx):
+            tree.insert(sco[v], n_)
+        tree.balance()
+        for v in lining:
+            u = idx[tree.find(sco[v])[1]]
+            want[v] = r[v] + (want[u] - r[u])
+    moved = 0
+    for v in np.concatenate([idx, lining]):
+        if want[v] > r[v] + 1e-4:
+            k = want[v] / max(r[v], 1e-6)
+            co = shirt.data.vertices[v].co
+            co.x = ax + (co.x - ax) * k
+            co.y = ay + (co.y - ay) * k
+            moved += 1
+    shirt.data.update()
+    push = want - r
+    worst = int(np.argmax(push))
+    say('shirt draped from the chest:', moved, 'vertices out; mm by percentile 50/90/99/max',
+        [round(float(np.percentile(push[idx], q)) * 1000, 1) for q in (50, 90, 99, 100)],
+        '| most at height', round(float(sco[worst, 2] - J['Hips'].z), 3), 'm over the hips, bearing', round(float(np.degrees(th[worst]))),
+        'deg, r', round(float(r[worst]), 3), '->', round(float(want[worst]), 3))
 # How far inside the armhole's plane the skin stays (person_kit's TANK_SKIN): the shader cuts it 2 cm in (kit.ts
 # UNDER_ARMHOLE), and a vertex removed takes its triangles with it, so at 3.5 cm the skin ended a few millimetres in, in
 # places, and the armpit showed a dark gap under the edge.

@@ -24,6 +24,7 @@
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",
  "shoes_from": "~/bandeja-p9/assets-src/people/p1/p1.blend",
+ "drape": true,
  "kit": {
   "shoes": "#868b93",
   "sole": "#2a2b2e",

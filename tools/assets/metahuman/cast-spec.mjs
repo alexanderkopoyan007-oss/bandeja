@@ -32,7 +32,8 @@ console.log(JSON.stringify({
   shoes_from: '~/bandeja-p9/assets-src/people/p1/p1.blend',
   ...(shortsHem ? { shorts_hem: shortsHem } : {}),
   // (the women's tops ended level with the hips: mh-player cuts the tee's hem there)
-  ...(women.includes(n) ? { top_hem: 'hips' } : {}),
+  // (the men's tees hang from the chest instead of following the body in under it and at the waist: mh-player's drape)
+  ...(women.includes(n) ? { top_hem: 'hips' } : { drape: true }),
   // (a tank keeps the scoop the shader cuts, as the MPFB women had it; tees and polos the garment's own crew neck)
   kit: kit.top === 'tank' ? kit : { ...kit, collar: 'own' },
 }, null, 1));
