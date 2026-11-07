@@ -25,8 +25,11 @@ if (process.argv[2] === '--child') {
     const { kitFor } = await import('../src/render/avatar/kit.ts');
     const gz = (f) => { const raw = gunzipSync(readFileSync(new URL('../public/assets/' + f, import.meta.url))); return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength); };
     const asset = parsePlayerAsset(gz('player.bnz'));
-    // Dressed as the game dresses them: one of the people each (ALLOC_PEOPLE=0: the mannequin).
-    const people = process.env.ALLOC_PEOPLE === '0' ? [] : PEOPLE.map((n) => parseBodyAsset(gz(`people/${n}.bnz`), asset));
+    // Dressed as the game dresses them: one of the people each (ALLOC_PEOPLE=0: the mannequin; ALLOC_PEOPLE=p7,p10,p9,p8: those,
+    // e.g. long hair, which swings by a pendulum each frame).
+    const want = process.env.ALLOC_PEOPLE;
+    const names = want === '0' ? [] : want ? want.split(',') : PEOPLE;
+    const people = names.map((n) => parseBodyAsset(gz(`people/${n}.bnz`), asset));
     const av = [0, 1, 2, 3].map((i) => new Avatar(people[i] ?? asset, kitFor(i)));
     const scene = new THREE.Scene();
     for (const v of av) scene.add(v.root);

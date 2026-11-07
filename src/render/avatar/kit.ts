@@ -6,7 +6,7 @@
 // turns shinier as it sweats. Shirt and shorts hems lag the body when it accelerates.
 import * as THREE from 'three/webgpu';
 import {
-  vec2, step, sin, select,
+  vec2, step, sin, cos, cross, select,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
   mx_noise_float, texture, uv, max, min, dot, normalView, normalWorld, normalLocal, normalGeometry, diffuseColor, frontFacing, faceDirection, positionViewDirection,
 } from 'three/tsl';
@@ -168,7 +168,50 @@ export interface KitState {
   sway?: { value: THREE.Vector3 };
   /** x: 1 the towelling bands painted on a person's wrists show, 0 they don't (a worn one, or bare wrists, chosen). */
   wrist?: { value: THREE.Vector2 };
+  /** Long hair hung as a pendulum (`hairHang`): where it hangs from and its tip at rest, and how far the tip is from where the
+   * head alone would carry it (m, model space), which the Avatar steps every frame. Null: short hair, which moves with the head. */
+  hang?: HairHang | null;
+  /** That pendulum's swing for the shader, in the body's frame: its pivot as the head carries it (m), and the turn that takes
+   * the head-carried tip to the swung one (unit axis, angle in w). */
+  ponyAt?: { value: THREE.Vector3 };
+  pony?: { value: THREE.Vector4 };
 }
+
+/** Long hair, measured once from the hair's modelled pose (model space): the point it hangs from, behind the head at the back
+ * hairline, and its lowest strands' centre. */
+export interface HairHang { pivot: THREE.Vector3; tip: THREE.Vector3 }
+
+/**
+ * Hair that reaches past the neck's base (a ponytail, long hair) hangs from the back hairline (HANG_BELOW_HEAD under the head
+ * joint): its pivot the centre of the strands within HANG_BAND of that height behind the neck, its tip the centre of the strands
+ * within HANG_BAND of the lowest. Anything shorter has none.
+ */
+export function hairHang(asset: PlayerAsset): HairHang | null {
+  const g = asset.look?.alphaGeometry;
+  const hi = asset.bones.findIndex((b) => b.name === 'Head'), ni = asset.bones.findIndex((b) => b.name === 'Neck');
+  if (!g || hi < 0 || ni < 0) return null;
+  const head = new THREE.Vector3().setFromMatrixPosition(asset.restWorld[hi]!);
+  const neck = new THREE.Vector3().setFromMatrixPosition(asset.restWorld[ni]!);
+  const pos = g.getAttribute('position');
+  let low = Infinity;
+  for (let v = 0; v < pos.count; v++) low = Math.min(low, pos.getY(v));
+  if (low >= neck.y) return null;
+  const top = head.y - HANG_BELOW_HEAD;
+  const pivot = new THREE.Vector3(), tip = new THREE.Vector3();
+  let np = 0, nt = 0;
+  for (let v = 0; v < pos.count; v++) {
+    const y = pos.getY(v), z = pos.getZ(v);
+    if (Math.abs(y - top) < HANG_BAND && z < neck.z) { pivot.x += pos.getX(v); pivot.z += z; np++; }
+    if (y < low + HANG_BAND) { tip.x += pos.getX(v); tip.y += y; tip.z += z; nt++; }
+  }
+  if (!np || !nt) return null;
+  pivot.set(pivot.x / np, top, pivot.z / np);
+  tip.divideScalar(nt);
+  return { pivot, tip };
+}
+/** The back hairline under the head joint, and the band either side of a height that a strand counts in (m). */
+const HANG_BELOW_HEAD = 0.02;
+const HANG_BAND = 0.015;
 
 export function kitMaterial(asset: PlayerAsset, look: KitLook): { material: THREE.MeshStandardNodeMaterial; state: KitState } {
   const { frame } = kitRegions(asset);
@@ -682,14 +725,27 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
       return l;
     };
   }
-  // Long hair swings: below the nape it trails with the hems' spring, further (round 7, the critic: it moved as one piece
-  // with the head).
+  // Long hair swings. Hair that reaches past the neck's base hangs from the back hairline as a pendulum the Avatar steps (it
+  // lags the head's own moves, turns and nods included, and gravity takes it back down): every strand below the pivot turns
+  // about the pivot by a share of the pendulum's swing, none at the tie to all of it at the tip, so a ponytail bends from
+  // where it is tied and keeps its length (carried by the tip's offset instead, a swing with any lift in it pushed the tail
+  // up into the head). The owner's realism list, 7 Nov: the ponytail moved with the head as one piece; the hems' spring below
+  // the nape only reached a few centimetres of it. Shorter hair keeps that spring below the nape.
   const neckY = frame.neck?.y ?? frame.chest.y + 0.2;
+  const longHair = hairHang(asset);
+  const ponyAt = uniform(new THREE.Vector3()), pony = uniform(new THREE.Vector4(0, 1, 0, 0));
   // Clumps go their own way a little, and every stride throws it from side to side and up, more towards the tips.
   const sway = uniform(new THREE.Vector3());
-  const below = smoothstep(neckY + 0.04, neckY - 0.22, p.y);
+  const below = longHair ? smoothstep(longHair.pivot.y, longHair.tip.y, p.y) : smoothstep(neckY + 0.04, neckY - 0.22, p.y);
   const clump = mx_noise_float(vec3(uv().x.mul(22), uv().y.mul(3), float(0))).mul(HAIR_CLUMP).add(1);
-  hair.positionNode = positionLocal.add(lag.mul(below.mul(HAIR_SWING).mul(clump))).add(sway.mul(below.mul(below).mul(clump)));
+  let held: THREE.Node<'vec3'>;
+  if (longHair) {
+    // (Rodrigues: rel turned by `turn` about the unit axis)
+    const turn = pony.w.mul(below).mul(mix(float(1), clump, 0.5)), axis = pony.xyz, rel = positionLocal.sub(ponyAt);
+    const c = cos(turn);
+    held = ponyAt.add(rel.mul(c)).add(cross(axis, rel).mul(sin(turn))).add(axis.mul(dot(axis, rel).mul(float(1).sub(c))));
+  } else held = positionLocal.add(lag.mul(below.mul(HAIR_SWING).mul(clump)));
+  hair.positionNode = held.add(sway.mul(below.mul(below).mul(clump)));
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
   const hAO = body.alphaGeometry.hasAttribute('bodyAO') ? attribute<'float'>('bodyAO', 'float') : float(1);
   // Strands, not a cap: brightness varies across the cards (fine) and along them (slowly); pale texels at the edge of a
@@ -739,7 +795,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   hair.specularColorNode = mix(vec3(1, 1, 1), base.mul(2.2), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
   hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);
-  return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU } };
+  return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU, hang: longHair, ponyAt, pony } };
 }
 
 /** Whether a person's hair mesh has a helmet (a MetaHuman groom's shell, at u past HAIR_U and v past HAIR_HELMET_V of the atlas). */

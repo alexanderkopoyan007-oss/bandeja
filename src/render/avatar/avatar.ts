@@ -289,6 +289,21 @@ const ELBOW_BEND_RATE = (1.8 * 2050 * Math.PI) / 180;
 const CLOTH_K = 160;
 const CLOTH_C = 15;
 const CLOTH_MAX = 0.05;
+/**
+ * Long hair's pendulum: the spring that holds it where the head carries it, per unit mass, for hair PONY_L0 long (1/s^2: about
+ * 2.8 Hz), softer for longer hair as a pendulum's own swing is slower (k by L0 / length: 43 cm of hair about 1.3 Hz); its
+ * damping against the head's own motion (a share of critical); the steps it is solved in (s); gravity (m/s^2); the furthest
+ * the tip strays (a share of the hair's length: about 35 degrees); and how far it may come forwards in the body's frame, into
+ * the back of the neck (m). At 120 and 0.8 a 9 cm ponytail spent most of play between 10 and 50 degrees off the head, half
+ * its time at the cap, and its cards turned edge on.
+ */
+const PONY_K = 300;
+const PONY_L0 = 0.1;
+const PONY_ZETA = 0.3;
+const PONY_H = 1 / 240;
+const PONY_G = 9.81;
+const PONY_MAX = 0.6;
+const PONY_FWD = 0.01;
 const SWEAT_T = 4800;
 const SWEAT_M = 6000;
 
@@ -1613,6 +1628,28 @@ export class Avatar {
   private bodyVZ = 0;
   private lastLift = 0;
   private clothOn = false;
+  /** Long hair's pendulum (kit.ts hairHang): its pivot and the pivot-to-tip arm at rest in the head bone's frame, rest gravity
+   * in that frame, and its length; the tip (world, m) and its velocity, and where the pivot and the head-carried tip were last frame. */
+  private readonly ponyPiv = new THREE.Vector3();
+  private readonly ponyArm = new THREE.Vector3();
+  private readonly ponyG = new THREE.Vector3();
+  private ponyLen = 0;
+  private ponyK = 0;
+  private ponyC = 0;
+  private ponyOn = false;
+  private ponyLive = false;
+  private ponyX = 0;
+  private ponyY = 0;
+  private ponyZ = 0;
+  private ponyVX = 0;
+  private ponyVY = 0;
+  private ponyVZ = 0;
+  private ponyPX = 0;
+  private ponyPY = 0;
+  private ponyPZ = 0;
+  private ponyTX = 0;
+  private ponyTY = 0;
+  private ponyTZ = 0;
   /** Metres run this match (render-side): sweat builds with effort as well as time. */
   private ran = 0;
   /**
@@ -1727,6 +1764,18 @@ export class Avatar {
     this.chestRestInv.invert();
     asset.restWorld[asset.bone('Head')]!.decompose(v1, this.headRestInv, v2);
     this.headRestInv.invert();
+    const hang = this.kit?.hang;
+    if (hang && this.kit?.pony) {
+      // (in the head bone's frame, as the skin is bound to it: rest world inverse)
+      const inv = asset.restWorld[asset.bone('Head')]!.clone().invert();
+      this.ponyPiv.copy(hang.pivot).applyMatrix4(inv);
+      this.ponyArm.copy(hang.tip).applyMatrix4(inv).sub(this.ponyPiv);
+      this.ponyG.set(0, -PONY_G, 0).applyQuaternion(this.headRestInv);
+      this.ponyLen = this.ponyArm.length();
+      this.ponyK = (PONY_K * PONY_L0) / Math.max(this.ponyLen, PONY_L0 / 2);
+      this.ponyC = 2 * PONY_ZETA * Math.sqrt(this.ponyK);
+      this.ponyOn = this.ponyLen > 0.03;
+    }
     this.armR = [b('RightArm'), b('RightForeArm'), b('RightHand')];
     this.armL = [b('LeftArm'), b('LeftForeArm'), b('LeftHand')];
     // The hand's own axes, in the wrist's frame: along the middle finger, and across the knuckles from the little finger to the index.
@@ -3072,6 +3121,69 @@ export class Avatar {
     }
     this.measureFeet();
     if (this.face) this.updateFace(sim, p, t, dt);
+    if (this.ponyOn) this.swingHair(cut, dt);
+  }
+
+  /**
+   * Long hair as one pendulum on the head (kit.ts hairHang): its tip, a mass on a spring towards where the head alone carries
+   * it, damped against the head's own motion and held at the hair's length from the pivot, so it lags the head's moves (turns
+   * and nods included) and swings back. Gravity acts as it differs from the rest pose's (the groom is modelled hanging under
+   * it): a head bowed lets the hair fall away from it. The tip's offset goes to the hair's shader in the body's frame.
+   */
+  private swingHair(cut: boolean, dt: number): void {
+    const k = this.kit!;
+    this.head.updateWorldMatrix(true, false);
+    const e = this.head.matrixWorld.elements;
+    const px = this.ponyPiv.x, py = this.ponyPiv.y, pz = this.ponyPiv.z, ax = this.ponyArm.x, ay = this.ponyArm.y, az = this.ponyArm.z;
+    const wx = e[0]! * px + e[4]! * py + e[8]! * pz + e[12]!, wy = e[1]! * px + e[5]! * py + e[9]! * pz + e[13]!, wz = e[2]! * px + e[6]! * py + e[10]! * pz + e[14]!;
+    const tx = wx + e[0]! * ax + e[4]! * ay + e[8]! * az, ty = wy + e[1]! * ax + e[5]! * ay + e[9]! * az, tz = wz + e[2]! * ax + e[6]! * ay + e[10]! * az;
+    if (cut || !this.ponyLive) {
+      this.ponyX = tx; this.ponyY = ty; this.ponyZ = tz;
+      this.ponyVX = this.ponyVY = this.ponyVZ = 0;
+      this.ponyLive = true;
+    } else if (dt > 0) {
+      // gravity beyond the rest pose's, in the world: g minus rest gravity carried round by the head
+      const gx = this.ponyG.x, gy = this.ponyG.y, gz = this.ponyG.z;
+      const fx = -(e[0]! * gx + e[4]! * gy + e[8]! * gz), fy = -PONY_G - (e[1]! * gx + e[5]! * gy + e[9]! * gz), fz = -(e[2]! * gx + e[6]! * gy + e[10]! * gz);
+      const vtx = (tx - this.ponyTX) / dt, vty = (ty - this.ponyTY) / dt, vtz = (tz - this.ponyTZ) / dt;
+      const n = Math.ceil(dt / PONY_H), h = dt / n, L = this.ponyLen, K = this.ponyK, C = this.ponyC;
+      for (let i = 1; i <= n; i++) {
+        // (the head's carried tip and the pivot moved straight across the frame: the spring pulls towards the tip as it is at the
+        // step's start, where the hair is, and the length holds about the pivot at its end; pulled towards the end's, the hair led
+        // a steady run by a step's travel)
+        const f0 = (i - 1) / n, f = i / n;
+        const qx = this.ponyTX + (tx - this.ponyTX) * f0, qy = this.ponyTY + (ty - this.ponyTY) * f0, qz = this.ponyTZ + (tz - this.ponyTZ) * f0;
+        const cx = this.ponyPX + (wx - this.ponyPX) * f, cy = this.ponyPY + (wy - this.ponyPY) * f, cz = this.ponyPZ + (wz - this.ponyPZ) * f;
+        this.ponyVX += (K * (qx - this.ponyX) - C * (this.ponyVX - vtx) + fx) * h;
+        this.ponyVY += (K * (qy - this.ponyY) - C * (this.ponyVY - vty) + fy) * h;
+        this.ponyVZ += (K * (qz - this.ponyZ) - C * (this.ponyVZ - vtz) + fz) * h;
+        let nx = this.ponyX + this.ponyVX * h - cx, ny = this.ponyY + this.ponyVY * h - cy, nz = this.ponyZ + this.ponyVZ * h - cz;
+        const d = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (d > 1e-6) { nx *= L / d; ny *= L / d; nz *= L / d; }
+        nx += cx; ny += cy; nz += cz;
+        this.ponyVX = (nx - this.ponyX) / h; this.ponyVY = (ny - this.ponyY) / h; this.ponyVZ = (nz - this.ponyZ) / h;
+        this.ponyX = nx; this.ponyY = ny; this.ponyZ = nz;
+      }
+    }
+    this.ponyPX = wx; this.ponyPY = wy; this.ponyPZ = wz;
+    this.ponyTX = tx; this.ponyTY = ty; this.ponyTZ = tz;
+    // The tip's offset from where the head carries it, capped, and never forwards into the back of the neck (the body's +z).
+    const c = Math.cos(this.yRoot), sn = Math.sin(this.yRoot);
+    let ox = this.ponyX - tx, oy = this.ponyY - ty, oz = this.ponyZ - tz;
+    const d = Math.sqrt(ox * ox + oy * oy + oz * oz), cap = PONY_MAX * this.ponyLen;
+    if (d > cap) { ox *= cap / d; oy *= cap / d; oz *= cap / d; }
+    const fwd = ox * sn + oz * c;
+    if (fwd > PONY_FWD) { ox -= (fwd - PONY_FWD) * sn; oz -= (fwd - PONY_FWD) * c; }
+    // The turn about the pivot from the head-carried arm to the swung one (world), then both into the body's frame (the
+    // root's: position and yaw), as the hair's shader works in.
+    const rx = tx - wx, ry = ty - wy, rz = tz - wz, ux = rx + ox, uy = ry + oy, uz = rz + oz;
+    let kx = ry * uz - rz * uy, ky = rz * ux - rx * uz, kz = rx * uy - ry * ux;
+    const s = Math.sqrt(kx * kx + ky * ky + kz * kz), angle = Math.atan2(s, rx * ux + ry * uy + rz * uz);
+    if (s > 1e-9) { kx /= s; ky /= s; kz /= s; } else { kx = 0; ky = 1; kz = 0; }
+    const r = this.root.matrixWorld.elements, bx = wx - r[12]!, by = wy - r[13]!, bz = wz - r[14]!;
+    const at = k.ponyAt!.value, w = k.pony!.value;
+    at.x = bx * c - bz * sn; at.y = by; at.z = bx * sn + bz * c;
+    w.x = kx * c - kz * sn; w.y = ky; w.z = kx * sn + kz * c; w.w = angle;
   }
 
   /** The face's inputs from the stroke, the run, the point and the ball, then its keys (face.ts). */

@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import * as THREE from 'three/webgpu';
 import { drawnTriangles, mannequinWithPeople } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
-import { kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
+import { hairHang, kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
 import { PEOPLE, modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
 import type { Paint } from '../../src/render/avatar/paint.ts';
@@ -380,6 +380,59 @@ describe('kit', () => {
     }
     expect(bad).toEqual([]);
   }, 300_000);
+
+  // The owner's realism list, 7 Nov: a ponytail moved with the head as one piece. Hair past the neck's base hangs as a
+  // pendulum from the back hairline (Avatar.swingHair): it must be found for long hair, hang down behind the head, and be absent for
+  // short hair, which moves with the head.
+  it('hangs long hair from the back of the head, and only long hair', () => {
+    const base = mannequinWithPeople();
+    let long = 0;
+    for (const p of base.people) {
+      const h = hairHang(p);
+      const neck = new THREE.Vector3().setFromMatrixPosition(p.restWorld[p.bone('Neck')]!);
+      const pos = p.look!.alphaGeometry.getAttribute('position');
+      let low = Infinity;
+      for (let v = 0; v < pos.count; v++) low = Math.min(low, pos.getY(v));
+      expect(h !== null).toBe(low < neck.y);
+      if (!h) continue;
+      long++;
+      expect(h.pivot.z).toBeLessThan(neck.z);
+      expect(h.tip.y).toBeLessThan(h.pivot.y - 0.05);
+      expect(h.pivot.distanceTo(h.tip)).toBeLessThan(0.6);
+    }
+    expect(long).toBeGreaterThan(0);
+  });
+
+  it('swings long hair after the head moves and lets it settle, and lets a bowed head\'s hair fall back towards hanging', () => {
+    const base = mannequinWithPeople();
+    const p = base.people.find((q) => hairHang(q) && hairHang(q)!.pivot.distanceTo(hairHang(q)!.tip) > 0.2)!;
+    type Swing = { root: THREE.Object3D; head: THREE.Bone; kit: { pony: { value: THREE.Vector4 } }; swingHair(cut: boolean, dt: number): void };
+    const av = new Avatar(p, kitFor(0)) as unknown as Swing;
+    const deg = (): number => (av.kit.pony.value.w * 180) / Math.PI;
+    const dt = 1 / 60;
+    av.root.updateMatrixWorld(true);
+    av.swingHair(true, 0);
+    for (let i = 0; i < 60; i++) av.swingHair(false, dt);
+    expect(deg()).toBeLessThan(0.01);
+    // a burst sideways to 4 m/s in 0.15 s, then held: a swing, then still again
+    let v = 0, most = 0;
+    for (let i = 0; i < 150; i++) {
+      v = Math.min(4, v + (4 / 0.15) * dt);
+      av.root.position.x += v * dt;
+      av.swingHair(false, dt);
+      most = Math.max(most, deg());
+    }
+    expect(most).toBeGreaterThan(5);
+    expect(deg()).toBeLessThan(2);
+    // the head bowed 30 degrees and held: hair hangs nearer straight down than the head would carry it, not past it
+    av.head.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 6));
+    for (let i = 0; i < 180; i++) av.swingHair(false, dt);
+    expect(deg()).toBeGreaterThan(1);
+    expect(deg()).toBeLessThan(30);
+    const settled = deg();
+    for (let i = 0; i < 60; i++) av.swingHair(false, dt);
+    expect(Math.abs(deg() - settled)).toBeLessThan(0.2);
+  });
 
   it('gives each person their own head of hair and their own shoes', () => {
     const specs = PEOPLE.map((n) => JSON.parse(readFileSync(new URL(`../../data/players/${n}.json`, import.meta.url), 'utf8')) as { hair: string; hair_fit?: number; hair_trim?: number; kit: { shoes: string; sole: string } });
