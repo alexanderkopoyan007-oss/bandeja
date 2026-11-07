@@ -362,6 +362,20 @@ const HAIR_FRINGE = 0.55;
 const HAIR_FAR_ROUGH = 0.46;
 const HAIR_FAR_SPEC = 1.6;
 const HAIR_SHEEN = 0.012;
+/**
+ * Near hair's shine as a fibre's (the owner's realism list, 7 Nov: "helmet hair"): a strand is rough across itself (round)
+ * and smooth along it, so its highlight is a band running across the strands, round the head, not a blob on a dome.
+ * three's anisotropy, across the cards' u (their strands run along v, tangents from the UVs' derivatives); and the
+ * roughness along a strand.
+ */
+const HAIR_ANISO = 0.85;
+const HAIR_ROUGH = 0.4;
+/** Near, the helmet's (and brows' and lashes') roughness and its highlight's share. */
+const HAIR_HELMET_ROUGH = 0.6;
+const HAIR_HELMET_SPEC = 0.35;
+/** Where the helmet's rectangle starts (v; u past HAIR_U), and how edge on (|n.v|) it has fully faded near. */
+const HAIR_HELMET_V = 0.75;
+const HAIR_HELMET_EDGE = 0.45;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;
 const LID_PLAIN = 1;
@@ -587,6 +601,18 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   m.positionNode = cut.bottom === 'pleated' || cut.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung).mul(smoothstep(0.08, 0.4, hang))) : hung;
 
   const hair = new PersonNodeMaterial();
+  // A MetaHuman's grooms: cards whose strands run along v, over a helmet (`hasHelmet`). They take the fibre's shine and the
+  // helmet's fading below; MPFB hair, whose cards run every way, is drawn as it was.
+  const shell = hasHelmet(body.alphaGeometry);
+  if (shell) {
+    // (anisotropy in its lighting: PersonNodeMaterial's model leaves it off, for the skin)
+    const hairLighting = hair.setupLightingModel.bind(hair);
+    hair.setupLightingModel = (): THREE.PhysicalLightingModel => {
+      const l = hairLighting();
+      (l as unknown as { anisotropy: boolean }).anisotropy = true;
+      return l;
+    };
+  }
   // Long hair swings: below the nape it trails with the hems' spring, further (round 7, the critic: it moved as one piece
   // with the head).
   const neckY = frame.neck?.y ?? frame.chest.y + 0.2;
@@ -618,22 +644,38 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // Coverage from the cards' alpha over the MSAA samples: strands fade out instead of being cut at a threshold. The
   // nearly clear texels are dropped outright, and the shadow keeps a hard cut (the shadow map has no samples).
   const edgeOn = normalView.dot(positionViewDirection).abs().add(lump.mul(0.14));
-  hair.opacityNode = mix(smoothstep(0.06, 0.7, ht.w), smoothstep(0.03, 0.72, ht.w).mul(smoothstep(0, HAIR_FRINGE, edgeOn)), far);
+  // Near, the helmet (a MetaHuman's shell under its cards, tools/assets/metahuman/ RECT; MPFB atlases have nothing there) fades
+  // where it is seen edge on: its outline was a shell's hard edge round the head, and now the cards' strands make it.
+  const helmet = step(HAIR_U, uv().x).mul(step(HAIR_HELMET_V, uv().y));
+  const nearOpacity = smoothstep(0.06, 0.7, ht.w).mul(mix(float(1), smoothstep(0.04, HAIR_HELMET_EDGE, edgeOn), helmet));
+  hair.opacityNode = mix(nearOpacity, smoothstep(0.03, 0.72, ht.w).mul(smoothstep(0, HAIR_FRINGE, edgeOn)), far);
   hair.alphaToCoverage = true;
   hair.maskNode = ht.w.greaterThan(0.05);
   hair.maskShadowNode = ht.w.greaterThan(0.5);
   hair.side = THREE.DoubleSide;
   // Hair's highlight is dimmer and tinted by the hair (the light that enters a strand comes out coloured), and
   // weaker deep in the hair.
-  hair.roughnessNode = mix(float(0.52).sub(strands.mul(0.18)), float(HAIR_FAR_ROUGH), far);
+  // (the cards only: the helmet's UVs don't run along strands, and its sheen drew a plastic shell; it is the deepest layer,
+  // rough and dim. Cards seen edge on lose the fibre's shine: a grazing card's highlight came out as one white spark.)
+  const nearRough = shell ? mix(float(HAIR_ROUGH), float(HAIR_HELMET_ROUGH), helmet).sub(strands.mul(0.12)) : float(0.52).sub(strands.mul(0.18));
+  hair.roughnessNode = mix(nearRough, float(HAIR_FAR_ROUGH), far);
+  if (shell) hair.anisotropyNode = vec2(float(HAIR_ANISO).mul(float(1).sub(far)).mul(onHead).mul(smoothstep(0.08, 0.35, edgeOn)), 0);
   // Each strand tilts its own way across the card, so the shine comes in fine broken lines and not one band over a helmet.
   hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT).mul(float(1).sub(far)), float(0)), strandUv);
   hair.metalnessNode = float(0);
-  hair.specularIntensityNode = hAO.mul(mix(float(0.6), float(1), far));
+  hair.specularIntensityNode = hAO.mul(mix(float(0.6), float(1), far)).mul(mix(float(1), float(HAIR_HELMET_SPEC), helmet.mul(float(1).sub(far))));
   hair.specularColorNode = mix(vec3(1, 1, 1), base.mul(2.2), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
   hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);
   return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU } };
+}
+
+/** Whether a person's hair mesh has a helmet (a MetaHuman groom's shell, at u past HAIR_U and v past HAIR_HELMET_V of the atlas). */
+function hasHelmet(g: THREE.BufferGeometry): boolean {
+  const uv = g.getAttribute('uv') as THREE.BufferAttribute | undefined;
+  if (!uv) return false;
+  for (let i = 0; i < uv.count; i++) if (uv.getX(i) > HAIR_U && uv.getY(i) > HAIR_HELMET_V) return true;
+  return false;
 }
 
 const BAKED_CLOTH_AMBIENT = 0.8;

@@ -3823,3 +3823,19 @@ The plan's five costumes, "paint plus generated attachments, all our own work": 
 - **Covers:** a costume takes over what the catalogue says it covers. A hood, a toque or the astronaut's suit take a modelled headband or visor off and wear no cap; the astronaut wears no sunglasses. The overgrip and the bag stay the player's. `costumed()` puts the colours and suit on, `dressFor()` the pieces.
 - **Checked** (`tests/render/costumes.test.ts`): the catalogue and the costumes agree on what each covers; every costume builds on all ten people and the guests; no piece goes more than 2 mm into the body as drawn in it (the nearest point on its triangles, along the normal there, the tail's root sewn into the suit aside), and what is skinned lies within 8 mm of it; the tail stays behind the hips and 30 cm off the floor; a hood and a toque press the hair in. Looked at in the game on p1, p3, p7 and p9, front and back.
 - **Not done:** the creator's locker shows them (phase D); a helmet for the astronaut (the plan had a ring); the tail and petals don't swing.
+
+## The owner's realism list, items 1 and 2: grounding and hair (2026-11-07)
+The owner sent eight points from a still of a MetaHuman woman and asked for, in order: lighting and grounding, hair with volume, clothes and shoes detail, then skin and eyes. Each is shown as stills before it changes the game.
+- **Grounding** (`render/grounding.ts`, `?ground=1`). The key light is nearly overhead (`data/arenas.json` light.key), so a standing player's shadow falls under them. The shadow map's 1.4 cm texels lose it round the shoes, and the feet read as floating, worst in the night club.
+  - Contact shadows are drawn rather than another shadow map or a screen-space AO pass:
+    - each foot: an ellipse under its sole points (`Avatar.soleWorld`, the points `measureFeet` already found) that shrinks to whichever end is still down and fades over 12 cm of lift;
+    - each body: a broad patch round its stance, pulled halfway under the hips, gone in a jump.
+  - One instanced draw for every player, nothing allocated per frame. Stills: the same frozen frame, off and on.
+- **Hair, pass 1** (MetaHuman grooms only):
+  - **Cards:** denser for the longer women's cuts (`cast.json` hairLod 1: p7 3.4k to 15.9k triangles, p10 5.1k to 17k, p9 6.7k to 19.4k; players about 51k).
+  - **Depth:** the cards' atlas's blue channel (a value per strand with no root-to-tip trend, mean 0.25: its depth in the card) darkens deeper strands, normalised to the head's own tone. The green channel, the strand's seed, keeps the strand-to-strand variation. Under the denser cards the helmet is darker (helmetShade 0.62); short cuts keep their measured colour, as their helmet is most of the hair the game shows.
+  - **Shine:** near, a fibre's highlight on the cards (three's anisotropy across the cards' u, tangents from the UVs' derivatives), off for cards seen edge on: grazing cards made a single white spark.
+  - **Helmet:** rough and dim near, and faded where seen edge on, so the outline is strands, not a shell's edge.
+  - **Scope:** MPFB hair, whose cards run every way, is unchanged (a fixed-frame A/B matches it to the run-to-run noise). The broadcast-distance look is unchanged.
+- **Still open from the list:** the ponytail still swings only by the hem lag below the nape; p10's bob is still a dense mass (the groom); points 3 and 6 need a close look.
+- **Fixed-frame stills:** `tools/still.mjs` holds the game at its start and steps it 1/60 s a frame to an exact sim time, so two builds can be compared at the same frame.

@@ -1056,6 +1056,15 @@ def ears_out(head_o, eyes_o, size):
 
 
 HELMET_FEATHER = 14
+# Volume (the owner's realism list, 7 Nov: "helmet hair"). The cards' atlas (Unreal's CardsAtlas_Attribute) holds coverage in
+# red, a value per strand in green (mean 0.48 over a whole atlas: the strand's seed) and another in blue (mean 0.25, flat from
+# root to tip: the strand's depth in its card). A strand deeper in its card is darker by up to HAIR_DEPTH_SHADE at
+# depth 1 (about the hair's own tone on average), and under the denser cards (cast.json hairLod 1) the helmet, the shell
+# under every card, by the spec's helmet_shade (cast.json helmetShade): a head of hair is lit on its outer strands and
+# dark between them, where the old even tone over shell and cards read as one painted surface. Not under short cuts,
+# whose helmet is most of the hair the game shows: their measured colour stays.
+HAIR_DEPTH_SHADE = 0.9
+HELMET_SHADE = float(spec.get('helmet_shade', 1.0))
 
 
 def rim_feather(o, size, radius):
@@ -1165,6 +1174,9 @@ save(op, os.path.join(OUT, 'opaque.webp'), 'opaque')
 
 al = np.zeros((ALPHA_SIZE[1], ALPHA_SIZE[0], 4), dtype=np.float32)
 cards = load_px(os.path.join(SRC, spec['hair_atlas']))
+_seen = cards[..., 0] > 0.5
+DEPTH_MEAN = float(np.clip(1 - HAIR_DEPTH_SHADE * cards[..., 2][_seen], 0.35, 1).mean()) if _seen.any() else 1.0
+say('hair depth: mean shade', round(DEPTH_MEAN, 3))
 tone = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32)
 
 
@@ -1177,7 +1189,9 @@ def hair_px(size):
         c = np.array(im.pixels[:], dtype=np.float32).reshape(size[1], size[0], 4)
         bpy.data.images.remove(im)
     px = np.zeros_like(c)
-    px[..., :3] = tone * (0.8 + 0.4 * c[..., 1:2])  # strand to strand variation from the atlas's second channel
+    # (strand to strand from the seed, darker deeper in the card: about the head's own tone on average, so front strands
+    # come out lighter than it and deep ones darker)
+    px[..., :3] = tone * (0.8 + 0.4 * c[..., 1:2]) * np.clip(1 - HAIR_DEPTH_SHADE * c[..., 2:3], 0.35, 1) / DEPTH_MEAN
     px[..., 3] = c[..., 0]  # coverage
     return px
 
@@ -1192,7 +1206,7 @@ if helmet:
     cov = load_px(HELMET_COV, RECT['helmet'][2:])
     hp = np.zeros_like(cov)
     # (its alpha is coverage; its green, a seed per strand, gives the strand-to-strand shade the cards' atlas does)
-    hp[..., :3] = tone * (0.75 + 0.35 * cov[..., 1:2] / max(float(cov[..., 1].max()), 1e-3))
+    hp[..., :3] = tone * (0.75 + 0.35 * cov[..., 1:2] / max(float(cov[..., 1].max()), 1e-3)) * HELMET_SHADE
     # (fading out over HELMET_FEATHER texels in from the shell's open rim, the hairline, sideburns and nape: cut off at full
     # coverage it drew a hard line across the forehead)
     hp[..., 3] = np.clip(cov[..., 3] * 1.15, 0, 1) * rim_feather(helmet, RECT['helmet'][2:], HELMET_FEATHER)

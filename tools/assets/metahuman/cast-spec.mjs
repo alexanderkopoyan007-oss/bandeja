@@ -12,7 +12,10 @@ const kit = JSON.parse(s.slice(at + 6, s.indexOf('}', at) + 1));
 const h = c.hair.replace(/^WI_/, '');
 // (every group of the groom's cards: L_Straight's come in two; and its coverage texture, which some builds don't write)
 const src = `${homedir()}/bandeja-people-src/cast/${n}`;
-const groups = readdirSync(`${src}/export`).filter((f) => f.startsWith(`${h}_CardsMesh_Group`) && f.endsWith('_LOD3.fbx')).sort().map((f) => `export/${f}`);
+// (the cards' level of detail: cast.json hairLod, 3 by default; the women's longer grooms take 1, whose strands and flyaways read
+// at a close camera where 3's few wide cards over the helmet read as one painted shell: the owner's "helmet hair", 7 Nov)
+const lod = c.hairLod ?? 3;
+const groups = readdirSync(`${src}/export`).filter((f) => f.startsWith(`${h}_CardsMesh_Group`) && f.endsWith(`_LOD${lod}.fbx`)).sort().map((f) => `export/${f}`);
 const cov = `export/tex/${h}_RootUVSeedCoverage.png`;
 // (the far shell is <groom>_Helmet_LOD5 for most grooms, plain <groom>_LOD5 for S_PulledBack)
 const helmet = [`export/${h}_Helmet_LOD5.fbx`, `export/${h}_LOD5.fbx`].find((f) => existsSync(`${src}/${f}`));
@@ -26,7 +29,7 @@ console.log(JSON.stringify({
   face: `full/SKM_MHC_${n}_FaceMesh.fbx`, face_lod: 2, teeth_decimate: 0.35,
   outfit: `export/MHC_${n}_Outfits.fbx`, outfit_lod: 1,
   hair: groups, hair_atlas: `export/tex/${h}_CardsAtlas_Attribute.png`, hair_rgb: c.hair_rgb,
-  helmet, ...(existsSync(`${src}/${cov}`) ? { helmet_cov: cov } : {}),
+  helmet, ...(existsSync(`${src}/${cov}`) ? { helmet_cov: cov } : {}), ...(c.helmetShade ? { helmet_shade: c.helmetShade } : {}),
   maps: `dcc/MHC_${n}/Maps`,
   head_bc: 'export/tex/T_Head_LOD3_BC.png', head_brows: 'export/tex/T_Head_LOD5to7_BC.png', body_bc: 'export/tex/T_Body_BC.png',
   shoes_from: '~/bandeja-p9/assets-src/people/p1/p1.blend',
