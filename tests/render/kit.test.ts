@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import * as THREE from 'three/webgpu';
 import { drawnTriangles, mannequinWithPeople, metaHumansHere } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
-import { hairBody, hairHang, hairOut, kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
+import { hairBody, hairHang, hairOut, hairPushed, hairSkinAt, kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
 import { PEOPLE, modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
 import type { Paint } from '../../src/render/avatar/paint.ts';
@@ -469,6 +469,84 @@ describe('kit', () => {
       }
     }
     expect(deep).toBeGreaterThan(0);
+  });
+
+  // Point 5's leftover: in an overhead p9mh's lowest strands at the neck's base went a centimetre under the shirt. The skin
+  // there follows Spine1, the collarbones and the neck, not Spine2, which the upper back's capsule hangs on. `hairPush` also
+  // pushes each capsule as its own skin is skinned (`HairBody.skin`) and makes the larger push.
+  it("keeps long hair out of the body as each bone under the capsules moves the skin, and changes nothing that doesn't move", () => {
+    const base = mannequinWithPeople();
+    const SKIN = ['Spine', 'Spine1', 'Spine2', 'Neck', 'LeftShoulder', 'RightShoulder'];
+    let people = 0;
+    for (const p of [...base.people, ...metaHumansHere(base)]) {
+      const body = hairBody(p);
+      if (!body) continue;
+      people++;
+      const name = p.look!.name;
+      // the skin's weights: over the spine, the neck and the collarbones only (an arm raised for an overhead, blended with the
+      // spine, turned the frame inside out), a whole share in every bin
+      for (const b of body.slots) expect(SKIN, name).toContain(p.bones[b]!.name);
+      for (const field of body.skin) for (const row of field) for (const w of row) {
+        expect(w.reduce((x, y) => x + y, 0), name).toBeCloseTo(1, 6);
+        for (const x of w) expect(x, name).toBeGreaterThanOrEqual(0);
+      }
+      // each side of the upper back leans on its own collarbone (+x is the left), and a shoulder's outer end on its own
+      const sl = (n: string): number => body.slots.indexOf(p.bone(n));
+      const upper = hairSkinAt(body, 1, 0.5, Math.PI / 3), upperR = hairSkinAt(body, 1, 0.5, -Math.PI / 3);
+      expect(upper[sl('LeftShoulder')]!, name).toBeGreaterThan(upper[sl('RightShoulder')]!);
+      expect(upperR[sl('RightShoulder')]!, name).toBeGreaterThan(upperR[sl('LeftShoulder')]!);
+      expect(hairSkinAt(body, 2, 1, 0)[sl('LeftShoulder')]!, name).toBeGreaterThan(0.4);
+      expect(hairSkinAt(body, 3, 1, 0)[sl('RightShoulder')]!, name).toBeGreaterThan(0.4);
+      // Each of those bones turned 15 degrees alone, either way about x and z: the skin of the upper back moves as its weights
+      // say (linear blend). Hair modelled 4 mm off it and now 1 cm under it is pushed: never left under the skin (by over 2 mm)
+      // more often than by the capsules on their own bones alone, and less often over all. Not turned, nothing changes.
+      const pos = p.geometry.getAttribute('position'), nrm = p.geometry.getAttribute('normal');
+      const si = p.geometry.getAttribute('skinIndex'), sw = p.geometry.getAttribute('skinWeight'), on = modelledVertices(p);
+      const neck = new THREE.Vector3().setFromMatrixPosition(p.restWorld[p.bone('Neck')]!);
+      const under = (from: THREE.Matrix4[], turned: number, turn: THREE.Matrix4): [number, number] => {
+        let mine = 0, own = 0;
+        const s = new THREE.Vector3(), n = new THREE.Vector3(), s1 = new THREE.Vector3(), n1 = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i += 3) {
+          if (!on[i]) continue;
+          s.fromBufferAttribute(pos, i);
+          n.fromBufferAttribute(nrm, i).normalize();
+          if (s.z > neck.z - 0.02 || s.y > neck.y + 0.01 || s.y < neck.y - 0.25 || n.z > -0.4) continue;
+          s1.set(0, 0, 0);
+          n1.set(0, 0, 0);
+          for (let c = 0; c < 4; c++) {
+            const w = sw.getComponent(i, c), moved = si.getComponent(i, c) === turned;
+            s1.addScaledVector(moved ? s.clone().applyMatrix4(turn) : s, w);
+            n1.addScaledVector(moved ? n.clone().transformDirection(turn) : n, w);
+          }
+          n1.normalize();
+          const rest = s.clone().addScaledVector(n, 0.004), q = s1.clone().addScaledVector(n1, -0.01);
+          let alone = q.clone();
+          for (let k = 0; k < body.bones.length; k++) {
+            const m = from[body.slots.indexOf(body.bones[k]![0])]!, qa = alone.clone().applyMatrix4(m.clone().invert());
+            alone.add(hairOut(body, k, qa, rest).sub(qa).applyMatrix3(new THREE.Matrix3().setFromMatrix4(m)));
+          }
+          if (s1.clone().sub(hairPushed(body, from, q, rest)).dot(n1) > 0.002) mine++;
+          if (s1.clone().sub(alone).dot(n1) > 0.002) own++;
+        }
+        return [mine, own];
+      };
+      const still = under(body.slots.map(() => new THREE.Matrix4()), -1, new THREE.Matrix4());
+      expect(still[0], name).toBe(still[1]);
+      let mine = 0, own = 0;
+      for (const b of body.slots) {
+        const j = new THREE.Vector3().setFromMatrixPosition(p.restWorld[b]!);
+        for (const [axis, sign] of [[new THREE.Vector3(1, 0, 0), 1], [new THREE.Vector3(1, 0, 0), -1], [new THREE.Vector3(0, 0, 1), 1], [new THREE.Vector3(0, 0, 1), -1]] as const) {
+          const turn = new THREE.Matrix4().makeTranslation(j.x, j.y, j.z).multiply(new THREE.Matrix4().makeRotationAxis(axis, sign * 15 * Math.PI / 180))
+            .multiply(new THREE.Matrix4().makeTranslation(-j.x, -j.y, -j.z));
+          const [m, o] = under(body.slots.map((x) => (x === b ? turn.clone() : new THREE.Matrix4())), b, turn);
+          expect(m, `${name} ${p.bones[b]!.name}`).toBeLessThanOrEqual(o);
+          mine += m;
+          own += o;
+        }
+      }
+      expect(mine, name).toBeLessThan(own * 0.97);
+    }
+    expect(people).toBeGreaterThan(1);
   });
 
   // The anisotropic highlight's frame, from screen derivatives, came out zero on a card the push pressed flat, and the lighting

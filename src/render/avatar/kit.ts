@@ -230,14 +230,23 @@ export interface HairBody {
   bones: [number, number][]; a: THREE.Vector3[]; b: THREE.Vector3[]; r: number[][][];
   /** Across the back (unit, square to the capsule), which the angles are measured from straight behind towards; null for a round one. */
   across: (THREE.Vector3 | null)[];
+  /** The bones that skin the body under the capsules (HAIR_SKIN_BONES this skeleton has, and every capsule's first bone). */
+  slots: number[];
+  /**
+   * Per capsule, how its surface is skinned: the mean share of each slot's bone in the skin measured there,
+   * `skin[k][angle][station][slot]`, at HAIR_SKIN_ANGLES round the back (signed, towards +x) and at one angle round a shoulder.
+   */
+  skin: number[][][][];
 }
 export function hairBody(asset: PlayerAsset): HairBody | null {
   if (!hairHang(asset)) return null;
   const pos = asset.geometry.getAttribute('position');
   const UP = new THREE.Vector3(0, 0.8, -0.6);
   const segs: [string, string, boolean][] = [['Spine1', 'Spine2', true], ['Spine2', 'Neck', true], ['LeftShoulder', 'LeftArm', false], ['RightShoulder', 'RightArm', false]];
-  const out: HairBody = { bones: [], a: [], b: [], r: [], across: [] };
+  const out: HairBody = { bones: [], a: [], b: [], r: [], across: [], slots: [], skin: [] };
   const v = new THREE.Vector3(), d = new THREE.Vector3(), half = 0.5 / (HAIR_STATIONS - 1), neckY = at(asset, 'Neck').y;
+  const slots = [...new Set([...HAIR_SKIN_BONES.filter((n) => asset.bone(n) >= 0), ...segs.map((sg) => sg[0])].map((n) => asset.bone(n)))];
+  const si = asset.geometry.getAttribute('skinIndex'), sw = asset.geometry.getAttribute('skinWeight'), on = modelledVertices(asset);
   const p80 = (ls: number[]): number => (ls.length < 3 ? NaN : ls.sort((x, y) => x - y)[Math.floor(0.8 * ls.length)]!);
   // (a station with too few points takes its nearest measured neighbour's)
   const fill = (r: number[]): number[] => {
@@ -246,8 +255,19 @@ export function hairBody(asset: PlayerAsset): HairBody | null {
   };
   for (const [n0, n1, back] of segs) {
     const a = at(asset, n0), b = at(asset, n1), ab = b.clone().sub(a);
-    const angles = back ? HAIR_ANGLES : [0];
+    const angles = back ? HAIR_ANGLES : [0], skinAngles = back ? HAIR_SKIN_ANGLES : [0];
     const near: number[][][] = angles.map(() => Array.from({ length: HAIR_STATIONS }, () => []));
+    // (the skin's weights over the slots, summed, and how many points; a bin whose spine, neck and shoulders hold under
+    // HAIR_SKIN_MIN of its weight is the arm's, and is filled from its neighbours)
+    const skinSum = skinAngles.map(() => Array.from({ length: HAIR_STATIONS }, () => new Array<number>(slots.length + 1).fill(0)));
+    const addSkin = (j: number, k: number, i: number): void => {
+      const acc = skinSum[j]![k]!;
+      for (let c = 0; c < 4; c++) {
+        const s = slots.indexOf(si.getComponent(i, c));
+        if (s >= 0) acc[s]! += sw.getComponent(i, c);
+      }
+      acc[slots.length]!++;
+    };
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i).sub(a);
       const t = v.dot(ab) / ab.lengthSq();
@@ -258,8 +278,13 @@ export function hairBody(asset: PlayerAsset): HairBody | null {
       if (back) {
         const g = Math.atan2(Math.abs(d.x), -d.z);
         angles.forEach((ang, j) => { if (l < HAIR_BODY_FAR && Math.abs(g - ang) < HAIR_BODY_ANGLE) near[j]![k]!.push(l); });
+        const gs = Math.atan2(d.x, -d.z);
+        if (on[i]) skinAngles.forEach((ang, j) => { if (l < HAIR_BODY_FAR && Math.abs(gs - ang) < HAIR_BODY_ANGLE) addSkin(j, k, i); });
       // (a shoulder's own: the neck and the head stand above its inner end, and made it 19 cm round there)
-      } else if (l < HAIR_BODY_REACH && d.dot(UP) > HAIR_BODY_SIDE * l && v.y + a.y < neckY) near[0]![k]!.push(l);
+      } else if (l < HAIR_BODY_REACH && d.dot(UP) > HAIR_BODY_SIDE * l && v.y + a.y < neckY) {
+        near[0]![k]!.push(l);
+        if (on[i]) addSkin(0, k, i);
+      }
     }
     const byAngle = near.map((st) => st.map(p80));
     if (byAngle[0]!.every((x) => Number.isNaN(x))) continue;
@@ -270,8 +295,28 @@ export function hairBody(asset: PlayerAsset): HairBody | null {
     out.r.push(Array.from({ length: HAIR_STATIONS }, (_, k) => byAngle.map((rs) => rs[k]!)));
     const axis = ab.clone().normalize();
     out.across.push(back ? new THREE.Vector3(1, 0, 0).addScaledVector(axis, -axis.x).normalize() : null);
+    out.skin.push(skinField(skinSum, slots.indexOf(asset.bone(n0))));
   }
+  out.slots = slots;
   return out.bones.length ? out : null;
+}
+/**
+ * A capsule's skin weights (`HairBody.skin`) from their sums per bin (the last entry: how many points): each bin's mean share
+ * of the slots, out of what the slots hold of it; a bin with no points, or whose slots hold under HAIR_SKIN_MIN of its weight
+ * (the arm's), takes its nearest filled neighbour's along the capsule, then round it; with none at all, the capsule's own bone.
+ */
+function skinField(sums: number[][][], own: number): number[][][] {
+  const n = sums[0]![0]!.length - 1;
+  const mean = sums.map((row) => row.map((acc): number[] | null => {
+    const held = acc.slice(0, n).reduce((x, y) => x + y, 0), pts = acc[n]!;
+    return pts > 0 && held >= HAIR_SKIN_MIN * pts ? acc.slice(0, n).map((x) => x / held) : null;
+  }));
+  const ownOnly = Array.from({ length: n }, (_, s) => (s === own ? 1 : 0));
+  return mean.map((row, j) => row.map((w, k) => {
+    for (let dk = 0; !w && dk < row.length; dk++) w = row[k - dk] ?? row[k + dk] ?? null;
+    for (let dj = 1; !w && dj < mean.length; dj++) w = mean[j - dj]?.[k] ?? mean[j + dj]?.[k] ?? null;
+    return w ?? ownOnly;
+  }));
 }
 /** Radii along each capsule: how many points they are measured at; the back's angles out from straight behind (radians), and
  * how near one (radians) and how far out (m) a point must be to count; how far out (m) and how squarely above and behind a
@@ -282,6 +327,13 @@ const HAIR_BODY_ANGLE = 0.17;
 const HAIR_BODY_FAR = 0.3;
 const HAIR_BODY_REACH = 0.12;
 const HAIR_BODY_SIDE = 0.85;
+/** The bones a capsule's skin weights are taken over: the spine's, the neck's and the shoulders' (collarbones'). An arm's is
+ * left out: blended with the spine's, an arm raised for an overhead turned the frame inside out and threw hair 10 cm. The
+ * angles (radians, signed towards +x) the back's skin is measured at, and the least share of a bin's weight these bones must
+ * hold for it to count. */
+const HAIR_SKIN_BONES = ['Spine', 'Spine1', 'Spine2', 'Neck', 'LeftShoulder', 'RightShoulder'];
+const HAIR_SKIN_ANGLES = [-Math.PI / 3, -Math.PI / 6, 0, Math.PI / 6, Math.PI / 3];
+const HAIR_SKIN_MIN = 0.2;
 /** How far off the body hair stops (m), and the depth (m) over which it eases onto that: hair inside goes to between CLEAR
  * and CLEAR + SOFT off it, the deepest least far, so the layers keep their order (all put on one surface, the deepest helmet
  * and the cards would fight there). Hair as modelled never moves: the easing narrows (to SOFT_MIN) for a strand modelled
@@ -322,52 +374,119 @@ export function hairOut(body: HairBody, k: number, q: THREE.Vector3, rest: THREE
   return q.clone().addScaledVector(way, (to - out) * keep);
 }
 
+/** A capsule's skin weights, one per slot (`HairBody.skin`), at `t` along it and `ang` round it (radians, signed), each a
+ * straight line from one station or angle to the next. */
+export function hairSkinAt(body: HairBody, k: number, t: number, ang: number): number[] {
+  const f = body.skin[k]!, angs = f.length > 1 ? HAIR_SKIN_ANGLES : [0];
+  const along = (row: number[][]): number[] => row[0]!.map((_, s) => lerpAt(row.map((w) => w[s]!), t, (i) => i / (row.length - 1)));
+  const rows = f.map(along);
+  return rows[0]!.map((_, s) => lerpAt(rows.map((w) => w[s]!), ang, (i) => angs[i]!));
+}
+function lerpAt(xs: number[], u: number, at: (i: number) => number): number {
+  let x = xs[0]!;
+  for (let i = 1; i < xs.length; i++) x += THREE.MathUtils.clamp((u - at(i - 1)) / (at(i) - at(i - 1)), 0, 1) * (xs[i]! - xs[i - 1]!);
+  return x;
+}
+
 /**
- * Hair out of the back and the shoulders (`hairBody`). Each capsule works in its first bone's modelled pose: the skinned point
- * taken back by that bone's skinning is set against the capsule there, and pushed out along its own way out of it in the
- * modelled pose (from the capsule's axis to where the strand was modelled), never the nearest way: hair thrown more than the
- * back's depth in (a head back for a lob swings long hair 10 cm and more) passed the axis and a radial push sent it on out
- * of the chest. A strand that has moved sideways off that line (HAIR_SIDE) is beside the body, not in it, and is let go.
- * Hair as modelled is never moved (HAIR_CLEAR), so the round end of the upper back's capsule at the neck's base leaves the
- * nape's hair, which lies closer in, where it lies.
+ * `hairPush` in plain numbers, for a test: where the strand modelled at `rest` and now at `p` (model space) is put, with
+ * `from[s]` taking the modelled pose to this one for slot s's bone (`HairBody.slots`).
+ */
+export function hairPushed(body: HairBody, from: THREE.Matrix4[], p: THREE.Vector3, rest: THREE.Vector3): THREE.Vector3 {
+  const q = p.clone(), to = from.map((m) => m.clone().invert()), rot = from.map((m) => new THREE.Matrix3().setFromMatrix4(m));
+  for (let k = 0; k < body.bones.length; k++) {
+    const f = body.slots.indexOf(body.bones[k]![0]);
+    const qa = q.clone().applyMatrix4(to[f]!);
+    const own = hairOut(body, k, qa, rest).sub(qa).applyMatrix3(rot[f]!);
+    const w = hairSkinAt(body, k, ...skinWhere(body, k, qa, rest));
+    const qs = new THREE.Vector3();
+    w.forEach((x, s) => qs.addScaledVector(q.clone().applyMatrix4(to[s]!), x));
+    const step = hairOut(body, k, qs, rest).sub(qs), skin = new THREE.Vector3();
+    w.forEach((x, s) => skin.addScaledVector(step.clone().applyMatrix3(rot[s]!), x));
+    q.add(own.lengthSq() > skin.lengthSq() ? own : skin);
+  }
+  return q;
+}
+/** Where a strand is on capsule k for its skin weights: along it, as `q` (its first bone's frame) is, and round it, as the strand
+ * was modelled. */
+function skinWhere(body: HairBody, k: number, q: THREE.Vector3, rest: THREE.Vector3): [number, number] {
+  const a = body.a[k]!, ab = body.b[k]!.clone().sub(a), len2 = ab.lengthSq(), across = body.across[k];
+  const home = rest.clone().sub(a).addScaledVector(ab, -THREE.MathUtils.clamp(rest.clone().sub(a).dot(ab) / len2, 0, 1));
+  const way = home.divideScalar(Math.max(home.length(), 1e-4));
+  return [q.clone().sub(a).dot(ab) / len2, across ? Math.asin(THREE.MathUtils.clamp(way.dot(across), -1, 1)) : 0];
+}
+
+/**
+ * Hair out of the back and the shoulders (`hairBody`). Each capsule pushes in two frames. One is its first bone's modelled pose: the
+ * skinned point taken back by that bone's skinning is set against the capsule there, and pushed out along its own way out of
+ * it in the modelled pose (from the capsule's axis to where the strand was modelled), never the nearest way: hair thrown more
+ * than the back's depth in (a head back for a lob swings long hair 10 cm and more) passed the axis and a radial push sent it
+ * on out of the chest. Also as the skin under the capsule is skinned there (`HairBody.skin`, by where the strand is along it
+ * and round it): the point taken back by each of those bones, blended by their shares, and the push brought forward the same
+ * way; the larger of the two pushes is the one made. The skin at the neck's base follows Spine1, the collarbones and the neck,
+ * not the bone the capsule hangs on, and in an overhead it went 9 mm back from the capsule: the strands lying there went
+ * under the shirt. A strand that has moved sideways
+ * off its line (HAIR_SIDE) is beside the body, not in it, and is let go. Hair as modelled is never moved (HAIR_CLEAR), so the
+ * round end of the upper back's capsule at the neck's base leaves the nape's hair, which lies closer in, where it lies.
  */
 function hairPush(body: HairBody, at: THREE.Node<'vec3'>): THREE.Node<'vec3'> {
-  const n = body.bones.length;
-  const toRest = body.bones.map(() => uniform(new THREE.Matrix4()));
-  const fromRest = body.bones.map(() => uniform(new THREE.Matrix4()));
+  const n = body.slots.length;
+  const toRest = body.slots.map(() => uniform(new THREE.Matrix4()));
+  const fromRest = body.slots.map(() => uniform(new THREE.Matrix4()));
   const s = new THREE.Matrix4();
   toRest[0]!.onObjectUpdate((f) => {
     const mesh = f.object as THREE.SkinnedMesh, sk = mesh.skeleton;
     for (let k = 0; k < n; k++) {
-      const i = body.bones[k]![0];
+      const i = body.slots[k]!;
       s.multiplyMatrices(sk.bones[i]!.matrixWorld, sk.boneInverses[i]!);
       const m = (fromRest[k]!.value as THREE.Matrix4).multiplyMatrices(mesh.bindMatrixInverse, s).multiply(mesh.bindMatrix);
       (toRest[k]!.value as THREE.Matrix4).copy(m).invert();
     }
   });
+  // (a straight line from one station or angle to the next)
+  const lerp = (xs: THREE.Node<'float'>[], u: THREE.Node<'float'>, at: (i: number) => number): THREE.Node<'float'> => {
+    let x = xs[0]!;
+    for (let i = 1; i < xs.length; i++) x = x.add(u.sub(at(i - 1)).div(at(i) - at(i - 1)).clamp().mul(xs[i]!.sub(xs[i - 1]!)));
+    return x;
+  };
   let p = at;
-  for (let k = 0; k < n; k++) {
-    const a = body.a[k]!, ab = body.b[k]!.clone().sub(a), rs = body.r[k]!, across = body.across[k];
+  for (let k = 0; k < body.bones.length; k++) {
+    const a = body.a[k]!, ab = body.b[k]!.clone().sub(a), rs = body.r[k]!, across = body.across[k], f = body.slots.indexOf(body.bones[k]![0]);
     const A = vec3(a.x, a.y, a.z), AB = vec3(ab.x, ab.y, ab.z), len2 = ab.lengthSq();
-    const q = toRest[k]!.mul(vec4(p, 1)).xyz;
-    const t = q.sub(A).dot(AB).div(len2).clamp();
     const home = positionGeometry.sub(A.add(AB.mul(positionGeometry.sub(A).dot(AB).div(len2).clamp())));
     const way = home.div(home.length().max(1e-4));
-    const d = q.sub(A.add(AB.mul(t))), out = d.dot(way), side = d.sub(way.mul(out)).length();
-    // (the radius between the stations along it and the angles round it, a straight line from one to the next)
-    const lerp = (xs: THREE.Node<'float'>[], u: THREE.Node<'float'>, at: (i: number) => number): THREE.Node<'float'> => {
-      let x = xs[0]!;
-      for (let i = 1; i < xs.length; i++) x = x.add(u.sub(at(i - 1)).div(at(i) - at(i - 1)).clamp().mul(xs[i]!.sub(xs[i - 1]!)));
-      return x;
+    const sided = across ? way.dot(vec3(across.x, across.y, across.z)).clamp(-1, 1) : float(0);
+    const ang = across ? asin(sided.abs()) : float(0);
+    const byAngle = (t: THREE.Node<'float'>): THREE.Node<'float'>[] => rs[0]!.map((_, j) => lerp(rs.map((st) => float(st[j]!)), t, (i) => i / (rs.length - 1)));
+    const modelled = home.length();
+    // (how far along `way` the point `q`, in the modelled pose, is pushed)
+    const push = (q: THREE.Node<'vec3'>): THREE.Node<'vec3'> => {
+      const t = q.sub(A).dot(AB).div(len2).clamp();
+      const d = q.sub(A.add(AB.mul(t))), out = d.dot(way), side = d.sub(way.mul(out)).length();
+      const r = lerp(byAngle(t), ang, (i) => HAIR_ANGLES[i]!);
+      const target = min(r.add(HAIR_CLEAR), modelled.sub(HAIR_SOFT_MIN));
+      const soft = modelled.sub(target).clamp(HAIR_SOFT_MIN, HAIR_SOFT);
+      const to = max(out, target.add(exp(min(out.sub(target).sub(soft), 0).div(soft)).mul(soft)));
+      const keep = smoothstep(target.mul(HAIR_SIDE[1]), target.mul(HAIR_SIDE[0]), side);
+      return way.mul(to.sub(out).mul(keep));
     };
-    const byAngle = rs[0]!.map((_, j) => lerp(rs.map((st) => float(st[j]!)), t, (i) => i / (rs.length - 1)));
-    const ang = across ? asin(way.dot(vec3(across.x, across.y, across.z)).abs().min(1)) : float(0);
-    const r = lerp(byAngle, ang, (i) => HAIR_ANGLES[i]!);
-    const modelled = home.length(), target = min(r.add(HAIR_CLEAR), modelled.sub(HAIR_SOFT_MIN));
-    const soft = modelled.sub(target).clamp(HAIR_SOFT_MIN, HAIR_SOFT);
-    const to = max(out, target.add(exp(min(out.sub(target).sub(soft), 0).div(soft)).mul(soft)));
-    const keep = smoothstep(target.mul(HAIR_SIDE[1]), target.mul(HAIR_SIDE[0]), side);
-    p = p.add(fromRest[k]!.mul(vec4(way.mul(to.sub(out).mul(keep)), 0)).xyz);
+    // in its first bone's frame
+    const qa = toRest[f]!.mul(vec4(p, 1)).xyz;
+    const own = fromRest[f]!.mul(vec4(push(qa), 0)).xyz;
+    // and as the skin under it is skinned, where the strand now is along it (the slots that skin none of it left out)
+    const field = body.skin[k]!, angs = field.length > 1 ? HAIR_SKIN_ANGLES : [0];
+    const tNow = qa.sub(A).dot(AB).div(len2);
+    const used = body.slots.map((_, sl) => sl).filter((sl) => field.some((row) => row.some((w) => w[sl]! > 1e-3)));
+    const w = used.map((sl) => (angs.length > 1
+      ? lerp(field.map((row) => lerp(row.map((x) => float(x[sl]!)), tNow, (i) => i / (row.length - 1))), asin(sided), (i) => angs[i]!)
+      : lerp(field[0]!.map((x) => float(x[sl]!)), tNow, (i) => i / (field[0]!.length - 1))));
+    let qs: THREE.Node<'vec3'> = vec3(0, 0, 0);
+    used.forEach((sl, j) => { qs = qs.add(toRest[sl]!.mul(vec4(p, 1)).xyz.mul(w[j]!)); });
+    const step = vec4(push(qs), 0);
+    let skin: THREE.Node<'vec3'> = vec3(0, 0, 0);
+    used.forEach((sl, j) => { skin = skin.add(fromRest[sl]!.mul(step).xyz.mul(w[j]!)); });
+    // (the larger of the two: pushed twice, hair the first had eased out was eased further, 3 mm on, even where they agree)
+    p = p.add(select(dot(own, own).greaterThan(dot(skin, skin)), own, skin));
   }
   return p;
 }
