@@ -10,6 +10,7 @@ import { loadSettings } from './app/settings.ts';
 import { sampleDisplay } from './render/display.ts';
 import { BackendGuard, wantWebGL } from './render/backend.ts';
 import { Avatar } from './render/avatar/avatar.ts';
+import { Grounding } from './render/grounding.ts';
 
 // The display's refresh, from the frames while the page loads (Auto quality judges slow frames against it).
 sampleDisplay();
@@ -34,6 +35,8 @@ const num = (k: string, d: number): number => {
 };
 // ?motion=2: locomotion by motion matching (render/avatar/matcher.ts) until the owner has seen it.
 Avatar.motion = num('motion', 0);
+// ?ground=1: contact shadows under the players (render/grounding.ts) until the owner has seen them.
+Grounding.on = num('ground', 0) === 1;
 
 async function makeRenderer(): Promise<THREE.WebGPURenderer> {
   // ?gputime=1 (perf runs): GPU timestamp queries, read back each frame into the probe (Game.tick). WebGL 2 where

@@ -1620,6 +1620,11 @@ export class Avatar {
    * the right foot. The soundscape hears a step where one comes down onto the floor.
    */
   readonly feet = new Float64Array(6);
+  /**
+   * Each foot's sole points after this frame's pose (world x, y, z): heel, toe tip, then the two edges, the left foot's
+   * four then the right's (soles.ts). Contact shadows are laid under them (render/grounding.ts).
+   */
+  readonly soleWorld = new Float64Array(24);
   /** The racket tap's touch, for the soundscape: counted at each, at this point (x, y, z). One of the two counts it. */
   tapSeq = 0;
   readonly tapAt = new Float64Array(3);
@@ -3105,6 +3110,7 @@ export class Avatar {
       this.footA.setFromMatrixPosition(foot.matrixWorld);
       worldQuat(foot, this.footQ);
       this.soleLow(f, this.footA, this.footQ);
+      for (let k = 0; k < 12; k++) this.soleWorld[f * 12 + k] = this.soleP[k]!;
       this.feet[f * 3] = this.footA.x;
       this.feet[f * 3 + 1] = this.low1;
       this.feet[f * 3 + 2] = this.footA.z;

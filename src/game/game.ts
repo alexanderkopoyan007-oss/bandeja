@@ -7,6 +7,7 @@ import { SW_CHARGE, SW_COMMITTED } from '../sim/player/player.ts';
 import { buildCourtView, type CourtView } from '../render/courtView.ts';
 import { Arena, arenaDef } from '../render/arena/arena.ts';
 import { NetView } from '../render/netView.ts';
+import { Grounding } from '../render/grounding.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView, ReplayCamera, type CameraPreset } from '../render/views.ts';
 import { Replays, RP_IDLE, RP_PREP, RP_SHOW } from './replay.ts';
 import { dealNames, nameOf, type PlayerName } from './names.ts';
@@ -174,6 +175,8 @@ export class Game {
   readonly arena: Arena;
   readonly court: CourtView;
   readonly players: PlayerView[];
+  /** Contact shadows under the players (`?ground=1`, render/grounding.ts). */
+  private readonly grounding: Grounding | null;
   readonly assists: AssistView;
   readonly kb: KeyboardInput;
   readonly pad: GamepadInput;
@@ -290,6 +293,7 @@ export class Game {
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, cast, opts.match.rackets?.[i], opts.wear?.[i]));
     if (!opts.autoplay) this.players[opts.human]!.markYou();
+    this.grounding = Grounding.on ? new Grounding(this.scene, this.players) : null;
     this.placeBags(cast);
     this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
     this.assists = new AssistView(this.scene);
@@ -834,6 +838,7 @@ export class Game {
     if (net) this.ball.ease(net.nudge, frameDt);
     this.net.update(view, vAlpha);
     for (let i = 0; i < this.players.length; i++) this.players[i]!.update(view, view.players[i]!, i, vAlpha, vTime);
+    this.grounding?.update();
     const server = view.phase === PH_SETUP ? this.players[view.score.serverPlayer()]!.avatar : null;
     if (server) this.ball.carried(server.palm(palmAt), server.addressing);
     const who = this.opts.autoplay || showing ? -1 : human;
