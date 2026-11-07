@@ -18,7 +18,8 @@
 #   over shorts, each MetaHuman UV square squeezed into half of it), a skirt's shading in a strip at the bottom right,
 #   hair at the left of the alpha atlas.
 # - Not yet: face expressions and gaze (MetaHuman moves the face with joints; none are baked yet, so the face is
-#   still), ambient occlusion (atlas alpha is 1). The garments' cloth map is drawn from their own meshes (folds, seams, hems).
+#   still). The garments' cloth map is drawn from their own meshes (folds, seams, hems); the skin's occlusion is baked into
+#   the opaque atlas's alpha and the eyes' per vertex, as the MPFB players' are; the garments' isn't yet.
 import bpy, bmesh, json, math, os, sys
 import numpy as np
 from mathutils import Vector, Matrix
@@ -27,6 +28,7 @@ from mathutils.kdtree import KDTree
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mpfb'))
 import person_kit as pk  # the skirt's and the band's geometry, shared with the MPFB players
+import ao_bake  # the occlusion bakes, shared with the MPFB players
 
 args = sys.argv[sys.argv.index('--') + 1:]
 spec = json.load(open(args[0]))
@@ -945,14 +947,14 @@ def fill_gutters(atlas, rects):
     say('gutters filled', int(gap.sum()), 'texels')
 
 
-def save(atlas, path, name):
+def save(atlas, path, name, quality=92):
     h, w = atlas.shape[:2]
     im = bpy.data.images.new(name, w, h, alpha=True)
     im.pixels.foreach_set(atlas.ravel())
     im.file_format = 'WEBP'
     im.filepath_raw = path
-    bpy.context.scene.render.image_settings.quality = 92
-    im.save(filepath=path, quality=92)
+    bpy.context.scene.render.image_settings.quality = quality
+    im.save(filepath=path, quality=quality)
     bpy.data.images.remove(im)
 
 
@@ -1119,6 +1121,66 @@ if helmet and not (HELMET_COV and os.path.exists(HELMET_COV)):
     say('no coverage texture for the helmet: the whole shell, feathered at its rim')
 
 
+# Ambient occlusion, baked with Cycles in the game's T-pose as finish-player.py bakes the MPFB players': the skin's into the
+# opaque atlas's alpha, where kit.ts reads it (creases darker and duller: the lids' rims, the nostrils, the corners of the
+# mouth, the ears' hollows, between the fingers, under the shirt's hem), and the eyes' per vertex, the shade the lids put
+# on the eyeball (Unreal draws it with an occlusion shell over the eye). Without it every crease and the eyes were lit as
+# the cheek is: the owner's realism list, 7 Nov, "flat face". The cards stay out of it, as finish-player's: Cycles' AO
+# sees a card's whole quad. Baked at most AO_TEX square, the occlusion being soft, and scaled to the rectangle.
+AO_TEX = 1024
+
+
+def resized(a, w, h):
+    if a.shape == (h, w):
+        return a
+    im = bpy.data.images.new('rs', a.shape[1], a.shape[0], alpha=False, float_buffer=True)
+    px = np.repeat(a[..., None], 4, -1)
+    im.pixels.foreach_set(px.ravel())
+    im.scale(w, h)
+    out = np.array(im.pixels[:], dtype=np.float32).reshape(h, w, 4)[..., 0].copy()
+    bpy.data.images.remove(im)
+    return out
+
+
+def bake_skin_ao(o, rect):
+    """The mesh's occlusion over its own UV square (first layer; the body's sit in the next tile, u 1-2, brought back for
+    the bake), at the rectangle's size."""
+    me = o.data
+    me.uv_layers.active_index = 0
+    uv = np.empty(len(me.uv_layers[0].data) * 2, dtype=np.float32)
+    me.uv_layers[0].data.foreach_get('uv', uv)
+    tile = np.floor(np.median(uv.reshape(-1, 2), axis=0))
+    me.uv_layers[0].data.foreach_set('uv', (uv.reshape(-1, 2) - tile).ravel())
+    a = ao_bake.bake_ao_image(o, min(rect[2], AO_TEX), 'ao_' + o.name)
+    me.uv_layers[0].data.foreach_set('uv', uv)
+    # (the texels no triangle covers, as the skin under the kit, whose triangles are gone, take the nearest baked value: left
+    # at the bake's black they darkened the arms at a distance, where the texture shrinks and they mix in)
+    on = a > 1e-4
+    while not on.all():
+        s, n = np.zeros_like(a), np.zeros_like(a)
+        for d, ax in ((1, 0), (-1, 0), (1, 1), (-1, 1)):
+            s += np.roll(a * on, d, ax)
+            n += np.roll(on, d, ax)
+        new = ~on & (n > 0)
+        if not new.any():
+            a[~on] = a[on].mean() if on.any() else 1
+            break
+        a[new] = s[new] / n[new]
+        on |= new
+    return resized(a, rect[2], rect[3])
+
+
+cards_out = [o for o in (hair, brows, lashes, helmet) if o]
+for o in cards_out:
+    o.hide_render = True
+ao_bake.cycles_setup()
+skin_ao = {'head': bake_skin_ao(head_skin, RECT['head']), 'body': bake_skin_ao(body, RECT['body'])}
+eye_ao = ao_bake.bake_ao_vertices(eyes)
+for o in cards_out:
+    o.hide_render = False
+say('occlusion: head mean', round(float(skin_ao['head'].mean()), 3), 'body', round(float(skin_ao['body'].mean()), 3),
+    'eyes', round(float(eye_ao.mean()), 3), 'min', round(float(eye_ao.min()), 3))
+
 MAPS = os.path.join(SRC, spec['maps'])
 op = np.zeros((OPAQUE_SIZE[1], OPAQUE_SIZE[0], 4), dtype=np.float32)
 op[..., 3] = 1
@@ -1156,6 +1218,143 @@ if helmet:
     m = np.clip(cov_mask * SCALP_COVER, 0, 1)[..., None]
     head_px[..., :3] = head_px[..., :3] * (1 - m) + scalp * m
     say('scalp painted', int((cov_mask > 0.5).sum()), 'texels')
+def skin_regions():
+    """Per head vertex (lips, T-zone, eyelids, ears) in 0..1, the regions finish-player.py gives the MPFB players and kit.ts
+    shades (wet lips and lids, the oily T-zone's sheen, ears that glow red against the light). MetaHuman's head has no masks
+    for them: the lids are the skin within LID_REACH of the eyeball; the lips the skin within LIP_REACH of the teeth that is
+    redder than most of it; the T-zone the nose's ridge and the middle of the forehead, from the eyes; the ears as
+    ears_out finds them."""
+    co = coords(head_skin)
+    eco = coords(eyes)
+    ez, ex, ey = float(eco[:, 2].mean()), float(eco[:, 0].mean()), float(eco[:, 1].mean())
+    dx, dz = np.abs(co[:, 0] - ex), co[:, 2] - ez
+
+    def near(o):
+        t = BVHTree.FromPolygons([v.co.copy() for v in o.data.vertices], [tuple(p.vertices) for p in o.data.polygons])
+        return np.array([(lambda h: h[3] if h[0] is not None else 1.0)(t.find_nearest(Vector(c), 0.2)) for c in co])
+    d_eye, d_teeth = near(eyes), near(teeth)
+    lids = np.clip((LID_REACH - d_eye) / 0.006, 0, 1) * (dz > -0.03) * (dz < 0.025)
+    # (the colour under each vertex: its first corner's UV in the head's painted square)
+    me = head_skin.data
+    uvl = me.uv_layers[0].data
+    vuv = np.zeros((len(co), 2), dtype=np.float32)
+    for lp in reversed(me.loops):
+        vuv[lp.vertex_index] = uvl[lp.index].uv
+    hh, hw = head_px.shape[:2]
+    c = head_px[np.clip((vuv[:, 1] * hh).astype(int), 0, hh - 1), np.clip((vuv[:, 0] * hw).astype(int), 0, hw - 1), :3]
+    red = c[:, 0] - 0.5 * (c[:, 1] + c[:, 2])
+    # (both references from the skin round the teeth itself, mostly skin and about a third lips: a ring further out lay on
+    # another colour on some heads (p10's jaw), and half her cheeks came out lips)
+    mouth = d_teeth < LIP_REACH
+    r_skin = float(np.percentile(red[mouth], 20)) if mouth.any() else float(np.median(red))
+    r_lip = float(np.percentile(red[mouth], 90)) if mouth.any() else r_skin + 0.1
+    lips = np.clip((red - r_skin) / max(r_lip - r_skin, 1e-3) * 2 - 0.6, 0, 1) * np.clip((LIP_REACH - d_teeth) / 0.006, 0, 1)
+    # (the nose stands in front of the eyes; the forehead, sloping back above them, by facing forward: MetaHuman faces -y)
+    nrm = np.empty(len(co) * 3)
+    me.vertices.foreach_get('normal', nrm)
+    facing = np.clip((-nrm.reshape(-1, 3)[:, 1] - 0.5) / 0.2, 0, 1)
+    nose = np.clip((0.02 - dx) / 0.008, 0, 1) * (dz < 0.0) * (dz > -0.065) * (co[:, 1] < ey - 0.004)
+    brow = np.clip((0.045 - dx) / 0.015, 0, 1) * np.clip((dz - 0.025) / 0.01, 0, 1) * np.clip((0.09 - dz) / 0.015, 0, 1) * facing
+    tz = np.maximum(nose, brow) * (1 - lips)
+    ears = np.clip((dx - EAR_X) / 0.01, 0, 1) * (dz > -0.08) * (dz < 0.03)
+    say('skin regions (vertices over 0.5): lips', int((lips > 0.5).sum()), 'T-zone', int((tz > 0.5).sum()), 'lids',
+        int((lids > 0.5).sum()), 'ears', int((ears > 0.5).sum()), '; redness skin', round(r_skin, 3), 'lips', round(r_lip, 3))
+    return np.stack([lips, tz, lids, ears], axis=1).astype(np.float32)
+
+
+LID_REACH, LIP_REACH = 0.009, 0.022
+regions = skin_regions()
+
+
+def vertex_raster(o, values, size, keep):
+    """Per texel of `o`'s UV square (rows from the bottom), its vertices' `values` interpolated over the triangles for which
+    `keep(values of its three vertices)` holds; NaN elsewhere."""
+    me = o.data
+    me.calc_loop_triangles()
+    uvl = me.uv_layers[0].data
+    w, h = size
+    out = np.full((h, w), np.nan, dtype=np.float32)
+    for tri in me.loop_triangles:
+        vals = values[list(tri.vertices)]
+        if not keep(vals):
+            continue
+        pt = np.array([(uvl[li].uv[0] * w, uvl[li].uv[1] * h) for li in tri.loops])
+        x0, y0 = np.floor(pt.min(0)).astype(int)
+        x1, y1 = np.ceil(pt.max(0)).astype(int)
+        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w - 1), min(y1, h - 1)
+        if x1 < x0 or y1 < y0:
+            continue
+        gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+        (ax, ay), (bx, by), (cx, cy) = pt
+        d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(d) < 1e-12:
+            continue
+        l1 = ((by - cy) * (gx - cx) + (cx - bx) * (gy - cy)) / d
+        l2 = ((cy - ay) * (gx - cx) + (ax - cx) * (gy - cy)) / d
+        l3 = 1 - l1 - l2
+        inside = (l1 >= -0.01) & (l2 >= -0.01) & (l3 >= -0.01)
+        v = l1 * vals[0] + l2 * vals[1] + l3 * vals[2]
+        sub = out[y0:y1 + 1, x0:x1 + 1]
+        sub[inside] = v[inside]
+    return out
+
+
+# The eye's occlusion: Unreal lays a shell over each eye that darkens the eyeball's edge and the lids' rims, where the lashes
+# and the eyeball shade them; without it the lower lid's rim, facing the overhead key, drew a white line under every eye
+# (7 Nov). The rims are the skin between the eye's hole in the head (its open edge, round the eyeball) and the lash line,
+# 3 to 10 mm from the eyeball itself, as far as much of the lid, so they are found along the skin from that edge: the head's
+# colour and its occlusion (which kit.ts takes the skin's shine and wetness down by: the line was mostly the key's
+# highlight) lower by up to EYE_SHELL within EYE_SHELL_IN of the edge, easing off by EYE_SHELL_REACH.
+EYE_SHELL, EYE_SHELL_IN, EYE_SHELL_REACH = 0.7, 0.003, 0.007
+
+
+def from_eye_holes():
+    """Per head vertex, the distance along the skin (m, over its edges) to the open edge of either eye's hole; 1 past 2 cm."""
+    import heapq
+    bm = bmesh.new()
+    bm.from_mesh(head_skin.data)
+    bm.verts.ensure_lookup_table()
+    eco = coords(eyes)
+    centres = [eco[eco[:, 0] > 0].mean(0), eco[eco[:, 0] <= 0].mean(0)]
+    dist = np.full(len(bm.verts), 1.0)
+    heap = []
+    for e in bm.edges:
+        if not e.is_boundary:
+            continue
+        for v in e.verts:
+            if min(np.linalg.norm(np.array(v.co) - c) for c in centres) < 0.025 and dist[v.index] > 0:
+                dist[v.index] = 0.0
+                heap.append((0.0, v.index))
+    n_edge = len(heap)
+    heapq.heapify(heap)
+    while heap:
+        dv, i = heapq.heappop(heap)
+        if dv > dist[i] or dv > 0.02:
+            continue
+        for e in bm.verts[i].link_edges:
+            j = e.other_vert(bm.verts[i]).index
+            nd = dv + e.calc_length()
+            if nd < dist[j]:
+                dist[j] = nd
+                heapq.heappush(heap, (nd, j))
+    bm.free()
+    say('eye holes: open-edge vertices', n_edge)
+    return dist
+
+
+head_from_hole = from_eye_holes()
+d_tex = vertex_raster(head_skin, head_from_hole, RECT['head'][2:], lambda v: v.min() < EYE_SHELL_REACH)
+t = np.clip((EYE_SHELL_REACH - np.nan_to_num(d_tex, nan=1.0)) / (EYE_SHELL_REACH - EYE_SHELL_IN), 0, 1)
+shade = 1 - EYE_SHELL * t * t * (3 - 2 * t)
+head_px[..., :3] *= shade[..., None]
+skin_ao['head'] *= shade
+say('eye shell: texels darkened', int((shade < 0.9).sum()), '; vertices within 3/5/7 mm of the eyes\' holes',
+    [int((head_from_hole < r).sum()) for r in (0.003, 0.005, 0.007)])
+if os.environ.get('MH_DEBUG'):
+    dbg = np.ones(shade.shape + (4,), dtype=np.float32)
+    dbg[..., :3] = shade[..., None]
+    save(dbg, os.path.join(OUT, 'debug-eye-shell.webp'), 'dbg')
+
 paste(op, RECT['head'], head_px)
 paste(op, RECT['body'], load_px(os.path.join(SRC, spec['body_bc']), RECT['body'][2:]))
 paste(op, RECT['eye'], load_px(os.path.join(MAPS, 'Eyes_Color.png'), RECT['eye'][2:]))
@@ -1169,8 +1368,31 @@ if skirt:
     w = RECT['skirt'][2]
     paste(op, RECT['skirt'], sao.reshape(sao.shape[0], w, -1, 4).mean(2))
 op[..., 3] = 1
+for k, a in skin_ao.items():
+    x, y, w, h = RECT[k]
+    op[y:y + h, x:x + w, 3] = a
 fill_gutters(op, [RECT[k] for k in ('head', 'body', 'eye', 'teeth', 'shirt', 'shorts')] + ([RECT['skirt']] if skirt else []))
 save(op, os.path.join(OUT, 'opaque.webp'), 'opaque')
+
+
+# The skin's detail normals: pores, the creases round the eyes and mouth, the lips' lines, knuckles. The build's own maps,
+# on the opaque atlas's layout at 1/SKIN_DIV of its size (the creases keep; the finest pores go, which only a close camera
+# would show). Their green runs down the texture, as DirectX's does (their slope field has a third of the curl with it
+# flipped), and kit.ts reads up v, as OpenGL's. Flat everywhere else.
+SKIN_DIV, SKIN_QUALITY = 2, 96
+skin_n = np.zeros((OPAQUE_SIZE[1] // SKIN_DIV, OPAQUE_SIZE[0] // SKIN_DIV, 4), dtype=np.float32)
+skin_n[..., :3] = (0.5, 0.5, 1)
+skin_n[..., 3] = 1
+for key, part in (('head_n', 'head'), ('body_n', 'body')):
+    if not spec.get(key):
+        continue
+    x, y, w, h = (r // SKIN_DIV for r in RECT[part])
+    n = load_px(os.path.join(SRC, spec[key]), (w, h))[..., :3] * 2 - 1
+    n[..., 1] *= -1
+    n /= np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-6)
+    skin_n[y:y + h, x:x + w, :3] = n * 0.5 + 0.5
+    say('skin normals', part, (w, h), 'slope sd', [round(float(v), 4) for v in (n[..., :2] / np.maximum(n[..., 2:], 0.2)).reshape(-1, 2).std(0)])
+save(skin_n, os.path.join(OUT, 'skin.webp'), 'skin', SKIN_QUALITY)
 
 al = np.zeros((ALPHA_SIZE[1], ALPHA_SIZE[0], 4), dtype=np.float32)
 cards = load_px(os.path.join(SRC, spec['hair_atlas']))
@@ -1450,9 +1672,10 @@ for o, part, rect in KINDS:
             B['si'] += si
             B['sw'] += sw
             B['part'].append(PART[pt])
-            B['ao'].append(float(head_shade[vi]) if o is head_piece else 1.0)
+            B['ao'].append(float(head_shade[vi]) if o is head_piece else float(eye_ao[vi]) if o is eyes else 1.0)
             # (a skirt's hang, 0 at its top to 1 at the hem, in the mask's x: kit.ts swings it and keeps it off the thighs)
-            B['mask'] += [float(skirt_hang[vi]) if o is skirt else 0.0, 0.0, 0.0, 0.0]
+            B['mask'] += ([float(x) for x in regions[vi]] if o is head_skin else
+                          [float(skirt_hang[vi]) if o is skirt else 0.0, 0.0, 0.0, 0.0])
             B['index'].append(seen[key])
     say('mesh', o.name, len(seen), 'vertices', len(me.loop_triangles), 'triangles')
 
@@ -1470,7 +1693,7 @@ blob = bytearray()
 header = {'name': spec['name'], 'height': round(float(height), 4), 'bones': BONES,
           'joints': [[joints[n].x, joints[n].z, -joints[n].y] for n in BONES],
           'move': [game_m(move[n]) for n in BONES],
-          'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': spec['name'] + '-cloth.webp'},
+          'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': spec['name'] + '-cloth.webp', 'skin': 'skin.webp'},
           'parts': PART, 'morphs': [], 'kit': spec.get('kit', {}), 'meshes': {}}
 for kind, B in buffers.items():
     ent = {'vertices': len(B['part']), 'indices': len(B['index'])}

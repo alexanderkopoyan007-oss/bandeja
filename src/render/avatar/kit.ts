@@ -299,7 +299,13 @@ class SkinLighting extends THREE.PhysicalLightingModel {
     // (skin facing down has the body under it, not the bright floor the probe saw: at a grazing view the bare reflection
     // drew a pale band under every jaw)
     c.radiance = this.ambient(radiance).mul(mix(float(1), smoothstep(-0.75, 0.05, normalWorld.y), this.ambientFix));
+    // (and the clearcoat's, the cornea's and wet skin's: it kept the probe's colour, and an eye in the brow's shadow, where
+    // little else lights it, came out a navy and violet slot, 7 Nov)
+    const self = this as unknown as { clearcoatRadiance: THREE.Node<'vec3'> | null };
+    const cc = self.clearcoatRadiance;
+    if (cc) self.clearcoatRadiance = this.ambient(cc).mul(mix(float(1), smoothstep(-0.75, 0.05, normalWorld.y), this.ambientFix));
     super.indirectSpecular(builder);
+    self.clearcoatRadiance = cc;
     c.iblIrradiance = ibl;
     c.radiance = radiance;
   }
@@ -328,6 +334,8 @@ const BODY_INSIDE = 0.3;
 const SKIRT_INSIDE = 0.75;
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
 const FOLD_DEPTH = 1;
+/** The skin's detail normals at their own strength (a MetaHuman's map). */
+const SKIN_DETAIL = 0.6;
 const BIB_PLAIN = 0.9;
 /** The collar's bins across (count, m each), and how far inside the shirt's top its edge stays (m). */
 const COLLAR_BINS = 6;
@@ -386,7 +394,12 @@ const HAIR_HELMET_EDGE = 0.45;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;
 const LID_PLAIN = 1;
-const CATCHLIGHT = vec3(-0.29, 0.41, 0.864);
+/** The catchlight's place in view space (the normal it shines on) and how tight it is (the cosine's power). */
+const CATCHLIGHT = vec3(-0.170, 0.170, 0.971);
+const CATCHLIGHT_SHARP = 500;
+/** The cornea's share of three's clearcoat: it reflects 2.5% head on (index 1.376), the clearcoat's 1.5 index 4%. At the full
+ * clearcoat, an eye looking up at the lit roof had its iris under a silver sheet once the reflection lost its colour. */
+const CORNEA = 0.625;
 
 /** A person's body: MeshPhysicalNodeMaterial with the skin's lighting model (clearcoat for oil, sweat and the wet
  * eyes, mouth; sheen for the fabric). */
@@ -588,7 +601,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   m.specularIntensityNode = mix(float(1), smoothstep(0.05, 0.55, tex.w).mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
   m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)))
-    .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
+    .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW.mul(CORNEA)).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
   m.clearcoatRoughnessNode = skinW.mul(float(0.32).sub(sweat.mul(0.1))).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
   // Cotton and polyester's soft rim.
   // (less on the shorts and skirts, which are often near black: at a grazing view the white in it turned them grey; and none
@@ -602,7 +615,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   m.toneBackNode = skinW.mul(SKIN_TONE_BACK);
   // The catchlight: a floodlit cornea always holds a bright point, and a face without one reads as dead. The light it
   // would mirror isn't in the probe, so it is drawn: fixed in view space, where the eyeball's normal meets it.
-  m.emissiveNode = vec3(1, 0.98, 0.94).mul(normalView.dot(CATCHLIGHT).clamp().pow(1100)).mul(eyeW).mul(1.5);
+  // (10 degrees up and over from the view, on the iris: at 24 up it fell under the upper lid and no eye showed one, 7 Nov; a
+  // little wider, so it holds a pixel at the face camera)
+  m.emissiveNode = vec3(1, 0.98, 0.94).mul(normalView.dot(CATCHLIGHT).clamp().pow(CATCHLIGHT_SHARP)).mul(eyeW).mul(1.5);
   const folds = mx_noise_float(vec3(p.x.mul(16), p.y.mul(44), p.z.mul(16))).mul(0.6)
     .add(mx_noise_float(p.mul(60)).mul(0.15));
   // Pores: about 0.5 mm features, 30 µm deep, faded out wherever a pixel covers more than a few of them (bump.ts),
@@ -610,7 +625,15 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const pores = mx_noise_float(p.mul(1900)).mul(0.6).add(poreFine.mul(0.4))
     .mul(0.00003).mul(skinW).mul(float(1).sub(lips.mul(0.7)).sub(lids.mul(0.5))).mul(footprintKeep(0.0012));
   // The suit's sculpted folds, MakeHuman's own normal map, over the suit's rectangle of the atlas (finish-player.py RECT).
-  const bumped = heightBump(folds.mul(body.clothNormal ? sockW : fabric).mul(0.0025).add(pores).add(shoeRelief), 0.023);
+  let bumped = heightBump(folds.mul(body.clothNormal ? sockW : fabric).mul(0.0025).add(pores).add(shoeRelief), 0.023);
+  // The skin's own detail normals over that (a MetaHuman's, mh-player.py: pores, the creases round the eyes and mouth, the
+  // lips' lines; the owner's realism list, 7 Nov: "flat face"), added as a tilt of the bumped normal. Every rectangle of the
+  // atlas is square in texels and the atlas is 3:2, so u is stretched by 3/2 for the frame: `uvNormal` scales both its axes by
+  // the longer, which would have halved the creases running across the face.
+  if (body.skinNormal) {
+    const detail = texture(body.skinNormal, uv()).xy.mul(2).sub(1).mul(SKIN_DETAIL);
+    bumped = bumped.add(uvNormal(detail, uv().mul(vec2(1.5, 1))).sub(normalView).mul(skinW)).normalize();
+  }
   if (body.clothNormal) {
     const suitUv = vec2(uv().x.sub(2 / 3).mul(3), uv().y.sub(0.5).mul(2));
     // (the suit's rectangle only: a skirt has pleats of its own)
@@ -687,13 +710,16 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // weaker deep in the hair.
   // (the cards only: the helmet's UVs don't run along strands, and its sheen drew a plastic shell; it is the deepest layer,
   // rough and dim. Cards seen edge on lose the fibre's shine: a grazing card's highlight came out as one white spark.)
-  const nearRough = shell ? mix(float(HAIR_ROUGH), float(HAIR_HELMET_ROUGH), helmet).sub(strands.mul(0.12)) : float(0.52).sub(strands.mul(0.18));
+  // (a MetaHuman's brows and lashes too, everything past HAIR_U: a lash is a fine dark fibre against the lid, and with the
+  // cards' gloss and strand tilt the lashes' tips caught the sky as a row of blue-white dots along each lid, 7 Nov)
+  const fine = shell ? float(1).sub(onHead) : helmet;
+  const nearRough = shell ? mix(float(HAIR_ROUGH).sub(strands.mul(0.12)), float(HAIR_HELMET_ROUGH), fine) : float(0.52).sub(strands.mul(0.18));
   hair.roughnessNode = mix(nearRough, float(HAIR_FAR_ROUGH), far);
   if (shell) hair.anisotropyNode = vec2(float(HAIR_ANISO).mul(float(1).sub(far)).mul(onHead).mul(smoothstep(0.08, 0.35, edgeOn)), 0);
   // Each strand tilts its own way across the card, so the shine comes in fine broken lines and not one band over a helmet.
-  hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT).mul(float(1).sub(far)), float(0)), strandUv);
+  hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT).mul(float(1).sub(far)).mul(float(1).sub(fine)), float(0)), strandUv);
   hair.metalnessNode = float(0);
-  hair.specularIntensityNode = hAO.mul(mix(float(0.6), float(1), far)).mul(mix(float(1), float(HAIR_HELMET_SPEC), helmet.mul(float(1).sub(far))));
+  hair.specularIntensityNode = hAO.mul(mix(float(0.6), float(1), far)).mul(mix(float(1), float(HAIR_HELMET_SPEC), fine.mul(float(1).sub(far))));
   hair.specularColorNode = mix(vec3(1, 1, 1), base.mul(2.2), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
   hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);

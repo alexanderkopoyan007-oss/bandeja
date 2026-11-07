@@ -3854,6 +3854,24 @@ The owner sent eight points from a still of a MetaHuman woman and asked for, in 
 
   Checked at fixed frames on the MPFB women: the stitching and the midsole ridges show.
   - **Not done:** the shoe's shape itself (MPFB shoes05, a soft slipper-like form); the laces only show from in front.
+- **Item 4, skin and eyes (MetaHumans):** the builder used none of MetaHuman's own skin data and baked no occlusion, so every crease and the eyes were lit like the cheek. `mh-player.py` now carries:
+  - **Detail normals:** `T_Head_LOD3_N` and `T_Body_N` (pores, the creases round the eyes and mouth, the lips' lines) at half the opaque atlas's size, in its layout, as `<name>-skin.webp` (about 0.3 MB). Their green runs down the texture (DirectX's): the slope field has a third of the curl with green flipped, so it is flipped to OpenGL's. kit.ts adds them as a tilt of the bumped normal on skin, at 0.6 of their strength: at 1 the cheeks read as sandpaper at the face camera. The atlas is 3:2 with square rectangles, so `uvNormal` gets u stretched by 3/2 (it scales both axes by the longer). Skipped: `T_BakedNormal_LOD3` (256 px, ringing across the cheeks); the SRMF maps (every texel 0).
+  - **Occlusion:** baked with Cycles in the T-pose as the MPFB players' is (the bakes moved, unchanged, from `person_face.py` into `ao_bake.py`, which needs no MPFB add-on). The head and body go into the opaque atlas's alpha, where kit.ts reads the skin's occlusion (it was 1). Texels no triangle covers take the nearest baked value: left black, they would darken the arms at a distance. The eyes get it per vertex.
+  - **Regions** (lips, T-zone, lids, ears; MPFB's from the expression units):
+    - lids: the skin within 9 mm of the eyeball;
+    - lips: the skin within 22 mm of the teeth that is redder than most of it;
+    - T-zone: the nose's ridge and the middle of the forehead, placed from the eyes;
+    - ears: as `ears_out` finds them.
+
+    kit.ts already shades them: wet lips and lids, the T-zone's sheen, backlit ears.
+  - **Lashes:** the hair material treated them as cards, glossy with each strand tilted, and their tips caught the sky as a row of blue-white dots. Everything past `HAIR_U` (brows, lashes, helmet) is now rough and dim, with no tilt; MetaHumans only.
+  - **Checked** at fixed frames on p7: pores and fine lines at the face camera, the forehead's sheen, the ear glowing, dark lashes.
+  - **Eyes** (at 2x stills of p7 in the brow's shadow, the eyeball was a navy slot under a white line):
+    - **The cornea's reflection:** `SkinLighting` already gave skin and eyes the environment's brightness without its colour (the court's blue and red floors had turned the whites lavender). The clearcoat's own reflection (`clearcoatRadiance`) didn't get the same treatment, and on an eye that is the cornea. It does now: every player, and the brown iris and a neutral sclera show in shadow.
+    - **The cornea's share:** with the reflection neutral, an eye looking up at the lit roof (MPFB p8) had its iris under a silver sheet. The eye's clearcoat is now 0.625 (`CORNEA`): a cornea (index 1.376) reflects 2.5% head on, where three's clearcoat (1.5) reflects 4%. MPFB eyes come out more neutral than their old amber, which partly came from the coloured reflection; it is on the sheet for the owner.
+    - **The catchlight** (drawn, fixed in view space) moves from 24 degrees above the view to 10 (`CATCHLIGHT`), and is a little wider (`CATCHLIGHT_SHARP` 500, was 1100). At 24 it fell under the upper lid, and no eye showed one. MPFB eyes, which look down, show none either way.
+    - **The eye's occlusion:** Unreal lays a shell over each eye that darkens the lids' rims and the eyeball's edge. Without it, the lower lid's rim, facing the overhead key, drew a white line. The rims lie 3 to 10 mm from the eyeball, as far as much of the lid, so `mh-player.py` finds them along the skin from the edge of the eye's hole in the head (`from_eye_holes`, Dijkstra over the head's edges). It takes the head's colour and its occlusion down by up to 0.7 within 3 mm, easing off by 7 mm. The occlusion carries it because the line was mostly the key's highlight, and kit.ts scales the skin's shine and wetness by the occlusion. `MH_DEBUG=1` writes the map as `debug-eye-shell.webp`.
+    - **Lips:** both references come from the skin within 22 mm of the teeth: its 20th percentile is skin, its 90th lips. A ring further out lay on another colour on p10's jaw, and half her cheeks came out as lips (1802 vertices; now 697, like the others).
 
 ## M5 phase C, step 5: the skirts, the polo and the dress for everyone (2026-11-07)
 The catalogue's four garments (`top-polo`, `top-dress`, `bot-pleated`, `bot-aline`) are worn like step 3's cuts: built for every body in Blender and drawn when chosen (`&wear=bot-pleated`, `top-dress`).

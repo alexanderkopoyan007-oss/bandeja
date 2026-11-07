@@ -137,7 +137,9 @@ export interface BodyLook {
   alphaMap: THREE.Texture | null;
   /** The suit's sculpted folds, a tangent-space normal map over the suit's own UVs (everyone's suit is the same one). */
   clothNormal: THREE.Texture | null;
-  textures: { opaque: string; alpha: string; cloth?: string };
+  /** The skin's detail normals (pores, creases), tangent space on the opaque atlas's UVs: a MetaHuman's only. */
+  skinNormal: THREE.Texture | null;
+  textures: { opaque: string; alpha: string; cloth?: string; skin?: string };
   /** The face's keys by name, in the order of every morphed mesh's influences (empty for a version-2 person). */
   morphs: string[];
   face: FaceData | null;
@@ -223,11 +225,19 @@ async function loadPerson(base: PlayerAsset, name: string, progress?: (frac: num
   try {
     const p = parseBodyAsset(await fetchGz(dir + name + '.bnz', progress), base);
     const look = p.look!;
-    [look.opaqueMap, look.alphaMap, look.clothNormal] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha), suitNormal(texture, look.textures.cloth ?? 'suit-normal.webp')]);
+    [look.opaqueMap, look.alphaMap, look.clothNormal, look.skinNormal] = await Promise.all([texture(look.textures.opaque), texture(look.textures.alpha),
+      suitNormal(texture, look.textures.cloth ?? 'suit-normal.webp'), look.textures.skin ? texture(look.textures.skin).then(linear) : null]);
     base.people.push(p);
   } catch (err) {
     console.warn(`person ${name} not loaded, that player is the mannequin:`, err);
   }
+}
+
+/** A normal map's texels are directions, not colours. */
+function linear(t: THREE.Texture): THREE.Texture {
+  t.colorSpace = THREE.NoColorSpace;
+  t.needsUpdate = true;
+  return t;
 }
 
 /** One copy per suit for everybody in it; a player without it keeps the shader's noise folds. */
@@ -235,11 +245,7 @@ const suitNormalMaps = new Map<string, Promise<THREE.Texture | null>>();
 function suitNormal(texture: (name: string) => Promise<THREE.Texture>, file: string): Promise<THREE.Texture | null> {
   let map = suitNormalMaps.get(file);
   if (!map) {
-    map = texture(file).then((t) => {
-      t.colorSpace = THREE.NoColorSpace;
-      t.needsUpdate = true;
-      return t;
-    }, () => null);
+    map = texture(file).then(linear, () => null);
     suitNormalMaps.set(file, map);
   }
   return map;
@@ -518,7 +524,7 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     hide: new Uint16Array(buf, base + wh.hide[0]!, h.meshes.opaque.vertices).slice(),
   } : null;
   const asset = assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
-    name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, textures: h.textures, morphs, face,
+    name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, skinNormal: null, textures: h.textures, morphs, face,
     wardrobe,
   });
   SOURCES.set(asset, { buf, mannequin });
@@ -542,6 +548,7 @@ export function pristineCopy(asset: PlayerAsset): PlayerAsset {
     a.look.opaqueMap = asset.look.opaqueMap;
     a.look.alphaMap = asset.look.alphaMap;
     a.look.clothNormal = asset.look.clothNormal;
+    a.look.skinNormal = asset.look.skinNormal;
   }
   return a;
 }

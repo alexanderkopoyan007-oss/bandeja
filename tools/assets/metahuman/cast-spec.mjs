@@ -32,6 +32,8 @@ console.log(JSON.stringify({
   helmet, ...(existsSync(`${src}/${cov}`) ? { helmet_cov: cov } : {}), ...(c.helmetShade ? { helmet_shade: c.helmetShade } : {}),
   maps: `dcc/MHC_${n}/Maps`,
   head_bc: 'export/tex/T_Head_LOD3_BC.png', head_brows: 'export/tex/T_Head_LOD5to7_BC.png', body_bc: 'export/tex/T_Body_BC.png',
+  // (the skin's detail normals, pores and creases, on the same UVs as those colours)
+  head_n: 'export/tex/T_Head_LOD3_N.png', body_n: 'export/tex/T_Body_N.png',
   shoes_from: '~/bandeja-p9/assets-src/people/p1/p1.blend',
   ...(shortsHem ? { shorts_hem: shortsHem } : {}),
   // (the women's tops ended level with the hips: mh-player cuts the tee's hem there)

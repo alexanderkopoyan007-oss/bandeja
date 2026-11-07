@@ -24,6 +24,8 @@
  "head_bc": "export/tex/T_Head_LOD3_BC.png",
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",
+ "head_n": "export/tex/T_Head_LOD3_N.png",
+ "body_n": "export/tex/T_Body_N.png",
  "shoes_from": "~/bandeja-p9/assets-src/people/p1/p1.blend",
  "shorts_hem": 0.71,
  "top_hem": "hips",
