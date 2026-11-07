@@ -79,9 +79,28 @@ export interface FaceData {
   nrm: Float32Array[];
 }
 
+/**
+ * Every cut built for a person (tools/assets/mpfb/person_wear.py): the opaque mesh's triangles by garment, and the skin each hides.
+ * The game draws the garments worn (`dressedIndex`); a person without one (a MetaHuman, an older build) is drawn as modelled.
+ */
+export interface Wardrobe {
+  /** Garment names; a garment's id is its place here ('body', always drawn, is 0). */
+  pieces: string[];
+  /** What they were modelled in. */
+  worn: string[];
+  /** Per garment, its triangles in FaceData.bodyIndex: [first index, count]. */
+  ranges: Array<[number, number]>;
+  /** Per vertex of the person's geometry: its garment's id; for skin, the garments that hide it (bit = id). */
+  piece: Uint8Array;
+  hide: Uint16Array;
+  /** The V-neck's point under the Neck joint and its rise to the sides (m, m per m): kit.ts cuts it. */
+  vneck?: [number, number];
+}
+
 /** What a person wears beyond the suit (data/players/*.json `kit`, tools/assets/mpfb/person_kit.py). */
 export interface KitCut {
-  top?: 'tee' | 'polo' | 'tank';
+  /** (sleeveless, vneck and long: chosen cuts, paint.ts cutFor) */
+  top?: 'tee' | 'polo' | 'tank' | 'sleeveless' | 'vneck' | 'long';
   bottom?: 'shorts' | 'pleated' | 'aline';
   head?: 'band' | 'visor';
   /** Which of the kit's small marks (kit.ts). */
@@ -120,6 +139,8 @@ export interface BodyLook {
   /** The face's keys by name, in the order of every morphed mesh's influences (empty for a version-2 person). */
   morphs: string[];
   face: FaceData | null;
+  /** Every cut built for them (null: drawn as modelled whatever is chosen). */
+  wardrobe: Wardrobe | null;
 }
 
 /** The roster (public/assets/people/, data/players/); a match loads the four it deals (game/cast.ts). */
@@ -137,6 +158,7 @@ interface MeshHeader {
   ao?: number[]; mask?: number[];
   face?: { vertices: number; indices: number; verts: number[]; index: number[]; bodyIndices: number; bodyIndex: number[] };
   morphs?: { name: string; pos: number; nrm: number; data: number[] }[];
+  wardrobe?: { pieces: string[]; worn: string[]; ranges: Array<[number, number]>; piece: number[]; hide: number[]; vneck?: [number, number] };
 }
 
 interface Header {
@@ -487,8 +509,15 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     for (let k = 0; k < hips.length; k++) hips[k] = hips[k]! * h.hips;
     clips.set(name, { ...c, hips, speed: c.speed * h.hips });
   }
+  const wh = h.meshes.opaque.wardrobe;
+  const wardrobe: Wardrobe | null = wh && face ? {
+    pieces: wh.pieces, worn: wh.worn, ranges: wh.ranges, vneck: wh.vneck,
+    piece: new Uint8Array(buf, base + wh.piece[0]!, h.meshes.opaque.vertices).slice(),
+    hide: new Uint16Array(buf, base + wh.hide[0]!, h.meshes.opaque.vertices).slice(),
+  } : null;
   const asset = assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
     name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, textures: h.textures, morphs, face,
+    wardrobe,
   });
   SOURCES.set(asset, { buf, mannequin });
   return asset;
@@ -570,7 +599,7 @@ export function personMeshes(asset: PlayerAsset): { body: THREE.BufferGeometry; 
       for (let j = 0; j < f.verts.length; j++) for (let c = 0; c < s; c++) out[j * s + c] = src[f.verts[j]! * s + c]!;
       face.setAttribute(name, new THREE.BufferAttribute(out, s, a.normalized));
     }
-    body.setIndex(new THREE.BufferAttribute(f.bodyIndex, 1));
+    body.setIndex(new THREE.BufferAttribute(asset.look!.wardrobe ? dressedIndex(asset, asset.look!.wardrobe.worn) : f.bodyIndex, 1));
     face.setIndex(new THREE.BufferAttribute(f.index, 1));
     setMorphs(face, asset.look!.morphs, f.pos, f.nrm);
     body.computeBoundingSphere();
@@ -579,4 +608,55 @@ export function personMeshes(asset: PlayerAsset): { body: THREE.BufferGeometry; 
   }
   MESHES.set(asset, m);
   return m;
+}
+
+/**
+ * The opaque mesh's triangles (but the face's) for a person wearing `pieces` (Wardrobe.pieces names): those garments' own, the
+ * shoes', and every skin triangle but those all of whose corners a worn garment hides.
+ */
+export function dressedIndex(asset: PlayerAsset, pieces: readonly string[]): Uint16Array | Uint32Array {
+  const w = asset.look!.wardrobe!, src = asset.look!.face!.bodyIndex;
+  const on = new Set(['body', 'shoe', ...pieces].map((p) => w.pieces.indexOf(p)).filter((i) => i >= 0));
+  let bits = 0;
+  for (const i of on) bits |= 1 << i;
+  const hidden = (v: number): boolean => (w.hide[v]! & bits) !== 0;
+  const out: number[] = [];
+  for (const i of [...on].sort((a, b) => a - b)) {
+    const [start, count] = w.ranges[i]!;
+    for (let t = start; t < start + count; t += 3) {
+      const a = src[t]!, b = src[t + 1]!, c = src[t + 2]!;
+      if (i === 0 && hidden(a) && hidden(b) && hidden(c)) continue;
+      out.push(a, b, c);
+    }
+  }
+  return src instanceof Uint32Array ? Uint32Array.from(out) : Uint16Array.from(out);
+}
+
+const MODELLED = new WeakMap<PlayerAsset, Uint8Array>();
+
+/**
+ * Per vertex of `asset.geometry`, 1 if it belongs to what they were modelled in (Wardrobe.worn, and all skin): the other cuts in a
+ * wardrobe lie over the same body, so whatever measures the body by its parts (the kit's landmarks, a head piece's or a
+ * wristband's fit) looks at these alone. All 1 without a wardrobe.
+ */
+export function modelledVertices(asset: PlayerAsset): Uint8Array {
+  let m = MODELLED.get(asset);
+  if (m) return m;
+  const n = asset.geometry.getAttribute('position').count;
+  m = new Uint8Array(n).fill(1);
+  const w = asset.look?.wardrobe;
+  if (w) {
+    const worn = new Set(['body', ...w.worn].map((p) => w.pieces.indexOf(p)));
+    for (let i = 0; i < n; i++) m[i] = worn.has(w.piece[i]!) ? 1 : 0;
+  }
+  MODELLED.set(asset, m);
+  return m;
+}
+
+/** As modelledVertices, for a person wearing `pieces` (Wardrobe.pieces names; null: as modelled). */
+export function wornVertices(asset: PlayerAsset, pieces: readonly string[] | null): Uint8Array {
+  const w = asset.look?.wardrobe;
+  if (!pieces || !w) return modelledVertices(asset);
+  const on = new Set(['body', 'shoe', ...pieces].map((p) => w.pieces.indexOf(p)));
+  return Uint8Array.from(w.piece, (k) => (on.has(k) ? 1 : 0));
 }

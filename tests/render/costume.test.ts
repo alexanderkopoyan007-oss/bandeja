@@ -6,7 +6,7 @@ import * as THREE from 'three/webgpu';
 import { mannequinWithPeople, guestAsset, GUESTS } from './people.ts';
 import { clothTable, dress, fitHead, pressHair, radius, worn, HEAD_PIECES, HEADWEAR, type HeadFit } from '../../src/render/avatar/costume.ts';
 import { kitFor } from '../../src/render/avatar/kit.ts';
-import type { PlayerAsset } from '../../src/render/avatar/asset.ts';
+import { modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 
 const base = mannequinWithPeople();
 const guests = new Set(GUESTS.map((g) => guestAsset(g, base)));
@@ -24,8 +24,9 @@ function verts(p: PlayerAsset, bones: string[], min = 0.5): THREE.Vector3[] {
   const partA = g.getAttribute('bodyA');
   const ids = bones.map((b) => p.bone(b));
   const out: THREE.Vector3[] = [];
+  const mine = modelledVertices(p);
   for (let i = 0; i < pos.count; i++) {
-    if (p.look?.kit.head && partA && partA.getW(i) > 0.5 && pos.getY(i) > 1.4) continue;
+    if (!mine[i] || (p.look?.kit.head && partA && partA.getW(i) > 0.5 && pos.getY(i) > 1.4)) continue;
     let w = 0;
     for (let k = 0; k < 4; k++) if (ids.includes(si.getComponent(i, k))) w += sw.getComponent(i, k);
     if (w >= min) out.push(new THREE.Vector3().fromBufferAttribute(pos, i));

@@ -1,5 +1,5 @@
-// M5 phase C step 3: what a player chooses for their suit beyond its cut (src/render/avatar/paint.ts): patterns and shoes
-// painted by the person's shader, the overgrip on the racket. The catalogue's paint items, the URL that chooses them, and a
+// M5 phase C step 3: what a player chooses for their suit (src/render/avatar/paint.ts): patterns and shoes painted by the person's
+// shader, the overgrip on the racket (the cuts are garments: wardrobe.test.ts). The catalogue's paint items, the URL that chooses them, and a
 // material for every choice on everyone.
 import { describe, expect, it } from 'vitest';
 import { mannequinWithPeople } from './people.ts';
@@ -23,7 +23,7 @@ describe('paint', () => {
       else if (c.slot === 'grip') expect(grip, c.id).toMatch(/^#[0-9a-f]{6}$/);
       else throw new Error(`unexpected paint slot ${c.slot}`);
     }
-    // (garments wait for their meshes)
+    // (the polo, the skirts and the dress are garments of their own: step 5)
     expect(paintOf(['top-polo', 'bot-pleated', 'top-dress']).paint).toEqual({});
   });
 

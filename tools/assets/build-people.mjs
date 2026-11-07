@@ -12,7 +12,9 @@
 // 4-byte-aligned binary chunks, as player.bnz; no clips (the game skeleton's are used, the hips' travel scaled).
 // Version 3 adds per-vertex ambient occlusion and skin regions, and the face: the opaque mesh's triangles that any
 // expression or gaze key moves, listed apart (`face`) with their keys as int16 deltas, so only the face carries
-// morph targets; the alpha mesh (hair, brows, lashes) carries them whole.
+// morph targets; the alpha mesh (hair, brows, lashes) carries them whole. A body with a wardrobe (every cut built for it,
+// tools/assets/mpfb/person_wear.py) has the rest of the opaque mesh's triangles grouped by garment (`wardrobe.ranges`, in
+// indices into `bodyIndex`) and per vertex the garment it belongs to and, for skin, which garments hide it (`piece`, `hide`).
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, existsSync } from 'node:fs';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import * as THREE from 'three';
@@ -101,6 +103,8 @@ for (const name of names) {
     const SI = arr(Uint8Array, m.si), SW = arr(Float32Array, m.sw), PART = arr(Uint8Array, m.part), I = arr(Uint32Array, m.index);
     const AO = m.ao ? arr(Float32Array, m.ao) : null, MASK = m.mask ? arr(Float32Array, m.mask) : null;
     const MORPH = m.morph ? arr(Float32Array, m.morph) : null;
+    const TPIECE = m.tpiece ? arr(Uint8Array, m.tpiece) : null, PIECE = m.piece ? arr(Uint8Array, m.piece) : null;
+    const HIDE = m.hide ? arr(Uint16Array, m.hide) : null;
     const NM = h.morphs ? h.morphs.length : 0;
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (let v = 0; v < n; v++) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], P[v * 3 + k]); max[k] = Math.max(max[k], P[v * 3 + k]); }
@@ -134,6 +138,19 @@ for (const name of names) {
       if (kind === 'opaque') {
         const faceTri = [], bodyTri = [];
         for (let t = 0; t < I.length; t += 3) (moving[I[t]] || moving[I[t + 1]] || moving[I[t + 2]] ? faceTri : bodyTri).push(t);
+        // (by garment, in the wardrobe's order: the game draws the ranges of the ones worn)
+        let ranges = null;
+        if (TPIECE && h.wardrobe) {
+          const stray = faceTri.filter((t) => TPIECE[t / 3] !== 0).length;
+          if (stray) throw new Error(`${name}: ${stray} face triangles are on garments`);
+          bodyTri.sort((a, b) => TPIECE[a / 3] - TPIECE[b / 3] || a - b);
+          ranges = h.wardrobe.pieces.map(() => [0, 0]);
+          for (let j = 0; j < bodyTri.length; j++) {
+            const r = ranges[TPIECE[bodyTri[j] / 3]];
+            if (r[1] === 0) r[0] = j * 3;
+            r[1] += 3;
+          }
+        }
         const local = new Int32Array(n).fill(-1);
         const list = [];
         for (const t of faceTri) for (let c = 0; c < 3; c++) if (local[I[t + c]] < 0) { local[I[t + c]] = list.length; list.push(I[t + c]); }
@@ -142,6 +159,10 @@ for (const name of names) {
         const bodyIdx = Uint32Array.from(bodyTri.flatMap((t) => [I[t], I[t + 1], I[t + 2]]));
         me.face = { vertices: verts.length, indices: faceIdx.length, verts: chunk(verts), index: chunk(faceIdx),
           bodyIndices: bodyIdx.length, bodyIndex: chunk(n < 65536 ? Uint16Array.from(bodyIdx) : bodyIdx) };
+        if (ranges) {
+          me.wardrobe = { pieces: h.wardrobe.pieces, worn: h.wardrobe.worn, vneck: h.wardrobe.vneck, ranges, piece: chunk(PIECE), hide: chunk(HIDE) };
+          console.log(name, 'wardrobe', h.wardrobe.pieces.map((p, i) => `${p} ${ranges[i][1] / 3}`).join(', '));
+        }
         console.log(name, 'face', verts.length, 'vertices', faceIdx.length / 3, 'triangles; body', bodyIdx.length / 3);
       }
       // The keys over the morphing vertices (the face's for the opaque mesh, every vertex for the alpha mesh), int16

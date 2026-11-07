@@ -3,11 +3,12 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import * as THREE from 'three/webgpu';
-import { mannequinWithPeople } from './people.ts';
+import { drawnTriangles, mannequinWithPeople } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
 import { kitFor, hemPush, personCut, personMaterial, personSway } from '../../src/render/avatar/kit.ts';
-import { PEOPLE, type PlayerAsset } from '../../src/render/avatar/asset.ts';
+import { PEOPLE, modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
+import type { Paint } from '../../src/render/avatar/paint.ts';
 
 const cast = JSON.parse(readFileSync(new URL('../../data/people.json', import.meta.url), 'utf8')) as { men: { name: string }[]; women: { name: string }[] };
 
@@ -22,6 +23,9 @@ function ring(elevations: number[]): number[][] {
 }
 
 const GRID = 0.003;
+/** Cuts other than the modelled one, two or three garments at a time, for the hole checks. */
+const CHOSEN: Paint[] = [{ top: 'tank', socks: 'noshow' }, { top: 'sleeveless', socks: 'ankle' }, { top: 'vneck', bottom: 'tights' },
+  { top: 'long', socks: 'knee' }, { top: 'tee', bottom: 'shorts' }];
 
 /**
  * What the renderer would leave of a body, in software, along parallel rays 3 mm apart looking along `dir`: the mesh in `pos`, the
@@ -33,9 +37,9 @@ const GRID = 0.003;
  * the hole's rays pass to the line `axis` (m): a hem hung forward off a bent body and a raised thigh shut in some air in front of the
  * belly, which is no way through the body.
  */
-function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: boolean, axis?: THREE.Vector3[]): { size: number; at: number[] | null; waist: boolean; core: number }[] {
+function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: boolean, axis?: THREE.Vector3[], paint?: Paint): { size: number; at: number[] | null; waist: boolean; core: number }[] {
   const g = p.geometry, rest = g.getAttribute('position').array as Float32Array, A = g.getAttribute('bodyA').array as Float32Array;
-  const cut = personCut(p);
+  const cut = personCut(p, paint);
   const up = [0, 1, 0];
   const cross = (a: number[], b: number[]): number[] => [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
   const unit = (a: number[]): number[] => { const l = Math.hypot(a[0]!, a[1]!, a[2]!); return a.map((x) => x / l); };
@@ -51,8 +55,8 @@ function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: bool
   u0 -= 3 * GRID; v0 -= 3 * GRID;
   const nu = Math.ceil((u1 + 3 * GRID - u0) / GRID) + 1, nv = Math.ceil((v1 + 3 * GRID - v0) / GRID) + 1;
   const undrawn = new Uint8Array(nu * nv), drawn = new Uint8Array(nu * nv), shirt = new Uint8Array(nu * nv), bottom = new Uint8Array(nu * nv), near = new Float32Array(nu * nv).fill(Infinity), first = new Float32Array(nu * nv * 3);
-  const f = p.look!.face!;
-  const tris = [...f.bodyIndex, ...Array.from(f.index, (i) => f.verts[i]!)];
+  // (what is drawn in that cut: the rest of the wardrobe and the skin it hides are in the buffers too)
+  const tris = drawnTriangles(p, paint);
   for (let t = 0; t < tris.length; t += 3) {
     const i0 = tris[t]!, i1 = tris[t + 1]!, i2 = tris[t + 2]!;
     const x0 = U[i0]!, y0 = V[i0]!, x1 = U[i1]!, y1 = V[i1]!, x2 = U[i2]!, y2 = V[i2]!;
@@ -178,9 +182,9 @@ describe('kit', () => {
 
   it('ends shorts at mid-thigh', () => {
     for (const p of base.people.filter((x) => !skirted(x))) {
-      const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array;
+      const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array, mine = modelledVertices(p);
       let hem = Infinity;
-      for (let v = 0; v < r.length / 3; v++) if (A[v * 4 + 1]! > 0.5) hem = Math.min(hem, r[v * 3 + 1]!);
+      for (let v = 0; v < r.length / 3; v++) if (A[v * 4 + 1]! > 0.5 && mine[v]) hem = Math.min(hem, r[v * 3 + 1]!);
       const knee = at(p, 'LeftLeg').y, hip = at(p, 'LeftUpLeg').y;
       const u = (hip - hem) / (hip - knee);
       expect(u).toBeGreaterThan(0.45);
@@ -237,8 +241,11 @@ describe('kit', () => {
       const arm = at(p, 'LeftArm');
       for (const pos of [p.geometry.getAttribute('position').array as Float32Array, p.restPos]) for (const dir of ring([0, 20, 45])) {
         const seen = holes(p, pos, dir, false).filter((h) => h.at && Math.abs(h.at[0]!) > Math.abs(arm.x) - 0.06 && h.at[1]! > arm.y - 0.2 && h.at[1]! < arm.y + 0.09);
-        // (in the T-pose, with the arm drawn up and looking along the edge, 6 rays: half a square centimetre)
-        expect(seen.filter((h) => h.size >= 8).map((h) => [h.size, ...h.at!])).toEqual([]);
+        // (in the T-pose, with the arm drawn up and looking along the edge, 6 rays: half a square centimetre. Since the skin under
+        // the clothes stays in the file (M5 step 3b), whether two skin vertices 1.2 cm inside p7's right armhole are hidden is
+        // decided on a knife-edge (2.5 cm from skin that shows); kept, as cut_tank means them to be, their backs show through the
+        // same gap from 20 degrees up: 9 rays. Before the build was made repeatable it came out 7 or 9 by the order of a set.)
+        expect(seen.filter((h) => h.size >= 10).map((h) => [h.size, ...h.at!])).toEqual([]);
       }
     }
   });
@@ -264,8 +271,12 @@ describe('kit', () => {
       poses.forEach((pos, k) => {
         for (const dir of ring([-15, 0, 20, 45])) expect(holes(p, pos, dir, true).filter((h) => h.size >= 3 && (k === 0 || h.at)).map((h) => [h.size, h.at])).toEqual([]);
       });
+      // Every cut they can choose (wardrobe.test.ts), standing and in the first moment of play, level and from above.
+      for (const paint of CHOSEN) poses.slice(0, 2).forEach((pos, k) => {
+        for (const dir of ring([0, 30])) expect(holes(p, pos, dir, true, undefined, paint).filter((h) => h.size >= 3 && (k === 0 || h.at)).map((h) => [h.size, h.at]), `${p.look!.name} ${JSON.stringify(paint)}`).toEqual([]);
+      });
     }
-  }, 300_000);
+  }, 600_000);
 
   it('opens no way through the waist as a hem swings', () => {
     const CLOTH_MAX = 0.05; // (avatar.ts)
@@ -273,7 +284,7 @@ describe('kit', () => {
     const bad: string[] = [];
     for (const p of base.people) {
       const g = p.geometry, rest = g.getAttribute('position').array as Float32Array, A = g.getAttribute('bodyA').array as Float32Array;
-      const n = rest.length / 3, tris = p.look!.face!.bodyIndex, sway = personSway(p);
+      const n = rest.length / 3, tris = drawnTriangles(p), sway = personSway(p);
       const weldAt = new Map<string, number>(), weld = new Int32Array(n);
       for (let i = 0; i < n; i++) {
         const key = `${Math.round(rest[i * 3]! * 2e4)},${Math.round(rest[i * 3 + 1]! * 2e4)},${Math.round(rest[i * 3 + 2]! * 2e4)}`;

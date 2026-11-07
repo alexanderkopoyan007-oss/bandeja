@@ -9,11 +9,11 @@
 // is the bone's inverse bind matrix: the bone's world matrix times that is exactly the transform the skin bound to the
 // bone gets.
 import * as THREE from 'three/webgpu';
-import type { PlayerAsset } from './asset.ts';
+import { modelledVertices, wornVertices, type PlayerAsset } from './asset.ts';
 import type { KitLook } from './kit.ts';
 import { lathe, mergeParts, roundedBox, surface, tube, type Part } from '../geom.ts';
 import { fabric, lens, metal, plastic, printed, stitched } from './clothTex.ts';
-import type { Paint } from './paint.ts';
+import { piecesFor, type Paint } from './paint.ts';
 
 /** A worn piece: the mesh, the bone it hangs on, and for a one-sided piece which arm it follows. */
 export interface Piece {
@@ -77,8 +77,10 @@ export function fitHead(asset: PlayerAsset): HeadFit | null {
   let nl = 0, nr = 0;
   const pts: number[] = [];
   const v = new THREE.Vector3();
+  // (and only what they were modelled in: their wardrobe's other cuts lie over the same body, asset.ts modelledVertices)
+  const mine = modelledVertices(asset);
   for (let i = 0; i < pos.count; i++) {
-    if (weightOf(si, sw, i, head) < 0.5 || baked?.(i)) continue;
+    if (weightOf(si, sw, i, head) < 0.5 || baked?.(i) || !mine[i]) continue;
     v.fromBufferAttribute(pos, i);
     pts.push(v.x, v.y, v.z);
     lo.min(v);
@@ -651,7 +653,7 @@ function glasses(f: HeadFit, style: 'wrap' | 'round' | 'shield'): { lens: THREE.
  * the arm ring by ring as the forearm widens towards the elbow (one size for its whole length stood a centimetre off
  * the wrist), bridging only what an arm's hollows are between its bones.
  */
-function wristband(asset: PlayerAsset, side: 'R' | 'L', from: number, to: number): THREE.BufferGeometry | null {
+function wristband(asset: PlayerAsset, side: 'R' | 'L', from: number, to: number, mine = modelledVertices(asset)): THREE.BufferGeometry | null {
   const fore = asset.bone(side === 'R' ? 'RightForeArm' : 'LeftForeArm');
   const hand = asset.bone(side === 'R' ? 'RightHand' : 'LeftHand');
   if (fore < 0 || hand < 0) return null;
@@ -674,7 +676,7 @@ function wristband(asset: PlayerAsset, side: 'R' | 'L', from: number, to: number
   const p = new THREE.Vector3();
   const near: number[] = [];
   for (let i = 0; i < pos.count; i++) {
-    if (weightOf(si, sw, i, fore) + weightOf(si, sw, i, hand) < 0.5) continue;
+    if (weightOf(si, sw, i, fore) + weightOf(si, sw, i, hand) < 0.5 || !mine[i]) continue;
     p.fromBufferAttribute(pos, i).sub(B);
     const along = p.dot(axis);
     if (along < from - 0.02 || along > end + 0.02) continue;
@@ -927,8 +929,10 @@ export function dress(asset: PlayerAsset, wear: Wear, look: KitLook): Piece[] {
   }
   if (wear.wrist === 'wrist-single' || wear.wrist === 'wrist-pair' || wear.wrist === 'wrist-long') {
     const [from, to] = wear.wrist === 'wrist-long' ? [0.02, 0.14] : [0.025, 0.09];
+    // (fitted to what is worn there: over a long sleeve's cuff, not inside it)
+    const mine = wornVertices(asset, piecesFor(asset.look?.wardrobe ?? null, wear.paint));
     for (const side of ['R', 'L'] as const) {
-      const g = wristband(asset, side, from, to);
+      const g = wristband(asset, side, from, to, mine);
       if (!g) continue;
       out.push({ bone: side === 'R' ? 'RightForeArm' : 'LeftForeArm', mesh: new THREE.SkinnedMesh(g, fabric('terry', look.trim)), skinned: true, side, arm: wear.wrist === 'wrist-pair' ? undefined : 'racket' });
     }

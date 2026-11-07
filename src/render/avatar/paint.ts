@@ -1,11 +1,12 @@
-// M5 phase C step 3: what a player chooses for their suit beyond its cut. Colours, patterns, shoes and the overgrip are
-// paint (the person's shader, kit.ts personMaterial). Cuts (a tank, a V-neck, long sleeves, tights, sock lengths) are
-// garment meshes built per body; drawn by repainting the modelled suit (skin on a sleeve, cloth on an arm) they read as body
-// paint, and the owner turned that down (6 Nov). Until those meshes exist a chosen cut draws the body as modelled.
+// M5 phase C step 3: what a player chooses for their suit. Colours, patterns, shoes and the overgrip are paint (the person's
+// shader, kit.ts personMaterial). Cuts (a tank, a V-neck, long sleeves, tights, sock lengths) are garments built per body
+// (tools/assets/mpfb/person_wear.py), the ones worn drawn (`piecesFor`, asset.ts dressedIndex): repainting the modelled suit
+// instead (skin on a sleeve, cloth on an arm) read as body paint, and the owner turned that down (6 Nov). A person without a
+// wardrobe (a MetaHuman) is drawn in their modelled cut whatever is chosen.
 import * as THREE from 'three/webgpu';
 import { abs, attribute, float, fract, min, mix, select, smoothstep, varying, vec2, vec4 } from 'three/tsl';
 import { footprintKeep } from '../bump.ts';
-import type { PlayerAsset } from './asset.ts';
+import type { KitCut, PlayerAsset, Wardrobe } from './asset.ts';
 
 export type PaintTop = 'tee' | 'tank' | 'vneck' | 'raglan' | 'long' | 'sleeveless';
 export type PaintPattern = 'plain' | 'panels' | 'band' | 'hoops' | 'pinstripe' | 'split' | 'dots' | 'fade' | 'chevron' | 'check';
@@ -13,7 +14,7 @@ export type PaintSocks = 'ankle' | 'crew' | 'noshow' | 'knee' | 'stripe';
 
 /** A player's choice for their suit (data/cosmetics.json `paint` items); a key left out draws it as modelled. */
 export interface Paint {
-  /** Cuts: garment meshes (not yet built: drawn as modelled). */
+  /** Cuts: garments built per body (raglan is a tee with its seam drawn, stripe a crew sock with bands). */
   top?: PaintTop;
   bottom?: 'shorts' | 'tights';
   socks?: PaintSocks;
@@ -91,3 +92,44 @@ export function patternAt(kind: PaintPattern | undefined, p: THREE.Node<'vec3'>,
   }
 }
 
+
+/** The garments a top is drawn with (a raglan is a tee). */
+const TOP_PIECES: Record<PaintTop, string> = { tee: 'tee', raglan: 'tee', tank: 'tank', vneck: 'vneck', long: 'long', sleeveless: 'sleeveless' };
+const SOCK_PIECES: Record<PaintSocks, string | null> = { crew: 'crew', stripe: 'crew', ankle: 'ankle', knee: 'knee', noshow: null };
+const TOPS = new Set(Object.values(TOP_PIECES)), SOCKS = new Set(['crew', 'ankle', 'knee']);
+
+/**
+ * The garments `paint` puts a person in (Wardrobe.pieces names), or null to draw them as modelled: no cut chosen, the ones
+ * chosen what they were modelled in, or no wardrobe. A chosen top replaces the modelled one (and a polo's collar); tights go
+ * under the shorts or skirt; 'shorts' on a body modelled in a skirt takes the skirt off; a sock length replaces the crew.
+ */
+export function piecesFor(w: Wardrobe | null, paint?: Paint): string[] | null {
+  if (!w || !paint || (!paint.top && !paint.bottom && !paint.socks)) return null;
+  let out = [...w.worn];
+  if (paint.top) out = [...out.filter((p) => !TOPS.has(p) && p !== 'collar'), TOP_PIECES[paint.top]];
+  if (paint.bottom === 'tights') out.push('tights');
+  if (paint.bottom === 'shorts') out = out.filter((p) => p !== 'skirt');
+  if (paint.socks) {
+    out = out.filter((p) => !SOCKS.has(p));
+    const s = SOCK_PIECES[paint.socks];
+    if (s) out.push(s);
+  }
+  if (out.some((p) => !w.pieces.includes(p))) return null;
+  const same = out.length === w.worn.length && out.every((p) => w.worn.includes(p));
+  return same ? null : out;
+}
+
+/** The cut the shader draws for (`KitCut`): the modelled one with the chosen top, seam and bottom in it. */
+export function cutFor(asset: PlayerAsset, paint?: Paint): KitCut {
+  const kit = asset.look!.kit;
+  const w = asset.look!.wardrobe;
+  if (!w || !piecesFor(w, paint)) return kit;
+  const out: KitCut = { ...kit };
+  if (paint!.top) {
+    out.top = paint!.top === 'raglan' ? 'tee' : paint!.top;
+    if (paint!.top === 'raglan') out.seam = 'raglan';
+    else delete out.seam;
+  }
+  if (paint!.bottom === 'shorts') out.bottom = 'shorts';
+  return out;
+}

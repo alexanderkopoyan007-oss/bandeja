@@ -131,8 +131,9 @@ def cut_tank(suit, body, rig, women, shirt_polys):
     arm = rig.data.bones[P + 'LeftArm'].head_local
     x0, z0 = abs(arm.x), arm.z
     shirt_f = [f for f, s in zip(bm.faces, shirt_polys) if s]
-    shirt_v = list({v for f in shirt_f for v in f.verts})
-    shirt_e = list({e for f in shirt_f for e in f.edges})
+    # (in the faces' order: a set of mesh elements runs in memory order, and the cut came out different on each build)
+    shirt_v = list(dict.fromkeys(v for f in shirt_f for v in f.verts))
+    shirt_e = list(dict.fromkeys(e for f in shirt_f for e in f.edges))
     planes = []
     for side in (1, -1):
         a = Vector((side * (x0 - 0.035), 0, z0 + 0.07))
@@ -146,8 +147,8 @@ def cut_tank(suit, body, rig, women, shirt_polys):
         bmesh.ops.bisect_plane(bm, geom=geom, plane_co=a, plane_no=no, clear_outer=True)
         bm.faces.ensure_lookup_table()
         shirt_f = [f for f in bm.faces if f.is_valid and min(v.co.z for v in f.verts) > arm.z - 0.6]
-        shirt_v = list({v for f in shirt_f for v in f.verts})
-        shirt_e = list({e for f in shirt_f for e in f.edges})
+        shirt_v = list(dict.fromkeys(v for f in shirt_f for v in f.verts))
+        shirt_e = list(dict.fromkeys(e for f in shirt_f for e in f.edges))
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
     bm.to_mesh(suit.data)
     bm.free()
@@ -168,14 +169,14 @@ def cut_tank(suit, body, rig, women, shirt_polys):
     return planes
 
 
-def hug_armholes(suit, body, planes, women, reach=0.04, lift=0.002):
+def hug_armholes(suit, body, planes, women, reach=0.04, lift=0.002, floor=None):
     """
     A tank's armhole lies on the skin. The tee it is cut from stands off the shoulder, by up to 2 cm in front of the arm, and
     the torso is hollow under the shirt: all round each armhole there was a gap to look through, in at one armhole and out of
     the other, or of the neck (round 8). Each vertex of the edge goes to `lift` off the skin (on it, or under it, the two cross
     in a ragged line and the occlusion bake goes black along it), staying in the cut's plane so the game's binding and
     `skinCut` still fit, and takes the nearest skin vertex's weights, so it stays there as the arm moves; the shirt eases to it
-    over `reach`.
+    over `reach`. `floor`: no lower than this (z); a sleeveless shirt's hem passes near its plane at the waist.
     """
     from mathutils.bvhtree import BVHTree
     from mathutils.kdtree import KDTree
@@ -194,7 +195,7 @@ def hug_armholes(suit, body, planes, women, reach=0.04, lift=0.002):
     for a, no in planes:
         for i in edge:
             co = me.vertices[i].co
-            if abs((co - a).dot(no)) > 0.012:
+            if abs((co - a).dot(no)) > 0.012 or floor is not None and co.z < floor:
                 continue
             p = co.copy()
             for _ in range(4):

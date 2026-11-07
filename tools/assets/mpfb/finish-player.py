@@ -29,6 +29,7 @@ from bl_ext.user_default.mpfb.services.targetservice import TargetService
 from bl_ext.user_default.mpfb.services.assetservice import AssetService
 import person_face as face
 import person_kit as kit
+import person_wear as pw
 
 P = 'mixamorig:'
 # Part codes (the game's body shader colours by them).
@@ -36,11 +37,12 @@ PART = {'skin': 0, 'shirt': 1, 'shorts': 2, 'shoe': 3, 'eye': 4, 'sock': 5, 'hai
         'teeth': 9, 'tongue': 10}
 ALPHA_PARTS = ('hair', 'brow', 'lash')
 # Atlas rectangles in pixels from the bottom left (Blender's image rows run upwards, like UV v).
-# Skin at its source's 2048 (MakeHuman's skins), hair at 2048, the rest at 1024 or 512.
+# Skin at its source's 2048 (MakeHuman's skins), hair at 2048, the rest at 1024 or 512. The ramp: a grey from black to white
+# along u, where generated cloth's baked occlusion is looked up (person_wear.py).
 OPAQUE_SIZE = (3072, 2048)
 ALPHA_SIZE = (2560, 2048)
 RECT = {'skin': (0, 0, 2048, 2048), 'clothes': (2048, 1024, 1024, 1024), 'eye': (2048, 512, 512, 512),
-        'teeth': (2560, 512, 512, 512), 'tongue': (2048, 0, 512, 512), 'skirt': (2560, 0, 512, 512),
+        'teeth': (2560, 512, 512, 512), 'tongue': (2048, 0, 512, 256), 'ramp': (2048, 256, 512, 256), 'skirt': (2560, 0, 512, 512),
         'hair': (0, 0, 2048, 2048), 'brow': (2048, 1024, 512, 512), 'lash': (2048, 512, 512, 512)}
 # The game skeleton's bone order (ybot-rest.json keys) is the output order.
 SIDES = ('Left', 'Right')
@@ -49,6 +51,8 @@ SIDES = ('Left', 'Right')
 SKIN_UP = 0.06
 HEM_FLARE = 0.004
 HEM_UP = 0.04
+# How far round skin a cut can bare the bake without the clothes blends in (m).
+REVEAL_BLEND = 0.03
 SHORTS_EASE = {False: 0.016, True: 0.014}
 SHORTS_INNER = 0.8
 FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky')
@@ -80,6 +84,8 @@ def kind_of(o, spec):
         return 'skirt'
     if n.startswith('HeadPiece') or n.startswith('Collar'):
         return 'extra'
+    if n.startswith('Wear.'):
+        return 'wear'
     for part, key in (('eye', 'eyes'), ('brow', 'eyebrows'), ('lash', 'eyelashes'), ('hair', 'hair'), ('teeth', 'teeth'),
                       ('tongue', 'tongue')):
         if spec.get(key) and n.endswith(spec[key]):
@@ -239,6 +245,8 @@ def finish(yb, spec, out, preview=False):
     outfit = spec.get('kit', {})
     women = spec['clothes'][0].startswith('female_')
     armholes = None
+    # (the shirt as MakeHuman fitted it: every other cut is made from it as this one is, person_wear.make_tops)
+    raw = pw.shirt_only(suit, women, 'Wear.raw') if suit is not None else None
     if suit is not None:
         if outfit.get('top') == 'tank':
             armholes = kit.cut_tank(suit, body, rig, women, face.shirt_polygons(suit.data, women))
@@ -285,6 +293,9 @@ def finish(yb, spec, out, preview=False):
         hair_o = next((o for o in meshes if kinds[o.name] == 'hair'), None)
         eyes = [v.co.copy() for o in meshes if kinds[o.name] == 'eye' for v in o.data.vertices]
         wear(kit.make_head_piece(body, hair_o, rig, eyes, outfit['head']))
+    shoe = next(o for o in meshes if kinds[o.name] == 'shoe')
+    crew = pw.split_crew(shoe)
+    wear(crew)
 
     # ---------- helpers and hidden skin out ----------
     # As the MASK modifiers would (a vertex survives every mask), by bmesh: applying a modifier fails on a mesh with
@@ -295,6 +306,9 @@ def finish(yb, spec, out, preview=False):
     neck = rig.data.bones[P + 'Neck'].head_local
     behind_collar = lambda c: abs(c.x - neck.x) < 0.105 and neck.z - 0.1 < c.z < neck.z + 0.03 and neck.y - 0.16 < c.y < neck.y + 0.025
     keep = np.ones(len(body.data.vertices), dtype=bool)
+    # The clothes' delete groups: the skin each garment hides outright (kept, and hidden by the game when that garment is
+    # worn: person_wear.hide_masks). The helpers' mask still takes MakeHuman's helper geometry out.
+    deleted = {}
     for m in list(body.modifiers):
         if m.type != 'MASK':
             continue
@@ -305,12 +319,14 @@ def finish(yb, spec, out, preview=False):
                 for e in v.groups:
                     if e.group == g.index and e.weight > m.threshold:
                         inside[v.index] = True
-        keep &= ~inside if m.invert_vertex_group else inside
+        gone = ~inside if not m.invert_vertex_group else inside
+        if m.vertex_group.startswith('Delete.'):
+            deleted[m.vertex_group[len('Delete.'):]] = gone[:kit.N_BODY].copy()
+        keep &= ~gone
+        print('MASK', m.name, m.vertex_group, 'skin vertices', int(gone[:kit.N_BODY].sum()), 'helpers', int(gone[kit.N_BODY:].sum()))
         body.modifiers.remove(m)
-    # (the first BODY_VERTS are the skin; after them come MakeHuman's helpers, which must stay out)
-    for v in body.data.vertices[:13380]:
-        if behind_collar(v.co):
-            keep[v.index] = True
+    # (the first BODY_VERTS are the skin, all of it kept; after them come MakeHuman's helpers, which must stay out)
+    keep[:kit.N_BODY] = True
     bm = bmesh.new()
     bm.from_mesh(body.data)
     bm.verts.ensure_lookup_table()
@@ -320,45 +336,75 @@ def finish(yb, spec, out, preview=False):
     body.data.update()
     print('MASKED', int((~keep).sum()), 'vertices out,', len(body.data.vertices), 'left')
 
-    # ---------- skin under the clothes out ----------
+    # ---------- every cut, and the skin each hides ----------
     # The masks leave skin under the sleeves and over the shoulders, and it pokes through once the arm moves. The
-    # clothes go 3 mm out along their normals; then skin that sees clothing within 3 cm straight out from it is
-    # removed, except a 2.5 cm band next to the uncovered skin: the skin just inside a hem stays, so looking into a
-    # sleeve never shows a hole in the arm.
-    from mathutils.bvhtree import BVHTree
+    # clothes go 3 mm out along their normals; then skin that sees a garment within 3 cm straight out from it is hidden by that
+    # garment, except a 2.5 cm band next to the skin that shows, so looking into a sleeve never shows a hole in the arm. The
+    # skin stays in the mesh with a mask of the garments that hide it (person_wear.hide_masks): the game draws what the worn ones
+    # leave bare.
     from mathutils.kdtree import KDTree
-    covers = [o for o in meshes if kinds[o.name] in ('suit', 'shoe')]
-    for o in covers:
+    for o in meshes:
         if kinds[o.name] == 'suit':
-            for v in o.data.vertices:
-                v.co += v.normal * 0.003
-            o.data.update()
+            pw.push(o)
     if armholes:
         kit.hug_armholes(suit, body, armholes, women)
-    dg = bpy.context.evaluated_depsgraph_get()
-    trees = [BVHTree.FromObject(o, dg, deform=False) for o in covers]
-    bm = bmesh.new()
-    bm.from_mesh(body.data)
-    bm.normal_update()
-    covered = set()
-    for v in bm.verts:
-        o0 = v.co + v.normal * 0.0005
-        if any(t.ray_cast(o0, v.normal, 0.03)[0] is not None for t in trees):
-            covered.add(v.index)
-    open_skin = [v for v in bm.verts if v.index not in covered]
-    kd = KDTree(len(open_skin))
-    for i, v in enumerate(open_skin):
-        kd.insert(v.co, i)
+    top0 = 'tank' if outfit.get('top') == 'tank' else 'tee'
+    tops = pw.make_tops(body, raw, rig, spec, women, outfit.get('top', 'tee'), suit) if suit is not None else {}
+    bpy.data.objects.remove(raw)
+    for o in tops.values():
+        wear(o)
+    socks = pw.make_socks(body, crew, shoe, rig)
+    for o in socks.values():
+        wear(o)
+    tights = pw.make_tights(body, rig, hem, shoe, crew) if hem is not None else None
+    if tights:
+        wear(tights)
+    piece_obj = {**tops, **socks, 'crew': crew, 'shoe': shoe}
+    if tights:
+        piece_obj['tights'] = tights
+    is_shirt = face.shirt_polygons(suit.data, women)
+    cover = {top0: pw.covered_by(body, suit, is_shirt), 'shorts': pw.covered_by(body, suit, [not x for x in is_shirt])}
+    for name, o in piece_obj.items():
+        cover[name] = pw.covered_by(body, o)
+    # MakeHuman's delete groups: the suit's split between its shirt and its shorts by the nearer, the shoes' between the shoe and the sock.
+    skin_co = [body.data.vertices[i].co for i in range(kit.N_BODY)]
+    mask = {}
+    sm = suit.data
+    sv_shirt = np.zeros(len(sm.vertices), dtype=bool)
+    for po, sh in zip(sm.polygons, is_shirt):
+        if sh:
+            sv_shirt[list(po.vertices)] = True
+    kd = KDTree(len(sm.vertices))
+    for v in sm.vertices:
+        kd.insert(v.co, v.index)
     kd.balance()
-    # (the thigh inside the shorts' legs stays, to SKIN_UP up: see the shorts above)
-    inside_hem = (lambda z: hem - 0.05 < z < hem + SKIN_UP) if hem is not None else (lambda z: False)
-    gone = {v.index for v in bm.verts if v.index in covered and kd.find(v.co)[2] > 0.025 and not inside_hem(v.co.z) and not behind_collar(v.co)}
-    dead = [f for f in bm.faces if all(v.index in gone for v in f.verts)]
-    bmesh.ops.delete(bm, geom=dead, context='FACES')
-    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
-    bm.to_mesh(body.data)
-    bm.free()
-    print('COVERED skin faces removed', len(dead))
+    gs = deleted.get(spec['clothes'][0], np.zeros(kit.N_BODY, dtype=bool))
+    near_shirt = np.array([sv_shirt[kd.find(c)[1]] for c in skin_co])
+    mask[top0] = gs & near_shirt
+    mask['shorts'] = gs & ~near_shirt
+    shoe_name = next((c for c in spec['clothes'] if c.startswith('shoes')), None)
+    gsh = deleted.get(shoe_name, np.zeros(kit.N_BODY, dtype=bool))
+    low = np.array([c.z < pw.shoe_top(shoe) + 0.005 for c in skin_co])
+    mask['shoe'] = gsh & low
+    mask['crew'] = gsh & ~low
+    keep_always = np.array([behind_collar(c) for c in skin_co])
+    keep_in_hem = np.array([hem is not None and hem - 0.05 < c.z < hem + SKIN_UP for c in skin_co])
+    # (the skin in a V-neck's V shows: the game cuts the V, and the skin a little way under its edge, kit.ts)
+    vfield = pw.vneck_field(rig, women)
+    keep_for = {'vneck': np.array([vfield(c) > -0.02 and c.y < neck.y - 0.01 for c in skin_co])}
+    base_others = {'top': ['shorts', 'crew', 'shoe'], 'shorts': [top0, 'crew', 'shoe'], 'tights': ['shorts', top0, 'crew', 'shoe'],
+                   'socks': [top0, 'shorts', 'shoe'], 'shoe': [top0, 'shorts']}
+    union_of = {}
+    for name in cover:
+        slot = 'top' if name in pw.TOPS else 'socks' if name in pw.SOCKS else name
+        union_of[name] = base_others[slot]
+    hide = pw.hide_masks(body, cover, mask, union_of, keep_always, keep_in_hem, keep_for)
+    body.data.attributes.new('hide', 'INT', 'POINT').data.foreach_set('value', np.concatenate([hide, np.zeros(len(body.data.vertices) - kit.N_BODY, np.uint16)]).astype(np.int32))
+    worn = ['body', 'shoe', top0, 'shorts', 'crew'] + (['collar'] if outfit.get('top') == 'polo' else []) + (['skirt'] if skirt_style else [])
+    base_bits = 0
+    for name in worn:
+        base_bits |= 1 << pw.PIECES.index(name)
+    print('COVERED skin hidden as modelled', int(((hide & base_bits) != 0).sum()), 'of', kit.N_BODY, 'vertices')
 
     # ---------- the rig posed into the game skeleton's T-pose where they differ by pose ----------
     select_only(rig)
@@ -456,12 +502,50 @@ def finish(yb, spec, out, preview=False):
     for o in meshes:
         by_kind.setdefault(kinds[o.name], []).append(o)
     hidden = [o for o in meshes if kinds[o.name] in ALPHA_PARTS]
-    for o in hidden:
+    # (the cuts not worn as modelled are out of every bake but their own: each lies where the modelled one does)
+    variants = [o for o in meshes if kinds[o.name] == 'wear' and o is not crew]
+    for o in hidden + variants:
         o.hide_render = True
     face.cycles_setup()
     import time
     t0 = time.time()
     ao = {'body': face.bake_ao_image(body, RECT['skin'][2], 'ao_skin')}
+    # The skin a cut can bare (hidden as modelled, shown by another) was baked in the modelled garment's shade: it, and
+    # REVEAL_BLEND round it, take a bake without the clothes. (Without it a tank showed the tee's sleeve as a dark ring round
+    # the arm.)
+    clothes = [o for o in meshes if kinds[o.name] in ('suit', 'skirt') or o is crew or o.name.startswith('Collar')]
+    for o in clothes:
+        o.hide_render = True
+    ao_bare = face.bake_ao_image(body, RECT['skin'][2], 'ao_bare')
+    for o in clothes:
+        o.hide_render = False
+    bit = lambda n: 1 << pw.PIECES.index(n)
+    always = bit('shoe') | bit('shorts')
+    shown = ((hide & always) == 0) & np.any([(hide & bit(t)) == 0 for t in pw.TOPS], axis=0)
+    revealed = ((hide & base_bits) != 0) & shown
+    co_s = np.array([body.data.vertices[i].co[:] for i in range(kit.N_BODY)])
+    w_bare = revealed.astype(np.float32)
+    if revealed.any():
+        kr = KDTree(int(revealed.sum()))
+        for i in np.nonzero(revealed)[0]:
+            kr.insert(co_s[i], int(i))
+        kr.balance()
+        for i in np.nonzero(~revealed)[0]:
+            w_bare[i] = max(0.0, 1 - kr.find(co_s[i])[2] / REVEAL_BLEND)
+    me_b = body.data
+    me_b.calc_loop_triangles()
+    uvb = me_b.uv_layers.active.data
+    tri_uv = np.array([[tuple(uvb[li].uv) for li in t.loops] for t in me_b.loop_triangles if max(t.vertices) < kit.N_BODY])
+    tri_w = np.array([[w_bare[vi] for vi in t.vertices] for t in me_b.loop_triangles if max(t.vertices) < kit.N_BODY])
+    m_bare, _ = pw.rasterize(RECT['skin'][2], tri_uv, tri_w)
+    m_bare = face.blur(m_bare, 2)
+    ao['body'] = ao['body'] * (1 - m_bare) + ao_bare * m_bare
+    # Skin nothing ever bares (under the shorts, inside the shoes) is one flat shade: its bake's noise only cost the atlas's size.
+    tri_n = np.array([[0.0 if shown[vi] else 1.0 for vi in t.vertices] for t in me_b.loop_triangles if max(t.vertices) < kit.N_BODY])
+    m_never, _ = pw.rasterize(RECT['skin'][2], tri_uv, tri_n)
+    never = face.blur((m_never > 0.999).astype(np.float32), 1) > 0.999
+    ao['body'][never] = 0.5
+    print('AO skin a cut can bare:', int(revealed.sum()), 'vertices,', round(float((m_bare > 0.5).mean()) * 100, 1), '% of the skin atlas from the bare bake')
     # Teeth and tongue with the mouth open: closed, the lips hide them completely and they would bake black.
     face.set_keys(meshes, {'jawOpen': 1.0, 'grimace': 0.7})
     for kd in ('teeth', 'tongue'):
@@ -472,8 +556,29 @@ def finish(yb, spec, out, preview=False):
     for kd in ('eye', 'shoe'):
         for o in by_kind.get(kd, []):
             vao[o.name] = face.bake_ao_vertices(o)
-    for o in hidden:
+    vao[crew.name] = face.bake_ao_vertices(crew)
+    for o in variants:
+        name = o.name[len('Wear.'):]
+        off = [suit] if name in pw.TOPS else [crew] if name in pw.SOCKS else []
+        for x in off:
+            x.hide_render = True
         o.hide_render = False
+        vao[o.name] = face.bake_ao_vertices(o)
+        o.hide_render = True
+        for x in off:
+            x.hide_render = False
+    for o in hidden + variants:
+        o.hide_render = False
+    # Generated cloth's occlusion into its UVs: a place along the ramp (person_wear.py).
+    for o in variants:
+        uvl = o.data.uv_layers.active
+        if uvl is None:
+            continue
+        a = vao[o.name]
+        for po in o.data.polygons:
+            for li, vi in zip(po.loop_indices, po.vertices):
+                if uvl.data[li].uv.x >= 2:
+                    uvl.data[li].uv.x = 2 + 0.02 + 0.96 * float(a[vi])
     for o in by_kind.get('hair', []):
         vao[o.name] = face.hair_depth_ao(o, body)
     for o in by_kind.get('extra', []):
@@ -545,7 +650,8 @@ def finish(yb, spec, out, preview=False):
             paste(opaque, img, RECT['eye'])[:, :, 3] = 1
         elif kd in ('teeth', 'tongue'):
             r = paste(opaque, img_of(o), RECT[kd])
-            r[:, :, 3] = ao.get(kd, 1)
+            a = ao.get(kd)
+            r[:, :, 3] = 1 if a is None else (a if a.shape == r.shape[:2] else face.resize(a[:, :, None], r.shape[1], r.shape[0])[:, :, 0])
         elif kd == 'skirt':
             paste(opaque, kit.skirt_ao(RECT['skirt'][2], skirt_style == 'pleated'), RECT['skirt'])
         elif kd in ALPHA_PARTS:
@@ -553,6 +659,10 @@ def finish(yb, spec, out, preview=False):
             if kd == 'hair' and spec.get('hair_tone'):
                 # (the same hairstyle in another person's colour)
                 r[:, :, :3] = r[:, :, :3] * np.array(spec['hair_tone'], dtype=np.float32)
+
+    x0r, y0r, wr, hr = RECT['ramp']
+    opaque[y0r:y0r + hr, x0r:x0r + wr, :3] = np.linspace(0, 1, wr, dtype=np.float32)[None, :, None]
+    opaque[y0r:y0r + hr, x0r:x0r + wr, 3] = 1
 
     # ---------- the suit's sculpted folds (one file for everybody in that suit) ----------
     suit_name = spec['clothes'][0]
@@ -618,7 +728,8 @@ def finish(yb, spec, out, preview=False):
         return ((x0 + min(max(u, 0), 1) * w) / size[0], (y0 + min(max(v, 0), 1) * h) / size[1])
 
     def fresh():
-        return {'pos': [], 'nrm': [], 'uv': [], 'si': [], 'sw': [], 'part': [], 'index': [], 'ao': [], 'mask': [], 'morph': []}
+        return {'pos': [], 'nrm': [], 'uv': [], 'si': [], 'sw': [], 'part': [], 'index': [], 'ao': [], 'mask': [], 'morph': [],
+                'piece': [], 'tpiece': [], 'hide': []}
     buffers = {'opaque': fresh(), 'alpha': fresh()}
     zero6 = [0.0] * 6
     for o in meshes:
@@ -636,11 +747,24 @@ def finish(yb, spec, out, preview=False):
         hang = me.attributes['hang'].data if kd == 'skirt' else None
         va = vao.get(o.name)
         top_piece = face.highest_piece(me) if kd == 'suit' and spec['clothes'][0].startswith('female_') else None
+        wname = o.name[len('Wear.'):] if kd == 'wear' else None
         for tri in me.loop_triangles:
             u0, v0 = 0, 0
             for li in tri.loops:
                 u0 += uvl[li].uv.x / 3
                 v0 += uvl[li].uv.y / 3
+            # Which garment the triangle is (person_wear.PIECES; the game draws the ones worn).
+            if kd == 'suit':
+                tp = top0 if (tri.vertices[0] in top_piece if top_piece else v0 > 0.57) else 'shorts'
+            elif kd == 'wear':
+                tp = wname
+            elif kd in ('shoe', 'skirt'):
+                tp = kd
+            elif kd == 'extra':
+                tp = 'collar' if o.name.startswith('Collar') else 'body'
+            else:
+                tp = 'body'
+            B['tpiece'].append(pw.PIECES.index(tp))
             for li, vi in zip(tri.loops, tri.vertices):
                 u, v = uvl[li].uv
                 key = (vi, round(u, 5), round(v, 5))
@@ -658,6 +782,14 @@ def finish(yb, spec, out, preview=False):
                         part, uv = 'shorts', uv_to(RECT['skirt'], OPAQUE_SIZE, u, v)
                     elif kd == 'extra':
                         part, uv = 'sock', (0.0, 0.0)
+                    elif kd == 'wear':
+                        part = 'shirt' if wname in pw.TOPS else 'shorts' if wname == 'tights' else 'sock'
+                        if u >= 2:
+                            uv = uv_to(RECT['ramp'], OPAQUE_SIZE, u - 2, v - 2)
+                        elif part == 'shirt':
+                            uv = uv_to(RECT['clothes'], OPAQUE_SIZE, u, v)
+                        else:
+                            uv = (0.0, 0.0)
                     elif kd == 'shoe':
                         part, uv = ('sock' if co.z > sock_from else 'shoe'), (0.0, 0.0)
                     elif kd in ('eye', 'teeth', 'tongue'):
@@ -679,6 +811,8 @@ def finish(yb, spec, out, preview=False):
                     B['si'] += si
                     B['sw'] += sw
                     B['part'].append(PART[part])
+                    B['piece'].append(pw.PIECES.index(tp))
+                    B['hide'].append(int(hide[vi]) if kd == 'body' and vi < kit.N_BODY else 0)
                     B['ao'].append(float(va[vi]) if va is not None else 1.0)
                     B['mask'] += [mk[k][vi].value for k in range(4)] if mk else [hang[vi].value if hang else 0.0, 0.0, 0.0, 0.0]
                     for name in face.MORPHS:
@@ -703,12 +837,13 @@ def finish(yb, spec, out, preview=False):
               'move': [game_m(move[n]) for n in bone_names],
               'textures': {'opaque': 'opaque.webp', 'alpha': 'alpha.webp', 'cloth': cloth_file}, 'parts': PART, 'morphs': face.MORPHS,
               'kit': outfit,
+              'wardrobe': {'pieces': list(pw.PIECES), 'worn': worn, 'vneck': [pw.VNECK_DROP[women], pw.VNECK_SLOPE]},
               'meshes': {}}
     for kind, B in buffers.items():
         ent = {'vertices': len(B['part']), 'indices': len(B['index'])}
         for key, fmt in (('pos', 'f'), ('nrm', 'f'), ('uv', 'f'), ('si', 'B'), ('sw', 'f'), ('part', 'B'), ('index', 'I'),
-                         ('ao', 'f'), ('mask', 'f'), ('morph', 'f')):
-            data = np.asarray(B[key], dtype={'f': '<f4', 'B': 'u1', 'I': '<u4'}[fmt]).tobytes()
+                         ('ao', 'f'), ('mask', 'f'), ('morph', 'f'), ('piece', 'B'), ('tpiece', 'B'), ('hide', 'H')):
+            data = np.asarray(B[key], dtype={'f': '<f4', 'B': 'u1', 'I': '<u4', 'H': '<u2'}[fmt]).tobytes()
             ent[key] = [len(blob), len(data)]
             blob += data
             blob += b'\0' * ((4 - len(blob) % 4) % 4)
@@ -716,6 +851,9 @@ def finish(yb, spec, out, preview=False):
     open(os.path.join(out, 'body.bin'), 'wb').write(bytes(blob))
     json.dump(header, open(os.path.join(out, 'body.json'), 'w'))
     print('WROTE', out, len(blob) // 1024, 'KB')
+    if os.environ.get('BANDEJA_FINISHED_BLEND'):
+        # (the finished person, posed in the T-pose, to look at: tools/assets/mpfb/wear-sheet.py)
+        bpy.ops.wm.save_as_mainfile(filepath=os.environ['BANDEJA_FINISHED_BLEND'])
 
 
     if preview:

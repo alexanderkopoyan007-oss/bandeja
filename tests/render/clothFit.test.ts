@@ -2,9 +2,9 @@
 // hem) and an overhead (the arm over the head, the sleeve and the shoulder dragged up).
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three/webgpu';
-import { mannequinWithPeople } from './people.ts';
+import { drawnTriangles, mannequinWithPeople } from './people.ts';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
-import type { PlayerAsset } from '../../src/render/avatar/asset.ts';
+import { modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 import { personCut } from '../../src/render/avatar/kit.ts';
 
 type Pts = [number, number][];
@@ -41,20 +41,21 @@ function onArm(p: PlayerAsset): Uint8Array {
 /** The shirt's girth at the chest, the waist and just over its hem, and round one leg of the shorts over their hem (m). */
 function measures(p: PlayerAsset): { chest: number; waist: number; hem: number; thigh: number } {
   const r = p.geometry.getAttribute('position').array as Float32Array, A = p.geometry.getAttribute('bodyA').array as Float32Array, X = p.geometry.getAttribute('bodyX').array as Float32Array;
-  const arm = onArm(p), n = r.length / 3;
+  const arm = onArm(p), n = r.length / 3, mine = modelledVertices(p);
   let hem = Infinity, legHem = Infinity;
   for (let i = 0; i < n; i++) {
+    if (!mine[i]) continue;
     if (A[i * 4]! > 0.5) hem = Math.min(hem, r[i * 3 + 1]!);
     if (A[i * 4 + 1]! > 0.5 && X[i * 4]! === 0) legHem = Math.min(legHem, r[i * 3 + 1]!);
   }
   const armY = new THREE.Vector3().setFromMatrixPosition(p.restWorld[p.bone('LeftArm')]!).y;
   const at = (y: number): number => {
     const pts: Pts = [];
-    for (let i = 0; i < n; i++) if (A[i * 4]! > 0.5 && !arm[i] && Math.abs(r[i * 3 + 1]! - y) < 0.015) pts.push([r[i * 3]!, r[i * 3 + 2]!]);
+    for (let i = 0; i < n; i++) if (mine[i] && A[i * 4]! > 0.5 && !arm[i] && Math.abs(r[i * 3 + 1]! - y) < 0.015) pts.push([r[i * 3]!, r[i * 3 + 2]!]);
     return pts.length > 3 ? girth(pts) : 0;
   };
   const leg: Pts = [];
-  for (let i = 0; i < n; i++) if (A[i * 4 + 1]! > 0.5 && X[i * 4]! === 0 && r[i * 3]! > 0 && r[i * 3 + 1]! < legHem + 0.03) leg.push([r[i * 3]!, r[i * 3 + 2]!]);
+  for (let i = 0; i < n; i++) if (mine[i] && A[i * 4 + 1]! > 0.5 && X[i * 4]! === 0 && r[i * 3]! > 0 && r[i * 3 + 1]! < legHem + 0.03) leg.push([r[i * 3]!, r[i * 3 + 2]!]);
   return { chest: at(armY - 0.13), waist: at(hem + (armY - hem) * 0.33), hem: at(hem + 0.03), thigh: leg.length > 3 ? girth(leg) : 0 };
 }
 
@@ -178,10 +179,12 @@ describe('the kit on the people', () => {
     for (const p of base.people) {
       const g = p.geometry, rest = g.getAttribute('position').array as Float32Array, A = g.getAttribute('bodyA').array as Float32Array, X = g.getAttribute('bodyX').array as Float32Array;
       const n = rest.length / 3, cut = personCut(p);
-      const skin = (i: number): boolean => A[i * 4 + 2]! > 0.5, shirt = (i: number): boolean => A[i * 4]! > 0.5, shorts = (i: number): boolean => A[i * 4 + 1]! > 0.5 && X[i * 4]! === 0;
+      // (what is drawn as modelled: the skin a garment hides and the wardrobe's other cuts are in the buffers too)
+      const tris = drawnTriangles(p), drawn = new Uint8Array(n);
+      for (const v of tris) drawn[v] = 1;
+      const skin = (i: number): boolean => drawn[i] === 1 && A[i * 4 + 2]! > 0.5, shirt = (i: number): boolean => drawn[i] === 1 && A[i * 4]! > 0.5;
+      const shorts = (i: number): boolean => drawn[i] === 1 && A[i * 4 + 1]! > 0.5 && X[i * 4]! === 0;
       const open = (i: number): boolean => !cut(rest[i * 3]!, rest[i * 3 + 1]!, rest[i * 3 + 2]!, A[i * 4]!, A[i * 4 + 2]!);
-      const f = p.look!.face!;
-      const tris = [...f.bodyIndex, ...Array.from(f.index, (i) => f.verts[i]!)];
       const flagSkin = hiddenBy(p, skin, (i) => (shirt(i) && open(i)) || shorts(i), tris), flagShorts = hiddenBy(p, shorts, (i) => shirt(i) && open(i), tris, 0.08);
       const worst = { lunge: 0, over: 0, lungeSkin: 0, overSkin: 0, lungeShorts: 0, overShorts: 0 };
       const hip = new THREE.Vector3(), knee = new THREE.Vector3(), hand = new THREE.Vector3(), head = new THREE.Vector3(), v = new THREE.Vector3();

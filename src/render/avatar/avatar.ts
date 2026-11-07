@@ -10,7 +10,7 @@ import { MOD_POWER, MOD_PRECISION, SHOT_BANDEJA, SHOT_DRIVE, SHOT_DROP, SHOT_LOB
 import type { StandPlan } from '../../sim/player/positioning.ts';
 import { STRETCH_DIVE, STRETCH_JUMP } from '../../sim/contact/windows.ts';
 import { DT } from '../../sim/core/constants.ts';
-import { personMeshes, type Clip, type PlayerAsset } from './asset.ts';
+import { dressedIndex, personMeshes, type Clip, type PlayerAsset } from './asset.ts';
 import { FaceDriver, type FaceInput } from './face.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { hingeIK, IK_BEND, IK_SOFT, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
@@ -22,7 +22,7 @@ import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
 import type { Dressing, Piece } from './costume.ts';
-import type { Paint } from './paint.ts';
+import { piecesFor, type Paint } from './paint.ts';
 import MANNERS from '../../../data/manners.json' with { type: 'json' };
 import { type OverArm,
   BACKHAND, TRIUMPH, TRIUMPH_LEFT, FIST, FIST_LEFT, HIP, HIP_LEFT, BH_CHIQUITA, BH_CONTRA, BH_DROP, BH_LOB, BH_SLICE, FH_CHIQUITA, FH_CONTRA, FH_DROP, FH_LOB, FH_SLICE, FOREHAND, OVERHEAD, READY, READY_LEFT, TAP, TAP_LEFT, HUG, HUG_LEFT, KNEES, KNEES_LEFT, CARRY, CARRY_LEFT, SERVE, SERVE_ADDRESS, SERVE_ADDRESS_LEFT, SERVE_TURN_SHARE, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH,
@@ -1661,7 +1661,10 @@ export class Avatar {
     // adds attributes the face copies.
     cupPalms(asset);
     const pm = asset.look && typeof look !== 'number' ? personMeshes(asset) : null;
-    this.mesh = new THREE.SkinnedMesh(pm ? pm.body : asset.geometry, mat);
+    // (the cuts chosen, drawn from the garments built for this body: triangles of this avatar's own over the shared attributes)
+    const pieces = pm && typeof look !== 'number' ? piecesFor(asset.look!.wardrobe, paint) : null;
+    const body = pm && pieces ? ownGeometry(pm.body, new THREE.BufferAttribute(dressedIndex(asset, pieces), 1), null) : pm?.body;
+    this.mesh = new THREE.SkinnedMesh(body ?? asset.geometry, mat);
     this.mesh.add(this.bones[0]!);
     this.mesh.bind(skeleton, new THREE.Matrix4());
     this.mesh.castShadow = true;
