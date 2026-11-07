@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { mannequinWithPeople } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
 import { kitFor } from '../../src/render/avatar/kit.ts';
-import { PAINT_PATTERNS, PAINT_SOCKS, PAINT_TOPS, type Paint } from '../../src/render/avatar/paint.ts';
+import { PAINT_BOTTOMS, PAINT_PATTERNS, PAINT_SOCKS, PAINT_TOPS, type Paint } from '../../src/render/avatar/paint.ts';
 import { COSMETICS, paintOf } from '../../src/app/unlocks.ts';
 import { wearParam } from '../../src/app/options.ts';
 
@@ -13,18 +13,19 @@ const people = mannequinWithPeople().people;
 
 describe('paint', () => {
   it('turns every paint item into a choice the game knows, and the grips into colours', () => {
-    for (const c of COSMETICS.filter((x) => x.kind === 'paint')) {
+    for (const c of COSMETICS.filter((x) => x.kind === 'paint' || x.kind === 'garment')) {
       const { paint, grip } = paintOf([c.id]);
       if (c.slot === 'top') expect(PAINT_TOPS, c.id).toContain(paint.top);
       else if (c.slot === 'pattern') expect(PAINT_PATTERNS, c.id).toContain(paint.pattern);
-      else if (c.slot === 'bottom') expect(['shorts', 'tights'], c.id).toContain(paint.bottom);
+      else if (c.slot === 'bottom') expect(PAINT_BOTTOMS, c.id).toContain(paint.bottom);
       else if (c.slot === 'socks') expect(PAINT_SOCKS, c.id).toContain(paint.socks);
       else if (c.slot === 'shoes') for (const k of ['upper', 'sole', 'accent'] as const) expect(paint.shoes![k], c.id).toMatch(/^#[0-9a-f]{6}$/);
       else if (c.slot === 'grip') expect(grip, c.id).toMatch(/^#[0-9a-f]{6}$/);
       else throw new Error(`unexpected paint slot ${c.slot}`);
     }
-    // (the polo, the skirts and the dress are garments of their own: step 5)
-    expect(paintOf(['top-polo', 'bot-pleated', 'top-dress']).paint).toEqual({});
+    // (the polo, the skirts and the dress are garments built per body, chosen as the cuts are)
+    expect(paintOf(['top-polo', 'bot-pleated']).paint).toEqual({ top: 'polo', bottom: 'pleated' });
+    expect(paintOf(['top-dress']).paint).toEqual({ top: 'dress' });
   });
 
   it('reads the paint and the grip from the URL', () => {

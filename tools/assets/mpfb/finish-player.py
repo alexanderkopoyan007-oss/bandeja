@@ -245,6 +245,7 @@ def finish(yb, spec, out, preview=False):
     outfit = spec.get('kit', {})
     women = spec['clothes'][0].startswith('female_')
     armholes = None
+    under = None
     # (the shirt as MakeHuman fitted it: every other cut is made from it as this one is, person_wear.make_tops)
     raw = pw.shirt_only(suit, women, 'Wear.raw') if suit is not None else None
     if suit is not None:
@@ -270,6 +271,9 @@ def finish(yb, spec, out, preview=False):
                 for p, s in zip(sm.polygons, face.shirt_polygons(sm, women)):
                     if s:
                         top.update(p.vertices)
+                # The same shorts as they are before standing off the leg, worn instead under a skirt (person_wear.PIECES 'under'): loose,
+                # the thighs carried them out through a skirt's front in a ready stance, and the skirt sized over them hung 25 cm out.
+                under = pw.copy_of(suit, 'Wear.under', keep=lambda po: not any(i in top for i in po.vertices))
                 z0 = rig.data.bones[P + 'Hips'].head_local.z - 0.04
                 ease = SHORTS_EASE[women]
                 for v in sm.vertices:
@@ -287,8 +291,19 @@ def finish(yb, spec, out, preview=False):
     skirt_style = outfit.get('bottom') in ('pleated', 'aline') and outfit['bottom']
     if skirt_style:
         wear(kit.make_skirt(body, suit, rig, spec, women))
-    if outfit.get('top') == 'polo':
+    # The skirts and the collar not modelled: any player can choose them (person_wear.py's cuts; M5 phase C step 5). A skirt
+    # chosen instead of shorts goes over them, its hem SKIRT_BELOW under theirs; on a skirted body the other style hangs as far.
+    # They are out of every bake (`unworn`): baked under a skirt, a player in shorts had dark thighs.
+    unworn = []
+    for style in ('pleated', 'aline'):
+        if style != skirt_style and suit is not None:
+            at = outfit['skirt'] if skirt_style else (hem if hem is not None else 0.4 * want) - kit.SKIRT_BELOW
+            unworn.append(kit.make_skirt(body, suit, rig, spec, women, style, at, under=under))
+            wear(unworn[-1])
+    if outfit.get('top') == 'polo' or (outfit.get('top', 'tee') == 'tee' and suit is not None):
         wear(kit.make_collar(body, suit, rig, women))
+        if outfit.get('top') != 'polo':
+            unworn.append(meshes[-1])
     if outfit.get('head'):
         hair_o = next((o for o in meshes if kinds[o.name] == 'hair'), None)
         eyes = [v.co.copy() for o in meshes if kinds[o.name] == 'eye' for v in o.data.vertices]
@@ -343,8 +358,10 @@ def finish(yb, spec, out, preview=False):
     # skin stays in the mesh with a mask of the garments that hide it (person_wear.hide_masks): the game draws what the worn ones
     # leave bare.
     from mathutils.kdtree import KDTree
+    if under is not None:
+        wear(under)
     for o in meshes:
-        if kinds[o.name] == 'suit':
+        if kinds[o.name] == 'suit' or o is under:
             pw.push(o)
     if armholes:
         kit.hug_armholes(suit, body, armholes, women)
@@ -353,6 +370,10 @@ def finish(yb, spec, out, preview=False):
     bpy.data.objects.remove(raw)
     for o in tops.values():
         wear(o)
+    if 'tee' in tops:
+        # (a body modelled in a tank: its collar lies on the tee built for it)
+        unworn.append(kit.make_collar(body, tops['tee'], rig, women, whole=True, lift=0.0045 - pw.PUSH))
+        wear(unworn[-1])
     socks = pw.make_socks(body, crew, shoe, rig)
     for o in socks.values():
         wear(o)
@@ -362,6 +383,8 @@ def finish(yb, spec, out, preview=False):
     piece_obj = {**tops, **socks, 'crew': crew, 'shoe': shoe}
     if tights:
         piece_obj['tights'] = tights
+    if under is not None:
+        piece_obj['under'] = under
     is_shirt = face.shirt_polygons(suit.data, women)
     cover = {top0: pw.covered_by(body, suit, is_shirt), 'shorts': pw.covered_by(body, suit, [not x for x in is_shirt])}
     for name, o in piece_obj.items():
@@ -382,6 +405,8 @@ def finish(yb, spec, out, preview=False):
     near_shirt = np.array([sv_shirt[kd.find(c)[1]] for c in skin_co])
     mask[top0] = gs & near_shirt
     mask['shorts'] = gs & ~near_shirt
+    if under is not None:
+        mask['under'] = mask['shorts']
     shoe_name = next((c for c in spec['clothes'] if c.startswith('shoes')), None)
     gsh = deleted.get(shoe_name, np.zeros(kit.N_BODY, dtype=bool))
     low = np.array([c.z < pw.shoe_top(shoe) + 0.005 for c in skin_co])
@@ -392,7 +417,7 @@ def finish(yb, spec, out, preview=False):
     # (the skin in a V-neck's V shows: the game cuts the V, and the skin a little way under its edge, kit.ts)
     vfield = pw.vneck_field(rig, women)
     keep_for = {'vneck': np.array([vfield(c) > -0.02 and c.y < neck.y - 0.01 for c in skin_co])}
-    base_others = {'top': ['shorts', 'crew', 'shoe'], 'shorts': [top0, 'crew', 'shoe'], 'tights': ['shorts', top0, 'crew', 'shoe'],
+    base_others = {'top': ['shorts', 'crew', 'shoe'], 'shorts': [top0, 'crew', 'shoe'], 'under': [top0, 'crew', 'shoe'], 'tights': ['shorts', top0, 'crew', 'shoe'],
                    'socks': [top0, 'shorts', 'shoe'], 'shoe': [top0, 'shorts']}
     union_of = {}
     for name in cover:
@@ -400,7 +425,7 @@ def finish(yb, spec, out, preview=False):
         union_of[name] = base_others[slot]
     hide = pw.hide_masks(body, cover, mask, union_of, keep_always, keep_in_hem, keep_for)
     body.data.attributes.new('hide', 'INT', 'POINT').data.foreach_set('value', np.concatenate([hide, np.zeros(len(body.data.vertices) - kit.N_BODY, np.uint16)]).astype(np.int32))
-    worn = ['body', 'shoe', top0, 'shorts', 'crew'] + (['collar'] if outfit.get('top') == 'polo' else []) + (['skirt'] if skirt_style else [])
+    worn = ['body', 'shoe', top0, 'shorts', 'crew'] + (['collar'] if outfit.get('top') == 'polo' else []) + ([skirt_style] if skirt_style else [])
     base_bits = 0
     for name in worn:
         base_bits |= 1 << pw.PIECES.index(name)
@@ -504,7 +529,7 @@ def finish(yb, spec, out, preview=False):
     hidden = [o for o in meshes if kinds[o.name] in ALPHA_PARTS]
     # (the cuts not worn as modelled are out of every bake but their own: each lies where the modelled one does)
     variants = [o for o in meshes if kinds[o.name] == 'wear' and o is not crew]
-    for o in hidden + variants:
+    for o in hidden + variants + unworn:
         o.hide_render = True
     face.cycles_setup()
     import time
@@ -518,7 +543,7 @@ def finish(yb, spec, out, preview=False):
         o.hide_render = True
     ao_bare = face.bake_ao_image(body, RECT['skin'][2], 'ao_bare')
     for o in clothes:
-        o.hide_render = False
+        o.hide_render = o in unworn
     bit = lambda n: 1 << pw.PIECES.index(n)
     always = bit('shoe') | bit('shorts')
     shown = ((hide & always) == 0) & np.any([(hide & bit(t)) == 0 for t in pw.TOPS], axis=0)
@@ -559,7 +584,7 @@ def finish(yb, spec, out, preview=False):
     vao[crew.name] = face.bake_ao_vertices(crew)
     for o in variants:
         name = o.name[len('Wear.'):]
-        off = [suit] if name in pw.TOPS else [crew] if name in pw.SOCKS else []
+        off = [suit] if name in pw.TOPS or name == 'under' else [crew] if name in pw.SOCKS else []
         for x in off:
             x.hide_render = True
         o.hide_render = False
@@ -567,7 +592,7 @@ def finish(yb, spec, out, preview=False):
         o.hide_render = True
         for x in off:
             x.hide_render = False
-    for o in hidden + variants:
+    for o in hidden + variants + unworn:
         o.hide_render = False
     # Generated cloth's occlusion into its UVs: a place along the ramp (person_wear.py).
     for o in variants:
@@ -653,7 +678,8 @@ def finish(yb, spec, out, preview=False):
             a = ao.get(kd)
             r[:, :, 3] = 1 if a is None else (a if a.shape == r.shape[:2] else face.resize(a[:, :, None], r.shape[1], r.shape[0])[:, :, 0])
         elif kd == 'skirt':
-            paste(opaque, kit.skirt_ao(RECT['skirt'][2], skirt_style == 'pleated'), RECT['skirt'])
+            # (both skirts' shading, each on its band of the rectangle: person_kit.SKIRT_BANDS)
+            paste(opaque, kit.skirts_ao(RECT['skirt'][2]), RECT['skirt'])
         elif kd in ALPHA_PARTS:
             r = paste(alpha, img_of(o), RECT[kd])
             if kd == 'hair' and spec.get('hair_tone'):
@@ -758,8 +784,10 @@ def finish(yb, spec, out, preview=False):
                 tp = top0 if (tri.vertices[0] in top_piece if top_piece else v0 > 0.57) else 'shorts'
             elif kd == 'wear':
                 tp = wname
-            elif kd in ('shoe', 'skirt'):
+            elif kd == 'shoe':
                 tp = kd
+            elif kd == 'skirt':
+                tp = o.name[len('Skirt.'):]
             elif kd == 'extra':
                 tp = 'collar' if o.name.startswith('Collar') else 'body'
             else:
@@ -783,10 +811,10 @@ def finish(yb, spec, out, preview=False):
                     elif kd == 'extra':
                         part, uv = 'sock', (0.0, 0.0)
                     elif kd == 'wear':
-                        part = 'shirt' if wname in pw.TOPS else 'shorts' if wname == 'tights' else 'sock'
+                        part = 'shirt' if wname in pw.TOPS else 'shorts' if wname in ('tights', 'under') else 'sock'
                         if u >= 2:
                             uv = uv_to(RECT['ramp'], OPAQUE_SIZE, u - 2, v - 2)
-                        elif part == 'shirt':
+                        elif part == 'shirt' or wname == 'under':
                             uv = uv_to(RECT['clothes'], OPAQUE_SIZE, u, v)
                         else:
                             uv = (0.0, 0.0)

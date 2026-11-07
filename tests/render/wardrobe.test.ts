@@ -7,12 +7,12 @@ import { mannequinWithPeople } from './people.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
 import { kitFor } from '../../src/render/avatar/kit.ts';
 import { dressedIndex, modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
-import { cutFor, piecesFor, PAINT_SOCKS, PAINT_TOPS, type Paint } from '../../src/render/avatar/paint.ts';
+import { cutFor, piecesFor, PAINT_BOTTOMS, PAINT_SOCKS, PAINT_TOPS, type Paint } from '../../src/render/avatar/paint.ts';
 import { dress } from '../../src/render/avatar/costume.ts';
 
 const base = mannequinWithPeople();
 const people = base.people;
-const CUTS = ['tee', 'tank', 'sleeveless', 'vneck', 'long', 'shorts', 'tights', 'crew', 'ankle', 'knee'];
+const CUTS = ['tee', 'tank', 'sleeveless', 'vneck', 'long', 'collar', 'shorts', 'pleated', 'aline', 'tights', 'crew', 'ankle', 'knee'];
 
 const at = (p: PlayerAsset, n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(p.restWorld[p.bone(n)]!);
 
@@ -41,11 +41,13 @@ describe('wardrobe', () => {
     for (const p of people) {
       const w = p.look!.wardrobe!, name = p.look!.name;
       expect(w, name).toBeTruthy();
-      for (const c of CUTS) expect(w.ranges[w.pieces.indexOf(c)]![1], `${name} ${c}`).toBeGreaterThan(300);
+      for (const c of CUTS) expect(w.ranges[w.pieces.indexOf(c)]![1], `${name} ${c}`).toBeGreaterThan(c === 'collar' ? 100 : 300);
       const kit = p.look!.kit;
       expect(w.worn, name).toContain(kit.top === 'tank' ? 'tank' : 'tee');
       expect(w.worn.includes('collar'), name).toBe(kit.top === 'polo');
-      expect(w.worn.includes('skirt'), name).toBe(kit.bottom === 'pleated' || kit.bottom === 'aline');
+      expect(w.worn.filter((x) => x === 'pleated' || x === 'aline'), name).toEqual(kit.bottom === 'pleated' || kit.bottom === 'aline' ? [kit.bottom] : []);
+      // (the tight shorts worn under a skirt, built where the modelled ones stand off the leg)
+      expect(w.ranges[w.pieces.indexOf('under')]![1] > 300, name).toBe(kit.bottom === 'shorts');
       expect(piecesFor(w, {}), name).toBeNull();
       // Choosing what they were modelled in changes nothing.
       expect(piecesFor(w, { top: kit.top === 'tank' ? 'tank' : 'tee', socks: 'crew' }) === null || kit.top === 'polo', name).toBe(true);
@@ -118,14 +120,31 @@ describe('wardrobe', () => {
     expect(piecesFor(w, { bottom: 'tights', socks: 'knee' })).toEqual(expect.arrayContaining(['shorts', 'tights', 'knee']));
     expect(piecesFor(w, { socks: 'noshow' })).not.toContain('crew');
     expect(piecesFor(w, { socks: 'stripe' })).toBeNull();
-    const s = people.find((x) => x.look!.kit.bottom === 'pleated')!;
-    expect(piecesFor(s.look!.wardrobe!, { bottom: 'shorts' })).not.toContain('skirt');
+    const s = people.find((x) => x.look!.kit.bottom === 'pleated')!, ws = s.look!.wardrobe!;
+    expect(piecesFor(ws, { bottom: 'shorts' })).not.toContain('pleated');
     expect(cutFor(s, { bottom: 'shorts' }).bottom).toBe('shorts');
+    // A skirt replaces the modelled one, over the shorts; a polo is a tee and the collar; a dress a tank over the A-line, coloured as the shirt.
+    expect(piecesFor(ws, { bottom: 'aline' })).toEqual(expect.arrayContaining(['shorts', 'aline']));
+    expect(piecesFor(ws, { bottom: 'aline' })).not.toContain('pleated');
+    expect(piecesFor(w, { bottom: 'pleated' })).toEqual(expect.arrayContaining(['under', 'pleated']));
+    expect(piecesFor(w, { bottom: 'pleated' })).not.toContain('shorts');
+    expect(cutFor(p, { bottom: 'pleated' }).bottom).toBe('pleated');
+    expect(piecesFor(ws, { top: 'polo' })).toEqual(expect.arrayContaining(['tee', 'collar']));
+    expect(cutFor(s, { top: 'polo' }).top).toBe('polo');
+    expect(piecesFor(w, { top: 'polo' })).toBeNull();
+    const dressed = piecesFor(w, { top: 'dress' })!;
+    expect(dressed).toEqual(expect.arrayContaining(['tank', 'aline', 'under']));
+    expect(dressed).not.toContain('tee');
+    expect(dressed).not.toContain('collar');
+    expect(piecesFor(ws, { top: 'dress', bottom: 'pleated' })).not.toContain('pleated');
+    expect(cutFor(p, { top: 'dress' })).toMatchObject({ top: 'tank', bottom: 'aline', dress: true });
+    expect(cutFor(s, { top: 'tee' }).dress).toBeUndefined();
+    expect(piecesFor(ws, { top: 'long', bottom: 'tights' })).toEqual(expect.arrayContaining(['pleated', 'tights']));
     expect(piecesFor(null, { top: 'tank' })).toBeNull();
   });
 
   it('builds every cut on everyone', () => {
-    const all: Paint[] = [...PAINT_TOPS.map((top) => ({ top })), { bottom: 'shorts' }, { bottom: 'tights' }, ...PAINT_SOCKS.map((socks) => ({ socks }))];
+    const all: Paint[] = [...PAINT_TOPS.map((top) => ({ top })), ...PAINT_BOTTOMS.map((bottom) => ({ bottom })), ...PAINT_SOCKS.map((socks) => ({ socks }))];
     for (const p of people) for (const paint of all) {
       const a = new Avatar(p, kitFor(1), paint);
       const idx = a.mesh.geometry.index!;

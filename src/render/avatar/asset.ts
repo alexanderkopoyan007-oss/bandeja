@@ -102,6 +102,8 @@ export interface KitCut {
   /** (sleeveless, vneck and long: chosen cuts, paint.ts cutFor) */
   top?: 'tee' | 'polo' | 'tank' | 'sleeveless' | 'vneck' | 'long';
   bottom?: 'shorts' | 'pleated' | 'aline';
+  /** A dress (paint.ts cutFor): a tank over the A-line skirt, the skirt in the shirt's colour. */
+  dress?: boolean;
   head?: 'band' | 'visor';
   /** Which of the kit's small marks (kit.ts). */
   mark?: number;

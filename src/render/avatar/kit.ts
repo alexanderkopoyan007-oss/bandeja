@@ -625,7 +625,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // (a skirt's swing is plain: `hemLag` goes by the vertex's normal, and a pleat's two faces share corners but not normals, so
   // it tore them apart into a fringe)
   const hung = hemLag(lag, shirtSway.add(shortsSway)).add(lag.mul(hang.mul(SKIRT_SWING)));
-  m.positionNode = cut.bottom === 'pleated' || cut.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung).mul(smoothstep(0.08, 0.4, hang))) : hung;
+  // (the thighs push all of the skirt that shows: it comes out under the shirt's hem about 0.15 down (person_kit.py SKIRT_TUCK
+  // over its length), and pushed only from 0.4 down, in a ready stance the thighs carried the shorts out through its top half)
+  const lining = step(SKIRT_OUT_V, uv().y).mul(SKIRT_LINING_IN);
+  m.positionNode = cut.bottom === 'pleated' || cut.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung, lining).mul(smoothstep(SKIRT_PUSH[0], SKIRT_PUSH[1], hang))) : hung;
 
   const hair = new PersonNodeMaterial();
   // A MetaHuman's grooms: cards whose strands run along v, over a helmet (`hasHelmet`). They take the fibre's shine and the
@@ -775,9 +778,10 @@ function bakedMaterial(asset: PlayerAsset, look: KitLook): { material: PersonNod
 /**
  * A skirt stays off the legs: each thigh, a tapered capsule from the hip to the knee where the skeleton has it this frame,
  * pushes the cloth out of itself (the weights alone leave a raised knee through the hem). The result is an offset for the
- * skinned position `at`. The bones are read where the mesh is drawn, so the capsules are the skeleton's own pose.
+ * skinned position `at`. The bones are read where the mesh is drawn, so the capsules are the skeleton's own pose. `inset`: how far
+ * inside that the cloth stops (the lining, which pushed onto the same surface as the skirt came through it in dark slivers).
  */
-function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>): THREE.Node<'vec3'> {
+function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>, inset: THREE.Node<'float'>): THREE.Node<'vec3'> {
   const ids = [asset.bone('LeftUpLeg'), asset.bone('LeftLeg'), asset.bone('RightUpLeg'), asset.bone('RightLeg')];
   const ends = ids.map(() => uniform(new THREE.Vector3()));
   ends[0]!.onObjectUpdate((f) => {
@@ -793,14 +797,15 @@ function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>)
     const t = at.sub(a).dot(ab).div(ab.dot(ab)).clamp();
     const d = at.sub(a.add(ab.mul(t)));
     const l = d.length().max(1e-4);
-    return d.mul(max(mix(float(r0), float(r1), t).add(SKIRT_CLEAR).sub(l), 0).div(l));
+    return d.mul(max(mix(float(r0), float(r1), t).add(SKIRT_CLEAR).sub(inset).sub(l), 0).div(l));
   };
   return push(ends[0]!, ends[1]!).add(push(ends[2]!, ends[3]!));
 }
 
 /**
  * The kit's detail, all in the kit's own colours: side panels and seams, a cuff, small invented marks on the chest, sleeve,
- * back and leg (never a real brand), a stripe down the shorts, a band round a skirt's hem, a polo's placket. Patterns are fixed
+ * back and leg (never a real brand), a stripe down the shorts, a band round a skirt's hem, a polo's placket, a dress's skirt in
+ * the shirt's colour. Patterns are fixed
  * to the body's modelled pose (`p`); on the arm, where that is lower than the rest pose, X.zw (the rest pose) hold them.
  * Anything finer than a pixel can show fades to its average, or it would shimmer at the TV camera's distance.
  */
@@ -899,7 +904,13 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
     // (no skirt, stripe or mark on a costume)
   } else if (cut.bottom === 'pleated' || cut.bottom === 'aline') {
     // (the outside only: on the lining or the cloth's inside, under a lifted hem, it read as a torn flap)
-    b = mix(b, shirt, smoothstep(float(SKIRT_BAND - 0.003), float(SKIRT_BAND), hang).mul(step(uv().y, SKIRT_OUT_V)).mul(float(frontFacing)));
+    const band = smoothstep(float(SKIRT_BAND - 0.003), float(SKIRT_BAND), hang).mul(step(uv().y, SKIRT_OUT_V)).mul(float(frontFacing));
+    if (cut.dress) {
+      // A dress: the skirt is the shirt's cloth and pattern (the shorts under it keep theirs; only a skirt has a hang), its hem's
+      // band in the trim. (Its top is up under the shirt's hem by then.)
+      b = mix(b, pat ? mix(shirt, trim, pat) : shirt, smoothstep(0, 0.02, hang));
+      b = mix(b, trim, band);
+    } else b = mix(b, shirt, band);
   } else {
     const stripe = smoothstep(0.0145, 0.0125, p.z.sub(legZ).abs()).mul(smoothstep(legX + 0.015, legX + 0.03, p.x.abs())).mul(float(1).sub(onRamp()));
     b = mix(b, shirt, stripe);
@@ -995,8 +1006,12 @@ const MARK_Y = 0.07;
 /** How far a skirt's hem trails as a multiple of the hems' lag; how far it stands off a thigh (m); where its hem's band starts (0-1 down the skirt). */
 const SKIRT_SWING = 1.6;
 const SKIRT_CLEAR = 0.012;
+/** Down a skirt (its hang), where the thighs' push starts and where it is whole; how far inside the skirt its lining stops (m). */
+const SKIRT_PUSH: [number, number] = [0.1, 0.2];
+const SKIRT_LINING_IN = 0.006;
 const SKIRT_BAND = 0.94;
-/** Atlas v above which a skirt's texels are its lining (person_kit.py SKIRT_V, LINING_V, in finish-player.py's RECT). */
+/** Atlas v above which a skirt's texels are its lining (person_kit.py SKIRT_BANDS and LINING_V, in finish-player.py's RECT: both
+ * skirts' outsides end by SKIRT_V, 0.23 in the atlas; the linings are at 0.2425). */
 const SKIRT_OUT_V = 0.236;
 
 /**
@@ -1118,22 +1133,40 @@ export function personFrame(asset: PlayerAsset): KitFrame {
   };
   const wrist = between(asset.bone('LeftForeArm'), asset.bone('LeftHand')), elbow = between(asset.bone('LeftArm'), asset.bone('LeftForeArm'));
   const armJ = at(asset, 'LeftArm'), legJ = at(asset, 'LeftUpLeg'), kneeJ = at(asset, 'LeftLeg');
-  // The thigh's radius at either end, from the shorts and the skin, its 90th percentile (the rest of a ring is the muscle's belly).
+  // The thigh as a skirt must clear it (thighsPush), `t` along it from the hip joint (0) to the knee's (1): the outermost point
+  // of a ring on the shorts worn under a skirt (the tight pair, 'under', where the modelled ones stand off the leg: paint.ts
+  // piecesFor) down to their hem, then the skin's 90th percentile (the rest of a ring is the muscle's belly). Both counted, the
+  // skin under the shorts (hidden, but there, and far denser) set a percentile: the capsule was the bare thigh's, and shorts
+  // off it came out through a skirt's front in a ready stance.
+  const legD = kneeJ.clone().sub(legJ), legL2 = legD.lengthSq();
+  const wd = asset.look?.wardrobe;
+  const shortsId = wd ? wd.pieces.indexOf((wd.ranges[wd.pieces.indexOf('under')]?.[1] ?? 0) > 0 ? 'under' : 'shorts') : -1;
+  const onThigh: Array<{ u: number; r: number; shorts: boolean }> = [];
+  for (let i = 0; i < n; i++) {
+    const shorts = wd ? wd.piece[i] === shortsId : A[i * 4 + 1]! > 0.5 && X[i * 4]! <= 0.01;
+    if (!(shorts || (modelled[i] && A[i * 4 + 2]! > 0.5)) || rest[i * 3]! * legJ.x <= 0) continue;
+    const x = rest[i * 3]! - legJ.x, y = rest[i * 3 + 1]! - legJ.y, z = rest[i * 3 + 2]! - legJ.z;
+    const u = (x * legD.x + y * legD.y + z * legD.z) / legL2;
+    const r = Math.hypot(x - u * legD.x, y - u * legD.y, z - u * legD.z);
+    if (r < 0.16) onThigh.push({ u, r, shorts });
+  }
+  const shortsEnd = onThigh.reduce((m, v) => (v.shorts ? Math.max(m, v.u) : m), -Infinity);
   const thighAt = (t: number): number => {
-    const d = kneeJ.clone().sub(legJ), l2 = d.lengthSq();
-    const out: number[] = [];
-    for (let i = 0; i < n; i++) {
-      const x = rest[i * 3]! - legJ.x, y = rest[i * 3 + 1]! - legJ.y, z = rest[i * 3 + 2]! - legJ.z;
-      if (!modelled[i] || (A[i * 4 + 2]! < 0.5 && A[i * 4 + 1]! < 0.5) || X[i * 4]! > 0.01 && A[i * 4 + 1]! > 0.5) continue;
-      if (rest[i * 3]! * legJ.x <= 0) continue;
-      const u = (x * d.x + y * d.y + z * d.z) / l2;
-      if (Math.abs(u - t) > 0.06) continue;
-      const r = Math.hypot(x - u * d.x, y - u * d.y, z - u * d.z);
-      if (r < 0.16) out.push(r);
-    }
-    out.sort((a, b) => a - b);
-    return out[Math.floor(out.length * 0.9)] ?? 0.08;
+    const ring = (shorts: boolean): number[] => onThigh.filter((v) => v.shorts === shorts && Math.abs(v.u - t) <= 0.06).map((v) => v.r).sort((a, b) => a - b);
+    // (the shorts' outermost: their sculpted folds stand in ridges, and past a percentile they came through in slivers)
+    const sh = ring(true);
+    if (sh.length >= 6) return sh[sh.length - 1]!;
+    const sk = ring(false);
+    return sk[Math.floor(sk.length * 0.9)] ?? 0.08;
   };
+  // (a line through the ring at 0.2 and the shorts' near their hem, so the capsule doesn't narrow inside them; never under the
+  // skin's at the knee)
+  const thighR = ((): [number, number] => {
+    const rA = thighAt(0.2), tH = Math.min(0.92, shortsEnd - 0.05);
+    if (!(tH > 0.4)) return [rA, thighAt(0.92)];
+    const k = (thighAt(tH) - rA) / (tH - 0.2);
+    return [rA - 0.2 * k, Math.max(rA + 0.8 * k, thighAt(0.92))];
+  })();
   // The shirt's outline at a height: the middle of the front's and back's extents.
   const midZ = (y0: number): number => {
     let lo = Infinity, hi = -Infinity;
@@ -1151,7 +1184,7 @@ export function personFrame(asset: PlayerAsset): KitFrame {
     floorY, footX: Math.abs(at(asset, 'LeftFoot').x), footZ: at(asset, 'LeftFoot').z,
     wrist, foreDir: wrist.clone().sub(elbow).normalize(),
     armX: Math.abs(armJ.x - chest.x), armY: armJ.y, armZ: armJ.z, legX: Math.abs(legJ.x), legZ: legJ.z,
-    backTop: Number.isFinite(backTop) ? backTop : undefined, thighR: [thighAt(0.2), thighAt(0.92)],
+    backTop: Number.isFinite(backTop) ? backTop : undefined, thighR,
   };
   PERSON_FRAMES.set(asset, frame);
   return frame;

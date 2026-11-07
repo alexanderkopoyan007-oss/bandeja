@@ -1,6 +1,7 @@
 // M5 phase C step 3: what a player chooses for their suit. Colours, patterns, shoes and the overgrip are paint (the person's
-// shader, kit.ts personMaterial). Cuts (a tank, a V-neck, long sleeves, tights, sock lengths) are garments built per body
-// (tools/assets/mpfb/person_wear.py), the ones worn drawn (`piecesFor`, asset.ts dressedIndex): repainting the modelled suit
+// shader, kit.ts personMaterial). Cuts (a tank, a V-neck, long sleeves, a polo's collar, the skirts and a dress, tights, sock
+// lengths) are garments built per body (tools/assets/mpfb/person_wear.py, person_kit.py), the ones worn drawn (`piecesFor`,
+// asset.ts dressedIndex): repainting the modelled suit
 // instead (skin on a sleeve, cloth on an arm) read as body paint, and the owner turned that down (6 Nov). A person without a
 // wardrobe (a MetaHuman) is drawn in their modelled cut whatever is chosen.
 import * as THREE from 'three/webgpu';
@@ -8,7 +9,8 @@ import { abs, atan, attribute, float, fract, max, min, mix, mx_noise_float, sele
 import { footprintKeep } from '../bump.ts';
 import type { KitCut, PlayerAsset, Wardrobe } from './asset.ts';
 
-export type PaintTop = 'tee' | 'tank' | 'vneck' | 'raglan' | 'long' | 'sleeveless';
+export type PaintTop = 'tee' | 'tank' | 'vneck' | 'raglan' | 'long' | 'sleeveless' | 'polo' | 'dress';
+export type PaintBottom = 'shorts' | 'tights' | 'pleated' | 'aline';
 export type PaintPattern = 'plain' | 'panels' | 'band' | 'hoops' | 'pinstripe' | 'split' | 'dots' | 'fade' | 'chevron' | 'check';
 export type PaintSocks = 'ankle' | 'crew' | 'noshow' | 'knee' | 'stripe';
 /** A costume's print over its suit (costumes.ts). */
@@ -16,9 +18,10 @@ export type Print = 'banana' | 'tux' | 'astro' | 'dino' | 'chef';
 
 /** A player's choice for their suit (data/cosmetics.json `paint` items); a key left out draws it as modelled. */
 export interface Paint {
-  /** Cuts: garments built per body (raglan is a tee with its seam drawn, stripe a crew sock with bands). */
+  /** Cuts: garments built per body (raglan is a tee with its seam drawn, a polo a tee with its collar, a dress a tank over the
+   * A-line skirt in the shirt's colour; stripe a crew sock with bands). Tights go under whatever is worn below. */
   top?: PaintTop;
-  bottom?: 'shorts' | 'tights';
+  bottom?: PaintBottom;
   socks?: PaintSocks;
   /** Paint: the shirt's pattern, and the shoes' upper, sole and accent (laces, heel tab, stripe; CSS hex). */
   pattern?: PaintPattern;
@@ -28,7 +31,8 @@ export interface Paint {
   print?: Print;
 }
 
-export const PAINT_TOPS: readonly PaintTop[] = ['tee', 'tank', 'vneck', 'raglan', 'long', 'sleeveless'];
+export const PAINT_TOPS: readonly PaintTop[] = ['tee', 'tank', 'vneck', 'raglan', 'long', 'sleeveless', 'polo', 'dress'];
+export const PAINT_BOTTOMS: readonly PaintBottom[] = ['shorts', 'tights', 'pleated', 'aline'];
 export const PAINT_PATTERNS: readonly PaintPattern[] = ['plain', 'panels', 'band', 'hoops', 'pinstripe', 'split', 'dots', 'fade', 'chevron', 'check'];
 export const PAINT_SOCKS: readonly PaintSocks[] = ['ankle', 'crew', 'noshow', 'knee', 'stripe'];
 
@@ -98,22 +102,40 @@ export function patternAt(kind: PaintPattern | undefined, p: THREE.Node<'vec3'>,
 }
 
 
-/** The garments a top is drawn with (a raglan is a tee). */
-const TOP_PIECES: Record<PaintTop, string> = { tee: 'tee', raglan: 'tee', tank: 'tank', vneck: 'vneck', long: 'long', sleeveless: 'sleeveless' };
+/** The garments a top is drawn with (a raglan is a tee, a polo a tee and its collar, a dress a tank and the A-line skirt). */
+const TOP_PIECES: Record<PaintTop, string[]> = {
+  tee: ['tee'], raglan: ['tee'], tank: ['tank'], vneck: ['vneck'], long: ['long'], sleeveless: ['sleeveless'], polo: ['tee', 'collar'], dress: ['tank'],
+};
 const SOCK_PIECES: Record<PaintSocks, string | null> = { crew: 'crew', stripe: 'crew', ankle: 'ankle', knee: 'knee', noshow: null };
-const TOPS = new Set(Object.values(TOP_PIECES)), SOCKS = new Set(['crew', 'ankle', 'knee']);
+const TOPS = new Set(['tee', 'tank', 'vneck', 'long', 'sleeveless', 'collar']), SOCKS = new Set(['crew', 'ankle', 'knee']);
+const SKIRTS = new Set(['pleated', 'aline']);
+
+/** The skirt `paint` puts on (null: none, the shorts alone), or undefined to leave the modelled one: a dress is over the A-line;
+ * a costume's suit is in one piece. */
+function skirtOf(paint: Paint): string | null | undefined {
+  if (paint.top === 'dress') return 'aline';
+  if (paint.print) return null;
+  if (paint.bottom === 'pleated' || paint.bottom === 'aline') return paint.bottom;
+  return paint.bottom === 'shorts' ? null : undefined;
+}
+
+/** Does the wardrobe have the garment built (every piece is named for everyone; some are only built where they are needed)? */
+const built = (w: Wardrobe, p: string): boolean => (w.ranges[w.pieces.indexOf(p)]?.[1] ?? 0) > 0;
 
 /**
  * The garments `paint` puts a person in (Wardrobe.pieces names), or null to draw them as modelled: no cut chosen, the ones
- * chosen what they were modelled in, or no wardrobe. A chosen top replaces the modelled one (and a polo's collar); tights go
- * under the shorts or skirt; 'shorts' on a body modelled in a skirt takes the skirt off; a sock length replaces the crew.
+ * chosen what they were modelled in, or no wardrobe. A chosen top replaces the modelled one and its collar; a skirt replaces the
+ * modelled one, over shorts (they stay on under it, as under the modelled skirts): the tight pair, 'under', where the modelled
+ * shorts stand off the leg; 'shorts' takes a modelled skirt off; tights go under whatever is below; a sock length replaces the crew.
  */
 export function piecesFor(w: Wardrobe | null, paint?: Paint): string[] | null {
   if (!w || !paint || (!paint.top && !paint.bottom && !paint.socks)) return null;
   let out = [...w.worn];
-  if (paint.top) out = [...out.filter((p) => !TOPS.has(p) && p !== 'collar'), TOP_PIECES[paint.top]];
+  if (paint.top) out = [...out.filter((p) => !TOPS.has(p)), ...TOP_PIECES[paint.top]];
+  const skirt = skirtOf(paint);
+  if (skirt !== undefined) out = [...out.filter((p) => !SKIRTS.has(p)), ...(skirt ? [skirt] : [])];
+  if (skirt && built(w, 'under')) out = out.map((p) => (p === 'shorts' ? 'under' : p));
   if (paint.bottom === 'tights') out.push('tights');
-  if (paint.bottom === 'shorts' || paint.print) out = out.filter((p) => p !== 'skirt');
   if (paint.socks) {
     out = out.filter((p) => !SOCKS.has(p));
     const s = SOCK_PIECES[paint.socks];
@@ -124,18 +146,22 @@ export function piecesFor(w: Wardrobe | null, paint?: Paint): string[] | null {
   return same ? null : out;
 }
 
-/** The cut the shader draws for (`KitCut`): the modelled one with the chosen top, seam and bottom in it. */
+/** The cut the shader draws for (`KitCut`): the modelled one with the chosen top, seam and bottom in it (a dress: a tank, the
+ * A-line skirt and `dress`, which colours the skirt as the shirt). */
 export function cutFor(asset: PlayerAsset, paint?: Paint): KitCut {
   const kit = asset.look!.kit;
   const w = asset.look!.wardrobe;
-  if (!w || !piecesFor(w, paint)) return kit;
+  // (a dress on a body modelled in a tank and an A-line is those pieces, but in the shirt's colour)
+  if (!w || (!piecesFor(w, paint) && paint?.top !== 'dress')) return kit;
   const out: KitCut = { ...kit };
   if (paint!.top) {
-    out.top = paint!.top === 'raglan' ? 'tee' : paint!.top;
+    out.top = paint!.top === 'raglan' ? 'tee' : paint!.top === 'dress' ? 'tank' : paint!.top;
     if (paint!.top === 'raglan') out.seam = 'raglan';
     else delete out.seam;
+    if (paint!.top === 'dress') out.dress = true;
   }
-  if (paint!.bottom === 'shorts' || paint!.print) out.bottom = 'shorts';
+  const skirt = skirtOf(paint!);
+  if (skirt !== undefined) out.bottom = (skirt ?? 'shorts') as KitCut['bottom'];
   return out;
 }
 

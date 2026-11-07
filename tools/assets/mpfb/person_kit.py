@@ -254,13 +254,20 @@ PLEATS = 34
 ALINE_COLS = 60
 LINING_V = 0.97
 SKIRT_V = 0.92
+# Every body carries both skirts (any player can choose one, M5 phase C step 5), shaded in the one rectangle: each skirt's
+# outside on a band of v (at its top, at its hem), the tops meeting in the middle where both are dark up under the shirt, so
+# a far mip level that bleeds one into the other bleeds like into like; the linings at LINING_V. (mh-player.py's MetaHumans
+# keep one skirt each, v from 0 down to SKIRT_V: skirt_mesh's and skirt_ao's defaults.)
+SKIRT_BANDS = {'pleated': (0.44, 0.0), 'aline': (0.48, SKIRT_V)}
+# A skirt chosen over shorts hangs this far under their hem (m), as the modelled ones hang over theirs (4-4.5 cm).
+SKIRT_BELOW = 0.042
 
 
-def _skirt_shape(body, rig, shirt, top, hem, flare, cols):
+def _skirt_shape(body, rig, shirt, top, hem, flare, cols, over=None):
     co = _body_co(body)
     dom = _dominant_bones(body)
     keep = np.array([not ('Arm' in d or 'Hand' in d) for d in dom])
-    return skirt_rings(co[keep], shirt, top, hem, flare, cols)
+    return skirt_rings(co[keep] if over is None else np.concatenate([co[keep], over]), shirt, top, hem, flare, cols)
 
 
 def skirt_rings(pts, shirt, top, hem, flare, cols, cx=0.0):
@@ -291,31 +298,62 @@ def skirt_rings(pts, shirt, top, hem, flare, cols, cx=0.0):
     return R, c, th, zs
 
 
-def make_skirt(body, suit, rig, spec, women):
+def _surface_points(o, polys, step=0.008, push=0.003):
+    """Points over polygons `polys` of `o` (indices, in order) no further than `step` apart, `push` out along each face: the
+    surface itself, which a mesh's own vertices are too sparse to stand for (the suit's shorts have rows of them 4-5 cm apart,
+    and a skirt measured from them went 1-1.7 cm into the cloth between)."""
+    me = o.data
+    out = []
+    for pi in polys:
+        po = me.polygons[pi]
+        vs = [np.array(me.vertices[i].co) for i in po.vertices]
+        n = np.array(po.normal) * push
+        for k in range(1, len(vs) - 1):
+            a, b, c = vs[0], vs[k], vs[k + 1]
+            m = max(2, int(math.ceil(max(np.linalg.norm(b - a), np.linalg.norm(c - b), np.linalg.norm(a - c)) / step)))
+            for i in range(m + 1):
+                for j in range(m + 1 - i):
+                    out.append(a + (b - a) * (i / m) + (c - a) * (j / m) + n)
+    return np.array(out) if out else np.zeros((0, 3))
+
+
+def make_skirt(body, suit, rig, spec, women, style=None, hem=None, under=None):
+    """A skirt, 'Skirt.<style>': the modelled one (`style` None: the kit's own, at its hem), or another a player can choose
+    (person_wear.py's cuts), at `hem`, which takes nothing off the suit. Every skirt goes over shorts (they stay on under it):
+    the suit's own, or `under`, the tight pair worn under a skirt on a body whose shorts stand off the leg. It is measured over
+    their surface as they will stand once pushed out (person_wear.PUSH): a women's shorts stand 1.5 cm off the hip at the front,
+    and a skirt sized to the body alone went into them."""
     k = spec['kit']
-    style = k['bottom']
-    hem = k['skirt']
+    modelled = style is None
+    style = style or k['bottom']
+    hem = k['skirt'] if hem is None else hem
     top_piece = _shirt_verts(suit, women)
     shirt_hem = min(suit.data.vertices[i].co.z for i in top_piece)
     top = shirt_hem + SKIRT_TUCK
     pleated = style == 'pleated'
-    # The inner shorts' top goes: the skirt covers it, and it came through the shirt's back in a bend.
-    bm = bmesh.new()
-    bm.from_mesh(suit.data)
-    limit = shirt_hem - 0.03
-    bm.verts.ensure_lookup_table()
-    dead = [f for f in bm.faces if not any(v.index in top_piece for v in f.verts) and min(v.co.z for v in f.verts) > limit]
-    bmesh.ops.delete(bm, geom=dead, context='FACES')
-    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
-    bm.to_mesh(suit.data)
-    bm.free()
-    suit.data.update()
-    top_piece = _shirt_verts(suit, women)
+    if modelled:
+        # The inner shorts' top goes: the skirt covers it, and it came through the shirt's back in a bend.
+        bm = bmesh.new()
+        bm.from_mesh(suit.data)
+        limit = shirt_hem - 0.03
+        bm.verts.ensure_lookup_table()
+        dead = [f for f in bm.faces if not any(v.index in top_piece for v in f.verts) and min(v.co.z for v in f.verts) > limit]
+        bmesh.ops.delete(bm, geom=dead, context='FACES')
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+        bm.to_mesh(suit.data)
+        bm.free()
+        suit.data.update()
+        top_piece = _shirt_verts(suit, women)
     cols = PLEATS if pleated else ALINE_COLS
-    shirt = np.array([suit.data.vertices[i].co for i in top_piece])
-    R, c, th, zs = _skirt_shape(body, rig, shirt, top, hem, 0.15 if pleated else 0.11, cols)
-    me, verts, hang, bad = skirt_mesh(R, c, th, zs, pleated, cols)
-    o = bpy.data.objects.new('Skirt', me)
+    sv = suit.data.vertices
+    shirt = np.array([sv[i].co for i in top_piece])
+    if under is not None:
+        over = _surface_points(under, range(len(under.data.polygons)))
+    else:
+        over = _surface_points(suit, [p.index for p in suit.data.polygons if not any(i in top_piece for i in p.vertices)])
+    R, c, th, zs = _skirt_shape(body, rig, shirt, top, hem, 0.15 if pleated else 0.11, cols, over)
+    me, verts, hang, bad = skirt_mesh(R, c, th, zs, pleated, cols, SKIRT_BANDS[style])
+    o = bpy.data.objects.new('Skirt.' + style, me)
     for coll in body.users_collection:
         coll.objects.link(o)
     hips_g = o.vertex_groups.new(name=P + 'Hips')
@@ -331,16 +369,18 @@ def make_skirt(body, suit, rig, spec, women):
             rg.add([i], w * (1 - s), 'REPLACE')
     m = o.modifiers.new('Armature', 'ARMATURE')
     m.object = rig
-    print('SKIRT', style, 'top', round(top, 3), 'hem', hem, 'shirt hem', round(shirt_hem, 3), 'radius at the hem', round(float(R[-1].min()), 3), '..', round(float(R[-1].max()), 3),
+    print('SKIRT', style, 'modelled' if modelled else 'chosen', 'top', round(top, 3), 'hem', round(hem, 3), 'shorts points', len(over),
+          'shirt hem', round(shirt_hem, 3), 'radius at the hem', round(float(R[-1].min()), 3), '..', round(float(R[-1].max()), 3),
           'faces', len(me.polygons), 'wrong way', bad)
     return o
 
 
-def skirt_mesh(R, c, th, zs, pleated, cols):
+def skirt_mesh(R, c, th, zs, pleated, cols, band=(0.0, SKIRT_V)):
     """The skirt from its rings (skirt_rings): knife pleats or an A-line's soft folds outside, the lining in, its UVs (u round,
-    v down to SKIRT_V; the lining at LINING_V) and 'hang' (0 at the top, 1 at the hem). Returns the mesh, its vertices, their
-    hang and how many faces wind the wrong way."""
+    v from band[0] at the top to band[1] at the hem, SKIRT_BANDS; the lining at LINING_V) and 'hang' (0 at the top, 1 at the
+    hem). Returns the mesh, its vertices, their hang and how many faces wind the wrong way."""
     nr = len(zs)
+    v_at = lambda u: band[0] + (band[1] - band[0]) * u
     verts, faces, uvs, hang, leg_w = [], [], [], [], []
 
     def add(theta, r, z, u, v, h):
@@ -361,10 +401,10 @@ def skirt_mesh(R, c, th, zs, pleated, cols):
                 sag = 0.0
                 z = zs[i] - sag
                 rq = R[i, q]
-                s0.append(add(a, R[i, p], z, p / cols, u * SKIRT_V, u))
-                s1.append(add(b, rq - d, z, (p + 0.92) / cols, u * SKIRT_V, u))
-                t0.append(add(b, rq - d, z, (p + 0.96) / cols, u * SKIRT_V, u))
-                t1.append(add(b + 0.0005, rq, z, (p + 0.99) / cols, u * SKIRT_V, u))
+                s0.append(add(a, R[i, p], z, p / cols, v_at(u), u))
+                s1.append(add(b, rq - d, z, (p + 0.92) / cols, v_at(u), u))
+                t0.append(add(b, rq - d, z, (p + 0.96) / cols, v_at(u), u))
+                t1.append(add(b + 0.0005, rq, z, (p + 0.99) / cols, v_at(u), u))
             for i in range(nr - 1):
                 faces.append((s0[i], s0[i + 1], s1[i + 1], s1[i]))
                 faces.append((t0[i], t0[i + 1], t1[i + 1], t1[i]))
@@ -375,8 +415,10 @@ def skirt_mesh(R, c, th, zs, pleated, cols):
             for j in range(cols + 1):
                 t = 2 * math.pi * j / cols
                 a = pleat(u) * 0.012
-                fold = a * (0.62 * math.sin(7 * t + 0.6) + 0.38 * math.sin(13 * t + 2.1))
-                row.append(add(t, R[i, j % cols] + fold, zs[i], j / cols, u * SKIRT_V, u))
+                # (out from the ring only, as deep as before: the ring is the least that clears what is under it, and folds
+                # either side of it went up to 7 mm into the shorts)
+                fold = a * (1 + 0.62 * math.sin(7 * t + 0.6) + 0.38 * math.sin(13 * t + 2.1))
+                row.append(add(t, R[i, j % cols] + fold, zs[i], j / cols, v_at(u), u))
             rows.append(row)
         for i in range(nr - 1):
             for j in range(cols):
@@ -416,13 +458,8 @@ def skirt_mesh(R, c, th, zs, pleated, cols):
     at.data.foreach_set('value', np.array(hang, dtype=np.float32))
     return me, verts, hang, bad
 
-def skirt_ao(size, pleated):
-    """The skirt's shading in the atlas (grey): darker up under the shirt, in each pleat's valley and on the lining."""
-    v = (np.arange(size) + 0.5) / size
-    u = (np.arange(size) + 0.5) / size
-    px = np.ones((size, size, 4), dtype=np.float32)
-    uv_u, uv_v = np.meshgrid(u, v)
-    h = np.clip(uv_v / SKIRT_V, 0, 1)
+def _skirt_shade(uv_u, h, pleated):
+    """A skirt's outside's shading at u round it and h down it (0 at the top, 1 at the hem)."""
     under = 0.55 + 0.45 * np.clip(h / 0.12, 0, 1)
     if pleated:
         t = (uv_u * PLEATS) % 1
@@ -434,11 +471,38 @@ def skirt_ao(size, pleated):
         a = uv_u * 2 * math.pi
         fold = 0.62 * np.sin(7 * a + 0.6) + 0.38 * np.sin(13 * a + 2.1)
         valley = 1 - 0.2 * np.clip((h - SKIRT_YOKE) / 0.3, 0, 1) * np.clip(-fold, 0, 1)
-    g = under * valley
-    g[uv_v > (SKIRT_V + LINING_V) / 2 - 0.02] = 0.3
+    return under * valley
+
+
+def _grey(g):
+    px = np.ones(g.shape + (4,), dtype=np.float32)
     for k in range(3):
         px[:, :, k] = g
     return px
+
+
+def skirt_ao(size, pleated):
+    """The skirt's shading in the atlas (grey): darker up under the shirt, in each pleat's valley and on the lining. One skirt, v
+    from 0 down to SKIRT_V (mh-player.py); skirts_ao for both."""
+    v = (np.arange(size) + 0.5) / size
+    u = (np.arange(size) + 0.5) / size
+    uv_u, uv_v = np.meshgrid(u, v)
+    g = _skirt_shade(uv_u, np.clip(uv_v / SKIRT_V, 0, 1), pleated)
+    g[uv_v > (SKIRT_V + LINING_V) / 2 - 0.02] = 0.3
+    return _grey(g)
+
+
+def skirts_ao(size):
+    """Both skirts' shading in the one rectangle, each on its band (SKIRT_BANDS), and the linings'."""
+    v = (np.arange(size) + 0.5) / size
+    u = (np.arange(size) + 0.5) / size
+    uv_u, uv_v = np.meshgrid(u, v)
+    g = np.full((size, size), 0.55)  # (between the bands: both tops, up under the shirt)
+    for style, (v0, v1) in SKIRT_BANDS.items():
+        h = (uv_v - v0) / (v1 - v0)
+        g = np.where((h >= 0) & (h <= 1), _skirt_shade(uv_u, np.clip(h, 0, 1), style == 'pleated'), g)
+    g[uv_v > (max(b[1] for b in SKIRT_BANDS.values()) + LINING_V) / 2 - 0.02] = 0.3
+    return _grey(g.astype(np.float32))
 
 
 def _shirt_verts(suit, women):
@@ -586,12 +650,14 @@ def make_head_piece(body, hair, rig, eye_pts, style):
 # ---------------------------------------------------------------------------------------------------------------
 # A polo's collar: a stand round the neck, open at the throat, and a leaf folded down over it, lying on the shirt, its points
 # spread at the front. It follows the neckline the game cuts (kit.ts: `drop` under the Neck joint in front, COLLAR_CURVE up the
-# sides) and covers its ribbed band.
-def make_collar(body, suit, rig, women, drop=0.075, curve=11.5):
+# sides) and covers its ribbed band. Every body has one (any player can choose a polo, M5 phase C step 5): on the suit's shirt
+# when that is a tee, or on the tee person_wear.make_tops built (`whole`: all of `suit` is the shirt), already pushed out, so
+# the leaf comes down to `lift` over it (the suit is pushed PUSH after its collar is made: 4.5 mm becomes 1.5).
+def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lift=0.0045):
     from mathutils.bvhtree import BVHTree
     skin = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices],
                                 [tuple(p.vertices) for p in body.data.polygons if max(p.vertices) < N_BODY])
-    top = _shirt_verts(suit, women)
+    top = set(range(len(suit.data.vertices))) if whole else _shirt_verts(suit, women)
     sm = suit.data
     shirt = BVHTree.FromPolygons([v.co.copy() for v in sm.vertices], [tuple(p.vertices) for p in sm.polygons if p.vertices[0] in top])
     neck = rig.data.bones[P + 'Neck'].head_local.copy()
@@ -599,14 +665,17 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5):
     open_a = math.radians(26)
     cols = 32
     verts, faces, shade = [], [], []
-    rows = {k: [] for k in range(4)}
+    # (the leaf laid on the shirt at LEAF_STEPS places down its fall: with one between the fold and the edge, its strips cut in
+    # under a shirt that curves over the shoulder, and on the women's only ragged bits of it showed)
+    LEAF_STEPS = 4
+    rows = {k: [] for k in range(2 + LEAF_STEPS)}
     down = Vector((0, 0, -1))
 
     def on_shirt(p, d):
         """`p` brought onto the shirt's outside, along the way the shirt faces there (out and up)."""
         n = (d * 0.55 + Vector((0, 0, 0.85))).normalized()
         hit = shirt.ray_cast(p + n * 0.07, -n, 0.14)
-        return hit[0] + n * 0.0045 if hit[0] is not None else p
+        return hit[0] + n * lift if hit[0] is not None else p
 
     for j in range(cols + 1):
         t = j / cols
@@ -628,26 +697,28 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5):
         reach = 0.026 + 0.014 * point
         fall = 0.03 + 0.024 * point
         leaf = on_shirt(fold + d * reach + down * fall, d)
-        mid = on_shirt(fold * 0.5 + leaf * 0.5, d) + Vector((0, 0, 0.002))
         stand = fold + down * 0.03 - d * 0.004
-        for k, (p, sh) in enumerate(((stand, 0.55), (fold, 1.0), (mid, 1.0), (leaf, 0.9))):
+        mids = [on_shirt(fold * (1 - f) + leaf * f, d) + Vector((0, 0, 0.002 * (1 - f)))
+                for f in (i / LEAF_STEPS for i in range(1, LEAF_STEPS))]
+        for k, (p, sh) in enumerate([(stand, 0.55), (fold, 1.0)] + [(m, 1.0) for m in mids] + [(leaf, 0.9)]):
             rows[k].append(len(verts))
             verts.append(tuple(p))
             shade.append(sh)
-    for k in range(3):
+    last = 1 + LEAF_STEPS
+    for k in range(last):
         for j in range(cols):
             faces.append((rows[k][j], rows[k + 1][j], rows[k + 1][j + 1], rows[k][j + 1]))
     # The leaf is a fold, so its edge has thickness underneath: a row turned back in under it.
     under = []
     for j in range(cols + 1):
-        p = Vector(verts[rows[3][j]]) + Vector((0, 0, 0.004))
-        n = Vector(verts[rows[1][j]]) - Vector(verts[rows[3][j]])
+        p = Vector(verts[rows[last][j]]) + Vector((0, 0, 0.004))
+        n = Vector(verts[rows[1][j]]) - Vector(verts[rows[last][j]])
         p = p + n.normalized() * 0.012
         under.append(len(verts))
         verts.append(tuple(p))
         shade.append(0.5)
     for j in range(cols):
-        faces.append((rows[3][j], under[j], under[j + 1], rows[3][j + 1]))
+        faces.append((rows[last][j], under[j], under[j + 1], rows[last][j + 1]))
     me = bpy.data.meshes.new('Collar')
     me.from_pydata(verts, [], faces)
     me.update()
@@ -698,7 +769,10 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5):
         for n, x in w.items():
             (o.vertex_groups.get(n) or o.vertex_groups.new(name=n)).add([i], x, 'REPLACE')
 
-    for k, wn in ((0, 0.5), (1, 0.4), (2, 0.15), (3, 0.0)):
+    # (the neck's share: half at the stand, a quarter at the fold, none on the leaf, which lies on the shirt: with a share
+    # down it, a player looking down at the ball pulled the leaf into the chest under the shirt)
+    for k in range(last + 1):
+        wn = 0.5 if k == 0 else 0.25 if k == 1 else 0.0
         for i in rows[k]:
             bind(i, wn)
     for i in under:

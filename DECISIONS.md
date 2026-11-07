@@ -3854,3 +3854,27 @@ The owner sent eight points from a still of a MetaHuman woman and asked for, in 
 
   Checked at fixed frames on the MPFB women: the stitching and the midsole ridges show.
   - **Not done:** the shoe's shape itself (MPFB shoes05, a soft slipper-like form); the laces only show from in front.
+
+## M5 phase C, step 5: the skirts, the polo and the dress for everyone (2026-11-07)
+The catalogue's four garments (`top-polo`, `top-dress`, `bot-pleated`, `bot-aline`) are worn like step 3's cuts: built for every body in Blender and drawn when chosen (`&wear=bot-pleated`, `top-dress`).
+- **Every body carries both skirts and a collar** (`person_kit.make_skirt`, `make_collar`). `person_wear.PIECES` swaps `skirt` for `pleated` and `aline` and adds `under` (below), sixteen pieces: the 16-bit hide mask is now full. A skirt hides no skin, since shorts stay on under it as under the modelled ones. The collar lies on the suit's tee, or, on a tank-modelled body, on the tee built for it. Pieces not modelled are left out of every bake: baked under a skirt, a player in shorts had dark thighs.
+- **The hem.** A skirt chosen over shorts hangs 4.2 cm under their hem (`SKIRT_BELOW`), as the modelled skirts hang 4-4.5 cm under theirs, so the shorts never show beneath it. On a skirted body the other style hangs where the modelled one does.
+- **Over the shorts, measured on their surface.** The rings were sized to the body's vertices alone. Measured against the shorts' triangles, every skirt went 1-1.7 cm into them at the front of the hip, including the modelled ones on p7, p9 and p10. The women's shorts stand 1.5 cm off the hip there, and the shorts' own vertices lie in rows 4-5 cm apart, too sparse to size a ring from. Every skirt is now sized over points 8 mm apart on the surface of the shorts it is worn over, as they stand once pushed out. The A-line's soft folds now go out from the ring only, as deep as before; folding either side of it, they went up to 7 mm into what was under it. (`mh-player.py` shares `skirt_mesh`; its MetaHuman skirts change only when rebuilt.)
+- **Tight shorts under a skirt (`under`).** The men's and p8's shorts are eased 1.4-1.6 cm off the leg so they hang like shorts. Under a skirt, in a ready stance, the thighs carried them out through its front. Every body modelled in eased shorts also gets the same shorts as they were before easing, and `piecesFor` wears those under a skirt or a dress. The chosen skirts are sized over them.
+- **The thighs push the skirt** (`kit.ts thighsPush`), three fixes found by looking at a man in the dress in a ready stance:
+  1. Each thigh's capsule is the outermost of the shorts worn under the skirt down to their hem, then the skin. It was a 90th percentile of skin and shorts together, so the denser skin under the shorts set it, and the capsule was the bare thigh's.
+  2. The push now starts where the skirt comes out under the shirt (`SKIRT_PUSH`, 0.1-0.2 down it), not 0.08-0.4.
+  3. The lining stops 6 mm inside the skirt (`SKIRT_LINING_IN`): pushed onto the same surface, it came through in dark slivers.
+  The dark patches that stay on a light skirt in a ready stance are the forearms' shadows (they move with the light): a white shirt shows the same.
+- **The collar's leaf follows the shirt.** It is laid on the shirt at five places down its fall, not three; with three, its strips cut in under a shirt curving over the shoulder. The neck's weight is now half at the stand, a quarter at the fold and none on the leaf: with a share down the leaf, a player looking down at the ball pulled it into the chest, and on the women only ragged bits showed. The modelled polos (p2, p3, p6) get the same collar.
+- **One atlas rectangle for both skirts.** No space was free, so the skirt rectangle holds both skirts' shading, each on its own band of v (`SKIRT_BANDS`: pleated from 0.44 at the top down to 0, the A-line from 0.48 down to 0.92). Their tops meet in the middle, where both are dark under the shirt, so a far mip level blurs like into like. The linings stay at 0.97, so the shader's one lining threshold (`SKIRT_OUT_V`) holds for both.
+- **The choices** (`paint.ts`):
+  - A polo is a tee and the collar, with the placket drawn.
+  - A skirt replaces the modelled one, over shorts; shorts take a modelled skirt off.
+  - A dress is a tank over the A-line with `KitCut.dress`, which draws the skirt in the shirt's colour and pattern and the hem's band in the trim. It covers the bottom slot, so a skirt chosen with it is ignored.
+  - Tights go under any of them.
+  - `unlocks.paintOf` now maps garment items as it maps paint.
+- **Checked:**
+  - Every body has every cut, `under` exactly where the shorts are eased, and every choice builds on all ten people (`tests/render/wardrobe.test.ts`).
+  - Below the shirt, no skirt goes more than 2 mm into the legs or the shorts it is worn over, and its hem is 3 cm under theirs (`tests/render/skirts.test.ts`, the nearest point on their triangles).
+  - Looked at in the game: p1 pleated; p4 A-line; p2 and p9 in the dress, front and back in a ready stance; p5 and p7 in the polo, close up.

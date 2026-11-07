@@ -7,7 +7,9 @@
 # - Tops: the suit's shirt, cut and fitted as the modelled ones are (person_face.fit_suit), so they hang alike. A tank and a
 #   sleeveless shirt are cut along a plane and their armholes laid on the skin (person_kit.hug_armholes); a V-neck is a tee
 #   whose chest lies on the skin round the V (the game cuts the V itself and draws its rib, kit.ts); long sleeves carry a
-#   tee's sleeves on down the arm in rings that close to a cuff at the wrist. The polo's collar goes with the modelled tee.
+#   tee's sleeves on down the arm in rings that close to a cuff at the wrist. A polo is a tee with the collar every body has
+#   (person_kit.make_collar); a dress, a tank over the A-line skirt in the shirt's colour (kit.ts).
+# - Skirts: both, on every body (person_kit.make_skirt), over the shorts on a body modelled in them.
 # - Tights: rings round each leg on the skin, from inside the shorts' hem into the shoe.
 # - Socks: shoes05's own crew tube; an ankle sock is it cut low with a rib at the top; a knee sock carries it on up the shin.
 # Generated cloth (the sleeves past a tee's hem, the tights) has no texels in the suit's atlas: its baked occlusion goes in its
@@ -25,8 +27,10 @@ import person_face as face
 P = 'mixamorig:'
 N_BODY = kit.N_BODY
 # Piece ids (the export's per-vertex `piece`; bit i of a skin vertex's `hide` is piece i). 'body' is always drawn (skin, eyes,
-# mouth, a modelled head piece), and so is the shoe.
-PIECES = ('body', 'shoe', 'tee', 'tank', 'sleeveless', 'vneck', 'long', 'collar', 'shorts', 'skirt', 'tights', 'crew', 'ankle', 'knee')
+# mouth, a modelled head piece), and so is the shoe. The skirts are 'pleated' and 'aline' (person_kit.make_skirt; neither hides
+# skin: shorts stay on under them). 'under' is the shorts before they were eased off the leg, worn instead under a skirt on a
+# body modelled in loose shorts (finish-player.py). Sixteen: `hide` is 16 bits, all used.
+PIECES = ('body', 'shoe', 'tee', 'tank', 'sleeveless', 'vneck', 'long', 'collar', 'shorts', 'under', 'pleated', 'aline', 'tights', 'crew', 'ankle', 'knee')
 TOPS = ('tee', 'tank', 'sleeveless', 'vneck', 'long')
 SOCKS = ('crew', 'ankle', 'knee')
 # How far out the suit stands off the skin once fitted (finish-player.py pushes the suit the same).
