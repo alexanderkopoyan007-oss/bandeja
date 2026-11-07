@@ -380,6 +380,26 @@ def refine_maps(arr, maps, ref, centres, where, rounds=4):
     return list(zip(a.tolist(), b.tolist())), e, kinds, keep, stats
 
 
+def locate(t, maps, centres, guess):
+    """Where a pop was made and when (reference clock), from its arrivals at four or more phones (t: each phone's own
+    clock, NaN where unheard): least squares, sound at SOUND. Phones on tripods at one height can't tell a source from its
+    mirror image above that height, so the search starts low (a bounce, a stroke) and the height is the weak part; across
+    the court it is good to centimetres. None with fewer than four phones."""
+    from scipy.optimize import least_squares
+    ok = np.isfinite(t)
+    if ok.sum() < 4:
+        return None, None
+    a = np.array([m[0] for m in maps])[ok]
+    b = np.array([m[1] for m in maps])[ok]
+    c, y = centres[ok], t[ok]
+    e0 = float(np.min((y - b) / a)) - 0.01
+
+    def f(p):
+        return (a * (p[3] + np.linalg.norm(c - p[:3], axis=1) / SOUND) + b - y) * 1000
+    r = least_squares(f, np.r_[guess, e0])
+    return r.x[:3], float(r.x[3])
+
+
 def refine(rec, toml):
     import cv2
     from aniposelib.cameras import CameraGroup
@@ -427,8 +447,12 @@ def refine(rec, toml):
     S.update({'stage': 'refined', 'T0': T0n, 'frames': N, 'refine': stats})
     Z.update({'src': src, 'lag': lag})
     S['pops'] = timeline_pops(S, Z, maps, ref, T0n, kinds, e)
-    for p, k in zip(S['pops'], keep):
+    low = np.r_[np.mean(centres, axis=0)[0], np.mean(centres, axis=0)[1] - 1.0, np.mean(centres, axis=0)[2]]
+    for i, (p, k) in enumerate(zip(S['pops'], keep)):
         p['used'] = bool(k)
+        at, _ = locate(Z['arrivals'][i], maps, centres, low)
+        if at is not None:
+            p['at'] = [round(float(v), 3) for v in at]  # m, the calibration's space (camera 1's; height weak)
     save(rec, S, Z)
     print('REFINE', stats, '| clocks moved ms', dict(zip([c['name'] for c in S['cams']], moved)),
           '| pictures after sound ms', {c['name']: round(1000 * c['av'], 2) for c in S['cams']})
@@ -534,6 +558,19 @@ def selftest_sound():
     for label, rk in (('racket and hands', (centre, rigid)), ('hands only', None)):
         new, e, kinds, keep, stats = refine_maps(arr, maps, ref, cams, lambda t: source_at(t - T0, fps, body, rk))
         print('SELFTEST refined with %s: worst clock error %.2f ms;' % (label, err(new)), stats)
+    # every pop placed on the court from its arrivals alone, against where it was made
+    truth = [(clock(ref, t + np.linalg.norm(cams[ref] - p) / SOUND), p, kind) for t, p, kind in events]
+    off = {}
+    for i in range(len(arr)):
+        tr = min(truth, key=lambda x: abs(x[0] - arr[i, ref]))
+        if abs(tr[0] - arr[i, ref]) > 0.002:
+            continue
+        at, _ = locate(arr[i], new, cams, np.r_[cams[:, 0].mean(), 0.6, cams[:, 2].mean()])
+        if at is not None:
+            off.setdefault(tr[2], []).append((np.hypot(at[0] - tr[1][0], at[2] - tr[1][2]), abs(at[1] - tr[1][1])))
+    print('SELFTEST pops placed by sound alone, across the court cm median/95th (height cm median):',
+          {k: '%.1f/%.1f (%.0f)' % (100 * np.median([x[0] for x in v]), 100 * np.percentile([x[0] for x in v], 95),
+                                    100 * np.median([x[1] for x in v])) for k, v in off.items()})
 
 
 def selftest_video():

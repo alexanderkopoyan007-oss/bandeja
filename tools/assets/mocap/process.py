@@ -6,7 +6,8 @@
 # that ran at the same time, matched by their creation times (phones keep network time to a second or so, and the
 # recordings run for minutes); the first one holds the board and calibrates every recording. Out, for recording NN:
 # <session>/rec/NN/ (FreeMoCap's folder layout: synchronized_videos, output_data; sync.json/npz, racket.npz),
-# public/assets/mocap-local/<session>-NN.json (the clip, gitignored) and the gate printed. A step whose output exists
+# public/assets/mocap-local/<session>-NN.json (the clip, gitignored) and the gate printed; at the end every recording's
+# takes labelled (takes.json) and the shot list's coverage. A step whose output exists
 # is skipped; delete it to run the step again.
 import datetime
 import json
@@ -76,6 +77,7 @@ def process(session, square, only=None, given_toml=None):
     groups, cams = recordings(session)
     print('PROCESS', len(groups), 'recordings:', [[f'{c}/{os.path.basename(f)}' for c, f in g] for g in groups])
     toml = None
+    done = []
     for n, group in enumerate(groups, 1):
         rec = os.path.join(session, 'rec', '%02d' % n)
         if only is not None and n != only and n != 1:
@@ -117,6 +119,10 @@ def process(session, square, only=None, given_toml=None):
             run([PY, '-I', os.path.join(HERE, 'retarget.py'), os.path.join(rec, 'output_data'), clip], env={'FPS': str(S['fps'])})
         run([PY, '-I', os.path.join(HERE, 'gate.py'), rec, os.path.join(session, 'rec', '01', 'calibration_check.json')])
         print('== recording', n, 'done: clip', os.path.normpath(clip))
+        done.append(rec)
+    # the takes, labelled, and how much of the shot list they fill (what's left to film)
+    if done:
+        run([PY, '-I', os.path.join(HERE, 'takes.py')] + done)
 
 
 def selftest():
