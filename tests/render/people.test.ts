@@ -238,8 +238,9 @@ describe('people', () => {
       expect(r.pops.perMinute).toBeLessThan(30);
       expect(r.clip.racketBody).toBeLessThan(0.01);
       expect(r.clip.handTorso).toBeLessThan(0.035);
-      // (seed 1: p7 10.8, p10 11.6, men about 1.5. The thighs of a narrow walk and run pass inside two wide capsules, a
-      // walk's every step; 3.6-5.6 over six seeds before the walk and the weight. Past 12 cm: 0.5% of frames.)
+      // (seed 1: p7 5.9, p9 5.5, p10 5.7, p1 4.8. The thighs of a narrow walk and run pass inside two wide capsules, a
+      // walk's every step; 3.6-5.6 over six seeds before the walk and the weight. Past 12 cm: 0.5% of frames. p7 and p10
+      // read 10.8 and 11.6 while their skirts were fitted into their thigh capsules: capsules.ts.)
       expect(r.clip.legs).toBeLessThan(0.13);
       expect(r.serve.handTorso).toBeLessThan(0.005);
       expect(r.serve.racketBody).toBeLessThan(0.015);

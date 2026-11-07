@@ -15,21 +15,52 @@ const at = (a: PlayerAsset, n: string): THREE.Vector3 => new THREE.Vector3().set
 const seg = (a: PlayerAsset, ...ns: string[]): number => { let d = 0; for (let i = 1; i < ns.length; i++) d += at(a, ns[i - 1]!).distanceTo(at(a, ns[i]!)); return d; };
 const lowest = (p: Float32Array): number => { let m = Infinity; for (let i = 1; i < p.length; i += 3) m = Math.min(m, p[i]!); return m; };
 
-/** How far the skin's edges go past what the factors allow: the share off by over 5 mm and the most (m). */
-function skinOff(a: PlayerAsset, b: PlayerAsset, p: Proportions): { share: number; worst: number } {
+/** The skirts every person carries (M5 phase C step 5): cloth that hangs, not skin. */
+const SKIRTS = ['pleated', 'aline'];
+
+/** Per vertex, 1 on a skirt (none without a wardrobe). */
+function onSkirt(a: PlayerAsset): Uint8Array {
+  const w = a.look?.wardrobe, n = a.restPos.length / 3;
+  if (!w) return new Uint8Array(n);
+  const ks = SKIRTS.map((s) => w.pieces.indexOf(s));
+  return Uint8Array.from(w.piece, (k) => (ks.includes(k) ? 1 : 0));
+}
+
+/**
+ * How far the edges go past what the factors allow: the share off by over 5 mm and the most (m), on the skin and what lies
+ * on it, and the share on the skirts. A skirt is weighted from the hips at its top to the thighs at its hem along its whole
+ * length (so it swings with the legs), and no such blend stretches evenly: the hem goes with the thigh, the middle stays
+ * nearer the hips, and a leg's factor squeezes or draws out the lower half more than itself (up to a seventh of a skirt's edges,
+ * by up to 2 cm, on all ten bodies). Cloth that hangs gathers or lengthens; it doesn't tear, and the worst is over all.
+ */
+function skinOff(a: PlayerAsset, b: PlayerAsset, p: Proportions): { share: number; worst: number; skirts: number } {
   const f = Object.values(p) as number[], hi = Math.max(1, ...f) * p.height, lo = Math.min(1, ...f) * p.height;
-  const idx = a.geometry.getIndex()!.array, A = a.restPos, Bp = b.restPos;
-  let over = 0, n = 0, worst = 0;
+  const idx = a.geometry.getIndex()!.array, A = a.restPos, Bp = b.restPos, cloth = onSkirt(a);
+  let over = 0, n = 0, worst = 0, skirtOver = 0, skirtN = 0;
   for (let i = 0; i < idx.length; i += 3) for (let e = 0; e < 3; e++) {
     const u = idx[i + e]!, v = idx[i + ((e + 1) % 3)]!;
     const la = Math.hypot(A[u * 3]! - A[v * 3]!, A[u * 3 + 1]! - A[v * 3 + 1]!, A[u * 3 + 2]! - A[v * 3 + 2]!);
     const lb = Math.hypot(Bp[u * 3]! - Bp[v * 3]!, Bp[u * 3 + 1]! - Bp[v * 3 + 1]!, Bp[u * 3 + 2]! - Bp[v * 3 + 2]!);
     const ex = Math.max(lb - hi * la, lo * la - lb, 0);
+    worst = Math.max(worst, ex);
+    if (cloth[u]) { skirtN++; if (ex > 0.005) skirtOver++; continue; }
     n++;
     if (ex > 0.005) over++;
-    worst = Math.max(worst, ex);
   }
-  return { share: over / n, worst };
+  return { share: over / n, worst, skirts: skirtN ? skirtOver / skirtN : 0 };
+}
+
+/**
+ * Each skirt's hem under the shorts worn with it (the tight pair, 'under', where the body was modelled in loose shorts), m:
+ * 3.5-4.6 cm as built, 2.9 cm at the least reshaped (short-wide).
+ */
+function hemsUnder(a: PlayerAsset): Record<string, number> {
+  const w = a.look?.wardrobe, out: Record<string, number> = {};
+  if (!w) return out;
+  const low = (k: number): number => { let m = Infinity; for (let v = 0; v < w.piece.length; v++) if (w.piece[v] === k) m = Math.min(m, a.restPos[v * 3 + 1]!); return m; };
+  const shorts = low(w.pieces.indexOf(a.look!.kit.bottom === 'shorts' ? 'under' : 'shorts'));
+  for (const s of SKIRTS) out[s] = shorts - low(w.pieces.indexOf(s));
+  return out;
 }
 
 describe('proportions', () => {
@@ -71,6 +102,9 @@ describe('proportions', () => {
       const off = skinOff(a, b, p);
       expect(off.share).toBeLessThan(0.004);
       expect(off.worst).toBeLessThan(0.04);
+      expect(off.skirts).toBeLessThan(0.2);
+      // (and a skirt still hangs below the shorts, as built: skirts.test.ts)
+      for (const [s, d] of Object.entries(hemsUnder(b))) expect(d, `${who} ${name} ${s} under the shorts`).toBeGreaterThan(0.02);
       const n = b.geometry.getAttribute('normal');
       for (let v = 0; v < n.count; v += 97) expect(Math.hypot(n.getX(v), n.getY(v), n.getZ(v))).toBeCloseTo(1, 4);
       if (a.look) expect(b.look!.height / a.look.height).toBeGreaterThan(0.5);

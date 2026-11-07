@@ -1,8 +1,14 @@
 // The body as capsules fitted to the player mesh (radius = the median distance of a segment's vertices from it), and
 // points on the racket. The animation QA measures clipping with them; the avatar keeps its racket out of its own
-// torso and head with the same capsules.
+// torso and head with the same capsules. They are the body: the skin and what the person was modelled in that lies on it
+// (modelledVertices; the other cuts in a wardrobe lie over the same body), never a skirt. A skirt hangs well off the thighs
+// and the hips, so the women modelled in one (p7, p9, p10) had thighs a centimetre and a half too fat, which read as their
+// legs overlapping in a narrow walk; and once every body carried both skirts (M5 phase C step 5), so did everyone.
 import * as THREE from 'three/webgpu';
-import type { PlayerAsset } from './asset.ts';
+import { modelledVertices, type PlayerAsset } from './asset.ts';
+
+/** Wardrobe pieces that hang off the body (person_wear.py PIECES). */
+const HANGING = ['pleated', 'aline'];
 
 export function pointSeg(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
   const ab = new THREE.Vector3().subVectors(b, a);
@@ -29,7 +35,8 @@ export function fitCapsules(asset: PlayerAsset): CapsuleDef[] {
     ['shinR', 'RightLeg', 'RightFoot', ['RightLeg']],
   ];
   const g = asset.geometry;
-  const rest = asset.restPos;
+  const rest = asset.restPos, on = modelledVertices(asset), w = asset.look?.wardrobe;
+  const hanging = new Set(w ? HANGING.map((n) => w.pieces.indexOf(n)).filter((k) => k >= 0) : []);
   const si = g.getAttribute('skinIndex');
   const sw = g.getAttribute('skinWeight');
   const at = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(asset.restWorld[asset.bone(n)]!);
@@ -40,6 +47,7 @@ export function fitCapsules(asset: PlayerAsset): CapsuleDef[] {
     const A = at(a), B = at(b);
     const d: number[] = [];
     for (let k = 0; k < rest.length / 3; k++) {
+      if (!on[k] || (w && hanging.has(w.piece[k]!))) continue;
       let best = -1, bw = -1;
       for (let j = 0; j < 4; j++) {
         const w = (sw as THREE.BufferAttribute).getComponent(k, j);

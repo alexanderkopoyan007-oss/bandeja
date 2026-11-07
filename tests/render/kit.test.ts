@@ -130,6 +130,11 @@ function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: bool
   return found;
 }
 
+/** A gap the shirt and the bottom close round that no ray through it meets anything in is a way through the waist within this
+ * of the spine (inside the hips: the way p8's waist opened on a hem that slid ran within 3 cm of the axis); farther out it is
+ * the air in front of a belly (9 cm or more off it), or beside the body under an arm where a skirt's flare closes it below. */
+const CORE = 0.08;
+
 describe('kit', () => {
   const base = mannequinWithPeople();
   const person = (n: string): (typeof base.people)[number] => base.people.find((p) => p.look!.name === n)!;
@@ -198,6 +203,22 @@ describe('kit', () => {
       const si = p.geometry.getAttribute('skinIndex').array as Uint16Array, sw = p.geometry.getAttribute('skinWeight').array as Float32Array;
       const head = p.bone('Head'), neck = p.bone('Neck'), chest = p.bone('Spine2');
       const hips = at(p, 'Hips').y;
+      // The arm's share of the shirt under a point: the most on the tee's four vertices nearest it.
+      const arms = new Set([p.bone('LeftArm'), p.bone('RightArm')]), w = p.look!.wardrobe!, tee = w.pieces.indexOf('tee');
+      const shirt: number[] = [];
+      for (let v = 0; v < w.piece.length; v++) if (w.piece[v] === tee) shirt.push(v);
+      const armUnder = (v: number): number => {
+        const near: Array<[number, number]> = [];
+        for (const u of shirt) {
+          const d = Math.hypot(r[u * 3]! - r[v * 3]!, r[u * 3 + 1]! - r[v * 3 + 1]!, r[u * 3 + 2]! - r[v * 3 + 2]!);
+          if (near.length < 4 || d < near[3]![0]) { near.push([d, u]); near.sort((a, b) => a[0] - b[0]); near.length = Math.min(near.length, 4); }
+        }
+        return Math.max(...near.map(([, u]) => {
+          let x = 0;
+          for (let k = 0; k < 4; k++) if (arms.has(si[u * 4 + k]!)) x += sw[u * 4 + k]!;
+          return x;
+        }));
+      };
       let eyeY = 0, ne = 0, band = 0;
       for (let v = 0; v < r.length / 3; v++) if (B[v * 4 + 1]! > 0.5) { eyeY += r[v * 3 + 1]!; ne++; }
       eyeY /= ne;
@@ -211,8 +232,16 @@ describe('kit', () => {
           expect(sw[v * 4]).toBeCloseTo(1, 2);
           band++;
         } else {
-          // (a collar's leaf rides on the shirt: the neck's weight and the shirt's own, on the chest and the shoulders)
-          for (let k = 0; k < 2; k++) if (sw[v * 4 + k]! > 0) expect([neck, chest, p.bone('LeftShoulder'), p.bone('RightShoulder')]).toContain(si[v * 4 + k]);
+          // (a collar's leaf rides on the shirt: the neck's weight and the shirt's own. Most of it on the neck, the chest or
+          // the shoulders; out at the leaf's tips, over the shoulder seam, the shirt is a fifth to a third arm (it lifts with
+          // the arm) and the leaf goes with it, but never more arm than the shirt under it has)
+          let most = 0, arm = 0;
+          for (let k = 0; k < 4; k++) {
+            if (sw[v * 4 + k]! > sw[v * 4 + most]!) most = k;
+            if (arms.has(si[v * 4 + k]!)) arm += sw[v * 4 + k]!;
+          }
+          expect([neck, chest, p.bone('LeftShoulder'), p.bone('RightShoulder')]).toContain(si[v * 4 + most]);
+          expect(arm, `${p.look!.name} collar vertex ${v}`).toBeLessThan(armUnder(v) + 0.05);
         }
       }
       if (p.look!.kit.head) expect(band).toBeGreaterThan(60);
@@ -267,20 +296,23 @@ describe('kit', () => {
         poses.push(pos);
       } });
       expect(poses.length).toBe(3);
-      // (in play a sleeve and the body can close round a gap between them: there only rays that meet something and aren't drawn)
+      // (in play a sleeve and the body can close round a gap between them: there only rays that meet something and aren't drawn.
+      // Standing, every gap, but for the air an arm and a skirt's flare close round, CORE or more off the spine: a long sleeve
+      // over an A-line seen from above, p9's)
+      const spine = ['Hips', 'Spine1', 'Spine2', 'Neck'].map((b) => at(p, b));
+      const way = (k: number) => (h: ReturnType<typeof holes>[number]): boolean => h.size >= 3 && (k === 0 ? !(h.waist && h.core >= CORE) : !!h.at);
       poses.forEach((pos, k) => {
-        for (const dir of ring([-15, 0, 20, 45])) expect(holes(p, pos, dir, true).filter((h) => h.size >= 3 && (k === 0 || h.at)).map((h) => [h.size, h.at])).toEqual([]);
+        for (const dir of ring([-15, 0, 20, 45])) expect(holes(p, pos, dir, true, spine).filter(way(k)).map((h) => [h.size, h.at])).toEqual([]);
       });
       // Every cut they can choose (wardrobe.test.ts), standing and in the first moment of play, level and from above.
       for (const paint of CHOSEN) poses.slice(0, 2).forEach((pos, k) => {
-        for (const dir of ring([0, 30])) expect(holes(p, pos, dir, true, undefined, paint).filter((h) => h.size >= 3 && (k === 0 || h.at)).map((h) => [h.size, h.at]), `${p.look!.name} ${JSON.stringify(paint)}`).toEqual([]);
+        for (const dir of ring([0, 30])) expect(holes(p, pos, dir, true, spine, paint).filter(way(k)).map((h) => [h.size, h.at]), `${p.look!.name} ${JSON.stringify(paint)}`).toEqual([]);
       });
     }
   }, 600_000);
 
   it('opens no way through the waist as a hem swings', () => {
     const CLOTH_MAX = 0.05; // (avatar.ts)
-    const CORE = 0.08; // (inside the hips: the way p8's waist opened on a hem that slid ran within 3 cm of the axis, the air in front of a belly 9 cm or more off it)
     const bad: string[] = [];
     for (const p of base.people) {
       const g = p.geometry, rest = g.getAttribute('position').array as Float32Array, A = g.getAttribute('bodyA').array as Float32Array;

@@ -1,8 +1,9 @@
 // The animation QA (animQa.test.ts's thresholds) on bodies the creator reshapes past anything real (data/bodies.json,
 // src/render/avatar/proportions.ts), the leg at both ends of LEG_SPAN: the racket must still meet the ball and the legs
 // must still walk. Two minutes each (one held four serves, and four pops of 6-8 degrees read as 49 a minute), men and
-// women, left-handers on the seeds marked; two files run side by side. Not p7 or the guest meshy: as modelled their thighs
-// already overlap past the threshold (9.2% and 8.0% of frames on seed 1; REVIEW.md).
+// women, left-handers on the seeds marked; two files run side by side. Not the guest meshy: as modelled its thighs already
+// overlap past the threshold (8.0% of frames on seed 1; REVIEW.md). p7's did (9.2%) while her skirt was fitted into her
+// thigh capsules, 5.9% since (capsules.ts); she has no case here yet.
 import { describe, it } from 'vitest';
 import { runAnimQa } from '../../src/render/avatar/animQa.ts';
 import { bodyNamed, reproportion } from '../../src/render/avatar/proportions.ts';

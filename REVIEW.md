@@ -960,5 +960,5 @@ Not covered by this review: sound, online, left-handers, singles, the change of 
 | # | Severity | Finding | Status |
 |---|---|---|---|
 | 1 | Low | The racket elbow's side is rate-limited (`ELBOW_SIDE_RATE`) and swings round in stop-start steps as a serve starts: 12.5 degrees a frame at the limit, a stop, then another step as the pole moves on. p8 as modelled: two pops of 20-23 degrees in two minutes; reshaped short and wide: 28-45 pops a minute of serving, all 6-8 degrees. An acceleration limit on the side's turn (as the hips' reach has, `REACH_ACC`) would make it one smooth swing. | Open (the elbow item). bodiesQa2.test.ts allows short-wide 50 serve pops a minute until it's done. |
-| 2 | Low | p7's and the guest meshy's thighs as modelled pass through each other on 9.2% and 8.0% of frames (seed 1, 60 s), over the 7% bound that the shipped guard holds only on the mannequin. | Open. Not played by bodiesQa. |
+| 2 | Low | p7's and the guest meshy's thighs as modelled pass through each other on 9.2% and 8.0% of frames (seed 1, 60 s), over the 7% bound that the shipped guard holds only on the mannequin. | p7 fixed 7 Nov (M5 C step 5): her skirt was fitted into her thigh capsules (`capsules.ts`); 5.9% since, p9 5.5%, p10 5.7%. The meshy guest is still open; neither is played by bodiesQa yet. |
 
