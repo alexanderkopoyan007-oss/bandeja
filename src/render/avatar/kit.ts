@@ -591,6 +591,14 @@ const SHOE_LACE_PITCH = 0.0135, SHOE_LACE_H = 0.0016, SHOE_EYELET_X = 0.027, SHO
 const SHOE_STITCH_Y = 0.036, SHOE_STITCH_H = 0.0003, SHOE_RIDGE = 0.005, SHOE_RIDGE_H = 0.0003, SHOE_TREAD = 0.008, SHOE_TREAD_D = 0.0012;
 const HAIR_ANISO = 0.85;
 const HAIR_ROUGH = 0.4;
+/**
+ * A strand's shine (a MetaHuman's cards): what the cuticle reflects (Marschner's R) is the surface's own, white, at keratin's
+ * index (1.55, 4.6% head on); only light that went into the strand and back out (TRT) takes the hair's colour, which dark hair
+ * absorbs and light hair adds: HAIR_TRT times the albedo on top of the white. Tinted by the hair and at 60% (about 1% head on),
+ * black hair had no highlight left and read as one black mass from behind (p9mh, 7 Nov).
+ */
+const HAIR_IOR = 1.55;
+const HAIR_TRT = 2.2;
 /** Near, the helmet's (and brows' and lashes') roughness and its highlight's share. */
 const HAIR_HELMET_ROUGH = 0.6;
 const HAIR_HELMET_SPEC = 0.35;
@@ -954,8 +962,19 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // Each strand tilts its own way across the card, so the shine comes in fine broken lines and not one band over a helmet.
   hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT).mul(float(1).sub(far)).mul(float(1).sub(fine)), float(0)), strandUv);
   hair.metalnessNode = float(0);
-  hair.specularIntensityNode = hAO.mul(mix(float(0.6), float(1), far)).mul(mix(float(1), float(HAIR_HELMET_SPEC), fine.mul(float(1).sub(far))));
-  hair.specularColorNode = mix(vec3(1, 1, 1), base.mul(2.2), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
+  const tinted = mix(vec3(1, 1, 1), base.mul(2.2), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
+  const dimmed = hAO.mul(mix(float(0.6), float(1), far)).mul(mix(float(1), float(HAIR_HELMET_SPEC), fine.mul(float(1).sub(far))));
+  if (shell) {
+    // (the cards: the fibre's white shine, gone where a card is seen edge on as the anisotropy is, or its Fresnel lit the
+    // card's edge white; the helmet, brows and lashes as before)
+    const card = onHead.mul(mix(smoothstep(0.08, 0.35, edgeOn), float(1), far));
+    hair.iorNode = mix(float(1.5), float(HAIR_IOR), onHead);
+    hair.specularColorNode = mix(tinted, vec3(1, 1, 1).add(base.mul(HAIR_TRT)), onHead);
+    hair.specularIntensityNode = mix(dimmed, hAO.mul(card), onHead);
+  } else {
+    hair.specularIntensityNode = dimmed;
+    hair.specularColorNode = tinted;
+  }
   hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);
   return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU, hang: longHair, ponyAt, pony } };

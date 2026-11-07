@@ -241,8 +241,23 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 body_arm, body = keep_lod(imp(spec['body']), spec.get('body_lod', 1))
 face_arm, face = keep_lod(imp(spec['face']), spec.get('face_lod', 2))
 outfit_arm, outfit = keep_lod(imp(spec['outfit']), spec.get('outfit_lod', 0))
+def atlas_uv_first(o):
+    """Keep only a card group's first UV layer, the atlas's, under one name for every group. Unreal names a group's UV channels
+    by what else it exports: L_Straight's Group1 at LOD1 has a single channel, its atlas UVs, called LightMapUV, where Group0's
+    is UVmap_0, and join() matches layers by name, so Group1's 13,393 vertices sat at UV (0, 0), a clear texel: from hair pass
+    1 (LOD1, 7 Nov) on, 60% of p9mh's hair drew nothing, and what was left read as one thin black mass with her nape through it."""
+    layers = o.data.uv_layers
+    while len(layers) > 1:
+        layers.remove(layers[-1])
+    layers[0].name = 'UVMap'
+    return o
+
+
 # (a groom's cards can come in groups, L_Straight's two: all of them, as one mesh)
-hair = join([imp(h)[0] for h in (spec['hair'] if isinstance(spec['hair'], list) else [spec['hair']])], 'hair')
+hair = join([atlas_uv_first(imp(h)[0]) for h in (spec['hair'] if isinstance(spec['hair'], list) else [spec['hair']])], 'hair')
+_huv = np.empty(len(hair.data.uv_layers[0].data) * 2, dtype=np.float32)
+hair.data.uv_layers[0].data.foreach_get('uv', _huv)
+say('hair cards with no UVs (loops at 0, 0):', round(float((np.abs(_huv.reshape(-1, 2)).sum(1) == 0).mean()), 4))
 brows = imp(spec['brows'])[0] if spec.get('brows') else None
 
 

@@ -59,6 +59,18 @@ describe('people', () => {
     }
   });
 
+  // A card on UV (0, 0) samples a clear texel and draws nothing: Blender's join matches UV layers by name, and L_Straight's
+  // second group of cards at LOD1 calls its only one LightMapUV, so 60% of p9mh's hair was invisible (mh-player atlas_uv_first).
+  // (Some grooms' own cards sit there: 1.9% of p4mh's, 1% of L_Straight's first group.)
+  it('puts every MetaHuman hair card on the hair atlas', () => {
+    for (const p of metaHumansHere(base)) {
+      const uv = p.look!.alphaGeometry.getAttribute('uv');
+      let none = 0;
+      for (let v = 0; v < uv.count; v++) if (uv.getX(v) === 0 && uv.getY(v) === 0) none++;
+      expect(none / uv.count, p.look!.name).toBeLessThan(0.03);
+    }
+  });
+
   it('stands at its height on the floor, arms out level as the game skeleton rests', () => {
     for (const p of base.people) {
       const r = p.restPos, A = p.geometry.getAttribute('bodyA').array as Float32Array;
