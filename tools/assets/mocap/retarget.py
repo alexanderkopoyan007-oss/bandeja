@@ -55,8 +55,58 @@ def perp(v, d):
     return w, np.linalg.norm(w, axis=-1)
 
 
-# The capture's frame to the model's: up from the trunk on average, forward from the hips' line and up.
-up_c = unit(np.nanmean(unit((P('Lsh') + P('Rsh')) / 2 - (P('Lhip') + P('Rhip')) / 2), axis=0))
+
+
+def floor_up():
+    """Up as the floor's normal, the floor from where the feet stood: every heel and toe point held still (under 0.25 m/s
+    for five frames) is on the court, and a plane through them (RANSAC, 3 cm) over a metre or more of court gives up to
+    a fraction of a degree. The calibration doesn't give it: its space is the first phone's (calibrate.py). None if the
+    feet didn't stand on enough of the court (then up from the trunk, as before the pilot: a padel ready stance leans
+    the trunk 10-20 degrees, so that's the fallback only)."""
+    pts = []
+    for k in ('Lhe', 'Rhe', 'Lto', 'Rto'):
+        x = P(k)
+        v = np.linalg.norm(x[4:] - x[:-4], axis=-1) / 4 * FPS / 1000  # m/s over four frames (mm in)
+        still = np.zeros(F, bool)
+        still[2:-2] = v < 0.25
+        pts.append(x[still & np.isfinite(x).all(1)])
+    pts = np.concatenate(pts)
+    if len(pts) < 50:
+        return None, 'too few planted feet (%d points)' % len(pts)
+    rng = np.random.default_rng(0)
+    best, n_best = None, 0
+    for _ in range(400):
+        a, b, c = pts[rng.choice(len(pts), 3, replace=False)]
+        n = np.cross(b - a, c - a)
+        if np.linalg.norm(n) < 1e-6:
+            continue
+        n = n / np.linalg.norm(n)
+        inl = np.abs((pts - a) @ n) < 30.0
+        if inl.sum() > n_best:
+            best, n_best = inl, inl.sum()
+    q = pts[best]
+    c = q.mean(0)
+    _, sv, vt = np.linalg.svd(q - c, full_matrices=False)
+    n = vt[2]
+    hip = np.nanmean((P('Lhip') + P('Rhip')) / 2, axis=0)
+    if np.dot(hip - c, n) < 0:
+        n = -n
+    spread = sv[:2] / np.sqrt(len(q)) * 2  # about the planted points' extent (two standard deviations), mm
+    if spread.min() < 800:
+        return None, 'the feet stood on too little of the court (%.0f x %.0f mm)' % tuple(spread)
+    return n, '%d planted points over %.1f x %.1f m' % (len(q), spread[0] / 1000, spread[1] / 1000)
+
+
+# The capture's frame to the model's: up from the floor (from the trunk if the feet don't give it), forward from the
+# hips' line and up.
+up_trunk = unit(np.nanmean(unit((P('Lsh') + P('Rsh')) / 2 - (P('Lhip') + P('Rhip')) / 2), axis=0))
+up_c, floor_note = floor_up()
+if up_c is None:
+    up_c = up_trunk
+    print('RETARGET up from the trunk:', floor_note)
+else:
+    print('RETARGET up from the floor:', floor_note, '| the trunk leans %.1f deg off it on average'
+          % np.degrees(np.arccos(np.clip(np.dot(up_c, up_trunk), -1, 1))))
 left_c, _ = perp(np.nanmean(unit(P('Lhip') - P('Rhip')), axis=0), up_c)
 left_c = unit(left_c)
 fwd_c = np.cross(left_c, up_c)

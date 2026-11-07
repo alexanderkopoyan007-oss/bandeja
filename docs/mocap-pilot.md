@@ -36,10 +36,11 @@ Every phone must see the whole area where the player moves: from the back glass 
 
 ## Session plan (about 1 hour)
 1. **Calibration (10 min).**
-   - Start all 4 recordings. One loud **clap** where every phone can see it; the clap is what lines the videos up.
-   - Walk the board slowly round the whole hitting area for about 90 s: turn it, tilt it, high and low, so every phone sees it often and from different angles.
-   - Lay it flat on the court at the T (centre of the service line) for 10 s.
+   - Start all 4 recordings. One loud **clap** where every phone can hear it; the claps and the balls' pops are what line the videos up.
+   - **Close-ups:** hold the board about 1 m in front of each phone in turn for 5 s, tilting it a little each way, so it fills a good part of that phone's picture. (This is what gets each phone's lens right; without it the farthest phone's comes out several % wrong.)
+   - Walk the board slowly round the whole hitting area for about 90 s: turn it, tilt it, high and low, and turn its printed face towards each phone in turn, so every phone sees it often and from different angles. Go right up to the far end of the area too, near phone 4.
    - Clap again.
+   - (No need to lay the board on the floor: from 1.6 m up and several metres away the phones can't read it lying flat. The floor comes from where the player's feet stand.)
 2. **Footwork, no ball (5 min).** Without stopping the phones:
    - ready bounce, 10 s
    - 5 split steps
@@ -81,3 +82,14 @@ I check each item once the videos are on the Mac.
 | Contact moment from the ball's sound against the racket's path | within one frame |
 
 If the body passes but the racket doesn't, phones still do all the footwork, and the strokes get a studio day (route B).
+
+## Processing (on the Mac, `PY=~/bandeja-mocap/venv/bin/python`, each with `-I`; every tool has a `--selftest`)
+For each recording, with the phones' files that were recorded together:
+1. `tools/assets/mocap/sync.py cut <rec> cam1.mov cam2.mov cam3.mov cam4.mov`: the phones on one clock by the claps' and balls' sound, cut to FreeMoCap's synchronized videos (ffmpeg from imageio-ffmpeg).
+2. On the calibration recording only, `tools/assets/mocap/calibrate.py <rec> <square mm>`: each phone's lens from its own views first, then where the phones stand. Gate: corners' reprojection error.
+3. `tools/assets/mocap/run_headless.py <rec> <calibration.toml>`: FreeMoCap's bodies.
+4. `tools/assets/mocap/racket.py <toml> <rec>/racket.npz <rec>/synchronized_videos/cam*.mp4`: the racket, each phone's dots moved to the frame's own moment, and each phone's picture delay against its sound. Gate: dots and shape at contact.
+5. `tools/assets/mocap/sync.py refine <rec> <toml>`: the clocks again, each pop's travel to each phone taken off (its source the racket's face, else the hitting hand), with the picture delays. If it re-cuts the videos, 3-5 once more.
+6. `tools/assets/mocap/retarget.py <rec>/output_data <out.json>` (with `FPS=120`): onto the game's skeleton, up from the floor the feet stood on. Gate: limb lengths.
+
+Self-tests (7 Nov 2026, synthetic): clocks to 0.07 ms after refine (5.3 ms by sound alone); frames exact through a video round trip; the racket at 23 m/s within 1 mm once retimed with picture delays (30 mm as cut); the calibration with four phones round half a court: lenses within 0.4%, 0.5 m sticks anywhere in the hitting area 2.1% at the 95th percentile (7.0% without the lens step); the floor from footsteps within 0.05 degrees.
