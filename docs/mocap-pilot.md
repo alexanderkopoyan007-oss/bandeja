@@ -5,7 +5,7 @@
 ## Bring
 - **4 phones** with the free **Blackmagic Camera** app (iPhone or Android). Its manual shutter and its "stabilisation off" setting matter.
 - **4 tripods**, or anything that holds a phone still at chest height. Phone clamps on light stands are fine.
-- **The board**: the file `charuco_board_5x3.png` (sent with this guide), printed at a print shop **about 1 m wide on stiff foam board**. Keep it flat; a bent board ruins calibration. Afterwards, measure one black square's side in mm and write it down.
+- **The board**: the file `charuco_board_5x3_1m.pdf` (sent with this guide), printed at a print shop **at 100%, 1000 × 773 mm, on stiff foam board**. Keep it flat; a bent board ruins calibration. Afterwards, measure one black square's side in mm and write it down.
 - **Fluorescent tape** in 3 colours (pink, orange, green). Wrap 2 cm strips round the racket's rim so they show from both faces:
   - pink at the very top of the head
   - orange at the widest point on the left of the head
