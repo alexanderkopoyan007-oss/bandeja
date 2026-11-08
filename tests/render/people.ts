@@ -38,12 +38,13 @@ export function drawnTriangles(p: PlayerAsset, paint?: Paint): number[] {
 }
 
 /**
- * How far a point is outside a surface of `p` (bind pose) made of the triangles `tris` (vertex ids, three a triangle): the nearest
- * point on them within 2 cm, and the distance along the normal there (the corners' normals blended), negative inside. (A nearest
- * vertex's normal gave false hits beside steep slopes.)
+ * How far a point is outside a surface of `p` (bind pose, or the positions `at`) made of the triangles `tris` (vertex ids, three
+ * a triangle): the nearest point on them within 2 cm, and the distance along the normal there (the corners' normals blended),
+ * negative inside. (A nearest vertex's normal gave false hits beside steep slopes.) The normals are the bind pose's: in the rest
+ * pose the feet turn 2-4 degrees, which moves `along` by under a tenth of a millimetre at these distances.
  */
-export function surfaceNear(p: PlayerAsset, tris: ArrayLike<number>): (q: THREE.Vector3) => { d: number; along: number } {
-  const pos = p.geometry.getAttribute('position'), nrm = p.geometry.getAttribute('normal');
+export function surfaceNear(p: PlayerAsset, tris: ArrayLike<number>, at?: THREE.BufferAttribute): (q: THREE.Vector3) => { d: number; along: number } {
+  const pos = at ?? p.geometry.getAttribute('position'), nrm = p.geometry.getAttribute('normal');
   const cells = new Map<string, number[]>(), key = (x: number, y: number, z: number): string => `${x},${y},${z}`;
   const P = (v: number): THREE.Vector3 => new THREE.Vector3().fromBufferAttribute(pos, v);
   for (let t = 0; t < tris.length; t += 3) {

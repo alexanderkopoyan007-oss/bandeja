@@ -9,6 +9,7 @@
 // scaled to their height. Version 3 adds per-vertex occlusion and skin regions, and the face's expression and gaze
 // keys: the opaque mesh's moving part is drawn as its own mesh with morph targets (`personMeshes`).
 import * as THREE from 'three/webgpu';
+import { remakeShoes, type ShoeFit, type SoleRef } from './shoe.ts';
 
 export interface BoneDef {
   name: string;
@@ -150,6 +151,10 @@ export interface BodyLook {
   face: FaceData | null;
   /** Every cut built for them (null: drawn as modelled whatever is chosen). */
   wardrobe: Wardrobe | null;
+  /** Their shoes as made to their feet when parsed (shoe.ts): what kit.ts places the laces by (none: no shoes). */
+  shoe?: ShoeFit | null;
+  /** The trainer the feet's animation was tuned on (shoe.ts SoleRef), for soles.ts. */
+  soleRef?: SoleRef | null;
 }
 
 /** The roster (public/assets/people/, data/players/); a match loads the four it deals (game/cast.ts). */
@@ -531,10 +536,14 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     piece: new Uint8Array(buf, base + wh.piece[0]!, h.meshes.opaque.vertices).slice(),
     hide: new Uint16Array(buf, base + wh.hide[0]!, h.meshes.opaque.vertices).slice(),
   } : null;
-  const asset = assemble(h.bones, geometry, boneInverses, restOf(h.bones), clips, {
+  // Their trainers, swapped for shoes made to their feet (shoe.ts).
+  const restWorld = restOf(h.bones);
+  const shoes = remakeShoes(geometry, face?.bodyIndex ?? null, wardrobe, restWorld.map((r, i) => r.clone().multiply(boneInverses[i]!)));
+  if (face && shoes?.bodyIndex) face.bodyIndex = shoes.bodyIndex;
+  const asset = assemble(h.bones, geometry, boneInverses, restWorld, clips, {
     name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, skinNormal: null,
     handsMap: null, handsNormal: null, handsBox: h.handsBox ?? null, textures: h.textures, morphs, face,
-    wardrobe,
+    wardrobe, shoe: shoes?.fit ?? null, soleRef: shoes?.soleRef ?? null,
   });
   SOURCES.set(asset, { buf, mannequin });
   return asset;

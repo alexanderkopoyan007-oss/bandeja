@@ -52,7 +52,9 @@ function holes(p: PlayerAsset, pos: ArrayLike<number>, dir: number[], both: bool
     U[i] = x * u[0]! + y * u[1]! + z * u[2]!; V[i] = x * v[0]! + y * v[1]! + z * v[2]!; D[i] = x * w[0]! + y * w[1]! + z * w[2]!;
     u0 = Math.min(u0, U[i]!); u1 = Math.max(u1, U[i]!); v0 = Math.min(v0, V[i]!); v1 = Math.max(v1, V[i]!);
   }
-  u0 -= 3 * GRID; v0 -= 3 * GRID;
+  // (on a fixed lattice: from the body's own edge, a change anywhere moved every ray; the shoes made to the feet stand 1.7 mm
+  // lower in the modelled pose, and the rays then fell on a gap under 3 mm wide at p3's neck that they had passed beside)
+  u0 = (Math.floor(u0 / GRID) - 3) * GRID; v0 = (Math.floor(v0 / GRID) - 3) * GRID;
   const nu = Math.ceil((u1 + 3 * GRID - u0) / GRID) + 1, nv = Math.ceil((v1 + 3 * GRID - v0) / GRID) + 1;
   const undrawn = new Uint8Array(nu * nv), drawn = new Uint8Array(nu * nv), shirt = new Uint8Array(nu * nv), bottom = new Uint8Array(nu * nv), near = new Float32Array(nu * nv).fill(Infinity), first = new Float32Array(nu * nv * 3);
   // (what is drawn in that cut: the rest of the wardrobe and the skin it hides are in the buffers too)

@@ -11,19 +11,26 @@ export function fitSoles(asset: PlayerAsset): SolePoint[][] {
   const g = asset.geometry;
   const si = g.getAttribute('skinIndex') as THREE.BufferAttribute;
   const sw = g.getAttribute('skinWeight') as THREE.BufferAttribute;
+  // (the shoes made to the feet stand in for the trainer the animation was tuned on: its vertices, kept by shoe.ts, not theirs)
+  const ref = asset.look?.soleRef ?? null, shoe = ref ? g.getAttribute('bodyB') as THREE.BufferAttribute : null;
   const out: SolePoint[][] = [];
   for (const side of ['Left', 'Right']) {
     const ids = new Set([asset.bone(side + 'Foot'), asset.bone(side + 'ToeBase'), asset.bone(side + 'Toe_End')]);
     const verts: Array<{ v: THREE.Vector3; bone: number }> = [];
     let minY = Infinity;
-    for (let k = 0; k < asset.restPos.length / 3; k++) {
+    const take = (pos: ArrayLike<number>, k: number, bone: (j: number) => number, weight: (j: number) => number): void => {
       let best = -1, bw = -1;
-      for (let j = 0; j < 4; j++) { const w = sw.getComponent(k, j); if (w > bw) { bw = w; best = si.getComponent(k, j); } }
-      if (!ids.has(best)) continue;
-      const v = new THREE.Vector3().fromArray(asset.restPos, k * 3);
+      for (let j = 0; j < 4; j++) { const w = weight(j); if (w > bw) { bw = w; best = bone(j); } }
+      if (!ids.has(best)) return;
+      const v = new THREE.Vector3(pos[k * 3]!, pos[k * 3 + 1]!, pos[k * 3 + 2]!);
       verts.push({ v, bone: best });
       if (v.y < minY) minY = v.y;
+    };
+    for (let k = 0; k < asset.restPos.length / 3; k++) {
+      if (shoe && shoe.getX(k) > 0.5) continue;
+      take(asset.restPos, k, (j) => si.getComponent(k, j), (j) => sw.getComponent(k, j));
     }
+    if (ref) for (let k = 0; k < ref.pos.length / 3; k++) take(ref.pos, k, (j) => ref.skinIndex[k * 4 + j]!, (j) => ref.skinWeight[k * 4 + j]!);
     const sole = verts.filter((x) => x.v.y < minY + 0.012);
     const pick = (f: (x: { v: THREE.Vector3 }) => number): { v: THREE.Vector3; bone: number } =>
       sole.reduce((m, x) => (f(x) > f(m) ? x : m), sole[0]!);

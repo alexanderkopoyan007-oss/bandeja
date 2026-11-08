@@ -703,12 +703,17 @@ const HAIR_SHEEN = 0.012;
  * roughness along a strand.
  */
 /**
- * A shoe's relief (m): the laces' pitch along the instep and how far they stand up; the eyelets' distance out from the
- * foot's line and their depth; the stitching's height over the floor and its rise; the midsole's ridges (spacing, depth);
- * the outsole's herringbone (spacing, groove depth).
+ * A shoe's relief (m): the laces' pitch along the instep, how far they stand up and half their width; the eyelets' depth;
+ * the welt's stitching's height over the midsole and its rise; the outsole's herringbone (spacing, groove depth).
  */
-const SHOE_LACE_PITCH = 0.0135, SHOE_LACE_H = 0.0016, SHOE_EYELET_X = 0.027, SHOE_EYELET_D = 0.0008;
-const SHOE_STITCH_Y = 0.036, SHOE_STITCH_H = 0.0003, SHOE_RIDGE = 0.005, SHOE_RIDGE_H = 0.0003, SHOE_TREAD = 0.008, SHOE_TREAD_D = 0.0012;
+const SHOE_LACE_PITCH = 0.0135, SHOE_LACE_H = 0.0016, SHOE_LACE_W = 0.0016, SHOE_EYELET_D = 0.0008;
+const SHOE_STITCH_Y = 0.004, SHOE_STITCH_H = 0.0003, SHOE_TREAD = 0.008, SHOE_TREAD_D = 0.0012;
+/**
+ * A shoe's colours' shapes: the heel counter's front edge (fraction along at the midsole) and how far back it leans per metre
+ * up; the side stripe's height over the midsole (a size 43's, m) at 30% along and its rise per metre along; the outsole's
+ * rubber, mixed two parts to the midsole's colour's one.
+ */
+const SHOE_COUNTER = 0.17, SHOE_COUNTER_SLANT = 1.2, SHOE_STRIPE_H = 0.016, SHOE_STRIPE_RISE = 0.12, SHOE_OUTSOLE = 0x34312e;
 const HAIR_ANISO = 0.85;
 const HAIR_ROUGH = 0.4;
 /**
@@ -823,39 +828,54 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const { shirtC, shortsC, sockC, skinCut } = kitDetail(look, cut, frame, p, X, paint, asset);
   const hang = X.x.mul(shortsW);
 
-  const sole = float(1).sub(smoothstep(frame.floorY + 0.022, frame.floorY + 0.03, p.y));
-  const stripe = smoothstep(0.012, 0.004, p.y.sub(frame.floorY + 0.055).abs());
-  // The upper: a knit that fades out with distance, laces up the instep, a heel counter in the stripe's colour.
-  const footX = float(frame.footX ?? 0).sub(p.x.abs()), toe = p.z.sub(frame.footZ ?? 0), top = smoothstep(frame.floorY + 0.05, frame.floorY + 0.07, p.y);
+  // Shoes (made to their feet by shoe.ts; bodyX: occlusion, where on the shoe (0 outsole, 0.5 midsole, 1 + cm over the
+  // midsole on the upper, 20 + that on the tongue), how far along it (0 heel, 1 toe), how far across (m, the outside +)).
+  const fit = body.shoe ?? null, shoeLen = fit?.length ?? 0.27, shoeK = fit?.k ?? 1;
+  const where = X.y, along = X.z, side = X.w.abs();
+  const onUpper = smoothstep(0.7, 0.8, where), outsole = float(1).sub(smoothstep(0.2, 0.3, where));
+  const midsole = float(1).sub(onUpper).sub(outsole).max(0), tongue = step(15, where);
+  const hUp = where.sub(mix(float(1), float(20), tongue)).mul(0.01).mul(onUpper), alongM = along.mul(shoeLen);
+  // The upper: a knit that fades out with distance; a heel counter and a stripe down each side in the accent; a toe cap a
+  // shade darker.
   const knit = p.x.mul(1100).add(p.y.mul(700)).sin().mul(p.z.mul(1100).sub(p.y.mul(700)).sin()).mul(0.1).mul(footprintKeep(0.0016));
-  const lace = smoothstep(0.024, 0.02, footX.abs()).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top)
-    .mul(smoothstep(0.34, 0.2, toe.mul(1 / 0.0135).fract().sub(0.5).abs()));
-  const heel = smoothstep(-0.03, -0.045, toe).mul(0.8);
+  const onSide = float(1).sub(tongue).mul(onUpper);
+  const counterEdge = float(SHOE_COUNTER).sub(hUp.mul(SHOE_COUNTER_SLANT / shoeLen));
+  const counter = smoothstep(counterEdge.add(0.012), counterEdge.sub(0.012), along).mul(smoothstep(0.003, 0.006, hUp)).mul(onSide);
+  const stripeAt = float(SHOE_STRIPE_H * shoeK).add(along.sub(0.3).mul(SHOE_STRIPE_RISE * shoeLen));
+  const stripe = smoothstep(0.006 * shoeK, 0.0035 * shoeK, hUp.sub(stripeAt).abs()).mul(smoothstep(0.2, 0.26, along)).mul(smoothstep(0.66, 0.6, along))
+    .mul(smoothstep(0.02 * shoeK, 0.028 * shoeK, side)).mul(onSide);
+  const toeCap = smoothstep(0.84, 0.86, along).mul(smoothstep(0.024 * shoeK, 0.02 * shoeK, hUp)).mul(onSide);
+  // The laces: criss-crossed over the tongue between the eyestays, from eyelet to eyelet, each eyelet `eyelets` out from the
+  // slot's edge (shoe.ts measures where the slot runs).
+  const laceFrom = fit?.laceFrom ?? 0.45, laceTo = fit?.laceTo ?? 0.74;
+  const reachE = float(fit?.gapFrom ?? 0.011).add(float((fit?.gapTo ?? 0.006) - (fit?.gapFrom ?? 0.011)).mul(along.sub(laceFrom).div(laceTo - laceFrom).clamp(0, 1)))
+    .add(fit?.eyelets ?? 0.006);
+  const inLaces = smoothstep(laceFrom - 0.005, laceFrom + 0.005, along).mul(smoothstep(laceTo + 0.005, laceTo - 0.005, along)).mul(onUpper);
+  const laceT = alongM.sub(laceFrom * shoeLen).mul(1 / SHOE_LACE_PITCH), laceF = laceT.fract();
+  const crossX = laceF.mul(2).sub(1).mul(reachE), xs = X.w;
+  const laceD = min(xs.sub(crossX).abs(), xs.add(crossX).abs()).mul(SHOE_LACE_PITCH).div(reachE.mul(2).mul(reachE.mul(2)).add(SHOE_LACE_PITCH * SHOE_LACE_PITCH).sqrt());
+  const lace = smoothstep(SHOE_LACE_W, SHOE_LACE_W * 0.6, laceD).mul(smoothstep(reachE.add(0.001), reachE.sub(0.001), side)).mul(inLaces);
   // (a pair chosen in the locker: its upper, sole, and an accent on the laces, the heel and the stripe)
   const shoe = new THREE.Color(paint?.shoes?.upper ?? body.kit.shoes ?? look.shoes);
   const accent = paint?.shoes ? new THREE.Color(paint.shoes.accent) : null;
   const tab = accent ?? new THREE.Color(look.shirt), laces = accent ?? new THREE.Color(shoe.getHSL({ h: 0, s: 0, l: 0 }).l > 0.5 ? 0x8b9098 : 0xe8e8e8);
-  const upper = mix(mix(color(shoe).mul(float(1).add(knit)), color(tab), stripe.mul(0.9).add(heel).min(1)), color(laces), lace);
-  // Relief (the owner's realism list, 7 Nov: "shoes are black blobs"): laces standing off the tongue, an eyelet either side of each
-  // crossing, a line of stitching round the upper over the sole, the midsole's wall in ridges, and a herringbone outsole
-  // underneath (seen as the heel lifts); all of it gone where a pixel covers more than a few millimetres.
-  const laceRow = toe.mul(1 / SHOE_LACE_PITCH).fract().sub(0.5).abs();
-  const laceBand = smoothstep(0.024, 0.02, footX.abs()).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top);
-  const eyeR = vec2(footX.abs().sub(SHOE_EYELET_X), laceRow.mul(SHOE_LACE_PITCH)).length();
-  const eyelet = smoothstep(0.0032, 0.0022, eyeR).mul(smoothstep(0.02, 0.03, toe)).mul(smoothstep(0.125, 0.115, toe)).mul(top);
-  const aboveSole = smoothstep(frame.floorY + 0.03, frame.floorY + 0.034, p.y);
-  const stitch = smoothstep(0.0009, 0.0004, p.y.sub(frame.floorY + SHOE_STITCH_Y).abs())
-    .mul(step(0.2, toe.add(footX).mul(2 * Math.PI / 0.0045).sin()));
-  const wall = smoothstep(frame.floorY + 0.004, frame.floorY + 0.007, p.y).mul(float(1).sub(smoothstep(frame.floorY + 0.024, frame.floorY + 0.028, p.y)));
-  const under = float(1).sub(smoothstep(frame.floorY + 0.002, frame.floorY + 0.005, p.y));
-  const chevron = toe.add(footX.abs()).mul(1 / SHOE_TREAD).fract();
-  const shoeRelief = laceBand.mul(smoothstep(0.34, 0.12, laceRow)).mul(SHOE_LACE_H)
+  const upper = mix(mix(color(shoe).mul(float(1).add(knit)).mul(float(1).sub(toeCap.mul(0.12))), color(tab), max(stripe.mul(0.9), counter.mul(0.85))), color(laces), lace);
+  // Relief (the owner's realism list, 7 Nov: "shoes are black blobs"): the laces standing off the tongue, an eyelet at each
+  // end of a lace, stitching round the upper over the midsole and round the toe cap, and a herringbone outsole underneath
+  // (seen as the heel lifts); all of it gone where a pixel covers more than a few millimetres.
+  const eyeR = vec2(side.sub(reachE), min(laceF, float(1).sub(laceF)).mul(SHOE_LACE_PITCH)).length();
+  const eyelet = smoothstep(0.0032, 0.0022, eyeR).mul(inLaces).mul(onSide);
+  const dash = step(0.2, alongM.add(side).mul(2 * Math.PI / 0.0045).sin());
+  const stitch = smoothstep(0.0009, 0.0004, hUp.sub(SHOE_STITCH_Y).abs()).mul(onSide)
+    .add(smoothstep(0.0009, 0.0004, along.sub(0.855).mul(shoeLen).abs()).mul(smoothstep(0.024 * shoeK, 0.02 * shoeK, hUp)).mul(onSide)).mul(dash);
+  const chevron = alongM.add(side).mul(1 / SHOE_TREAD).fract();
+  const shoeRelief = lace.mul(SHOE_LACE_H)
     .sub(eyelet.mul(SHOE_EYELET_D))
-    .add(stitch.mul(aboveSole).mul(SHOE_STITCH_H))
-    .add(wall.mul(p.y.mul(2 * Math.PI / SHOE_RIDGE).sin()).mul(SHOE_RIDGE_H))
-    .sub(under.mul(smoothstep(0.3, 0.2, chevron)).mul(SHOE_TREAD_D))
+    .add(stitch.mul(SHOE_STITCH_H))
+    .sub(outsole.mul(smoothstep(0.3, 0.2, chevron)).mul(SHOE_TREAD_D))
     .mul(shoeW).mul(footprintKeep(0.003));
-  const shoeC = mix(upper, color(new THREE.Color(paint?.shoes?.sole ?? body.kit.sole ?? 0x8a8378)), sole)
+  const soleCol = new THREE.Color(paint?.shoes?.sole ?? body.kit.sole ?? 0x8a8378);
+  const shoeC = mix(mix(upper, color(soleCol), midsole.add(outsole).min(1)), color(soleCol.clone().lerp(new THREE.Color(SHOE_OUTSOLE), 0.65)), outsole)
     .mul(float(1).sub(eyelet.mul(0.45)));
   // Albedo: the skin a little darker in its deepest creases, the eyeball under the lids, the mouth's inside.
   // (dark skin lifted a little: under the same floodlights its faces read as masks beside the others', mean luminance
