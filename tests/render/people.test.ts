@@ -28,7 +28,10 @@ describe('people', () => {
       for (const f of Object.values(p.look!.textures)) expect(existsSync(new URL('../../public/assets/people/' + f, import.meta.url))).toBe(true);
       expect(p.look!.alphaGeometry.getAttribute('uv').count).toBeGreaterThan(500);
       // What is drawn as modelled; the buffers also hold the other cuts in their wardrobe (asset.ts Wardrobe), drawn only when chosen.
-      // (22000 until the shoes made to the feet, shoe.ts: 1848 vertices a side against MakeHuman's trainer's 717, about 2300 more)
+      // A tripwire set just over the largest person, not a budget: it catches a build that keeps geometry it shouldn't (MakeHuman's
+      // helpers once drew strips over p6's face). The budget is the presets' triangles on screen (CLAUDE.md). (20000 for the first
+      // men, 22000 with eyes, teeth and scalp, 24000 with the shoes made to the feet: shoe.ts, 2184 vertices a side against
+      // MakeHuman's trainer's 717, about 2700 more a person.)
       expect(new Set(drawnTriangles(p)).size).toBeLessThan(24000);
       expect(p.geometry.getAttribute('position').count).toBeLessThan(48000);
       // WebGPU binds at most 8 vertex buffers: skinning's 5 and the person's 3 (bodyA, bodyB, bodyX).
