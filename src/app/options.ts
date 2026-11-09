@@ -263,6 +263,10 @@ export function applyCharacter(opts: GameOptions, c: Character): void {
   opts.match.rackets[at] = c.racket.base;
   opts.match.lefty = Array.from({ length: n }, (_, i) => opts.match.lefty?.[i] ?? false);
   opts.match.lefty[at] = c.hand === 'left';
+  if (c.racket.look) {
+    opts.designs = Array.from({ length: n }, (_, i) => opts.designs?.[i] ?? null);
+    opts.designs[at] = c.racket.look;
+  }
   const look = selfLookOf(c);
   if (look) {
     opts.looks = Array.from({ length: n }, (_, i) => opts.looks?.[i] ?? null);

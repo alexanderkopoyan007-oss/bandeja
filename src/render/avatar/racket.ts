@@ -27,7 +27,7 @@ import p1 from '../../../data/racket-looks/p1.json' with { type: 'json' };
 import p2 from '../../../data/racket-looks/p2.json' with { type: 'json' };
 import p3 from '../../../data/racket-looks/p3.json' with { type: 'json' };
 import p4 from '../../../data/racket-looks/p4.json' with { type: 'json' };
-import { racketArt, sideLayout, ART, type ArtShape } from './racketArt.ts';
+import { racketArt, sideLayout, ART, type ArtShape, type RacketArt, type SideLayout } from './racketArt.ts';
 import { racketMaterial, cordMaterial } from './racketMaterial.ts';
 import { LOOKS_BY_RACKET } from './racketLooks.ts';
 
@@ -119,6 +119,8 @@ export interface RacketLook {
   cap: string;
   cord: string;
   holes: { d: number; pitch: number; rings: number; margin: number; blank: Array<{ x: number; y: number; a: number; b: number; rot: number }> };
+  /** A player's own colours over the maker's racket (racketDesign.ts designKey): the print and materials are cached apart. */
+  design?: string;
 }
 
 /** The players' rackets, by player number (as the people are: data/players/p*.json), when they play `standard`. */
@@ -1197,24 +1199,70 @@ export class RacketLod extends THREE.LOD {
 }
 
 interface Parts { near: THREE.BufferGeometry; far: THREE.BufferGeometry; material: THREE.Material }
-const PARTS = new Map<string, Parts>();
+
+/**
+ * What rackets share, cached by what each depends on: the geometry on the shape (the look's name), the print on the
+ * colours too (name and design), the material on the print and the overgrip. The material was cached by name alone, so
+ * two players with one look shared whichever overgrip was built first, match after match (9 Nov).
+ */
+interface Built { near: THREE.BufferGeometry; far: THREE.BufferGeometry; shape: ArtShape; lay: SideLayout }
+const BUILT = new Map<string, Built>();
+const PRINTS = new Map<string, RacketArt>();
+const MATERIALS = new Map<string, THREE.Material>();
+/** Players' own designs printed, newest last: the creator makes one at each change, so only the newest DESIGNS_KEPT keep
+ * their print and materials (the one in play is always the newest). */
+const DESIGNS: string[] = [];
+const DESIGNS_KEPT = 4;
+
+function keepDesign(design: string): void {
+  const at = DESIGNS.indexOf(design);
+  if (at >= 0) DESIGNS.splice(at, 1);
+  DESIGNS.push(design);
+  while (DESIGNS.length > DESIGNS_KEPT) {
+    const gone = DESIGNS.shift()!;
+    for (const [k, art] of PRINTS) {
+      if (!k.endsWith(`|${gone}`)) continue;
+      for (const t of [art.head, art.mask, art.side]) t.dispose();
+      PRINTS.delete(k);
+    }
+    for (const [k, m] of MATERIALS) {
+      if (!k.includes(`|${gone}|`)) continue;
+      m.dispose();
+      MATERIALS.delete(k);
+    }
+  }
+}
 
 /** Geometry and material of a look, shared by every racket of that look. */
 function parts(look: RacketLook): Parts {
-  let p = PARTS.get(look.name);
-  if (p) return p;
-  const s = racketShape(look);
-  const shape: ArtShape = {
-    outer: s.outer, face: s.face, heart: s.heart, bridgeTop: s.bridgeTop, bridgeBottom: s.bridgeBottom, perimeter: polyLength(s.outer, true),
-    holes: s.holes, holeEdge: s.holeR + CHAMFER, plateY: plateCentre(s), profile: PROFILE_LEN,
-  };
-  const lay = sideLayout(shape, look.bumper.span);
-  const side: SideMap = (sv, v, half) => ART.sideUv(lay, sv, v, half);
-  const art = racketArt(look, shape, lay);
-  const dims = { t2: T2, step: FACE_STEP, skin: SKIN_T, pitch: GRIP_PITCH, gripY0: GRIP_Y0 };
-  p = { near: buildLevel(look, false, side, shape.perimeter), far: buildLevel(look, true, side, shape.perimeter), material: racketMaterial(art, look, dims) };
-  PARTS.set(look.name, p);
-  return p;
+  let b = BUILT.get(look.name);
+  if (!b) {
+    const s = racketShape(look);
+    const shape: ArtShape = {
+      outer: s.outer, face: s.face, heart: s.heart, bridgeTop: s.bridgeTop, bridgeBottom: s.bridgeBottom, perimeter: polyLength(s.outer, true),
+      holes: s.holes, holeEdge: s.holeR + CHAMFER, plateY: plateCentre(s), profile: PROFILE_LEN,
+    };
+    const lay = sideLayout(shape, look.bumper.span);
+    const side: SideMap = (sv, v, half) => ART.sideUv(lay, sv, v, half);
+    b = { near: buildLevel(look, false, side, shape.perimeter), far: buildLevel(look, true, side, shape.perimeter), shape, lay };
+    BUILT.set(look.name, b);
+  }
+  const printKey = `${look.name}|${look.design ?? ''}`;
+  if (look.design) keepDesign(look.design);
+  let art = PRINTS.get(printKey);
+  if (!art) PRINTS.set(printKey, (art = racketArt(look, b.shape, b.lay)));
+  const matKey = `${printKey}|${look.grip}`;
+  let material = MATERIALS.get(matKey);
+  if (!material) {
+    const dims = { t2: T2, step: FACE_STEP, skin: SKIN_T, pitch: GRIP_PITCH, gripY0: GRIP_Y0 };
+    MATERIALS.set(matKey, (material = racketMaterial(art, look, dims)));
+  }
+  return { near: b.near, far: b.far, material };
+}
+
+/** Tests: how many prints and materials are kept. */
+export function racketCacheSize(): { prints: number; materials: number; designs: number } {
+  return { prints: PRINTS.size, materials: MATERIALS.size, designs: DESIGNS.length };
 }
 
 /** The racket's body (both levels), to put in a racket group. */

@@ -11,6 +11,7 @@ import tuning from '../../data/tuning.json' with { type: 'json' };
 import { Avatar } from './avatar/avatar.ts';
 import { reproportion } from './avatar/proportions.ts';
 import { dressRacket, makeRacketModel, racketLookFor, type RacketLook } from './avatar/racket.ts';
+import { designed, designKey, type RacketColours } from './avatar/racketDesign.ts';
 import type { PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
 import type { Wear } from './avatar/costume.ts';
@@ -22,6 +23,12 @@ import { routineBounceOf, routineHeight, routineTime, routineUp } from './routin
 
 /** A racket's look with the overgrip a player chose (the looks are shared: a copy). */
 const gripped = (look: RacketLook, grip?: string): RacketLook => (grip ? { ...look, grip } : look);
+
+/** Player `idx`'s racket as drawn: the racket's own look (data/racket-looks/), in the player's own colours if they made
+ * some (racketDesign.ts), under the overgrip they wear if they chose one (it is wrapped over the design's grip). */
+function racketLookOf(idx: number, racket: string | undefined, design: RacketColours | null | undefined, grip?: string): RacketLook {
+  return gripped(designed(racketLookFor(idx, racket), design), grip);
+}
 
 const TIMING = tuning.timing;
 const BALL_COLOR = 0xdff23b;
@@ -241,10 +248,19 @@ export class PlayerView {
   private readonly body: THREE.Mesh | null = null;
   private readonly racket: THREE.Group | null = null;
   private readonly ready = new THREE.Vector3();
+  /** What paintRacket needs to draw the racket again: whose, which, its worn overgrip and the design it shows. */
+  private readonly idx: number;
+  private readonly racketId: string | undefined;
+  private readonly grip: string | undefined;
+  private design = '';
 
   /** `racket`: the racket this player plays (MatchConfig.rackets), drawn as its own look; `wear`: what they wear
    * beyond the suit (costume.ts). */
   constructor(scene: THREE.Scene, idx: number, asset: PlayerAsset | null = null, cast?: Cast, racket?: string, wear?: Wear) {
+    this.idx = idx;
+    this.racketId = racket;
+    const own = cast?.designs?.[idx] ?? null;
+    this.design = own ? designKey(own) : '';
     if (asset) {
       // Dressed as the person dealt to them (game/cast.ts) when they loaded, else the mannequin.
       const person = cast ? asset.people.find((p) => p.look!.name === cast.people[idx]) : asset.people[idx];
@@ -255,8 +271,9 @@ export class PlayerView {
       const { look: kit, wear: w } = costumed(kitFor(idx, cast?.kits), wear);
       // (and their own skin and hair: a character's, game/cast.ts looks)
       this.avatar = new Avatar(who, kit, w?.paint, cast?.looks?.[idx]);
-      // Each player's own racket (data/racket-looks/), in their own overgrip if they chose one.
-      dressRacket(this.avatar.racket, gripped(racketLookFor(idx, racket), w?.grip));
+      // Each player's own racket, in their own colours and overgrip if they chose them.
+      this.grip = w?.grip;
+      dressRacket(this.avatar.racket, racketLookOf(idx, racket, own, w?.grip));
       if (w) this.avatar.wear(dressFor(who, w, kit, this.avatar.mesh.geometry.index));
       this.root = this.avatar.root;
       scene.add(this.root);
@@ -281,8 +298,19 @@ export class PlayerView {
     nose.position.set(0, 1.7, -0.12);
     this.root.add(nose);
     scene.add(this.root);
-    this.racket = makeRacketModel(gripped(racketLookFor(idx, racket), wear?.grip));
+    this.grip = wear?.grip;
+    this.racket = makeRacketModel(racketLookOf(idx, racket, own, wear?.grip));
     scene.add(this.racket);
+  }
+
+  /** The racket in other colours (the creator's turntable, as they change): its print and material only, no build. */
+  paintRacket(design: RacketColours | null): void {
+    const key = design ? designKey(design) : '';
+    if (key === this.design) return;
+    this.design = key;
+    const look = racketLookOf(this.idx, this.racketId, design, this.grip);
+    if (this.avatar) dressRacket(this.avatar.racket, look);
+    else if (this.racket) dressRacket(this.racket, look);
   }
 
   /** A thin ring on the floor under the human's player, so you can tell yourself from your partner. */

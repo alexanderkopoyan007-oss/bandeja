@@ -2,14 +2,16 @@
 // characters (store.ts), made and changed on the studio's turntable (game/studio.ts), shared as codes and links
 // (character.ts). The one marked as playing plays as the player in Quick Match, the knock-out and practice.
 //
-// This step has what shows on the body as it is drawn now: the face preset, the hand, the body's proportions
-// (realistic or ridiculous), the outfit from what is owned and the racket. The skin's and hair's tone, tattoos, the
-// racket's own colours, the grunt and the celebration join with the looks they need (phase D's next step).
+// The creator has the face preset, the hand, the skin's and hair's tone, tattoos, the body's proportions (realistic or
+// ridiculous), the racket in its maker's colours or the player's own (render/avatar/racketDesign.ts), and the outfit
+// from what is owned.
 import type { Choice, Item, Menu, Screen } from '../ui/menu/menu.ts';
 import {
-  checkedBody, cleanName, decodeCharacter, defaultCharacter, encodeCharacter, FACES, HAIR_TONES, NAME_MAX, RACKET_IDS, setSilly,
-  TATTOOS, type Character, type Tattoo,
+  checkedBody, checkedRacket, cleanName, decodeCharacter, defaultCharacter, encodeCharacter, FACE_FINISH, FACES, FRAME_FINISH, HAIR_TONES,
+  NAME_MAX, RACKET_ART, RACKET_IDS, setSilly, TATTOOS, type Character, type RacketDesign, type Tattoo,
 } from './character.ts';
+import { racketLookFor } from '../render/avatar/racket.ts';
+import { designFrom, RACKET_PALETTE } from '../render/avatar/racketDesign.ts';
 import { CHARACTERS_MAX, type Store } from './store.ts';
 import { COSMETICS, covered, SLOT_INFO, SLOTS, type Slot } from './unlocks.ts';
 import { PROPORTION_KEYS, RANGES, type Proportions } from '../render/avatar/proportions.ts';
@@ -106,6 +108,8 @@ export class Creator {
   private was = '';
   /** What "Copy their code" last did, said under it. */
   private copied = '';
+  /** The racket colours they made last while this one is open: back to the maker's and to their own again keeps them. */
+  private lastDesign: RacketDesign['look'] = null;
 
   private readonly host: CreatorHost;
 
@@ -214,6 +218,7 @@ export class Creator {
   /** Open the creator on a copy of `c`, to be saved as number `at` (-1: a new one). */
   edit(at: number, c: Character): void {
     this.draft = structuredClone(c);
+    this.lastDesign = null;
     this.at = at;
     this.was = JSON.stringify(c);
     this.dress();
@@ -323,6 +328,7 @@ export class Creator {
         options: RACKET_IDS.map((id) => ({ value: id, label: racketName(id) })),
         get: () => d().racket.base, set: (v) => { d().racket = { ...d().racket, base: String(v) }; this.dress(); },
       },
+      ...this.designItems(d),
       ...SLOTS.map((slot): Item => this.slotItem(slot, d, owned)),
       { kind: 'group', label: 'Turntable' },
       {
@@ -334,6 +340,60 @@ export class Creator {
       { kind: 'button', label: 'Leave without saving', action: () => this.leave() },
     ];
     return { id: 'creator', title: this.at < 0 ? 'New player' : 'Change them', back: () => this.leave(), items };
+  }
+
+  /** The racket's colours: the maker's, or their own (the same racket underneath, so it plays the same) from the
+   * designer's palette, with its graphic and finishes. Their own starts from the maker's in the palette's nearest
+   * colours, or from the last they made while this screen is open. */
+  private designItems(d: () => Character): Item[] {
+    type Look = NonNullable<RacketDesign['look']>;
+    const own = (): Look => d().racket.look!;
+    const put = <K extends keyof Look>(k: K, v: Look[K]): void => {
+      const r = d().racket;
+      d().racket = { ...r, look: { ...r.look!, [k]: v } };
+      this.dress();
+    };
+    const mine = (): boolean => d().racket.look === null;
+    const words = (w: string): string => w[0]!.toUpperCase() + w.slice(1);
+    const palette = RACKET_PALETTE.map((p) => ({ value: p.hex, label: p.name, swatch: p.hex }));
+    // (no grip colour: the overgrip slot is never empty, and the overgrip is what shows)
+    const colour = (k: 'face' | 'a' | 'b' | 'accent' | 'frame', label: string, desc: string): Item => ({
+      kind: 'choice', label, desc, options: palette, hidden: mine, get: () => own()[k], set: (v) => put(k, String(v)),
+    });
+    return [
+      {
+        kind: 'choice', label: 'Racket colours', desc: 'The maker’s, or your own over the same racket. Colours never change how it plays.',
+        options: [{ value: false, label: 'Maker’s' }, { value: true, label: 'Your own' }],
+        get: () => d().racket.look !== null,
+        set: (v) => {
+          const r = d().racket;
+          if (v === true) d().racket = r.look ? r : this.lastDesign ? { ...r, look: this.lastDesign } : checkedRacket({ base: r.base, look: designFrom(racketLookFor(0, r.base)) });
+          else {
+            if (r.look) this.lastDesign = r.look;
+            d().racket = { ...r, look: null };
+          }
+          this.dress();
+          this.menu.refresh();
+        },
+      },
+      {
+        kind: 'choice', label: 'Graphic', desc: 'What is printed on the face, in your colours.', hidden: mine,
+        options: RACKET_ART.map((a) => ({ value: a, label: words(a) })), get: () => own().art, set: (v) => put('art', v as Look['art']),
+      },
+      colour('face', 'Face colour', 'The face’s ground.'),
+      colour('a', 'Graphic colour', 'The graphic’s main colour.'),
+      colour('b', 'Second colour', 'The graphic’s other colour.'),
+      colour('accent', 'Accent', 'The graphic’s highlights, the finishing tape and the cap.'),
+      colour('frame', 'Frame colour', 'The frame, and the bumper over its top.'),
+      {
+        kind: 'choice', label: 'Face finish', desc: 'Sand (a gritty print), matte or gloss: a look only. How the face grips the ball is the racket’s own.', hidden: mine,
+        options: FACE_FINISH.map((f) => ({ value: f, label: words(f) })), get: () => own().finish, set: (v) => put('finish', v as Look['finish']),
+      },
+      {
+        kind: 'choice', label: 'Frame finish', desc: 'The frame’s lacquer.', hidden: mine,
+        options: FRAME_FINISH.map((f) => ({ value: f, label: words(f) })), get: () => own().frameFinish, set: (v) => put('frameFinish', v as Look['frameFinish']),
+      },
+    ];
   }
 
   /** An outfit slot's choice: what is owned for it (and nothing, where it can be empty); hidden under a costume. */

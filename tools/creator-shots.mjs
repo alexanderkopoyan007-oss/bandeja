@@ -7,7 +7,8 @@
 //   (rad); drill: -1 still, 3 volleys, 2 overheads (game/studio.ts STUDIO_DRILLS); menu: false hides the list;
 //   "around": [-0.2, 0, 0.15] in place of times: those offsets (s) from the player's first contact with the ball;
 //   "clip": [x, y, w, h] crops the shot; "bone": "RightForeArm" (with "dist" m, default 0.55, and "angle") aims a close
-//   camera at that joint instead of the turntable's framing, "bone": ["RightForeArm", "RightHand"] at the middle of two. SHEET=<file.png> also lays every shot out on one sheet, captioned by name
+//   camera at that joint instead of the turntable's framing, "bone": ["RightForeArm", "RightHand"] at the middle of two,
+//   "bone": "racket" at the racket face's centre, from square on (angle turns off it). SHEET=<file.png> also lays every shot out on one sheet, captioned by name
 //   (SHEET_COLS columns, default 4).
 import puppeteer from 'puppeteer-core';
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -78,9 +79,19 @@ for (const s of spec) {
         a.root.updateMatrixWorld(true);
         const names = Array.isArray(s.bone) ? s.bone : [s.bone];
         const at = new V();
-        for (const n of names) at.add(a.mesh.skeleton.bones.find((x) => x.name === n).getWorldPosition(new V()));
-        at.multiplyScalar(1 / names.length);
-        const ang = st.view.root.rotation.y + (s.angle ?? 0), d = s.dist ?? 0.55, c = st.camera;
+        // ("racket": the face's centre, seen square on from its side `angle` turns from)
+        const racket = s.bone === 'racket';
+        if (racket) a.racket.getWorldPosition(at);
+        else {
+          for (const n of names) at.add(a.mesh.skeleton.bones.find((x) => x.name === n).getWorldPosition(new V()));
+          at.multiplyScalar(1 / names.length);
+        }
+        let ang = st.view.root.rotation.y + (s.angle ?? 0);
+        if (racket) {
+          const nrm = new V(0, 0, 1).transformDirection(a.racket.matrixWorld);
+          ang = Math.atan2(nrm.x, nrm.z) + (s.angle ?? 0);
+        }
+        const d = s.dist ?? 0.55, c = st.camera;
         c.clearViewOffset();
         c.position.set(at.x + Math.sin(ang) * d, at.y + (s.dy ?? 0), at.z + Math.cos(ang) * d);
         c.lookAt(at.x, at.y + (s.dy ?? 0), at.z);

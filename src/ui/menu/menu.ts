@@ -48,6 +48,7 @@ export const MENU_CSS = `
 #menu .item.focus { background: rgba(255,255,255,.14); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,216,74,.55); transform: translateX(6px); }
 #menu .item.focus::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 4px; border-radius: 2px; background: var(--accent); }
 #menu .item.focus .val .arw { opacity: 1; }
+#menu .item .val .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 7px; vertical-align: -2px; box-shadow: 0 0 0 1px rgba(255,255,255,.35); }
 #menu .item.primary { background: linear-gradient(90deg, rgba(255,216,74,.95), rgba(255,177,59,.9)); color: #111; }
 #menu .item.primary.focus { background: linear-gradient(90deg, #fff1a8, #ffc65a); color: #111; box-shadow: 0 6px 20px rgba(255,190,70,.35); }
 #menu .item.primary.focus::before { background: #111; }
@@ -84,7 +85,8 @@ export const MENU_CSS = `
 :root.hc #menu .shade { background: rgba(5,7,10,.9); }
 `;
 
-export interface Choice<T = unknown> { value: T; label: string }
+/** `swatch`: a CSS colour shown beside the label (a colour choice). */
+export interface Choice<T = unknown> { value: T; label: string; swatch?: string }
 
 export interface Item {
   kind: 'button' | 'choice' | 'slider' | 'key' | 'group' | 'text';
@@ -373,7 +375,15 @@ export class Menu {
       b.setAttribute('aria-valuetext', lab);
       b.innerHTML = `<span class="lab"></span><span class="val"><span class="arw" data-d="-">◀</span><span class="v"></span><span class="arw" data-d="+">▶</span></span>`;
       b.querySelector('.lab')!.textContent = it.label;
-      b.querySelector('.v')!.textContent = lab;
+      const vEl = b.querySelector('.v') as HTMLElement;
+      vEl.textContent = lab;
+      const sw = opts[i]?.swatch;
+      if (sw) {
+        const chip = document.createElement('span');
+        chip.className = 'sw';
+        chip.style.background = sw;
+        vEl.prepend(chip);
+      }
     } else if (it.kind === 'slider') {
       const v = Number(it.get?.() ?? 0);
       const pct = Math.round(v * 100);

@@ -6,6 +6,7 @@
 import roster from '../../data/people.json';
 import { KIT_COUNT, type SelfLook } from '../render/avatar/kit.ts';
 import { bodyNamed, isNeutral, type Proportions } from '../render/avatar/proportions.ts';
+import type { RacketColours } from '../render/avatar/racketDesign.ts';
 
 export interface Cast {
   /** People by player number. */
@@ -23,6 +24,8 @@ export interface Cast {
   bodies?: Array<Proportions | null>;
   /** Each player's own skin and hair (kit.ts SelfLook: a character's), by player number; missing or null: the person's. */
   looks?: Array<SelfLook | null>;
+  /** Each player's own racket colours (racketDesign.ts: a character's), by player number; missing or null: the maker's. */
+  designs?: Array<RacketColours | null>;
 }
 
 interface Person { name: string; nations: string[]; voice: number; tone: number; woman?: boolean; dealt?: boolean }

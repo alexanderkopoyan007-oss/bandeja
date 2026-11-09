@@ -177,11 +177,13 @@ export class Studio {
   /** Dress the turntable as `opts` say (GameOptions as a match would have them, the character applied): built once
    * the changes rest, and only the newest of several. */
   show(opts: GameOptions): void {
-    // Only the skin's or the hair's tone changed: in place, at once (uniforms), no build.
+    // Only the skin's or the hair's tone or the racket's colours changed: in place, at once (uniforms, the racket's
+    // own print), no build.
     const key = buildKey(opts);
     if (this.view && !this.pending && !this.building && !this.timer && key === this.key) {
       this.opts = opts;
       this.view.avatar?.setSelf(opts.looks?.[0]);
+      this.view.paintRacket(opts.designs?.[0] ?? null);
       return;
     }
     this.pending = opts;
@@ -218,6 +220,7 @@ export class Studio {
     const cast = dealCast(opts.castSeed ?? 0, opts.people, undefined, opts.me?.face);
     if (opts.bodies) cast.bodies = opts.bodies;
     if (opts.looks) cast.looks = opts.looks;
+    if (opts.designs) cast.designs = opts.designs;
     opts.match.women = cast.women;
     const old = this.view;
     this.view = new PlayerView(this.scene, 0, this.asset, cast, opts.match.rackets?.[0], opts.wear?.[0]);

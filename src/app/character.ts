@@ -8,6 +8,7 @@
 // What a character looks like changes nothing in play: its racket plays as that racket does for anyone, and its body's
 // proportions reach the sim only through the optional "Bodies count" toggle (phase D's last step).
 import roster from '../../data/people.json' with { type: 'json' };
+import { nearestPalette } from '../render/avatar/racketDesign.ts';
 import racketData from '../../data/rackets.json' with { type: 'json' };
 import { fitted, NEUTRAL, PROPORTION_KEYS, RANGES, type Proportions } from '../render/avatar/proportions.ts';
 import { checkedLoadout, defaultLoadout, type Loadout } from './unlocks.ts';
@@ -131,9 +132,12 @@ export function checkedBody(raw: unknown, silly: boolean): Proportions {
 }
 
 const DEFAULT_LOOK: NonNullable<RacketDesign['look']> = {
-  art: 'stripe', face: '#1d2738', a: '#f2b84b', b: '#c8652a', accent: '#f7e1a6', frame: '#1d2738', grip: '#1b1c1f',
+  art: 'stripe', face: '#1d2738', a: '#f2b84b', b: '#f07a1f', accent: '#d8c4a0', frame: '#1d2738', grip: '#111214',
   finish: 'sand', frameFinish: 'gloss',
 };
+
+/** A design's colour: one of the designer's (RACKET_PALETTE), the nearest of them to any other. */
+const paint = (v: unknown, dflt: Hex): Hex => nearestPalette(hex(v, dflt));
 
 export function checkedRacket(raw: unknown): RacketDesign {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -144,8 +148,8 @@ export function checkedRacket(raw: unknown): RacketDesign {
   return {
     base,
     look: {
-      art: oneOf(l.art, RACKET_ART, d.art), face: hex(l.face, d.face), a: hex(l.a, d.a), b: hex(l.b, d.b), accent: hex(l.accent, d.accent),
-      frame: hex(l.frame, d.frame), grip: hex(l.grip, d.grip), finish: oneOf(l.finish, FACE_FINISH, d.finish),
+      art: oneOf(l.art, RACKET_ART, d.art), face: paint(l.face, d.face), a: paint(l.a, d.a), b: paint(l.b, d.b),
+      accent: paint(l.accent, d.accent), frame: paint(l.frame, d.frame), grip: paint(l.grip, d.grip), finish: oneOf(l.finish, FACE_FINISH, d.finish),
       frameFinish: oneOf(l.frameFinish, FRAME_FINISH, d.frameFinish),
     },
   };

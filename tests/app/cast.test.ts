@@ -113,6 +113,14 @@ describe('the player’s own character on court (M5 phase D)', () => {
     applyCharacter(plain, defaultCharacter());
     expect(plain.bodies).toBeUndefined();
     expect(plain.looks).toBeUndefined();
+    expect(plain.designs).toBeUndefined();
+    // Their own racket colours go to their player only; the racket under them plays as itself
+    const { checkedRacket } = await import('../../src/app/character.ts');
+    const painted = optionsFromSetup({ ...DEFAULT_SETUP, mode: 'doubles' }, defaultSettings(), 5, null, false, new URLSearchParams());
+    const racket = checkedRacket({ base: RACKET_IDS[2], look: { art: 'tide', face: '#f04f9a' } });
+    applyCharacter(painted, { ...defaultCharacter(), racket });
+    expect(painted.designs).toEqual([racket.look, null, null, null]);
+    expect(painted.match.rackets![0]).toBe(RACKET_IDS[2]);
     // Skin and hair go to the human's player only, the hair as its tone's colour
     const { HAIR_TONES } = await import('../../src/app/character.ts');
     const toned = optionsFromSetup({ ...DEFAULT_SETUP, mode: 'doubles' }, defaultSettings(), 5, null, false, new URLSearchParams());

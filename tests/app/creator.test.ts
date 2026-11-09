@@ -116,6 +116,34 @@ describe('the creator', () => {
     expect([store.characters[0]!.skin, store.characters[0]!.hair]).toEqual([0.7, 'copper']);
   });
 
+  it('racket colours: the maker’s, or their own from the palette, kept when switched off and on, saved', async () => {
+    const { menu, store, dressed } = await setup(true);
+    press(menu.current, 'Create a player');
+    const colours = item(menu.current, 'Racket colours'), face = item(menu.current, 'Face colour');
+    expect(colours.get!()).toBe(false);
+    expect(face.hidden!()).toBe(true);
+    item(menu.current, 'Racket').set!('qarro-yunque');
+    colours.set!(true);
+    expect(face.hidden!()).toBe(false);
+    // (their own starts from the maker's, in the palette)
+    expect(face.options!.map((o) => o.value)).toContain(face.get!());
+    expect(face.options!.every((o) => typeof o.swatch === 'string')).toBe(true);
+    const n = dressed.length;
+    face.set!('#f04f9a');
+    item(menu.current, 'Graphic').set!('tide');
+    item(menu.current, 'Frame finish').set!('satin');
+    expect(dressed.length).toBe(n + 3);
+    colours.set!(false);
+    expect(face.hidden!()).toBe(true);
+    colours.set!(true);
+    expect(face.get!()).toBe('#f04f9a');
+    // (the grip is the overgrip's: a slot never empty)
+    expect(menu.current!.items.some((x) => x.label === 'Grip colour')).toBe(false);
+    press(menu.current, 'Save them');
+    const saved = store.characters[0]!.racket;
+    expect([saved.base, saved.look?.face, saved.look?.art, saved.look?.frameFinish]).toEqual(['qarro-yunque', '#f04f9a', 'tide', 'satin']);
+  });
+
   it('leaving asks first only when something changed; ridiculous off brings the body back in range', async () => {
     const { menu, store } = await setup();
     press(menu.current, 'Create a player');
