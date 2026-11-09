@@ -63,3 +63,54 @@ describe('who plays', () => {
     expect(changed).toBeGreaterThan(100);
   });
 });
+
+describe('the player’s own character on court (M5 phase D)', () => {
+  it('without a character every seed deals exactly as before', () => {
+    for (let seed = 0; seed < 300; seed++) expect(dealCast(seed, undefined, undefined, undefined)).toEqual(dealCast(seed));
+  });
+
+  it('their face preset is player 0, in a match of their sex, and nobody else on court has it, knock-out rounds too', async () => {
+    const { FACES } = await import('../../src/app/character.ts');
+    for (const f of FACES) {
+      for (let seed = 0; seed < 60; seed++) {
+        for (const rivals of [undefined, seed * 7 + 3]) {
+          const c = dealCast(seed, undefined, rivals, f.id);
+          expect(c.people[0]).toBe(f.id);
+          expect(c.women).toBe(f.woman);
+          expect(c.people.filter((p) => p === f.id).length).toBe(1);
+          expect(new Set(c.people).size).toBe(4);
+          expect(dealCast(seed, undefined, rivals, f.id)).toEqual(c);
+        }
+      }
+    }
+  });
+
+  it('applyCharacter puts the body, outfit, racket and hand on the human only', async () => {
+    const { applyCharacter, optionsFromSetup } = await import('../../src/app/options.ts');
+    const { defaultSettings, DEFAULT_SETUP } = await import('../../src/app/settings.ts');
+    const { defaultCharacter, RACKET_IDS } = await import('../../src/app/character.ts');
+    const { COSMETICS } = await import('../../src/app/unlocks.ts');
+    const c = defaultCharacter();
+    c.hand = 'left';
+    c.body = { ...c.body, height: 1.08, arms: 1.05 };
+    const cap = COSMETICS.find((x) => x.slot === 'head')!;
+    c.outfit = { ...c.outfit, head: cap.id };
+    c.racket = { base: RACKET_IDS[3]!, look: null };
+    for (const mode of ['doubles', 'singles'] as const) {
+      const opts = optionsFromSetup({ ...DEFAULT_SETUP, mode }, defaultSettings(), 5, null, false, new URLSearchParams());
+      applyCharacter(opts, c);
+      const n = mode === 'doubles' ? 4 : 2;
+      expect(opts.me).toBe(c);
+      expect(opts.bodies![0]).toEqual(c.body);
+      expect(opts.bodies!.slice(1)).toEqual(Array(n - 1).fill(null));
+      expect(opts.wear![0]!.head).toBe(cap.id);
+      expect(opts.wear!.slice(1)).toEqual(Array(n - 1).fill(undefined));
+      expect(opts.match.rackets).toEqual([RACKET_IDS[3], ...Array(n - 1).fill('standard')]);
+      expect(opts.match.lefty).toEqual([true, ...Array(n - 1).fill(false)]);
+    }
+    // A neutral body adds no proportions at all (nothing to reproportion)
+    const plain = optionsFromSetup(DEFAULT_SETUP, defaultSettings(), 5, null, false, new URLSearchParams());
+    applyCharacter(plain, defaultCharacter());
+    expect(plain.bodies).toBeUndefined();
+  });
+});

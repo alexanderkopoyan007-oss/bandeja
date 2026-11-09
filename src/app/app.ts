@@ -15,7 +15,8 @@ import { resetHints } from '../ui/hud.ts';
 import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '../game/input/bindings.ts';
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
-import { keepStyles, optionsFromSetup, wearParam } from './options.ts';
+import { applyCharacter, keepStyles, optionsFromSetup, wearParam } from './options.ts';
+import type { Character } from './character.ts';
 import { Store } from './store.ts';
 import type { Cosmetic } from './unlocks.ts';
 import { OnlineSession, ROOM_LOST, SEATS, type OnlineStart } from '../net/session.ts';
@@ -207,13 +208,17 @@ export class App {
       opts.prefs!.replays = false;
       this.castSeed = opts.castSeed = on.castSeed;
     }
+    // The player's own character plays as them (behind ?creator=1 until the owner has seen the creator; never online,
+    // where everyone plays the dealt cast and the standard racket).
+    const me = this.character();
+    if (!attract && !on && me) applyCharacter(opts, me);
     if (!attract && this.drill >= 0) {
       opts.match.practice = this.drill;
       opts.match.firstServer = 1;
       opts.match.walkBack = false;
     }
     if (this.asset && peopleWanted(this.params)) {
-      await loadPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f));
+      await loadPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f));
     }
     const g = new Game(opts, this.renderer, this.hud);
     (window as unknown as { __bandeja: Game }).__bandeja = g;
@@ -256,6 +261,12 @@ export class App {
   /** The next match's people, fetched while nothing is at stake, so starting it doesn't wait for the network. */
   private fetchAhead(): void {
     if (this.asset && peopleWanted(this.params)) void loadPeople(this.asset, dealCast(nextSeed(this.seedBase), castParam(this.params)).people);
+  }
+
+  /** The character that plays as the player: the store's active one, behind ?creator=1 (null: the dealt cast's). */
+  private character(): Character | null {
+    if (this.params.get('creator') !== '1' || !this.store || this.store.active < 0) return null;
+    return this.store.characters[this.store.active] ?? null;
   }
 
   private rebuildAttract(): void {

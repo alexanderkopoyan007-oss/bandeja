@@ -65,6 +65,8 @@ export interface GameOptions {
   castSeed?: number;
   /** A knock-out's later round: team 0 kept, opponents shuffled from this seed (cast.ts). */
   rivals?: number;
+  /** The player's own character (app/character.ts; app/options.ts applyCharacter): their face is dealt to the human. */
+  me?: import('../app/character.ts').Character;
   /** Each player's proportions by player number (cast.ts bodiesParam, the creator). */
   bodies?: Array<import('../render/avatar/proportions.ts').Proportions | null>;
   closeCamPlayer?: number;
@@ -263,8 +265,13 @@ export class Game {
     this.hudLayer.style.cssText = opts.attract ? 'display:none' : 'position:absolute;inset:0';
     hudRoot = this.hudLayer;
     const castSeed = opts.castSeed ?? opts.match.seed ?? 0;
-    const cast = dealCast(castSeed, opts.people, opts.rivals);
+    const cast = dealCast(castSeed, opts.people, opts.rivals, opts.me?.face);
     if (opts.bodies) cast.bodies = opts.bodies;
+    // The character's own grunt: a voice of PLAYER_VOICES, and a pitch about three semitones either way.
+    if (opts.me) {
+      if (opts.me.voice !== null) cast.voices[opts.human] = opts.me.voice;
+      cast.tones[opts.human] = cast.tones[opts.human]! * 2 ** ((opts.me.pitch * 3) / 12);
+    }
     opts.match.women = cast.women;
     this.sim = new MatchSim(opts.match);
     const court = this.sim.world.court;

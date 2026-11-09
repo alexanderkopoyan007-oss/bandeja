@@ -39,11 +39,16 @@ export function seeded(seed: number, salt: number): () => number {
 
 /** The cast for `seed`; `only` (?people=a,b,c,d) names the people instead. `rivals`: the same pairing's team 0 against
  * two others of the roster, shuffled from that seed (a knock-out's later rounds). */
-export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
+export function dealCast(seed: number, only?: string[], rivals?: number, me?: string): Cast {
   const rnd = seeded(seed, 0x2f0b4a87);
-  const women = rnd() < roster.womensMatches;
+  // The player's own character (`me`, a person of the roster: app/character.ts) is player 0, in a match of their own sex,
+  // and nobody else on court has their face. (The draw is made either way, so a match without one deals as before.)
+  const mine = me ? [...roster.men, ...roster.women].find((p) => p.name === me) : undefined;
+  const women = mine ? roster.women.includes(mine) : rnd() < roster.womensMatches;
+  if (mine) rnd();
   const guests: Person[] = roster.guests;
-  const pool: Person[] = [...(women ? roster.women : roster.men), ...guests.filter((p) => p.dealt && (p.woman === true) === women)];
+  const pool: Person[] = [...(women ? roster.women : roster.men), ...guests.filter((p) => p.dealt && (p.woman === true) === women)]
+    .filter((p) => p !== mine);
   // Fisher-Yates: everyone in a different order, the first four play.
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
@@ -52,8 +57,8 @@ export function dealCast(seed: number, only?: string[], rivals?: number): Cast {
   const kits: [number, number] = [Math.floor(rnd() * KIT_COUNT), Math.floor(rnd() * KIT_COUNT)];
   // Seats 0 and 1 are one from each team, the player's and the one facing the camera.
   const made = pool.filter((p) => p.dealt), others = pool.filter((p) => !p.dealt);
-  const seats = [made[0] ?? others.shift()!, made[1] ?? others.shift()!];
-  pool.splice(0, pool.length, ...seats, ...others, ...made.slice(2));
+  const seats = mine ? [mine, made[0] ?? others.shift()!] : [made[0] ?? others.shift()!, made[1] ?? others.shift()!];
+  pool.splice(0, pool.length, ...seats, ...others, ...made.slice(mine ? 1 : 2));
   if (rivals !== undefined) {
     const r = seeded(rivals, 0x7c1e93d5);
     const rest = pool.filter((_, i) => i !== 0 && i !== 2);

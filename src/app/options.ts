@@ -13,6 +13,8 @@ import type { CameraPreset } from '../render/views.ts';
 import { type MatchSetup, type Settings, LEVEL_AI, PARTNER_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
 import type { Wear } from '../render/avatar/costume.ts';
 import { COSMETIC_BY_ID, paintOf } from './unlocks.ts';
+import type { Character } from './character.ts';
+import { isNeutral } from '../render/avatar/proportions.ts';
 
 /**
  * URL parameters that name a game (what optionsFromUrl and main.ts read to set one up): any of them launches it
@@ -220,19 +222,43 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
 export function wearParam(params: URLSearchParams): Array<Wear | undefined> | undefined {
   const s = params.get('wear');
   if (!s) return undefined;
-  return s.split(',').map((one) => {
-    const w: Wear = {};
-    // (a + in a query reads as a space)
-    const ids = one.split(/[+ ]/);
-    for (const id of ids) {
-      if (id === 'nohead') w.head = null;
-      const slot = COSMETIC_BY_ID.get(id)?.slot;
-      if (slot === 'head' || slot === 'eyes' || slot === 'wrist' || slot === 'bag' || slot === 'costume') w[slot] = id;
-    }
-    // (the suit's paint and the overgrip: shirt cuts, patterns, tights, sock lengths, shoes)
-    const { paint, grip } = paintOf(ids);
-    if (Object.keys(paint).length) w.paint = paint;
-    if (grip) w.grip = grip;
-    return Object.keys(w).length ? w : undefined;
-  });
+  // (a + in a query reads as a space)
+  return s.split(',').map((one) => wearFromIds(one.split(/[+ ]/)));
+}
+
+/** What a list of cosmetic ids puts on a player (`nohead` takes a modelled headband or visor off). */
+export function wearFromIds(ids: readonly string[]): Wear | undefined {
+  const w: Wear = {};
+  for (const id of ids) {
+    if (id === 'nohead') w.head = null;
+    const slot = COSMETIC_BY_ID.get(id)?.slot;
+    if (slot === 'head' || slot === 'eyes' || slot === 'wrist' || slot === 'bag' || slot === 'costume') w[slot] = id;
+  }
+  // (the suit's paint and the overgrip: shirt cuts, patterns, tights, sock lengths, shoes)
+  const { paint, grip } = paintOf(ids);
+  if (Object.keys(paint).length) w.paint = paint;
+  if (grip) w.grip = grip;
+  return Object.keys(w).length ? w : undefined;
+}
+
+/**
+ * The player's own character (app/character.ts) as the human's player: their face (dealt at seat 0, cast.ts), body,
+ * outfit, racket and hand; their voice and pitch go to the sound (game.ts). The racket is the one thing the sim sees: a
+ * racket played as anyone who chose it plays it, with the character's colours only drawn.
+ */
+export function applyCharacter(opts: GameOptions, c: Character): void {
+  const n = opts.match.doubles ? 4 : 2;
+  const at = opts.human;
+  opts.me = c;
+  if (!isNeutral(c.body)) {
+    opts.bodies = Array.from({ length: n }, (_, i) => opts.bodies?.[i] ?? null);
+    opts.bodies[at] = c.body;
+  }
+  const worn = Object.values(c.outfit).filter((v): v is string => typeof v === 'string');
+  opts.wear = Array.from({ length: n }, (_, i) => opts.wear?.[i]);
+  opts.wear[at] = wearFromIds(worn);
+  opts.match.rackets = Array.from({ length: n }, (_, i) => opts.match.rackets?.[i] ?? 'standard');
+  opts.match.rackets[at] = c.racket.base;
+  opts.match.lefty = Array.from({ length: n }, (_, i) => opts.match.lefty?.[i] ?? false);
+  opts.match.lefty[at] = c.hand === 'left';
 }
