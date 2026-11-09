@@ -111,6 +111,8 @@ export interface Item {
   listen?: (code: string | null) => void;
   hidden?: () => boolean;
   disabled?: () => boolean;
+  /** Called as the item takes the focus (a list whose focused entry shows elsewhere: the roster's turntable). */
+  onFocus?: () => void;
 }
 
 export interface Screen {
@@ -416,6 +418,7 @@ export class Menu {
     b.focus({ preventScroll: true });
     b.scrollIntoView({ block: 'nearest' });
     if (this.descEl) this.descEl.textContent = descOf(this.items[i]!);
+    this.items[i]!.onFocus?.();
   }
 
   private move(d: number): void {

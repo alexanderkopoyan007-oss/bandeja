@@ -168,7 +168,8 @@ describe('the same people play the same way', () => {
     expect(round[1]).toBe(deal(seed + 1)[1]);
     const again = deal(seed + 1);
     keepStyles(again, setup, seed, true);
-    expect(again).toEqual(deal(seed));
+    // (the three AI players: seat 0 is the human's, its style never played; it matched only by chance with four styles)
+    expect(again.slice(1)).toEqual(deal(seed).slice(1));
   });
 
   it('a style chosen in the menu stands', () => {

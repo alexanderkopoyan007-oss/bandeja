@@ -250,9 +250,21 @@ export function wearFromIds(ids: readonly string[]): Wear | undefined {
  * sees their body too (MatchConfig.bodyScale).
  */
 export function applyCharacter(opts: GameOptions, c: Character, bodiesCount = false): void {
-  const n = opts.match.doubles ? 4 : 2;
-  const at = opts.human;
   opts.me = c;
+  applyCharacterAt(opts, c, opts.human, bodiesCount);
+}
+
+/**
+ * A character as player `at`: the player's own, or a roster pro (app/roster.ts). Their face is the caller's to seat
+ * (cast.ts deals the player's at 0; the roster names every face, GameOptions.people).
+ */
+export function applyCharacterAt(opts: GameOptions, c: Character, at: number, bodiesCount = false): void {
+  const n = opts.match.doubles ? 4 : 2;
+  // (their grunt: a voice of their own or the face's, their pitch on it; game.ts)
+  if (c.voice !== null || c.pitch !== 0) {
+    opts.voices = Array.from({ length: n }, (_, i) => opts.voices?.[i] ?? null);
+    opts.voices[at] = { voice: c.voice, pitch: c.pitch };
+  }
   if (!isNeutral(c.body)) {
     opts.bodies = Array.from({ length: n }, (_, i) => opts.bodies?.[i] ?? null);
     opts.bodies[at] = c.body;

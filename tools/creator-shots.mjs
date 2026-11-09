@@ -9,7 +9,8 @@
 //   "clip": [x, y, w, h] crops the shot; "bone": "RightForeArm" (with "dist" m, default 0.55, and "angle") aims a close
 //   camera at that joint instead of the turntable's framing, "bone": ["RightForeArm", "RightHand"] at the middle of two,
 //   "bone": "racket" at the racket face's centre, from square on (angle turns off it). SHEET=<file.png> also lays every shot out on one sheet, captioned by name
-//   (SHEET_COLS columns, default 4).
+//   (SHEET_COLS columns, default 4). SCREEN=roster shoots the Roster screen instead: each spec's "pro" (a data/roster.json
+//   id) focused, on the turntable (draft is ignored).
 import puppeteer from 'puppeteer-core';
 import { mkdirSync, readFileSync } from 'node:fs';
 
@@ -27,20 +28,29 @@ page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 page.on('console', (m) => { if (m.type() === 'error') console.log('[error]', m.text().slice(0, 400)); });
 await page.goto(url, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__app && document.querySelector('#menu.on .item'), { timeout: 180000, polling: 200 });
-await page.evaluate(async () => {
+await page.evaluate(async (roster) => {
   const click = (t) => [...document.querySelectorAll('#menu .item')].find((b) => b.textContent.trim().startsWith(t))?.click();
   for (let i = 0; i < 100 && !window.__app.store; i++) await new Promise((r) => setTimeout(r, 100));
+  if (roster) { click('Roster'); return; }
   click('Players');
   await new Promise((r) => setTimeout(r, 200));
   click('Create a player');
-});
+}, process.env.SCREEN === 'roster');
 const shots = [];
 for (const s of spec) {
   const times = await page.evaluate(async (s) => {
-    const app = window.__app, cr = app.creator, st = app.studio;
-    const d = cr.draft;
-    for (const [k, v] of Object.entries(s.draft ?? {})) d[k] = k === 'body' || k === 'outfit' || k === 'racket' ? { ...d[k], ...v } : v;
-    cr.dress();
+    const app = window.__app, cr = app.creator;
+    if (s.pro) {
+      // (the Roster: the pro's entry focused, as the pointer would)
+      const { ROSTER, proName } = await import('/src/app/roster.ts');
+      const p = [...ROSTER.men, ...ROSTER.women].find((x) => x.id === s.pro);
+      [...document.querySelectorAll('#menu .item')].find((b) => b.textContent.trim() === proName(p))?.dispatchEvent(new MouseEvent('mouseenter'));
+    } else {
+      const d = cr.draft;
+      for (const [k, v] of Object.entries(s.draft ?? {})) d[k] = k === 'body' || k === 'outfit' || k === 'racket' ? { ...d[k], ...v } : v;
+      cr.dress();
+    }
+    const st = app.studio;
     await st.ready();
     st.play(s.drill ?? -1);
     // around: shots this far (s) either side of the player's first contact, found by a dry run of the same seed.

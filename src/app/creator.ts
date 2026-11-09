@@ -100,7 +100,7 @@ export function skinWords(t: number): string {
 }
 
 /** A racket's name without its specs in brackets (data/rackets.json `name`). */
-function racketName(id: string): string {
+export function racketName(id: string): string {
   return (RACKETS[id]?.name ?? id).replace(/\s*\(.*\)\s*$/, '');
 }
 
@@ -113,12 +113,19 @@ function statsOf(id: string): RacketStats | null {
   return s;
 }
 
-function racketLine(id: string): string {
+/** A racket's measured stats (racketStats) out of 10, in words. */
+export function racketStatsLine(id: string): string {
   const s = statsOf(id);
-  const name = RACKETS[id]?.name ?? id;
-  if (!s) return name;
+  if (!s) return '';
   const n = (x: number): number => Math.round(x / 10);
-  return `${name}. Power ${n(s.power)}, control ${n(s.control)}, spin ${n(s.spin)}, sweet spot ${n(s.sweetSpot)}, handling ${n(s.manoeuvrability)} (out of 10). It plays the same for anyone who picks it.`;
+  return `power ${n(s.power)}, control ${n(s.control)}, spin ${n(s.spin)}, sweet spot ${n(s.sweetSpot)}, handling ${n(s.manoeuvrability)} (out of 10)`;
+}
+
+export function racketLine(id: string): string {
+  const name = RACKETS[id]?.name ?? id;
+  const st = racketStatsLine(id);
+  if (!st) return name;
+  return `${name}. ${st[0]!.toUpperCase()}${st.slice(1)}. It plays the same for anyone who picks it.`;
 }
 
 export class Creator {

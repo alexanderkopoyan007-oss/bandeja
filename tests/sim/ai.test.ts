@@ -65,7 +65,7 @@ describe('AI difficulty', () => {
 });
 
 describe('AI personalities', () => {
-  /** Mixed doubles, the four styles rotated over the seats: each style's shot shares, pace and errors. */
+  /** Mixed doubles, the styles rotated over the four seats: each style's shot shares, pace and errors. */
   function signatures(seeds: number, secs: number) {
     type S = { shots: number; kinds: Record<string, number>; pace: number; paceN: number; errors: number; oh: number };
     const by: Record<string, S> = {};
@@ -99,7 +99,7 @@ describe('AI personalities', () => {
     return { by, share, ofOh, pace: (k: string) => by[k]!.pace / by[k]!.paceN, errors: (k: string) => by[k]!.errors / by[k]!.shots };
   }
 
-  it('Martillo drives and smashes and errs, El Muro lobs and plays safe, La Serpiente plays víboras and touch', () => {
+  it('Martillo drives and smashes and errs, El Muro lobs and plays safe, La Serpiente plays víboras and touch, El Contragolpe drives from the back', () => {
     // Measured over 60 seeds at the end of Phase 4 (about 2,400 shots each): lobs Muro 28% / Martillo 11%; drives
     // Martillo 27% / Muro 6%; smashes of overheads Martillo 71% / Muro 16%; víboras of overheads Serpiente 68% /
     // Relojero 14%; errors per shot Martillo 8.3% / Muro 5.3% / Relojero 4.7%; pace Martillo 60.8 / Muro 57.9 km/h.
@@ -111,6 +111,11 @@ describe('AI personalities', () => {
     expect(r.share('serpiente', 'drop') + r.share('serpiente', 'chiquita')).toBeGreaterThan(r.share('muro', 'drop') + r.share('muro', 'chiquita'));
     expect(r.errors('martillo')).toBeGreaterThan(1.15 * r.errors('muro'));
     expect(r.pace('martillo')).toBeGreaterThan(r.pace('muro'));
+    // El Contragolpe (9 Nov, 100 matches: drives 18% / Muro 6%, lobs 16% / Muro 31%, errors 8.7% / Martillo 10.7%):
+    // back like El Muro, but answering with drives, not lobs, and steadier than Martillo.
+    expect(r.share('contra', 'drive')).toBeGreaterThan(2.2 * r.share('muro', 'drive'));
+    expect(r.share('contra', 'lob')).toBeLessThan(0.65 * r.share('muro', 'lob'));
+    expect(r.errors('contra')).toBeLessThan(0.92 * r.errors('martillo'));
   }, 300_000);
 
   // Review round 9, the pro's #2: drawn for every ball, defenders in time lost plain volleys off the glass.

@@ -15,9 +15,11 @@ import { resetHints } from '../ui/hud.ts';
 import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '../game/input/bindings.ts';
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
+import { rosterScreen } from './rosterScreen.ts';
+import { applyRoster, dealRoster } from './roster.ts';
 import { applyCharacter, keepStyles, optionsFromSetup, wearParam } from './options.ts';
-import type { Character } from './character.ts';
-import { Creator } from './creator.ts';
+import { FACES, type Character } from './character.ts';
+import { Creator, type CreatorHost } from './creator.ts';
 import { Studio } from '../game/studio.ts';
 import { Store } from './store.ts';
 import type { Cosmetic } from './unlocks.ts';
@@ -98,6 +100,8 @@ export class App {
   private readonly storeOpen: Promise<Store>;
   /** The Players screens and the creator (app/creator.ts), and its turntable while it is up (game/studio.ts). */
   private readonly creator: Creator;
+  /** What the creator and the roster's turntable need of the app. */
+  private readonly creatorHost: CreatorHost;
   private studio: Studio | null = null;
   private studioOn = false;
   /** The game on court's drill (-1: not a drill), and its points already in the progress. */
@@ -144,7 +148,7 @@ export class App {
     this.menu.onSound = (k) => this.uiSound(k);
     addEventListener('resize', () => this.game?.resize());
     this.storeOpen = Store.open().then((s) => (this.store = s));
-    this.creator = new Creator({
+    this.creator = new Creator((this.creatorHost = {
       menu: this.menu,
       store: () => this.store,
       studio: () => this.takeStudio(),
@@ -152,7 +156,7 @@ export class App {
       options: (c) => this.studioOptions(c),
       confirm: (t, sub, yd, yes) => this.confirm(t, sub, yd, yes),
       grunt: (v, r) => this.game?.previewGrunt(v, r),
-    });
+    }));
     // A drill's points are logged as it's left, the page being closed among the ways out.
     addEventListener('pagehide', () => this.logDrill());
     (window as unknown as { __app: App }).__app = this;
@@ -275,6 +279,18 @@ export class App {
       opts.match.practice = this.drill;
       opts.match.firstServer = 1;
       opts.match.walkBack = false;
+    }
+    // The AI players are the roster's pros (behind ?creator=1 until the owner has seen it; never online, not a drill's
+    // coach, not when ?people= names the cast).
+    if (this.creatorOn && !on && (attract || this.drill < 0) && !opts.people) {
+      const n = opts.match.doubles ? 4 : 2;
+      const face = opts.me?.face;
+      const dealt = dealRoster(this.castSeed, n, {
+        human: attract || opts.autoplay ? -1 : opts.human,
+        me: face ? { face, woman: FACES.find((f) => f.id === face)?.woman === true } : undefined,
+        rivals: opts.rivals,
+      });
+      applyRoster(opts, dealt, attract ? undefined : this.gameSetup());
     }
     if (this.asset && peopleWanted(this.params)) {
       await loadPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f));
@@ -730,6 +746,10 @@ export class App {
           kind: 'button', label: 'Players', hidden: () => !this.creatorOn, desc: 'Make your own player: their face, their body, what they wear, their racket. They play as you.',
           action: () => this.menu.open(this.creator.playersScreen()),
         },
+        {
+          kind: 'button', label: 'Roster', hidden: () => !this.creatorOn, desc: 'The pros you play with and against: their game, their racket, on the turntable.',
+          action: () => this.menu.open(rosterScreen(this.creatorHost)),
+        },
         { kind: 'button', label: 'Settings', desc: 'Timing, assists, picture quality, sound and accessibility.', action: () => this.menu.open(this.settingsScreen()) },
         { kind: 'button', label: 'Controls', desc: 'Every shot on the keyboard and the gamepad; change any key.', action: () => this.menu.open(this.controlsScreen()) },
         { kind: 'button', label: 'Credits', desc: 'The libraries, assets and references the game is built from.', action: () => this.menu.open(this.creditsScreen()) },
@@ -777,7 +797,7 @@ export class App {
           'Padel is played in pairs. Singles is one against one on the same court, or on a narrow one.', () => !!this.online),
         ch('level', 'Opponents', [{ value: 'novice', label: 'Novice' }, { value: 'club', label: 'Club' }, { value: 'advanced', label: 'Advanced' }, { value: 'pro', label: 'Pro' }],
           'How well the AI plays: reaction, reading the ball, timing and shot choice (your partner plays a level above it).'),
-        ch('partner', 'Partner', this.styleChoices(), 'Your partner’s game. El Relojero is even; El Muro lobs and stays back; Martillo takes the net and smashes; La Serpiente plays víboras and drops.', () => st.mode !== 'doubles'),
+        ch('partner', 'Partner', this.styleChoices(), 'Your partner’s game. El Relojero is even; El Muro lobs and stays back; Martillo takes the net and smashes; La Serpiente plays víboras and drops; El Contragolpe defends from the glass and answers with drives.', () => st.mode !== 'doubles'),
         ch('opponents', st.mode === 'doubles' ? 'Opponents’ style' : 'Opponent’s style', this.styleChoices(), 'How the other side plays (random deals each player a style).'),
         ch('arena', 'Venue', ARENAS, 'An indoor arena with a crowd, a covered club hall, or an outdoor club by day or under floodlights.'),
         ch('court', 'Court', [{ value: 'standard', label: 'Standard' }, { value: 'panoramic', label: 'Panoramic' }, ...(st.mode === 'singles' ? [{ value: 'singles-narrow', label: 'Narrow singles' }] : [])],

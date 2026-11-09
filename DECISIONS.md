@@ -4068,3 +4068,48 @@ A fun switch in the match setup (`MatchSetup.bodies`, off by default), shown onl
 - The cast test (the human only, only when on).
 - In Chrome: the switch appears once a player is active, and the match's player 0 has the body's reach.
 - Also: with your own player playing, the setup's "You play" hand is hidden, because the player's own hand decides.
+
+## M5 phase E: the roster (2026-11-09)
+Behind `?creator=1` with the rest of M5 until the owner has seen it. When on, the AI players are 28 pros (`data/roster.json`, `app/roster.ts`): 16 men and 12 women. Without the flag, matches deal as before.
+- **Each pro is a character** (`character.ts`): face, hand, skin and hair, tattoos, outfit, racket (a few in their own colours), voice and pitch. They also have a name and nation, a side (drive or revés), a style, a signature shot and a level.
+  - **No reshaped bodies:** the owner's rule for normal matches, so every pro has the face's own body.
+  - **Names:** the owner's seven names (`OWNER_ROSTER`) are on seven of the men. The rest are made up from `names.ts`'s pools, from a nation the face fits, and never a professional's surname.
+  - **Faces:** two or three pros share each face.
+  - **Meshy faces** are one baked surface, so their pros wear only what goes on bones (head, eyes, wrists), a grip and a bag.
+- **A fifth style, El Contragolpe** (the counter-puncher, `data/ai.json`): it waits at the back like El Muro but answers with drives rather than lobs, and keeps El Muro's margin. Over 100 matches at level 1:
+  - drives 18% of its shots (Relojero 11%, Muro 6%, Martillo 22%);
+  - lobs 16% (Muro 31%);
+  - at the net 35% of the time (Muro 33%);
+  - errors 8.7%, between El Muro's 8.1% and Martillo's 10.7%.
+
+  The first values (pace +0.6, margin 1.1) made it the most error-prone style, which is wrong for a counter-puncher. `tests/sim/ai.test.ts` holds its signature. Normal matches now deal it among the styles too.
+- **Signature and level** are a per-player tweak on the style (`MatchConfig.aiTweak`, `ai/styles.ts` `tweaked`): the level and pace are added, the other choices multiplied, from the roster's `signatures` table (e.g. smash x1.35). A match without tweaks is the one from before, to the bit.
+- **Dealing** (`dealRoster`):
+  - never two pros on one court with one face;
+  - the human's seat is left to them: their own character, or, without one, a face no pro on court has (so a pro's racket and hand never become theirs);
+  - a women's match as often as the cast deals one;
+  - each pair's drive player sits in the slot that receives in the deuce box (seat t), the revés player at t + 2, when they differ;
+  - left-handers play the drive side;
+  - the same seed deals the same court;
+  - a knock-out's later round keeps the pair and deals the other side again.
+- **Styles from the setup:** a style chosen in the setup (partner, opponents) is played instead of the pro's own; their level and signature stay.
+- **Never online, and not in a practice drill or with `?people=`.**
+- **Per seat for anyone:** names (`GameOptions.names`) and grunts (`GameOptions.voices`); the player's own character uses the same per-seat path (`applyCharacterAt`).
+- **The Roster screen** (title → Roster): the pros by sex, the focused one on the creator's turntable, their card under the list:
+  - style, hand, side, signature;
+  - how they stand against the field;
+  - their racket and its measured stats.
+
+  Menu items can now act on focus (`Item.onFocus`).
+- **Checked:**
+  - `tests/app/roster.test.ts`:
+    - the roster's rules;
+    - every pro a valid character as written;
+    - 400 deals with distinct faces and the human's seat theirs;
+    - the women's share;
+    - sides and rivals;
+    - the options produced;
+    - golden hashes without tweaks;
+    - a court of pros playing.
+  - Stills of ten pros on the turntable (`SCREEN=roster tools/creator-shots.mjs`).
+  - In Chrome, the title match is four pros, and a quick match puts three pros round you, named on the scoreboard.

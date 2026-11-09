@@ -50,3 +50,21 @@ export const DEFAULT_STYLE = 'reloj';
 export function styleOf(key: string | undefined): AiStyle {
   return STYLES[key ?? DEFAULT_STYLE] ?? STYLES[DEFAULT_STYLE]!;
 }
+
+/**
+ * A player's own take on a style (a roster pro's: app/roster.ts): their level against the style's, added; their pace,
+ * added; the other choices multiplied. Missing fields leave the style's.
+ */
+export interface StyleTweak {
+  level?: number; net?: number; lob?: number; drop?: number; smash?: number; vibora?: number; margin?: number; pace?: number;
+}
+
+/** `s` as a player with tweak `t` plays it (no tweak: `s` itself), built in the one shape every style has. */
+export function tweaked(s: AiStyle, t: StyleTweak | null | undefined): AiStyle {
+  if (!t) return s;
+  return makeStyle(s.key, {
+    name: s.name, short: s.short, level: s.level + (t.level ?? 0),
+    net: s.net * (t.net ?? 1), lob: s.lob * (t.lob ?? 1), drop: s.drop * (t.drop ?? 1), smash: s.smash * (t.smash ?? 1),
+    vibora: s.vibora * (t.vibora ?? 1), margin: s.margin * (t.margin ?? 1), pace: s.pace + (t.pace ?? 0),
+  });
+}

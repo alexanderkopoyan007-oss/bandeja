@@ -73,6 +73,11 @@ export interface GameOptions {
   bodies?: Array<import('../render/avatar/proportions.ts').Proportions | null>;
   /** Each player's own skin and hair by player number (the creator's character; kit.ts SelfLook). */
   looks?: Array<import('../render/avatar/kit.ts').SelfLook | null>;
+  /** Each player's own grunt (a character's: a voice of PLAYER_VOICES or null for the face's own, and a pitch -1..1
+   * of about three semitones either way), by player number; null: the face's as dealt. */
+  voices?: Array<{ voice: number | null; pitch: number } | null>;
+  /** Each player's name, by player number (a roster pro's); null: dealt from the seed (game/names.ts). */
+  names?: Array<import('./names.ts').PlayerName | null>;
   /** Each player's own racket colours (a character's, racketDesign.ts), by player number; null: the maker's. */
   designs?: Array<import('../render/avatar/racketDesign.ts').RacketColours | null>;
   closeCamPlayer?: number;
@@ -275,10 +280,12 @@ export class Game {
     if (opts.bodies) cast.bodies = opts.bodies;
     if (opts.looks) cast.looks = opts.looks;
     if (opts.designs) cast.designs = opts.designs;
-    // The character's own grunt: a voice of PLAYER_VOICES, and a pitch about three semitones either way.
-    if (opts.me) {
-      if (opts.me.voice !== null) cast.voices[opts.human] = opts.me.voice;
-      cast.tones[opts.human] = cast.tones[opts.human]! * 2 ** ((opts.me.pitch * 3) / 12);
+    // A character's own grunt (the player's, a pro's): a voice of PLAYER_VOICES, and a pitch about three semitones either way.
+    for (let i = 0; i < cast.voices.length; i++) {
+      const v = opts.voices?.[i];
+      if (!v) continue;
+      if (v.voice !== null) cast.voices[i] = v.voice;
+      cast.tones[i] = cast.tones[i]! * 2 ** ((v.pitch * 3) / 12);
     }
     opts.match.women = cast.women;
     this.sim = new MatchSim(opts.match);
@@ -355,6 +362,8 @@ export class Game {
       const r = dealNames(opts.rivals, this.sim.players.length, cast);
       for (let i = 1; i < r.length; i += 2) this.names[i] = r[i]!;
     }
+    // (a roster pro's own name)
+    for (let i = 0; i < this.names.length; i++) { const own = opts.names?.[i]; if (own) this.names[i] = own; }
     const who = (i: number, short: boolean): string => (!opts.autoplay && i === opts.human ? 'YOU' : nameOf(this.names[i]!, short));
     const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
     const names: [string, string] = [row(0), row(1)];

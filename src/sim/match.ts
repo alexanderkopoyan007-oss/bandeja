@@ -23,7 +23,7 @@ import { findWindows, BEHIND_MAX, makeWindows, OH_BANDEJA, OH_SMASH, OH_VIBORA, 
 import { InputFrame, SHOT_BUTTONS, BTN_POWER, BTN_PRECISION, BTN_OVERHEAD, BTN_VOLLEY } from './input.ts';
 import { holdBack, holdShort, makeStandPlan, planStand, type Hold, type StandPlan } from './player/positioning.ts';
 import { formationSpot, bounceIsFar, roundPartner, SWITCH_X, type Spot } from './player/formation.ts';
-import { styleOf } from './ai/styles.ts';
+import { styleOf, tweaked, type StyleTweak } from './ai/styles.ts';
 import { pressureOf } from './ai/pressure.ts';
 import { smashLanding } from './contact/smashAim.ts';
 import { SimpleAi, WOMENS_SPEED, blockShare, humanMotor, proMotor, volleyControl } from './ai/simpleAi.ts';
@@ -142,6 +142,9 @@ export interface MatchConfig {
   aiLevel?: [number, number];
   /** AI playing style per player (keys of data/ai.json); missing entries play the neutral default. */
   aiStyle?: string[];
+  /** Each player's own take on their style (a roster pro's level and signature: ai/styles.ts StyleTweak), by player
+   * number; missing or null: the style as it is, so a match without any is the one from before, to the bit. */
+  aiTweak?: Array<StyleTweak | null>;
   /** Left-handed players, by player number. */
   lefty?: boolean[];
   /**
@@ -476,7 +479,7 @@ export class MatchSim {
       if (own) this.bodied = true;
       this.players.push(new Player(i, own ? tuneForBody(tune, body!) : tune));
       if (cfg.lefty?.[i]) this.players[i]!.handed = -1;
-      this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, styleOf(cfg.aiStyle?.[i]), cfg.women === true));
+      this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, tweaked(styleOf(cfg.aiStyle?.[i]), cfg.aiTweak?.[i]), cfg.women === true));
       if (!cfg.human[i]) this.players[i]!.glassWait = this.ai[i]!.glassWait;
       this.players[i]!.ohArrive = OH_ARRIVE;
       this.aiFrames.push(new InputFrame());
@@ -2347,7 +2350,7 @@ export class MatchSim {
    */
   giveToAi(i: number): void {
     if (this.ai[i]) return;
-    const p = this.players[i]!, cfg = this.cfg, ai = new SimpleAi(i, (cfg.aiLevel ?? [0.55, 0.55])[i & 1]!, styleOf(cfg.aiStyle?.[i]), cfg.women === true);
+    const p = this.players[i]!, cfg = this.cfg, ai = new SimpleAi(i, (cfg.aiLevel ?? [0.55, 0.55])[i & 1]!, tweaked(styleOf(cfg.aiStyle?.[i]), cfg.aiTweak?.[i]), cfg.women === true);
     ai.reset();
     this.ai[i] = ai;
     this.aiTaken |= 1 << i;
