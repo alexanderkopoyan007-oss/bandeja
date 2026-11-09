@@ -4,7 +4,7 @@
 // device pulsing its drive key (auto timing fires the held swing) each of the three humans hits the ball.
 // Prints one line per check and PASS/FAIL.
 //   bash tools/one-chrome.sh node tools/local-check.mjs [url]   (the dev server: npx vite --port 5190; or a build: npx vite preview)
-//   PADS=3 for all four seats played; PLAY_S=<seconds> (90 by default: under ~40 s a revés player may never get a ball)
+//   CAMERA=side (or any Settings > Camera value) checks every push against that camera's picture; PADS=3 for all four seats played; PLAY_S=<seconds> (90 by default: under ~40 s a revés player may never get a ball)
 import puppeteer from 'puppeteer-core';
 
 const url = process.argv[2] ?? 'http://localhost:5190/?creator=1';
@@ -13,6 +13,8 @@ const PLAY_S = Number(process.env.PLAY_S ?? 90);
 // PADS=3: a third pad, so all four seats are played (keyboard, then pads 1-3 in the chart's order).
 const PADS = process.env.PADS === '3' ? 3 : 2;
 const HUMANS = PADS + 1;
+// CAMERA=side|dynamic|...: the match camera (Settings > Camera); every push is checked against the picture.
+const CAMERA = process.env.CAMERA ?? '';
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? `  (${detail})` : ''}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,6 +46,7 @@ try {
   }, t);
   // Auto timing: a held swing fires itself at the ideal moment, so scripted presses hit balls.
   await page.evaluate(() => { const s = window.__app.settings; s.autoTiming = true; s.setup.mode = 'doubles'; s.setup.length = 'short'; });
+  if (CAMERA) await page.evaluate((c) => { window.__app.settings.camera = c; }, CAMERA);
   check('title lists Local match', await click('Local match'));
   await sleep(300);
   const chart = await page.evaluate(() => ({
@@ -71,28 +74,34 @@ try {
     for (let k = 0; k < 40 && !ok(f); k++) { await sleep(50); f = await frames(); }
     return f;
   };
-  await page.evaluate(() => window.__padAxis(0, 0, 1));
-  let f = await framesWhen((f) => f[1]?.x !== 0);
-  check('pad 1 moves player 1 only, turned round', f[1]?.x === -1 && f[0]?.x === 0 && f[2]?.x === 0 && (PADS === 3 ? f[3]?.x === 0 : f[3] === null), JSON.stringify(f));
-  // On screen: player 1's push (moveX -1 at the far end) goes the camera's right.
-  const screenRight = await page.evaluate(() => {
-    const g = window.__bandeja, cam = g.cam.camera;
+  // A push right, as the sim takes it (dx = moveX * side, dz = -moveY * side), against the camera's screen right.
+  const onScreen = (i) => page.evaluate((i) => {
+    const g = window.__bandeja, cam = g.cam.camera, f = g.inputs[i], s = g.sim.side(g.sim.players[i].team);
     cam.updateMatrixWorld();
-    const right = { x: cam.matrixWorld.elements[0], z: cam.matrixWorld.elements[2] };
-    const dx = -1 * g.sim.side(1);
-    return dx * right.x;
-  });
-  check('far player goes right on screen', screenRight > 0, screenRight.toFixed(3));
+    const e = cam.matrixWorld.elements, dx = f.moveX * s, dz = -f.moveY * s;
+    return (dx * e[0] + dz * e[2]) / Math.max(1e-9, Math.hypot(dx, dz) * Math.hypot(e[0], e[2]));
+  }, i);
+  const moving = (f) => f.map((x) => (x && (x.x !== 0 || x.y !== 0) ? 1 : 0));
+  const only = (f, i) => moving(f).every((m, k) => m === (k === i ? 1 : 0));
+  await page.evaluate(() => window.__padAxis(0, 0, 1));
+  let f = await framesWhen((f) => moving(f)[1] === 1);
+  check(`pad 1 moves player 1 only${CAMERA ? ` (${CAMERA} camera)` : ''}`, only(f, 1) && (CAMERA ? true : f[1].x === -1), JSON.stringify(f));
+  let r = await onScreen(1);
+  check('the far player goes right on screen', r > 0.9, r.toFixed(3));
   await page.evaluate(() => { window.__padAxis(0, 0, 0); window.__padAxis(1, 0, 1); });
-  f = await framesWhen((f) => f[2]?.x !== 0);
-  check('pad 2 moves player 2 only, not turned', f[2]?.x === 1 && f[0]?.x === 0 && f[1]?.x === 0, JSON.stringify(f));
+  f = await framesWhen((f) => moving(f)[2] === 1);
+  check('pad 2 moves player 2 only', only(f, 2) && (CAMERA ? true : f[2].x === 1), JSON.stringify(f));
+  r = await onScreen(2);
+  check('player 2 goes right on screen', r > 0.9, r.toFixed(3));
   await page.evaluate(() => window.__padAxis(1, 0, 0));
   const tick = () => page.evaluate(() => ({ tick: window.__bandeja.sim.tick, frame: window.__bandeja.probe.frames.length, menu: window.__app.menu.isOpen }));
   const t0k = await tick();
   await page.keyboard.down('KeyD');
-  f = await framesWhen((f) => f[0]?.x !== 0);
+  f = await framesWhen((f) => moving(f)[0] === 1);
   const t1k = await tick();
-  check('keyboard moves P1 only', f[0]?.x === 1 && f[1]?.x === 0 && f[2]?.x === 0, `${JSON.stringify(f)}; sim tick ${t0k.tick} -> ${t1k.tick}, frames ${t0k.frame} -> ${t1k.frame}, menu ${t1k.menu}`);
+  check('keyboard moves P1 only', only(f, 0) && (CAMERA ? true : f[0].x === 1), `${JSON.stringify(f)}; sim tick ${t0k.tick} -> ${t1k.tick}, frames ${t0k.frame} -> ${t1k.frame}, menu ${t1k.menu}`);
+  r = await onScreen(0);
+  check('P1 goes right on screen', r > 0.9, r.toFixed(3));
   await page.keyboard.up('KeyD');
 
   // Start on pad 2 pauses for everyone; Start again resumes.

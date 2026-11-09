@@ -1146,8 +1146,12 @@ export class App {
         ch('Quality', 'quality', [{ value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'ultra', label: 'Ultra' }],
           'Auto lowers the resolution when frames run long, to hold 60 frames a second. Low draws fewer pixels with softer shadows and no glow. Applies from the next match.'),
         ch('Frame rate meter', 'showFps', onOff, 'Frames per second and frame times, top right (also F3).'),
-        ch('Camera', 'camera', [{ value: 'tv', label: 'TV' }, { value: 'near', label: 'TV close' }, { value: 'player', label: 'Player' }],
-          'TV: the broadcast camera high behind the glass. TV close: nearer and wider. Player: low behind your end, sliding with you.'),
+        ch('Camera', 'camera', [{ value: 'tv', label: 'TV' }, { value: 'near', label: 'TV close' }, { value: 'player', label: 'Player' },
+          // (M7's cameras, behind ?creator=1 until the owner has seen them)
+          ...(this.creatorOn ? [{ value: 'side', label: 'Side' }, { value: 'dynamic', label: 'Dynamic' }] : [])],
+          this.creatorOn
+            ? 'TV: the broadcast camera high behind the glass. TV close: nearer and wider. Player: low behind your end, sliding with you. Side: high beside the court, your pair on the left or right. Dynamic: behind you, moving in and out with you.'
+            : 'TV: the broadcast camera high behind the glass. TV close: nearer and wider. Player: low behind your end, sliding with you.'),
         ch('Replays', 'replays', [{ value: true, label: 'Big points' }, { value: false, label: 'Off' }],
           'After a winner off the court, a hard overhead or a long rally, the point again from another angle, the winning shot slowed. Enter or Space skips one.'),
         { kind: 'group', label: 'Sound' },

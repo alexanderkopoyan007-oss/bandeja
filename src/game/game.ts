@@ -14,7 +14,7 @@ import { dealNames, nameOf, type PlayerName } from './names.ts';
 import { dealCast, type Cast } from './cast.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
-import { Local, LOCAL_COLOURS, axisFlip, type LocalSeat } from './locals.ts';
+import { Local, LOCAL_COLOURS, axisFlip, turnStick, type LocalSeat } from './locals.ts';
 import { ChallengeRun, type ChallengeDef } from './challenge.ts';
 import { GlassVision } from '../render/glassVision.ts';
 import { InputLog, LogPlayer, type SavedLog } from './inputLog.ts';
@@ -338,7 +338,9 @@ export class Game {
     this.net = new NetView(this.sim.net);
     this.scene.add(this.net.group);
 
-    this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0);
+    // (the side camera stands away from a neighbouring court, else away from the umpire's chair on +x)
+    const sideX = (this.arena.def.neighbours ?? []).some((ox) => ox < 0) ? 1 : -1;
+    this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0, sideX);
     const bl = this.arena.def.post?.bloom;
     if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
     BroadcastCamera.cutaways = opts.cutaway !== false;
@@ -698,10 +700,17 @@ export class Game {
     }
     if (l.keys) this.kb.axes(l.axes);
     else { l.axes.x = 0; l.axes.y = 0; }
-    // The pad's stick, when it is pushed, wins over the keys. A player at the far end steers as the screen shows them.
+    // The pad's stick, when it is pushed, wins over the keys. A player at the far end steers as the screen shows them,
+    // and from the side camera the stick is turned a quarter (views.ts steerTurn): its right is the screen's right.
     const pad = l.pad, stick = pad !== null && (pad.x !== 0 || pad.y !== 0);
-    f.moveX = (stick ? pad.x : l.axes.x) * l.flip;
-    f.moveY = (stick ? pad.y : l.axes.y) * l.flip;
+    const sx = stick ? pad.x : l.axes.x, sy = stick ? pad.y : l.axes.y;
+    if (this.cam.rig !== 'side') {
+      f.moveX = sx * l.flip;
+      f.moveY = sy * l.flip;
+    } else {
+      const team = this.sim.players[l.player]!.team;
+      turnStick(f, sx, sy, this.cam.steerTurn(team, this.team, this.sim.side(team)));
+    }
     // Button events that happened before the end of this tick, with their exact sim times; the buttons held are
     // those events' result at the tick's end (the keys as they are now can be a frame later than the tick).
     const endMs = this.epoch + t1 * 1000;

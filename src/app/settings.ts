@@ -42,8 +42,9 @@ export interface Settings {
   /** auto: High with the render scale adapted to hold 60 Hz (Game.adapt); the others are fixed presets. */
   quality: 'auto' | 'low' | 'medium' | 'high' | 'ultra';
   showFps: boolean;
-  /** The match camera (render/views.ts CAMERA_PRESETS): TV, TV close, or the player camera. */
-  camera: 'tv' | 'near' | 'player';
+  /** The match camera (render/views.ts CAMERA_PRESETS): TV, TV close, the player camera, and (M7, listed behind
+   * ?creator=1 until the owner has seen them) the side and dynamic cameras. */
+  camera: 'tv' | 'near' | 'player' | 'side' | 'dynamic';
   /** Instant replays of big points (game/replay.ts). */
   replays: boolean;
   // Sound (0..1)
@@ -91,7 +92,7 @@ const CHOICES: Record<string, readonly unknown[]> = {
   arena: ['stadium', 'hall', 'club-day', 'club-night', 'club-dusk', 'final'], court: ['standard', 'panoramic', 'singles-narrow'],
   scoring: ['star', 'golden', 'advantage'], length: ['short', 'set', 'three'], hand: ['right', 'left'],
   timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'], swing: ['hold', 'tap'],
-  quality: ['auto', 'low', 'medium', 'high', 'ultra'], camera: ['tv', 'near', 'player'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
+  quality: ['auto', 'low', 'medium', 'high', 'ultra'], camera: ['tv', 'near', 'player', 'side', 'dynamic'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
   // A partner's or the opponents' style: 'random' or a style that exists (data/ai.json).
   partner: ['random', ...STYLE_KEYS], opponents: ['random', ...STYLE_KEYS],
 };

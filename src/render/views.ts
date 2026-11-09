@@ -400,11 +400,67 @@ const FOV = 26;
  * 1.6 m behind the glass, 0.42 m up every 0.82 m: 2.7 m and heads at 3.9 m at 6 m back).
  */
 export const CAMERA_PRESETS = {
-  tv: { back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0 },
-  near: { back: 8.0, height: 7.8, fov: 36, follow: 0 },
-  player: { back: 6.0, height: 5.8, fov: 44, follow: 0.55 },
+  tv: { rig: 'end', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0 },
+  near: { rig: 'end', back: 8.0, height: 7.8, fov: 36, follow: 0 },
+  player: { rig: 'end', back: 6.0, height: 5.8, fov: 44, follow: 0.55 },
+  side: { rig: 'side', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0 },
+  dynamic: { rig: 'dynamic', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0 },
 } as const;
 export type CameraPreset = keyof typeof CAMERA_PRESETS;
+export type CameraRig = (typeof CAMERA_PRESETS)[CameraPreset]['rig'];
+
+/**
+ * The side camera (M7, Settings > Camera "Side"): high beside the court at the net line, as a broadcast's side camera
+ * stands, SIDE_OUT out from the side glass and SIDE_HEIGHT up, on the side away from any neighbouring court and the
+ * umpire's chair (`sideX`, from the arena). It pans a little along the court after the ball (SIDE_PAN of the ball's
+ * z, through a SIDE_LAG spring) and never swings round: your pair is on the left or the right of the picture and
+ * changes at the change of ends, as on TV. Steering turns with it (game.ts): the stick's right is the screen's right.
+ * 16 m from the middle at 40° (66° across at 16:9) the picture holds the court from back glass to back glass; at 9 m
+ * out and 36° it cut a back player in half at the frame's edge. 8 m up stays under a covered club's roof there (9.4 m)
+ * and over a stadium's side stand (heads at about 6 m), and the sight line clears its first row at the glass.
+ */
+const SIDE_OUT = 11;
+const SIDE_HEIGHT = 8;
+const SIDE_FOV = 40;
+const SIDE_PAN = 0.2;
+const SIDE_LAG = 0.7;
+/**
+ * The dynamic camera (M7, Settings > Camera "Dynamic"): behind your end like the end cameras (and swinging round with
+ * them at a change of ends) but moving with you. It slides across with DYN_FOLLOW of your x, comes in towards the
+ * glass and down as you go up to the net and back out and up as you drop back (DYN_BACK_*, DYN_HIGH_*, from your depth
+ * in your half), and looks between you and the far court, a share of the way to the ball (DYN_LOOK_BALL). Every part
+ * moves through a critically damped spring (DYN_LAG; DYN_LOOK_LAG for where it looks): it eases in and out, never
+ * jerks, and a player's sudden turn reaches it smoothed. tests/render/cameras.test.ts holds its turn rate and
+ * angular acceleration under the end cameras' over whole AI matches.
+ */
+const DYN_BACK_NET = 3.2;
+const DYN_BACK_BASE = 6.0;
+const DYN_HIGH_NET = 4.4;
+const DYN_HIGH_BASE = 5.8;
+const DYN_FOLLOW = 0.6;
+const DYN_LOOK_AHEAD = 7;
+const DYN_LOOK_BALL = 0.3;
+const DYN_FOV = 46;
+const DYN_LAG = 0.55;
+const DYN_LOOK_LAG = 0.4;
+
+/** A critically damped spring towards a moving target (the closed form: no overshoot, exact at any step). */
+class Spring {
+  x = 0;
+  v = 0;
+  to(target: number, dt: number, lag: number): number {
+    if (dt <= 0) return this.x;
+    const w = 2 / lag, k = Math.exp(-w * dt);
+    const c = this.x - target, t = (this.v + w * c) * dt;
+    this.v = (this.v - w * t) * k;
+    this.x = target + (c + t) * k;
+    return this.x;
+  }
+  snap(x: number): void {
+    this.x = x;
+    this.v = 0;
+  }
+}
 /** The pan's response (s): 5% a 60 Hz frame, as it was a frame at any rate (critic Low #14: 2.4x faster at 144 Hz). */
 const PAN_LAG = 0.325;
 const KICK_DECAY = 0.09;
@@ -475,9 +531,26 @@ export class BroadcastCamera {
     const p = CAMERA_PRESETS[name] ?? CAMERA_PRESETS.tv;
     this.back = p.back;
     this.height = p.height;
-    this.fov0 = p.fov;
+    this.fov0 = p.rig === 'side' ? SIDE_FOV : p.rig === 'dynamic' ? DYN_FOV : p.fov;
     this.follow = p.follow;
+    if (p.rig !== this.rig) this.snapRig = true;
+    this.rig = p.rig;
   }
+  /** Which kind of camera: behind an end, beside the court, or behind an end and moving with you. */
+  rig: CameraRig = 'end';
+  /** The side camera's side of the court (1: +x). */
+  readonly sideX: number;
+  /** The moving rigs' springs: the side camera's pan; the dynamic camera's place and look (in the frame of the end
+   * it is behind: x across, z out from the net, y up). Snapped where they belong after a cut. */
+  private snapRig = true;
+  private readonly sidePan = new Spring();
+  private readonly dynX = new Spring();
+  private readonly dynBack = new Spring();
+  private readonly dynHigh = new Spring();
+  private readonly dynLookX = new Spring();
+  private readonly dynLookZ = new Spring();
+  /** Where the camera looks this frame (before the lob tilt). */
+  private readonly lookT = new THREE.Vector3();
   private tilt = 0;
   private lastNow = -1;
 
@@ -485,9 +558,11 @@ export class BroadcastCamera {
    * stands, never through a hall's roof). */
   private readonly swingRise: number;
 
-  constructor(aspect: number, swingRise = 0) {
+  /** `sideX`: which side of the court the side camera stands (1: +x). */
+  constructor(aspect: number, swingRise = 0, sideX = 1) {
     this.camera = new THREE.PerspectiveCamera(FOV, aspect, 0.1, 300);
     this.swingRise = swingRise;
+    this.sideX = sideX >= 0 ? 1 : -1;
   }
 
   /** Something else pointed the camera (a replay): the next update sets its lens again and starts any cut-away afresh. */
@@ -496,11 +571,24 @@ export class BroadcastCamera {
     this.cutOn = false;
     this.lastNow = -1;
     this.lastPan = -1;
+    this.snapRig = true;
   }
 
   /** The camera is swinging round at a change of ends. */
   get swinging(): boolean {
     return this.turnStart >= 0;
+  }
+
+  /**
+   * How a player of `team` steers as this camera shows them, by whole quarter turns (exact: the stick's bits go to the
+   * sim unrounded): 0 as the stick reads, 1 its right is the team's forward (moveY = stick x, moveX = -stick y), 2
+   * turned round, 3 the other quarter. End cameras: 0 for the team at the camera's end, 2 for the other (locals.ts
+   * axisFlip). The side camera: a quarter turn one way or the other, by the side of the court the team is on and the
+   * side the camera stands (screen right is +z from -x, -z from +x).
+   */
+  steerTurn(team: number, cameraTeam: number, side: number): number {
+    if (this.rig !== 'side') return team === cameraTeam ? 0 : 2;
+    return this.sideX * side > 0 ? 1 : 3;
   }
 
   /**
@@ -577,6 +665,12 @@ export class BroadcastCamera {
     } else {
       this.angle = this.to;
     }
+    // (the side camera never swings round)
+    if (this.rig === 'side' && this.turnStart >= 0) {
+      this.turnStart = -1;
+      this.angle = this.to;
+      swing = 0;
+    }
     const court = sim.world.court;
     const Rz = court.halfL + this.back;
     const Rx = court.halfW + this.back;
@@ -600,10 +694,50 @@ export class BroadcastCamera {
         fov = this.fov0 * (1 - 0.029 * env * Math.min(1, u / 0.03));
       }
     }
-    const camY = this.height + this.swingRise * swing + jolt;
-    const tx = this.lookX * ca * 0.8, ty = 0.35 + jolt * 0.5, tz = -ca * 1.1;
-    this.camera.position.set(sa * Rx + this.lookX * ca, camY, ca * Rz - this.lookX * sa);
-    this.camera.lookAt(tx, ty, tz);
+    // The moving rigs' springs run on the match clock (as the tilt below).
+    const rdt = this.lastNow < 0 ? 0 : Math.min(0.1, Math.max(0, sim.time - this.lastNow));
+    const snap = this.snapRig;
+    this.snapRig = false;
+    if (this.rig === 'side') {
+      const panZ = ball ? ball.z * SIDE_PAN : 0;
+      if (snap) this.sidePan.snap(panZ);
+      else this.sidePan.to(panZ, rdt, SIDE_LAG);
+      this.camera.position.set(this.sideX * (court.halfW + SIDE_OUT), SIDE_HEIGHT + jolt, 0);
+      // (a little past the middle, so the far side's players stand in the picture as the near side's do)
+      this.lookT.set(-this.sideX * 0.8, 0.3 + jolt * 0.5, this.sidePan.x);
+    } else if (this.rig === 'dynamic') {
+      // Into the frame of the end the camera is behind: x across (its right), z from the net out to this end.
+      const p = sim.players[this.followPlayer]!.pos;
+      const plx = p.x * ca - p.z * sa, plz = p.x * sa + p.z * ca;
+      const bx = ball ? ball.x : p.x, bz = ball ? ball.z : p.z - DYN_LOOK_AHEAD;
+      const blx = bx * ca - bz * sa, blz = bx * sa + bz * ca;
+      const d = Math.min(1, Math.max(0, plz / court.halfL));
+      const backT = DYN_BACK_NET + (DYN_BACK_BASE - DYN_BACK_NET) * d;
+      const highT = DYN_HIGH_NET + (DYN_HIGH_BASE - DYN_HIGH_NET) * d;
+      const xT = plx * DYN_FOLLOW;
+      const ahead = plz - DYN_LOOK_AHEAD;
+      const lzT = Math.min(plz - 2, Math.max(-court.halfL, ahead + (blz - ahead) * DYN_LOOK_BALL));
+      const lxT = plx * 0.5 * (1 - DYN_LOOK_BALL) + blx * DYN_LOOK_BALL;
+      if (snap) {
+        this.dynX.snap(xT); this.dynBack.snap(backT); this.dynHigh.snap(highT); this.dynLookX.snap(lxT); this.dynLookZ.snap(lzT);
+      } else {
+        this.dynX.to(xT, rdt, DYN_LAG);
+        this.dynBack.to(backT, rdt, DYN_LAG);
+        this.dynHigh.to(highT, rdt, DYN_LAG);
+        this.dynLookX.to(lxT, rdt, DYN_LOOK_LAG);
+        this.dynLookZ.to(lzT, rdt, DYN_LOOK_LAG);
+      }
+      const lx = this.dynX.x, lz = court.halfL + this.dynBack.x;
+      this.camera.position.set(lx * ca + lz * sa, this.dynHigh.x + this.swingRise * swing + jolt, lz * ca - lx * sa);
+      const tlx = this.dynLookX.x, tlz = this.dynLookZ.x;
+      this.lookT.set(tlx * ca + tlz * sa, 0.6 + jolt * 0.5, tlz * ca - tlx * sa);
+    } else {
+      const camY = this.height + this.swingRise * swing + jolt;
+      this.lookT.set(this.lookX * ca * 0.8, 0.35 + jolt * 0.5, -ca * 1.1);
+      this.camera.position.set(sa * Rx + this.lookX * ca, camY, ca * Rz - this.lookX * sa);
+    }
+    this.camera.lookAt(this.lookT);
+    const tx = this.lookT.x, ty = this.lookT.y, tz = this.lookT.z;
     // Tilt up with a lob, as the operator does: keep the ball TILT_MARGIN below the top of the frame, following
     // with a TILT_LAG response (and easing back down).
     // On the match clock (stepped captures included); the operator leads a rising ball by the lag.

@@ -4255,3 +4255,27 @@ The owner said "keep going" after M5 went to main (0a5c6bd). M6 is the brief's c
   - In the first run, under load 31 from an orphaned headless Chrome left by another project (killed by its PID), one seat of the four-player run rewound 50 ticks deep.
   - Run again alone: deepest 9-17 ticks and longest replay 6.1 ms, as in docs/online.md (deepest 15-16).
 - **Still behind `?creator=1`:** local match, tournament, challenges, academy and career, until the owner has seen them. main stays at 0a5c6bd until the owner says to push it.
+
+## M7 phase A: the side and dynamic cameras (2026-11-09)
+The owner said "keep going" after M6 went to main (558510e). M7 is the brief's section 12, Presentation. The plan is at the top of `~/.claude/plans/toasty-swimming-bonbon.md`, with a list of what already existed from the realism brief: end cameras, cut-aways, instant replays, the `?gfx=tv` package and most of the audio. Everything new is behind `?creator=1` until the owner has seen it.
+- **Rigs (`render/views.ts` `CAMERA_PRESETS[...].rig`):** the three end cameras keep their exact code path, and two rigs join them.
+  - **`side`:** 11 m out from the side glass, 8 m up, 40°.
+    - It stands on the side away from a neighbouring court, otherwise away from the umpire's chair (`sideX`, from the arena).
+    - It pans 0.2 of the ball's z through a critically damped spring (0.7 s) and never swings round. Your pair is left or right of the picture and changes at the change of ends.
+    - The first version stood 9 m out at 36°, panning 0.45: it cut a back player in half at the frame's edge and turned up to 25 deg/s.
+  - **`dynamic`:** behind your end.
+    - It slides across with 0.6 of your x, and comes in and down as you go to the net (3.2 m from the glass at 4.4 m up, against 6.0 m at 5.8 m from the baseline).
+    - It looks 7 m ahead of you, 0.3 of the way to the ball.
+    - Every part moves through a critically damped spring (`Spring`, the closed form: no overshoot at any frame rate).
+- **Steering stays screen-relative:**
+  - `BroadcastCamera.steerTurn` gives whole quarter turns, and `locals.ts turnStick` applies them. They are exact, and `0 - v` / `v + 0` keep out a -0 the stick didn't give.
+  - The end rigs keep the old `x * flip` line, so nothing a TV-camera player sends changes.
+- **Checked:**
+  - **`tests/render/cameras.test.ts`, steering:** for every rig, both sides of the court and both ends, a push right goes along the camera's own screen right (from its matrix) and up goes into the picture.
+  - **`tests/render/cameras.test.ts`, motion:** over 150 s of an AI match at 60 Hz, rallies only:
+    - the end cameras turn up to 8-9 deg/s (p99 change 21-28 deg/s²);
+    - side up to 10 (22);
+    - dynamic up to 17 (41), moving at most 1.3 m/s.
+  - `tools/local-check.mjs CAMERA=side|dynamic` in Chrome: every device's push goes right on that camera's screen.
+  - `tools/cam-stills.mjs` sheets in the stadium, the covered club and the park: the side camera holds the court glass to glass, and nothing stands in front of either rig.
+- **Listed in Settings > Camera** only behind `?creator=1`. `?camera=side|dynamic` works anywhere.

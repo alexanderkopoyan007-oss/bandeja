@@ -52,6 +52,16 @@ export function axisFlip(team: number, cameraTeam: number): number {
   return team === cameraTeam ? 1 : -1;
 }
 
+/**
+ * The stick (`sx` right, `sy` up the screen) as the team's own axes for a camera turned a quarter from its end
+ * (views.ts steerTurn): 1, the stick's right is the team's forward; 3, the other way. Whole quarter turns only, so the
+ * values stay exact, and `0 - v` / `v + 0` keep a -0 out that the stick didn't give.
+ */
+export function turnStick(f: { moveX: number; moveY: number }, sx: number, sy: number, turn: number): void {
+  if (turn === 1) { f.moveX = 0 - sy; f.moveY = sx + 0; }
+  else { f.moveX = sy + 0; f.moveY = 0 - sx; }
+}
+
 /** A player on this machine and their input on its way to the sim (nothing here allocates per tick). */
 export class Local {
   readonly player: number;
