@@ -662,6 +662,14 @@ const SKIN_DETAIL = 0.6;
 /** The hands' at their full strength: at the sources' resolution (hands-n.webp) the knuckles' creases and the nails' edges are
  * texels wide, not smeared, and at the face's 0.6 they read as smooth. */
 const HANDS_DETAIL = 1;
+/**
+ * The nails (mh-player.py `nail_mask`, hands-n.webp's alpha; MetaHuman's own roughness map came out empty): keratin is
+ * smoother than skin and has no pores, with a soft gloss over it (a clearcoat), and the plate scatters less light than skin.
+ * Natural nails, not polish. Roughness, the gloss's strength and roughness, and how much of the skin's scatter is kept.
+ */
+const NAIL_ROUGH = 0.3, NAIL_COAT = 0.4, NAIL_COAT_ROUGH = 0.15, NAIL_SCATTER = 0.5;
+/** hands-n.webp's alpha is 1 - this x the nail (mh-player.py NAIL_ALPHA: never 0, as WebP drops the colour under a clear texel). */
+const NAIL_ALPHA = 0.5;
 const BIB_PLAIN = 0.9;
 /** The collar's bins across (count, m each), and how far inside the shirt's top its edge stays (m). */
 const COLLAR_BINS = 6;
@@ -808,6 +816,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const handsUv = hb ? uv().sub(vec2(hb[0], hb[1])).div(vec2(hb[2] - hb[0], hb[3] - hb[1])) : uv();
   const atlas = body.opaqueMap ? texture(body.opaqueMap, uv()) : vec4(0.8, 0.62, 0.5, 1);
   const tex = inHands ? mix(atlas, texture(body.handsMap!, handsUv), inHands) : atlas;
+  const handsN = inHands && body.handsNormal ? texture(body.handsNormal, handsUv) : null;
+  const nail = handsN ? float(1).sub(handsN.w).div(NAIL_ALPHA).clamp(0, 1).mul(inHands!).mul(skinW) : float(0);
   // The clothes' ambient occlusion is the grey in their rectangle; the skin's, teeth's and tongue's is the alpha.
   const ao = float(0.32).add(tex.x.mul(0.68));
   // The skin under the shirt's collar was baked in the shirt's shadow, and the collar is cut lower than that shirt's:
@@ -950,8 +960,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
-  const skinRough = mix(float(0.5), float(0.33), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07))
-    .add(mottle.mul(0.07)).add(poreFine.mul(0.05));
+  const skinRough = mix(mix(float(0.5), float(0.33), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07))
+    .add(mottle.mul(0.07)).add(poreFine.mul(0.05)), float(NAIL_ROUGH), nail);
   m.roughnessNode = fabric.mul(float(0.88).sub(wet.mul(0.25)))
     .add(skinW.mul(mix(skinRough, float(0.9), band)))
     .add(eyeW.mul(0.2)).add(teethW.mul(0.3)).add(tongueW.mul(0.38)).add(shoeW.mul(0.45));
@@ -961,16 +971,16 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // (dark skin shows more of its specular: the same lobe over a darker base, a little stronger)
   m.specularIntensityNode = mix(float(1), smoothstep(0.05, 0.55, tex.w).mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
-  m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)))
+  m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
     .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW.mul(CORNEA)).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
-  m.clearcoatRoughnessNode = skinW.mul(float(0.32).sub(sweat.mul(0.1))).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
+  m.clearcoatRoughnessNode = skinW.mul(mix(float(0.32).sub(sweat.mul(0.1)), float(NAIL_COAT_ROUGH), nail)).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
   // Cotton and polyester's soft rim.
   // (less on the shorts and skirts, which are often near black: at a grazing view the white in it turned them grey; and none
   // in the cloth's own creases, or a pleat's inside lit up in a lunge)
   m.sheenNode = mix(col, vec3(1, 1, 1), mix(float(0.35), float(0.12), shortsW)).mul(fabric.mul(0.6)).mul(ao);
   m.sheenRoughnessNode = float(0.55);
   // (little on the lids: the red at their terminator drew an orange band over each eye)
-  m.scatterNode = skinW.mul(float(SKIN_SCATTER).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85)));
+  m.scatterNode = skinW.mul(float(SKIN_SCATTER).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85))).mul(float(1).sub(nail.mul(1 - NAIL_SCATTER)));
   // (the mouth too: the sky's blue on teeth turned them blue-black with the head bowed)
   m.ambientFixNode = skinW.add(eyeW).add(mouthW);
   m.toneBackNode = skinW.mul(SKIN_TONE_BACK);
@@ -984,7 +994,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // Pores: about 0.5 mm features, 30 µm deep, faded out wherever a pixel covers more than a few of them (bump.ts),
   // less on the lips and lids.
   const pores = mx_noise_float(p.mul(1900)).mul(0.6).add(poreFine.mul(0.4))
-    .mul(0.00003).mul(skinW).mul(float(1).sub(lips.mul(0.7)).sub(lids.mul(0.5))).mul(footprintKeep(0.0012));
+    .mul(0.00003).mul(skinW).mul(float(1).sub(lips.mul(0.7)).sub(lids.mul(0.5)).sub(nail)).mul(footprintKeep(0.0012));
   // The suit's sculpted folds, MakeHuman's own normal map, over the suit's rectangle of the atlas (finish-player.py RECT).
   let bumped = heightBump(folds.mul(body.clothNormal ? sockW : fabric).mul(0.0025).add(pores).add(shoeRelief), 0.023);
   // The skin's own detail normals over that (a MetaHuman's, mh-player.py: pores, the creases round the eyes and mouth, the
@@ -993,8 +1003,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // the longer, which would have halved the creases running across the face.
   if (body.skinNormal) {
     const own = texture(body.skinNormal, uv()).xy;
-    const detail = inHands && body.handsNormal
-      ? mix(own.mul(2).sub(1).mul(SKIN_DETAIL), texture(body.handsNormal, handsUv).xy.mul(2).sub(1).mul(HANDS_DETAIL), inHands)
+    const detail = inHands && handsN
+      ? mix(own.mul(2).sub(1).mul(SKIN_DETAIL), handsN.xy.mul(2).sub(1).mul(HANDS_DETAIL), inHands)
       : own.mul(2).sub(1).mul(SKIN_DETAIL);
     bumped = bumped.add(uvNormal(detail, uv().mul(vec2(1.5, 1))).sub(normalView).mul(skinW)).normalize();
   }

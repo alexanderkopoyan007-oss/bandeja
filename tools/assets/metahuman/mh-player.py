@@ -334,6 +334,60 @@ if helmet:
     helmet.data.update()
     say('helmet vertices pushed out of the skin', moved, 'of', len(helmet.data.vertices),
         'offsets (mm) by percentile', [round(float(np.percentile(depth, q)) * 1000, 1) for q in (0, 5, 10, 25, 50, 90)])
+    # (and under the cards. Unreal's helmet is the hair's outside, the far head's stand-in for the cards; near, it stood over
+    # them, and a bob (p10mh, no coverage map, so all of the shell drawn) read as a black plastic shell with its cards'
+    # strands, parting and shine hidden. Along each vertex's line out of the skin, the cards are hit in layers; the vertex
+    # now sits HELMET_UNDER inside the hit HELMET_Q of the way out, under most of them, filling the gaps between the
+    # strands as the hair's mass without covering them, and never nearer the skin than HELMET_OFF. Over the face (skin
+    # facing within HELMET_FRONT of straight ahead, the forehead under a fringe) the shell goes where cards cover it: what
+    # shows between a fringe's strands is the forehead, and sunk onto it the shell was a dark band under the fringe's
+    # edge and a notch at its end, behind cards 3-4 mm off the skin. It sinks at most HELMET_SINK: an afro's cards fill a
+    # deep volume (p8mh's quarter-depth hit is 3-8 cm in), and sunk to it the afro lost its mass and read as a sparse
+    # spiky halo; held 1.5 cm under its outside, its outer cards are a fuzz over the dark mass.)
+    HELMET_Q, HELMET_UNDER, HELMET_REACH, HELMET_FRONT, HELMET_SINK = 0.25, 0.0015, 0.08, 0.7, 0.015
+    ahead = Vector((0, -1, 0))
+    cb = bmesh.new()
+    cb.from_mesh(hair.data)
+    card_bvh = BVHTree.FromBMesh(cb)
+    cb.free()
+    sink, over_face = [], set()
+    for v in helmet.data.vertices:
+        loc, nrm, _, _ = head_bvh.find_nearest(v.co)
+        if loc is None:
+            continue
+        s = (v.co - loc).dot(nrm)
+        if s <= HELMET_OFF:
+            continue
+        hits, t0 = [], 0.0005
+        while t0 < s + HELMET_REACH:
+            hit = card_bvh.ray_cast(loc + nrm * t0, nrm, s + HELMET_REACH - t0)
+            if hit[0] is None:
+                break
+            t = (hit[0] - loc).dot(nrm)
+            hits.append(t)
+            t0 = t + 0.0002
+        if not hits:
+            continue
+        if nrm.dot(ahead) > HELMET_FRONT:
+            over_face.add(v.index)
+            continue
+        want = max(HELMET_OFF, s - HELMET_SINK, min(s, float(np.quantile(hits, HELMET_Q)) - HELMET_UNDER))
+        if want < s - 1e-4:
+            v.co = v.co - nrm * (s - want)
+            sink.append(s - want)
+    helmet.data.update()
+    n_shell = len(helmet.data.vertices)
+    hb = bmesh.new()
+    hb.from_mesh(helmet.data)
+    gone = [f for f in hb.faces if all(v.index in over_face for v in f.verts)]
+    bmesh.ops.delete(hb, geom=gone, context='FACES')
+    bmesh.ops.delete(hb, geom=[v for v in hb.verts if not v.link_faces], context='VERTS')
+    hb.to_mesh(helmet.data)
+    hb.free()
+    helmet.data.update()
+    say('helmet vertices sunk under the cards', len(sink), 'of', n_shell,
+        'by (mm) percentile 10/50/90', [round(float(np.percentile(sink, q)) * 1000, 1) for q in (10, 50, 90)] if sink else [],
+        '; faces over the face under cards dropped', len(gone))
 
 # ---------------------------------------------------------------- joints ----------------------------------------------------------
 J = {}
@@ -1439,6 +1493,128 @@ def hands_box(o):
     return float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1]), int(len(on))
 
 
+# The nails: hands-n.webp's alpha (the owner's realism list, 7 Nov, point 6: "hands need knuckles and nails"). The sharper
+# hands show each nail's shape, but it shone as the skin round it does: MetaHuman's T_Body_SRMF, where its roughness would
+# be, came out all zeros, and its scatter map is 512 square. So the plate is found in the colour: on each finger's last
+# bone (at least half its skin), on the side the nail faces (the back of the hand: the finger crossed with the knuckles'
+# line, index to pinky; the thumb's turned halfway towards the index), where the colour is lighter and the normals tilt
+# more (the plate's dome and its edge; the skin round it is flat at this size) than over the rest of that side, smoothed
+# (NAIL_BLUR texels), its largest piece kept, closed and its edge softened. (Not by redness: the plate is a shade pinker
+# than the skin round it. p7mh's index: lighter by 0.06, tilt 0.06-0.07 against 0.02.)
+# Written as 1 - NAIL_ALPHA x the plate, never 0: WebP drops the colour under a fully clear texel, and an alpha of 0 off the
+# nails left hands-n.webp flat everywhere else (p8mh's went from 264 to 11 KB).
+NAIL_SIDE, NAIL_BLUR, NAIL_OVER, NAIL_MIN, NAIL_ALPHA = 0.2, 2, 0.6, 40, 0.5
+
+
+def mean_blur(a, r):
+    """The mean over a (2r+1)-square round each texel, the edges clamped."""
+    k = 2 * r + 1
+    c = np.pad(np.pad(a, r, mode='edge'), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    return (c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k]) / (k * k)
+
+
+def largest_piece(on):
+    """The largest 4-connected piece of a boolean picture."""
+    seen = np.zeros_like(on)
+    best = []
+    for y, x in zip(*np.nonzero(on)):
+        if seen[y, x]:
+            continue
+        seen[y, x] = True
+        stack, piece = [(y, x)], []
+        while stack:
+            cy, cx = stack.pop()
+            piece.append((cy, cx))
+            for ny, nx in ((cy + 1, cx), (cy - 1, cx), (cy, cx + 1), (cy, cx - 1)):
+                if 0 <= ny < on.shape[0] and 0 <= nx < on.shape[1] and on[ny, nx] and not seen[ny, nx]:
+                    seen[ny, nx] = True
+                    stack.append((ny, nx))
+        if len(piece) > len(best):
+            best = piece
+    out = np.zeros_like(on)
+    if best:
+        ys, xs = zip(*best)
+        out[list(ys), list(xs)] = True
+    return out
+
+
+def nail_mask(o, full, x0, y0, x1, y1, colour, normal):
+    """Per texel of the hands' rectangle (colour's and normal's size, rows from the bottom; normal in -1..1): 1 on a nail,
+    0 off, softened at the edge."""
+    h, w = colour.shape[:2]
+    bwn = weights(o)
+    nrm = np.empty(len(o.data.vertices) * 3)
+    o.data.vertices.foreach_get('normal', nrm)
+    nrm = nrm.reshape(-1, 3)
+    finger = np.zeros(len(bwn), dtype=np.int32)
+    names = {}
+    for s, sign in (('Left', -1), ('Right', 1)):
+        across = J[s + 'HandIndex1'] - J[s + 'HandPinky1']
+        mid = (J[s + 'HandMiddle4'] - J[s + 'HandMiddle3']).normalized()
+        back = mid.cross(across) * sign
+        back.normalize()
+        say('nails:', s, 'back of the hand', [round(t, 2) for t in back])
+        for F, _ in FINGERS:
+            k = len(names) + 1
+            names[k] = s + F
+            d = (J[f'{s}Hand{F}4'] - J[f'{s}Hand{F}3']).normalized()
+            way = back + across.normalized() if F == 'Thumb' else d.cross(across) * sign
+            way = way - d * way.dot(d)
+            way.normalize()
+            last = (f'{s}Hand{F}3', f'{s}Hand{F}4')
+            for i, wv in enumerate(bwn):
+                tot = sum(wv.values())
+                if tot > 0 and sum(wv.get(b, 0.0) for b in last) >= 0.5 * tot and float(np.dot(nrm[i], way)) > NAIL_SIDE:
+                    finger[i] = k
+    me = o.data
+    me.calc_loop_triangles()
+    uv = np.empty(len(me.uv_layers[0].data) * 2, dtype=np.float32)
+    me.uv_layers[0].data.foreach_get('uv', uv)
+    uv = uv.reshape(-1, 2)
+    uv -= np.floor(np.median(uv, axis=0))
+    sx, sy = w / (x1 - x0), h / (y1 - y0)
+    ids = np.zeros((h, w), dtype=np.int32)
+    for tri in me.loop_triangles:
+        f = finger[list(tri.vertices)]
+        if f[0] == 0 or f[0] != f[1] or f[0] != f[2]:
+            continue
+        pt = (uv[list(tri.loops)] * full - (x0, y0)) * (sx, sy)
+        lo, hi = np.floor(pt.min(0)).astype(int), np.ceil(pt.max(0)).astype(int)
+        lo, hi = np.maximum(lo, 0), np.minimum(hi, (w - 1, h - 1))
+        if (hi < lo).any():
+            continue
+        gx, gy = np.meshgrid(np.arange(lo[0], hi[0] + 1) + 0.5, np.arange(lo[1], hi[1] + 1) + 0.5)
+        (ax, ay), (bx, by), (cx, cy) = pt
+        dd = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(dd) < 1e-12:
+            continue
+        l1 = ((by - cy) * (gx - cx) + (cx - bx) * (gy - cy)) / dd
+        l2 = ((cy - ay) * (gx - cx) + (ax - cx) * (gy - cy)) / dd
+        inside = (l1 >= -0.01) & (l2 >= -0.01) & (1 - l1 - l2 >= -0.01)
+        ids[lo[1]:hi[1] + 1, lo[0]:hi[0] + 1][inside] = f[0]
+    lum = colour[..., :3] @ np.array([0.3, 0.59, 0.11], dtype=np.float32)
+    tilt = np.hypot(normal[..., 0], normal[..., 1])
+    plate = np.zeros((h, w), dtype=bool)
+    found = []
+    for k, name in names.items():
+        on = ids == k
+        if on.sum() < NAIL_MIN:
+            found.append((name, int(on.sum()), 0))
+            continue
+        ys, xs = np.nonzero(on)
+        ya, yb, xa, xb = max(ys.min() - 4, 0), min(ys.max() + 5, h), max(xs.min() - 4, 0), min(xs.max() + 5, w)
+        sub = on[ya:yb, xa:xb]
+        L, T = lum[ya:yb, xa:xb], tilt[ya:yb, xa:xb]
+        z = (L - L[sub].mean()) / max(L[sub].std(), 1e-4) + (T - T[sub].mean()) / max(T[sub].std(), 1e-4)
+        z[~sub] = 0
+        keep = largest_piece(sub & (mean_blur(z, NAIL_BLUR) > NAIL_OVER))
+        keep = largest_piece(sub & (mean_blur(keep.astype(np.float32), 1) > 0.3))
+        plate[ya:yb, xa:xb] |= keep
+        found.append((name, int(sub.sum()), int(keep.sum())))
+    say('nails: texels on the side / on the plate', found)
+    return np.clip(mean_blur(plate.astype(np.float32), 1) * 1.5 - 0.25, 0, 1)
+
+
 hands = None
 if spec.get('body_n'):
     u0, v0, u1, v1, n_on = hands_box(body)
@@ -1462,7 +1638,20 @@ if spec.get('body_n'):
     hn /= np.maximum(np.linalg.norm(hn, axis=-1, keepdims=True), 1e-6)
     hn4 = np.ones((hh, HANDS_W, 4), dtype=np.float32)
     hn4[..., :3] = hn * 0.5 + 0.5
+    nails = nail_mask(body, full, x0, y0, x1, y1, hc, hn)
+    hn4[..., 3] = 1 - NAIL_ALPHA * nails
+    if os.environ.get('MH_DEBUG'):
+        dbg = hc.copy()
+        dbg[..., 3] = 1
+        dbg[..., 1] = np.maximum(dbg[..., 1], nails)
+        save(dbg, os.path.join(OUT, 'debug-nails.webp'), 'dbg')
     save(hn4, os.path.join(OUT, 'hands-n.webp'), 'hands-n', SKIN_QUALITY)
+    # (read back: the file must keep the normals' relief off the nails, as an alpha of 0 once flattened them)
+    back = load_px(os.path.join(OUT, 'hands-n.webp'))[..., :2] * 2 - 1
+    kept = float(np.hypot(back[..., 0], back[..., 1]).mean() / max(np.hypot(hn[..., 0], hn[..., 1]).mean(), 1e-6))
+    say('hands-n relief kept in the file', round(kept, 3))
+    if kept < 0.8:
+        raise ValueError(f'hands-n.webp lost its normals ({kept:.2f} of the relief kept)')
     bx, by, bw, bh = RECT['body']
     hands = [round((bx + t * bw) / OPAQUE_SIZE[0], 6) if k % 2 == 0 else round((by + t * bh) / OPAQUE_SIZE[1], 6)
              for k, t in enumerate((u0, v0, u1, v1))]
