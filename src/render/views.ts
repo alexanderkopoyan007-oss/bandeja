@@ -253,7 +253,8 @@ export class PlayerView {
       const who = body ? reproportion(person ?? asset, body) : person ?? asset;
       // (a costume puts on its own colours and suit: costumes.ts)
       const { look: kit, wear: w } = costumed(kitFor(idx, cast?.kits), wear);
-      this.avatar = new Avatar(who, kit, w?.paint);
+      // (and their own skin and hair: a character's, game/cast.ts looks)
+      this.avatar = new Avatar(who, kit, w?.paint, cast?.looks?.[idx]);
       // Each player's own racket (data/racket-looks/), in their own overgrip if they chose one.
       dressRacket(this.avatar.racket, gripped(racketLookFor(idx, racket), w?.grip));
       if (w) this.avatar.wear(dressFor(who, w, kit, this.avatar.mesh.geometry.index));

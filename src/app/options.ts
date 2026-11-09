@@ -13,7 +13,9 @@ import type { CameraPreset } from '../render/views.ts';
 import { type MatchSetup, type Settings, LEVEL_AI, PARTNER_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
 import type { Wear } from '../render/avatar/costume.ts';
 import { COSMETIC_BY_ID, paintOf } from './unlocks.ts';
-import type { Character } from './character.ts';
+import { HAIR_TONES, type Character } from './character.ts';
+import type { SelfLook } from '../render/avatar/kit.ts';
+import { TATTOO_DESIGNS } from '../render/avatar/tattoo.ts';
 import { isNeutral } from '../render/avatar/proportions.ts';
 
 /**
@@ -261,4 +263,18 @@ export function applyCharacter(opts: GameOptions, c: Character): void {
   opts.match.rackets[at] = c.racket.base;
   opts.match.lefty = Array.from({ length: n }, (_, i) => opts.match.lefty?.[i] ?? false);
   opts.match.lefty[at] = c.hand === 'left';
+  const look = selfLookOf(c);
+  if (look) {
+    opts.looks = Array.from({ length: n }, (_, i) => opts.looks?.[i] ?? null);
+    opts.looks[at] = look;
+  }
+}
+
+/** A character's skin, hair and tattoos as the shader takes them (null: the face preset's own, none). */
+export function selfLookOf(c: Character): SelfLook | null {
+  const hair = c.hair ? HAIR_TONES[c.hair]?.rgb ?? null : null;
+  const design = (t: string | null): number => (t ? TATTOO_DESIGNS.indexOf(t as (typeof TATTOO_DESIGNS)[number]) + 1 : 0);
+  const tattoos = { arm: design(c.tattoos.arm), calf: design(c.tattoos.calf), left: c.hand === 'left' };
+  const inked = tattoos.arm > 0 || tattoos.calf > 0;
+  return c.skin === 0 && !hair && !inked ? null : { skin: c.skin, hair, tattoos: inked ? tattoos : null };
 }

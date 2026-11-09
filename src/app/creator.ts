@@ -7,7 +7,8 @@
 // racket's own colours, the grunt and the celebration join with the looks they need (phase D's next step).
 import type { Choice, Item, Menu, Screen } from '../ui/menu/menu.ts';
 import {
-  checkedBody, cleanName, decodeCharacter, defaultCharacter, encodeCharacter, FACES, NAME_MAX, RACKET_IDS, setSilly, type Character,
+  checkedBody, cleanName, decodeCharacter, defaultCharacter, encodeCharacter, FACES, HAIR_TONES, NAME_MAX, RACKET_IDS, setSilly,
+  TATTOOS, type Character, type Tattoo,
 } from './character.ts';
 import { CHARACTERS_MAX, type Store } from './store.ts';
 import { COSMETICS, covered, SLOT_INFO, SLOTS, type Slot } from './unlocks.ts';
@@ -62,6 +63,18 @@ export function toScale(v: number, [lo, hi]: readonly [number, number]): number 
 }
 export function fromScale(x: number, [lo, hi]: readonly [number, number]): number {
   return x <= 1 ? (0.5 * (x - lo)) / (1 - lo) : 0.5 + (0.5 * (x - 1)) / (hi - 1);
+}
+
+/** The hair choices: the face's own, the natural tones, and the dyed ones in ridiculous mode. */
+function hairOptions(silly: boolean): Choice[] {
+  const tones = Object.entries(HAIR_TONES).filter(([, t]) => silly || !t.silly);
+  return [{ value: null, label: 'Their own' }, ...tones.map(([k]) => ({ value: k, label: k[0]!.toUpperCase() + k.slice(1) }))];
+}
+
+/** A skin tint as the slider shows it. */
+export function skinWords(t: number): string {
+  const n = Math.round(Math.abs(t) * 100);
+  return n === 0 ? 'Their own' : `${t < 0 ? 'Darker' : 'Lighter'} ${n}%`;
 }
 
 /** A racket's name without its specs in brackets (data/rackets.json `name`). */
@@ -243,6 +256,11 @@ export class Creator {
     const d = (): Character => this.draft!;
     const s = this.host.store();
     const owned = s?.owned ?? new Set<string>();
+    // (its choices change with ridiculous: dyed colours only there)
+    const hair: Item = {
+      kind: 'choice', label: 'Hair colour', desc: () => (d().silly ? 'The face’s own, a natural colour, or dyed.' : 'The face’s own or a natural colour. Ridiculous has dyed ones.'),
+      options: hairOptions(d().silly), get: () => d().hair, set: (v) => { d().hair = typeof v === 'string' ? v : null; this.dress(); },
+    };
     const items: Item[] = [
       {
         kind: 'text', label: 'Name', free: true, desc: 'Letters, spaces, apostrophes, hyphens, dots.', get: () => d().name,
@@ -264,11 +282,25 @@ export class Creator {
         kind: 'choice', label: 'Racket hand', options: [{ value: 'right', label: 'Right' }, { value: 'left', label: 'Left' }],
         get: () => d().hand, set: (v) => { d().hand = v === 'left' ? 'left' : 'right'; this.dress(); },
       },
+      {
+        kind: 'slider', label: 'Skin', step: 0.05, desc: 'Darker or lighter than the face’s own, within real skin.',
+        readout: () => skinWords(d().skin), get: () => (d().skin + 1) / 2,
+        set: (v) => { d().skin = Math.round((Number(v) * 2 - 1) * 100) / 100; this.dress(); },
+      },
+      hair,
+      ...(['arm', 'calf'] as const).map((where): Item => ({
+        kind: 'choice', label: where === 'arm' ? 'Arm tattoo' : 'Calf tattoo',
+        desc: where === 'arm' ? 'On the racket arm’s forearm, outside.' : 'On the back of the other leg’s calf.',
+        options: [{ value: null, label: 'None' }, ...TATTOOS.map((t) => ({ value: t, label: t[0]!.toUpperCase() + t.slice(1) }))],
+        get: () => d().tattoos[where],
+        set: (v) => { d().tattoos = { ...d().tattoos, [where]: (v as Tattoo | null) ?? null }; this.dress(); },
+      })),
       { kind: 'group', label: 'Body' },
       {
         kind: 'choice', label: 'Ridiculous', options: [{ value: false, label: 'Off' }, { value: true, label: 'On' }],
         desc: 'Off: within real people’s range. On: giant heads, long arms, little legs. They still play the ball.',
-        get: () => d().silly, set: (v) => { setSilly(d(), v === true); this.dress(); this.menu.refresh(); },
+        get: () => d().silly,
+        set: (v) => { setSilly(d(), v === true); hair.options = hairOptions(d().silly); this.dress(); this.menu.refresh(); },
       },
       ...PROPORTION_KEYS.map((k): Item => ({
         kind: 'slider', label: BODY[k][0], step: 0.05,

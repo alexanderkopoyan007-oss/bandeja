@@ -93,6 +93,29 @@ describe('the creator', () => {
     expect(menu.current!.sub).toBe('You play as Zoë O’Neil-Ríos');
   });
 
+  it('skin and hair: the slider says how much, and dyed colours are offered only in ridiculous mode', async () => {
+    const { menu, store } = await setup();
+    press(menu.current, 'Create a player');
+    const skin = item(menu.current, 'Skin'), hair = item(menu.current, 'Hair colour');
+    expect(skin.readout!()).toBe('Their own');
+    skin.set!(0.2);
+    expect(skin.readout!()).toBe('Darker 60%');
+    skin.set!(0.85);
+    expect(skin.readout!()).toBe('Lighter 70%');
+    const values = (): unknown[] => hair.options!.map((o) => o.value);
+    expect(values()).toContain('blonde');
+    expect(values()).not.toContain('lime');
+    item(menu.current, 'Ridiculous').set!(true);
+    expect(values()).toContain('lime');
+    hair.set!('lime');
+    item(menu.current, 'Ridiculous').set!(false);
+    expect(values()).not.toContain('lime');
+    expect(hair.get!()).toBeNull();
+    hair.set!('copper');
+    press(menu.current, 'Save them');
+    expect([store.characters[0]!.skin, store.characters[0]!.hair]).toEqual([0.7, 'copper']);
+  });
+
   it('leaving asks first only when something changed; ridiculous off brings the body back in range', async () => {
     const { menu, store } = await setup();
     press(menu.current, 'Create a player');

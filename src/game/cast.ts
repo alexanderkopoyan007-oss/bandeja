@@ -4,7 +4,7 @@
 // they are dealt first, the player's own place and then the far side's; repeating one on a court would bring back the
 // same men under new names, so the rest of the court is the others. Nothing here touches the sim: looks and voices.
 import roster from '../../data/people.json';
-import { KIT_COUNT } from '../render/avatar/kit.ts';
+import { KIT_COUNT, type SelfLook } from '../render/avatar/kit.ts';
 import { bodyNamed, isNeutral, type Proportions } from '../render/avatar/proportions.ts';
 
 export interface Cast {
@@ -21,6 +21,8 @@ export interface Cast {
   tones: number[];
   /** Each player's proportions (proportions.ts), by player number; missing or null: as the person was built. */
   bodies?: Array<Proportions | null>;
+  /** Each player's own skin and hair (kit.ts SelfLook: a character's), by player number; missing or null: the person's. */
+  looks?: Array<SelfLook | null>;
 }
 
 interface Person { name: string; nations: string[]; voice: number; tone: number; woman?: boolean; dealt?: boolean }

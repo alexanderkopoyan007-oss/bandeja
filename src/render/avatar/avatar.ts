@@ -21,7 +21,7 @@ import type { HingeLimb } from './ik.ts';
 import { INERT_DT, Inertializer, InertN, InertQ } from './inertia.ts';
 import { Matcher, WARP_REACH } from './matcher.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
-import { kitMaterial, personMaterial, type KitLook, type KitState } from './kit.ts';
+import { applySelf, kitMaterial, personMaterial, type KitLook, type KitState, type SelfLook } from './kit.ts';
 import type { Dressing, Piece } from './costume.ts';
 import { piecesFor, type Paint } from './paint.ts';
 import MANNERS from '../../../data/manners.json' with { type: 'json' };
@@ -1279,6 +1279,11 @@ export class Avatar {
   private cutPending = false;
 
   /** The next frame draws another match, or another moment (a replay starts or ends): every filter starts afresh. */
+  /** A player's own skin and hair, changed in place (the creator's turntable). */
+  setSelf(self: SelfLook | null | undefined): void {
+    if (this.kit) applySelf(this.kit, self);
+  }
+
   cutNext(): void {
     this.cutPending = true;
     this.lastT = -1;
@@ -1677,7 +1682,8 @@ export class Avatar {
   private readonly eyeInHead = new THREE.Vector3();
   private puff = 0;
 
-  constructor(asset: PlayerAsset, look: number | KitLook, paint?: Paint) {
+  /** `self`: a player's own skin and hair (kit.ts SelfLook), changeable later with `setSelf`. */
+  constructor(asset: PlayerAsset, look: number | KitLook, paint?: Paint, self?: SelfLook | null) {
     this.nb = asset.bones.length;
     this.pose = new Pose(this.nb);
     this.tmp = new Pose(this.nb);
@@ -1697,10 +1703,11 @@ export class Avatar {
       mat = new THREE.MeshStandardMaterial({ color: look, vertexColors: true, roughness: 0.55, metalness: 0.05 });
       if (asset.look) hairMat = new THREE.MeshStandardMaterial({ color: look, roughness: 0.6, metalness: 0 });
     } else if (asset.look) {
-      const k = personMaterial(asset, look, paint);
+      const k = personMaterial(asset, look, paint, self);
       mat = k.material;
       hairMat = k.hair;
       this.kit = k.state;
+      applySelf(k.state, self);
     } else {
       const k = kitMaterial(asset, look);
       mat = k.material;

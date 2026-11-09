@@ -27,24 +27,25 @@ export const FACE_FINISH = ['sand', 'matte', 'gloss'] as const;
 export const FRAME_FINISH = ['gloss', 'matte', 'satin'] as const;
 
 /**
- * The hair's tone: the preset's own, a natural colour, or (ridiculous mode only) a dyed one. Linear-ish sRGB as the
- * hair atlas holds it.
+ * The hair's tone: the preset's own, a natural colour, or (ridiculous mode only) a dyed one. Linear, as the hair atlas
+ * holds colour: real hair is darker than it looks in sRGB (a blonde's sRGB 180,140,90 is linear 0.46, 0.26, 0.1). Lighter
+ * values washed light hair out to a felt cap (9 Nov).
  */
 export const HAIR_TONES: Readonly<Record<string, { rgb: readonly [number, number, number]; silly?: true }>> = {
-  black: { rgb: [0.06, 0.05, 0.045] },
-  espresso: { rgb: [0.13, 0.085, 0.06] },
-  brown: { rgb: [0.24, 0.15, 0.09] },
-  chestnut: { rgb: [0.36, 0.19, 0.1] },
-  auburn: { rgb: [0.45, 0.17, 0.08] },
-  copper: { rgb: [0.62, 0.3, 0.13] },
-  honey: { rgb: [0.66, 0.47, 0.26] },
-  blonde: { rgb: [0.8, 0.66, 0.43] },
-  platinum: { rgb: [0.9, 0.86, 0.78] },
-  grey: { rgb: [0.55, 0.54, 0.52] },
-  rose: { rgb: [0.85, 0.36, 0.55], silly: true },
-  violet: { rgb: [0.45, 0.25, 0.75], silly: true },
-  teal: { rgb: [0.12, 0.55, 0.55], silly: true },
-  lime: { rgb: [0.55, 0.8, 0.2], silly: true },
+  black: { rgb: [0.03, 0.026, 0.024] },
+  espresso: { rgb: [0.07, 0.045, 0.03] },
+  brown: { rgb: [0.14, 0.08, 0.045] },
+  chestnut: { rgb: [0.22, 0.1, 0.05] },
+  auburn: { rgb: [0.3, 0.1, 0.04] },
+  copper: { rgb: [0.48, 0.19, 0.07] },
+  honey: { rgb: [0.42, 0.22, 0.075] },
+  blonde: { rgb: [0.68, 0.44, 0.16] },
+  platinum: { rgb: [0.85, 0.74, 0.55] },
+  grey: { rgb: [0.34, 0.33, 0.31] },
+  rose: { rgb: [0.6, 0.18, 0.3], silly: true },
+  violet: { rgb: [0.25, 0.1, 0.5], silly: true },
+  teal: { rgb: [0.05, 0.35, 0.35], silly: true },
+  lime: { rgb: [0.3, 0.55, 0.08], silly: true },
 };
 
 /** Original line tattoos (drawn in the skin's shader, phase D's looks step), on the racket arm's forearm or a calf. */

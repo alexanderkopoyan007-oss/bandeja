@@ -5,7 +5,10 @@
 // spec.json: [{ "name": "giant-head", "draft": { "silly": true, "body": { "head": 2 } }, "drill": 2,
 //   "times": [0, 4.2, 4.5], "angle": 0.6, "zoom": 1, "menu": true }]; angle: the camera round them from their front
 //   (rad); drill: -1 still, 3 volleys, 2 overheads (game/studio.ts STUDIO_DRILLS); menu: false hides the list;
-//   "around": [-0.2, 0, 0.15] in place of times: those offsets (s) from the player's first contact with the ball.
+//   "around": [-0.2, 0, 0.15] in place of times: those offsets (s) from the player's first contact with the ball;
+//   "clip": [x, y, w, h] crops the shot; "bone": "RightForeArm" (with "dist" m, default 0.55, and "angle") aims a close
+//   camera at that joint instead of the turntable's framing, "bone": ["RightForeArm", "RightHand"] at the middle of two. SHEET=<file.png> also lays every shot out on one sheet, captioned by name
+//   (SHEET_COLS columns, default 4).
 import puppeteer from 'puppeteer-core';
 import { mkdirSync, readFileSync } from 'node:fs';
 
@@ -30,8 +33,9 @@ await page.evaluate(async () => {
   await new Promise((r) => setTimeout(r, 200));
   click('Create a player');
 });
+const shots = [];
 for (const s of spec) {
-  const shots = await page.evaluate(async (s) => {
+  const times = await page.evaluate(async (s) => {
     const app = window.__app, cr = app.creator, st = app.studio;
     const d = cr.draft;
     for (const [k, v] of Object.entries(s.draft ?? {})) d[k] = k === 'body' || k === 'outfit' || k === 'racket' ? { ...d[k], ...v } : v;
@@ -62,18 +66,45 @@ for (const s of spec) {
     return times;
   }, s);
   let at = 0;
-  for (const t of shots) {
-    await page.evaluate(async (from, to) => {
+  for (const t of times) {
+    await page.evaluate(async (from, to, s) => {
       const st = window.__app.studio;
       // (60 frames a second from `from` to `to` seconds after the build)
       for (let f = Math.round(from * 60); f < Math.round(to * 60); f++) st.frame(1000 + (f + 1) * (1000 / 60));
       st.frame(1000 + Math.round(to * 60) * (1000 / 60) + 0.001);
+      if (s.bone) {
+        // A close camera on the bone, `angle` round the body from its front, level with the bone.
+        const a = st.view.avatar, V = st.camera.position.constructor;
+        a.root.updateMatrixWorld(true);
+        const names = Array.isArray(s.bone) ? s.bone : [s.bone];
+        const at = new V();
+        for (const n of names) at.add(a.mesh.skeleton.bones.find((x) => x.name === n).getWorldPosition(new V()));
+        at.multiplyScalar(1 / names.length);
+        const ang = st.view.root.rotation.y + (s.angle ?? 0), d = s.dist ?? 0.55, c = st.camera;
+        c.clearViewOffset();
+        c.position.set(at.x + Math.sin(ang) * d, at.y + (s.dy ?? 0), at.z + Math.cos(ang) * d);
+        c.lookAt(at.x, at.y + (s.dy ?? 0), at.z);
+        c.updateProjectionMatrix();
+        window.__app.renderer.render(st.scene, c);
+      }
       await new Promise((r) => requestAnimationFrame(() => r()));
-    }, at, t);
+    }, at, t, s);
     at = t;
     const file = `${out}/${s.name}-${t.toFixed(2)}.png`;
-    await page.screenshot({ path: file });
+    await page.screenshot({ path: file, ...(s.clip ? { clip: { x: s.clip[0], y: s.clip[1], width: s.clip[2], height: s.clip[3] } } : {}) });
+    shots.push({ file, name: s.name });
     console.log(file);
   }
+}
+if (process.env.SHEET) {
+  // One sheet: the shots as data URLs on a page of their own, in a grid, captioned.
+  const cols = Number(process.env.SHEET_COLS ?? 4);
+  const cells = shots.map((s) => `<figure><img src="data:image/png;base64,${readFileSync(s.file).toString('base64')}"><figcaption>${s.name}</figcaption></figure>`).join('');
+  const sheet = await browser.newPage();
+  await sheet.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1 });
+  await sheet.setContent(`<style>body{margin:0;background:#111;color:#ddd;font:14px system-ui;display:grid;grid-template-columns:repeat(${cols},1fr);gap:6px;padding:6px}
+    figure{margin:0}img{width:100%;display:block}figcaption{padding:3px 2px}</style>${cells}`, { waitUntil: 'load' });
+  await sheet.screenshot({ path: process.env.SHEET, fullPage: true });
+  console.log(process.env.SHEET);
 }
 await browser.close();

@@ -14,6 +14,7 @@ import { BallView, PlayerView } from '../render/views.ts';
 import { pooledLight } from '../render/arena/lights.ts';
 import { disposeTree } from '../render/dispose.ts';
 import { loadPeople, type PlayerAsset } from '../render/avatar/asset.ts';
+import { hasTattoo } from '../render/avatar/kit.ts';
 import { dealCast } from './cast.ts';
 import type { GameOptions } from './game.ts';
 
@@ -64,6 +65,12 @@ const ENV_INTENSITY = 0.55;
 
 const v = new THREE.Vector3();
 
+/** What building the player depends on (the face, body, outfit, racket and hand): a change of anything else is applied in place. */
+function buildKey(o: GameOptions): string {
+  // (a tattoo's code is in the shader only when there is one: hasTattoo)
+  return JSON.stringify([o.me?.face, o.bodies?.[0], o.wear?.[0], o.match.rackets?.[0], o.match.lefty?.[0], hasTattoo(o.looks?.[0])]);
+}
+
 export class Studio {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 80);
@@ -77,6 +84,8 @@ export class Studio {
   private view: PlayerView | null = null;
   private opts: GameOptions | null = null;
   private pending: GameOptions | null = null;
+  /** What the player on the turntable was built from (buildKey). */
+  private key = '';
   private building: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** The drill being played (-1: held). */
@@ -168,6 +177,13 @@ export class Studio {
   /** Dress the turntable as `opts` say (GameOptions as a match would have them, the character applied): built once
    * the changes rest, and only the newest of several. */
   show(opts: GameOptions): void {
+    // Only the skin's or the hair's tone changed: in place, at once (uniforms), no build.
+    const key = buildKey(opts);
+    if (this.view && !this.pending && !this.building && !this.timer && key === this.key) {
+      this.opts = opts;
+      this.view.avatar?.setSelf(opts.looks?.[0]);
+      return;
+    }
     this.pending = opts;
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => { this.timer = null; void this.build(); }, this.view ? SETTLE_MS : 0);
@@ -198,8 +214,10 @@ export class Studio {
 
   private place(opts: GameOptions): void {
     this.opts = opts;
+    this.key = buildKey(opts);
     const cast = dealCast(opts.castSeed ?? 0, opts.people, undefined, opts.me?.face);
     if (opts.bodies) cast.bodies = opts.bodies;
+    if (opts.looks) cast.looks = opts.looks;
     opts.match.women = cast.women;
     const old = this.view;
     this.view = new PlayerView(this.scene, 0, this.asset, cast, opts.match.rackets?.[0], opts.wear?.[0]);

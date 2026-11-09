@@ -14,6 +14,7 @@ import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import { modelledVertices, type KitCut, type PlayerAsset } from './asset.ts';
 import { backBody, hairOnBack } from './hairBack.ts';
 import { ownedTextures } from '../dispose.ts';
+import { setTattoos, tattooed, type TattooChoice, type TattooState } from './tattoo.ts';
 import { armWeight, cutFor, patternAt, printBottom, printShirt, type Paint } from './paint.ts';
 import { FACE_T2, HANDLE_R, HANDLE_TOP, PROFILE_E, RACKET_BUTT, RACKET_TIP, RC, RC_H } from './racket.ts';
 
@@ -177,6 +178,10 @@ export interface KitState {
    * the head-carried tip to the swung one (unit axis, angle in w). */
   ponyAt?: { value: THREE.Vector3 };
   pony?: { value: THREE.Vector4 };
+  /** A player's own look (SelfLook, `applySelf`): the skin's tint per channel, and the hair's dye (rgb, w how much of it). */
+  self?: { skin: { value: THREE.Vector3 }; hair: { value: THREE.Vector4 } };
+  /** Its tattoos (tattoo.ts), when it was built with one. */
+  tattoo?: TattooState;
 }
 
 /** Long hair, measured once from the hair's modelled pose (model space): the point it hangs from, behind the head at the back
@@ -700,6 +705,60 @@ const HAIR_STRAND = 0.008;
 const HAIR_U = 0.8;
 const HAIR_FLOOR = 0.018;
 const HAIR_WARM = vec3(1.3, 0.95, 0.72);
+
+/**
+ * A player's own look on the person as modelled (M5 phase D: a character's skin and hair; app/character.ts). It reaches the
+ * shader as uniforms that every person has, at no change by default, so it adds no shader program and changes live.
+ */
+export interface SelfLook {
+  /** -1 darker .. 1 lighter than the person's own skin (0: as modelled). */
+  skin: number;
+  /** The head's hair in this colour (as the hair atlas holds colour: linear), its strands' own light and dark kept; null: its own. */
+  hair: readonly [number, number, number] | null;
+  /** Tattoos (tattoo.ts): which designs, on the racket arm's side. A person built with none has no tattoo code at all, so
+   * going from none to some needs the person built again; changing designs after that is live. */
+  tattoos?: TattooChoice | null;
+}
+
+/** Whether a look has a tattoo (its person's shader then carries the tattoo code). */
+export function hasTattoo(self: SelfLook | null | undefined): boolean {
+  return !!self?.tattoos && (self.tattoos.arm > 0 || self.tattoos.calf > 0);
+}
+
+/**
+ * Skin darker or lighter as melanin makes it: more or less of an absorber that takes the most blue and the least red
+ * (SKIN_ABSORB, per channel), as exp(k x absorb). Darkest (-1) takes a fair skin to a mid brown (x0.35-0.45 in red-green),
+ * lightest (+1) a dark one to a mid one; a lightened skin is held under SKIN_MAX luminance, as no skin is near white.
+ */
+const SKIN_ABSORB = [0.8, 1.0, 1.25] as const;
+const SKIN_DARKER = 1.05, SKIN_LIGHTER = 0.8, SKIN_MAX = 0.42;
+/** Nails keep most of their own colour under a tint (a nail bed is lighter than dark skin round it). */
+const SKIN_NAIL_KEEP = 0.6;
+/** Dyed hair: the strand's brightness against its neighbourhood's (the atlas this many mips down) carries the dye's light and
+ * dark, by HAIR_DYE_GRAIN, within HAIR_DYE_RANGE. */
+const HAIR_DYE_MIP = 4, HAIR_DYE_GRAIN = 0.7;
+/** Dyed hair near: each strand between these shares of the dye's brightness (about 1 on average), and the occlusion to this
+ * power (deeper inside). */
+const HAIR_DYE_STRANDS = [0.5, 1.5] as const;
+const HAIR_DYE_DEPTH = 0.8;
+const HAIR_DYE_RANGE = [0.45, 1.8] as const;
+
+/** The per-channel factor a skin tint `t` (-1..1) multiplies the skin's colour by. */
+export function skinTint(t: number, out = new THREE.Vector3()): THREE.Vector3 {
+  const k = t < 0 ? t * SKIN_DARKER : t * SKIN_LIGHTER;
+  return out.set(Math.exp(k * SKIN_ABSORB[0]), Math.exp(k * SKIN_ABSORB[1]), Math.exp(k * SKIN_ABSORB[2]));
+}
+
+/** Put a player's own look on a person's material (live: uniforms). */
+export function applySelf(state: KitState, self: SelfLook | null | undefined): void {
+  const s = state.self;
+  if (!s) return;
+  skinTint(self?.skin ?? 0, s.skin.value);
+  const h = self?.hair;
+  if (h) s.hair.value.set(h[0], h[1], h[2], 1);
+  else s.hair.value.set(0, 0, 0, 0);
+  if (state.tattoo) setTattoos(state.tattoo, self?.tattoos);
+}
 const HAIR_LUMP = 42;
 const HAIR_FRINGE = 0.55;
 const HAIR_FAR_ROUGH = 0.46;
@@ -789,7 +848,7 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
  * The second material is the hair, brows and lashes: alpha to coverage over the MSAA samples (soft strands instead
  * of a hard alpha-tested edge), darker where cards lie near the scalp (baked per vertex), a soft sheen.
  */
-export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
+export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint, self?: SelfLook | null): { material: PersonNodeMaterial; hair: THREE.MeshPhysicalNodeMaterial; state: KitState } {
   const body = asset.look!;
   if (body.kit.baked) return bakedMaterial(asset, look);
   const frame0 = personFrame(asset);
@@ -809,6 +868,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const sweatU = uniform(new THREE.Vector2());
   const sweat = sweatU.x;
   const lag = uniform(new THREE.Vector3());
+  const selfSkin = uniform(new THREE.Vector3(1, 1, 1)), selfHair = uniform(new THREE.Vector4(0, 0, 0, 0));
   // A MetaHuman's hands at the sources' resolution (mh-player.py hands.webp, its skin's occlusion in the alpha as the atlas has
   // it), in place of the atlas inside their rectangle of it: the same picture, sharper (the owner's realism list, 7 Nov: "add
   // knuckles, nails and skin detail on the hands").
@@ -902,7 +962,14 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const mottle = mx_noise_float(p.mul(42)).mul(0.6).add(mx_noise_float(p.mul(150)).mul(0.4));
   const poreFine = mx_noise_float(p.mul(620));
   const skinTone = vec3(1, 1, 1).add(vec3(0.13, 0.065, 0.055).mul(mottle)).mul(float(1).add(poreFine.mul(0.06).mul(footprintKeep(0.0012))));
-  const skinCol = skinBase.mul(skinTone).mul(mix(float(1), skinAO, 0.3)).mul(float(1).add(smoothstep(0.4, 0.12, tex.y).mul(0.3)));
+  const skinCol0 = skinBase.mul(skinTone).mul(mix(float(1), skinAO, 0.3)).mul(float(1).add(smoothstep(0.4, 0.12, tex.y).mul(0.3)));
+  // The player's own tint (SelfLook): darker or lighter, the nails keeping most of theirs, a lightened skin held under SKIN_MAX.
+  const skinTinted = skinCol0.mul(mix(selfSkin, vec3(1, 1, 1), nail.mul(SKIN_NAIL_KEEP)));
+  const lighter = selfSkin.y.sub(1).mul(4).clamp(0, 1);
+  const skinLit = mix(skinTinted, skinTinted.mul(min(float(1), float(SKIN_MAX).div(skinTinted.dot(LUMA).max(1e-4)))), lighter);
+  // Tattoos (tattoo.ts), in a shader of their own only when this person has one; never on the hands or nails.
+  const ink = hasTattoo(self) ? tattooed(asset, skinLit, p, float(1).sub(inHands ?? float(0)).mul(float(1).sub(nail))) : null;
+  const skinCol = ink ? ink.col : skinLit;
   // (the source draws a brown iris dark red: its green and blue are lifted to the red's; whites and blue or green irises
   // keep theirs)
   // (a little darker than the source, and well under the lid's shadow: at 0.74 the eyes shone out of the sockets)
@@ -1084,10 +1151,19 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // noise and the tilt fade to a few big lumps, a broad sheen from above, and cards seen edge on thin out into the background.
   const far = float(1).sub(footprintKeep(HAIR_STRAND));
   const onHead = step(uv().x, HAIR_U);
-  const base = ht.xyz.add(HAIR_WARM.mul(max(float(HAIR_FLOOR).sub(ht.xyz.dot(LUMA)), 0)).mul(onHead));
+  const own = ht.xyz.add(HAIR_WARM.mul(max(float(HAIR_FLOOR).sub(ht.xyz.dot(LUMA)), 0)).mul(onHead));
+  // Dyed (SelfLook): the head's hair in the dye's colour, each strand as much lighter or darker than its neighbours as it was.
+  const around = body.alphaMap ? texture(body.alphaMap, uv()).level(float(HAIR_DYE_MIP)).xyz.dot(LUMA) : ht.xyz.dot(LUMA);
+  const grain = ht.xyz.dot(LUMA).div(around.max(0.003)).clamp(HAIR_DYE_RANGE[0], HAIR_DYE_RANGE[1]);
+  const dyed = selfHair.xyz.mul(mix(float(1), grain, HAIR_DYE_GRAIN));
+  const base = mix(own, dyed, selfHair.w.mul(onHead));
   const lump = mx_noise_float(p.mul(HAIR_LUMP));
   const strandLit = mix(float(0.8).add(strands.mul(0.75)), float(1).add(lump.mul(0.4)), far);
-  hair.colorNode = base.mul(mix(smoothstep(0.1, 0.62, ht.w), float(1), far)).mul(mix(hAO, hAO.sqrt(), far)).mul(strandLit);
+  // Dyed hair is light enough to show its depth as dark hair can't: the strands differ more (HAIR_DYE_STRANDS) and its inside
+  // goes darker (hAO taken further, HAIR_DYE_DEPTH), near; far it stays the mass.
+  const dyeShade = mix(float(HAIR_DYE_STRANDS[0]), float(HAIR_DYE_STRANDS[1]), smoothstep(-0.5, 0.9, strands)).mul(hAO.pow(HAIR_DYE_DEPTH));
+  const dyeLit = mix(float(1), mix(dyeShade, float(1), far), selfHair.w.mul(onHead));
+  hair.colorNode = base.mul(mix(smoothstep(0.1, 0.62, ht.w), float(1), far)).mul(mix(hAO, hAO.sqrt(), far)).mul(strandLit).mul(dyeLit);
   hair.aoNode = hAO;
   hair.toneBackNode = float(1);
   // Coverage from the cards' alpha over the MSAA samples: strands fade out instead of being cut at a threshold. The
@@ -1115,7 +1191,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   // Each strand tilts its own way across the card, so the shine comes in fine broken lines and not one band over a helmet.
   hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT).mul(float(1).sub(far)).mul(float(1).sub(fine)), float(0)), strandUv);
   hair.metalnessNode = float(0);
-  const tinted = mix(vec3(1, 1, 1), base.mul(2.2), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
+  // (a light hair's shine is white, not brighter than white: dyed light, base x 2.2 went past 1 and washed it out)
+  const tinted = mix(vec3(1, 1, 1), base.mul(2.2).min(vec3(1, 1, 1)), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
   const dimmed = hAO.mul(mix(float(0.6), float(1), far)).mul(mix(float(1), float(HAIR_HELMET_SPEC), fine.mul(float(1).sub(far))));
   if (shell) {
     // (the cards: the fibre's white shine, gone where a card is seen edge on as the anisotropy is, or its Fresnel lit the
@@ -1130,7 +1207,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   }
   hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
   hair.sheenRoughnessNode = float(0.45);
-  return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU, hang: longHair, ponyAt, pony } };
+  return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU, hang: longHair, ponyAt, pony, self: { skin: selfSkin, hair: selfHair }, tattoo: ink?.state } };
 }
 
 /** Whether a person's hair mesh has a helmet (a MetaHuman groom's shell, at u past HAIR_U and v past HAIR_HELMET_V of the atlas). */

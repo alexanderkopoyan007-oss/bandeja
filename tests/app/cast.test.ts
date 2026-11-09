@@ -108,9 +108,15 @@ describe('the player’s own character on court (M5 phase D)', () => {
       expect(opts.match.rackets).toEqual([RACKET_IDS[3], ...Array(n - 1).fill('standard')]);
       expect(opts.match.lefty).toEqual([true, ...Array(n - 1).fill(false)]);
     }
-    // A neutral body adds no proportions at all (nothing to reproportion)
+    // A neutral body adds no proportions at all (nothing to reproportion), and the face's own skin and hair no looks
     const plain = optionsFromSetup(DEFAULT_SETUP, defaultSettings(), 5, null, false, new URLSearchParams());
     applyCharacter(plain, defaultCharacter());
     expect(plain.bodies).toBeUndefined();
+    expect(plain.looks).toBeUndefined();
+    // Skin and hair go to the human's player only, the hair as its tone's colour
+    const { HAIR_TONES } = await import('../../src/app/character.ts');
+    const toned = optionsFromSetup({ ...DEFAULT_SETUP, mode: 'doubles' }, defaultSettings(), 5, null, false, new URLSearchParams());
+    applyCharacter(toned, { ...defaultCharacter(), skin: -0.4, hair: 'copper' });
+    expect(toned.looks).toEqual([{ skin: -0.4, hair: HAIR_TONES.copper!.rgb, tattoos: null }, null, null, null]);
   });
 });

@@ -69,6 +69,8 @@ export interface GameOptions {
   me?: import('../app/character.ts').Character;
   /** Each player's proportions by player number (cast.ts bodiesParam, the creator). */
   bodies?: Array<import('../render/avatar/proportions.ts').Proportions | null>;
+  /** Each player's own skin and hair by player number (the creator's character; kit.ts SelfLook). */
+  looks?: Array<import('../render/avatar/kit.ts').SelfLook | null>;
   closeCamPlayer?: number;
   /** The human's player number (team + 2 * slot); ignored with autoplay. */
   human: number;
@@ -267,6 +269,7 @@ export class Game {
     const castSeed = opts.castSeed ?? opts.match.seed ?? 0;
     const cast = dealCast(castSeed, opts.people, opts.rivals, opts.me?.face);
     if (opts.bodies) cast.bodies = opts.bodies;
+    if (opts.looks) cast.looks = opts.looks;
     // The character's own grunt: a voice of PLAYER_VOICES, and a pitch about three semitones either way.
     if (opts.me) {
       if (opts.me.voice !== null) cast.voices[opts.human] = opts.me.voice;
