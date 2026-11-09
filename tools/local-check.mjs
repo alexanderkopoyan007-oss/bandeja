@@ -3,12 +3,16 @@
 // player only, the far end's stick is turned round to the screen, Start on a pad pauses and resumes, and with every
 // device pulsing its drive key (auto timing fires the held swing) each of the three humans hits the ball.
 // Prints one line per check and PASS/FAIL.
-//   bash tools/one-chrome.sh node tools/local-check.mjs [url]   (the dev server: npx vite --port 5190)
+//   bash tools/one-chrome.sh node tools/local-check.mjs [url]   (the dev server: npx vite --port 5190; or a build: npx vite preview)
+//   PADS=3 for all four seats played; PLAY_S=<seconds> (90 by default: under ~40 s a revés player may never get a ball)
 import puppeteer from 'puppeteer-core';
 
 const url = process.argv[2] ?? 'http://localhost:5190/?creator=1';
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PLAY_S = Number(process.env.PLAY_S ?? 90);
+// PADS=3: a third pad, so all four seats are played (keyboard, then pads 1-3 in the chart's order).
+const PADS = process.env.PADS === '3' ? 3 : 2;
+const HUMANS = PADS + 1;
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? `  (${detail})` : ''}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -21,16 +25,16 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
-  // Two pads, indices 0 and 1, standard mapping; a change moves the pad's timestamp, as a real one's does.
-  await page.evaluateOnNewDocument(() => {
+  // Two pads (or PADS), indices 0 up, standard mapping; a change moves the pad's timestamp, as a real one's does.
+  await page.evaluateOnNewDocument((n) => {
     const mk = (index) => ({ id: `Scripted pad ${index + 1} (STANDARD GAMEPAD)`, index, connected: true, mapping: 'standard', timestamp: performance.now(),
       axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })), vibrationActuator: null });
-    const pads = [mk(0), mk(1)];
+    const pads = Array.from({ length: n }, (_, i) => mk(i));
     window.__pads = pads;
     window.__padSet = (p, b, on) => { pads[p].buttons[b] = { pressed: on, touched: on, value: on ? 1 : 0 }; pads[p].timestamp = performance.now(); };
     window.__padAxis = (p, a, v) => { pads[p].axes[a] = v; pads[p].timestamp = performance.now(); };
-    Object.defineProperty(navigator, 'getGamepads', { value: () => [pads[0], pads[1], null, null], configurable: true });
-  });
+    Object.defineProperty(navigator, 'getGamepads', { value: () => [0, 1, 2, 3].map((i) => pads[i] ?? null), configurable: true });
+  }, PADS);
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__app && document.querySelector('#menu.on .item'), { timeout: 180000, polling: 200 });
   const click = (t) => page.evaluate((t) => {
@@ -50,9 +54,14 @@ try {
   check('seat chart shows', chart.id === 'local', chart.rows.join(' | '));
   check('both pads listed', /Scripted pad 1/.test(chart.side) && /Scripted pad 2/.test(chart.side), chart.side.slice(0, 160));
   check('start allowed', await click('Start match'));
-  await page.waitForFunction(() => window.__bandeja?.running && !window.__app.menu.isOpen && window.__bandeja.localPlayers.length === 3, { timeout: 180000, polling: 250 });
+  await page.waitForFunction((n) => window.__bandeja?.running && !window.__app.menu.isOpen && window.__bandeja.localPlayers.length === n, { timeout: 180000, polling: 250 }, HUMANS);
+  // (the first frames of a match compile its pipelines and can stall for seconds in headless Chrome: the routing checks
+  // wait up to 2 s for a change, so they start once 30 frames are drawn, and the longest of those is printed)
+  await page.waitForFunction(() => window.__bandeja.probe.frames.length >= 30, { timeout: 120000, polling: 100 });
+  const early = await page.evaluate(() => { const f = window.__bandeja.probe.frames.slice(0, 30); return { max: Math.max(...f), over100: f.filter((d) => d > 100).length }; });
+  console.log(`first 30 frames: longest ${early.max.toFixed(0)} ms, ${early.over100} over 100 ms`);
   const seats = await page.evaluate(() => window.__bandeja.localPlayers);
-  check('three locals, P1 the keyboard at seat 0', JSON.stringify(seats) === '[0,2,1]', JSON.stringify(seats));
+  check(`${HUMANS} locals, P1 the keyboard at seat 0`, JSON.stringify(seats) === (PADS === 3 ? '[0,2,1,3]' : '[0,2,1]'), JSON.stringify(seats));
 
   // Routing: each device reaches its own player's frame only; the far end's stick turned round to the screen.
   const frames = () => page.evaluate(() => { const g = window.__bandeja; return [0, 1, 2, 3].map((i) => { const f = g.inputs[i]; return f ? { x: f.moveX, y: f.moveY, held: f.held } : null; }); });
@@ -64,7 +73,7 @@ try {
   };
   await page.evaluate(() => window.__padAxis(0, 0, 1));
   let f = await framesWhen((f) => f[1]?.x !== 0);
-  check('pad 1 moves player 1 only, turned round', f[1]?.x === -1 && f[0]?.x === 0 && f[2]?.x === 0 && f[3] === null, JSON.stringify(f));
+  check('pad 1 moves player 1 only, turned round', f[1]?.x === -1 && f[0]?.x === 0 && f[2]?.x === 0 && (PADS === 3 ? f[3]?.x === 0 : f[3] === null), JSON.stringify(f));
   // On screen: player 1's push (moveX -1 at the far end) goes the camera's right.
   const screenRight = await page.evaluate(() => {
     const g = window.__bandeja, cam = g.cam.camera;
@@ -78,9 +87,12 @@ try {
   f = await framesWhen((f) => f[2]?.x !== 0);
   check('pad 2 moves player 2 only, not turned', f[2]?.x === 1 && f[0]?.x === 0 && f[1]?.x === 0, JSON.stringify(f));
   await page.evaluate(() => window.__padAxis(1, 0, 0));
+  const tick = () => page.evaluate(() => ({ tick: window.__bandeja.sim.tick, frame: window.__bandeja.probe.frames.length, menu: window.__app.menu.isOpen }));
+  const t0k = await tick();
   await page.keyboard.down('KeyD');
   f = await framesWhen((f) => f[0]?.x !== 0);
-  check('keyboard moves P1 only', f[0]?.x === 1 && f[1]?.x === 0 && f[2]?.x === 0, JSON.stringify(f));
+  const t1k = await tick();
+  check('keyboard moves P1 only', f[0]?.x === 1 && f[1]?.x === 0 && f[2]?.x === 0, `${JSON.stringify(f)}; sim tick ${t0k.tick} -> ${t1k.tick}, frames ${t0k.frame} -> ${t1k.frame}, menu ${t1k.menu}`);
   await page.keyboard.up('KeyD');
 
   // Start on pad 2 pauses for everyone; Start again resumes.
@@ -112,10 +124,10 @@ try {
   let k = 0;
   while (Date.now() - t0 < PLAY_S * 1000) {
     await page.keyboard.down('KeyJ');
-    await page.evaluate(() => { window.__padSet(0, 0, true); window.__padSet(1, 0, true); });
+    await page.evaluate(() => { for (let i = 0; i < window.__pads.length; i++) window.__padSet(i, 0, true); });
     await sleep(1100);
     await page.keyboard.up('KeyJ');
-    await page.evaluate(() => { window.__padSet(0, 0, false); window.__padSet(1, 0, false); });
+    await page.evaluate(() => { for (let i = 0; i < window.__pads.length; i++) window.__padSet(i, 0, false); });
     await sleep(60);
     // (the pause menu or a replay would stop the match: nothing here should open one)
     if (++k % 10 === 0 && await page.evaluate(() => window.__app.menu.isOpen)) break;
@@ -126,7 +138,7 @@ try {
   });
   check('menu stayed shut while playing', !hits.open, `${hits.menu}`);
   check('points played', hits.points >= Math.max(1, Math.floor(PLAY_S / 25)), `${hits.points} points in ${PLAY_S} s`);
-  check('each human hit the ball (players 0, 1, 2)', hits.by[0] > 0 && hits.by[1] > 0 && hits.by[2] > 0, `hits by player ${JSON.stringify(hits.by)}`);
+  check(`each human hit the ball (players 0-${HUMANS - 1})`, hits.by.slice(0, HUMANS).every((n) => n > 0), `hits by player ${JSON.stringify(hits.by)}`);
   const fps = await page.evaluate(() => {
     const p = window.__bandeja.probe, pc = (v) => { const s = v.slice(-600).filter((d) => d >= 0).sort((a, b) => a - b); return [s[s.length >> 1], s[Math.floor(s.length * 0.99)]]; };
     const [p50, p99] = pc(p.frames.filter((d) => d > 0)), [w50, w99] = pc(p.works), [s50, s99] = pc(p.sims);

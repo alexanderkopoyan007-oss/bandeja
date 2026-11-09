@@ -4233,3 +4233,25 @@ The owner said "keep going" after M5 went to main (0a5c6bd). M6 is the brief's c
   - `tests/app/store.test.ts`: career rules.
   - `tests/sim/rackets.test.ts`: prize rackets.
   - `tools/career-check.mjs` in Chrome. Each tie is moved to match point through `Score.pointWon` and the last points are played for real.
+
+## M6 close (2026-11-09)
+- **Suite and build:** 1204/1204 tests, typecheck clean, `npm run build` OK. Golden hashes unchanged (ef6e47b6 seed 42 singles, 90c06c87 seed 7 doubles).
+- **Alloc ×6:** singles 10-11 GCs per 100k ticks (budget 10), doubles 8, avatars 6.
+  - Paired against main (0a5c6bd, M5): singles 10 / 11 / 10 now against 10 / 10 / 11 there. The same spread, so singles sits at the budget's edge on both commits, and E's chemistry branch is not the cause.
+  - One run had a 20 ms pause, under load from other sessions.
+- **Perf, paired against main, load 8-11:**
+  - Medium 4x: p50 10.2 against 9.9 ms, p99 15.9 against 15.4 ms.
+  - High paced at 120 Hz holds on both: p99 8.3 ms, one missed refresh against none.
+  - Draw calls (163) and triangles (628k) are the same.
+  - No change: the M6 screens are menus, and a match draws what it drew.
+- **Four locals in Chrome:** `PADS=3 bash tools/one-chrome.sh node tools/local-check.mjs <url>` (new; keyboard plus three scripted pads, every seat played).
+  - Each device reaches only its own player, the far end is turned round, and Start on a pad pauses.
+  - All four humans hit the ball: 30 / 26 / 3 / 3 hits in 90 s, 14 / 10 / 2 / 3 in 40 s.
+  - CPU work per frame p50 3.4-4.1, p99 9.7-10.8 ms (three locals: 4.1-4.2 and 9.3-9.8 ms).
+- **The first frame of a local match** compiles its pipelines: 1.6 s with four locals, 0.7 s with three, in headless Chrome.
+  - The check's routing tests used to start inside that stall and miss a 2 s wait. They now start after 30 drawn frames.
+  - Not chased further: it happens once, before the first serve.
+- **Online:** `tools/net/online-e2e.mjs` on the new build: 2 players direct, with lag and loss, through the server, and 4 players. All clear, hashes agree, nothing stalled.
+  - In the first run, under load 31 from an orphaned headless Chrome left by another project (killed by its PID), one seat of the four-player run rewound 50 ticks deep.
+  - Run again alone: deepest 9-17 ticks and longest replay 6.1 ms, as in docs/online.md (deepest 15-16).
+- **Still behind `?creator=1`:** local match, tournament, challenges, academy and career, until the owner has seen them. main stays at 0a5c6bd until the owner says to push it.

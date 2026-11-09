@@ -185,7 +185,7 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
     - Up to four on one screen. Each local has its own `InputQueue` (`src/game/input/queue.ts`; `KeyboardInput` extends it), its own pad (`GamepadInput` held to one index), input frame, cues, rumble and replay record.
     - One broadcast camera behind P1's team. The far end steers screen-relative (`axisFlip`).
     - The menus take any pad (`anyPad`).
-    - Check: `bash tools/one-chrome.sh node tools/local-check.mjs` (fake pads; it prints CPU work per frame).
+    - Check: `bash tools/one-chrome.sh node tools/local-check.mjs [url]` (fake pads; `PADS=3` plays all four seats; it prints CPU work per frame; under ~40 s of `PLAY_S` a revés player may never get a ball).
   - Tournament (`src/app/bracket.ts`, `tournament.ts`, `tournamentScreen.ts`; store doc `tournament.v1`):
     - Seeded draws of the roster. Other ties are settled by a logistic draw on ratings (`RESULT_SCALE`).
     - Check: `tools/tour-check.mjs`.
@@ -203,6 +203,11 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
       - three prize rackets (`prize` in data/rackets.json; the creator lists them once won);
       - two secret arenas (data/career.json `arenas`; the menus list them once opened).
     - Check: `tools/career-check.mjs` (moves each tie to match point with `Score.pointWon`, plays the rest; a check must wait for the tie's own match, since the title's runs on while it loads).
+  - At M6's close (2026-11-09):
+    - Alloc singles 10-11 per 100k ticks, the same spread as on main; doubles 8, avatars 6.
+    - Perf paired against main is unchanged: medium-4x p50 10.2 against 9.9 ms, high paced at 120 Hz holds.
+    - Four locals: `PADS=3` on `tools/local-check.mjs`, CPU work p50 about 4 ms. The first frame of a local match compiles for 0.7-1.6 s headless.
+    - Online e2e all clear.
 - [ ] **M7** Broadcast cameras, replays, clip export, audio pass, menus
 - [ ] **M8** Polish, accessibility, final optimisation, deploy
 - [x] **Online** (2026-11-02; `docs/online.md` is the whole story, `docs/net-proof.md` the feasibility proof): `src/net/` (rollback, packets, WebRTC links, rooms, the public queue, the event feed), `worker/room.js` (Cloudflare Worker, Durable Objects `Room` and `Queue`; deploy with `npx wrangler@4.156.2 deploy` from `worker/`, and the URL is in `src/net/config.ts`). `Game.online` is the hook; anything reading sim events online goes through `eventsOf(sim)`. `bash tools/one-chrome.sh node tools/net/online-e2e.mjs <dist>` plays it in real windows: `LINKS='[[players,lag ms,loss,relay]]'`, `FIND=1` the queue, `MENUS=1` through the menus, `WHOLE=1` to the end and again, `QUIT=host|last`, `HIDE=1`, `DROP=1`, `REMOTE=1` the deployed server (`VITE_ROOMS=ws://127.0.0.1:8799` when building for the local one). Traps: a tab behind another gets no frames and warm-up never ends, so every page needs its own window; the sim hashes bits, so anything on the wire must round-trip them exactly (a stick's -0 split the sims); a rollback rewinds at most 48 ticks, so a seat's handover waits for what everyone heard of them; state that must survive a rewind and change mid-match goes in the sim and the hash (`aiTaken`), not in `cfg`; a seat array shared with the session changes under the match when someone leaves; three windows in one Chrome sometimes never finish `compileAsync`.
