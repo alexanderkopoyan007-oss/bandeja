@@ -4113,3 +4113,16 @@ Behind `?creator=1` with the rest of M5 until the owner has seen it. When on, th
     - a court of pros playing.
   - Stills of ten pros on the turntable (`SCREEN=roster tools/creator-shots.mjs`).
   - In Chrome, the title match is four pros, and a quick match puts three pros round you, named on the scoreboard.
+
+## M5 close: checks (2026-11-09)
+The plan's phase F, on realism-brief at 501c7de (main not pushed; that waits for the owner, as it would also ship other sessions' commits):
+- **Tests and build:** `npm test` 1119/1119 (the one failure on the way was a test comparing the human's never-played style seat, which matched by chance with four styles); `npm run typecheck`, the sim's own tsconfig and `npm run build` are clean.
+- **`npm run alloc`** (three runs): singles 10 per 100k ticks (the budget's edge), doubles 8-9, avatars 6-7. The commit before D5's sim change measures the same (singles 10, doubles 8), so M5 D-E didn't move it. Singles has drifted from 5-6 (27 Oct) to the edge over other work. It's a Phase 8-style item for later.
+- **`npm run perf`**, paired with the commit before phase D (ABBA; load 9-12 from other sessions):
+  - medium-4x p50 10.3-12.0 vs 12.6-12.9 ms, p99 17.6-18.2 vs 18.0-18.7 ms: no change. The laptop proxy holds 60 Hz on neither, which predates M5 D (it read p50 6.6 ms in Phase 8).
+  - High 2x paced at 120 Hz holds on both: p99 8.3 ms.
+  - 163 draw calls, 628k triangles.
+- **Online:** `tools/net/online-e2e.mjs` against the local room server (2 players direct with and without lag and loss, through the server, and 4 players) all clear, hashes matched, nothing stalled.
+- **Not run:** the anim army on extreme bodies (phase A's `bodiesQa` tests hold those thresholds in the suite) and the Pages deploy check (nothing pushed to main).
+- **Waiting for the owner:** everything of phases D and E is behind `?creator=1`: the creator, the turntable, the racket designer, the grunt, Bodies count, the roster and the Roster screen. The stills are in `tools/out/creator/` and `tools/out/roster/`.
+- **Already in normal matches:** the new style El Contragolpe is dealt, and the overgrip fix.
