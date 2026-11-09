@@ -4176,3 +4176,26 @@ The owner said "keep going" after M5 went to main (0a5c6bd). M6 is the brief's c
   - `tests/app/bracket.test.ts`.
   - `tests/app/tournament.test.ts`: fields of every kind with each pro once, sides, every tie's faces once through to the final, store round trip.
   - `tools/tour-check.mjs` in Chrome.
+
+## M6 phase C: challenges (2026-11-09)
+- **Four challenges (`data/challenges.json`, `src/game/challenge.ts`):** target practice (rings on the coach's side, 2-3 points each), glass vision (side-glass balls sent back into the last third), smash it out (por tres / por cuatro from short lobs), off the back glass (points won off the coach). Each is a run of the practice coach's balls, graded bronze, silver and gold.
+- **Fed by the practice coach, not new sim code:** two drills were added to `data/practice.json` with `challenge: true` ("Feeds to the drive", "Short lobs"), appended so every existing drill keeps its index; Practice and the drill unlocks skip them. The sim is unchanged, so no hash moved.
+- **Scored from the sim's events (`ChallengeRun`):** E_HIT (whose ball), E_WALL (a wall before the floor is out, so it scores nothing), E_FLOOR (where the first bounce came down), E_POINT (a ball is over; why it ended). Nothing reads the render, so a run scores the same in Node, in the game and watched again.
+- **The daily challenge:** one of the four, picked and its rings shifted by the date (`daily(dayKey)`), the date as the feeds' seed: the same all day on every machine.
+- **Best runs kept and watched (`src/game/inputLog.ts`, store doc `challenges.v1`):**
+  - The run's match config, cast seed and player-0 inputs are kept: only the ticks whose frame changed, as the float64 bits in base64 (a -0 that came back as 0 sent a run another way). About 27-32 KB for a 2-minute run.
+  - "Watch your best" re-runs that match from those inputs in the real game loop. Only on the same build (`BUILD`): a newer sim would play another run.
+  - Found in Chrome: the watch dealt the cast afresh, the game set `women` from that cast, and a women's match (other top speeds) went another way from its fourth ball. Now a played-back match is its kept config to the letter (`Game` writes nothing into it) and the kept cast seed deals the same people. `tools/run-replay.ts` re-runs a kept run in Node to tell a log that misses something from a watch that builds another match.
+- **Checked:** `tests/app/challenge.test.ts` (every challenge counts its balls, daily, bit-exact replay with -0, store round trip); `tools/challenge-check.mjs` in Chrome (play a run, keep it, watch it, every ball ends at the same moment).
+
+## M6 phase D: the academy (2026-11-09)
+- **Thirteen lessons in order (`data/academy.json`):** timing; the drive, topspin, slice, lob, drop, volleys, the bandeja, the víbora and the smash; then three on the glass. Each is a run of 10 of the coach's balls, run by the same `ChallengeRun` as the challenges (`LESSONS`, ids `lesson-*`, bests kept beside the challenges' in `challenges.v1`).
+- **What counts:**
+  - Timing: a ball hit Good or Perfect. Played with the player's own timing whatever the setting (`autoTiming: false`), since assisted timing would grade every swing Good.
+  - A shot lesson: a ball played with that shot (the sim's E_HIT shot, so a bandeja pressed on a ball too low turns into a slice and scores nothing) that comes down in their court.
+  - The glass: a ball played back in after the coach's ball came off the player's own glass.
+- **Bronze opens the next lesson** (`lessonOpen`); results offer "Next lesson". A lesson's text names the keys in use (`{drive}` → the bound key).
+- **Glass vision (`src/render/glassVision.ts`):** the coach's ball's path drawn from the sim's own noise-free look-ahead (`sim.pred`), redrawn only when it is recomputed. The first glass lesson draws the whole path (dots every 25 ms, the glass contact, where it comes down after); the second only the contact and the landing; the third nothing.
+- **The pass marks are within reach:** a bot that only holds the lesson's key and lets the positioning assist move it reaches bronze in most lessons over four seeds; a player who moves does better. The AI's own scores are low on shot lessons only because it picks its own shots.
+- **Behind `?creator=1`** until the owner has seen it, like the rest of M6.
+- **Checked:** `tests/app/academy.test.ts` (lessons load onto drills that exist, each scores exactly what an independent count of the events says, lessons open in order, keys named); `tools/academy-check.mjs` in Chrome.

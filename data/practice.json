@@ -1,5 +1,5 @@
 {
-  "//": "Practice drills (app Practice screen, MatchSim cfg.practice): the coach across the net bounces a ball and feeds one of `feeds`, then plays on. spot: where the player starts, m from the net. x: |x| of the target (either side), depth: m from the net.",
+  "//": "Practice drills (app Practice screen, MatchSim cfg.practice; `challenge`: a challenge's feeds, not listed in Practice and not counted in the drills' unlocks; only ever appended, so a drill's index stays): the coach across the net bounces a ball and feeds one of `feeds`, then plays on. spot: where the player starts, m from the net. x: |x| of the target (either side), depth: m from the net.",
   "drills": [
     { "name": "Back glass", "desc": "Deep balls that come off your back glass. Let them come; take them as they drop.", "spot": 8.2,
       "feeds": [{ "shot": "topspin", "x": [0.5, 3.2], "depth": [8.2, 9.0] }, { "shot": "slice", "x": [0.5, 3.2], "depth": [8.2, 9.0] }] },
@@ -8,6 +8,10 @@
     { "name": "Lobs and overheads", "desc": "Lobs over you at the net: bandeja, víbora, smash, or back to the glass.", "spot": 3.4,
       "feeds": [{ "shot": "lob", "x": [0.5, 3.5], "depth": [4.8, 6.4] }, { "shot": "lob", "x": [0.5, 3.5], "depth": [6.4, 8.0] }] },
     { "name": "Volleys", "desc": "Balls at you at the net: punch them deep, drop them short, play the angles.", "spot": 3.2,
-      "feeds": [{ "shot": "drive", "x": [0.3, 2.4], "depth": [3.8, 5.2] }, { "shot": "slice", "x": [0.3, 2.4], "depth": [3.8, 5.2] }, { "shot": "topspin", "x": [0.3, 2.4], "depth": [2.8, 3.8] }] }
+      "feeds": [{ "shot": "drive", "x": [0.3, 2.4], "depth": [3.8, 5.2] }, { "shot": "slice", "x": [0.3, 2.4], "depth": [3.8, 5.2] }, { "shot": "topspin", "x": [0.3, 2.4], "depth": [2.8, 3.8] }] },
+    { "name": "Feeds to the drive", "challenge": true, "desc": "Groundstrokes fed to you mid-court, before the glass (data/challenges.json target practice).", "spot": 7.4,
+      "feeds": [{ "shot": "drive", "x": [0.8, 2.8], "depth": [5.6, 6.8] }, { "shot": "topspin", "x": [0.8, 2.8], "depth": [5.8, 7.0] }] },
+    { "name": "Short lobs", "challenge": true, "desc": "Lobs that fall short of the service line behind you at the net (smash it out).", "spot": 3.0,
+      "feeds": [{ "shot": "lob", "x": [0.5, 3.0], "depth": [4.0, 5.6] }] }
   ]
 }

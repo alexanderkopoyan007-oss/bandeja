@@ -1,0 +1,32 @@
+{
+  "//": "Challenges (M6 phase C; game/challenge.ts): a run of `balls` fed by the practice coach (data/practice.json, the drill named), scored as `kind` says. targets: points for the first bounce of your shot inside a target on the coach's side (x across, m; depth from the net, m; r its radius, m); zone: a point for each first bounce inside the zone (x and depth ranges, m); exits: a point for each ball put out of the court after its bounce (por tres or por cuatro); won: a point for each ball the coach can't get back. medals: the scores for bronze, silver and gold. The daily challenge is one of these, picked and shifted by the date.",
+  "challenges": [
+    {
+      "id": "targets", "name": "Target practice", "kind": "targets", "drill": "Feeds to the drive", "balls": 15,
+      "desc": "The coach feeds you groundstrokes. Land your first bounce in the rings: the corners score three, the middle two.",
+      "targets": [
+        { "x": -3.6, "depth": 8.4, "r": 1.0, "points": 3 },
+        { "x": 3.6, "depth": 8.4, "r": 1.0, "points": 3 },
+        { "x": 0, "depth": 7.6, "r": 1.3, "points": 2 },
+        { "x": 3.4, "depth": 3.6, "r": 0.9, "points": 3 }
+      ],
+      "medals": [8, 16, 26]
+    },
+    {
+      "id": "glass", "name": "Glass vision", "kind": "zone", "drill": "Side glass", "balls": 12,
+      "desc": "Balls into the side glass and the corners. Read the angle off the glass and send each one back deep: the last third of their court.",
+      "zone": { "x": [-5, 5], "depth": [6.7, 10] },
+      "medals": [4, 7, 10]
+    },
+    {
+      "id": "smash", "name": "Smash it out", "kind": "exits", "drill": "Short lobs", "balls": 12,
+      "desc": "Short lobs over you at the net. Smash them out of the court: over the glass or out through the door, por tres or por cuatro.",
+      "medals": [2, 5, 8]
+    },
+    {
+      "id": "wall", "name": "Off the back glass", "kind": "won", "drill": "Back glass", "balls": 12,
+      "desc": "Deep balls that come off your back glass. Let them come, take them as they drop, and win the point off the coach.",
+      "medals": [4, 7, 10]
+    }
+  ]
+}

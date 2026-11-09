@@ -1,0 +1,31 @@
+{
+  "//": "The academy (M6 phase D; game/challenge.ts runs it like a challenge): lessons in order, each passed with bronze to open the next. kind: timing (a point for each ball you hit Good or Perfect), shot (a point for each ball you play with `shot` that comes down in their court), glass (a point for each ball you play back in after it came off your own glass); the coach's feeds come from the practice drill named. vision: how much of the ball's path off the glass is drawn (2 all of it, 1 where it meets the glass and where it comes down, 0 none). autoTiming false: the lesson is played with your own timing whatever the setting. {drive} and the like are the keys in use.",
+  "lessons": [
+    { "id": "timing", "name": "Timing", "kind": "timing", "drill": "Feeds to the drive", "balls": 10, "autoTiming": false, "medals": [4, 6, 8],
+      "desc": "Hold {drive} as the ball comes: the ring closes on it and the meter runs to the middle. Let go as they meet. Good or Perfect counts." },
+    { "id": "drive", "name": "The drive", "kind": "shot", "shot": "drive", "drill": "Feeds to the drive", "balls": 10, "medals": [4, 6, 8],
+      "desc": "{drive} hits flat and through the ball. Land it in their court." },
+    { "id": "topspin", "name": "Topspin", "kind": "shot", "shot": "topspin", "drill": "Feeds to the drive", "balls": 10, "medals": [4, 6, 8],
+      "desc": "{topspin} brushes up the back of the ball: it dips over the net and kicks off the floor." },
+    { "id": "slice", "name": "Slice", "kind": "shot", "shot": "slice", "drill": "Feeds to the drive", "balls": 10, "medals": [4, 6, 8],
+      "desc": "{slice} cuts under the ball: low over the net, skidding, safe." },
+    { "id": "lob", "name": "The lob", "kind": "shot", "shot": "lob", "drill": "Feeds to the drive", "balls": 10, "medals": [4, 6, 8],
+      "desc": "{lob} sends the ball high over a pair at the net, down towards their back glass." },
+    { "id": "drop", "name": "The drop", "kind": "shot", "shot": "drop", "drill": "Feeds to the drive", "balls": 10, "medals": [3, 5, 7],
+      "desc": "{drop}: soft, just over the net, dying before they reach it." },
+    { "id": "volley", "name": "Volleys", "kind": "shot", "shot": "volley", "drill": "Volleys", "balls": 10, "medals": [4, 6, 8],
+      "desc": "At the net, {volley} takes the ball in the air before it bounces: punch it back deep." },
+    { "id": "bandeja", "name": "The bandeja", "kind": "shot", "shot": "bandeja", "drill": "Lobs and overheads", "balls": 10, "medals": [3, 5, 7],
+      "desc": "A lob over you at the net: {overhead} plays the bandeja, flat and deep, so you keep the net." },
+    { "id": "vibora", "name": "The víbora", "kind": "shot", "shot": "vibora", "drill": "Lobs and overheads", "balls": 10, "medals": [3, 5, 7],
+      "desc": "{overhead} with {precision} is the víbora: sidespin, cross-court into their side glass." },
+    { "id": "smash", "name": "The smash", "kind": "shot", "shot": "smash", "drill": "Short lobs", "balls": 10, "medals": [3, 5, 7],
+      "desc": "{overhead} with {power}: the smash. A short lob is your chance to finish the point." },
+    { "id": "back-glass", "name": "The back glass", "kind": "glass", "drill": "Back glass", "balls": 10, "vision": 2, "medals": [3, 5, 7],
+      "desc": "Let the ball come off your back glass. The line shows its path off the glass: be where it comes down, take it as it drops, play it back in." },
+    { "id": "side-glass", "name": "Side glass", "kind": "glass", "drill": "Side glass", "balls": 10, "vision": 1, "medals": [3, 5, 7],
+      "desc": "Wide balls into the side glass and the corners. Only where it meets the glass and where it comes down are shown now." },
+    { "id": "read-glass", "name": "Read the glass", "kind": "glass", "drill": "Back glass", "balls": 10, "vision": 0, "medals": [3, 5, 7],
+      "desc": "The same balls, nothing drawn: read them yourself." }
+  ]
+}

@@ -15,6 +15,9 @@ import { dealCast, type Cast } from './cast.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
 import { Local, LOCAL_COLOURS, axisFlip, type LocalSeat } from './locals.ts';
+import { ChallengeRun, type ChallengeDef } from './challenge.ts';
+import { GlassVision } from '../render/glassVision.ts';
+import { InputLog, LogPlayer, type SavedLog } from './inputLog.ts';
 import { DEFAULT_KEYS } from './input/bindings.ts';
 import { AudioEngine } from '../audio/engine.ts';
 import { GRUNT_WOMEN, GRUNT_WOMEN_GAIN, Soundscape, type FeetSource } from '../audio/soundscape.ts';
@@ -43,6 +46,8 @@ import type { NetHooks } from '../net/netMatch.ts';
 const MAX_TICKS_PER_FRAME = 12;
 /** After match point: the results come OVER_HOLD_MS after the players have played the end out (MatchSim.overStage 4),
  * at the latest OVER_MAX_MS after it; Enter or Space skips to them from OVER_SKIP_AFTER_MS. */
+/** A challenge's last ball is seen down before its results (ms). */
+const RUN_OVER_HOLD_MS = 1400;
 const OVER_HOLD_MS = 1500;
 const OVER_MAX_MS = 16000;
 const OVER_SKIP_AFTER_MS = 800;
@@ -87,6 +92,10 @@ export interface GameOptions {
   /** Local multiplayer (M6, locals.ts): every player on this machine and their device; absent, `human` alone on the
    * keyboard and the first pad. The first is the camera's end. */
   locals?: LocalSeat[];
+  /** A challenge (M6, challenge.ts): the run is scored as it is played, its rings drawn on court, its inputs recorded. */
+  challenge?: ChallengeDef;
+  /** A saved run's inputs (inputLog.ts) played back for player 0, nobody's devices: watching a best run. */
+  playback?: SavedLog;
   autoplay: boolean;
   forceWebGL: boolean;
   pro: boolean;
@@ -209,6 +218,20 @@ export class Game {
   readonly feedback: Feedback;
   readonly hud: Hud;
   readonly debug: DebugOverlay;
+  /** The challenge being played (null: none), its inputs recorded for a best run to keep, and a saved run played back. */
+  readonly run: ChallengeRun | null;
+  readonly log: InputLog | null;
+  private readonly playback: LogPlayer | null;
+  /** The run is over (its last ball played out, or the saved run's inputs run out): the app shows how it went. */
+  onChallengeOver: ((run: ChallengeRun) => void) | null = null;
+  private runOverAt = -1;
+  private runSent = false;
+  private runLine: HTMLElement | null = null;
+  private runShown = -1;
+  private readonly runDots: THREE.Mesh[] = [];
+  /** An academy lesson's glass vision (the coach's ball's path off the glass), or null. */
+  private vision: GlassVision | null = null;
+  private runDotsShown = -1;
   /** The players on this machine (locals.ts); none with autoplay. */
   private readonly locals: Local[] = [];
   /** Every pad in use (a local's, or the first pad with autoplay: Start opens the menu). */
@@ -298,7 +321,9 @@ export class Game {
       if (v.voice !== null) cast.voices[i] = v.voice;
       cast.tones[i] = cast.tones[i]! * 2 ** ((v.pitch * 3) / 12);
     }
-    opts.match.women = cast.women;
+    // (a run played back is its kept match to the letter: the cast decides nothing in it. A women's match is another
+    // match: a watched run dealt a women's cast from a fresh seed went another way from its fourth ball)
+    if (!opts.playback) opts.match.women = cast.women;
     this.sim = new MatchSim(opts.match);
     const court = this.sim.world.court;
 
@@ -340,11 +365,20 @@ export class Game {
     const moving: THREE.Object3D[] = [this.ball.mesh, this.ball.shadow, this.ball.trail, this.ball.marker, this.aimMarker, this.net.group];
     for (const pv of this.players) moving.push(pv.root);
     this.court.setEnvironment(this.arena.bakeEnvironment(renderer, this.scene, moving));
+    // A challenge: its run, its marks on court and its line on screen; the inputs kept (six minutes) or played back.
+    this.run = opts.challenge ? new ChallengeRun(opts.challenge) : null;
+    this.playback = opts.playback ? new LogPlayer(opts.playback) : null;
+    this.log = this.run && !this.playback ? new InputLog(120 * 60 * 6) : null;
+    if (this.run) this.buildRunMarks(this.run.def);
+    if (this.run && this.run.def.vision > 0) {
+      this.vision = new GlassVision(this.scene, 1);
+      this.vision.level = this.run.def.vision;
+    }
 
     const sig = this.ac.signal;
     this.kb = new KeyboardInput(window, sig, prefs.keys);
     // The players on this machine: one on the keyboard and the first pad, or each on their own device (locals.ts).
-    const seats: LocalSeat[] = opts.autoplay ? [] : opts.locals ?? [{ player: opts.human, device: 'any' }];
+    const seats: LocalSeat[] = opts.autoplay || opts.playback ? [] : opts.locals ?? [{ player: opts.human, device: 'any' }];
     for (const st of seats) {
       const l = new Local(st, this.kb, window, sig);
       this.locals.push(l);
@@ -811,6 +845,64 @@ export class Game {
     }
   }
 
+  /**
+   * A challenge's marks: its rings (or its zone) on the coach's side, where the player's shots must come down, and a pool
+   * of dots for where they did (made now; drawRun only moves them).
+   */
+  private buildRunMarks(def: ChallengeDef): void {
+    const far = this.sim.side(1);
+    const flat = (m: THREE.Mesh, x: number, z: number, y: number): void => {
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, y, z);
+      m.renderOrder = 1;
+      this.scene.add(m);
+    };
+    const mat = (color: number, opacity: number): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    for (const t of def.targets) {
+      const colour = t.points >= 3 ? 0xf0e442 : 0xffffff;
+      flat(new THREE.Mesh(new THREE.RingGeometry(t.r - 0.07, t.r, 56), mat(colour, 0.85)), t.x, far * t.depth, 0.007);
+      flat(new THREE.Mesh(new THREE.CircleGeometry(t.r - 0.07, 56), mat(colour, 0.12)), t.x, far * t.depth, 0.0065);
+    }
+    if (def.zone) {
+      const z = def.zone, w = z.x[1] - z.x[0], d = z.depth[1] - z.depth[0];
+      flat(new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat(0x56b4e9, 0.16)), (z.x[0] + z.x[1]) / 2, far * (z.depth[0] + z.depth[1]) / 2, 0.0065);
+    }
+    const hitMat = mat(0x3fcf6e, 0.95), missMat = mat(0xd0d4d8, 0.6), dot = new THREE.CircleGeometry(0.1, 20);
+    for (let k = 0; k < 24; k++) {
+      const m = new THREE.Mesh(dot, missMat);
+      m.userData.hit = hitMat;
+      m.userData.miss = missMat;
+      m.visible = false;
+      flat(m, 0, 0, 0.008);
+      this.runDots.push(m);
+    }
+    this.runLine = this.hudLayer.appendChild(document.createElement('div'));
+    this.runLine.style.cssText = 'position:absolute;left:50%;top:18px;transform:translateX(-50%);padding:6px 14px;border-radius:8px;'
+      + 'background:rgba(9,12,17,.72);font:800 15px/1.2 var(--display, system-ui);letter-spacing:.06em;text-transform:uppercase;color:#fff;';
+  }
+
+  /** The run's line and dots, redrawn only when they change (nothing allocated otherwise). */
+  private drawRun(): void {
+    const run = this.run!;
+    const key = run.balls * 10000 + run.score;
+    if (key !== this.runShown && this.runLine) {
+      this.runShown = key;
+      const ball = Math.min(run.def.balls, run.balls + 1);
+      this.runLine.textContent = `${this.playback ? 'Your best · ' : ''}${run.def.name} · ball ${ball} of ${run.def.balls} · ${run.score} ${run.score === 1 ? 'point' : 'points'}`;
+    }
+    if (run.marks.length !== this.runDotsShown || (run.marks.length === 24 && key !== this.runShown)) {
+      this.runDotsShown = run.marks.length;
+      const far = this.sim.side(1);
+      for (let k = 0; k < this.runDots.length; k++) {
+        const m = this.runDots[k]!, mk = run.marks[k];
+        m.visible = !!mk;
+        if (!mk) continue;
+        m.position.set(mk.x, 0.008, far * mk.z);
+        m.material = (mk.points > 0 ? m.userData.hit : m.userData.miss) as THREE.MeshBasicMaterial;
+      }
+    }
+  }
+
   /** The players on this machine, P1 first (none with autoplay). */
   get localPlayers(): number[] {
     return this.locals.map((l) => l.player);
@@ -898,6 +990,8 @@ export class Game {
       // (held up, the tick can't run: the keys stay in their queue, or a release made now is lost)
       if (net?.held) break;
       for (let k = 0; k < this.locals.length; k++) { const l = this.locals[k]!; this.inputs[l.player] = this.buildInput(l, this.sim.time + DT); }
+      if (this.playback) this.inputs[0] = this.playback.next();
+      if (this.log) this.log.record(this.inputs[0] ?? null);
       if (net) net.step(this.inputs[human] ?? null);
       else {
         rp.beforeStep(this.sim, this.inputs);
@@ -1003,6 +1097,19 @@ export class Game {
     this.hud.update(this.sim, showing ? -1 : this.meterWho, now / 1000);
     this.tv?.update(this.sim);
     this.stats.update(this.sim);
+    if (this.run && !showing) {
+      this.run.update(this.sim);
+      this.drawRun();
+      this.vision?.update(this.sim);
+      const over = this.run.done || (this.playback !== null && this.playback.over);
+      if (over && this.runOverAt < 0) this.runOverAt = now;
+      // (the last ball seen down first)
+      if (over && !this.runSent && now - this.runOverAt > RUN_OVER_HOLD_MS && this.onChallengeOver) {
+        this.runSent = true;
+        this.onChallengeOver(this.run);
+        if (this.disposed) return;
+      }
+    }
     this.transitions?.update(this.sim, team, now / 1000);
     this.announcer?.update(this.sim, team);
     // The match is over: the players play it out (MatchSim.overStage: reactions, the walk to the net, rackets

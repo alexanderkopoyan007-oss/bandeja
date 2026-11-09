@@ -19,6 +19,10 @@ import { rosterScreen } from './rosterScreen.ts';
 import { connectedPads, defaultPicks, localScreen, type SeatPick } from './localScreen.ts';
 import type { LocalSeat } from '../game/locals.ts';
 import { bracketScreen, tourScreen, type TourHost } from './tournamentScreen.ts';
+import { bestsFrom, challengesScreen, type BestRun, type ChallengeHost } from './challengeScreen.ts';
+import { LESSONS, MEDAL_NAMES, medal, type ChallengeDef, type ChallengeRun } from '../game/challenge.ts';
+import { academyScreen, lessonOpen, type AcademyHost } from './academyScreen.ts';
+import { BUILD } from '../net/config.ts';
 import { DEFAULT_TOUR, nextTieName, tieCourt, tourFrom, type Tour, type TourSetup } from './tournament.ts';
 import { current as tieNow, finished as drawOver, playRound, recordYours, roundName, stillIn } from './bracket.ts';
 import { applyRoster, dealRoster } from './roster.ts';
@@ -105,6 +109,8 @@ export class App {
   private localPicks: SeatPick[] | null = null;
   /** The game on court is the player's tie in the tournament (M6, tournament.ts). */
   private tourTie = false;
+  /** The game on court is a challenge (M6, challenge.ts): its feeds' seed (the daily's; null: the run's own), or a best run watched. */
+  private challenge: { def: ChallengeDef; seed: number | null; watch: BestRun | null } | null = null;
   /** The tournament setup being made (kept while the page is open). */
   private readonly tourSetup: TourSetup = { ...DEFAULT_TOUR };
   private cupRound = -1;
@@ -303,6 +309,21 @@ export class App {
       opts.match.firstServer = 1;
       opts.match.walkBack = false;
     }
+    // A challenge: scored, no replays; the daily's feeds from the date, or a best run's own match and inputs, watched.
+    const ch = !attract && !on ? this.challenge : null;
+    if (ch) {
+      opts.challenge = ch.def;
+      opts.replays = false;
+      opts.prefs!.replays = false;
+      if (ch.watch?.cfg && ch.watch.log) {
+        opts.match = structuredClone(ch.watch.cfg);
+        opts.playback = ch.watch.log;
+        // (the same people: a cast dealt afresh can be a women's one, and that is another match)
+        if (ch.watch.castSeed !== undefined) this.castSeed = opts.castSeed = ch.watch.castSeed;
+      } else if (ch.seed !== null) opts.match.seed = ch.seed;
+      // (the timing lesson is played with the player's own timing, whatever the setting)
+      if (ch.def.ownTiming && !ch.watch) { opts.match.autoTiming = false; opts.match.tapSwing = false; }
+    }
     // The AI players are the roster's pros (behind ?creator=1 until the owner has seen it; never online, not a drill's
     // coach, not when ?people= names the cast).
     if (court) {
@@ -347,6 +368,7 @@ export class App {
     }
     stage('Ready', 1);
     g.onMenu = () => { if (this.playing && !this.menu.isOpen) this.pause(); };
+    g.onChallengeOver = (run) => this.challengeOver(run);
     g.onMatchOver = (st) => {
       if (this.playing) this.results(st);
       // Not inside the game's own frame (the rebuild tears that game down): in a task of its own.
@@ -397,10 +419,11 @@ export class App {
     return st;
   }
 
-  private play(drill: number, cupRound: number, tourTie = false): void {
+  private play(drill: number, cupRound: number, tourTie = false, challenge: { def: ChallengeDef; seed: number | null; watch: BestRun | null } | null = null): void {
     this.drill = drill;
     this.cupRound = cupRound;
     this.tourTie = tourTie;
+    this.challenge = challenge;
     void this.startMatch();
   }
 
@@ -487,6 +510,75 @@ export class App {
     recordYours(tour.draw, g.sim.score.winner === mine, score);
     playRound(tour.draw);
     this.saveTour(tour);
+  }
+
+  /** Every challenge's best run, as saved (checked on every read). */
+  private bests(): Record<string, BestRun> {
+    return bestsFrom(this.store?.doc('challenges.v1'));
+  }
+
+  private challengeHost(): ChallengeHost {
+    return {
+      best: (id) => this.bests()[id] ?? null,
+      build: BUILD,
+      start: (def, seed) => this.play(def.drill, -1, false, { def, seed, watch: null }),
+      watch: (def, best) => this.play(def.drill, -1, false, { def, seed: null, watch: best }),
+      open: (sc) => this.menu.open(sc),
+      // (the list opened after a run has nothing under it: back is the title)
+      back: () => { if (this.menu.depth > 1) this.menu.pop(); else void this.toTitle(); },
+    };
+  }
+
+  private academyHost(): AcademyHost {
+    return {
+      best: (id) => this.bests()[id]?.score ?? null,
+      keys: () => resolveKeys(this.settings.keys),
+      start: (def) => this.play(def.drill, -1, false, { def, seed: null, watch: null }),
+      open: (sc) => this.menu.open(sc),
+      back: () => { if (this.menu.depth > 1) this.menu.pop(); else void this.toTitle(); },
+    };
+  }
+
+  /** A challenge's run is over: a better score than the best is kept (with its match and inputs, to watch again). */
+  private challengeOver(run: ChallengeRun): void {
+    const g = this.game, ch = this.challenge;
+    if (!g || !ch || !this.playing) return;
+    g.setMenuPaused(true);
+    const all = this.bests(), prev = all[ch.def.id] ?? null;
+    let fresh = false;
+    if (!ch.watch && (!prev || run.score > prev.score)) {
+      const rec: BestRun = { score: run.score, at: Date.now(), build: BUILD };
+      if (g.log && !g.log.full) { rec.cfg = structuredClone(g.opts.match); rec.log = g.log.save(); rec.castSeed = g.opts.castSeed; }
+      all[ch.def.id] = rec;
+      this.store?.saveDoc('challenges.v1', { best: all });
+      fresh = true;
+    }
+    const m = medal(ch.def, run.score);
+    const sub = ch.watch ? `${run.score} points, as you played it`
+      : `${run.score} ${run.score === 1 ? 'point' : 'points'}${fresh && prev ? ` · a new best (was ${prev.score})` : fresh ? ' · your first' : prev ? ` · best ${prev.score}` : ''}`;
+    const again = { def: ch.def, seed: ch.seed, watch: null };
+    // A lesson: the next one, once this one has its bronze; back to the academy rather than the challenges.
+    const k = ch.def.lesson ? LESSONS.findIndex((l) => l.id === ch.def.id) : -1;
+    const next = k >= 0 && k + 1 < LESSONS.length && lessonOpen(k + 1, (id) => this.bests()[id]?.score ?? null) ? LESSONS[k + 1]! : null;
+    this.menu.open({
+      id: 'results', title: ch.watch ? 'Your best run' : MEDAL_NAMES[m]!, sub, back: null,
+      side: () => `<div class="card"><h2>${ch.def.name}</h2><table>${[1, 2, 3].map((k) => `<tr><td class="l">${MEDAL_NAMES[k]}</td><td${m >= k ? ' class="w"' : ''}>${ch.def.medals[k - 1]} points</td></tr>`).join('')}</table></div>`,
+      items: [
+        {
+          kind: 'button', label: 'Next lesson', primary: true, hidden: () => !next || !!ch.watch, desc: next ? `${next.name}: ${next.balls} balls.` : '',
+          action: () => { if (next) this.play(next.drill, -1, false, { def: next, seed: null, watch: null }); },
+        },
+        { kind: 'button', label: 'Again', primary: !next || !!ch.watch, desc: `${ch.def.balls} more balls.`, action: () => this.play(ch.def.drill, -1, false, again) },
+        {
+          kind: 'button', label: 'Watch your best', hidden: () => { const b = this.bests()[ch.def.id]; return !b?.log || b.build !== BUILD; },
+          desc: 'Your best run, played again as you played it.', action: () => { const b = this.bests()[ch.def.id]; if (b) this.play(ch.def.drill, -1, false, { def: ch.def, seed: null, watch: b }); },
+        },
+        k >= 0
+          ? { kind: 'button', label: 'Academy', desc: 'The lessons.', action: () => this.menu.open(academyScreen(this.academyHost()), true) }
+          : { kind: 'button', label: 'Challenges', desc: 'The list.', action: () => this.menu.open(challengesScreen(this.challengeHost()), true) },
+        { kind: 'button', label: 'Title screen', desc: 'Back to the club.', action: () => void this.toTitle() },
+      ],
+    }, true);
   }
 
   /** The tournament under way, as saved (checked on every read; null: none). */
@@ -838,6 +930,16 @@ export class App {
           action: () => this.menu.open(tourScreen(this.tourHost())),
         },
         {
+          kind: 'button', label: 'Academy', hidden: () => !this.creatorOn,
+          desc: 'Lessons from the timing to every shot and reading the glass, each a run of the coach’s balls. Bronze opens the next.',
+          action: () => this.menu.open(academyScreen(this.academyHost())),
+        },
+        {
+          kind: 'button', label: 'Challenges', hidden: () => !this.creatorOn,
+          desc: 'Rings to land in, the glass to read, smashes out of the court: a run of balls each, medals, and a new one every day.',
+          action: () => this.menu.open(challengesScreen(this.challengeHost())),
+        },
+        {
           kind: 'button', label: 'Local match', hidden: () => !this.creatorOn, desc: 'Up to four people on one screen: the keyboard and pads, as partners or opponents.',
           action: () => this.menu.open(this.localScreen()),
         },
@@ -861,7 +963,7 @@ export class App {
   private practiceScreen(): Screen {
     return {
       id: 'practice', title: 'Practice', sub: 'The coach feeds, you play it out. Pause to leave.',
-      items: practiceData.drills.map((d, i) => ({ kind: 'button' as const, label: d.name, desc: d.desc, action: () => this.play(i, -1) })),
+      items: practiceData.drills.flatMap((d, i) => ((d as { challenge?: boolean }).challenge ? [] : [{ kind: 'button' as const, label: d.name, desc: d.desc, action: () => this.play(i, -1) }])),
     };
   }
 

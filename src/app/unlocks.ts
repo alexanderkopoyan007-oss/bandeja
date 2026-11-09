@@ -60,7 +60,7 @@ export function paintOf(ids: Iterable<string>): { paint: Paint; grip?: string } 
 }
 export const COSMETIC_BY_ID: ReadonlyMap<string, Cosmetic> = new Map(COSMETICS.map((c) => [c.id, c]));
 export const SLOT_INFO = data.slots as Record<Slot, { name: string; required: boolean }>;
-export const DRILL_NAMES: readonly string[] = practiceData.drills.map((d) => d.name);
+export const DRILL_NAMES: readonly string[] = practiceData.drills.filter((d) => !(d as { challenge?: boolean }).challenge).map((d) => d.name);
 
 /** What the player has done, as the rules read it. */
 export interface Progress {
