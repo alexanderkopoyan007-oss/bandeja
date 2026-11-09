@@ -47,6 +47,12 @@ export interface Settings {
   camera: 'tv' | 'near' | 'player' | 'side' | 'dynamic';
   /** Instant replays of big points (game/replay.ts). */
   replays: boolean;
+  /** The score graphics: simple (the HUD's) or a TV package (ui/tv.ts). Listed behind ?creator=1 (M7) until the owner has seen it. */
+  graphics: 'simple' | 'tv';
+  /** The umpire's calls spoken (game/umpire.ts, ui/umpireVoice.ts): off, English or Spanish. Behind ?creator=1 (M7). */
+  umpire: 'off' | 'en' | 'es';
+  /** The umpire's calls written on screen. Behind ?creator=1 (M7). */
+  captions: boolean;
   // Sound (0..1)
   volume: number;
   crowd: number;
@@ -78,7 +84,7 @@ export function defaultSettings(): Settings {
   return {
     setup: { ...DEFAULT_SETUP },
     timing: 'forgiving', assist: 'normal', autoTiming: false, swing: 'hold', pro: false, mouseAim: false,
-    quality: 'auto', showFps: false, camera: 'tv', replays: true,
+    quality: 'auto', showFps: false, camera: 'tv', replays: true, graphics: 'simple', umpire: 'off', captions: false,
     volume: 1, crowd: 1,
     motion: 'system', safeColours: false, contrast: false, textSize: 1, announce: true, rumble: true,
     keys: {},
@@ -92,7 +98,7 @@ const CHOICES: Record<string, readonly unknown[]> = {
   arena: ['stadium', 'hall', 'club-day', 'club-night', 'club-dusk', 'final'], court: ['standard', 'panoramic', 'singles-narrow'],
   scoring: ['star', 'golden', 'advantage'], length: ['short', 'set', 'three'], hand: ['right', 'left'],
   timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'], swing: ['hold', 'tap'],
-  quality: ['auto', 'low', 'medium', 'high', 'ultra'], camera: ['tv', 'near', 'player', 'side', 'dynamic'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
+  quality: ['auto', 'low', 'medium', 'high', 'ultra'], camera: ['tv', 'near', 'player', 'side', 'dynamic'], graphics: ['simple', 'tv'], umpire: ['off', 'en', 'es'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
   // A partner's or the opponents' style: 'random' or a style that exists (data/ai.json).
   partner: ['random', ...STYLE_KEYS], opponents: ['random', ...STYLE_KEYS],
 };

@@ -219,11 +219,24 @@ export class Menu {
     this.render(false);
   }
 
-  /** Replace the top screen (same place in the stack). */
+  /**
+   * Replace the top screen (same place in the stack). The same screen made again (its id) is redrawn in place with
+   * the focus on the item it was on (by label: the items are new), as a choice that remakes its screen leaves it.
+   */
   replace(s: Screen): void {
+    const same = this.current?.id === s.id;
+    const was = this.items[this.focusIdx];
     this.stack.pop();
     this.stack.push(s);
-    this.render(false);
+    this.render(false, same ? this.focusIdx : -1, same);
+    if (same && was) this.refocus(was);
+  }
+
+  /** Back onto the item that had the focus, wherever a redraw put it (shown or hidden items above it move it). */
+  private refocus(was: Item): void {
+    let i = this.items.indexOf(was);
+    if (i < 0) i = this.items.findIndex((x) => x.label === was.label && x.kind === was.kind);
+    if (i >= 0 && i !== this.focusIdx) this.setFocus(i, false);
   }
 
   back(): void {
@@ -244,8 +257,9 @@ export class Menu {
 
   /** Redraw the current screen in place (values changed elsewhere), keeping the focus. */
   refresh(): void {
-    const keep = this.focusIdx;
-    this.render(false, keep, true);
+    const was = this.items[this.focusIdx];
+    this.render(false, this.focusIdx, true);
+    if (was) this.refocus(was);
   }
 
   show(): void {

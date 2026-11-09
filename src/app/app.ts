@@ -1,8 +1,10 @@
 // The app (Phase 8): the loading screen, the menus over an AI match, and the player's matches, all in one page.
 // A game is built for each match and torn down after it (Game.dispose), so the title screen, a match, the results
 // and back again never reload the page. Settings live in localStorage (settings.ts).
+import { statsScreen } from './statsScreen.ts';
+import { clipType, clipExt, saveFile, fileStem } from '../game/clipRecorder.ts';
 import * as THREE from 'three/webgpu';
-import { Game, type GameOptions } from '../game/game.ts';
+import { Game, type GameOptions, type GamePrefs } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
 import { loadPeople, loadPlayerAsset, peopleWanted, type PlayerAsset } from '../render/avatar/asset.ts';
 import { bodiesParam, castParam, dealCast } from '../game/cast.ts';
@@ -271,7 +273,20 @@ export class App {
   // ---- games ---------------------------------------------------------------------------------------------
 
   private prefs() {
-    return optionsFromSetup(this.settings.setup, this.settings, 0, null, false, this.params).prefs!;
+    return this.gatePrefs(optionsFromSetup(this.settings.setup, this.settings, 0, null, false, this.params).prefs!);
+  }
+
+  /**
+   * M7's umpire and the side and dynamic cameras are behind ?creator=1 until the owner has seen them: a choice stored
+   * with the flag stays off without it.
+   */
+  private gatePrefs(p: GamePrefs): GamePrefs {
+    if (!this.creatorOn) {
+      p.umpire = 'off';
+      p.captions = false;
+      if (p.camera === 'side' || p.camera === 'dynamic') p.camera = 'tv';
+    }
+    return p;
   }
 
   /** Build a game (the title screen's AI match, or the player's) and start it. */
@@ -285,6 +300,12 @@ export class App {
     await frame();
     const seed = (this.seedBase = nextSeed(this.seedBase));
     const opts = optionsFromSetup(attract ? this.settings.setup : this.gameSetup(), this.settings, seed, this.asset, attract, this.params);
+    this.gatePrefs(opts.prefs!);
+    opts.camera = opts.prefs!.camera ?? opts.camera;
+    // The TV graphics package (M7 phase D: a setting behind ?creator=1; ?gfx=tv still asks for it).
+    opts.gfx = this.params.get('gfx') ?? (!attract && this.creatorOn && this.settings.graphics === 'tv' ? 'tv' : undefined);
+    // The title's establishing shots between points (M7 phase F).
+    opts.establish = attract && this.creatorOn;
     opts.people = castParam(this.params);
     opts.bodies = bodiesParam(this.params);
     opts.wear = wearParam(this.params);
@@ -1154,7 +1175,13 @@ export class App {
             : 'TV: the broadcast camera high behind the glass. TV close: nearer and wider. Player: low behind your end, sliding with you.'),
         ch('Replays', 'replays', [{ value: true, label: 'Big points' }, { value: false, label: 'Off' }],
           'After a winner off the court, a hard overhead or a long rally, the point again from another angle, the winning shot slowed. Enter or Space skips one.'),
+        // (M7's graphics, umpire and captions: behind ?creator=1 until the owner has seen them)
+        { ...ch('Score graphics', 'graphics', [{ value: 'simple', label: 'Simple' }, { value: 'tv', label: 'TV' }],
+          'Simple: the score in the corner. TV: a broadcast package: the score bug in the pairs\' colours with the server, tags for break, set and match points, the speed of serves and smashes, how each point was won, the scoreboard after each game and the stats at the change of ends.' + next), hidden: () => !this.creatorOn },
         { kind: 'group', label: 'Sound' },
+        { ...ch('Umpire', 'umpire', [{ value: 'off', label: 'Off' }, { value: 'en', label: 'English' }, { value: 'es', label: 'Spanish' }],
+          'The umpire calls faults, lets and the score as it is counted, in the browser\'s own voice (one on this computer; with none, the calls are written only).'), hidden: () => !this.creatorOn },
+        { ...ch('Captions', 'captions', onOff, 'The umpire\'s calls written at the foot of the screen, in the umpire\'s language (English when the umpire is off).'), hidden: () => !this.creatorOn },
         { kind: 'slider', label: 'Volume', get: () => s.volume, set: (v) => { s.volume = Number(v); }, step: 0.1, desc: 'Everything you hear.' },
         { kind: 'slider', label: 'Crowd', get: () => s.crowd, set: (v) => { s.crowd = Number(v); }, step: 0.1, desc: 'The crowd and the neighbouring courts, against the ball and the players.' },
         { kind: 'group', label: 'Accessibility' },
@@ -1261,6 +1288,9 @@ export class App {
         { kind: 'button', label: 'Resume', primary: true, desc: 'Back to the point, where it stopped.', action: () => this.resume() },
         { kind: 'button', label: 'Settings', desc: 'Sound, picture and accessibility change at once; timing and assists from the next match.', action: () => this.menu.open(this.settingsScreen()) },
         { kind: 'button', label: 'Controls', desc: 'Every shot on the keyboard and the gamepad; change any key.', action: () => this.menu.open(this.controlsScreen()) },
+        // (M7 phase C, behind ?creator=1 until the owner has seen it)
+        { kind: 'button', label: 'Photo mode', desc: 'The match stands still; take the camera anywhere and save the picture.', hidden: () => !this.creatorOn,
+          action: () => { this.menu.hide(); this.game?.enterPhoto(() => this.menu.open(this.pauseScreen(), true)); } },
         { kind: 'button', label: 'Restart match', desc: 'A new match with the same setup.', action: () => this.menu.open(this.confirm('Restart?', 'This match is lost.', 'Start the match again.', () => void this.startMatch())) },
         { kind: 'button', label: 'Quit to title', desc: 'Leave the match for the title screen.', action: () => this.menu.open(this.confirm('Leave the match?', 'This match is lost.', 'To the title screen.', () => void this.toTitle())) },
       ],
@@ -1282,6 +1312,17 @@ export class App {
     // The match's highlights (M7 phase B; behind ?creator=1 until the owner has seen them; never online, where the
     // others' inputs aren't kept): watched on court, then back here.
     const g = this.game;
+    // The breakdown (M7 phase D; behind ?creator=1 until the owner has seen it): shots, overheads and the serve, the
+    // net and the running, where the ball came down.
+    if (this.creatorOn && g) {
+      const you = g.team;
+      const mine = g.localPlayers.length > 1 ? g.teamName(you) : g.sim.doubles ? 'Your pair' : 'You';
+      const them = g.localPlayers.length > 1 ? g.teamName(1 - you) : g.sim.doubles ? 'Them' : 'Opponent';
+      screen.items.splice(1, 0, {
+        kind: 'button', label: 'Match stats', desc: 'Every shot by kind, overheads and the serve, the net and the running, where the ball came down.',
+        action: () => this.menu.open(statsScreen({ stats: st, you, names: [mine, them], back: () => this.menu.pop() })),
+      });
+    }
     if (this.creatorOn && !this.online && g && g.highlights.clips.length) {
       const n = g.highlights.clips.length;
       screen.items.splice(1, 0, {
@@ -1292,6 +1333,20 @@ export class App {
           if (!g.playReel(back)) back();
         },
       });
+      // ... and as a video file (M7 phase C: recorded in the browser while it plays, then saved by it).
+      if (clipType()) {
+        screen.items.splice(2, 0, {
+          kind: 'button', label: 'Save highlights as video', desc: 'They play, recorded with their sound and captions, then your browser saves the file. Escape stops without saving.',
+          action: () => {
+            this.menu.hide();
+            const back = (): void => { g.setMenuPaused(true); this.menu.open(this.resultsScreen(st), true); };
+            const ok = g.recordReel(back, (file, type) => {
+              if (file && file.size > 0) saveFile(file, `${fileStem('highlights')}.${clipExt(type)}`);
+            });
+            if (!ok) back();
+          },
+        });
+      }
     }
     return screen;
   }

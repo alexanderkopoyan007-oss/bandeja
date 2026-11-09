@@ -75,7 +75,8 @@ describe('the highlight reel', () => {
       const reel = new Reel(cfg, humans);
       expect(reel.start(clips)).toBe(true);
       const st = (): number => reel.state;
-      let shown = 0, cuts = reel.cuts;
+      // (each clip is a cut, the first made by start())
+      let shown = 0, cuts = reel.cuts - 1;
       while (st() !== 0) {
         const c = reel.clip!;
         while (st() === RL_PREP) reel.prepare();

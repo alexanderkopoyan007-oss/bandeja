@@ -495,6 +495,24 @@ const NET_SHOT_HEIGHT = 1.6;
 const NET_SHOT_Z = 1.9;
 const NET_SHOT_FOV = 40;
 
+/**
+ * The title's establishing shots (M7 phase F; `BroadcastCamera.establish`, the title's match only, behind ?creator=1):
+ * between points, in place of the cut-away, a slow arc round the court, as a broadcast opens on the venue. The camera
+ * goes round the ellipse through the side camera's place (SIDE_OUT beside the side glass) and the TV camera's (CAM_BACK
+ * behind the back glass), both seen clear in every arena, EST_HEIGHT up, looking at the middle of the court, at
+ * EST_RATE (rad of the ellipse a second, about 4 degrees: slower than the end cameras turn in play). Each break starts
+ * at the next of EST_STARTS (never square on to an end, which is the match camera's view) and goes the other way round
+ * from the last. The lens widens from EST_FOV_END off an end to EST_FOV_SIDE beside the court, where the court's
+ * length is across the picture (at 32 degrees a side view cut its far end off). The broadcast angle comes back with a
+ * cut for the serve.
+ */
+const EST_HEIGHT = 8;
+const EST_FOV_END = 32;
+const EST_FOV_SIDE = 40;
+const EST_RATE = 0.07;
+const EST_STARTS = [0.55, -2.35, 1.3, -0.95, 2.55, -1.65] as const;
+const EST_LOOK_Y = 0.4;
+
 /** Broadcast camera high behind the back glass of the human's end; swings round smoothly at changes of ends. */
 export class BroadcastCamera {
   /** Cut away to a close camera while the players walk back between points (?cutaway=0 keeps the broadcast angle). */
@@ -509,6 +527,11 @@ export class BroadcastCamera {
   /** The cut-away looks from the pair's back glass (CUT_BACK), not the net post. */
   private cutBack = false;
   private netShot = false;
+  /** Establishing shots between points (the title's match) in place of the cut-away. */
+  establish = false;
+  private estOn = false;
+  private estN = 0;
+  private estT0 = 0;
   private angle = 0;
   private from = 0;
   private to = 0;
@@ -646,6 +669,24 @@ export class BroadcastCamera {
     return CUT_FOV;
   }
 
+  /** The establishing shot's pose for this frame (EST_*); returns its field of view. A cut when it starts. */
+  private establishing(sim: MatchSim): number {
+    const court = sim.world.court;
+    if (!this.estOn) {
+      this.estOn = true;
+      this.estT0 = sim.time;
+      this.estN++;
+    }
+    const k = this.estN - 1;
+    const dir = k & 1 ? 1 : -1;
+    const u = EST_STARTS[k % EST_STARTS.length]! + dir * EST_RATE * Math.max(0, sim.time - this.estT0);
+    const rx = court.halfW + SIDE_OUT, rz = court.halfL + CAM_BACK;
+    this.camera.position.set(Math.sin(u) * rx, EST_HEIGHT, Math.cos(u) * rz);
+    this.camera.lookAt(0, EST_LOOK_Y, 0);
+    const s = Math.sin(u);
+    return EST_FOV_END + (EST_FOV_SIDE - EST_FOV_END) * s * s;
+  }
+
   /** `ball`: where the ball is drawn (null: placing the camera before play). `now` in seconds. */
   update(sim: MatchSim, humanTeam: number, ball: THREE.Vector3 | null, now: number): void {
     const want = sim.side(humanTeam) > 0 ? 0 : Math.PI;
@@ -768,9 +809,15 @@ export class BroadcastCamera {
     const over = sim.phase === PH_OVER;
     const pw = over ? sim.score.winner : sim.pointWinner;
     if (pw >= 0) this.cutTeam = pw;
-    if (BroadcastCamera.cutaways && (sim.walking > 0 || over) && this.turnStart < 0) {
+    if (this.establish && sim.walking > 0 && !over && this.turnStart < 0) {
+      fov = this.establishing(sim);
+    } else if (BroadcastCamera.cutaways && (sim.walking > 0 || over) && this.turnStart < 0) {
+      this.estOn = false;
       fov = this.cutaway(sim, dt);
-    } else this.cutOn = false;
+    } else {
+      this.cutOn = false;
+      this.estOn = false;
+    }
     if (fov !== this.fovNow) {
       this.fovNow = fov;
       this.camera.fov = fov;

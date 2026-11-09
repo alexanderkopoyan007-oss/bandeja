@@ -261,6 +261,11 @@ export class Hud {
   }
 
   /** The replay tag (game/replay.ts) on or off. */
+  /** The whole HUD out of the picture (photo mode) or back. */
+  setHidden(on: boolean): void {
+    this.root.style.visibility = on ? 'hidden' : '';
+  }
+
   setReplay(on: boolean, title = 'REPLAY', sub = 'Enter skips'): void {
     if (on !== this.replayOn) { this.replayOn = on; this.replay.classList.toggle('on', on); }
     // (the highlight reel names its point; written only when it changes, once a point)

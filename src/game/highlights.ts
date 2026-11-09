@@ -26,8 +26,8 @@ const SLOW_AFTER = 0.6;
 const RAMP = 0.15;
 /** An overhead winner this fast (m/s off the racket) or more counts as a hard one (replay.ts BIG_SPEED). */
 const HARD = 21;
-/** Ticks re-run per frame to reach a clip's start (as replays: 4.5 ms a frame). */
-const PREP_PER_FRAME = 300;
+/** The most ticks re-run at a cut to reach a clip's start (90 s: a point is never kept longer). */
+const PREP_MAX = 120 * 90;
 
 /** What a point is worth as a highlight: a shot a stroke, and a bonus for each thing that makes one. */
 export const HL_WEIGHTS = { shot: 1, exit: 10, hardOverhead: 6, setPoint: 6, matchPoint: 25 } as const;
@@ -245,7 +245,9 @@ export class Reel {
     return this.next();
   }
 
-  /** On to the next clip (a skip), or the end: false once there is none. */
+  /** On to the next clip (a skip), or the end: false once there is none. The clip is re-run to its start at once
+   * (from the point's setup to a second before the serve: a few hundred ticks, about 10 ms), so a cut never shows a
+   * frame of anything else (a recorded clip would keep it). */
   next(): boolean {
     this.index++;
     const c = this.clip;
@@ -253,19 +255,17 @@ export class Reel {
     this.sim.copyFrom(c.sim);
     this.players = c.logs.map((l) => new LogPlayer(l));
     this.state = RL_PREP;
-    return true;
-  }
-
-  /** While preparing: re-run towards the clip's start, a frame's share at a time. True once it is there. */
-  prepare(): boolean {
-    const c = this.clip!;
-    for (let k = 0; k < PREP_PER_FRAME && this.sim.time < c.start - DT; k++) this.stepOne();
-    if (this.sim.time < c.start - DT) return false;
+    for (let k = 0; k < PREP_MAX && this.sim.time < c.start - DT; k++) this.stepOne();
     this.state = RL_SHOW;
     this.clock = this.sim.time;
     this.speed = 1;
     this.cuts++;
     return true;
+  }
+
+  /** (for callers that step a preparing reel: the cut does it all now) */
+  prepare(): boolean {
+    return this.state === RL_SHOW;
   }
 
   /** Showing: advance by a frame's `dt` of wall time. False once the reel is over. */

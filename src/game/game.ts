@@ -11,6 +11,8 @@ import { Grounding } from '../render/grounding.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView, ReplayCamera, type CameraPreset } from '../render/views.ts';
 import { Replays, RP_IDLE, RP_PREP, RP_SHOW } from './replay.ts';
 import { Highlights, Reel, RL_IDLE, RL_PREP, RL_SHOW } from './highlights.ts';
+import { PhotoCamera, PhotoControls, noPush } from './photoMode.ts';
+import { ClipRecorder, clipType, saveFile, fileStem } from './clipRecorder.ts';
 import { dealNames, nameOf, type PlayerName } from './names.ts';
 import { dealCast, type Cast } from './cast.ts';
 import { KeyboardInput } from './input/keyboard.ts';
@@ -40,6 +42,8 @@ import { CrowdMood } from './crowdMood.ts';
 import { disposeTree } from '../render/dispose.ts';
 import { Transitions } from '../ui/transitions.ts';
 import { Announcer } from '../ui/announce.ts';
+import { Umpire, pairName } from './umpire.ts';
+import { UmpireVoice } from '../ui/umpireVoice.ts';
 import { QUALITY, type QualityPreset } from '../render/quality.ts';
 import { displayPeriod, stopDisplaySample } from '../render/display.ts';
 import type { NetHooks } from '../net/netMatch.ts';
@@ -130,6 +134,8 @@ export interface GameOptions {
   dprCap?: number;
   /** The AI match behind the title screen: no HUD, no banners. */
   attract?: boolean;
+  /** Establishing shots between points (render/views.ts EST_*): the title's match, behind ?creator=1 (M7 phase F). */
+  establish?: boolean;
   /** Phase 8: what the settings change in a game (all optional; tools leave them out). */
   prefs?: GamePrefs;
 }
@@ -156,6 +162,9 @@ export interface GamePrefs {
   /** Settings > Camera and Replays. */
   camera?: CameraPreset;
   replays?: boolean;
+  /** The umpire's calls (M7 phase E): spoken in a language, or not, and written on screen, or not. */
+  umpire?: 'off' | 'en' | 'es';
+  captions?: boolean;
 }
 
 /** One button event's trip to the screen, performance.now() ms (tools/latency.mjs reads these). */
@@ -284,6 +293,16 @@ export class Game {
   private reel: Reel | null = null;
   private reelDone: (() => void) | null = null;
   private reelCut = 0;
+  /** Photo mode (M7 phase C): the free camera, its controls, the exposure to give back, a photo asked for. */
+  private shotCam: PhotoCamera | null = null;
+  private shotCtl: PhotoControls | null = null;
+  private shotDone: (() => void) | null = null;
+  private shotExposure = 1;
+  private shotWanted = false;
+  private readonly shotPush = noPush();
+  /** A clip being recorded (the highlights as a video), and who gets the file. */
+  private recorder: ClipRecorder | null = null;
+  private clipSaved: ((file: Blob | null, type: string) => void) | null = null;
   private readonly replayCam = new ReplayCamera();
   private replayShown = false;
   /** The replay's take last drawn (Replays.cuts). */
@@ -353,6 +372,7 @@ export class Game {
     const bl = this.arena.def.post?.bloom;
     if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
     BroadcastCamera.cutaways = opts.cutaway !== false;
+    this.cam.establish = !!opts.establish;
     this.cam.setPreset(opts.camera ?? 'tv');
     this.cam.followPlayer = opts.autoplay ? 0 : opts.human;
     // Replays re-run a point from a copy of the match (two more matches: about 2 MB, nothing per frame).
@@ -408,7 +428,7 @@ export class Game {
     for (const p of this.pads) {
       p.rumbleOn = prefs.rumble !== false;
       // Start while a menu is up is the menu's (it resumes from the pause screen).
-      p.onStart = () => { if (this.reelOn) this.endReel(); else if (!this.menuPaused) this.onMenu?.(); };
+      p.onStart = () => { if (this.reelOn) this.endReel(false); else if (!this.menuPaused) this.onMenu?.(); };
       p.onLost = () => this.onMenu?.();
     }
     this.cues = Array.from({ length: Math.max(1, this.locals.length) }, () => new AssistView(this.scene));
@@ -463,6 +483,7 @@ export class Game {
     this.kb.onKey = (code) => this.onKey(code);
     this.transitions = prefs.transitions === false || opts.autoplay ? null : new Transitions(hudRoot, names);
     this.announcer = prefs.announce && !opts.autoplay ? new Announcer(hudRoot) : null;
+    this.setUmpire(prefs.umpire ?? 'off', !!prefs.captions, prefs.volume ?? 1);
 
     addEventListener('resize', () => this.resize(), { signal: sig });
     // Leaving the game (another window, a hidden tab, the controller gone) opens the pause menu, so a point
@@ -488,8 +509,8 @@ export class Game {
     if (this.menuPaused) return;
     // (the reel: Enter or Space the next point, Escape back to the results)
     if (this.reelOn) {
-      if (code === 'Escape') this.endReel();
-      else if ((code === 'Enter' || code === 'Space') && this.reel && !this.reel.next()) this.endReel();
+      if (code === 'Escape') this.endReel(false);
+      else if ((code === 'Enter' || code === 'Space') && this.reel && !this.reel.next()) this.endReel(true);
       return;
     }
     if (code === 'Escape') this.onMenu?.();
@@ -586,12 +607,43 @@ export class Game {
     if (p.mouseAim !== undefined && p.mouseAim !== this.prefMouse) { this.prefMouse = p.mouseAim; this.mouseAim = p.mouseAim; }
     if (p.camera !== undefined) this.cam.setPreset(p.camera);
     if (p.replays !== undefined) { this.replays.enabled = p.replays && !this.opts.closeCam; if (!p.replays) this.replays.stop(); }
+    if (p.umpire !== undefined || p.captions !== undefined) this.setUmpire(p.umpire ?? 'off', !!p.captions, p.volume ?? 1);
     if (p.announce !== undefined && !this.opts.autoplay && p.announce !== !!this.announcer) {
       if (p.announce) this.announcer = new Announcer(this.hudLayer, this.sim);
       else { this.announcer?.dispose(); this.announcer = null; }
     }
     this.hud.applyPalette();
   }
+
+  /**
+   * The umpire (M7 phase E, game/umpire.ts): calls spoken in `lang` ('off': not spoken) and/or captioned. Matches
+   * only: not the title's, drills or challenges, which have no score to call. Made again only for a new language.
+   */
+  private setUmpire(lang: 'off' | 'en' | 'es', captions: boolean, volume: number): void {
+    const wanted = (lang !== 'off' || captions) && !this.opts.autoplay && this.opts.match.practice === undefined && !this.opts.challenge;
+    if (!wanted) {
+      this.umpireVoice?.dispose();
+      this.umpireVoice = null;
+      this.umpire = null;
+      return;
+    }
+    const L = lang === 'off' ? 'en' : lang;
+    const speak = lang !== 'off' && this.opts.sound !== false;
+    if (!this.umpire || this.umpire.lang !== L) {
+      this.umpireVoice?.dispose();
+      this.umpireVoice = new UmpireVoice(this.hudLayer, L, speak, captions, volume);
+      const n = this.names, d = this.sim.doubles;
+      const team = (t: number): string => pairName(L, d ? [n[t]!.last, n[t + 2]!.last] : [n[t]!.last]);
+      this.umpire = new Umpire(L, [team(0), team(1)], d, this.umpireVoice, this.sim);
+    } else {
+      this.umpireVoice!.speak = speak;
+      this.umpireVoice!.captions = captions;
+      this.umpireVoice!.volume = volume;
+    }
+  }
+
+  private umpire: Umpire | null = null;
+  private umpireVoice: UmpireVoice | null = null;
 
   /** The pro and mouse-aim settings last applied (P and M toggle in play; only a change of the setting overrides). */
   private prefPro: boolean | undefined = undefined;
@@ -603,11 +655,18 @@ export class Game {
     if (this.disposed) return;
     this.disposed = true;
     this.running = false;
+    // (photo mode's keys and panel, and a clip being recorded, go with the match)
+    this.shotCtl?.dispose();
+    this.shotCtl = null;
+    this.shotCam = null;
+    this.recorder?.cancel();
+    this.recorder = null;
     // (lent, the loop is the studio's)
     if (!this.lent) this.renderer.setAnimationLoop(null);
     this.ac.abort();
     this.audio.close();
     this.announcer?.dispose();
+    this.umpireVoice?.dispose();
     this.hudLayer.remove();
     this.post?.dispose();
     this.net.dispose();
@@ -780,9 +839,19 @@ export class Game {
     return true;
   }
 
-  /** The reel over or left: back to the live match's camera, and to whoever watched it. */
-  private endReel(): void {
+  /** The reel over (`finished`: played to its end) or left: back to the live match's camera, and to whoever watched
+   * it; a clip being recorded is saved, or thrown away if the reel was left. */
+  private endReel(finished = false): void {
     this.reel?.stop();
+    const rec = this.recorder;
+    if (rec) {
+      this.recorder = null;
+      this.audio.releaseCapture();
+      const cb = this.clipSaved;
+      this.clipSaved = null;
+      if (finished) void rec.stop().then((b) => cb?.(b, rec.type));
+      else { rec.cancel(); cb?.(null, rec.type); }
+    }
     this.hud.setReplay(false);
     for (const pv of this.players) pv.cutNext();
     this.ball.cutNext();
@@ -792,6 +861,69 @@ export class Game {
     this.reelDone = null;
     d?.();
   }
+
+  /**
+   * The highlights recorded as a video while they play (the results' "Save highlights as video"; clipRecorder.ts):
+   * `saved` gets the file once the reel has played to its end, null if it was left. False if the browser records no
+   * video or there is nothing to show.
+   */
+  recordReel(back: () => void, saved: (file: Blob | null, type: string) => void): boolean {
+    const type = clipType();
+    if (!type || !this.playReel(back)) return false;
+    try {
+      this.recorder = new ClipRecorder(this.renderer.domElement, this.audio.captureTrack(), type);
+      this.clipSaved = saved;
+      const c = this.reel!.clip!;
+      this.recorder.setCaption(`HIGHLIGHTS ${this.reel!.index + 1}/${this.reel!.count}`, `${c.label} · ${c.why}`);
+    } catch (e) {
+      console.warn('clip', e);
+      this.recorder = null;
+      this.audio.releaseCapture();
+      saved(null, type);
+    }
+    return true;
+  }
+
+  /** Photo mode (the pause menu's): the match stays as it is, the free camera starts from the match camera's view.
+   * `done` when it is left (Escape, a pad's B). */
+  enterPhoto(done: () => void): void {
+    if (this.shotCam) return;
+    const b = this.ball.mesh.position, c = this.sim.world.court;
+    const at = new THREE.Vector3(Math.max(-c.halfW, Math.min(c.halfW, b.x)), Math.max(0.6, Math.min(2.2, b.y)), Math.max(-c.halfL, Math.min(c.halfL, b.z)));
+    this.shotExposure = this.renderer.toneMappingExposure;
+    this.shotCam = new PhotoCamera(this.cam.camera, at, this.shotExposure);
+    this.shotCtl = new PhotoControls(window, this.renderer.domElement, this.shotCam);
+    this.shotDone = done;
+    this.hud.setHidden(true);
+  }
+
+  /** Photo mode on (tools). */
+  get photoOn(): boolean {
+    return this.shotCam !== null;
+  }
+
+  private exitPhoto(): void {
+    this.renderer.toneMappingExposure = this.shotExposure;
+    this.shotCtl?.dispose();
+    this.shotCtl = null;
+    this.shotCam = null;
+    this.hud.setHidden(false);
+    this.cam.retake();
+    const d = this.shotDone;
+    this.shotDone = null;
+    d?.();
+  }
+
+  /** The frame just drawn as a PNG the browser saves (photo mode's "save"). */
+  private savePhoto(): void {
+    const name = `${fileStem('photo')}.png`, ctl = this.shotCtl;
+    this.renderer.domElement.toBlob((b) => {
+      if (b && b.size > 0) { saveFile(b, name); ctl?.say(`Saved ${name}`); this.photosSaved++; }
+      else ctl?.say('The photo could not be made.');
+    }, 'image/png');
+  }
+  /** Photos saved (tools). */
+  photosSaved = 0;
 
   /** The pad buttons held now are not a skip (only a press after this). */
   private skipHeld(): void {
@@ -1118,8 +1250,8 @@ export class Game {
     const rl = this.reel;
     if (rl && rl.state === RL_PREP && !this.menuPaused) rl.prepare();
     if (rl && rl.state === RL_SHOW && !this.menuPaused) {
-      if (this.padSkip()) { this.skipHeld(); if (!rl.next()) this.endReel(); }
-      else if (!rl.advance(frameDt)) this.endReel();
+      if (this.padSkip()) { this.skipHeld(); if (!rl.next()) this.endReel(true); }
+      else if (!rl.advance(frameDt)) this.endReel(true);
     }
     const reeling = rl !== null && rl.state === RL_SHOW;
     if (reeling && rl.cuts !== this.reelCut) {
@@ -1130,6 +1262,7 @@ export class Game {
       this.soundscape.retake();
       const c = rl.clip!;
       this.hud.setReplay(true, `HIGHLIGHTS ${rl.index + 1}/${rl.count}`, `${c.label} · ${c.why}`);
+      this.recorder?.setCaption(`HIGHLIGHTS ${rl.index + 1}/${rl.count}`, `${c.label} · ${c.why}`);
     }
     const showing = rp.state === RP_SHOW;
     // (a replay's second take is a cut too: the camera, the people and the sound start afresh)
@@ -1159,7 +1292,7 @@ export class Game {
     // (anything shown again: no cues, no meter, no rumble)
     const again = showing || reeling;
     const marker = this.ball.showMarker;
-    if (again) this.ball.showMarker = false;
+    if (again || this.shotCam) this.ball.showMarker = false;
     this.ball.update(view, vAlpha, team);
     this.ball.showMarker = marker;
     if (net) this.ball.ease(net.nudge, frameDt);
@@ -1176,6 +1309,16 @@ export class Game {
     else this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     if (this.opts.closeCam) this.aimCloseCam(this.opts.closeCam);
+    // Photo mode: the free camera, over whatever the match's camera did (the match itself stands still: paused).
+    const shot = this.shotCam;
+    if (shot) {
+      const ctl = this.shotCtl!;
+      shot.step(ctl.read(this.shotPush), frameDt);
+      shot.apply(this.cam.camera);
+      this.renderer.toneMappingExposure = shot.exposure;
+      if (ctl.saveAsked) { ctl.saveAsked = false; this.shotWanted = true; }
+      if (ctl.leaveAsked) { ctl.leaveAsked = false; this.exitPhoto(); }
+    }
     // Sound never takes a frame down: a browser's WebAudio quirk (Firefox has no listener.positionX) once threw on
     // every play and the frame's assists, HUD and draw were skipped.
     try {
@@ -1189,7 +1332,7 @@ export class Game {
       if (!this.audioFailed) { this.audioFailed = true; console.warn('audio', e); }
     }
     for (let k = 0; k < this.cues.length; k++) {
-      this.cues[k]!.update(this.sim, again ? -1 : this.locals[k]?.player ?? -1, this.ball.mesh.position, this.cam.camera, renderTime,
+      this.cues[k]!.update(this.sim, again || this.shotCam ? -1 : this.locals[k]?.player ?? -1, this.ball.mesh.position, this.cam.camera, renderTime,
         this.opts.match.timingScale ?? 1, now / 1000, frameDt, cueNow);
     }
     this.hud.cueLead = net ? net.lead : 0;
@@ -1212,6 +1355,7 @@ export class Game {
     }
     this.transitions?.update(this.sim, team, now / 1000);
     this.announcer?.update(this.sim, team);
+    this.umpire?.update(this.sim);
     // The match is over: the players play it out (MatchSim.overStage: reactions, the walk to the net, rackets
     // touched across it), then the app shows the results. Enter or Space skips to them (overSkip).
     if (this.sim.phase === PH_OVER && !this.overSent && (!net || net.over)) {
@@ -1233,9 +1377,12 @@ export class Game {
     mood.ovation = this.crowdMood.ovation;
     // Stands behind the camera are skipped, but not while it swings round (a very wide screen sees them) or in
     // photo-match mode (the photo's camera can stand anywhere).
-    this.arena.update(now / 1000, this.cam.swinging || this.photo ? undefined : this.cam.camera.position);
+    this.arena.update(now / 1000, this.cam.swinging || this.photo || this.shotCam ? undefined : this.cam.camera.position);
 
     this.draw();
+    // (in the same task as the draw, while the canvas still holds this frame's picture)
+    if (this.recorder) this.recorder.frame(this.renderer.domElement);
+    if (this.shotWanted) { this.shotWanted = false; this.savePhoto(); }
     if (this.latFirst < this.latency.length) this.markShown(this.epoch + renderTime * 1000);
     const info = this.renderer.info.render;
     this.probe.drawCalls = info.drawCalls;

@@ -1,6 +1,6 @@
 // Stills of the match cameras (M7 phase A): an AI match in each arena through each camera, mid-rally, into one
 // contact sheet. `CAMS=side,dynamic ARENAS=stadium,hall,club-day bash tools/one-chrome.sh node tools/cam-stills.mjs
-// <out.png> [base url]` (the dev server: npx vite --port 5190).
+// <out.png> [base url]` (the dev server: npx vite --port 5190). `WAIT=walk`: the title's establishing shots instead.
 import puppeteer from 'puppeteer-core';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -20,7 +20,30 @@ try {
   const page = await browser.newPage();
   await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
-  for (const arena of arenas) for (const cam of cams) {
+  // WAIT=walk: the title's establishing shots (M7 phase F), the first three breaks between points in each arena, each
+  // 1.5 s into the walk back.
+  if (process.env.WAIT === 'walk') {
+    cams.splice(0, cams.length, 'break 1', 'break 2', 'break 3');
+    for (const arena of arenas) {
+      await page.goto(`${base}?autoplay=1&seed=7&arena=${arena}&establish=1&creator=1`, { waitUntil: 'load' });
+      for (let n = 1; n <= 3; n++) {
+        await page.waitForFunction((n) => {
+          const g = window.__bandeja;
+          if (!g?.running) return false;
+          if (g.sim.walking > 0) {
+            if (window.__w0 === undefined) { window.__w0 = g.sim.time; window.__breaks = (window.__breaks ?? 0) + 1; }
+            return window.__breaks === n && g.sim.time - window.__w0 > 1.5;
+          }
+          window.__w0 = undefined;
+          return false;
+        }, { timeout: 240000, polling: 50 }, n);
+        const f = join(dir, `${arena}-walk${n}.png`);
+        await page.screenshot({ path: f });
+        files.push({ f, label: `${arena} / break ${n}` });
+        console.log('shot', arena, 'break', n);
+      }
+    }
+  } else for (const arena of arenas) for (const cam of cams) {
     await page.goto(`${base}?autoplay=1&seed=7&arena=${arena}&camera=${cam}&creator=1`, { waitUntil: 'load' });
     // Mid-rally, a few points in (the ball well away from the server).
     await page.waitForFunction(() => { const g = window.__bandeja; return g && g.running && g.sim.time > 12 && g.sim.phase === 2 && g.sim.rally?.shots >= 2; }, { timeout: 240000, polling: 100 });

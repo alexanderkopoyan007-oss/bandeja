@@ -56,6 +56,25 @@ export class AudioEngine implements AudioSink {
   /** The page wants sound (not hidden): resume whenever the context stops for any other reason. */
   private wantRunning = true;
   private master: GainNode | null = null;
+  /** The chain's last node (what the speakers get), and the stream a clip records it from (M7: clipRecorder.ts). */
+  private outNode: AudioNode | null = null;
+  private capture: MediaStreamAudioDestinationNode | null = null;
+  private captureOn = false;
+
+  /** The game's sound as a track for a clip being recorded (null with no sound). Joined to the speakers' feed, so
+   * the clip hears what the player hears; let go with releaseCapture. */
+  captureTrack(): MediaStreamTrack | null {
+    if (!this.ctx || !this.outNode) return null;
+    this.capture ??= this.ctx.createMediaStreamDestination();
+    if (!this.captureOn) { this.outNode.connect(this.capture); this.captureOn = true; }
+    return this.capture.stream.getAudioTracks()[0] ?? null;
+  }
+
+  releaseCapture(): void {
+    if (!this.captureOn || !this.outNode || !this.capture) return;
+    this.outNode.disconnect(this.capture);
+    this.captureOn = false;
+  }
   private stage: GainNode | null = null;
   private closed = false;
   /** The player's volume and crowd level (0..1, applied on an audio taper: gain = level squared). */
@@ -148,6 +167,7 @@ export class AudioEngine implements AudioSink {
       clip.curve = softClipCurve();
       clip.oversample = '2x';
       master.connect(lim).connect(unmakeup).connect(clip).connect(ctx.destination);
+      this.outNode = clip;
       const stage = ctx.createGain();
       stage.connect(master);
       this.stage = stage;

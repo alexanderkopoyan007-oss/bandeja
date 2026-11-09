@@ -28,7 +28,7 @@ import type { LocalSeat } from '../game/locals.ts';
 const GAME_PARAMS = new Set([
   'autoplay', 'mode', 'seed', 'styles', 'scoring', 'court', 'floor', 'temp', 'alt', 'windx', 'windz', 'sets', 'games',
   'ai', 'lefty', 'timing', 'assist', 'autotime', 'tap', 'server', 'pro', 'gfx', 'aim', 'runahead', 'sound', 'arena',
-  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'people', 'ball', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot', 'rackets', 'wear',
+  'gpuload', 'fpscap', 'cam', 'camp', 'avatar', 'people', 'ball', 'photo', 'still', 'lines', 'overlay', 'wipe', 'lab', 'shot', 'rackets', 'wear', 'establish',
 ]);
 
 /** Does the URL ask for a game straight away (tools and links from before the menus)? */
@@ -109,6 +109,8 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     forceWebGL: params.get('backend') === 'webgl',
     pro: params.get('pro') === '1',
     gfx: params.get('gfx') ?? undefined,
+    // (the title's establishing shots, for stills of them: tools/cam-stills.mjs WAIT=walk)
+    establish: params.get('establish') === '1',
     bloom: params.get('bloom') !== '0',
     cutaway: params.get('cutaway') !== '0',
     mouseAim: params.get('aim') === 'mouse',
@@ -212,7 +214,7 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
     prefs: {
       volume: s.volume, crowd: s.crowd, shake: !calm, rumble: s.rumble, announce: s.announce,
       keys: resolveKeys(s.keys), quality: qualityPreset(auto ? 'high' : quality), adapt: auto, transitions: true,
-      pro: s.pro, mouseAim: s.mouseAim, camera: s.camera, replays: s.replays,
+      pro: s.pro, mouseAim: s.mouseAim, camera: s.camera, replays: s.replays, umpire: s.umpire, captions: s.captions,
     },
   };
 }

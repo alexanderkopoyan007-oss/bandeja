@@ -4301,3 +4301,105 @@ The owner said "keep going" after M6 went to main (558510e). M7 is the brief's s
   - `tests/app/replay.test.ts`: two takes per replay, the first at speed, the second slowed, and the second the same match as the first on every tick both drew.
   - `tests/app/highlights.test.ts`: whole matches, AI only and with a scripted human. The clips come in the order played, the match point is among them, and each re-run shows its point (winner and moment) ending on the live match's state hash at its last tick.
   - `tools/reel-check.mjs` in Chrome: the results' button, the reel on court with its caption, Enter, Escape back.
+
+## M7 phase C: photo mode and clips as video files (2026-11-09)
+- **Photo mode** (`game/photoMode.ts`; the pause menu's "Photo mode", behind `?creator=1`):
+  - The match stands still (it is paused) and a free camera starts from the match camera's own view.
+  - It orbits a point, comes closer or goes further, and the point moves about the court as the picture shows it and goes up and down.
+  - The lens runs 12-80°, and the exposure is tone mapping's, 0.4-2.5×. Every limit is held (`PHOTO`), and the camera never goes under the floor.
+  - Controls: keys, a mouse drag, the wheel, or a pad (both sticks, triggers, shoulders, d-pad, Y saves, B back).
+  - The HUD and the cues are hidden, and a panel lists the keys. It is HTML, so never in the picture.
+  - P saves the next frame drawn as a PNG: `canvas.toBlob` in the same task as the draw, while the WebGPU canvas still holds it. The browser saves it as a download.
+  - Depth of field was left out. The post chain is bloom and tone mapping only, and a DoF pass would be a second pipeline for one feature.
+- **Clips** (`game/clipRecorder.ts`; the results' "Save highlights as video"):
+  - The reel plays and is recorded with MediaRecorder (the brief's way: free and in the browser).
+  - Each frame is drawn onto a 2D canvas of the same size with the point's caption burned in at the foot. The HUD is HTML, and a capture of the game's canvas alone would lose it.
+  - The sound is the game's own: `AudioEngine.captureTrack` joins a MediaStream destination to the end of the chain, so the clip hears what the player hears. It is let go after.
+  - The format is the first the browser records of MP4 (H.264, AAC), then WebM (VP9 or VP8, Opus), at about 0.12 bits a pixel a frame (8-24 Mb/s).
+  - Escape stops without a file.
+- **No frame of anything else at a cut:** the reel now re-runs a clip to its start at the cut, a few hundred ticks or about 10 ms. Before, the frames spent getting there drew the finished live match, a flash a video would have kept.
+- **Checked:**
+  - `tests/app/photoClip.test.ts`:
+    - the photo camera starts on the match camera's view and looks at its point;
+    - a push right moves the point along the screen's right;
+    - every limit holds under minutes of full pushes;
+    - format choice, extension, bitrate and file names.
+  - `tools/photo-clip-check.mjs` in Chrome, with real downloads read back:
+    - photo mode from the pause menu, the camera moved by keys while the match tick stays put;
+    - a PNG saved (signature and size);
+    - Escape and Resume;
+    - then the highlights saved as a video (the file's signature and size).
+  - Measured in that run: the PNG 1372 KB at 1280 × 720; 8 points kept, saved as an MP4 of 13.8 MB (headless Chrome records H.264).
+
+## M7 phase D: the match's stats, broken down (2026-11-09)
+- **What the brief asks:** "match stats: winners, unforced errors, smash success, net time" and a "deep shot-stats breakdown after each match". The results already listed points, winners, errors, aces, double faults, por tres and the fastest ball. Phase D adds a **Match stats** screen from the results (behind `?creator=1`), with four views beside the list.
+- **Read from the sim's events, as the rest of `game/stats.ts` is**, never from the render. Nothing in the sim changed, and no hash.
+- **Every shot filed once, under its kind** (`TeamStats.shots`, one `ShotLine` per `SHOT_KEYS` entry: played, won, lost):
+  - A shot stays open until the next thing that settles it.
+  - The next hit means it came back. A point means it is the point's last shot: won if the point went to its side, lost if not. A fault means lost.
+  - So "won" counts winners and the points the other side lost after it, and "lost" counts the hitter's own errors. Every point and fault ends on exactly one shot.
+  - In AI matches most points end on the loser's own shot (the net, the glass before the bounce, out), so the "won" column is small. That is the match, not the count: seed 17 has 2 double-bounce winners in its first 30 points.
+- **Overheads:** smash, bandeja and víbora together (`overheads()`), with kept in play or won, and won on, beside each kind.
+- **First serves in:** a first serve stays open until something other than a fault follows.
+- **Net and running:** from where the players stand each frame of a rally (`PH_RALLY` only, frames over 0.25 s skipped):
+  - time within `NET_ZONE` 4 m of the net, as a share of the rally time, both players of a pair counted;
+  - metres run in the rallies.
+- **Points won by rally length:** bands of 1-3, 4-6, 7-9 and 10 or more shots (`RALLY_BANDS`). Double faults have no rally and are left out.
+- **Where the shots came down:**
+  - each shot's first bounce, kept as seen from the hitter's end (up to `MAX_LANDED` 600 a pair, preallocated);
+  - drawn on a court from above, yours filled blue at the top, theirs ringed orange at the foot (Okabe-Ito, told apart without colour too).
+- **Checked:**
+  - `tests/app/statsBreakdown.test.ts` plays an AI match and counts the events itself:
+    - shots played per side equal its hits;
+    - won plus lost equal points plus faults;
+    - won equals the points that went to the side that struck last;
+    - first serves equal the first serves struck, and in ≤ struck;
+    - the bands hold every point but double faults;
+    - net time < rally time;
+    - landings mostly (> 80%) in the opponents' half;
+    - every view draws, with one dot per landing.
+  - `tools/photo-clip-check.mjs` opens Match stats from the results in Chrome, steps through the four views and goes back.
+- **The TV graphics become a setting:** Settings > Picture > "Score graphics: Simple / TV", listed behind `?creator=1`. `?gfx=tv` still asks for them, now through the menus too.
+- **Settings stored with the flag stay off without it:** `App.gatePrefs` turns the umpire, the captions and the side and dynamic cameras off when `?creator=1` is absent, and the TV graphics are only read with it. Before, a camera picked with the flag played on without it.
+
+## M7 phase E: the umpire's calls and captions (2026-11-09)
+- **What is called** (`game/umpire.ts`, pure text from the sim's events, through `eventsOf` so online calls are confirmed first):
+  - at once: "Fault.", "Double fault.", "Let. First serve." / "Let. Second serve.", and "Out." for a ball out of the court without a bounce;
+  - when the score is counted, as the scoreboard changes (the end of the point's dead time, about 1.2 s; the screen reader's moment too):
+    - the points with the server's first: "Fifteen–love.", "Thirty all.", "Deuce.", "Advantage Ruiz and Vega.";
+    - "Deuce. Golden point." and, at the third deuce of a star-point game, "Deuce. Star point.";
+    - a tie-break by the leader: "Five–three, Soto and Mena.", "Four all.";
+    - "Game, Soto and Mena. Ruiz and Vega lead two games to one." or "One game all."; at six all, "Tie-break.";
+    - "Game and set, Soto and Mena, six games to four. One set all.";
+    - "Game, set and match, Soto and Mena."
+  - Pairs by surname, "Ruiz and Vega" / "Ruiz y Vega".
+- **Spanish** is the tennis umpire's: cero, quince, treinta, cuarenta; "Quince iguales", "Iguales", "Ventaja", "Punto de oro", "Juego", "Juego y set", "Juego, set y partido", "Falta", "Doble falta", "Fuera". "Star point" is said as it is in Spanish broadcasts. Level games and sets are "Empate a un juego" / "Empate a un set", and one before a noun is "un".
+- **The voice is the browser's own** (`ui/umpireVoice.ts`, Web Speech API). Only a voice on this machine (`localService`) is used, so no words leave it; en-GB and es-ES are preferred. With none, the calls are captions only. The game's volume sets the voice's, and `?sound=0` silences it.
+- **Captions** are a line at the foot of the screen in the HUD layer, so photo mode hides them. They are hidden from screen readers, which hear the score from the announcer.
+- **Settings > Sound:** "Umpire: Off / English / Spanish" and "Captions: Off / On" (captions in English when the umpire is off), both off by default and listed behind `?creator=1`. Matches only: not the title's match, drills or challenges.
+- **Checked:**
+  - `tests/app/umpire.test.ts` plays the words point by point on the real `Score` (both languages, every mode). It then follows an AI match: a call for every fault and double fault, one counted call per point, every game named for the team that won it, the last call the match's, and every point call equal to the scoreboard (server first) as it is made.
+  - `tools/photo-clip-check.mjs` plays with the settings on in Chrome: the captions and the TV package appear, and the captions read as shown end on "Game, set and match".
+
+## M7 phase F: menus by pad alone, and the title's establishing shots (2026-11-09)
+- **`tools/menu-walk.mjs`** walks every screen from the title with a scripted pad and nothing else:
+  - every enabled item must be reachable by d-pad, round and back;
+  - every choice and slider must change with right and come back with left;
+  - every button is pressed with A;
+  - every screen opened must come back with B onto the item that opened it.
+  - Match starts and going online are only counted: `startMatch`, `findMatch` and `connect` are stubbed in the page, and a socket fails as an offline one does. The online flows are the online e2e's to check, with the rooms' server.
+  - It follows the menus as they are made: buttons that go back (Back, Cancel, Done) are noted and the walk goes down again. A button that makes its screen another (a draw made, a career begun) has that screen walked in its place.
+  - Press to next screen drawn is timed (two animation frames after the new title), and long tasks are listed by screen.
+- **Found and fixed: the focus followed the index, not the item.**
+  - When a screen was redrawn or remade, the focus kept its place in the list, not its item. After changing a choice, the next left or right could change another item. The walk saw it on the tournament's "Draw", the local match's "Mode" (which remakes the seat chart) and the creator's "Watch them play".
+  - `Menu.refresh()` and a same-screen `Menu.replace()` now put the focus back on the item it was on. Replace matches by label, since a remade screen's items are new. A same-screen replace is also drawn in place, not slid in again.
+  - The walk found nothing else: every item reached, every choice back with left, every screen back with B onto its item.
+- **Measured** (headless, dev server, 27 screens, 89 buttons): press to next screen drawn p50 48 ms, p90 51 ms. Three took 205-221 ms: back to the title from the tournament and the career screens (not chased: under a quarter of a second), and the creator's "New player" (the turntable builds the person: one 130 ms task). Apart from loading, no other long task (over 50 ms) on any screen.
+- **Not a fault, noted:** text fields need a keyboard: the join code, a player's name and "Paste a code". A pad player joins by the invite link.
+- **The title's establishing shots** (`BroadcastCamera.establish`, render/views.ts `EST_*`; the title's match with `?creator=1`; `?establish=1` for stills):
+  - between points, in place of the cut-away, a slow arc round the court as a broadcast opens on its venue;
+  - on the ellipse through the side camera's place and the TV camera's, both clear of every arena's stands, 8 m up, looking at the court's middle, at 0.07 rad a second;
+  - each break starts at the next of six places (never square on to an end) and goes the other way round from the last;
+  - the lens widens from 32° off an end to 40° beside the court: at 32° a side view cut off the far end;
+  - a cut back to the match camera for the serve.
+  - Checked: `tests/render/cameras.test.ts` (turn under 6°/s, outside the cage, looking at the middle, a new place each break, in play the same as the match camera) and `WAIT=walk tools/cam-stills.mjs` (stadium, hall, club, final; three breaks each).

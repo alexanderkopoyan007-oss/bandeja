@@ -138,3 +138,49 @@ describe('the cameras move smoothly', () => {
     expect(got.dynamic!.moveMax).toBeGreaterThan(0.3);
   });
 });
+
+describe('the title\'s establishing shots', () => {
+  it('arc slowly round the court between points, from a new place each time, and cut back for the serve', () => {
+    const sim = new MatchSim({ seed: 9, doubles: true, human: [false, false, false, false], aiLevel: [0.8, 0.8] });
+    const cam = new BroadcastCamera(16 / 9, 0, 1);
+    cam.establish = true;
+    // The same match through the match camera alone: in play both must show the same.
+    const plain = new BroadcastCamera(16 / 9, 0, 1);
+    const ball = new THREE.Vector3();
+    const fwd = new THREE.Vector3(), last = new THREE.Vector3(), toMid = new THREE.Vector3();
+    const court = sim.world.court;
+    const starts: THREE.Vector3[] = [];
+    let wasWalking = false, turnMax = 0, frames = 0, aimWorst = 1, inPlayOff = 0;
+    for (let k = 0; k < 160 * 120; k++) {
+      sim.step(NONE);
+      if (k % 2) continue;
+      ball.set(sim.ball.pos.x, sim.ball.pos.y, sim.ball.pos.z);
+      cam.update(sim, 0, ball, sim.time);
+      plain.update(sim, 0, ball, sim.time);
+      cam.camera.updateMatrixWorld();
+      cam.camera.getWorldDirection(fwd);
+      const p = cam.camera.position;
+      const walking = sim.walking > 0;
+      if (walking) {
+        if (!wasWalking) starts.push(p.clone());
+        else {
+          turnMax = Math.max(turnMax, (Math.acos(Math.min(1, fwd.dot(last))) * 180) / Math.PI * 60);
+          frames++;
+        }
+        // Outside the cage, high over the court, looking at its middle.
+        expect(Math.abs(p.x) > court.halfW + 4 || Math.abs(p.z) > court.halfL + 4).toBe(true);
+        expect(p.y).toBeGreaterThan(5);
+        toMid.set(-p.x, 0.4 - p.y, -p.z).normalize();
+        aimWorst = Math.min(aimWorst, fwd.dot(toMid));
+      } else if (sim.phase === PH_RALLY) inPlayOff = Math.max(inPlayOff, p.distanceTo(plain.camera.position));
+      wasWalking = walking;
+      last.copy(fwd);
+    }
+    console.log(`establishing: ${starts.length} shots, ${frames} frames, turn max ${turnMax.toFixed(1)} deg/s`);
+    expect(starts.length).toBeGreaterThan(4);
+    expect(turnMax).toBeLessThan(6);
+    expect(aimWorst).toBeGreaterThan(0.999);
+    for (let i = 1; i < starts.length; i++) expect(starts[i]!.distanceTo(starts[i - 1]!)).toBeGreaterThan(5);
+    expect(inPlayOff).toBeLessThan(1e-9);
+  });
+});
