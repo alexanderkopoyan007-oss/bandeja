@@ -1,5 +1,5 @@
-// The player's saved things (M5 phase C): progress, the cosmetics owned and what is worn, in IndexedDB as the brief
-// asks (characters join them in phase D). Like settings.ts, nothing stored is trusted: every value is checked on load,
+// The player's saved things (M5 phases C and D): progress, the cosmetics owned, what is worn and the player's own
+// characters (character.ts), in IndexedDB as the brief asks. Like settings.ts, nothing stored is trusted: every value is checked on load,
 // and anything unknown, out of range or of the wrong kind falls back to its default, so an old, hand-edited or
 // half-written store can't break the game. Where IndexedDB is missing or refuses (private windows, blocked site
 // data, a stuck open), the store runs in memory for the visit and says so (`persistent`).
@@ -7,6 +7,7 @@ import {
   blankProgress, checkedLoadout, COSMETIC_BY_ID, defaultLoadout, DRILL_NAMES, earned, LEVELS, newlyEarned, recordDrill, recordMatch,
   type Cosmetic, type Loadout, type MatchRecord, type Progress, type Slot,
 } from './unlocks.ts';
+import { checkedCharacter, type Character } from './character.ts';
 
 /** Where values are kept: IndexedDB in the browser, a Map in tests or when IndexedDB is refused. */
 export interface Backend {
@@ -106,12 +107,24 @@ export function ownedFrom(raw: unknown): Set<string> {
 const K_PROGRESS = 'progress.v1';
 const K_OWNED = 'owned.v1';
 const K_LOADOUT = 'loadout.v1';
+const K_CHARACTERS = 'characters.v1';
+const K_ACTIVE = 'active.v1';
+/** The most characters kept (the creator's list fits one screen). */
+export const CHARACTERS_MAX = 12;
+
+/** Stored characters, each checked against what is owned now; at most CHARACTERS_MAX. */
+export function charactersFrom(raw: unknown, owned: ReadonlySet<string>): Character[] {
+  return Array.isArray(raw) ? raw.slice(0, CHARACTERS_MAX).map((c) => checkedCharacter(c, owned)) : [];
+}
 
 export class Store {
   progress: Progress;
   /** Items owned: everything ever earned (an item stays owned if a later version makes its rule harder). */
   readonly owned: Set<string>;
   loadout: Loadout;
+  /** The player's own characters, and the one that plays as them (-1: none, the dealt cast's player plays). */
+  characters: Character[];
+  active: number;
 
   /** False when the store is in memory only (IndexedDB missing or refused): nothing outlives the visit. */
   readonly persistent: boolean;
@@ -119,13 +132,15 @@ export class Store {
   /** The writes in flight, one after another (`put`). */
   private writes: Promise<void> = Promise.resolve();
 
-  private constructor(backend: Backend, persistent: boolean, progress: Progress, owned: Set<string>, loadout: unknown) {
+  private constructor(backend: Backend, persistent: boolean, progress: Progress, owned: Set<string>, loadout: unknown, characters: unknown, active: unknown) {
     this.backend = backend;
     this.persistent = persistent;
     this.progress = progress;
     // What the progress has earned is owned even if the save of the owned list was lost.
     this.owned = new Set([...owned, ...earned(progress)]);
     this.loadout = checkedLoadout(loadout, this.owned);
+    this.characters = charactersFrom(characters, this.owned);
+    this.active = typeof active === 'number' && Number.isInteger(active) && active >= 0 && active < this.characters.length ? active : -1;
   }
 
   /** The browser's store, or one in memory if IndexedDB is missing or refuses. */
@@ -140,13 +155,13 @@ export class Store {
 
   /** A store on this backend (tests pass a memory one; `persistent` is what the store reports). */
   static async load(backend: Backend, persistent: boolean): Promise<Store> {
-    let raw: [unknown, unknown, unknown] = [undefined, undefined, undefined];
+    let raw: unknown[] = [];
     try {
-      raw = await Promise.all([backend.get(K_PROGRESS), backend.get(K_OWNED), backend.get(K_LOADOUT)]);
+      raw = await Promise.all([K_PROGRESS, K_OWNED, K_LOADOUT, K_CHARACTERS, K_ACTIVE].map((k) => backend.get(k)));
     } catch {
       // Unreadable: the defaults (and saving will try again).
     }
-    return new Store(backend, persistent, progressFrom(raw[0]), ownedFrom(raw[1]), raw[2]);
+    return new Store(backend, persistent, progressFrom(raw[0]), ownedFrom(raw[1]), raw[2], raw[3], raw[4]);
   }
 
   /** A finished match: the progress moves on, and anything it earns is owned. Returns the new items at once (the
@@ -167,6 +182,32 @@ export class Store {
     this.loadout = next;
     this.put(K_LOADOUT, this.loadout);
     return true;
+  }
+
+  /** Save a character (checked against what is owned) as number `at`, or as a new one with -1; returns its number, or
+   * -1 if the list is full. */
+  saveCharacter(at: number, c: Character): number {
+    const checked = checkedCharacter(c, this.owned);
+    if (at >= 0 && at < this.characters.length) this.characters[at] = checked;
+    else if (this.characters.length >= CHARACTERS_MAX) return -1;
+    else at = this.characters.push(checked) - 1;
+    this.put(K_CHARACTERS, this.characters);
+    return at;
+  }
+
+  removeCharacter(at: number): void {
+    if (at < 0 || at >= this.characters.length) return;
+    this.characters.splice(at, 1);
+    if (this.active === at) this.active = -1;
+    else if (this.active > at) this.active--;
+    this.put(K_CHARACTERS, this.characters);
+    this.put(K_ACTIVE, this.active);
+  }
+
+  /** The character that plays as the player (-1: none). */
+  setActive(at: number): void {
+    this.active = at >= 0 && at < this.characters.length ? at : -1;
+    this.put(K_ACTIVE, this.active);
   }
 
   /** Back to the defaults (the locker's reset; tests). */
