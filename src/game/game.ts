@@ -10,6 +10,7 @@ import { NetView } from '../render/netView.ts';
 import { Grounding } from '../render/grounding.ts';
 import { BallView, PlayerView, BroadcastCamera, AssistView, ReplayCamera, type CameraPreset } from '../render/views.ts';
 import { Replays, RP_IDLE, RP_PREP, RP_SHOW } from './replay.ts';
+import { Highlights, Reel, RL_IDLE, RL_PREP, RL_SHOW } from './highlights.ts';
 import { dealNames, nameOf, type PlayerName } from './names.ts';
 import { dealCast, type Cast } from './cast.ts';
 import { KeyboardInput } from './input/keyboard.ts';
@@ -277,8 +278,16 @@ export class Game {
   onMatchOver: ((stats: MatchStats) => void) | null = null;
   /** Instant replays (game/replay.ts) and their cameras; whether the last frame drew one. */
   readonly replays: Replays;
+  /** The match's best points (M7 phase B), and the reel that shows them after it (made when first watched). */
+  readonly highlights: Highlights;
+  private readonly reelHumans: number[];
+  private reel: Reel | null = null;
+  private reelDone: (() => void) | null = null;
+  private reelCut = 0;
   private readonly replayCam = new ReplayCamera();
   private replayShown = false;
+  /** The replay's take last drawn (Replays.cuts). */
+  private replayCut = 0;
   /** The score rows' names, team 0's and team 1's. */
   private rows: [string, string] = ['', ''];
   /** The players' names, dealt from the match's seed (game/names.ts). */
@@ -349,6 +358,11 @@ export class Game {
     // Replays re-run a point from a copy of the match (two more matches: about 2 MB, nothing per frame).
     this.replays = new Replays(opts.match, opts.autoplay ? [] : opts.locals?.map((l) => l.player) ?? [opts.human]);
     this.replays.enabled = opts.replays !== false && !opts.closeCam;
+    // The match's best points for the reel (M7 phase B): matches only, not the title's, drills, challenges or watched
+    // runs (online: never, game.ts steps them only without a net).
+    this.reelHumans = opts.autoplay ? [] : opts.locals?.map((l) => l.player) ?? [opts.human];
+    this.highlights = new Highlights(opts.match, this.reelHumans);
+    this.highlights.enabled = !opts.autoplay && !opts.playback && !opts.challenge && opts.match.practice === undefined && !opts.closeCam;
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, cast, opts.match.rackets?.[i], opts.wear?.[i]));
@@ -394,7 +408,7 @@ export class Game {
     for (const p of this.pads) {
       p.rumbleOn = prefs.rumble !== false;
       // Start while a menu is up is the menu's (it resumes from the pause screen).
-      p.onStart = () => { if (!this.menuPaused) this.onMenu?.(); };
+      p.onStart = () => { if (this.reelOn) this.endReel(); else if (!this.menuPaused) this.onMenu?.(); };
       p.onLost = () => this.onMenu?.();
     }
     this.cues = Array.from({ length: Math.max(1, this.locals.length) }, () => new AssistView(this.scene));
@@ -472,6 +486,12 @@ export class Game {
 
   private onKey(code: string): void {
     if (this.menuPaused) return;
+    // (the reel: Enter or Space the next point, Escape back to the results)
+    if (this.reelOn) {
+      if (code === 'Escape') this.endReel();
+      else if ((code === 'Enter' || code === 'Space') && this.reel && !this.reel.next()) this.endReel();
+      return;
+    }
     if (code === 'Escape') this.onMenu?.();
     else if (code === 'F3') this.debug.toggle();
     else if (code === 'KeyH') this.hud.toggleHelp();
@@ -740,6 +760,44 @@ export class Game {
     if (!keys) this.kb.flush();
   }
 
+  /** The highlight reel is on (from the results: playReel). */
+  get reelOn(): boolean {
+    return this.reel !== null && this.reel.state !== RL_IDLE;
+  }
+
+  /** Watch the match's highlights (the results' "Watch highlights"); `done` when the reel is over or left. False with
+   * none kept. */
+  playReel(done: () => void): boolean {
+    if (!this.highlights.clips.length) return false;
+    this.reel ??= new Reel(this.opts.match, this.reelHumans);
+    if (!this.reel.start(this.highlights.clips)) return false;
+    this.reelDone = done;
+    this.reelCut = -1;
+    this.setMenuPaused(false);
+    this.kb.flush();
+    for (let k = 0; k < this.locals.length; k++) this.locals[k]!.queue.flush();
+    this.skipHeld();
+    return true;
+  }
+
+  /** The reel over or left: back to the live match's camera, and to whoever watched it. */
+  private endReel(): void {
+    this.reel?.stop();
+    this.hud.setReplay(false);
+    for (const pv of this.players) pv.cutNext();
+    this.ball.cutNext();
+    this.cam.retake();
+    this.soundscape.retake();
+    const d = this.reelDone;
+    this.reelDone = null;
+    d?.();
+  }
+
+  /** The pad buttons held now are not a skip (only a press after this). */
+  private skipHeld(): void {
+    for (let k = 0; k < this.locals.length; k++) { const l = this.locals[k]!; l.replayHeld = l.pad ? l.pad.held : 0; }
+  }
+
   /** A local player pressed a pad button since the replay began (a press skips it). */
   private padSkip(): boolean {
     for (let k = 0; k < this.locals.length; k++) {
@@ -990,7 +1048,7 @@ export class Game {
         for (let k = 0; k < this.locals.length; k++) { const l = this.locals[k]!; l.queue.flush(); l.replayHeld = l.pad ? l.pad.held : 0; }
       }
     }
-    if (this.paused || (this.menuPaused && !net) || rp.state !== RP_IDLE) {
+    if (this.paused || (this.menuPaused && !net) || rp.state !== RP_IDLE || this.reelOn) {
       this.epoch = now - this.sim.time * 1000;
       drawn = this.sim.time;
     }
@@ -1004,8 +1062,10 @@ export class Game {
       if (net) net.step(this.inputs[human] ?? null);
       else {
         rp.beforeStep(this.sim, this.inputs);
+        this.highlights.beforeStep(this.sim, this.inputs);
         this.sim.step(this.inputs);
         rp.afterStep(this.sim);
+        this.highlights.afterStep(this.sim);
       }
       n++;
     }
@@ -1053,9 +1113,36 @@ export class Game {
       if (this.padSkip()) rp.stop();
       else rp.advance(frameDt);
     }
+    // The highlight reel (after the match, from the results): each kept point re-run in turn on the broadcast camera.
+    // A pad button or Enter skips to the next; Escape or Start goes back to the results.
+    const rl = this.reel;
+    if (rl && rl.state === RL_PREP && !this.menuPaused) rl.prepare();
+    if (rl && rl.state === RL_SHOW && !this.menuPaused) {
+      if (this.padSkip()) { this.skipHeld(); if (!rl.next()) this.endReel(); }
+      else if (!rl.advance(frameDt)) this.endReel();
+    }
+    const reeling = rl !== null && rl.state === RL_SHOW;
+    if (reeling && rl.cuts !== this.reelCut) {
+      this.reelCut = rl.cuts;
+      for (const pv of this.players) pv.cutNext();
+      this.ball.cutNext();
+      this.cam.retake();
+      this.soundscape.retake();
+      const c = rl.clip!;
+      this.hud.setReplay(true, `HIGHLIGHTS ${rl.index + 1}/${rl.count}`, `${c.label} · ${c.why}`);
+    }
     const showing = rp.state === RP_SHOW;
+    // (a replay's second take is a cut too: the camera, the people and the sound start afresh)
+    if (showing && this.replayShown && rp.cuts !== this.replayCut) {
+      this.replayCut = rp.cuts;
+      for (const pv of this.players) pv.cutNext();
+      this.ball.cutNext();
+      this.replayCam.reset();
+      this.soundscape.retake();
+    }
     if (showing !== this.replayShown) {
       this.replayShown = showing;
+      this.replayCut = rp.cuts;
       for (const pv of this.players) pv.cutNext();
       this.ball.cutNext();
       this.hud.setReplay(showing);
@@ -1066,11 +1153,13 @@ export class Game {
         this.epoch = now - this.sim.time * 1000;
       }
     }
-    const view = showing ? rp.sim : this.sim;
-    const vAlpha = showing ? rp.alpha : alpha;
-    const vTime = showing ? rp.clock : renderTime;
+    const view = reeling ? rl.sim : showing ? rp.sim : this.sim;
+    const vAlpha = reeling ? rl.alpha : showing ? rp.alpha : alpha;
+    const vTime = reeling ? rl.clock : showing ? rp.clock : renderTime;
+    // (anything shown again: no cues, no meter, no rumble)
+    const again = showing || reeling;
     const marker = this.ball.showMarker;
-    if (showing) this.ball.showMarker = false;
+    if (again) this.ball.showMarker = false;
     this.ball.update(view, vAlpha, team);
     this.ball.showMarker = marker;
     if (net) this.ball.ease(net.nudge, frameDt);
@@ -1081,8 +1170,9 @@ export class Game {
     if (server) this.ball.carried(server.palm(palmAt), server.addressing);
     // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last
     // frame's camera, which is close enough).
-    this.feedback.update(this.sim, !showing, now);
+    this.feedback.update(this.sim, !again, now);
     if (showing) this.replayCam.aim(this.cam.camera, view, rp.hitter, rp.angle, this.ball.mesh.position, frameDt * rp.speed);
+    else if (reeling) this.cam.update(rl.sim, team, this.ball.mesh.position, now / 1000);
     else this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     if (this.opts.closeCam) this.aimCloseCam(this.opts.closeCam);
@@ -1091,6 +1181,7 @@ export class Game {
     try {
       this.audio.setListener(this.cam.camera);
       if (showing) this.soundscape.replay(rp.sim, rp.clock, this.feetSrc, frameDt, rp.speed);
+      else if (reeling) this.soundscape.replay(rl.sim, rl.clock, this.feetSrc, frameDt, rl.speed);
       else this.soundscape.update(this.sim, renderTime, this.feetSrc, frameDt);
       if (this.ball.routineBounce) this.soundscape.routineBounce(this.ball.mesh.position.x, this.ball.mesh.position.z);
       for (let i = 0; i < this.players.length; i++) { const av = this.players[i]!.avatar; if (av) av.gruntAt = this.soundscape.gruntAt[i]!; }
@@ -1098,12 +1189,12 @@ export class Game {
       if (!this.audioFailed) { this.audioFailed = true; console.warn('audio', e); }
     }
     for (let k = 0; k < this.cues.length; k++) {
-      this.cues[k]!.update(this.sim, showing ? -1 : this.locals[k]?.player ?? -1, this.ball.mesh.position, this.cam.camera, renderTime,
+      this.cues[k]!.update(this.sim, again ? -1 : this.locals[k]?.player ?? -1, this.ball.mesh.position, this.cam.camera, renderTime,
         this.opts.match.timingScale ?? 1, now / 1000, frameDt, cueNow);
     }
     this.hud.cueLead = net ? net.lead : 0;
     this.hud.netNote = net ? net.note : '';
-    this.hud.update(this.sim, showing ? -1 : this.meterWho, now / 1000);
+    this.hud.update(this.sim, again ? -1 : this.meterWho, now / 1000);
     this.tv?.update(this.sim);
     this.stats.update(this.sim);
     if (this.run && !showing) {
@@ -1129,6 +1220,7 @@ export class Game {
       const done = this.overDoneAt >= 0 && now - this.overDoneAt > OVER_HOLD_MS;
       if ((done || this.overSkip || now - this.overAt > OVER_MAX_MS) && this.onMatchOver) {
         this.overSent = true;
+        this.highlights.flush(this.sim);
         this.onMatchOver(this.stats);
         if (this.disposed) return;
       }

@@ -217,6 +217,11 @@ export class Soundscape {
    * A replay's frame, in place of update: the shots, the bounces, the glass and the feet of the point again, pitched down
    * with the slow motion (REPLAY_PITCH), under the live crowd. `speed`: the replay's speed (1 = real time).
    */
+  /** A replay cut to another take (its match copied back): read its events afresh from where it now is. */
+  retake(): void {
+    this.replaying = false;
+  }
+
   replay(sim: MatchSim, renderTime: number, feet: readonly FeetSource[], dt: number, speed: number): void {
     if (!this.replaying) {
       this.replaying = true;

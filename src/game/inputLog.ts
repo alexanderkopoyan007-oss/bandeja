@@ -32,6 +32,12 @@ export class InputLog {
     this.ev = new Float64Array(events * EV);
   }
 
+  /** Empty again, for the next run (the arrays kept). */
+  reset(): void {
+    this.ticks = 0;
+    this.evN = 0;
+  }
+
   /** The next tick's frame (past the capacity: not kept, and `full` says so). */
   record(f: InputFrame | null): void {
     if (this.ticks >= this.capacity) { this.ticks++; return; }

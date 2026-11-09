@@ -4279,3 +4279,25 @@ The owner said "keep going" after M6 went to main (558510e). M7 is the brief's s
   - `tools/local-check.mjs CAMERA=side|dynamic` in Chrome: every device's push goes right on that camera's screen.
   - `tools/cam-stills.mjs` sheets in the stadium, the covered club and the park: the side camera holds the court glass to glass, and nothing stands in front of either rig.
 - **Listed in Settings > Camera** only behind `?creator=1`. `?camera=side|dynamic` works anywhere.
+
+## M7 phase B: two-take replays and the highlight reel (2026-11-09)
+- **Instant replays have two takes** (`game/replay.ts`; the brief's "several angles and slow motion"):
+  - First, the point at speed from the jib over the side stands. Then the winning shot again, slowed (0.35), from low behind the hitter's glass, from 0.9 s before it to 1.5 s after.
+  - The second take is a cut, not a re-run. A third match copy (`mark`) is taken as the first take passes the second's start.
+  - The game cuts the camera, the people and the sound at each take (`Replays.cuts`, `Soundscape.retake`).
+  - Before, a replay was one take, and the angle alternated from one replay to the next.
+- **The highlight reel** (`game/highlights.ts`):
+  - **Kept as played.** Each point keeps a match copy from its setup and the humans' inputs since, in the challenges' compact `InputLog` form once the point is over (`InputLog.reset` added). Nothing is filmed.
+  - **Scored for how much of a highlight it is** (`HL_WEIGHTS`): one a shot, +10 out of the court, +6 a hard overhead winner (75 km/h and up, as replays), +6 the set on it, +25 the match on it.
+  - **The best eight are kept,** in the order played. A dropped clip's copy is reused.
+  - **When the match ends** (`flush`), the match point is kept, cut at what was recorded.
+  - **The reel** (`Reel`) re-runs each clip from 1.2 s before the serve to 1.4 s after the point, the winning shot slowed to 0.5, on the broadcast camera.
+    - The camera takes each clip's ends as they are (`BroadcastCamera.retake` now snaps the change-of-ends turn).
+    - Enter or a pad button skips to the next point; Escape or Start goes back to the results.
+    - The caption names the point: "HIGHLIGHTS 3/8 · Set 1 · 2-1 · 30-15 · 14-shot rally".
+  - **Off** for the title's match, drills, challenges, watched runs and online (others' inputs aren't kept).
+- **The results offer "Watch highlights"** (behind `?creator=1`).
+- **Checked:**
+  - `tests/app/replay.test.ts`: two takes per replay, the first at speed, the second slowed, and the second the same match as the first on every tick both drew.
+  - `tests/app/highlights.test.ts`: whole matches, AI only and with a scripted human. The clips come in the order played, the match point is among them, and each re-run shows its point (winner and moment) ending on the live match's state hash at its last tick.
+  - `tools/reel-check.mjs` in Chrome: the results' button, the reel on court with its caption, Enter, Escape back.

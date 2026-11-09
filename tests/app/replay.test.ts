@@ -30,7 +30,8 @@ function play(humans: number[], seed: number, seconds: number) {
   const rp = new Replays(cfg, humans);
   const frames = humans.map(() => new InputFrame());
   const inputs: Array<InputFrame | null> = [null, null, null, null];
-  const checks: Array<{ live: number[]; shown: number[]; hash: number; liveHash: number | undefined }> = [];
+  const checks: Array<{ live: number[]; shown: number[]; hash: number; liveHash: number | undefined;
+    takes: { cuts: number; second: number; compared: number; agree: number; slowed: boolean; fullSpeed: boolean } }> = [];
   const hashes = new Map<number, number>();
   let pointAt: number[] = [];
   let seen = 0;
@@ -43,14 +44,29 @@ function play(humans: number[], seed: number, seconds: number) {
       const st = (): number => rp.state;
       while (st() === RP_PREP) rp.prepare();
       expect(st()).toBe(RP_SHOW);
+      // (M7 phase B: two takes; the second, cut from a copy taken in the first, must be the first again tick by tick)
+      const cuts0 = rp.cuts, take0 = new Map<number, number>();
+      let second = 0, compared = 0, agree = 0, slowed = false, fullSpeed = true;
       while (st() === RP_SHOW) {
         rp.advance(1 / 60);
+        if (st() !== RP_SHOW) break;
+        if (rp.take === 0) {
+          take0.set(rp.sim.tick, rp.sim.hash());
+          if (rp.speed !== 1) fullSpeed = false;
+        } else {
+          second++;
+          // (only ticks the first take drew: at speed it draws every second one)
+          const h = take0.get(rp.sim.tick);
+          if (h !== undefined) { compared++; if (h === rp.sim.hash()) agree++; }
+          if (rp.speed < 0.5) slowed = true;
+        }
         for (; rs < rp.sim.eventSeq; rs++) {
           const e = rp.sim.events[rs % rp.sim.events.length]!;
           if (e.kind === E_POINT) shownPoint = [e.team, e.time];
         }
       }
-      checks.push({ live: pointAt, shown: shownPoint, hash: rp.sim.hash(), liveHash: hashes.get(rp.sim.tick) });
+      checks.push({ live: pointAt, shown: shownPoint, hash: rp.sim.hash(), liveHash: hashes.get(rp.sim.tick),
+        takes: { cuts: rp.cuts - cuts0, second, compared, agree, slowed, fullSpeed } });
       continue;
     }
     // Two ticks a frame (120 Hz sim, 60 Hz frames), each human's frame recorded for each.
@@ -84,6 +100,13 @@ describe('instant replays', () => {
           expect(c.shown[1]).toBeCloseTo(c.live[1]!, 9);
           expect(c.liveHash).toBeDefined();
           expect(c.hash).toBe(c.liveHash);
+          // Two takes: the first at speed, then the cut to the second, slowed, the same match frame for frame.
+          expect(c.takes.cuts).toBe(1);
+          expect(c.takes.fullSpeed).toBe(true);
+          expect(c.takes.slowed).toBe(true);
+          expect(c.takes.second).toBeGreaterThan(60);
+          expect(c.takes.compared).toBeGreaterThan(20);
+          expect(c.takes.agree).toBe(c.takes.compared);
         }
       }
       expect(shown).toBeGreaterThan(0);

@@ -261,9 +261,20 @@ export class Hud {
   }
 
   /** The replay tag (game/replay.ts) on or off. */
-  setReplay(on: boolean): void {
+  setReplay(on: boolean, title = 'REPLAY', sub = 'Enter skips'): void {
     if (on !== this.replayOn) { this.replayOn = on; this.replay.classList.toggle('on', on); }
+    // (the highlight reel names its point; written only when it changes, once a point)
+    if (on && (title !== this.replayTitle || sub !== this.replaySub)) {
+      this.replayTitle = title;
+      this.replaySub = sub;
+      this.replay.textContent = title;
+      const small = document.createElement('small');
+      small.textContent = sub;
+      this.replay.appendChild(small);
+    }
   }
+  private replayTitle = 'REPLAY';
+  private replaySub = 'Enter skips';
   private readonly replay: HTMLElement;
   private replayOn = false;
 

@@ -572,7 +572,10 @@ export class BroadcastCamera {
     this.lastNow = -1;
     this.lastPan = -1;
     this.snapRig = true;
+    this.snapTurn = true;
   }
+  /** The next update takes the ends as they are (a cut: a highlight from another part of the match). */
+  private snapTurn = false;
 
   /** The camera is swinging round at a change of ends. */
   get swinging(): boolean {
@@ -646,6 +649,12 @@ export class BroadcastCamera {
   /** `ball`: where the ball is drawn (null: placing the camera before play). `now` in seconds. */
   update(sim: MatchSim, humanTeam: number, ball: THREE.Vector3 | null, now: number): void {
     const want = sim.side(humanTeam) > 0 ? 0 : Math.PI;
+    // (after a cut, the ends as they are: no swing round to them)
+    if (this.snapTurn) {
+      this.snapTurn = false;
+      this.angle = this.from = this.to = want;
+      this.turnStart = -1;
+    }
     if (Math.abs(want - this.to) > 1e-6) {
       this.from = this.angle;
       this.to = want;

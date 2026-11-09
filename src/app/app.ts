@@ -1278,6 +1278,25 @@ export class App {
   }
 
   private resultsScreen(st: MatchStats): Screen {
+    const screen = this.resultsOf(st);
+    // The match's highlights (M7 phase B; behind ?creator=1 until the owner has seen them; never online, where the
+    // others' inputs aren't kept): watched on court, then back here.
+    const g = this.game;
+    if (this.creatorOn && !this.online && g && g.highlights.clips.length) {
+      const n = g.highlights.clips.length;
+      screen.items.splice(1, 0, {
+        kind: 'button', label: 'Watch highlights', desc: `The match's best ${n === 1 ? 'point' : `${n} points`} again. Enter skips one, Escape comes back here.`,
+        action: () => {
+          this.menu.hide();
+          const back = (): void => { g.setMenuPaused(true); this.menu.open(this.resultsScreen(st), true); };
+          if (!g.playReel(back)) back();
+        },
+      });
+    }
+    return screen;
+  }
+
+  private resultsOf(st: MatchStats): Screen {
     const g = this.game!;
     const sim = g.sim;
     const won = sim.score.winner === g.team;
