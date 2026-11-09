@@ -25,6 +25,9 @@ import orzaProa from '../../../data/racket-looks/orza-proa.json' with { type: 'j
 import orzaQuilla from '../../../data/racket-looks/orza-quilla.json' with { type: 'json' };
 import orzaTimon from '../../../data/racket-looks/orza-timon.json' with { type: 'json' };
 import orzaGalerna from '../../../data/racket-looks/orza-galerna.json' with { type: 'json' };
+import orzaTrofeo from '../../../data/racket-looks/orza-trofeo.json' with { type: 'json' };
+import vilanoCorona from '../../../data/racket-looks/vilano-corona.json' with { type: 'json' };
+import granzaMaestro from '../../../data/racket-looks/granza-maestro.json' with { type: 'json' };
 
 export const LOOKS_BY_RACKET: Record<string, RacketLook> = {
   'qarro-yunque': qarroYunque as RacketLook,
@@ -51,4 +54,8 @@ export const LOOKS_BY_RACKET: Record<string, RacketLook> = {
   'orza-quilla': orzaQuilla as RacketLook,
   'orza-timon': orzaTimon as RacketLook,
   'orza-galerna': orzaGalerna as RacketLook,
+  // (the career's prize rackets, M6 phase E)
+  'orza-trofeo': orzaTrofeo as RacketLook,
+  'vilano-corona': vilanoCorona as RacketLook,
+  'granza-maestro': granzaMaestro as RacketLook,
 };

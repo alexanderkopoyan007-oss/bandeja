@@ -9,13 +9,17 @@ import { Rng } from '../../src/sim/core/rng.ts';
 import { V3 } from '../../src/sim/core/v3.ts';
 import { Racket, RACKETS, RACKET_IDS, swingWeight, type RacketSpec } from '../../src/sim/contact/racket.ts';
 import { racketStats } from '../../src/sim/contact/racketStats.ts';
+import racketData from '../../data/rackets.json';
 import {
   ShotSolver, strike, MOD_NONE, SHOT_CHIQUITA, SHOT_DRIVE, SHOT_SMASH, type ShotRequest, type ShotResult,
 } from '../../src/sim/contact/shots.ts';
 
 const BALL_M = 0.0577, BALL_R = 0.0328, ALPHA = 0.55;
-const MADE = RACKET_IDS.filter((id) => id !== 'standard');
 const spec = (id: string): RacketSpec => RACKETS[id]!;
+/** The catalogue: every racket but `standard` and the career's prize rackets (M6 phase E: `prize` in data/rackets.json). */
+const isPrize = (id: string): boolean => !!(racketData as unknown as Record<string, { prize?: unknown }>)[id]?.prize;
+const MADE = RACKET_IDS.filter((id) => id !== 'standard' && !isPrize(id));
+const PRIZES = RACKET_IDS.filter(isPrize);
 const stats = new Map(RACKET_IDS.map((id) => [id, racketStats(spec(id))]));
 const st = (id: string) => stats.get(id)!;
 
@@ -46,6 +50,30 @@ describe('rackets: limits and ranges', () => {
     const s = spec('standard');
     expect([s.mass, s.balance, s.iCm, s.iPolar, s.e17, s.eSlope, s.friction, s.headLength, s.headWidth])
       .toEqual([0.36, 0.265, 0.0075, 0.0018, 0.742, 0.0107, 0.35, 0.29, 0.26]);
+  });
+
+  it('the career’s three prize rackets are built by the same rules, from the makers, reading unlike any other', () => {
+    expect(PRIZES).toEqual(['orza-trofeo', 'vilano-corona', 'granza-maestro']);
+    const KC = { round: [0.14434, 0.07071, 0.29, 0.26], teardrop: [0.146, 0.0696, 0.284, 0.256], diamond: [0.1478, 0.0685, 0.276, 0.252] } as const;
+    const SLOPE = { soft: 0.0135, medium: 0.0107, hard: 0.0085, xhard: 0.0068 } as const;
+    const FRIC = { gloss: 0.22, matte: 0.3, sand: 0.45, rough: 0.62 } as const;
+    const makers = new Set(MADE.map((id) => spec(id).brand));
+    const read = new Set(MADE.map((id) => { const r = st(id); return [r.power, r.control, r.sweetSpot, r.spin, r.manoeuvrability].map(Math.round).join(','); }));
+    for (const id of [...PRIZES, 'qarro-yunque']) {
+      const r = spec(id) as ReturnType<typeof spec> & { shape: keyof typeof KC; core: keyof typeof SLOPE; face: keyof typeof FRIC };
+      const [kc, kp, hl, hw] = KC[r.shape];
+      expect(r.iCm, id).toBeCloseTo(r.mass * kc * kc, 5);
+      expect(r.iPolar, id).toBeCloseTo(r.mass * kp * kp, 5);
+      expect(r.eSlope, id).toBe(SLOPE[r.core]);
+      expect(r.e17, id).toBeCloseTo(0.67245 + 6.5 * SLOPE[r.core], 4);
+      expect(r.friction, id).toBe(FRIC[r.face]);
+      expect([r.headLength, r.headWidth], id).toEqual([hl, hw]);
+      expect(makers.has(r.brand), id).toBe(true);
+    }
+    for (const id of PRIZES) {
+      const x = st(id);
+      expect(read.has([x.power, x.control, x.sweetSpot, x.spin, x.manoeuvrability].map(Math.round).join(',')), id).toBe(false);
+    }
   });
 
   it('every racket meets the FIP limits: 45.5 cm long, 26 cm wide, 38 mm thick', () => {

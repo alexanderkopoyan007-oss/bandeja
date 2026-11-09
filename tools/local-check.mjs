@@ -127,8 +127,12 @@ try {
   check('menu stayed shut while playing', !hits.open, `${hits.menu}`);
   check('points played', hits.points >= Math.max(1, Math.floor(PLAY_S / 25)), `${hits.points} points in ${PLAY_S} s`);
   check('each human hit the ball (players 0, 1, 2)', hits.by[0] > 0 && hits.by[1] > 0 && hits.by[2] > 0, `hits by player ${JSON.stringify(hits.by)}`);
-  const fps = await page.evaluate(() => { const fr = window.__bandeja.probe.frames.slice(-600).filter((d) => d > 0).sort((a, b) => a - b); return { p50: fr[fr.length >> 1], p99: fr[Math.floor(fr.length * 0.99)] }; });
-  console.log(`frame ms over the last 600: p50 ${fps.p50?.toFixed(1)} p99 ${fps.p99?.toFixed(1)} (headless, not a perf run)`);
+  const fps = await page.evaluate(() => {
+    const p = window.__bandeja.probe, pc = (v) => { const s = v.slice(-600).filter((d) => d >= 0).sort((a, b) => a - b); return [s[s.length >> 1], s[Math.floor(s.length * 0.99)]]; };
+    const [p50, p99] = pc(p.frames.filter((d) => d > 0)), [w50, w99] = pc(p.works), [s50, s99] = pc(p.sims);
+    return { p50, p99, w50, w99, s50, s99 };
+  });
+  console.log(`frame ms over the last 600: p50 ${fps.p50?.toFixed(1)} p99 ${fps.p99?.toFixed(1)} (headless, not a perf run); CPU work per frame p50 ${fps.w50?.toFixed(2)} p99 ${fps.w99?.toFixed(2)} ms, sim p50 ${fps.s50?.toFixed(3)} p99 ${fps.s99?.toFixed(3)} ms`);
   check('no page errors', errors.length === 0, errors.slice(0, 3).join(' / '));
 } catch (e) {
   check('ran', false, String(e?.stack ?? e).slice(0, 400));

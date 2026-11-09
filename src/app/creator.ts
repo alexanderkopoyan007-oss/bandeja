@@ -13,7 +13,7 @@ import {
 import { racketLookFor } from '../render/avatar/racket.ts';
 import { designFrom, RACKET_PALETTE } from '../render/avatar/racketDesign.ts';
 import { CHARACTERS_MAX, type Store } from './store.ts';
-import { COSMETICS, covered, SLOT_INFO, SLOTS, type Slot } from './unlocks.ts';
+import { blankProgress, COSMETICS, covered, racketOpen, SLOT_INFO, SLOTS, type Slot } from './unlocks.ts';
 import { PROPORTION_KEYS, RANGES, type Proportions } from '../render/avatar/proportions.ts';
 import { RACKETS } from '../sim/contact/racket.ts';
 import { racketStats, type RacketStats } from '../sim/contact/racketStats.ts';
@@ -392,7 +392,8 @@ export class Creator {
       { kind: 'group', label: 'Racket and outfit' },
       {
         kind: 'choice', label: 'Racket', desc: () => racketLine(d().racket.base),
-        options: RACKET_IDS.map((id) => ({ value: id, label: racketName(id) })),
+        // (a prize racket once the career has won it; one already held stays on the list)
+        options: RACKET_IDS.filter((id) => id === d().racket.base || racketOpen(id, s?.progress ?? blankProgress())).map((id) => ({ value: id, label: racketName(id) })),
         get: () => d().racket.base, set: (v) => { d().racket = { ...d().racket, base: String(v) }; this.dress(); },
       },
       ...this.designItems(d),

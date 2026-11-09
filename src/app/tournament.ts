@@ -31,7 +31,7 @@ export interface Tour {
 }
 
 const LEVELS: ReadonlyArray<MatchSetup['level']> = ['novice', 'club', 'advanced', 'pro'];
-const ARENAS: ReadonlyArray<MatchSetup['arena']> = ['stadium', 'hall', 'club-day', 'club-night'];
+const ARENAS: ReadonlyArray<MatchSetup['arena']> = ['stadium', 'hall', 'club-day', 'club-night', 'club-dusk', 'final'];
 const SCORINGS: ReadonlyArray<MatchSetup['scoring']> = ['star', 'golden', 'advantage'];
 const LENGTHS: ReadonlyArray<MatchSetup['length']> = ['short', 'set', 'three'];
 
@@ -86,8 +86,9 @@ export function makePairs(pros: readonly Pro[]): Pro[][] {
 }
 
 /** A new tournament from this setup: the field drawn from the seed, the player's entry first. */
-export function newTour(seed: number, setup: TourSetup): Tour {
-  const pool = field(setup.women);
+export function newTour(seed: number, setup: TourSetup, from?: readonly Pro[]): Tour {
+  // (the career fills a draw from its tier's own field: app/career.ts)
+  const pool = from ?? field(setup.women);
   const sizes = sizesFor(setup.doubles, setup.women);
   const size = sizes.includes(setup.size) ? setup.size : sizes[sizes.length - 1]!;
   const n = Math.min(size, maxEntries(setup.doubles, setup.women));

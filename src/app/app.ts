@@ -28,21 +28,27 @@ import { current as tieNow, finished as drawOver, playRound, recordYours, roundN
 import { applyRoster, dealRoster } from './roster.ts';
 import { applyCharacter, applyLocals, keepStyles, optionsFromSetup, wearParam } from './options.ts';
 import { FACES, type Character } from './character.ts';
-import { Creator, type CreatorHost } from './creator.ts';
+import { Creator, racketName, type CreatorHost } from './creator.ts';
 import { Studio } from '../game/studio.ts';
 import { Store } from './store.ts';
-import type { Cosmetic } from './unlocks.ts';
+import { PRIZE_RACKETS, racketOpen, ruleMet, type Cosmetic } from './unlocks.ts';
 import { OnlineSession, ROOM_LOST, SEATS, type OnlineStart } from '../net/session.ts';
 import { NetMatch } from '../net/netMatch.ts';
 import { validCode } from '../net/room.ts';
 import { TEST_SHORT } from '../net/config.ts';
 import { QueueSocket, type Found } from '../net/queue.ts';
 import type { MatchConfig } from '../sim/match.ts';
+import { SECRET_ARENAS, SEASON, careerFrom, careerReach, finishEvent, ordinal, rankOf, recordTie, shortOf, type Career } from './career.ts';
+import { careerScreen, type CareerHost } from './careerScreen.ts';
 
 const ARENAS: Choice[] = [
   { value: 'stadium', label: 'Arena' }, { value: 'hall', label: 'Club hall' },
   { value: 'club-day', label: 'Club, day' }, { value: 'club-night', label: 'Club, night' },
 ];
+/** A venue's name, the career's secret ones too. */
+function arenaLabel(id: string): string {
+  return ARENAS.find((a) => a.value === id)?.label ?? SECRET_ARENAS.find((a) => a.id === id)?.name ?? '';
+}
 
 const nextSeed = (s: number): number => (Math.imul(s, 1103515245) + 12345) >>> 1;
 const PAGE_TITLE = document.title;
@@ -109,6 +115,11 @@ export class App {
   private localPicks: SeatPick[] | null = null;
   /** The game on court is the player's tie in the tournament (M6, tournament.ts). */
   private tourTie = false;
+  /** The tie on court is the career's (its event's draw, in the career's doc), and the draw as the last tie left it
+   * (the results read it after the event is over and the career has moved on), and what that event earned. */
+  private careerTie = false;
+  private careerDraw: Tour | null = null;
+  private careerNote: { event: string; short: number; points: number; rank: number; prizes: string[] } | null = null;
   /** The game on court is a challenge (M6, challenge.ts): its feeds' seed (the daily's; null: the run's own), or a best run watched. */
   private challenge: { def: ChallengeDef; seed: number | null; watch: BestRun | null } | null = null;
   /** The tournament setup being made (kept while the page is open). */
@@ -297,9 +308,16 @@ export class App {
     // A local match: several people on this machine, each on their own device (P1 the camera's end).
     if (!attract && !on && this.localMatch && this.drill < 0 && this.cupRound < 0 && !this.tourTie) applyLocals(opts, this.localMatch, this.gameSetup());
     // A tournament tie: the player beside their partner (their seat by the side they play), the other entry across.
-    const tour = !attract && !on && this.tourTie ? this.tour : null;
+    const tour = !attract && !on && this.tourTie ? this.tieTour : null;
     const court = tour ? tieCourt(tour, this.character()?.face ?? null) : null;
     if (court) applyLocals(opts, [{ player: court.you, device: 'any' }], this.gameSetup());
+    // A career tie: the pair's chemistry, which the sim reads (the AI partner reads the ball sooner as it grows).
+    const car = court && this.careerTie ? this.career : null;
+    if (court && car) {
+      const chem: Array<number | null> = [null, null];
+      chem[court.you & 1] = car.chemistry[car.partner] ?? null;
+      opts.match.chemistry = chem;
+    }
     // The player's own character plays as them (behind ?creator=1 until the owner has seen the creator; never online,
     // where everyone plays the dealt cast and the standard racket).
     const me = this.character();
@@ -408,7 +426,7 @@ export class App {
     const st = this.settings.setup;
     if (this.drill >= 0) return { ...st, mode: 'singles', court: 'standard', level: 'club', arena: 'club-day' };
     if (this.cupRound >= 0) return { ...st, level: CUP[this.cupRound]!.level, length: 'short' };
-    const tour = this.tourTie ? this.tour : null;
+    const tour = this.tourTie ? this.tieTour : null;
     if (tour) {
       const t = tour.setup;
       return {
@@ -419,10 +437,13 @@ export class App {
     return st;
   }
 
-  private play(drill: number, cupRound: number, tourTie = false, challenge: { def: ChallengeDef; seed: number | null; watch: BestRun | null } | null = null): void {
+  private play(drill: number, cupRound: number, tourTie = false, challenge: { def: ChallengeDef; seed: number | null; watch: BestRun | null } | null = null, careerTie = false): void {
     this.drill = drill;
     this.cupRound = cupRound;
     this.tourTie = tourTie;
+    this.careerTie = tourTie && careerTie;
+    this.careerDraw = null;
+    this.careerNote = null;
     this.challenge = challenge;
     void this.startMatch();
   }
@@ -503,13 +524,31 @@ export class App {
 
   /** The player's tournament tie into the draw (won or not, the score from their side), and the round's other ties. */
   private logTie(): void {
-    const g = this.game, tour = this.tourTie ? this.tour : null;
+    const g = this.game, tour = this.tourTie ? this.tieTour : null;
     if (!g || !tour || !tieNow(tour.draw).tie) return;
-    const mine = g.team;
+    const mine = g.team, won = g.sim.score.winner === mine;
     const score = g.sim.score.history.map((h) => `${h[mine]}-${h[1 - mine]}`).join(' ');
-    recordYours(tour.draw, g.sim.score.winner === mine, score);
+    recordYours(tour.draw, won, score);
     playRound(tour.draw);
-    this.saveTour(tour);
+    if (!this.careerTie) { this.saveTour(tour); return; }
+    // The career: the pair's chemistry grows; out (or champions), the rest of the draw is played and the event's points kept.
+    let c = this.career;
+    if (!c) return;
+    c = recordTie({ ...c, tour }, won);
+    if (shortOf(tour.draw) >= 0) {
+      while (!drawOver(tour.draw)) playRound(tour.draw);
+      const k = c.playing;
+      c = finishEvent(c);
+      const r = c.results[c.results.length - 1]!;
+      // (the career's own cosmetics, data/cosmetics.json careerTier / careerTitle, and its prize rackets)
+      const reach = careerReach(c), before = this.store?.progress;
+      if (this.store) this.earnedNow = [...this.earnedNow, ...this.store.recordCareer(reach.tier, reach.title)];
+      const after = this.store?.progress;
+      const prizes = before && after ? [...PRIZE_RACKETS.keys()].filter((id) => !racketOpen(id, before) && racketOpen(id, after)).map(racketName) : [];
+      this.careerNote = { event: SEASON[k]!.name, short: r.short, points: r.points, rank: rankOf(c), prizes };
+    }
+    this.careerDraw = tour;
+    this.saveCareer(c);
   }
 
   /** Every challenge's best run, as saved (checked on every read). */
@@ -586,6 +625,41 @@ export class App {
     return this.store ? tourFrom(this.store.doc('tournament.v1')) : null;
   }
 
+  /** The venues the menus offer: the four, and the career's secret ones it has opened (data/career.json `arenas`). */
+  private arenaChoices(): Choice[] {
+    const p = this.store?.progress;
+    return [...ARENAS, ...SECRET_ARENAS.filter((a) => p && ruleMet(a.unlock, p)).map((a) => ({ value: a.id, label: a.name }))];
+  }
+
+  /** The career under way, as saved (checked on every read; null: none). */
+  private get career(): Career | null {
+    return this.store ? careerFrom(this.store.doc('career.v1')) : null;
+  }
+
+  private saveCareer(c: Career | null): void {
+    this.store?.saveDoc('career.v1', c ? JSON.parse(JSON.stringify(c)) : null);
+  }
+
+  /** The draw the tie on court belongs to: the career event's, or the tournament's. */
+  private get tieTour(): Tour | null {
+    return this.careerTie ? this.career?.tour ?? null : this.tour;
+  }
+
+  private careerHost(): CareerHost {
+    return {
+      career: () => this.career,
+      save: (c) => this.saveCareer(c),
+      womanAsMe: () => { const me = this.character(); return me ? FACES.find((f) => f.id === me.face)?.woman === true : null; },
+      seed: () => Math.floor(Math.random() * 2 ** 31),
+      open: (sc) => this.menu.open(sc),
+      replace: (sc) => this.menu.replace(sc),
+      playTie: () => this.play(-1, -1, true, null, true),
+      confirm: (t, sub, yd, yes) => this.confirm(t, sub, yd, yes),
+      // (opened after a tie it has nothing under it: back is the title)
+      back: () => { if (this.menu.depth > 1) this.menu.pop(); else void this.toTitle(); },
+    };
+  }
+
   private saveTour(t: Tour | null): void {
     this.store?.saveDoc('tournament.v1', t ? JSON.parse(JSON.stringify(t)) : null);
   }
@@ -597,7 +671,7 @@ export class App {
       setup: this.tourSetup,
       womanAsMe: () => { const me = this.character(); return me ? FACES.find((f) => f.id === me.face)?.woman === true : null; },
       seed: () => Math.floor(Math.random() * 2 ** 31),
-      arenas: ARENAS,
+      arenas: this.arenaChoices(),
       open: (sc) => this.menu.open(sc),
       replace: (sc) => this.menu.replace(sc),
       playTie: () => this.play(-1, -1, true),
@@ -930,6 +1004,15 @@ export class App {
           action: () => this.menu.open(tourScreen(this.tourHost())),
         },
         {
+          kind: 'button', label: 'Career', hidden: () => !this.creatorOn,
+          desc: () => {
+            const c = this.career;
+            if (!c) return 'Your player from the club to the Masters: a season of tournaments, a partner of your level, ranking points.';
+            return c.tour ? `${SEASON[c.playing]!.name} goes on: ${nextTieName(c.tour.draw) ?? ''} next.` : `Season ${c.season}, ${ordinal(rankOf(c))} in the ranking: ${SEASON[c.next]!.name} next.`;
+          },
+          action: () => this.menu.open(careerScreen(this.careerHost())),
+        },
+        {
           kind: 'button', label: 'Academy', hidden: () => !this.creatorOn,
           desc: 'Lessons from the timing to every shot and reading the glass, each a run of the coach’s balls. Bronze opens the next.',
           action: () => this.menu.open(academyScreen(this.academyHost())),
@@ -969,7 +1052,7 @@ export class App {
 
   private setupLine(): string {
     const s = this.settings.setup;
-    const arena = ARENAS.find((a) => a.value === s.arena)?.label ?? '';
+    const arena = arenaLabel(s.arena);
     const lvl = { novice: 'novice', club: 'club', advanced: 'advanced', pro: 'pro' }[s.level];
     return `${s.mode}, ${lvl} opponents, ${arena.toLowerCase()}`;
   }
@@ -1003,7 +1086,7 @@ export class App {
           'How well the AI plays: reaction, reading the ball, timing and shot choice (your partner plays a level above it).'),
         ch('partner', 'Partner', this.styleChoices(), 'Your partner’s game. El Relojero is even; El Muro lobs and stays back; Martillo takes the net and smashes; La Serpiente plays víboras and drops; El Contragolpe defends from the glass and answers with drives.', () => st.mode !== 'doubles'),
         ch('opponents', st.mode === 'doubles' ? 'Opponents’ style' : 'Opponent’s style', this.styleChoices(), 'How the other side plays (random deals each player a style).'),
-        ch('arena', 'Venue', ARENAS, 'An indoor arena with a crowd, a covered club hall, or an outdoor club by day or under floodlights.'),
+        ch('arena', 'Venue', this.arenaChoices(), 'An indoor arena with a crowd, a covered club hall, or an outdoor club by day or under floodlights.'),
         ch('court', 'Court', [{ value: 'standard', label: 'Standard' }, { value: 'panoramic', label: 'Panoramic' }, ...(st.mode === 'singles' ? [{ value: 'singles-narrow', label: 'Narrow singles' }] : [])],
           'Standard: stepped side glass with mesh. Panoramic: a single run of glass along the sides. Narrow singles: a 6 m wide court for one against one.'),
         ch('scoring', 'Scoring', [{ value: 'star', label: 'Star point' }, { value: 'golden', label: 'Golden point' }, { value: 'advantage', label: 'Advantage' }],
@@ -1025,7 +1108,7 @@ export class App {
     const st = this.settings.setup;
     const lines = [
       ['Format', st.mode === 'doubles' ? 'Doubles' : 'Singles'],
-      ['Venue', ARENAS.find((a) => a.value === st.arena)?.label ?? ''],
+      ['Venue', arenaLabel(st.arena)],
       ['Scoring', { star: 'Star point', golden: 'Golden point', advantage: 'Advantage' }[st.scoring]],
       ['Length', { short: 'Short set', set: 'One set', three: 'Best of three' }[st.length]],
     ];
@@ -1215,7 +1298,7 @@ export class App {
     const side = earnedNow + `<div class="card"><h2>${mins} min · longest rally ${st.longestRally} shots</h2><table>`
       + `<tr><td class="l"></td><td class="w">${g.localPlayers.length > 1 ? g.teamName(0) : sim.doubles ? 'Your pair' : 'You'}</td><td class="w">${g.localPlayers.length > 1 ? g.teamName(1) : them}</td></tr>`
       + rows.map((r) => `<tr><td class="l">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('') + '</table></div>';
-    const tour = this.tourTie ? this.tour : null;
+    const tour = this.tourTie ? (this.careerTie ? this.careerDraw : this.tour) : null;
     if (tour) {
       const d = tour.draw, inIt = stillIn(d), over = drawOver(d);
       const last = d.rounds[d.rounds.length - 1]!;
@@ -1224,6 +1307,20 @@ export class App {
       d.rounds.forEach((r, k) => { if (r.some((t) => (t.a === d.you || t.b === d.you) && t.winner >= 0 && t.score !== 'bye')) at = k; });
       const played = roundName(d.rounds[at]!.length);
       const title = over && inIt ? 'Champions' : inIt ? `Through to the ${roundName(last.length).toLowerCase()}` : `Out in the ${played.toLowerCase()}`;
+      if (this.careerTie) {
+        const note = this.careerNote, c = this.career;
+        const chem = c ? Math.round((c.chemistry[c.partner] ?? 0) * 100) : 0;
+        const card = note
+          ? `<div class="card"><h2>${note.event}</h2><p>${note.short === 0 ? 'Won it' : `Out ${note.short === 1 ? 'in the final' : `${note.short} rounds short of the title`}`}: ${note.points} ranking points. You are ${ordinal(note.rank)} now.</p><p>Chemistry with your partner ${chem}%.</p>${note.prizes.length ? `<p>A prize racket: ${note.prizes.join(', ')}. Yours to play under Players.</p>` : ''}</div>`
+          : `<div class="card"><p>Chemistry with your partner ${chem}%.</p></div>`;
+        return {
+          id: 'results', title, sub: `${played} · ${sets}`, back: null, side: () => card + side,
+          items: [
+            { kind: 'button', label: 'Career', primary: true, desc: note ? 'The season goes on.' : `Next: ${nextTieName(d) ?? ''}.`, action: () => this.menu.open(careerScreen(this.careerHost()), true) },
+            { kind: 'button', label: 'Title screen', desc: 'The career is kept.', action: () => void this.toTitle() },
+          ],
+        };
+      }
       return {
         id: 'results', title, sub: `${played} · ${sets}`, back: null, side: () => side,
         items: [

@@ -61,7 +61,7 @@ const NET_BACK = 0.5;
 /** Chance a net-loving style comes in behind a low ball from the back, per unit of its net trait over 1 (Martillo, 1.6:
  * 36%). A style that lobs little has no other way forward: Martillo sat back at 32.6% net time against Muro's 40.6%. */
 const NET_PRESS = 0.6;
-const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; human: { motor: number; grade: number[] }; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; ohArrive: number; bajada: number[]; women: { speed: number; smashEffort: number; smash: number; lob: number; serveGlass: number; serveT: number; serveEdge: number; serveEffort: number } };
+const SKILL = skillData as unknown as { timing: number[]; motor: number[]; pressure: number; human: { motor: number; grade: number[] }; smashEffort: number[]; chaseEffort: number; formationEffort: number; glassWait: number; ohArrive: number; bajada: number[]; women: { speed: number; smashEffort: number; smash: number; lob: number; serveGlass: number; serveT: number; serveEdge: number; serveEffort: number }; chemistry: { slow: number; quick: number } };
 export const WOMENS_SPEED = SKILL.women.speed;
 /** A value by level: v holds it at evenly spaced levels from 0 to 1 (two or more), interpolated linearly between. */
 /**
@@ -124,6 +124,8 @@ export class SimpleAi {
   readonly ohArrive = SKILL.ohArrive;
   planVersion = -1;
   reactAt = 0;
+  /** The reaction time's share added by the pair's chemistry (setChemistry; -0: neutral). */
+  pairSlow = -0;
   /**
    * A bounce or a wall moved the ball off the path the plan was made for (mesh, a glass join, the net cord): the plan
    * and the release are corrected only from this time (-1: none pending). Players correct a stroke under way after
@@ -208,7 +210,13 @@ export class SimpleAi {
    * than any measured player: defenders blocked 150 km/h smashes on the rise from 8 m.
    */
   private reaction(): number {
-    return 0.3 - 0.13 * this.level;
+    return (0.3 - 0.13 * this.level) * (1 + this.pairSlow);
+  }
+
+  /** Its pair's chemistry (0..1; 0.5 or none: neutral, `pairSlow` stays -0 and the reaction is the one from before, to the bit). */
+  setChemistry(c: number | null | undefined): void {
+    if (typeof c !== 'number' || !(c >= 0 && c <= 1) || c === 0.5) { this.pairSlow = -0; return; }
+    this.pairSlow = c < 0.5 ? (0.5 - c) * 2 * SKILL.chemistry.slow : -(c - 0.5) * 2 * SKILL.chemistry.quick;
   }
 
   /** Standard deviation of the release timing error (seconds). */

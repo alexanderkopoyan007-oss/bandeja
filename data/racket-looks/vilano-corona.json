@@ -1,0 +1,45 @@
+{
+  "//": "VILANO Corona: the look of data/rackets.json \"vilano-corona\" (the sim's numbers are there; balance and weight here repeat them), a career prize (M6 phase E). Made-up maker and model, generic graphic (racketArt.ts \"stripe\"), copying no real racket.",
+  "name": "vilano-corona",
+  "maker": "VILANO",
+  "model": "CORONA",
+  "line": "CARBON 3K  ·  EVA HARD  ·  38 MM",
+  "shape": "teardrop",
+  "throat": "triangle",
+  "balance": 0.27,
+  "weight": 0.365,
+  "art": "stripe",
+  "colours": {
+    "base": "#14213d",
+    "a": "#e5c158",
+    "b": "#f2f2ee",
+    "c": "#e5c158",
+    "text": "#ffffff",
+    "frame": "#14213d",
+    "accent": "#e5c158"
+  },
+  "finish": "sand",
+  "frameFinish": "gloss",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#e5c158",
+    "clear": 0,
+    "span": 0.3
+  },
+  "grip": "#1b1c1f",
+  "tape": "#e5c158",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.012,
+    "pitch": 0.0245,
+    "rings": 3,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.027, "a": 0.0746, "b": 0.0155, "rot": 0 },
+      { "x": 0, "y": -0.066, "a": 0.05, "b": 0.011, "rot": 0 },
+      { "x": 0.075, "y": 0.06, "a": 0.013, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

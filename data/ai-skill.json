@@ -37,5 +37,7 @@
     0.05,
     0.2,
     0.3
-  ]
+  ],
+  "chemistry//": "A pair's chemistry (MatchConfig.chemistry, the career's: 0..1, 0.5 neutral): an AI with less reads the opponents' ball later, its reaction time up to `slow` longer at 0 (x(1 + (0.5 - c) * slow * 2)); with more, up to `quick` shorter at 1. The pair also calls a ball between them more often with more (the call margin x(0.5 + c)). The size is a guess: a new pair's hesitation of a few hundredths of a second, as coaches describe it; nothing published measures it.",
+  "chemistry": { "slow": 0.3, "quick": 0.15 }
 }

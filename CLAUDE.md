@@ -180,6 +180,29 @@ Measured with `npm run build && npm run perf` (Chrome with puppeteer, 1080p, AI-
     - `tests/app/roster.test.ts`.
   - At M5's close (2026-11-09): alloc singles 10 per 100k ticks (the budget's edge, the same on the commit before D5), doubles 8-9, avatars 6-7. Perf paired against the commit before phase D (load 9-12 from other sessions): medium-4x p50 10.3-12.0 vs 12.6-12.9 ms, p99 17.6-18.2 vs 18.0-18.7 ms (no change; the laptop proxy doesn't hold 60 Hz on either); high paced at 120 Hz holds on both.
 - [ ] **M6** Career, tournament, academy, challenges, local multiplayer
+  - All five built 2026-11-09, all behind `?creator=1` until the owner has seen them (DECISIONS.md "M6 phase A" to "E").
+  - Local multiplayer (`src/game/locals.ts`, `src/app/localScreen.ts`):
+    - Up to four on one screen. Each local has its own `InputQueue` (`src/game/input/queue.ts`; `KeyboardInput` extends it), its own pad (`GamepadInput` held to one index), input frame, cues, rumble and replay record.
+    - One broadcast camera behind P1's team. The far end steers screen-relative (`axisFlip`).
+    - The menus take any pad (`anyPad`).
+    - Check: `bash tools/one-chrome.sh node tools/local-check.mjs` (fake pads; it prints CPU work per frame).
+  - Tournament (`src/app/bracket.ts`, `tournament.ts`, `tournamentScreen.ts`; store doc `tournament.v1`):
+    - Seeded draws of the roster. Other ties are settled by a logistic draw on ratings (`RESULT_SCALE`).
+    - Check: `tools/tour-check.mjs`.
+  - Challenges and the academy (`src/game/challenge.ts`, `inputLog.ts`, `src/app/challengeScreen.ts`, `academyScreen.ts`, `src/render/glassVision.ts`; data/challenges.json, data/academy.json; drills with `challenge: true` appended to data/practice.json):
+    - Runs of the practice coach's balls, scored from sim events (never the render).
+    - A best run is kept as its config, cast seed and changed input rows (float64 bits) and watched again bit-exact.
+    - Trap: a played-back match must be its kept config to the letter. The game wrote `cfg.women` from a freshly dealt cast and the watched run went another way at ball 4.
+    - `DUMP=` on `tools/challenge-check.mjs` plus `node tools/run-replay.ts <dump>` tells a log that misses something from a watch that builds another match.
+    - Checks: `tools/challenge-check.mjs`, `tools/academy-check.mjs` (`VISION=1` the glass lessons only).
+  - Career (`src/app/career.ts`, `careerScreen.ts`, data/career.json; store doc `career.v1`):
+    - Five tiers, nine events a season, built on the tournament engine (`newTour(seed, setup, from)`). Ranking points are counted back from the title; entry needs points (the Masters a top-8 place).
+    - Partner chemistry is read by the sim (`MatchConfig.chemistry` by team, 0.5/null neutral and hashed as before: the AI's reaction and the pair's calls).
+    - Prizes:
+      - cosmetics (`careerTier`/`careerTitle` rules);
+      - three prize rackets (`prize` in data/rackets.json; the creator lists them once won);
+      - two secret arenas (data/career.json `arenas`; the menus list them once opened).
+    - Check: `tools/career-check.mjs` (moves each tie to match point with `Score.pointWon`, plays the rest; a check must wait for the tie's own match, since the title's runs on while it loads).
 - [ ] **M7** Broadcast cameras, replays, clip export, audio pass, menus
 - [ ] **M8** Polish, accessibility, final optimisation, deploy
 - [x] **Online** (2026-11-02; `docs/online.md` is the whole story, `docs/net-proof.md` the feasibility proof): `src/net/` (rollback, packets, WebRTC links, rooms, the public queue, the event feed), `worker/room.js` (Cloudflare Worker, Durable Objects `Room` and `Queue`; deploy with `npx wrangler@4.156.2 deploy` from `worker/`, and the URL is in `src/net/config.ts`). `Game.online` is the hook; anything reading sim events online goes through `eventsOf(sim)`. `bash tools/one-chrome.sh node tools/net/online-e2e.mjs <dist>` plays it in real windows: `LINKS='[[players,lag ms,loss,relay]]'`, `FIND=1` the queue, `MENUS=1` through the menus, `WHOLE=1` to the end and again, `QUIT=host|last`, `HIDE=1`, `DROP=1`, `REMOTE=1` the deployed server (`VITE_ROOMS=ws://127.0.0.1:8799` when building for the local one). Traps: a tab behind another gets no frames and warm-up never ends, so every page needs its own window; the sim hashes bits, so anything on the wire must round-trip them exactly (a stick's -0 split the sims); a rollback rewinds at most 48 ticks, so a seat's handover waits for what everyone heard of them; state that must survive a rewind and change mid-match goes in the sim and the hash (`aiTaken`), not in `cfg`; a seat array shared with the session changes under the match when someone leaves; three windows in one Chrome sometimes never finish `compileAsync`.

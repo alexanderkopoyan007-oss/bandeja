@@ -2,8 +2,8 @@
 // load like the settings), and the per-player feats the rules read from a match.
 import { describe, expect, it } from 'vitest';
 import {
-  blankProgress, checkedLoadout, COSMETICS, covered, defaultLoadout, describeRule, DRILL_NAMES, earned, LEVELS,
-  recordDrill, recordMatch, ruleMet, ruleProgress, SLOT_INFO, SLOTS, type MatchRecord, type Rule,
+  blankProgress, CAREER_TIERS, checkedLoadout, COSMETICS, covered, defaultLoadout, describeRule, DRILL_NAMES, earned, LEVELS,
+  recordCareer, recordDrill, recordMatch, ruleMet, ruleProgress, SLOT_INFO, SLOTS, type MatchRecord, type Rule,
 } from '../../src/app/unlocks.ts';
 import { memoryBackend, ownedFrom, progressFrom, Store, type Backend } from '../../src/app/store.ts';
 import { MatchSim } from '../../src/sim/match.ts';
@@ -30,6 +30,7 @@ describe('cosmetics catalogue', () => {
         for (const [k, v] of Object.entries(r)) {
           if (k === 'level') expect(LEVELS, c.id).toContain(v);
           else if (k === 'drill') expect(DRILL_NAMES, c.id).toContain(v);
+          else if (k === 'careerTier' || k === 'careerTitle') expect(CAREER_TIERS, c.id).toContain(v);
           else expect(Number.isInteger(v) && (v as number) >= 0, `${c.id} ${k}`).toBe(true);
         }
         // Not met by a new player: only starters are owned from the start.
@@ -53,6 +54,7 @@ describe('cosmetics catalogue', () => {
     let p = blankProgress();
     for (let i = 0; i < 16; i++) p = recordMatch(p, match({ level: 'pro', won: true, cupRound: i % 3, aces: 5, porTres: 3, fastest: 135, longestRally: 31 }));
     for (const d of DRILL_NAMES) p = recordDrill(p, d, 25);
+    p = recordCareer(p, CAREER_TIERS.length - 1, CAREER_TIERS.length - 1);
     expect(earned(p).length).toBe(COSMETICS.length);
   });
 
@@ -65,6 +67,25 @@ describe('cosmetics catalogue', () => {
 });
 
 describe('unlock rules', () => {
+  it('a career rule counts that tier and harder ones, played or won (M6 phase E)', () => {
+    const tier = { careerTier: 'national' } as const, title = { careerTitle: 'regional' } as const;
+    let p = recordCareer(blankProgress(), 1, 0);
+    expect(ruleMet(tier, p)).toBe(false);
+    expect(ruleMet(title, p)).toBe(false);
+    p = recordCareer(p, 3, 1);
+    expect(ruleMet(tier, p)).toBe(true);
+    expect(ruleMet(title, p)).toBe(true);
+    // (never back down)
+    expect(recordCareer(p, 0, -1).careerTier).toBe(3);
+    expect(describeRule(tier)).toBe('Play a National event in your career.');
+    expect(describeRule({ careerTitle: 'masters' })).toBe('Win a Masters event in your career.');
+    // Read back checked: a title past the tiers played, or out of range, isn't believed.
+    expect(progressFrom({ ...p }).careerTier).toBe(3);
+    expect(progressFrom({ ...p, careerTitle: 4 }).careerTitle).toBe(3);
+    expect(progressFrom({ ...p, careerTier: 99 }).careerTier).toBe(-1);
+    expect(progressFrom({}).careerTitle).toBe(-1);
+  });
+
   it('a level rule counts that level and harder, never easier', () => {
     const rule: Rule = { won: 2, level: 'advanced' };
     let p = blankProgress();

@@ -4199,3 +4199,37 @@ The owner said "keep going" after M5 went to main (0a5c6bd). M6 is the brief's c
 - **The pass marks are within reach:** a bot that only holds the lesson's key and lets the positioning assist move it reaches bronze in most lessons over four seeds; a player who moves does better. The AI's own scores are low on shot lessons only because it picks its own shots.
 - **Behind `?creator=1`** until the owner has seen it, like the rest of M6.
 - **Checked:** `tests/app/academy.test.ts` (lessons load onto drills that exist, each scores exactly what an independent count of the events says, lessons open in order, keys named); `tools/academy-check.mjs` in Chrome.
+
+## M6 phase E: the career (2026-11-09)
+- **Shape (`data/career.json`, `src/app/career.ts`, pure; store doc `career.v1`, checked value by value on every read):**
+  - Your player plays doubles with a partner from the lower half of the roster, through a season of nine events in five tiers: Club, Regional, National, Tour, Masters.
+  - Each event is a draw built by the tournament engine (`newTour` takes the tier's own field now): the Club's four pairs from the weakest pros, the Masters' from the strongest, the rest from all of them.
+  - The AI level rises with the tier: novice, club, advanced, pro.
+- **Ranking:**
+  - Points are counted back from the title, so a smaller draw starts further along.
+  - Your points are this season's events plus last season's at half. A pro's points come from their roster level.
+  - Entry needs points (0, 40, 140, 330); the Masters needs a place in the top eight.
+  - Points stored in a save are never believed: they are recomputed from the tier and the round.
+- **Partners and chemistry:**
+  - Anyone will partner you once you have played a National event.
+  - Chemistry is kept per partner. It starts at 0.2 and grows 0.06 a match together, plus 0.04 for a win.
+  - **The sim reads it** (`MatchConfig.chemistry`, by team, 0.5 neutral, data/ai-skill.json `chemistry`). The AI's reaction to the opponents' strike is ×(1 + (0.5 − c) × 0.6) below neutral and ×(1 − (c − 0.5) × 0.3) above. The pair's call margin is ×(0.5 + c).
+  - Neutral, null or missing chemistry keeps `pairSlow` at -0 and the call scale at 1, so every existing match hashes as before (`tests/sim/chemistry.test.ts`, golden 90c06c87).
+  - Measured over six AI matches with chemistry 0 / 0.5 / 1 on one pair: reaction 281 / 218 / 181 ms, calls 27 / 39 / 80. The share of points won moves within noise at that size: a nudge, as planned.
+  - The size is a guess: nothing published measures a new pair's hesitation.
+- **Prizes:**
+  - **Six cosmetics by career rules** (`careerTier`, `careerTitle` in data/cosmetics.json; `Progress.careerTier/careerTitle`, checked on load, never above the tiers played).
+  - **Three prize rackets** (ORZA Trofeo, VILANO Corona, GRANZA Maestro), built by the same six-choice rules as the 24 (a test recomputes them) and drawn with existing graphics in prize colours. data/rackets.json `prize` opens each in the creator; the sim never reads it, and the 24-racket catalogue tests leave them out.
+  - **Two secret arenas**, made from data: "Club, sunset" (a Regional title) and "Final court" (reaching the Masters, whose final is played there). The menus list them only once opened; settings accept them always.
+  - The sunset club came out muted: the warm light shows on the fence and trees, but the camera never sees the sky. Left for the owner's eye.
+- **The app:**
+  - The tournament's tie path serves both (`tieTour`: the career's draw or the tournament's).
+  - After your last tie, the rest of the draw is played, the event's points are kept and the season moves on.
+  - The results show the round, the points, your new ranking, the chemistry and any prize.
+  - Screens in `src/app/careerScreen.ts`: start, season, partner, ranking, retire. Behind `?creator=1` until the owner has seen it.
+- **Checked:**
+  - `tests/app/career.test.ts`: tiers and season, partners, the fields, points back from the title, season roll-over, Masters by ranking, store round trip.
+  - `tests/sim/chemistry.test.ts`.
+  - `tests/app/store.test.ts`: career rules.
+  - `tests/sim/rackets.test.ts`: prize rackets.
+  - `tools/career-check.mjs` in Chrome. Each tie is moved to match point through `Score.pointWon` and the last points are played for real.

@@ -156,6 +156,12 @@ export interface MatchConfig {
   /** A women's match: they move and hit as women do, and play it differently (data/ai-skill.json `women`). */
   women?: boolean;
   /**
+   * Each pair's chemistry (the career's, app/career.ts), by team, 0..1: how soon its AI reads the opponents' ball and how
+   * often the pair calls a ball between them (data/ai-skill.json `chemistry`). 0.5, null or missing: neutral, so a match
+   * without it is the one from before, to the bit.
+   */
+  chemistry?: Array<number | null>;
+  /**
    * "Bodies count" (a fun toggle; never online): each player's body against the tuned one, by player number
    * (player/bodyTune.ts): their reach, contact heights and top speed follow it. Missing, null or neutral: the tuned
    * player, and a match without any is the one from before, to the bit.
@@ -417,6 +423,8 @@ export class MatchSim {
   /** Doubles calls: whether this ball has been called (per team), and the last claim decision's run gap and switch. */
   private readonly called = [0, 0];
   private readonly claimGap = new Float64Array(2);
+  /** Each pair's call margin against the neutral (chemistry: 0.5 + c; 1 without it). */
+  private readonly callScale = new Float64Array([1, 1]);
   /**
    * Doubles, per team: 1 once this ball has been judged far enough from bouncing (before its bounce) for a
    * switched pair of AIs to cross back to their own sides; held until the team's next strike, so the crossing
@@ -473,6 +481,10 @@ export class MatchSim {
     this.aim = [];
     this.prevPlayers = [];
     const tune = cfg.women ? WOMENS_TUNING : DEFAULT_TUNING;
+    for (let t = 0; t < 2; t++) {
+      const c = cfg.chemistry?.[t];
+      if (typeof c === 'number' && c >= 0 && c <= 1 && c !== 0.5) this.callScale[t] = 0.5 + c;
+    }
     for (let i = 0; i < n; i++) {
       const body = cfg.bodyScale?.[i];
       const own = !isNeutralBody(body);
@@ -480,6 +492,7 @@ export class MatchSim {
       this.players.push(new Player(i, own ? tuneForBody(tune, body!) : tune));
       if (cfg.lefty?.[i]) this.players[i]!.handed = -1;
       this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, tweaked(styleOf(cfg.aiStyle?.[i]), cfg.aiTweak?.[i]), cfg.women === true));
+      this.ai[i]?.setChemistry(cfg.chemistry?.[i & 1]);
       if (!cfg.human[i]) this.players[i]!.glassWait = this.ai[i]!.glassWait;
       this.players[i]!.ohArrive = OH_ARRIVE;
       this.aiFrames.push(new InputFrame());
@@ -1325,7 +1338,7 @@ export class MatchSim {
     const s = this.side(team);
     const lane = (this.players[k ^ 2]!.pos.x - this.players[k]!.pos.x) * s > 0 ? 1 : -1;
     const sw = plan.valid && plan.bx * s * lane > SWITCH_X;
-    if (!sw && this.claimGap[team]! >= CALL_MARGIN) return;
+    if (!sw && this.claimGap[team]! >= CALL_MARGIN * this.callScale[team]!) return;
     this.called[team] = 1;
     const mate = k ^ 2;
     // The switch is called by the player the ball went over (they cross); "mine" by the taker. A human doesn't
@@ -2351,6 +2364,7 @@ export class MatchSim {
   giveToAi(i: number): void {
     if (this.ai[i]) return;
     const p = this.players[i]!, cfg = this.cfg, ai = new SimpleAi(i, (cfg.aiLevel ?? [0.55, 0.55])[i & 1]!, tweaked(styleOf(cfg.aiStyle?.[i]), cfg.aiTweak?.[i]), cfg.women === true);
+    ai.setChemistry(cfg.chemistry?.[i & 1]);
     ai.reset();
     this.ai[i] = ai;
     this.aiTaken |= 1 << i;

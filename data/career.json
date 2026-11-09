@@ -1,0 +1,29 @@
+{
+  "//": "The career (M6 phase E; app/career.ts). Your player plays doubles with a partner from the lower half of the roster, through a season of tournaments in five tiers. tiers: in order; level is the AI level of the matches (data/ai-skill.json via MatchSetup.level); size is the draw (pairs, yours among them; the roster fills what it can, byes for the rest) and pick which pros fill it (weakest: the weakest of the roster by level, strongest: the strongest, any: dealt from all of them); entry is the ranking points needed to enter (masters: a place in the top `top` of the ranking instead); points are the ranking points counted back from the title (last): the final lost, the semi-final, the quarter-final, so a smaller draw starts further along; length is the match length. season: the events in order; you play each one you can enter or pass it. Ranking: your points are every event of the last `rolling` you played (the current season and the one before, halved when a season ends); a pro's points come from their roster level, `pro.base + (level - pro.from) * pro.perLevel`. partners: the share of the roster (weakest first) who will partner you at the start, and the tier from which anyone will. arenas: the secret arenas (data/arenas.json) and the career rule that opens each (data/cosmetics.json careerTier / careerTitle); until then the menus don't list them. chemistry (0..1, per partner): starts at `start`, `perMatch` more for each match played together and `perWin` more for each won, up to 1; the sim reads it as the pair's chemistry (MatchConfig.chemistry: 0.5 is the AI as everyone else meets it).",
+  "tiers": [
+    { "id": "club", "name": "Club", "level": "novice", "size": 4, "pick": "weakest", "entry": 0, "points": [10, 20, 35, 60], "length": "short" },
+    { "id": "regional", "name": "Regional", "level": "club", "size": 8, "pick": "any", "entry": 40, "points": [20, 40, 70, 120], "length": "short" },
+    { "id": "national", "name": "National", "level": "advanced", "size": 8, "pick": "any", "entry": 140, "points": [40, 80, 140, 240], "length": "short" },
+    { "id": "tour", "name": "Tour", "level": "pro", "size": 8, "pick": "any", "entry": 330, "points": [80, 160, 280, 480], "length": "set" },
+    { "id": "masters", "name": "Masters", "level": "pro", "size": 8, "pick": "strongest", "top": 8, "points": [150, 300, 500, 800], "length": "set" }
+  ],
+  "season": [
+    { "id": "club-open", "name": "Club Open", "tier": "club", "arena": "club-day" },
+    { "id": "night-cup", "name": "Night Cup", "tier": "club", "arena": "club-night" },
+    { "id": "spring-regional", "name": "Spring Regional", "tier": "regional", "arena": "club-day" },
+    { "id": "regional-series", "name": "Regional Series", "tier": "regional", "arena": "club-night" },
+    { "id": "national-indoor", "name": "National Indoor", "tier": "national", "arena": "hall" },
+    { "id": "national-championship", "name": "National Championship", "tier": "national", "arena": "hall" },
+    { "id": "tour-open", "name": "Tour Open", "tier": "tour", "arena": "stadium" },
+    { "id": "tour-classic", "name": "Tour Classic", "tier": "tour", "arena": "stadium" },
+    { "id": "masters-final", "name": "Masters Final", "tier": "masters", "arena": "final" }
+  ],
+  "rolling": 2,
+  "pro": { "base": 300, "from": -0.03, "perLevel": 10000 },
+  "chemistry": { "start": 0.2, "perMatch": 0.06, "perWin": 0.04 },
+  "partners": { "lower": 0.5, "all": "national" },
+  "arenas": [
+    { "id": "club-dusk", "name": "Club, sunset", "unlock": { "careerTitle": "regional" } },
+    { "id": "final", "name": "Final court", "unlock": { "careerTier": "masters" } }
+  ]
+}

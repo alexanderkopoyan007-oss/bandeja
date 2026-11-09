@@ -3,6 +3,8 @@
 // match's end and when a drill is left. Earned by playing only.
 import data from '../../data/cosmetics.json';
 import practiceData from '../../data/practice.json';
+import careerData from '../../data/career.json';
+import racketData from '../../data/rackets.json';
 import type { MatchSetup } from './settings.ts';
 import type { Paint, PaintBottom, PaintPattern, PaintSocks, PaintTop } from '../render/avatar/paint.ts';
 
@@ -24,7 +26,9 @@ export type Rule =
   | { aces: number }
   | { porTres: number }
   | { rally: number }
-  | { speed: number };
+  | { speed: number }
+  | { careerTier: string }
+  | { careerTitle: string };
 
 export interface Cosmetic {
   id: string;
@@ -80,13 +84,31 @@ export interface Progress {
   /** Bests: the longest rally of a finished match (shots), the player's fastest ball (km/h). */
   rally: number;
   speed: number;
+  /** The career (app/career.ts): the highest tier played and the highest won, as indices into data/career.json's tiers (-1 none). */
+  careerTier: number;
+  careerTitle: number;
 }
+
+/** The career's prize rackets (data/rackets.json `prize`) and the rule that opens each in the creator. */
+export const PRIZE_RACKETS: ReadonlyMap<string, Rule> = new Map(
+  Object.entries(racketData as unknown as Record<string, { prize?: Rule }>).filter(([k, r]) => k !== '//' && r.prize).map(([k, r]) => [k, r.prize!]),
+);
+
+/** A racket the creator offers: every one but a prize not won yet. */
+export function racketOpen(id: string, p: Progress): boolean {
+  const rule = PRIZE_RACKETS.get(id);
+  return !rule || ruleMet(rule, p);
+}
+
+/** The career's tiers, by id (the career rules name them). */
+export const CAREER_TIERS: readonly string[] = careerData.tiers.map((t) => t.id);
+const CAREER_TIER_NAMES: readonly string[] = careerData.tiers.map((t) => t.name);
 
 export function blankProgress(): Progress {
   const byLevel = (): Record<Level, number> => ({ novice: 0, club: 0, advanced: 0, pro: 0 });
   return {
     played: byLevel(), won: byLevel(), online: { played: 0, won: 0 }, cupReached: -1, cupWins: 0,
-    drills: {}, aces: 0, porTres: 0, rally: 0, speed: 0,
+    drills: {}, aces: 0, porTres: 0, rally: 0, speed: 0, careerTier: -1, careerTitle: -1,
   };
 }
 
@@ -126,6 +148,14 @@ export function recordMatch(p: Progress, m: MatchRecord, cupRounds = 3): Progres
   return q;
 }
 
+/** The progress after a career event: the highest tier played and won so far (indices, -1 none). */
+export function recordCareer(p: Progress, tier: number, title: number): Progress {
+  const q = copyProgress(p);
+  q.careerTier = Math.max(q.careerTier, Math.min(tier, CAREER_TIERS.length - 1));
+  q.careerTitle = Math.max(q.careerTitle, Math.min(title, CAREER_TIERS.length - 1));
+  return q;
+}
+
 /** The progress after `points` more points won in a drill. */
 export function recordDrill(p: Progress, drill: string, points: number): Progress {
   const q = copyProgress(p);
@@ -158,6 +188,9 @@ export function ruleProgress(rule: Rule, p: Progress): [number, number] {
   if ('aces' in rule) return [p.aces, rule.aces];
   if ('porTres' in rule) return [p.porTres, rule.porTres];
   if ('rally' in rule) return [p.rally, rule.rally];
+  // (a tier or any harder one: index + 1 against the tier's)
+  if ('careerTier' in rule) return [p.careerTier + 1, CAREER_TIERS.indexOf(rule.careerTier) + 1];
+  if ('careerTitle' in rule) return [p.careerTitle + 1, CAREER_TIERS.indexOf(rule.careerTitle) + 1];
   return [p.speed, rule.speed];
 }
 
@@ -183,6 +216,8 @@ export function describeRule(rule: Rule): string {
   if ('aces' in rule) return `Serve ${times(rule.aces, 'an ace', 'aces')}.`;
   if ('porTres' in rule) return `Put ${times(rule.porTres, 'a ball', 'balls')} out of the court (por tres or por cuatro).`;
   if ('rally' in rule) return `Play a rally of ${rule.rally} shots.`;
+  if ('careerTier' in rule) return `Play a ${CAREER_TIER_NAMES[CAREER_TIERS.indexOf(rule.careerTier)] ?? rule.careerTier} event in your career.`;
+  if ('careerTitle' in rule) return `Win a ${CAREER_TIER_NAMES[CAREER_TIERS.indexOf(rule.careerTitle)] ?? rule.careerTitle} event in your career.`;
   return `Hit a ball at ${rule.speed} km/h.`;
 }
 

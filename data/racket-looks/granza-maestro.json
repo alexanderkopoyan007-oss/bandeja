@@ -1,0 +1,44 @@
+{
+  "//": "GRANZA Maestro: the look of data/rackets.json \"granza-maestro\" (the sim's numbers are there; balance and weight here repeat them), a career prize (M6 phase E). Made-up maker and model, generic graphic (racketArt.ts \"ember\"), copying no real racket.",
+  "name": "granza-maestro",
+  "maker": "GRANZA",
+  "model": "MAESTRO",
+  "line": "CARBON 12K  ·  EVA PRO HARD  ·  3D  ·  38 MM",
+  "shape": "diamond",
+  "throat": "triangle",
+  "balance": 0.282,
+  "weight": 0.372,
+  "art": "ember",
+  "colours": {
+    "base": "#111214",
+    "a": "#d4af37",
+    "b": "#8a6d1f",
+    "c": "#f5e7b0",
+    "text": "#d4af37",
+    "frame": "#111214",
+    "accent": "#d4af37"
+  },
+  "finish": "sand",
+  "frameFinish": "gloss",
+  "foam": "#ecebe6",
+  "skin": "#17181b",
+  "bumper": {
+    "colour": "#d4af37",
+    "clear": 0,
+    "span": 0.32
+  },
+  "grip": "#1b1c1f",
+  "tape": "#d4af37",
+  "cap": "#141518",
+  "cord": "#1a1b1e",
+  "holes": {
+    "d": 0.0125,
+    "pitch": 0.024,
+    "rings": 1,
+    "margin": 0.0115,
+    "blank": [
+      { "x": 0, "y": -0.036, "a": 0.0948, "b": 0.0145, "rot": 0 },
+      { "x": 0, "y": -0.07, "a": 0.05, "b": 0.011, "rot": 0 }
+    ]
+  }
+}

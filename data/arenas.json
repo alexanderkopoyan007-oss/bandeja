@@ -102,5 +102,52 @@
     },
     "post": { "bloom": { "strength": 0.5, "radius": 0.5, "threshold": 7.5 } },
     "//floods": "Eight heads (two per pole, four poles); spot lights aimed at the court. Only one casts a shadow (cost); the others light without. Intensity 16: exposed like a broadcast of a lit court, the turf near the camera about as bright as by day (luminance 120-126) and darker towards the glass (review round 3, critic #5: at 95 the turf rendered at 234, more than twice the day, and the centre line at 251 stood out by 7%)."
+  },
+  "club-dusk": {
+    "name": "Club (outdoor, sunset)",
+    "kind": "outdoor",
+    "//kind": "A secret arena (M6 phase E: a Regional title in the career opens it, data/career.json `arenas`): the same club as the sun goes down, a low warm sun from the side, the sky going from orange at the horizon to blue overhead, the floodlights just on. Not matched to a reference photo: a look of our own.",
+    "exposure": 1.0,
+    "background": "#d9935a",
+    "floor": { "kind": "turf", "color": "#3f7d3d", "sand": "#b5a27e", "sandAmount": 0.35, "line": "#f1f2ee", "roll": 4, "roughness": 0.93 },
+    "surround": { "kind": "hard", "color": "#59605a", "sand": "#7e7a70", "sandAmount": 0.2, "line": null, "roll": 0, "roughness": 0.95, "x": 21, "z": 12.5 },
+    "neighbours": [-12.5, 12.5],
+    "rim": "#3f7d3d",
+    "hallFloor": "#5f7a45",
+    "frame": "#17191c",
+    "base": "#17191c",
+    "sky": { "zenith": "#35477e", "horizon": "#f0a060", "ground": "#3e4630", "sunDir": [0.86, 0.2, 0.12], "sun": "#ffb070" },
+    "trees": { "count": 90, "inner": 30, "outer": 75, "height": [7, 16] },
+    "poles": { "height": 8, "heads": 2, "color": "#1d1f22", "lit": true, "color2": "#f6f0dc" },
+    "light": {
+      "env": 0.7,
+      "key": { "color": "#ffc08a", "intensity": 1.9, "dir": [0.86, 0.2, 0.12], "shadow": true, "radius": 3 },
+      "hemi": { "sky": "#a4b2d6", "ground": "#4d4434", "intensity": 0.5 },
+      "floods": { "intensity": 6, "angle": 1.15, "penumbra": 0.9, "decay": 1.2, "shadow": 0 }
+    },
+    "post": { "bloom": { "strength": 0.3, "radius": 0.45, "threshold": 4 } }
+  },
+  "final": {
+    "name": "Final court (indoor, TV)",
+    "kind": "stadium",
+    "//kind": "A secret arena (M6 phase E: reaching the Masters in the career opens it, and the Masters Final is played there): the arena dressed for a final, green turf on a navy surround, gold boards, a full house and the stands darker under a brighter court. Not matched to a reference photo: a look of our own.",
+    "exposure": 1.0,
+    "background": "#07080c",
+    "floor": { "kind": "turf", "color": "#1f7a5c", "sand": "#6f8f84", "sandAmount": 0.12, "line": "#f4f6f8", "roll": 4, "roughness": 0.92 },
+    "surround": { "kind": "turf", "color": "#13213f", "sand": "#5d6a86", "sandAmount": 0.08, "line": null, "roll": 4, "roughness": 0.92, "x": 9.5, "z": 16.5 },
+    "rim": "#13213f",
+    "hallFloor": "#141a2a",
+    "frame": "#15171b",
+    "base": "#aeb3b8",
+    "boards": { "x": 11.2, "z": 18.5, "height": 1.0, "color": "#a8842c" },
+    "stands": { "rows": 16, "rise": 0.42, "depth": 0.82, "from": 1.6, "fill": 0.96, "seat": "#2a2e38", "riser": "#3a3e48", "light": 0.14, "crowdLight": 0.1 },
+    "hall": { "x": 34, "z": 44, "height": 19, "wall": "#121419", "roof": "#0a0b0e", "roofGlow": 0.2, "lamps": 3.5, "windows": "#181b22", "steel": "#24272d" },
+    "light": {
+      "env": 0.32,
+      "key": { "color": "#fff6ec", "intensity": 3.3, "dir": [0.2, 1, 0.5], "shadow": true, "radius": 2 },
+      "hemi": { "sky": "#eef1f6", "ground": "#2c3448", "intensity": 0.4 }
+    },
+    "post": { "bloom": { "strength": 0.32, "radius": 0.5, "threshold": 3 } },
+    "camera": { "swingRise": 2.5 }
   }
 }

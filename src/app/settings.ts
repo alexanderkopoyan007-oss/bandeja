@@ -13,7 +13,7 @@ export interface MatchSetup {
   partner: string;
   /** The opponents' playing style ('random', or one style for both). */
   opponents: string;
-  arena: 'stadium' | 'hall' | 'club-day' | 'club-night';
+  arena: 'stadium' | 'hall' | 'club-day' | 'club-night' | 'club-dusk' | 'final';
   court: 'standard' | 'panoramic' | 'singles-narrow';
   scoring: 'star' | 'golden' | 'advantage';
   /** short: one set to 4 games; set: one set to 6; three: best of three sets to 6. */
@@ -88,7 +88,7 @@ export function defaultSettings(): Settings {
 /** The allowed values of each choice field (numbers and key bindings are checked by range and shape). */
 const CHOICES: Record<string, readonly unknown[]> = {
   mode: ['doubles', 'singles'], level: ['novice', 'club', 'advanced', 'pro'],
-  arena: ['stadium', 'hall', 'club-day', 'club-night'], court: ['standard', 'panoramic', 'singles-narrow'],
+  arena: ['stadium', 'hall', 'club-day', 'club-night', 'club-dusk', 'final'], court: ['standard', 'panoramic', 'singles-narrow'],
   scoring: ['star', 'golden', 'advantage'], length: ['short', 'set', 'three'], hand: ['right', 'left'],
   timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'], swing: ['hold', 'tap'],
   quality: ['auto', 'low', 'medium', 'high', 'ultra'], camera: ['tv', 'near', 'player'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],

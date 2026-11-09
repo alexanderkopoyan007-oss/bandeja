@@ -4,7 +4,7 @@
 // half-written store can't break the game. Where IndexedDB is missing or refuses (private windows, blocked site
 // data, a stuck open), the store runs in memory for the visit and says so (`persistent`).
 import {
-  blankProgress, checkedLoadout, COSMETIC_BY_ID, defaultLoadout, DRILL_NAMES, earned, LEVELS, newlyEarned, recordDrill, recordMatch,
+  blankProgress, CAREER_TIERS, checkedLoadout, COSMETIC_BY_ID, defaultLoadout, DRILL_NAMES, earned, LEVELS, newlyEarned, recordCareer, recordDrill, recordMatch,
   type Cosmetic, type Loadout, type MatchRecord, type Progress, type Slot,
 } from './unlocks.ts';
 import { checkedCharacter, type Character } from './character.ts';
@@ -92,6 +92,9 @@ export function progressFrom(raw: unknown): Progress {
   p.porTres = count(r.porTres);
   p.rally = Math.min(count(r.rally), 1000);
   p.speed = Math.min(count(r.speed), 400);
+  const tierIdx = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v >= -1 && v < CAREER_TIERS.length ? v : -1);
+  p.careerTier = tierIdx(r.careerTier);
+  p.careerTitle = Math.min(tierIdx(r.careerTitle), p.careerTier);
   return p;
 }
 
@@ -187,6 +190,11 @@ export class Store {
    * game shows them); the save follows in the background (`flush`). */
   recordMatch(m: MatchRecord): Cosmetic[] {
     return this.advance(recordMatch(this.progress, m));
+  }
+
+  /** A career event over: the highest tier played and won so far (indices). Returns the new items. */
+  recordCareer(tier: number, title: number): Cosmetic[] {
+    return this.advance(recordCareer(this.progress, tier, title));
   }
 
   /** Points won off the coach in a drill (by name), since the last record of it. Returns the new items. */
