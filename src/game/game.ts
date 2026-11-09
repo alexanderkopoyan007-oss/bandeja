@@ -136,6 +136,8 @@ export interface GameOptions {
   attract?: boolean;
   /** Establishing shots between points (render/views.ts EST_*): the title's match, behind ?creator=1 (M7 phase F). */
   establish?: boolean;
+  /** Instant replays in two takes (game/replay.ts `twoTakes`), behind ?creator=1 (M7 phase B). */
+  replayTakes?: boolean;
   /** Phase 8: what the settings change in a game (all optional; tools leave them out). */
   prefs?: GamePrefs;
 }
@@ -377,6 +379,7 @@ export class Game {
     this.cam.followPlayer = opts.autoplay ? 0 : opts.human;
     // Replays re-run a point from a copy of the match (two more matches: about 2 MB, nothing per frame).
     this.replays = new Replays(opts.match, opts.autoplay ? [] : opts.locals?.map((l) => l.player) ?? [opts.human]);
+    this.replays.twoTakes = !!opts.replayTakes;
     this.replays.enabled = opts.replays !== false && !opts.closeCam;
     // The match's best points for the reel (M7 phase B): matches only, not the title's, drills, challenges or watched
     // runs (online: never, game.ts steps them only without a net).

@@ -4403,3 +4403,18 @@ The owner said "keep going" after M6 went to main (558510e). M7 is the brief's s
   - the lens widens from 32° off an end to 40° beside the court: at 32° a side view cut off the far end;
   - a cut back to the match camera for the serve.
   - Checked: `tests/render/cameras.test.ts` (turn under 6°/s, outside the cage, looking at the middle, a new place each break, in play the same as the match camera) and `WAIT=walk tools/cam-stills.mjs` (stadium, hall, club, final; three breaks each).
+
+## M7 close (2026-11-09)
+- **Suite and build:** 1235/1235 tests, typecheck clean, `npm run build` OK. Golden hashes unchanged: nothing in M7 touches the sim.
+- **Alloc ×6:** singles 10-11 GCs per 100k ticks (budget 10; the same spread as main), doubles 8, avatars 6-7, longest pause 0.5 ms.
+- **Perf, paired against main (558510e), five pairs:**
+  - Draw calls (163) and triangles (628k) are the same.
+  - High at 2× is the same: p50 4.6-4.7 ms on both.
+  - High paced at 120 Hz holds on both at normal load (p99 8.3 ms).
+  - The medium-4× laptop proxy followed the machine's load, not the build: p50 this build against main 11.0/9.9, 10.1/9.6, 14.2/12.1, 15.1/18.0, 19.3/17.6 ms at loads 6-16 from other sessions. The differences change sign and main's own p50 ran 9.6-18 ms.
+  - Nothing M7 adds runs in an autoplay match: highlights, photo mode, the recorder, the umpire and the reel are off there.
+- **Pad-only menu walk:** PASS (phase F).
+- **Online:** `tools/net/online-e2e.mjs` on the new build: 2 players direct, with 80 ms and 2% loss, and through the server, and 4 players at 40 ms. All clear, hashes agree, nothing stalled; deepest rewind 9-20 ticks, longest replay 11.4 ms.
+- **Found at the close: phase B's two-take replays weren't behind the flag.** The instant replays the owner has already seen would have changed for everyone once main was pushed. `Replays.twoTakes` (from `GameOptions.replayTakes`: `?creator=1` through the menus or the URL) now chooses them. Without it, a replay is the one take of before: the point slowed round the winning shot, its angle alternating replay by replay. `tests/app/replay.test.ts` checks both: no cut in the single take, slowed, ending on the live match's hash, alternating angles.
+- **Chrome checks:** `tools/photo-clip-check.mjs` PASS (photo mode, the PNG, the video, Match stats, the umpire's captions, TV graphics), `tools/menu-walk.mjs` PASS, `WAIT=walk tools/cam-stills.mjs` stills of the establishing shots.
+- **Still behind `?creator=1`:** the side and dynamic cameras, two-take replays, the highlight reel, photo mode, clips, Match stats, TV graphics as a setting, the umpire and captions, and the title's establishing shots, until the owner has seen them. main stays at 558510e until the owner says to push it.

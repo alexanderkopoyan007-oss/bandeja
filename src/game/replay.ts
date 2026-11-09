@@ -56,6 +56,11 @@ export class Replays {
    * (game.ts cuts the camera, the people and the sound when it changes). */
   take = 0;
   cuts = 0;
+  /**
+   * Two takes (M7 phase B), behind ?creator=1 until the owner has seen them (game.ts from `GameOptions.replayTakes`).
+   * Off: the one take of before, the point slowed round the winning shot, its angle alternating replay by replay.
+   */
+  twoTakes = false;
   /** Replays shown (tools, tests). */
   shown = 0;
   /** The live match time at which the next replay begins (-1: none due). */
@@ -162,8 +167,8 @@ export class Replays {
     this.recording = false;
     this.sim.copyFrom(this.snap);
     this.state = RP_PREP;
-    this.take = 0;
-    this.angle = TAKE_ANGLE[0];
+    this.take = this.twoTakes ? 0 : 1;
+    this.angle = this.twoTakes ? TAKE_ANGLE[0] : this.shown % 2;
     this.markOk = false;
   }
 
@@ -204,7 +209,7 @@ export class Replays {
     this.speed = SLOW + (1 - SLOW) * Math.min(1, into / RAMP);
     this.clock += dt * this.speed;
     while (this.sim.time < this.clock) this.stepOne();
-    if (this.clock >= this.end2) { this.stop(); return false; }
+    if (this.clock >= (this.twoTakes ? this.end2 : this.end)) { this.stop(); return false; }
     return true;
   }
 

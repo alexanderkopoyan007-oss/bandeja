@@ -304,8 +304,9 @@ export class App {
     opts.camera = opts.prefs!.camera ?? opts.camera;
     // The TV graphics package (M7 phase D: a setting behind ?creator=1; ?gfx=tv still asks for it).
     opts.gfx = this.params.get('gfx') ?? (!attract && this.creatorOn && this.settings.graphics === 'tv' ? 'tv' : undefined);
-    // The title's establishing shots between points (M7 phase F).
+    // The title's establishing shots between points (M7 phase F), and replays in two takes (phase B).
     opts.establish = attract && this.creatorOn;
+    opts.replayTakes = this.creatorOn;
     opts.people = castParam(this.params);
     opts.bodies = bodiesParam(this.params);
     opts.wear = wearParam(this.params);

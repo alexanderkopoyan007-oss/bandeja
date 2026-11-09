@@ -111,6 +111,8 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     gfx: params.get('gfx') ?? undefined,
     // (the title's establishing shots, for stills of them: tools/cam-stills.mjs WAIT=walk)
     establish: params.get('establish') === '1',
+    // (M7's two-take replays, with the flag: tools/reel-check.mjs and the like)
+    replayTakes: params.get('creator') === '1',
     bloom: params.get('bloom') !== '0',
     cutaway: params.get('cutaway') !== '0',
     mouseAim: params.get('aim') === 'mouse',

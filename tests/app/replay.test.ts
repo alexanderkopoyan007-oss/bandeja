@@ -24,14 +24,15 @@ function humanFrame(f: InputFrame, m: MatchSim, shift = 0): InputFrame {
 }
 
 /** `humans`: the players on this machine (M6 local multiplayer: several, each recorded). */
-function play(humans: number[], seed: number, seconds: number) {
+function play(humans: number[], seed: number, seconds: number, twoTakes = true) {
   const cfg: MatchConfig = { seed, doubles: true, human: [0, 1, 2, 3].map((i) => humans.includes(i)) };
   const live = new MatchSim(cfg);
   const rp = new Replays(cfg, humans);
+  rp.twoTakes = twoTakes;
   const frames = humans.map(() => new InputFrame());
   const inputs: Array<InputFrame | null> = [null, null, null, null];
   const checks: Array<{ live: number[]; shown: number[]; hash: number; liveHash: number | undefined;
-    takes: { cuts: number; second: number; compared: number; agree: number; slowed: boolean; fullSpeed: boolean } }> = [];
+    angle: number; takes: { cuts: number; second: number; compared: number; agree: number; slowed: boolean; fullSpeed: boolean } }> = [];
   const hashes = new Map<number, number>();
   let pointAt: number[] = [];
   let seen = 0;
@@ -45,7 +46,7 @@ function play(humans: number[], seed: number, seconds: number) {
       while (st() === RP_PREP) rp.prepare();
       expect(st()).toBe(RP_SHOW);
       // (M7 phase B: two takes; the second, cut from a copy taken in the first, must be the first again tick by tick)
-      const cuts0 = rp.cuts, take0 = new Map<number, number>();
+      const cuts0 = rp.cuts, take0 = new Map<number, number>(), angle = rp.angle;
       let second = 0, compared = 0, agree = 0, slowed = false, fullSpeed = true;
       while (st() === RP_SHOW) {
         rp.advance(1 / 60);
@@ -65,7 +66,7 @@ function play(humans: number[], seed: number, seconds: number) {
           if (e.kind === E_POINT) shownPoint = [e.team, e.time];
         }
       }
-      checks.push({ live: pointAt, shown: shownPoint, hash: rp.sim.hash(), liveHash: hashes.get(rp.sim.tick),
+      checks.push({ live: pointAt, shown: shownPoint, hash: rp.sim.hash(), liveHash: hashes.get(rp.sim.tick), angle,
         takes: { cuts: rp.cuts - cuts0, second, compared, agree, slowed, fullSpeed } });
       continue;
     }
@@ -110,6 +111,26 @@ describe('instant replays', () => {
         }
       }
       expect(shown).toBeGreaterThan(0);
+    });
+  }
+
+  // Without ?creator=1 (the owner hasn't seen the two takes): the one take of before.
+  for (const humans of [[], [0]]) {
+    it(`keep their one slowed take without the flag (${humans.length ? 'a human' : 'AI only'})`, () => {
+      let shown = 0;
+      for (let seed = 21; seed < 41 && shown < 2; seed++) {
+        const r = play(humans, seed, 420, false);
+        shown += r.shown;
+        r.checks.forEach((c, i) => {
+          expect(c.shown[0]).toBe(c.live[0]);
+          expect(c.hash).toBe(c.liveHash);
+          expect(c.takes.cuts).toBe(0);
+          expect(c.takes.slowed).toBe(true);
+          // (one replay from one angle, the next from the other)
+          if (i > 0) expect(c.angle).toBe(1 - r.checks[i - 1]!.angle);
+        });
+      }
+      expect(shown).toBeGreaterThan(1);
     });
   }
 });
