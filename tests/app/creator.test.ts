@@ -1,8 +1,8 @@
 // M5 phase D: the Players screens and the creator (src/app/creator.ts) driven as the menu would drive them, with the
 // store in memory and no studio (the turntable is checked in the browser: tools/creator-shots.mjs).
-import { describe, expect, it } from 'vitest';
-import { Creator, faceLabel, fromScale, toScale, type CreatorHost } from '../../src/app/creator.ts';
-import { decodeCharacter, defaultCharacter, encodeCharacter, FACES } from '../../src/app/character.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { Creator, faceLabel, fromScale, pitchWords, toScale, type CreatorHost } from '../../src/app/creator.ts';
+import { checkedCharacter, decodeCharacter, defaultCharacter, encodeCharacter, faceVoice, FACES } from '../../src/app/character.ts';
 import { memoryBackend, Store } from '../../src/app/store.ts';
 import { COSMETICS } from '../../src/app/unlocks.ts';
 import { PROPORTION_KEYS, RANGES } from '../../src/render/avatar/proportions.ts';
@@ -21,11 +21,12 @@ class FakeMenu {
   refresh(): void {}
 }
 
-async function setup(owned = false): Promise<{ menu: FakeMenu; store: Store; creator: Creator; dressed: number[] }> {
+async function setup(owned = false): Promise<{ menu: FakeMenu; store: Store; creator: Creator; dressed: number[]; heard: Array<[number, number]> }> {
   const store = await Store.open(memoryBackend());
   if (owned) for (const c of COSMETICS) store.owned.add(c.id);
   const menu = new FakeMenu();
   const dressed: number[] = [];
+  const heard: Array<[number, number]> = [];
   // (the turntable as the creator sees it: dressed, and its drill)
   const turntable = { playing: -1, show: (o: GameOptions): void => { void o; dressed.push(1); }, play(d: number): void { this.playing = d; } };
   const host: CreatorHost = {
@@ -35,10 +36,11 @@ async function setup(owned = false): Promise<{ menu: FakeMenu; store: Store; cre
     leaveStudio: () => undefined,
     options: (c) => ({ me: c }) as unknown as GameOptions,
     confirm: (title, sub, _d, yes) => ({ id: 'confirm', title, sub, items: [{ kind: 'button', label: 'Yes', action: yes }] }),
+    grunt: (v, r) => { heard.push([v, r]); },
   };
   const creator = new Creator(host);
   menu.open(creator.playersScreen());
-  return { menu, store, creator, dressed };
+  return { menu, store, creator, dressed, heard };
 }
 
 const item = (s: Screen | null, label: string): Item => {
@@ -142,6 +144,44 @@ describe('the creator', () => {
     press(menu.current, 'Save them');
     const saved = store.characters[0]!.racket;
     expect([saved.base, saved.look?.face, saved.look?.art, saved.look?.frameFinish]).toEqual(['qarro-yunque', '#f04f9a', 'tide', 'satin']);
+  });
+
+  it('voice: their face’s own or one of its sex’s, a pitch in semitones, heard once the changes rest', async () => {
+    vi.useFakeTimers();
+    try {
+      const { menu, store, heard } = await setup();
+      press(menu.current, 'Create a player');
+      const grunt = item(menu.current, 'Grunt'), pitch = item(menu.current, 'Pitch'), face = item(menu.current, 'Face');
+      const man = FACES.find((f) => !f.woman)!.id, woman = FACES.find((f) => f.woman)!.id;
+      face.set!(man);
+      expect(grunt.options!.map((o) => o.value)).toEqual([null, 0, 1, 2, 3]);
+      press(menu.current, 'Hear them');
+      expect(heard).toEqual([[faceVoice(man).voice, faceVoice(man).tone]]);
+      // Changes are heard once they rest: a slider stepped five times plays one grunt.
+      grunt.set!(3);
+      for (let i = 0; i < 5; i++) pitch.set!(0.5 + i * 0.1);
+      expect(heard).toHaveLength(1);
+      vi.advanceTimersByTime(300);
+      expect(heard).toHaveLength(2);
+      expect(heard[1]![0]).toBe(3);
+      expect(heard[1]![1]).toBeCloseTo(faceVoice(man).tone * 2 ** (0.8 * 3 / 12), 12);
+      expect(pitch.readout!()).toBe('Higher 2.4 semitones');
+      expect(pitchWords(0)).toBe('As the voice is');
+      expect(pitchWords(-1 / 3)).toBe('Lower 1.0 semitone');
+      // A woman's face takes the women's voices; a man's voice doesn't follow it there.
+      face.set!(woman);
+      expect(grunt.options!.map((o) => o.value)).toEqual([null, 4, 5, 6, 7]);
+      expect(grunt.get!()).toBeNull();
+      expect(faceVoice(woman).voice).toBeGreaterThanOrEqual(4);
+      grunt.set!(6);
+      press(menu.current, 'Save them');
+      expect([store.characters[0]!.voice, store.characters[0]!.pitch]).toEqual([6, 0.8]);
+      // (and a code can't give a man's face a woman's grunt)
+      expect(checkedCharacter({ face: man, voice: 6 }, new Set()).voice).toBeNull();
+      expect(checkedCharacter({ face: man, voice: 2 }, new Set()).voice).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('leaving asks first only when something changed; ridiculous off brings the body back in range', async () => {

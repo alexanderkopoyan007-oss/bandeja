@@ -299,7 +299,8 @@ export class AudioEngine implements AudioSink {
     v.until = t + (buf.duration - Math.max(0, offset)) / src.playbackRate.value;
   }
 
-  playFlat(family: string, bin: number, gain: number, delay: number, bus: number): void {
+  /** A sound with no place (the crowd's, a preview's): `rate` plays it faster and higher (1: as rendered). */
+  playFlat(family: string, bin: number, gain: number, delay: number, bus: number, rate = 1): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
     const row = this.get(family, bin);
@@ -308,7 +309,7 @@ export class AudioEngine implements AudioSink {
     const t = ctx.currentTime + Math.max(0, delay);
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.playbackRate.value = 1 + (this.rand() - 0.5) * 0.04;
+    src.playbackRate.value = rate * (1 + (this.rand() - 0.5) * 0.04);
     const g = ctx.createGain();
     g.gain.value = gain;
     src.connect(g);

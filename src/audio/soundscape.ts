@@ -42,7 +42,7 @@ const MISTIMED_GAIN = 0.84, MISTIMED_RATE = 0.985;
 /** The most a play is lifted: a bin can already carry 2.2, and a Perfect on it went over. */
 const GAIN_TOP = 2.7;
 /** The voices from here on are women's, and this much under the men's bins: at the top of their range the same effort reads 7 dB over the hit a man's does (a usual drive +5 dB, voice first and ball second), and the game keeps grunts under the racket. */
-const GRUNT_WOMEN = 4, GRUNT_WOMEN_GAIN = 0.56;
+export const GRUNT_WOMEN = 4, GRUNT_WOMEN_GAIN = 0.56;
 /** The next courts: under the far pair of your own court, on the Crowd slider, and a rest of NEXT_REST to twice that between points. Played at the level of your own match they ran a false tick under the ball you were timing, 46 impacts a minute a court where the survey has 18. */
 const NEXT_GAIN = 0.4, NEXT_REST = 12;
 /** Partners' rackets touching after a point: the softest frame knock, a little higher (lighter) than a shot's. */

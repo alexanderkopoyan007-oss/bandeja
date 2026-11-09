@@ -58,6 +58,22 @@ export const CELEBRATIONS = ['fist'] as const;
 
 /** The grunt voices (voices.ts PLAYER_VOICES): the men's four, then the women's. */
 export const VOICE_COUNT = 8;
+const VOICES_EACH = VOICE_COUNT / 2;
+
+/** The voices a face can grunt in: the men's four for a man's face, the women's for a woman's (a match is one or the
+ * other, and its voices are dealt on that half: cast.ts). */
+export function voicesFor(face: string): number[] {
+  const w = FACES.find((f) => f.id === face)?.woman === true;
+  return Array.from({ length: VOICES_EACH }, (_, i) => i + (w ? VOICES_EACH : 0));
+}
+
+/** A face's own grunt: its person's voice (on the women's half for a woman, as cast.ts deals it) and their pitch on it. */
+export function faceVoice(face: string): { voice: number; tone: number } {
+  const m = roster.men.find((p) => p.name === face);
+  if (m) return { voice: m.voice, tone: m.tone };
+  const w = roster.women.find((p) => p.name === face);
+  return w ? { voice: w.voice + VOICES_EACH, tone: w.tone } : { voice: 0, tone: 1 };
+}
 
 /** A colour as the looks store it. */
 type Hex = string;
@@ -178,7 +194,8 @@ export function checkedCharacter(raw: unknown, owned: ReadonlySet<string>): Char
   c.outfit = checkedLoadout(r.outfit, owned);
   c.racket = checkedRacket(r.racket);
   c.celebrate = oneOf(r.celebrate, CELEBRATIONS, 'fist');
-  c.voice = typeof r.voice === 'number' && Number.isInteger(r.voice) && r.voice >= 0 && r.voice < VOICE_COUNT ? r.voice : null;
+  // (a voice of the face's own sex: a man's face never comes with a woman's grunt)
+  c.voice = typeof r.voice === 'number' && voicesFor(c.face).includes(r.voice) ? r.voice : null;
   c.pitch = Math.round(num(r.pitch, -1, 1, 0) * 100) / 100;
   return c;
 }

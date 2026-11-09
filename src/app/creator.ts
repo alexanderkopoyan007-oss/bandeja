@@ -8,7 +8,7 @@
 import type { Choice, Item, Menu, Screen } from '../ui/menu/menu.ts';
 import {
   checkedBody, checkedRacket, cleanName, decodeCharacter, defaultCharacter, encodeCharacter, FACE_FINISH, FACES, FRAME_FINISH, HAIR_TONES,
-  NAME_MAX, RACKET_ART, RACKET_IDS, setSilly, TATTOOS, type Character, type RacketDesign, type Tattoo,
+  faceVoice, NAME_MAX, RACKET_ART, RACKET_IDS, setSilly, TATTOOS, voicesFor, type Character, type RacketDesign, type Tattoo,
 } from './character.ts';
 import { racketLookFor } from '../render/avatar/racket.ts';
 import { designFrom, RACKET_PALETTE } from '../render/avatar/racketDesign.ts';
@@ -32,10 +32,30 @@ export interface CreatorHost {
   /** A match's options with the character applied (what the studio dresses them from). */
   options(c: Character): GameOptions;
   confirm(title: string, sub: string, yesDesc: string, yes: () => void): Screen;
+  /** Play a grunt of `voice` (voices.ts PLAYER_VOICES) at `rate`, as it sounds on court (absent: no sound to play). */
+  grunt?(voice: number, rate: number): void;
+}
+
+/** A grunt is heard this long (ms) after the voice or pitch last changed: once the slider rests, not at each step. */
+const HEAR_MS = 220;
+
+/** A grunt's pitch as the character holds it (-1..1) to semitones: three either way (game.ts). */
+const SEMITONES = 3;
+
+/** What the pitch slider says. */
+export function pitchWords(p: number): string {
+  if (p === 0) return 'As the voice is';
+  const st = Math.abs(p * SEMITONES);
+  return `${p > 0 ? 'Higher' : 'Lower'} ${st.toFixed(1)} semitone${st === 1 ? '' : 's'}`;
 }
 
 /** A character a name may hold (character.ts cleanName keeps these). */
 const NAME_CHAR = /^[\p{L}\p{M} '’.-]$/u;
+
+/** The grunt's choices for a face: its own, or one of its sex's four voices. */
+function gruntOptions(face: string): Choice[] {
+  return [{ value: null, label: 'Their own' }, ...voicesFor(face).map((v, i) => ({ value: v, label: `Voice ${i + 1}` }))];
+}
 
 /** A face preset's name in the lists: the presets are numbered by sex. */
 export function faceLabel(id: string): string {
@@ -110,6 +130,8 @@ export class Creator {
   private copied = '';
   /** The racket colours they made last while this one is open: back to the maker's and to their own again keeps them. */
   private lastDesign: RacketDesign['look'] = null;
+  /** The grunt waiting to be heard (HEAR_MS after the last change). */
+  private hearing: ReturnType<typeof setTimeout> | null = null;
 
   private readonly host: CreatorHost;
 
@@ -225,6 +247,22 @@ export class Creator {
     this.menu.open(this.editScreen());
   }
 
+  /** The draft's grunt: now, or once the changes rest. Their own face's tone with their pitch on it, as game.ts plays it. */
+  private hear(now = false): void {
+    if (!this.host.grunt) return;
+    if (this.hearing) clearTimeout(this.hearing);
+    this.hearing = null;
+    const go = (): void => {
+      this.hearing = null;
+      const c = this.draft;
+      if (!c) return;
+      const own = faceVoice(c.face);
+      this.host.grunt!(c.voice ?? own.voice, own.tone * 2 ** ((c.pitch * SEMITONES) / 12));
+    };
+    if (now) go();
+    else this.hearing = setTimeout(go, HEAR_MS);
+  }
+
   /** The turntable to the draft as it is now. */
   private dress(): void {
     const d = this.draft;
@@ -232,6 +270,8 @@ export class Creator {
   }
 
   private close(): void {
+    if (this.hearing) clearTimeout(this.hearing);
+    this.hearing = null;
     this.draft = null;
     this.host.leaveStudio();
     this.menu.pop();
@@ -262,6 +302,12 @@ export class Creator {
     const s = this.host.store();
     const owned = s?.owned ?? new Set<string>();
     // (its choices change with ridiculous: dyed colours only there)
+    // (its voices are the face's sex's: they change with a face of the other sex)
+    const grunt: Item = {
+      kind: 'choice', label: 'Grunt', desc: 'Their face’s own, or another voice. Heard as you change it.',
+      options: gruntOptions(d().face), get: () => d().voice,
+      set: (v) => { d().voice = typeof v === 'number' ? v : null; this.hear(); },
+    };
     const hair: Item = {
       kind: 'choice', label: 'Hair colour', desc: () => (d().silly ? 'The face’s own, a natural colour, or dyed.' : 'The face’s own or a natural colour. Ridiculous has dyed ones.'),
       options: hairOptions(d().silly), get: () => d().hair, set: (v) => { d().hair = typeof v === 'string' ? v : null; this.dress(); },
@@ -281,7 +327,13 @@ export class Creator {
       {
         kind: 'choice', label: 'Face', desc: 'Who they look like. Hair and beard come with the face.',
         options: FACES.map((f) => ({ value: f.id, label: faceLabel(f.id) })), get: () => d().face,
-        set: (v) => { d().face = String(v); this.dress(); },
+        set: (v) => {
+          const c = d();
+          c.face = String(v);
+          if (c.voice !== null && !voicesFor(c.face).includes(c.voice)) c.voice = null;
+          grunt.options = gruntOptions(c.face);
+          this.dress();
+        },
       },
       {
         kind: 'choice', label: 'Racket hand', options: [{ value: 'right', label: 'Right' }, { value: 'left', label: 'Left' }],
@@ -300,6 +352,14 @@ export class Creator {
         get: () => d().tattoos[where],
         set: (v) => { d().tattoos = { ...d().tattoos, [where]: (v as Tattoo | null) ?? null }; this.dress(); },
       })),
+      { kind: 'group', label: 'Voice' },
+      grunt,
+      {
+        kind: 'slider', label: 'Pitch', step: 0.1, desc: 'Their grunt higher or lower, up to three semitones. Heard as you change it.',
+        readout: () => pitchWords(d().pitch), get: () => (d().pitch + 1) / 2,
+        set: (v) => { d().pitch = Math.round((Number(v) * 2 - 1) * 100) / 100; this.hear(); },
+      },
+      { kind: 'button', label: 'Hear them', desc: 'Their grunt, as it sounds on court.', action: () => this.hear(true) },
       { kind: 'group', label: 'Body' },
       {
         kind: 'choice', label: 'Ridiculous', options: [{ value: false, label: 'Off' }, { value: true, label: 'On' }],

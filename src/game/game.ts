@@ -16,7 +16,9 @@ import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
 import { DEFAULT_KEYS } from './input/bindings.ts';
 import { AudioEngine } from '../audio/engine.ts';
-import { Soundscape, type FeetSource } from '../audio/soundscape.ts';
+import { GRUNT_WOMEN, GRUNT_WOMEN_GAIN, Soundscape, type FeetSource } from '../audio/soundscape.ts';
+import { GRUNT_E } from '../audio/bank.ts';
+import { BUS_PLAYERS } from '../audio/sink.ts';
 import { FLOOR_NAMES } from '../audio/voices.ts';
 import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
@@ -554,6 +556,13 @@ export class Game {
     if (this.lent) return;
     this.lent = true;
     if (this.running) this.renderer.setAnimationLoop(null);
+  }
+
+  /** A grunt of `voice` (voices.ts PLAYER_VOICES) at `rate` (the creator's preview): a hard shot's, from no place, as
+   * loud as one on court. Its effort bin is the top one, the grunt people know a player by. */
+  previewGrunt(voice: number, rate: number): void {
+    this.audio.unlock();
+    this.audio.playFlat('grunt', voice * 3 + GRUNT_E.length - 1, voice >= GRUNT_WOMEN ? GRUNT_WOMEN_GAIN : 1, 0, BUS_PLAYERS, rate);
   }
 
   /** The renderer back: the match goes on from where it was left. */

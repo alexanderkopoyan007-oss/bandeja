@@ -13,7 +13,7 @@ export interface AudioSink {
    */
   play(family: string, bin: number, x: number, y: number, z: number, gain: number, rate: number, delay: number, bus: number, offset?: number): void;
   /** A sound all round (the crowd), stereo as rendered. */
-  playFlat(family: string, bin: number, gain: number, delay: number, bus: number): void;
+  playFlat(family: string, bin: number, gain: number, delay: number, bus: number, rate?: number): void;
   /** A looping bed's level (linear; 0 silences it), approached with time constant `tc` s. */
   loop(name: string, gain: number, tc: number): void;
 }

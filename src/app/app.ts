@@ -151,6 +151,7 @@ export class App {
       leaveStudio: () => this.leaveStudio(),
       options: (c) => this.studioOptions(c),
       confirm: (t, sub, yd, yes) => this.confirm(t, sub, yd, yes),
+      grunt: (v, r) => this.game?.previewGrunt(v, r),
     });
     // A drill's points are logged as it's left, the page being closed among the ways out.
     addEventListener('pagehide', () => this.logDrill());
