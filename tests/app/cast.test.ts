@@ -107,6 +107,11 @@ describe('the player’s own character on court (M5 phase D)', () => {
       expect(opts.wear!.slice(1)).toEqual(Array(n - 1).fill(undefined));
       expect(opts.match.rackets).toEqual([RACKET_IDS[3], ...Array(n - 1).fill('standard')]);
       expect(opts.match.lefty).toEqual([true, ...Array(n - 1).fill(false)]);
+      // The sim plays the body only when bodies count, and then only theirs
+      expect(opts.match.bodyScale).toBeUndefined();
+      const counted = optionsFromSetup({ ...DEFAULT_SETUP, mode }, defaultSettings(), 5, null, false, new URLSearchParams());
+      applyCharacter(counted, c, true);
+      expect(counted.match.bodyScale).toEqual([{ height: 1.08, legs: 1, arms: 1.05, torso: 1 }, ...Array(n - 1).fill(null)]);
     }
     // A neutral body adds no proportions at all (nothing to reproportion), and the face's own skin and hair no looks
     const plain = optionsFromSetup(DEFAULT_SETUP, defaultSettings(), 5, null, false, new URLSearchParams());

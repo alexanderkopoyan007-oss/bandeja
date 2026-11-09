@@ -4046,3 +4046,25 @@ Behind `?creator=1`. A character's grunt is their face's own or one of the four 
 - **Heard as it changes:** 220 ms after the last change (a slider stepped five times plays one grunt), or at once with "Hear them". The preview is the voice's top effort bin, from no place, at the gain a grunt has on court (`Game.previewGrunt`, through the title match's audio engine; `playFlat` takes a rate).
 - **A man's face never comes with a woman's grunt:** a face of the other sex clears the voice, and `checkedCharacter` drops one of the wrong half (a code from elsewhere).
 - **Checked:** creator test (choices by sex, the pitch's words and rate, one grunt per resting change, saved); in headless Chrome the preview finds the rendered grunts and starts a source at the expected rate.
+
+## M5 phase D, step 5: "Bodies count" (2026-11-09)
+A fun switch in the match setup (`MatchSetup.bodies`, off by default), shown only behind `?creator=1` with your own player playing, never online. On, the sim plays your player's body: `MatchConfig.bodyScale` (by player number) gives that player a tuning of their own (`sim/player/bodyTune.ts` `tuneForBody`), built from the base tuning (a man's or a woman's) as Drillis & Contini put a 1.80 m adult together:
+- **Shoulder height** follows the legs (hip joint 0.954 m) and the trunk (0.516 m) under it: the reach's sphere sits on it, and a ball off the glass is met below it (`riseMaxOffWall`).
+- **The arm** (0.73 m of the 1.05 m `reachArm`; the racket's 0.32 m stays) sets the reach's radius. Across the floor the reach grows by as much as the arm does (`reachComfort`, `reachMax`, `volleyReach`), overhead by the same proportion.
+- **The highest contact** moves with the top of the reach. The overheads' planned heights scale with it.
+- **Top speed** follows the leg's length as running speed scales with leg length (Froude, v ~ sqrt(leg)), held within 15% either way. Leg length is one of many things a sprint depends on.
+- **Unchanged:** the jump, the body's girth, timing, and the AI's tactical heights (the back-volley and contrapared bands).
+
+**Off, or with a neutral body, a match is the one from before, to the bit.** The golden hashes are unchanged, and a body's values enter the hash only when one counts.
+**The full effect, not "a little":** the plan said bodies would change play a little. Within the realistic sliders it is little (a 10% taller body reaches about 0.22 m higher). Ridiculous bodies change a lot: a giant meets balls at 3.6 m; a small player can't reach a lob, and rallies are shorter. That is what the switch is for. It's off by default and the owner can say to damp it.
+**Checked:**
+- `tests/sim/bodies.test.ts`:
+  - a neutral body is the tuned one exactly;
+  - each part moves what it should;
+  - the speed cap holds;
+  - golden hashes are unchanged;
+  - the same body gives the same match;
+  - a giant and a small player play 240 s each, each within their own reach.
+- The cast test (the human only, only when on).
+- In Chrome: the switch appears once a player is active, and the match's player 0 has the body's reach.
+- Also: with your own player playing, the setup's "You play" hand is hidden, because the player's own hand decides.

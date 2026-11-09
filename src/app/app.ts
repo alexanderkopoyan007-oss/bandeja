@@ -270,7 +270,7 @@ export class App {
     // The player's own character plays as them (behind ?creator=1 until the owner has seen the creator; never online,
     // where everyone plays the dealt cast and the standard racket).
     const me = this.character();
-    if (!attract && !on && me) applyCharacter(opts, me);
+    if (!attract && !on && me) applyCharacter(opts, me, this.settings.setup.bodies);
     if (!attract && this.drill >= 0) {
       opts.match.practice = this.drill;
       opts.match.firstServer = 1;
@@ -786,7 +786,10 @@ export class App {
           'Star point: two advantages, then a deciding point at the third deuce (the FIP’s newest method). Golden point: the first deuce is decided by one point. Advantage: win by two.'),
         ch('length', 'Length', [{ value: 'short', label: 'Short set (to 4)' }, { value: 'set', label: 'One set' }, { value: 'three', label: 'Best of three' }],
           'A tie-break at 6-6 (4-4 in a short set).'),
-        ch('hand', 'You play', [{ value: 'right', label: 'Right-handed' }, { value: 'left', label: 'Left-handed' }], 'Your racket hand.', () => !!this.online),
+        ch('hand', 'You play', [{ value: 'right', label: 'Right-handed' }, { value: 'left', label: 'Left-handed' }], 'Your racket hand.', () => !!this.online || !!this.character()),
+        ch('bodies', 'Bodies count', [{ value: false, label: 'Off' }, { value: true, label: 'On' }],
+          'On: your player’s height, arms and legs change how high and far they reach and how fast they run. Off: every body plays the same.',
+          () => !!this.online || !this.character()),
         { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court with this setup (it is kept for Quick match).', hidden: () => !!this.online, action: () => this.play(-1, -1) },
         { kind: 'button', label: 'Done', primary: true, desc: 'Back to the room.', hidden: () => !this.online, action: () => this.menu.pop() },
       ],

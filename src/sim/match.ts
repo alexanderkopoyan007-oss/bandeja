@@ -13,6 +13,7 @@ import { Score, SIDE_RIGHT, SIDE_LEFT, DEFAULT_FORMAT, EV_GAME, EV_SET, EV_MATCH
 import { Rally, R_POINT, R_FAULT, R_LET, R_NONE } from './rules/rally.ts';
 import skillData from '../../data/ai-skill.json' with { type: 'json' };
 import { Player, SW_IDLE, SW_CHARGE, SW_COMMITTED, SW_RECOVER, DEFAULT_TUNING } from './player/player.ts';
+import { isNeutralBody, tuneForBody, type BodyScale } from './player/bodyTune.ts';
 import {
   ShotSolver, strike, SHAPES, SHOT_KEYS, SHOT_DRIVE, SHOT_TOPSPIN, SHOT_SLICE, SHOT_LOB, SHOT_DROP, SHOT_SERVE, SHOT_SMASH,
   SHOT_BANDEJA, SHOT_VOLLEY, SHOT_VIBORA, SHOT_CHIQUITA, SHOT_CONTRAPARED, MOD_NONE, MOD_POWER, MOD_PRECISION, type ShotRequest, type ShotResult,
@@ -151,6 +152,12 @@ export interface MatchConfig {
   rackets?: string[];
   /** A women's match: they move and hit as women do, and play it differently (data/ai-skill.json `women`). */
   women?: boolean;
+  /**
+   * "Bodies count" (a fun toggle; never online): each player's body against the tuned one, by player number
+   * (player/bodyTune.ts): their reach, contact heights and top speed follow it. Missing, null or neutral: the tuned
+   * player, and a match without any is the one from before, to the bit.
+   */
+  bodyScale?: Array<BodyScale | null>;
   /** Widens timing windows (accessibility). */
   timingScale?: number;
   /** Positioning assist strength 0..1 for human players. */
@@ -332,6 +339,8 @@ export class MatchSim {
   readonly aiFrames: InputFrame[];
   /** Seats the AI took over from a player who left, a bit each. */
   aiTaken = 0;
+  /** Some player's body counts (MatchConfig.bodyScale): what it changes goes in the hash. */
+  private bodied = false;
 
   tick = 0;
   time = 0;
@@ -462,7 +471,10 @@ export class MatchSim {
     this.prevPlayers = [];
     const tune = cfg.women ? WOMENS_TUNING : DEFAULT_TUNING;
     for (let i = 0; i < n; i++) {
-      this.players.push(new Player(i, tune));
+      const body = cfg.bodyScale?.[i];
+      const own = !isNeutralBody(body);
+      if (own) this.bodied = true;
+      this.players.push(new Player(i, own ? tuneForBody(tune, body!) : tune));
       if (cfg.lefty?.[i]) this.players[i]!.handed = -1;
       this.ai.push(cfg.human[i] ? null : new SimpleAi(i, lv[i & 1]!, styleOf(cfg.aiStyle?.[i]), cfg.women === true));
       if (!cfg.human[i]) this.players[i]!.glassWait = this.ai[i]!.glassWait;
@@ -2373,6 +2385,8 @@ export class MatchSim {
     for (let i = 0; i < this.players.length; i++) h.num(this.walkHomeX[i]!).num(this.walkHomeZ[i]!).num(this.walkHomeF[i]!);
     h.num(this.overStage).num(this.overUntil);
     if (this.aiTaken !== 0) h.num(this.aiTaken);
+    // (bodies that count: what they change; matches without them hash as before)
+    if (this.bodied) for (const p of this.players) h.num(p.tune.reachShoulder).num(p.tune.reachArm).num(p.tune.maxSpeed).num(p.tune.contactMaxHeight);
     for (let i = 0; i < this.players.length; i++) h.num(this.overX[i]!).num(this.overZ[i]!).num(this.overMate[i]!);
     const st: number[] = [];
     this.score.writeState(st);

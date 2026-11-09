@@ -246,15 +246,21 @@ export function wearFromIds(ids: readonly string[]): Wear | undefined {
 /**
  * The player's own character (app/character.ts) as the human's player: their face (dealt at seat 0, cast.ts), body,
  * outfit, racket and hand; their voice and pitch go to the sound (game.ts). The racket is the one thing the sim sees: a
- * racket played as anyone who chose it plays it, with the character's colours only drawn.
+ * racket played as anyone who chose it plays it, with the character's colours only drawn. With `bodiesCount` the sim
+ * sees their body too (MatchConfig.bodyScale).
  */
-export function applyCharacter(opts: GameOptions, c: Character): void {
+export function applyCharacter(opts: GameOptions, c: Character, bodiesCount = false): void {
   const n = opts.match.doubles ? 4 : 2;
   const at = opts.human;
   opts.me = c;
   if (!isNeutral(c.body)) {
     opts.bodies = Array.from({ length: n }, (_, i) => opts.bodies?.[i] ?? null);
     opts.bodies[at] = c.body;
+    // ("Bodies count": the sim plays the body too, its reach and speed)
+    if (bodiesCount) {
+      opts.match.bodyScale = Array.from({ length: n }, (_, i) => opts.match.bodyScale?.[i] ?? null);
+      opts.match.bodyScale[at] = { height: c.body.height, legs: c.body.legs, arms: c.body.arms, torso: c.body.torso };
+    }
   }
   const worn = Object.values(c.outfit).filter((v): v is string => typeof v === 'string');
   opts.wear = Array.from({ length: n }, (_, i) => opts.wear?.[i]);

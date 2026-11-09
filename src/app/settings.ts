@@ -19,6 +19,9 @@ export interface MatchSetup {
   /** short: one set to 4 games; set: one set to 6; three: best of three sets to 6. */
   length: 'short' | 'set' | 'three';
   hand: 'right' | 'left';
+  /** "Bodies count" (behind ?creator=1, with your own player; never online): your player's height, arms and legs change
+   * their reach and speed (sim/player/bodyTune.ts). Off, every body plays as the game's tuned one. */
+  bodies: boolean;
 }
 
 export interface Settings {
@@ -67,7 +70,7 @@ export interface Settings {
 
 export const DEFAULT_SETUP: MatchSetup = {
   mode: 'doubles', level: 'advanced', partner: 'random', opponents: 'random', arena: 'stadium', court: 'standard',
-  scoring: 'star', length: 'set', hand: 'right',
+  scoring: 'star', length: 'set', hand: 'right', bodies: false,
 };
 
 export function defaultSettings(): Settings {
