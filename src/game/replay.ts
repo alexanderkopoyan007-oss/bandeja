@@ -7,7 +7,7 @@ import { SHOT_SMASH, SHOT_VIBORA, SHOT_BANDEJA } from '../sim/contact/shots.ts';
 import { InputFrame } from '../sim/input.ts';
 import { DT } from '../sim/core/constants.ts';
 
-/** The human's inputs kept: a point from its setup, up to this many ticks (longer points get no replay). */
+/** The humans' inputs kept: a point from its setup, up to this many ticks (longer points get no replay). */
 const MAX_TICKS = 120 * 90;
 /** The replay starts LEAD s before the winning shot (the shot before it) and ends AFTER s after the point. */
 const LEAD = 1.9;
@@ -50,8 +50,9 @@ export class Replays {
   due = -1;
 
   private readonly snap: MatchSim;
-  private readonly frames: InputFrame[] = [];
-  private readonly human: number;
+  /** Each human's frames, by `humans`. */
+  private readonly frames: InputFrame[][] = [];
+  private readonly humans: number[];
   private readonly inputs: Array<InputFrame | null>;
   private snapTick = -1;
   private snapTime = 0;
@@ -68,17 +69,17 @@ export class Replays {
   private start = 0;
   private end = 0;
 
-  /** `human`: the human's player, or -1 (autoplay). */
-  constructor(cfg: MatchConfig, human: number) {
+  /** `humans`: the players on this machine (none with autoplay). */
+  constructor(cfg: MatchConfig, humans: readonly number[]) {
     this.sim = new MatchSim(cfg);
     this.snap = new MatchSim(cfg);
-    this.human = human;
+    this.humans = [...humans];
     this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
-    if (human >= 0) for (let i = 0; i < MAX_TICKS; i++) this.frames.push(new InputFrame());
+    for (let h = 0; h < this.humans.length; h++) this.frames.push(Array.from({ length: MAX_TICKS }, () => new InputFrame()));
   }
 
-  /** Before each live tick, with the human's frame for it (null: none). */
-  beforeStep(live: MatchSim, f: InputFrame | null): void {
+  /** Before each live tick, with every player's frame for it, by player number (null: none). */
+  beforeStep(live: MatchSim, inputs: ReadonlyArray<InputFrame | null>): void {
     if (live.phase === PH_DEAD || live.phase === PH_OVER) this.pointOver = true;
     if (live.phase === PH_SETUP && live.walking === 0 && (!this.recording || this.pointOver) && this.due < 0 && this.state === RP_IDLE) {
       // The point is set up: the copy it will be replayed from.
@@ -94,11 +95,14 @@ export class Replays {
     // (on through the dead ball and the walk back: the replay ends AFTER s after the point, and the next point's
     // setup starts the next recording)
     if (!this.recording) return;
-    if (this.human < 0) { this.n++; return; }
+    if (!this.humans.length) { this.n++; return; }
     if (this.n >= MAX_TICKS) { this.recording = false; this.n = -1; return; }
-    const r = this.frames[this.n++]!;
-    if (f) r.copyFrom(f);
-    else { r.clear(); r.held = 0; }
+    for (let h = 0; h < this.humans.length; h++) {
+      const r = this.frames[h]![this.n]!, f = inputs[this.humans[h]!] ?? null;
+      if (f) r.copyFrom(f);
+      else { r.clear(); r.held = 0; }
+    }
+    this.n++;
   }
 
   /** After each live tick: watch its events for a point worth showing again. */
@@ -174,10 +178,8 @@ export class Replays {
   }
 
   private stepOne(): void {
-    if (this.human >= 0) {
-      const k = this.sim.tick - this.snapTick;
-      this.inputs[this.human] = k >= 0 && k < this.n ? this.frames[k]! : null;
-    }
+    const k = this.sim.tick - this.snapTick;
+    for (let h = 0; h < this.humans.length; h++) this.inputs[this.humans[h]!] = k >= 0 && k < this.n ? this.frames[h]![k]! : null;
     this.sim.step(this.inputs);
   }
 }

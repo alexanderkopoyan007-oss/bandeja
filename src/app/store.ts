@@ -109,6 +109,9 @@ const K_OWNED = 'owned.v1';
 const K_LOADOUT = 'loadout.v1';
 const K_CHARACTERS = 'characters.v1';
 const K_ACTIVE = 'active.v1';
+/** M6's saved documents, each checked by its own module on use (tournament.ts tourFrom; the career, the challenges). */
+export const DOC_KEYS = ['tournament.v1', 'career.v1', 'challenges.v1'] as const;
+export type DocKey = (typeof DOC_KEYS)[number];
 /** The most characters kept (the creator's list fits one screen). */
 export const CHARACTERS_MAX = 12;
 
@@ -126,13 +129,17 @@ export class Store {
   characters: Character[];
   active: number;
 
+  /** M6's documents as read (unchecked: their modules check them; `doc`). */
+  private readonly docs = new Map<DocKey, unknown>();
+
   /** False when the store is in memory only (IndexedDB missing or refused): nothing outlives the visit. */
   readonly persistent: boolean;
   private readonly backend: Backend;
   /** The writes in flight, one after another (`put`). */
   private writes: Promise<void> = Promise.resolve();
 
-  private constructor(backend: Backend, persistent: boolean, progress: Progress, owned: Set<string>, loadout: unknown, characters: unknown, active: unknown) {
+  private constructor(backend: Backend, persistent: boolean, progress: Progress, owned: Set<string>, loadout: unknown, characters: unknown, active: unknown,
+    docs: unknown[] = []) {
     this.backend = backend;
     this.persistent = persistent;
     this.progress = progress;
@@ -141,6 +148,18 @@ export class Store {
     this.loadout = checkedLoadout(loadout, this.owned);
     this.characters = charactersFrom(characters, this.owned);
     this.active = typeof active === 'number' && Number.isInteger(active) && active >= 0 && active < this.characters.length ? active : -1;
+    DOC_KEYS.forEach((k, i) => { if (docs[i] !== undefined) this.docs.set(k, docs[i]); });
+  }
+
+  /** A saved document as it was read or last saved (undefined: none); its module checks it. */
+  doc(key: DocKey): unknown {
+    return this.docs.get(key);
+  }
+
+  /** Save a document (null removes what it held). */
+  saveDoc(key: DocKey, v: unknown): void {
+    this.docs.set(key, v ?? undefined);
+    this.put(key, v ?? null);
   }
 
   /** The browser's store, or one in memory if IndexedDB is missing or refuses. */
@@ -157,11 +176,11 @@ export class Store {
   static async load(backend: Backend, persistent: boolean): Promise<Store> {
     let raw: unknown[] = [];
     try {
-      raw = await Promise.all([K_PROGRESS, K_OWNED, K_LOADOUT, K_CHARACTERS, K_ACTIVE].map((k) => backend.get(k)));
+      raw = await Promise.all([K_PROGRESS, K_OWNED, K_LOADOUT, K_CHARACTERS, K_ACTIVE, ...DOC_KEYS].map((k) => backend.get(k)));
     } catch {
       // Unreadable: the defaults (and saving will try again).
     }
-    return new Store(backend, persistent, progressFrom(raw[0]), ownedFrom(raw[1]), raw[2], raw[3], raw[4]);
+    return new Store(backend, persistent, progressFrom(raw[0]), ownedFrom(raw[1]), raw[2], raw[3], raw[4], raw.slice(5).map((v) => v ?? undefined));
   }
 
   /** A finished match: the progress moves on, and anything it earns is owned. Returns the new items at once (the

@@ -2,13 +2,11 @@
 // so a release is judged at the moment it happened, not when the next frame polls it.
 // Which key is which button comes from the bindings (input/bindings.ts; remappable since Phase 8).
 import { DEFAULT_KEYS, keyTables } from './bindings.ts';
-import type { InputFrame } from '../../sim/input.ts';
+import { InputQueue } from './queue.ts';
 
-export interface TimedButton { press: boolean; button: number; ts: number }
+export type { TimedButton } from './queue.ts';
 
-const QUEUE = 32;
-
-export class KeyboardInput {
+export class KeyboardInput extends InputQueue {
   held = 0;
   private buttonKeys: Record<string, number> = {};
   private moveKeys: Record<string, [number, number]> = {};
@@ -16,10 +14,6 @@ export class KeyboardInput {
   private readonly moveHeld: Record<string, boolean> = {};
   /** Button keys down by code: two keys can make one button (both Shifts), held while either is. */
   private readonly codeDown: Record<string, boolean> = {};
-  /** Ring of timestamped button events not yet consumed by the sim. */
-  readonly queue: TimedButton[] = [];
-  head = 0;
-  tail = 0;
   /** Mouse position in normalised device coordinates (-1..1), for mouse aim. */
   mouseX = 0;
   mouseY = 0;
@@ -28,7 +22,7 @@ export class KeyboardInput {
 
   /** `signal` removes the listeners (a game being torn down); `keys`: action -> key codes (bindings.ts). */
   constructor(target: Window, signal?: AbortSignal, keys: Record<string, string[]> = DEFAULT_KEYS) {
-    for (let i = 0; i < QUEUE; i++) this.queue.push({ press: false, button: 0, ts: 0 });
+    super();
     this.setKeys(keys);
     const o = { signal };
     target.addEventListener('keydown', (e) => this.key(e, true), o);
@@ -52,7 +46,7 @@ export class KeyboardInput {
   }
 
   /** While input goes to a menu (paused): drop queued events and let go of everything, so nothing reaches the sim. */
-  flush(): void {
+  override flush(): void {
     this.releaseAll(performance.now());
     this.head = this.tail;
   }
@@ -65,29 +59,9 @@ export class KeyboardInput {
    * like any release, instead of waiting for a release the pause had dropped. Every change the sim sees is an
    * input event, so a replay of the frames is the same match.
    */
-  resume(simHeld: number, heldNow: number, ts: number): void {
+  override resume(simHeld: number, heldNow: number, ts: number): void {
     this.flush();
-    const stale = simHeld & ~(this.held | heldNow);
-    for (let b = 1; b <= stale; b <<= 1) if (stale & b) this.push(false, b, ts);
-  }
-
-  /**
-   * Hand the sim's frame `f` every queued event stamped before `endMs`, at its exact sim time (`epoch`: the sim's
-   * zero, performance.now() ms), and return the buttons held as of the last event handed over (`simHeld` before).
-   * `onEvent` sees each one (the latency probe; allocation-free when null).
-   */
-  feed(f: InputFrame, epoch: number, endMs: number, simHeld: number, onEvent: ((ts: number, press: boolean) => void) | null): number {
-    let held = simHeld;
-    const q = this.queue;
-    while (this.head < this.tail) {
-      const e = q[this.head % QUEUE]!;
-      if (e.ts >= endMs) break;
-      f.push(e.press, e.button, Math.max(0, (e.ts - epoch) / 1000));
-      held = e.press ? held | e.button : held & ~e.button;
-      this.head++;
-      onEvent?.(e.ts, e.press);
-    }
-    return held;
+    this.releaseStale(simHeld & ~(this.held | heldNow), ts);
   }
 
   private key(e: KeyboardEvent, down: boolean): void {
@@ -106,38 +80,6 @@ export class KeyboardInput {
       this.moveHeld[e.code] = down;
     }
     if (down) this.onKey?.(e.code, e);
-  }
-
-  /**
-   * A button event from another device (the gamepad), into the same timestamped queue, in time order: a pad's
-   * stamp can be earlier than a key event already queued, and the sim takes events up to the first one past a tick.
-   */
-  inject(press: boolean, button: number, ts: number): void {
-    this.push(press, button, ts);
-    for (let k = this.tail - 1; k > this.head; k--) {
-      const a = this.queue[(k - 1) % QUEUE]!, b = this.queue[k % QUEUE]!;
-      if (a.ts <= b.ts) break;
-      const p = a.press, bt = a.button, t = a.ts;
-      a.press = b.press; a.button = b.button; a.ts = b.ts;
-      b.press = p; b.button = bt; b.ts = t;
-    }
-  }
-
-  /** Move every queued event stamped before `t` up to `t` (the game dropped a backlog: those moments are gone). */
-  clampQueue(t: number): void {
-    for (let k = this.head; k < this.tail; k++) {
-      const q = this.queue[k % QUEUE]!;
-      if (q.ts < t) q.ts = t;
-    }
-  }
-
-  private push(press: boolean, button: number, ts: number): void {
-    const q = this.queue[this.tail % QUEUE]!;
-    q.press = press;
-    q.button = button;
-    q.ts = ts;
-    this.tail++;
-    if (this.tail - this.head > QUEUE) this.head = this.tail - QUEUE;
   }
 
   private releaseAll(ts: number): void {

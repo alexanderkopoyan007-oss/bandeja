@@ -193,6 +193,11 @@ export class Menu {
     return this.stack[this.stack.length - 1] ?? null;
   }
 
+  /** Screens on the stack (1: nothing under the one showing). */
+  get depth(): number {
+    return this.stack.length;
+  }
+
   /** Reduced motion: screens fade instead of sliding. */
   set calm(on: boolean) {
     this.root.classList.toggle('calm', on);
@@ -507,7 +512,7 @@ export class Menu {
 
   /** Buttons held when a menu opens (the press that opened it) are not presses. */
   private primePad(): void {
-    const p = firstPad();
+    const p = anyPad();
     if (!p) return;
     for (let b = 0; b < p.buttons.length; b++) this.padPrev.set(b, p.buttons[b]!.pressed);
     for (const d of [100, 101, 102, 103]) this.padPrev.set(d, true);
@@ -515,7 +520,7 @@ export class Menu {
 
   private pollPad(): void {
     if (!this.visible) return;
-    const p = firstPad();
+    const p = anyPad();
     if (!p) return;
     const now = performance.now();
     const ax = p.axes[0] ?? 0, ay = p.axes[1] ?? 0;
@@ -584,13 +589,26 @@ function descOf(it: Item): string {
   return typeof it.desc === 'function' ? it.desc() : it.desc ?? '';
 }
 
-function firstPad(): Gamepad | null {
+interface PadState { buttons: Array<{ pressed: boolean }>; axes: number[] }
+
+/**
+ * Every connected pad as one (M6 local multiplayer: anyone can drive the menus): a button is down while it is down on
+ * any pad, the stick is the one pushed furthest. Only while a menu shows (the match's loop never reads it).
+ */
+function anyPad(): PadState | null {
+  let out: PadState | null = null;
   try {
-    for (const p of navigator.getGamepads?.() ?? []) if (p && p.connected) return p;
+    for (const p of navigator.getGamepads?.() ?? []) {
+      if (!p || !p.connected) continue;
+      if (!out) { out = { buttons: p.buttons.map((b) => ({ pressed: b.pressed })), axes: [p.axes[0] ?? 0, p.axes[1] ?? 0] }; continue; }
+      for (let b = 0; b < p.buttons.length; b++) if (p.buttons[b]?.pressed) (out.buttons[b] ??= { pressed: false }).pressed = true;
+      const x = p.axes[0] ?? 0, y = p.axes[1] ?? 0;
+      if (Math.hypot(x, y) > Math.hypot(out.axes[0]!, out.axes[1]!)) { out.axes[0] = x; out.axes[1] = y; }
+    }
   } catch {
     // Blocked by a permissions policy: no pad.
   }
-  return null;
+  return out;
 }
 
 function el(tag: string, cls: string): HTMLElement {

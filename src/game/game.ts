@@ -14,6 +14,7 @@ import { dealNames, nameOf, type PlayerName } from './names.ts';
 import { dealCast, type Cast } from './cast.ts';
 import { KeyboardInput } from './input/keyboard.ts';
 import { GamepadInput } from './input/gamepad.ts';
+import { Local, LOCAL_COLOURS, axisFlip, type LocalSeat } from './locals.ts';
 import { DEFAULT_KEYS } from './input/bindings.ts';
 import { AudioEngine } from '../audio/engine.ts';
 import { GRUNT_WOMEN, GRUNT_WOMEN_GAIN, Soundscape, type FeetSource } from '../audio/soundscape.ts';
@@ -81,8 +82,11 @@ export interface GameOptions {
   /** Each player's own racket colours (a character's, racketDesign.ts), by player number; null: the maker's. */
   designs?: Array<import('../render/avatar/racketDesign.ts').RacketColours | null>;
   closeCamPlayer?: number;
-  /** The human's player number (team + 2 * slot); ignored with autoplay. */
+  /** The human's player number (team + 2 * slot); ignored with autoplay. With `locals`, the first of them. */
   human: number;
+  /** Local multiplayer (M6, locals.ts): every player on this machine and their device; absent, `human` alone on the
+   * keyboard and the first pad. The first is the camera's end. */
+  locals?: LocalSeat[];
   autoplay: boolean;
   forceWebGL: boolean;
   pro: boolean;
@@ -190,9 +194,13 @@ export class Game {
   readonly players: PlayerView[];
   /** Contact shadows under the players (`?ground=1`, render/grounding.ts). */
   private readonly grounding: Grounding | null;
-  readonly assists: AssistView;
+  /** Each local player's cues (their rings, spot and aim), by `locals`; one, showing nothing, with autoplay. */
+  private readonly cues: AssistView[];
   readonly kb: KeyboardInput;
-  readonly pad: GamepadInput;
+  /** The keyboard player at the camera's end, who can aim with the mouse (null: nobody can). */
+  private readonly mouseLocal: Local | null;
+  /** The local player whose timing the meter shows: the last of them to charge a swing. */
+  private meterWho = -1;
   /** Sound (Phase 6): the engine, and what decides what is heard. */
   readonly audio: AudioEngine;
   private audioFailed = false;
@@ -201,7 +209,10 @@ export class Game {
   readonly feedback: Feedback;
   readonly hud: Hud;
   readonly debug: DebugOverlay;
-  readonly frame = new InputFrame();
+  /** The players on this machine (locals.ts); none with autoplay. */
+  private readonly locals: Local[] = [];
+  /** Every pad in use (a local's, or the first pad with autoplay: Start opens the menu). */
+  private readonly pads: GamepadInput[] = [];
   readonly aimMarker: THREE.Mesh;
   private mouseOnCourt = false;
   readonly probe: PerfProbe = { frames: [], sims: [], works: [], gpus: [], drawCalls: 0, triangles: 0, backend: '', points: 0 };
@@ -215,7 +226,6 @@ export class Game {
   private epoch = 0;
   private hiddenAt = -1;
   private lastFrame = 0;
-  private readonly axes = { x: 0, y: 0 };
   private readonly ray = new THREE.Raycaster();
   private readonly ndc = new THREE.Vector2();
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -246,7 +256,8 @@ export class Game {
   readonly replays: Replays;
   private readonly replayCam = new ReplayCamera();
   private replayShown = false;
-  private replayPad = 0;
+  /** The score rows' names, team 0's and team 1's. */
+  private rows: [string, string] = ['', ''];
   /** The players' names, dealt from the match's seed (game/names.ts). */
   names: PlayerName[] = [];
   private overAt = -1;
@@ -309,17 +320,14 @@ export class Game {
     this.cam.setPreset(opts.camera ?? 'tv');
     this.cam.followPlayer = opts.autoplay ? 0 : opts.human;
     // Replays re-run a point from a copy of the match (two more matches: about 2 MB, nothing per frame).
-    this.replays = new Replays(opts.match, opts.autoplay ? -1 : opts.human);
+    this.replays = new Replays(opts.match, opts.autoplay ? [] : opts.locals?.map((l) => l.player) ?? [opts.human]);
     this.replays.enabled = opts.replays !== false && !opts.closeCam;
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
     this.players = [];
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, cast, opts.match.rackets?.[i], opts.wear?.[i]));
-    if (!opts.autoplay) this.players[opts.human]!.markYou();
     this.grounding = Grounding.on ? new Grounding(this.scene, this.players) : null;
     this.placeBags(cast);
     this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
-    this.assists = new AssistView(this.scene);
-    this.assists.enabled = !opts.pro;
     this.aimMarker = new THREE.Mesh(
       new THREE.RingGeometry(0.22, 0.3, 32),
       new THREE.MeshBasicMaterial({ color: 0xf4d03f, transparent: true, opacity: 0.3, depthWrite: false }),
@@ -335,10 +343,28 @@ export class Game {
 
     const sig = this.ac.signal;
     this.kb = new KeyboardInput(window, sig, prefs.keys);
-    this.pad = new GamepadInput(window, sig);
-    this.pad.rumbleOn = prefs.rumble !== false;
-    // Start while a menu is up is the menu's (it resumes from the pause screen).
-    this.pad.onStart = () => { if (!this.menuPaused) this.onMenu?.(); };
+    // The players on this machine: one on the keyboard and the first pad, or each on their own device (locals.ts).
+    const seats: LocalSeat[] = opts.autoplay ? [] : opts.locals ?? [{ player: opts.human, device: 'any' }];
+    for (const st of seats) {
+      const l = new Local(st, this.kb, window, sig);
+      this.locals.push(l);
+      if (l.pad) this.pads.push(l.pad);
+    }
+    if (!seats.length) this.pads.push(new GamepadInput(window, sig));
+    const camTeam = this.team;
+    for (const l of this.locals) l.flip = axisFlip(this.sim.players[l.player]!.team, camTeam);
+    this.mouseLocal = this.locals.find((l) => l.keys && l.flip === 1) ?? null;
+    this.meterWho = this.locals[0]?.player ?? -1;
+    for (const p of this.pads) {
+      p.rumbleOn = prefs.rumble !== false;
+      // Start while a menu is up is the menu's (it resumes from the pause screen).
+      p.onStart = () => { if (!this.menuPaused) this.onMenu?.(); };
+      p.onLost = () => this.onMenu?.();
+    }
+    this.cues = Array.from({ length: Math.max(1, this.locals.length) }, () => new AssistView(this.scene));
+    for (const c of this.cues) c.enabled = !opts.pro;
+    // Who is who: a ring under the one player, or under each in their colour (P1-P4).
+    for (let k = 0; k < this.locals.length; k++) this.players[this.locals[k]!.player]!.markYou(this.locals.length > 1 ? LOCAL_COLOURS[k] : undefined);
     // Sound: the bank renders in a worker from now; audio starts at the first key, click or pad press (browsers
     // allow it only from a gesture). Autoplay too: a click and the AI match has sound.
     const floor = Math.max(0, FLOOR_NAMES.indexOf(opts.match.world?.floor ?? 'turf'));
@@ -353,7 +379,8 @@ export class Game {
     addEventListener('pointerdown', unlock, { signal: sig });
     // The press that started this match came before it, so the match began silent until the next key.
     if (navigator.userActivation?.hasBeenActive) unlock();
-    this.feedback = new Feedback(this.pad, this.cam);
+    this.feedback = new Feedback(this.cam);
+    for (const l of this.locals) this.feedback.pads[l.player] = l.pad;
     this.feedback.shake = prefs.shake !== false;
     const sets = (opts.match.format?.setsToWin ?? 2) * 2 - 1;
     // Score rows name the players: YOU, and each AI by the name dealt from the seed (game/names.ts).
@@ -364,9 +391,13 @@ export class Game {
     }
     // (a roster pro's own name)
     for (let i = 0; i < this.names.length; i++) { const own = opts.names?.[i]; if (own) this.names[i] = own; }
-    const who = (i: number, short: boolean): string => (!opts.autoplay && i === opts.human ? 'YOU' : nameOf(this.names[i]!, short));
+    const who = (i: number, short: boolean): string => {
+      const k = this.locals.findIndex((l) => l.player === i);
+      return k < 0 ? nameOf(this.names[i]!, short) : this.locals.length > 1 ? `P${k + 1}` : 'YOU';
+    };
     const row = (t: number): string => (this.sim.doubles ? `${who(t, true)} · ${who(t + 2, true)}` : who(t, false));
     const names: [string, string] = [row(0), row(1)];
+    this.rows = names;
     this.hud = new Hud(hudRoot, names, sets);
     if (opts.gfx === 'tv') {
       const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
@@ -387,7 +418,6 @@ export class Game {
     // Leaving the game (another window, a hidden tab, the controller gone) opens the pause menu, so a point
     // isn't played on without you; outside a match onMenu does nothing.
     addEventListener('blur', () => { if (!this.online) this.onMenu?.(); }, { signal: sig });
-    this.pad.onLost = () => this.onMenu?.();
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && !this.online) this.onMenu?.();
       // Freeze the sim while the tab is hidden instead of fast-forwarding on return.
@@ -427,7 +457,7 @@ export class Game {
     this.hud.pro = on;
     this.ball.showTrail = !on;
     this.ball.showMarker = !on;
-    this.assists.enabled = !on;
+    for (const c of this.cues) c.enabled = !on;
   }
 
   resize(): void {
@@ -466,10 +496,12 @@ export class Game {
     this.menuPaused = on;
     // Pausing drops what was queued (the menu has the keys now); resuming lets go, at this moment, of any swing
     // the sim still holds that no key or button holds any more (KeyboardInput.resume).
-    if (on) this.kb.flush();
-    else {
-      this.kb.resume(this.simHeld, this.pad.held, performance.now());
-      this.pad.consumeStart();
+    if (on) {
+      this.kb.flush();
+      for (const l of this.locals) l.queue.flush();
+    } else {
+      this.resumeInput(performance.now());
+      for (const p of this.pads) p.consumeStart();
     }
     // (a menu over the match keeps the context running: its ticks, and the volume you are setting, have to sound)
     this.audio.hush(on, on && this.sim.phase === PH_OVER ? HUSH_OVER : HUSH_PAUSE);
@@ -489,7 +521,7 @@ export class Game {
   applyPrefs(p: GamePrefs): void {
     if (p.volume !== undefined || p.crowd !== undefined) this.audio.setLevels(p.volume ?? 1, p.crowd ?? 1);
     if (p.shake !== undefined) this.feedback.shake = p.shake;
-    if (p.rumble !== undefined) this.pad.rumbleOn = p.rumble;
+    if (p.rumble !== undefined) for (const pad of this.pads) pad.rumbleOn = p.rumble;
     if (p.keys) {
       this.kb.setKeys(p.keys);
       this.hud.setKeys(p.keys, !!(this.opts.match.tapSwing && this.opts.match.autoTiming));
@@ -541,7 +573,10 @@ export class Game {
   }
 
   start(): void {
-    if (!this.opts.autoplay) {
+    if (this.locals.length > 1) {
+      // A local match: who is on which side.
+      this.hud.announce(`${this.rows[0]}  vs  ${this.rows[1]}`, this.locals.length === 2 ? 'Two players' : `${this.locals.length} players`, performance.now() / 1000, 3);
+    } else if (!this.opts.autoplay) {
       // Who you are playing (and with): the names dealt, their nations, and their playing styles as nicknames.
       const name = (i: number): string => nameOf(this.names[i]!, false) + (this.names[i]!.nation ? ` (${this.names[i]!.nation})` : '');
       const style = (i: number): string => this.sim.ai[i]?.style.name ?? '';
@@ -601,10 +636,11 @@ export class Game {
       if (!document.hidden || !net || this.paused || this.disposed) return;
       net.frame();
       this.epoch += net.drift();
-      const human = this.opts.human, simNow = (performance.now() - this.epoch) / 1000;
+      const l = this.locals[0], simNow = (performance.now() - this.epoch) / 1000;
+      if (!l) return;
       for (let n = 0; this.sim.time < simNow && n < 24 && !net.held; n++) {
-        this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
-        net.step(this.inputs[human] ?? null);
+        this.inputs[l.player] = this.buildInput(l, this.sim.time + DT);
+        net.step(this.inputs[l.player] ?? null);
       }
     };
     this.pump = w;
@@ -617,29 +653,30 @@ export class Game {
   private gpuTimed = false;
   private gpuBusy = false;
 
-  private buildInput(t0: number, t1: number): InputFrame | null {
-    if (this.opts.autoplay) return null;
-    const f = this.frame;
+  /** Local player `l`'s frame for the tick ending at sim time `t1`. */
+  private buildInput(l: Local, t1: number): InputFrame {
+    const f = l.frame;
     f.clear();
     // (online a menu doesn't stop the match, and the keys are the menu's)
     if (this.menuPaused) {
-      f.held = this.simHeld;
+      f.held = l.simHeld;
       return f;
     }
-    this.kb.axes(this.axes);
-    // The pad's stick, when it is pushed, wins over the keys.
-    const pad = this.pad.x !== 0 || this.pad.y !== 0;
-    f.moveX = pad ? this.pad.x : this.axes.x;
-    f.moveY = pad ? this.pad.y : this.axes.y;
+    if (l.keys) this.kb.axes(l.axes);
+    else { l.axes.x = 0; l.axes.y = 0; }
+    // The pad's stick, when it is pushed, wins over the keys. A player at the far end steers as the screen shows them.
+    const pad = l.pad, stick = pad !== null && (pad.x !== 0 || pad.y !== 0);
+    f.moveX = (stick ? pad.x : l.axes.x) * l.flip;
+    f.moveY = (stick ? pad.y : l.axes.y) * l.flip;
     // Button events that happened before the end of this tick, with their exact sim times; the buttons held are
     // those events' result at the tick's end (the keys as they are now can be a frame later than the tick).
     const endMs = this.epoch + t1 * 1000;
-    this.simHeld = this.kb.feed(f, this.epoch, endMs, this.simHeld, this.onFed);
-    void t0;
+    l.simHeld = l.queue.feed(f, this.epoch, endMs, l.simHeld, this.onFed);
     // Every event handed over: the keys as they are now are the same state (unless the ring dropped one: resync).
-    if (this.kb.head === this.kb.tail) this.simHeld = this.kb.held | this.pad.held;
-    f.held = this.simHeld;
-    if (this.mouseAim && this.mouseOnCourt) {
+    if (l.queue.head === l.queue.tail) l.simHeld = l.heldNow(this.kb);
+    f.held = l.simHeld;
+    if (l.player !== this.meterWho && this.sim.players[l.player]!.swing === SW_CHARGE) this.meterWho = l.player;
+    if (l === this.mouseLocal && this.mouseAim && this.mouseOnCourt) {
       f.aimAbs = true;
       f.aimTX = this.aimMarker.position.x;
       f.aimTZ = this.aimMarker.position.z;
@@ -648,8 +685,35 @@ export class Game {
   }
 
   private readonly inputs: Array<InputFrame | null>;
-  /** Buttons held as of the last event handed to the sim. */
-  private simHeld = 0;
+
+  /** Back from a menu or a replay at `now`: each local player's queue lets go of what nothing holds any more (InputQueue.resume). */
+  private resumeInput(now: number): void {
+    let keys = false;
+    for (let k = 0; k < this.locals.length; k++) {
+      const l = this.locals[k]!;
+      l.queue.resume(l.simHeld, l.heldNow(this.kb), now);
+      if (l.keys) keys = true;
+    }
+    if (!keys) this.kb.flush();
+  }
+
+  /** A local player pressed a pad button since the replay began (a press skips it). */
+  private padSkip(): boolean {
+    for (let k = 0; k < this.locals.length; k++) {
+      const l = this.locals[k]!;
+      if (l.pad && (l.pad.held & ~l.replayHeld) !== 0) return true;
+    }
+    return false;
+  }
+
+  /** Some player on this machine holds a swing: charging (`chargingOnly`), or charging or committed to it. */
+  private localSwing(chargingOnly: boolean): boolean {
+    for (let k = 0; k < this.locals.length; k++) {
+      const s = this.sim.players[this.locals[k]!.player]!.swing;
+      if (s === SW_CHARGE || (!chargingOnly && s === SW_COMMITTED)) return true;
+    }
+    return false;
+  }
   /** The latency probe's record of each event handed to the sim (allocates only on key events). */
   private readonly onFed = (ts: number, press: boolean): void => {
     if (this.latency.length < 4000) this.latency.push({ ts, used: this.frameNow, shown: 0, gpu: 0, press });
@@ -747,9 +811,20 @@ export class Game {
     }
   }
 
+  /** The players on this machine, P1 first (none with autoplay). */
+  get localPlayers(): number[] {
+    return this.locals.map((l) => l.player);
+  }
+
+  /** A team as its score row names it (P numbers in a local match, YOU, the dealt names). */
+  teamName(t: number): string {
+    return this.rows[t] ?? '';
+  }
+
   /** The human's team (the camera's end); team 0 with autoplay. */
   get team(): number {
-    return this.opts.autoplay ? 0 : this.sim.players[this.opts.human]!.team;
+    const l = this.locals[0];
+    return l ? this.sim.players[l.player]!.team : 0;
   }
 
   private tick(): void {
@@ -780,15 +855,18 @@ export class Game {
     // step up to now and draw one tick behind it. Either way the render blends two real sim states, and a key
     // event inside the newest tick is handed to it with its exact time.
     const ahead = this.opts.runAhead !== false;
-    if (this.pad.connected) {
-      this.pad.poll(this.kb, now);
-      if (this.pad.held !== 0) this.audio.unlock();
+    for (let k = 0; k < this.locals.length; k++) {
+      const l = this.locals[k]!, p = l.pad;
+      if (!p || !p.connected) continue;
+      p.poll(l.queue, now);
+      if (p.held !== 0) this.audio.unlock();
     }
+    // (autoplay: the first pad, for its Start)
+    if (!this.locals.length && this.pads[0]!.connected) this.pads[0]!.poll(this.kb, now);
     // ...except while the human holds a swing: the release can come for any moment from now on, and one that
     // arrives for a moment the sim has already run past would meet the ball up to a tick late. Until it goes the
     // sim stays at or behind now, and is drawn a tick behind (the render clock below).
-    const hp = this.sim.players[human]!;
-    const holding = ahead && !this.opts.autoplay;
+    const holding = ahead && this.locals.length > 0;
     // The render clock: now, less a lag. While a swing is held the sim stays at or behind now, so drawing now would
     // mean drawing the newest tick as it is (no blend: a repeated frame whenever a frame has no new tick, every
     // sixth frame at 144 Hz). Instead the lag eases to one tick while a swing is held (blended, as ?runahead=0
@@ -796,7 +874,7 @@ export class Game {
     // contact. The sim is stepped to the drawn moment (now less the lag), not to now: stepped to now while the lag
     // is still a tick, the oldest state it keeps (a tick before its newest) is past the drawn moment and the picture
     // is pulled forward by up to a tick at the release, then drawn unblended, frames repeating, until the contact.
-    const swinging = hp.swing === SW_CHARGE || hp.swing === SW_COMMITTED;
+    const swinging = this.localSwing(false);
     const lagTo = !ahead || (holding && swinging) ? DT : 0;
     const ease = this.lastFrame ? 0.25 * Math.min(0.1, (now - this.lastFrame) / 1000) : DT;
     this.renderLag = lagTo > this.renderLag ? Math.min(lagTo, this.renderLag + ease) : Math.max(lagTo, this.renderLag - ease);
@@ -805,20 +883,24 @@ export class Game {
     const rp = this.replays;
     if (rp.state === RP_IDLE && rp.due >= 0 && this.sim.time >= rp.due && !this.menuPaused) {
       if (this.photo || !rp.enabled || net) rp.stop();
-      else { rp.begin(); this.kb.flush(); this.replayPad = this.pad.held; }
+      else {
+        rp.begin();
+        this.kb.flush();
+        for (let k = 0; k < this.locals.length; k++) { const l = this.locals[k]!; l.queue.flush(); l.replayHeld = l.pad ? l.pad.held : 0; }
+      }
     }
     if (this.paused || (this.menuPaused && !net) || rp.state !== RP_IDLE) {
       this.epoch = now - this.sim.time * 1000;
       drawn = this.sim.time;
     }
     while (this.sim.time < drawn && n < MAX_TICKS_PER_FRAME) {
-      if (holding && hp.swing === SW_CHARGE && this.sim.time + DT > simNow) break;
+      if (holding && this.localSwing(true) && this.sim.time + DT > simNow) break;
       // (held up, the tick can't run: the keys stay in their queue, or a release made now is lost)
       if (net?.held) break;
-      this.inputs[human] = this.buildInput(this.sim.time, this.sim.time + DT);
+      for (let k = 0; k < this.locals.length; k++) { const l = this.locals[k]!; this.inputs[l.player] = this.buildInput(l, this.sim.time + DT); }
       if (net) net.step(this.inputs[human] ?? null);
       else {
-        rp.beforeStep(this.sim, this.inputs[human] ?? null);
+        rp.beforeStep(this.sim, this.inputs);
         this.sim.step(this.inputs);
         rp.afterStep(this.sim);
       }
@@ -835,6 +917,7 @@ export class Game {
       drawn = this.sim.time - this.renderLag;
       cueNow = this.sim.time;
       this.kb.clampQueue(now);
+      for (let k = 0; k < this.locals.length; k++) if (this.locals[k]!.queue !== this.kb) this.locals[k]!.queue.clampQueue(now);
     }
     const simMs = performance.now() - s0;
     const renderTime = Math.min(this.sim.time, Math.max(this.sim.time - DT, drawn));
@@ -844,7 +927,8 @@ export class Game {
     // be aimed the sim's target (drawn by the assist view) sits under it instead.
     this.aimMarker.visible = false;
     this.mouseOnCourt = false;
-    if (this.mouseAim && this.kb.mouseActive && !this.opts.autoplay) {
+    const ml = this.mouseLocal;
+    if (this.mouseAim && this.kb.mouseActive && ml) {
       this.ndc.set(this.kb.mouseX, this.kb.mouseY);
       this.ray.setFromCamera(this.ndc, this.cam.camera);
       if (this.ray.ray.intersectPlane(this.ground, this.hit)) {
@@ -853,7 +937,7 @@ export class Game {
         const x = Math.max(-c.halfW + 0.3, Math.min(c.halfW - 0.3, this.hit.x));
         const z = -s * Math.max(0.6, Math.min(c.halfL - 0.3, -s * this.hit.z));
         this.aimMarker.position.set(x, 0.005, z);
-        this.aimMarker.visible = !this.sim.players[human]!.aiming;
+        this.aimMarker.visible = !this.sim.players[ml.player]!.aiming;
         this.mouseOnCourt = true;
       }
     }
@@ -863,7 +947,7 @@ export class Game {
     // clock (slowed round the winning shot) and cameras. A pad button pressed since it began skips it.
     if (rp.state === RP_PREP && !this.menuPaused) rp.prepare();
     if (rp.state === RP_SHOW && !this.menuPaused) {
-      if ((this.pad.held & ~this.replayPad) !== 0) rp.stop();
+      if (this.padSkip()) rp.stop();
       else rp.advance(frameDt);
     }
     const showing = rp.state === RP_SHOW;
@@ -875,7 +959,7 @@ export class Game {
       if (showing) this.replayCam.reset();
       else {
         this.cam.retake();
-        this.kb.resume(this.simHeld, this.pad.held, now);
+        this.resumeInput(now);
         this.epoch = now - this.sim.time * 1000;
       }
     }
@@ -892,10 +976,9 @@ export class Game {
     this.grounding?.update();
     const server = view.phase === PH_SETUP ? this.players[view.score.serverPlayer()]!.avatar : null;
     if (server) this.ball.carried(server.palm(palmAt), server.addressing);
-    const who = this.opts.autoplay || showing ? -1 : human;
     // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last
     // frame's camera, which is close enough).
-    this.feedback.update(this.sim, who, now);
+    this.feedback.update(this.sim, !showing, now);
     if (showing) this.replayCam.aim(this.cam.camera, view, rp.hitter, rp.angle, this.ball.mesh.position, frameDt * rp.speed);
     else this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
@@ -911,11 +994,13 @@ export class Game {
     } catch (e) {
       if (!this.audioFailed) { this.audioFailed = true; console.warn('audio', e); }
     }
-    this.assists.update(this.sim, who, this.ball.mesh.position, this.cam.camera, renderTime, this.opts.match.timingScale ?? 1,
-      now / 1000, frameDt, cueNow);
+    for (let k = 0; k < this.cues.length; k++) {
+      this.cues[k]!.update(this.sim, showing ? -1 : this.locals[k]?.player ?? -1, this.ball.mesh.position, this.cam.camera, renderTime,
+        this.opts.match.timingScale ?? 1, now / 1000, frameDt, cueNow);
+    }
     this.hud.cueLead = net ? net.lead : 0;
     this.hud.netNote = net ? net.note : '';
-    this.hud.update(this.sim, who, now / 1000);
+    this.hud.update(this.sim, showing ? -1 : this.meterWho, now / 1000);
     this.tv?.update(this.sim);
     this.stats.update(this.sim);
     this.transitions?.update(this.sim, team, now / 1000);

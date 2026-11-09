@@ -314,10 +314,11 @@ export class PlayerView {
   }
 
   /** A thin ring on the floor under the human's player, so you can tell yourself from your partner. */
-  markYou(): void {
+  /** The ring under the human player: white, or a local player's colour (P1-P4, game/locals.ts). */
+  markYou(colour = 0xffffff): void {
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(0.36, 0.42, 40),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: colour === 0xffffff ? 0.55 : 0.8, depthWrite: false }),
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.006;

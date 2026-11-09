@@ -9,10 +9,10 @@ import { Replays, RP_IDLE, RP_PREP, RP_SHOW } from '../../src/game/replay.ts';
 // shown must be the point played: the same winner at the same moment, and the whole match state (its hash) at the
 // replay's last tick the live match's at that tick.
 
-/** A scripted human (moves, drives and lobs by the tick), so the recorded inputs matter. */
-function humanFrame(f: InputFrame, m: MatchSim): InputFrame {
+/** A scripted human (moves, drives and lobs by the tick), so the recorded inputs matter; `shift` gives another one. */
+function humanFrame(f: InputFrame, m: MatchSim, shift = 0): InputFrame {
   f.clear();
-  const k = m.tick;
+  const k = m.tick + shift;
   f.moveX = Math.sin(k * 0.011);
   f.moveY = Math.cos(k * 0.005) * 0.5;
   const c = k % 300;
@@ -23,11 +23,12 @@ function humanFrame(f: InputFrame, m: MatchSim): InputFrame {
   return f;
 }
 
-function play(human: boolean, seed: number, seconds: number) {
-  const cfg: MatchConfig = { seed, doubles: true, human: [human, false, false, false] };
+/** `humans`: the players on this machine (M6 local multiplayer: several, each recorded). */
+function play(humans: number[], seed: number, seconds: number) {
+  const cfg: MatchConfig = { seed, doubles: true, human: [0, 1, 2, 3].map((i) => humans.includes(i)) };
   const live = new MatchSim(cfg);
-  const rp = new Replays(cfg, human ? 0 : -1);
-  const f = new InputFrame();
+  const rp = new Replays(cfg, humans);
+  const frames = humans.map(() => new InputFrame());
   const inputs: Array<InputFrame | null> = [null, null, null, null];
   const checks: Array<{ live: number[]; shown: number[]; hash: number; liveHash: number | undefined }> = [];
   const hashes = new Map<number, number>();
@@ -52,10 +53,10 @@ function play(human: boolean, seed: number, seconds: number) {
       checks.push({ live: pointAt, shown: shownPoint, hash: rp.sim.hash(), liveHash: hashes.get(rp.sim.tick) });
       continue;
     }
-    // Two ticks a frame (120 Hz sim, 60 Hz frames), the human's frame recorded for each.
+    // Two ticks a frame (120 Hz sim, 60 Hz frames), each human's frame recorded for each.
     for (let k = 0; k < 2; k++) {
-      inputs[0] = human ? humanFrame(f, live) : null;
-      rp.beforeStep(live, inputs[0]);
+      humans.forEach((p, h) => { inputs[p] = humanFrame(frames[h]!, live, 137 * h); });
+      rp.beforeStep(live, inputs);
       live.step(inputs);
       rp.afterStep(live);
       hashes.set(live.tick, live.hash());
@@ -70,12 +71,12 @@ function play(human: boolean, seed: number, seconds: number) {
 }
 
 describe('instant replays', () => {
-  for (const human of [false, true]) {
-    it(`show the point that was played (${human ? 'with a human' : 'AI only'})`, () => {
+  for (const humans of [[], [0], [2, 3]]) {
+    it(`show the point that was played (${humans.length ? `humans ${humans.join(', ')}` : 'AI only'})`, () => {
       // (a big point is a matter of the seed: play on until there has been a replay to check)
       let shown = 0;
-      for (let seed = 21; seed < 29 && shown === 0; seed++) {
-        const r = play(human, seed, 420);
+      for (let seed = 21; seed < 41 && shown === 0; seed++) {
+        const r = play(humans, seed, 420);
         shown += r.shown;
         for (const c of r.checks) {
           expect(c.shown.length).toBe(2);

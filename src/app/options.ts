@@ -17,6 +17,7 @@ import { HAIR_TONES, type Character } from './character.ts';
 import type { SelfLook } from '../render/avatar/kit.ts';
 import { TATTOO_DESIGNS } from '../render/avatar/tattoo.ts';
 import { isNeutral } from '../render/avatar/proportions.ts';
+import type { LocalSeat } from '../game/locals.ts';
 
 /**
  * URL parameters that name a game (what optionsFromUrl and main.ts read to set one up): any of them launches it
@@ -241,6 +242,22 @@ export function wearFromIds(ids: readonly string[]): Wear | undefined {
   if (Object.keys(paint).length) w.paint = paint;
   if (grip) w.grip = grip;
   return Object.keys(w).length ? w : undefined;
+}
+
+/**
+ * A local match (M6, game/locals.ts): these seats are played on this machine, the first of them (P1) the camera's end
+ * and the setup's hand. A team with a local player on it has its AI play at the partner's level (a level above the
+ * opponents'), so with players on both sides the two AI partners are the same strength.
+ */
+export function applyLocals(opts: GameOptions, seats: readonly LocalSeat[], setup: MatchSetup): void {
+  const n = opts.match.doubles ? 4 : 2;
+  opts.locals = seats.map((s) => ({ ...s }));
+  opts.human = seats[0]!.player;
+  opts.match.human = Array.from({ length: n }, (_, i) => seats.some((s) => s.player === i));
+  opts.match.lefty = Array.from({ length: n }, (_, i) => i === opts.human && setup.hand === 'left');
+  const teams = new Set(seats.map((s) => s.player & 1));
+  const lv = opts.match.aiLevel ?? [PARTNER_AI[setup.level], LEVEL_AI[setup.level]];
+  opts.match.aiLevel = [teams.has(0) ? lv[0]! : lv[1]!, teams.has(1) ? lv[0]! : lv[1]!];
 }
 
 /**

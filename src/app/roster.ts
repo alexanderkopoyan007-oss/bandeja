@@ -93,10 +93,12 @@ const WOMENS = people.womensMatches;
  * knock-out's later round, the same pair (seats 0 and 2) against two others dealt from that seed. The same seed deals
  * the same court.
  */
-export function dealRoster(seed: number, n: number, o: { human?: number; me?: { face: string; woman: boolean }; rivals?: number } = {}):
-  { women: boolean; seats: Array<Pro | null>; humanFace: string | null } {
+export function dealRoster(seed: number, n: number, o: { human?: number; humans?: readonly number[]; me?: { face: string; woman: boolean }; rivals?: number } = {}):
+  { women: boolean; seats: Array<Pro | null>; humanFace: string | null; otherFaces: Array<string | null> } {
   const { me, rivals } = o;
   const human = o.human ?? -1;
+  // (a local match's other players, M6: their seats are theirs too)
+  const others = (o.humans ?? []).filter((i) => i !== human && i >= 0 && i < n);
   const rnd = seeded(seed, 0x51ab2c3d);
   const women = me ? me.woman : rnd() < WOMENS;
   const shuffled = (r: () => number, list: readonly Pro[]): Pro[] => {
@@ -117,12 +119,12 @@ export function dealRoster(seed: number, n: number, o: { human?: number; me?: { 
     return p;
   };
   const order = shuffled(rnd, pool);
-  const seats: Array<Pro | null> = Array.from({ length: n }, (_, i) => (i === human ? null : take(order)));
+  const seats: Array<Pro | null> = Array.from({ length: n }, (_, i) => (i === human || others.includes(i) ? null : take(order)));
   if (rivals !== undefined && n > 1) {
     // The same pair (seats 0 and 2); the faces on the other side dealt again.
-    for (let i = 1; i < n; i += 2) faces.delete(seats[i]!.character.face);
+    for (let i = 1; i < n; i += 2) if (seats[i]) faces.delete(seats[i]!.character.face);
     const again = shuffled(seeded(rivals, 0x2e9d6b17), pool.filter((p) => !seats.includes(p)));
-    for (let i = 1; i < n; i += 2) seats[i] = take(again);
+    for (let i = 1; i < n; i += 2) if (seats[i]) seats[i] = take(again);
   }
   // Each pair's drive player in the slot that receives on the right (rules/score.ts): seat t, the revés at t + 2. The
   // player's own seat stays where it is.
@@ -134,11 +136,21 @@ export function dealRoster(seed: number, n: number, o: { human?: number; me?: { 
   }
   // The human's face, when they aren't their own character: one of the match's sex no pro on court has, from the seed.
   let humanFace: string | null = null;
+  const free = (): string[] => (women ? DEALT_FACES.women : DEALT_FACES.men).filter((f) => !faces.has(f));
   if (human >= 0 && !me) {
-    const free = (women ? DEALT_FACES.women : DEALT_FACES.men).filter((f) => !faces.has(f));
-    humanFace = free[Math.floor(rnd() * free.length)] ?? null;
+    const f = free();
+    humanFace = f[Math.floor(rnd() * f.length)] ?? null;
+    if (humanFace) faces.add(humanFace);
   }
-  return { women, seats, humanFace };
+  // The other local players' faces, after the first's (so a one-player deal is as it was): any free one.
+  const otherFaces: Array<string | null> = Array.from({ length: n }, () => null);
+  for (const i of others) {
+    const f = free();
+    const face = f[Math.floor(rnd() * f.length)] ?? null;
+    if (face) faces.add(face);
+    otherFaces[i] = face;
+  }
+  return { women, seats, humanFace, otherFaces };
 }
 
 /**
@@ -146,10 +158,10 @@ export function dealRoster(seed: number, n: number, o: { human?: number; me?: { 
  * name, look, outfit, racket, hand, grunt, style and their take on it. A style chosen in the setup (partner,
  * opponents) is played instead of the pro's own; their level and signature stay theirs.
  */
-export function applyRoster(opts: GameOptions, dealt: { seats: Array<Pro | null>; humanFace: string | null }, setup?: MatchSetup): void {
+export function applyRoster(opts: GameOptions, dealt: { seats: Array<Pro | null>; humanFace: string | null; otherFaces?: Array<string | null> }, setup?: MatchSetup): void {
   const seats = dealt.seats, n = seats.length;
   const human = opts.me?.face ?? dealt.humanFace ?? '';
-  opts.people = seats.map((p) => p?.character.face ?? human);
+  opts.people = seats.map((p, i) => p?.character.face ?? (i === opts.human ? human : dealt.otherFaces?.[i] ?? human));
   opts.names = seats.map((p) => p?.name ?? null);
   opts.match.aiStyle = Array.from({ length: n }, (_, i) => opts.match.aiStyle?.[i] ?? 'reloj');
   opts.match.aiTweak = seats.map((p) => p?.tweak ?? null);

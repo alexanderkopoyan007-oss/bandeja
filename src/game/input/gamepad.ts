@@ -2,7 +2,7 @@
 // performance.now() time base as key events), so a release is judged at the moment the pad reported it. Rumble
 // goes through the pad's vibrationActuator where the browser has one (Chrome, Edge).
 import { BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP, BTN_OVERHEAD, BTN_VOLLEY, BTN_POWER, BTN_PRECISION } from '../../sim/input.ts';
-import type { KeyboardInput } from './keyboard.ts';
+import type { InputQueue } from './queue.ts';
 
 /**
  * Standard-mapping button index -> sim button. Face buttons are the four ground strokes and the lob, the bumpers
@@ -38,7 +38,9 @@ export class GamepadInput {
   private rumbleUntil = 0;
   private lastPoll = 0;
   /** The queue button changes go into (set by poll). */
-  private kb: KeyboardInput | null = null;
+  private kb: InputQueue | null = null;
+  /** The pad this one is held to (a player of a local match, M6): -1 takes the first there is. */
+  readonly fixed: number;
   /** The Start button (standard 9) went down: the pause menu. */
   onStart: (() => void) | null = null;
   /** The pad in use was disconnected. */
@@ -55,17 +57,19 @@ export class GamepadInput {
     this.startDown = true;
   }
 
-  /** `signal` removes the listeners (a game being torn down). */
-  constructor(target: Window, signal?: AbortSignal) {
+  /** `signal` removes the listeners (a game being torn down); `fixed`: only that pad (Gamepad.index), never another. */
+  constructor(target: Window, signal?: AbortSignal, fixed = -1) {
+    this.fixed = fixed;
     const o = { signal };
     // A pad connected before this game was built sends no new event: take the first one there is.
     try {
-      for (const p of navigator.getGamepads?.() ?? []) if (p && p.connected && this.index < 0) this.index = p.index;
+      for (const p of navigator.getGamepads?.() ?? []) if (p && p.connected && this.index < 0 && this.mine(p.index)) this.index = p.index;
     } catch {
       // getGamepads can throw where a permissions policy blocks it: no pad.
     }
     target.addEventListener('gamepadconnected', (e) => {
-      if (this.index < 0) this.index = (e as GamepadEvent).gamepad.index;
+      const i = (e as GamepadEvent).gamepad.index;
+      if (this.index < 0 && this.mine(i)) this.index = i;
     }, o);
     target.addEventListener('gamepaddisconnected', (e) => {
       if ((e as GamepadEvent).gamepad.index === this.index) {
@@ -87,8 +91,12 @@ export class GamepadInput {
     return this.index >= 0;
   }
 
-  /** Read the pad; button changes go into the keyboard's timestamped queue (one queue, one order). */
-  poll(kb: KeyboardInput, now: number): void {
+  private mine(index: number): boolean {
+    return this.fixed < 0 || index === this.fixed;
+  }
+
+  /** Read the pad; button changes go into `kb`, a timestamped queue (the keyboard's in a one-player game: one queue, one order). */
+  poll(kb: InputQueue, now: number): void {
     this.kb = kb;
     if (this.index < 0) return;
     const pad = navigator.getGamepads()[this.index];

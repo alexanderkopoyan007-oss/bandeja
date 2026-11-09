@@ -16,8 +16,13 @@ import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
 import { rosterScreen } from './rosterScreen.ts';
+import { connectedPads, defaultPicks, localScreen, type SeatPick } from './localScreen.ts';
+import type { LocalSeat } from '../game/locals.ts';
+import { bracketScreen, tourScreen, type TourHost } from './tournamentScreen.ts';
+import { DEFAULT_TOUR, nextTieName, tieCourt, tourFrom, type Tour, type TourSetup } from './tournament.ts';
+import { current as tieNow, finished as drawOver, playRound, recordYours, roundName, stillIn } from './bracket.ts';
 import { applyRoster, dealRoster } from './roster.ts';
-import { applyCharacter, keepStyles, optionsFromSetup, wearParam } from './options.ts';
+import { applyCharacter, applyLocals, keepStyles, optionsFromSetup, wearParam } from './options.ts';
 import { FACES, type Character } from './character.ts';
 import { Creator, type CreatorHost } from './creator.ts';
 import { Studio } from '../game/studio.ts';
@@ -94,6 +99,14 @@ export class App {
   private seedBase = (Math.random() * 2 ** 31) | 0;
   /** What the next game is: a drill of data/practice.json, or a round of the knock-out; -1 for neither. */
   private drill = -1;
+  /** A local match's seats (M6, localScreen.ts): played until the title screen; null for one player. */
+  private localMatch: LocalSeat[] | null = null;
+  /** The seat chart's picks, by player number (kept while the page is open). */
+  private localPicks: SeatPick[] | null = null;
+  /** The game on court is the player's tie in the tournament (M6, tournament.ts). */
+  private tourTie = false;
+  /** The tournament setup being made (kept while the page is open). */
+  private readonly tourSetup: TourSetup = { ...DEFAULT_TOUR };
   private cupRound = -1;
   /** Progress and cosmetics (app/store.ts), opened in the background at start: null until it is. */
   private store: Store | null = null;
@@ -147,6 +160,10 @@ export class App {
     this.menu.onChange = () => { saveSettings(this.settings); this.applyLook(); this.game?.applyPrefs(this.prefs()); };
     this.menu.onSound = (k) => this.uiSound(k);
     addEventListener('resize', () => this.game?.resize());
+    // The seat chart lists the pads there are: one plugged in or out while it shows makes it again.
+    const padsChanged = (): void => { if (this.menu.current?.id === 'local') this.menu.replace(this.localScreen()); };
+    addEventListener('gamepadconnected', padsChanged);
+    addEventListener('gamepaddisconnected', padsChanged);
     this.storeOpen = Store.open().then((s) => (this.store = s));
     this.creator = new Creator((this.creatorHost = {
       menu: this.menu,
@@ -271,6 +288,12 @@ export class App {
       opts.prefs!.replays = false;
       this.castSeed = opts.castSeed = on.castSeed;
     }
+    // A local match: several people on this machine, each on their own device (P1 the camera's end).
+    if (!attract && !on && this.localMatch && this.drill < 0 && this.cupRound < 0 && !this.tourTie) applyLocals(opts, this.localMatch, this.gameSetup());
+    // A tournament tie: the player beside their partner (their seat by the side they play), the other entry across.
+    const tour = !attract && !on && this.tourTie ? this.tour : null;
+    const court = tour ? tieCourt(tour, this.character()?.face ?? null) : null;
+    if (court) applyLocals(opts, [{ player: court.you, device: 'any' }], this.gameSetup());
     // The player's own character plays as them (behind ?creator=1 until the owner has seen the creator; never online,
     // where everyone plays the dealt cast and the standard racket).
     const me = this.character();
@@ -282,11 +305,16 @@ export class App {
     }
     // The AI players are the roster's pros (behind ?creator=1 until the owner has seen it; never online, not a drill's
     // coach, not when ?people= names the cast).
-    if (this.creatorOn && !on && (attract || this.drill < 0) && !opts.people) {
+    if (court) {
+      // (each pro their own; one given a free face for the tie if two on court share one)
+      applyRoster(opts, court, this.gameSetup());
+      opts.people = court.faces.map((f) => f ?? '');
+    } else if (this.creatorOn && !on && (attract || this.drill < 0) && !opts.people) {
       const n = opts.match.doubles ? 4 : 2;
       const face = opts.me?.face;
       const dealt = dealRoster(this.castSeed, n, {
         human: attract || opts.autoplay ? -1 : opts.human,
+        humans: attract || opts.autoplay ? [] : opts.locals?.map((l) => l.player),
         me: face ? { face, woman: FACES.find((f) => f.id === face)?.woman === true } : undefined,
         rivals: opts.rivals,
       });
@@ -358,12 +386,21 @@ export class App {
     const st = this.settings.setup;
     if (this.drill >= 0) return { ...st, mode: 'singles', court: 'standard', level: 'club', arena: 'club-day' };
     if (this.cupRound >= 0) return { ...st, level: CUP[this.cupRound]!.level, length: 'short' };
+    const tour = this.tourTie ? this.tour : null;
+    if (tour) {
+      const t = tour.setup;
+      return {
+        ...st, mode: t.doubles ? 'doubles' : 'singles', court: t.doubles ? 'standard' : 'singles-narrow', level: t.level, arena: t.arena,
+        scoring: t.scoring, length: t.length, partner: 'random', opponents: 'random',
+      };
+    }
     return st;
   }
 
-  private play(drill: number, cupRound: number): void {
+  private play(drill: number, cupRound: number, tourTie = false): void {
     this.drill = drill;
     this.cupRound = cupRound;
+    this.tourTie = tourTie;
     void this.startMatch();
   }
 
@@ -402,6 +439,7 @@ export class App {
   private async toTitle(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    this.localMatch = null;
     this.closeRoom();
     this.menu.hide();
     this.loading.show('Back to the club');
@@ -420,6 +458,7 @@ export class App {
 
   private results(st: MatchStats): void {
     this.earnedNow = this.logMatch(st);
+    this.logTie();
     this.game?.setMenuPaused(true);
     this.menu.open(this.resultsScreen(st), true);
     this.fetchAhead();
@@ -437,6 +476,43 @@ export class App {
       aces: me?.aces ?? 0, porTres: me?.outOfCourt ?? 0, fastest: me?.fastest ?? 0,
       longestRally: st.longestRally,
     });
+  }
+
+  /** The player's tournament tie into the draw (won or not, the score from their side), and the round's other ties. */
+  private logTie(): void {
+    const g = this.game, tour = this.tourTie ? this.tour : null;
+    if (!g || !tour || !tieNow(tour.draw).tie) return;
+    const mine = g.team;
+    const score = g.sim.score.history.map((h) => `${h[mine]}-${h[1 - mine]}`).join(' ');
+    recordYours(tour.draw, g.sim.score.winner === mine, score);
+    playRound(tour.draw);
+    this.saveTour(tour);
+  }
+
+  /** The tournament under way, as saved (checked on every read; null: none). */
+  private get tour(): Tour | null {
+    return this.store ? tourFrom(this.store.doc('tournament.v1')) : null;
+  }
+
+  private saveTour(t: Tour | null): void {
+    this.store?.saveDoc('tournament.v1', t ? JSON.parse(JSON.stringify(t)) : null);
+  }
+
+  private tourHost(): TourHost {
+    return {
+      tour: () => this.tour,
+      setTour: (t) => this.saveTour(t),
+      setup: this.tourSetup,
+      womanAsMe: () => { const me = this.character(); return me ? FACES.find((f) => f.id === me.face)?.woman === true : null; },
+      seed: () => Math.floor(Math.random() * 2 ** 31),
+      arenas: ARENAS,
+      open: (sc) => this.menu.open(sc),
+      replace: (sc) => this.menu.replace(sc),
+      playTie: () => this.play(-1, -1, true),
+      confirm: (t, sub, yd, yes) => this.confirm(t, sub, yd, yes),
+      // (the draw opened after a tie has nothing under it: back is the title)
+      back: () => { if (this.menu.depth > 1) this.menu.pop(); else void this.toTitle(); },
+    };
   }
 
   /** Points won off the coach in the drill on court since they were last logged. */
@@ -460,6 +536,7 @@ export class App {
   }
 
   private enterRoom(s: OnlineSession): void {
+    this.localMatch = null;
     this.drill = -1;
     this.cupRound = -1;
     this.online = s;
@@ -733,6 +810,21 @@ export class App {
 
   // ---- screens ---------------------------------------------------------------------------------------------
 
+  /** The seat chart (localScreen.ts). */
+  private localScreen(): Screen {
+    const st = this.settings.setup;
+    this.localPicks ??= defaultPicks(connectedPads().map((p) => p.index), st.mode === 'doubles');
+    return localScreen({
+      setup: st,
+      picks: this.localPicks,
+      pads: connectedPads,
+      remake: () => { saveSettings(this.settings); this.menu.replace(this.localScreen()); },
+      openSetup: () => this.menu.open(this.setupScreen(true)),
+      start: (seats) => { this.localMatch = seats; this.play(-1, -1); },
+      back: () => this.menu.pop(),
+    });
+  }
+
   private titleScreen(): Screen {
     return {
       id: 'title', title: 'Padel', sub: 'A match is on court one', back: null,
@@ -740,6 +832,15 @@ export class App {
         { kind: 'button', label: 'Play', primary: true, desc: 'Set up a match: doubles or singles, your partner and opponents, the venue, the scoring.', action: () => this.menu.open(this.setupScreen()) },
         { kind: 'button', label: 'Quick match', desc: () => `Straight onto court with your last setup: ${this.setupLine()}.`, action: () => this.play(-1, -1) },
         { kind: 'button', label: 'Online', desc: 'Find a match with anyone looking, or send a friend a link. Up to four people.', action: () => this.menu.open(this.onlineScreen()) },
+        {
+          kind: 'button', label: 'Tournament', hidden: () => !this.creatorOn,
+          desc: () => { const t = this.tour; const n = t && !drawOver(t.draw) ? nextTieName(t.draw) : null; return n ? `Your draw goes on: ${n} next.` : 'A draw of the roster’s pros, seeded, at the venue and rules you choose. Lose and you are out.'; },
+          action: () => this.menu.open(tourScreen(this.tourHost())),
+        },
+        {
+          kind: 'button', label: 'Local match', hidden: () => !this.creatorOn, desc: 'Up to four people on one screen: the keyboard and pads, as partners or opponents.',
+          action: () => this.menu.open(this.localScreen()),
+        },
         { kind: 'button', label: 'Knock-out', desc: 'Three rounds, a short set each, against stronger players every round. Lose and you are out.', action: () => this.play(-1, 0) },
         { kind: 'button', label: 'Practice', desc: 'A coach feeds you the shots padel is made of: off the glass, overheads, volleys.', action: () => this.menu.open(this.practiceScreen()) },
         {
@@ -775,7 +876,8 @@ export class App {
     return [{ value: 'random', label: 'Random' }, ...STYLE_KEYS.map((k) => ({ value: k, label: STYLES[k]!.name }))];
   }
 
-  private setupScreen(): Screen {
+  /** `forLocal`: opened from the seat chart, which starts the match (Done goes back to it). */
+  private setupScreen(forLocal = false): Screen {
     const st = this.settings.setup;
     const set = <K extends keyof MatchSetup>(k: K) => (v: unknown): void => {
       st[k] = v as MatchSetup[K];
@@ -785,7 +887,7 @@ export class App {
         // the standard court is still one row away.
         else if (st.mode === 'singles' && st.court === 'standard') st.court = 'singles-narrow';
         // The court's options and the opponents' label depend on the mode: the screen is made again.
-        this.menu.replace(this.setupScreen());
+        this.menu.replace(this.setupScreen(forLocal));
       }
     };
     const ch = (k: keyof MatchSetup, label: string, options: Choice[], desc: string, hidden?: () => boolean): Item =>
@@ -810,8 +912,8 @@ export class App {
         ch('bodies', 'Bodies count', [{ value: false, label: 'Off' }, { value: true, label: 'On' }],
           'On: your player’s height, arms and legs change how high and far they reach and how fast they run. Off: every body plays the same.',
           () => !!this.online || !this.character()),
-        { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court with this setup (it is kept for Quick match).', hidden: () => !!this.online, action: () => this.play(-1, -1) },
-        { kind: 'button', label: 'Done', primary: true, desc: 'Back to the room.', hidden: () => !this.online, action: () => this.menu.pop() },
+        { kind: 'button', label: 'Start match', primary: true, desc: 'Onto court with this setup (it is kept for Quick match).', hidden: () => !!this.online || forLocal, action: () => this.play(-1, -1) },
+        { kind: 'button', label: 'Done', primary: true, desc: forLocal ? 'Back to the seats.' : 'Back to the room.', hidden: () => !this.online && !forLocal, action: () => this.menu.pop() },
       ],
       focus: 0,
     };
@@ -1009,8 +1111,25 @@ export class App {
     const earnedNow = this.params.get('creator') === '1' && this.earnedNow.length
       ? `<div class="card"><h2>New in your locker</h2><p>${this.earnedNow.map((c) => c.name).join(' · ')}</p></div>` : '';
     const side = earnedNow + `<div class="card"><h2>${mins} min · longest rally ${st.longestRally} shots</h2><table>`
-      + `<tr><td class="l"></td><td class="w">${sim.doubles ? 'Your pair' : 'You'}</td><td class="w">${them}</td></tr>`
+      + `<tr><td class="l"></td><td class="w">${g.localPlayers.length > 1 ? g.teamName(0) : sim.doubles ? 'Your pair' : 'You'}</td><td class="w">${g.localPlayers.length > 1 ? g.teamName(1) : them}</td></tr>`
       + rows.map((r) => `<tr><td class="l">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('') + '</table></div>';
+    const tour = this.tourTie ? this.tour : null;
+    if (tour) {
+      const d = tour.draw, inIt = stillIn(d), over = drawOver(d);
+      const last = d.rounds[d.rounds.length - 1]!;
+      // (the round just played: the last with a tie of theirs decided on court)
+      let at = 0;
+      d.rounds.forEach((r, k) => { if (r.some((t) => (t.a === d.you || t.b === d.you) && t.winner >= 0 && t.score !== 'bye')) at = k; });
+      const played = roundName(d.rounds[at]!.length);
+      const title = over && inIt ? 'Champions' : inIt ? `Through to the ${roundName(last.length).toLowerCase()}` : `Out in the ${played.toLowerCase()}`;
+      return {
+        id: 'results', title, sub: `${played} · ${sets}`, back: null, side: () => side,
+        items: [
+          { kind: 'button', label: 'To the draw', primary: true, desc: inIt && !over ? `Next: ${nextTieName(d) ?? ''}.` : 'How the rest of it went.', action: () => this.menu.open(bracketScreen(this.tourHost()), true) },
+          { kind: 'button', label: 'Title screen', desc: 'The draw is kept.', action: () => void this.toTitle() },
+        ],
+      };
+    }
     const round = this.cupRound;
     if (round >= 0) {
       const last = round === CUP.length - 1;
@@ -1035,8 +1154,14 @@ export class App {
         ],
       };
     }
+    // A local match: the winners by their P numbers (the computer's pair as they).
+    const locals = g.localPlayers;
+    const pName = (i: number): string => `P${locals.indexOf(i) + 1}`;
+    const winners = locals.filter((i) => (i & 1) === sim.score.winner);
+    const localTitle = locals.length < 2 ? null
+      : winners.length === 0 ? 'They win' : winners.length === 1 ? `${pName(winners[0]!)} wins` : `${winners.map(pName).join(' and ')} win`;
     return {
-      id: 'results', title: won ? 'You win' : sim.doubles ? 'They win' : 'You lose', sub: `Game, set and match · ${sets}`, back: null, side: () => side,
+      id: 'results', title: localTitle ?? (won ? 'You win' : sim.doubles ? 'They win' : 'You lose'), sub: `Game, set and match · ${sets}`, back: null, side: () => side,
       items: [
         { kind: 'button', label: 'Rematch', primary: true, desc: 'The same setup again.', action: () => { this.keep = KEEP_ALL; this.play(-1, -1); } },
         { kind: 'button', label: 'Change setup', desc: 'Mode, opponents, venue, court and scoring, then onto court.', action: () => this.menu.open(this.setupScreen()) },

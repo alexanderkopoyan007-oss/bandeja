@@ -4126,3 +4126,53 @@ The plan's phase F, on realism-brief at 501c7de (main not pushed; that waits for
 - **Not run:** the anim army on extreme bodies (phase A's `bodiesQa` tests hold those thresholds in the suite) and the Pages deploy check (nothing pushed to main).
 - **Waiting for the owner:** everything of phases D and E is behind `?creator=1`: the creator, the turntable, the racket designer, the grunt, Bodies count, the roster and the Roster screen. The stills are in `tools/out/creator/` and `tools/out/roster/`.
 - **Already in normal matches:** the new style El Contragolpe is dealt, and the overgrip fix.
+
+## M6 phase A: local multiplayer (2026-11-09)
+The owner said "keep going" after M5 went to main (0a5c6bd). M6 is the brief's career, tournament, academy, challenges and local multiplayer; the plan is at the top of `~/.claude/plans/toasty-swimming-bonbon.md`. Every new screen is behind `?creator=1` until the owner has seen it.
+- **Input per device:**
+  - `KeyboardInput`'s timestamped ring is now `InputQueue` (`src/game/input/queue.ts`), and the keyboard extends it.
+  - A `GamepadInput` can be held to one pad (`fixed`) and feeds its own queue.
+  - A one-player game is unchanged: the keyboard and the first pad share one queue.
+- **The players on one machine (`src/game/locals.ts`, `GameOptions.locals`):**
+  - Each seat has a device, its own frame, buttons held, cues (an `AssistView` each), rumble (`Feedback.pads` by player) and replay record (`Replays` takes every human).
+  - The held-swing render lag holds while any of them charges.
+  - The meter shows the last player to charge.
+  - Rings under them are in Okabe-Ito colours (P1-P4), and the scoreboard names them P1-P4.
+- **One camera, behind P1's end:**
+  - A player at the other end steers as the screen shows them: their axes are flipped. The sim's axes are each team's own (`dx = moveX * side`), so without the flip their left would be the screen's right.
+  - Mouse aim belongs only to a keyboard player at the camera's end.
+- **Menus:** any pad drives them (`anyPad` merges every connected pad), and Start on any pad pauses for everyone.
+- **The seat chart (`src/app/localScreen.ts`):** each seat (pair 1 drive and revés, then pair 2's) is Computer, Keyboard or a pad. P1 is the first seat played. `applyLocals` (options.ts) sets the humans and the hand. A team with a local player on it has its AI play at the partner's level, so two AI partners on opposite sides are equally strong. The roster deals pros only to the seats nobody plays (`dealRoster` `humans`, `otherFaces`; a one-player deal is unchanged).
+- **Checked:**
+  - `tests/app/locals.test.ts`: the seat rules, the flip, a pad held to one index, the chart and `applyLocals`, the roster's faces.
+  - `tests/app/replay.test.ts`: two humans' replays match the live point to the hash.
+  - `tools/local-check.mjs` in Chrome with two scripted pads:
+    - each device reaches only its own player;
+    - the far player's right is the screen's right;
+    - Start on pad 2 pauses and resumes;
+    - with auto timing, all three humans hit the ball (18, 19 and 14 hits over 8 points);
+    - no page errors.
+
+## M6 phase B: tournaments (2026-11-09)
+- **The draw (`src/app/bracket.ts`, pure):**
+  - Entries are seeded by rating: the strongest quarter, at least two, in the usual layout (1 and 2 in different halves, 1-4 in different quarters).
+  - The next power of two up, with byes for the top seeds.
+  - The player's ties are played. Every other tie is settled by a seeded draw from the two ratings: logistic with `RESULT_SCALE` 0.03, so a 0.04 roster-level edge wins 79%.
+  - Score lines come out tighter the closer the tie.
+  - Nothing hidden is simulated: a draw costs nothing and is the same draw on any machine.
+- **The field (`src/app/tournament.ts`):**
+  - Doubles is the player and a pro partner. They take the side the partner doesn't play: seat 2 if the partner plays the drive.
+  - The other pairs are made drive with revés, strongest together, from the roster's pros of the draw's sex. Men fill 8 pairs, women 6 (8 with two byes).
+  - Singles fills 16 (women with three byes).
+  - Each tie's court (`tieCourt`) has every face once: two pros sharing a face, the later gets a free face for that tie.
+- **Kept in the store:** `Store.doc/saveDoc` holds M6's documents (`tournament.v1`, and later the career's and challenges'), each checked by its module on every read (`tourFrom`, `drawFrom`).
+- **Screens (`src/app/tournamentScreen.ts`):**
+  - A setup screen: mode, draw, entries, partner, field level, venue, scoring, length.
+  - The draw: every round with its scores, the player lit.
+  - "Play the quarter-final".
+  - "See it through" once out.
+  - Results say "Through to the semi-finals" or "Out in the quarter-finals" and go back to the draw.
+- **Checked:**
+  - `tests/app/bracket.test.ts`.
+  - `tests/app/tournament.test.ts`: fields of every kind with each pro once, sides, every tie's faces once through to the final, store round trip.
+  - `tools/tour-check.mjs` in Chrome.
