@@ -88,3 +88,50 @@ export function keyTables(keys: Record<string, string[]>): { buttons: Record<str
   }
   return { buttons, moves };
 }
+
+// ---- The gamepad's buttons (M8): which pad button is which shot, remappable from the Controls screen ---------------
+
+/** Standard-mapping button indices the player may bind: everything but Start (9, the pause, kept) and Home (16). */
+export const PAD_BUTTONS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15];
+/** The shots a pad button can be (the stick moves, as it always has). */
+export const PAD_ACTIONS = ACTIONS.filter((a) => !a.move);
+
+/**
+ * The pad's layout since Phase 5: face buttons the four ground strokes and the lob, the bumpers the two shots taken in
+ * the air (volley, overhead), the triggers the modifiers (power, precision), the right stick's click the drop (the
+ * d-pad's up and down too: under the aiming thumb, so the stick's click is the one to use).
+ */
+export const DEFAULT_PAD: Record<string, number[]> = {
+  drive: [0], slice: [1], topspin: [2], lob: [3], volley: [4], overhead: [5], precision: [6], power: [7], drop: [11, 13, 12],
+};
+
+/** The pad's bindings in use: the defaults with the player's changes over them (as resolveKeys: one button, one shot). */
+export function resolvePad(custom: Record<string, number[]> | undefined): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  const taken = new Set<number>();
+  for (const a of PAD_ACTIONS) for (const b of custom?.[a.id] ?? []) taken.add(b);
+  for (const a of PAD_ACTIONS) {
+    const c = custom?.[a.id];
+    out[a.id] = c ? c.filter((b) => PAD_BUTTONS.includes(b)).slice(0, 3) : DEFAULT_PAD[a.id]!.filter((b) => !taken.has(b));
+  }
+  return out;
+}
+
+/** Bind pad button `b` to `action` as its only button; any other shot that had it loses it. */
+export function bindPad(pad: Record<string, number[]>, action: string, b: number): void {
+  for (const id of Object.keys(pad)) pad[id] = pad[id]!.filter((x) => x !== b);
+  pad[action] = [b];
+}
+
+/** The pad's (standard mapping) buttons as an Xbox-style pad names them. */
+const PAD_NAMES = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'View', 'Start', 'Left stick click', 'Right stick click', 'D-pad ↑', 'D-pad ↓', 'D-pad ←', 'D-pad →'];
+export function padName(b: number): string {
+  return PAD_NAMES[b] ?? `Button ${b}`;
+}
+
+/** [pad button, sim button] pairs, flat (the pad's lookup table: read every frame, so no objects). */
+export function padTable(pad: Record<string, number[]>): Int32Array {
+  const pairs: number[] = [];
+  for (const a of PAD_ACTIONS) for (const b of pad[a.id] ?? []) pairs.push(b, a.button);
+  return Int32Array.from(pairs);
+}

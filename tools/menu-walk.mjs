@@ -11,11 +11,16 @@
 // headless Chrome paces frames, so this is an upper bound). Page errors fail the walk.
 //   bash tools/one-chrome.sh node tools/menu-walk.mjs [url]   (the dev server: npx vite --port 5190; ?creator=1 for all)
 //   DEPTH=3 (screens deep), REPEAT=2 (walks of one screen id before it is only checked for reach)
+// M8 phase B: LAYOUT=1 also checks each screen's layout (text clipped or spilling out of its row, a side card taller
+// than its column, which a pad can't scroll, anything off the screen); VIEW=1024x640 the window, TEXT=1.5 the
+// text size and CONTRAST=1 the high-contrast panels (stored settings, as a player would have them).
 import puppeteer from 'puppeteer-core';
 
 const url = process.argv[2] ?? 'http://localhost:5190/?creator=1';
 const DEPTH = Number(process.env.DEPTH ?? 3);
 const REPEAT = Number(process.env.REPEAT ?? 2);
+const LAYOUT = process.env.LAYOUT === '1';
+const [VW, VH] = (process.env.VIEW ?? '1600x900').split('x').map(Number);
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const problems = [];
@@ -27,9 +32,13 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
     args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required'] });
   const page = await browser.newPage();
-  await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1 });
+  await page.setViewport({ width: VW, height: VH, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  const stored = { ...(process.env.TEXT ? { textSize: Number(process.env.TEXT) } : {}), ...(process.env.CONTRAST === '1' ? { contrast: true } : {}) };
+  await page.evaluateOnNewDocument((stored) => {
+    try { localStorage.setItem('bandeja.settings.v1', JSON.stringify(stored)); } catch { /* none */ }
+  }, stored);
   await page.evaluateOnNewDocument(() => {
     // The pad (as tools/pad-check.mjs): standard mapping, its timestamp moved on every change.
     const pad = { id: 'Scripted pad (STANDARD GAMEPAD)', index: 0, connected: true, mapping: 'standard', timestamp: performance.now(),
@@ -167,14 +176,70 @@ try {
     if (!ok) problem(where, 'can\'t get back to the title');
     return ok;
   }
+  /** What doesn't fit on this screen (LAYOUT=1). */
+  const layoutSeen = new Set();
+  async function layout(where) {
+    const found = await page.evaluate(() => {
+      const out = [];
+      const root = document.querySelector('#menu.on');
+      if (!root) return out;
+      const vw = innerWidth, vh = innerHeight;
+      const shown = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+      const t = (el) => JSON.stringify((el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 48));
+      for (const el of root.querySelectorAll('h1, .sub, .item, .item .lab, .item .v, .desc, .card, .card h2, .card td, .card p, .foot, .foot span')) {
+        if (!shown(el)) continue;
+        const cs = getComputedStyle(el);
+        if (cs.overflowX !== 'visible' && el.scrollWidth > el.clientWidth + 1) out.push(`clipped ${t(el)} (${el.scrollWidth} in ${el.clientWidth} px)`);
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && (r.right > vw + 1 || r.left < -1 || r.bottom > vh + 1)) out.push(`off the screen ${t(el)}`);
+      }
+      for (const it of root.querySelectorAll('.item')) {
+        if (!shown(it)) continue;
+        const r = it.getBoundingClientRect();
+        for (const c of it.querySelectorAll('.lab, .val')) {
+          const q = c.getBoundingClientRect();
+          if (q.width > 0 && (q.right > r.right + 1 || q.left < r.left - 1)) out.push(`spills out of its row ${t(c)} in ${t(it.querySelector('.lab') ?? it)}`);
+        }
+        const lab = it.querySelector('.lab'), val = it.querySelector('.val');
+        if (lab && val && shown(lab) && shown(val) && lab.getBoundingClientRect().right > val.getBoundingClientRect().left + 1) out.push(`label under its value ${t(lab)}`);
+      }
+      const side = root.querySelector('.side');
+      if (side && shown(side) && side.scrollHeight > side.clientHeight + 2) out.push(`side card taller than its column (${side.scrollHeight} in ${side.clientHeight} px): a pad can't scroll it`);
+      const panel = root.querySelector('.panel');
+      if (side && panel && shown(side) && side.getBoundingClientRect().width > 0 && panel.getBoundingClientRect().right > side.getBoundingClientRect().left + 1) out.push('the list runs under the side card');
+      const desc = root.querySelector('.desc');
+      if (desc && panel && shown(desc) && desc.getBoundingClientRect().bottom > panel.getBoundingClientRect().bottom + 1) out.push(`the description runs past the panel ${t(desc)}`);
+      return out;
+    });
+    for (const f of found) {
+      const key = `${where.split(' > ').at(-1)}: ${f}`;
+      if (layoutSeen.has(key)) continue;
+      layoutSeen.add(key);
+      problem(where, f);
+    }
+  }
   async function walk(stack, depth) {
     const s = await info();
     const where = named(stack);
     screens++;
+    if (LAYOUT) await layout(where);
     // Reach: down through the list and round, every enabled item met.
     const enabled = s.items.filter((it) => !it.disabled).map((it) => it.i);
     const met = new Set([s.focus]);
-    for (let k = 0; k < s.items.length + 1; k++) { await press(DOWN); met.add((await info()).focus); }
+    for (let k = 0; k < s.items.length + 1; k++) {
+      await press(DOWN);
+      met.add((await info()).focus);
+      // (each item's description, as it is shown on focus)
+      if (LAYOUT) {
+        const d = await page.evaluate(() => {
+          const panel = document.querySelector('#menu.on .panel'), desc = document.querySelector('#menu.on .desc');
+          return desc && panel && desc.getBoundingClientRect().bottom > panel.getBoundingClientRect().bottom + 1
+            ? `the description runs past the panel ${JSON.stringify(desc.textContent.trim().slice(0, 48))}` : '';
+        });
+        const key = `${where.split(' > ').at(-1)}: ${d}`;
+        if (d && !layoutSeen.has(key)) { layoutSeen.add(key); problem(where, d); }
+      }
+    }
     const missed = enabled.filter((i) => !met.has(i));
     if (missed.length) problem(where, `the d-pad never reaches ${missed.length} of ${enabled.length} items (${missed.slice(0, 4).map((i) => `"${s.items[i].label}"`).join(', ')}${missed.length > 4 ? ', ...' : ''})`);
     const n = (walked.get(s.id) ?? 0) + 1;

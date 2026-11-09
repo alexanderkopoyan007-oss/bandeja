@@ -12,7 +12,7 @@ import { offGlassHigh, BAJADA_ABOVE, BAJADA_DEPTH } from '../sim/player/position
 import { SHAPES, SHOT_BANDEJA, SHOT_VOLLEY } from '../sim/contact/shots.ts';
 import tuning from '../../data/tuning.json' with { type: 'json' };
 import { PAL, gradeColour, hex } from './palette.ts';
-import { DEFAULT_KEYS, keyName } from '../game/input/bindings.ts';
+import { DEFAULT_KEYS, DEFAULT_PAD, PAD_ACTIONS, keyName, padName } from '../game/input/bindings.ts';
 import { eventsOf } from '../net/feed.ts';
 
 /** E_CALL's words (CALL_MINE, CALL_YOURS, CALL_SWITCH), as a pair shouts them. */
@@ -287,7 +287,7 @@ export class Hud {
    * The keys in use (input/bindings.ts, remapped ones included) and the swing mode: the help panel, the hints and
    * the serve call name them. Built here, once per change, so a frame showing a hint builds no strings.
    */
-  setKeys(bound: Record<string, string[]>, tap: boolean): void {
+  setKeys(bound: Record<string, string[]>, tap: boolean, pad: Record<string, number[]> = DEFAULT_PAD): void {
     const c = (id: string): string => {
       const code = bound[id]?.[0];
       return cap(code ? keyName(code) : '–');
@@ -307,7 +307,8 @@ export class Hud {
       + how
       + `Doubles: you are the ringed player; your partner calls the balls on their side, ${tap ? 'pressing' : 'holding'} a shot key takes it<br>`
       + `${pw} power &nbsp; ${pr} precision &nbsp; ${keys('[M] mouse aim &nbsp; [P] pro mode &nbsp; [F3] debug &nbsp; [H] hide')}<br>`
-      + 'Gamepad: stick moves &nbsp; A drive &nbsp; X topspin &nbsp; B slice &nbsp; Y lob &nbsp; right stick click drop &nbsp; LB volley &nbsp; RB overhead &nbsp; RT power &nbsp; LT precision';
+      // (the pad's first button for each shot, as bound)
+      + `Gamepad: stick moves${PAD_ACTIONS.map((a) => (pad[a.id]?.length ? ` &nbsp; ${padName(pad[a.id]![0]!)} ${a.id}` : '')).join('')}`;
     this.hintBandeja = `Bandeja · hold ${pw} to smash, ${pr} for a víbora`;
     this.hintVolley = `Volley · hold ${pw} to punch it flat`;
     this.hintLob = `Lob coming · ${tap ? 'press' : 'hold'} ${c('overhead')} for an overhead`;

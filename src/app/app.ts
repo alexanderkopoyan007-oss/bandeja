@@ -14,7 +14,7 @@ import type { BackendGuard } from '../render/backend.ts';
 import { Menu, type Item, type Screen, type Choice } from '../ui/menu/menu.ts';
 import { setSafeColours } from '../ui/palette.ts';
 import { resetHints } from '../ui/hud.ts';
-import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys } from '../game/input/bindings.ts';
+import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys, PAD_ACTIONS, bindPad, padName, resolvePad } from '../game/input/bindings.ts';
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
 import { rosterScreen } from './rosterScreen.ts';
@@ -1165,8 +1165,26 @@ export class App {
         ch('Timing cues', 'pro', [{ value: false, label: 'Shown' }, { value: true, label: 'Hidden (pro)' }], 'The closing ring, the meter, the trail and the bounce marker. Pro mode plays without them.'),
         ch('Aim with', 'mouseAim', [{ value: false, label: 'Keys' }, { value: true, label: 'Mouse' }], 'Keys: a movement key pressed while a shot key is held steers the target (one already down keeps its run until you let it go). Mouse: point at the far court.'),
         { kind: 'group', label: 'Picture' },
-        ch('Quality', 'quality', [{ value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'ultra', label: 'Ultra' }],
-          'Auto lowers the resolution when frames run long, to hold 60 frames a second. Low draws fewer pixels with softer shadows and no glow. Applies from the next match.'),
+        {
+          ...ch('Quality', 'quality', [{ value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'ultra', label: 'Ultra' },
+            // (M8's Custom, behind ?creator=1 until the owner has seen it; stored without the flag, it plays as Auto)
+            ...(this.creatorOn ? [{ value: 'custom', label: 'Custom' }] : [])],
+          this.creatorOn
+            ? 'Auto lowers the resolution when frames run long, to hold 60 frames a second. Low draws fewer pixels with softer shadows and no glow. Custom: the resolution, shadows and glow below, one by one. Applies from the next match.'
+            : 'Auto lowers the resolution when frames run long, to hold 60 frames a second. Low draws fewer pixels with softer shadows and no glow. Applies from the next match.'),
+          get: () => (s.quality === 'custom' && !this.creatorOn ? 'auto' : s.quality),
+        },
+        { ...ch('Resolution', 'resolution', [{ value: 'half', label: '50%' }, { value: 'three', label: '75%' }, { value: 'full', label: '100%' }, { value: 'sharp', label: 'Sharp' }],
+          'How many pixels are drawn: 50% and 75% of the window\'s, 100% one per pixel, Sharp every pixel of a high-density screen (High\'s). Fewer pixels, more frames. Applies from the next match.'),
+          hidden: () => !this.creatorOn || s.quality !== 'custom' },
+        { ...ch('Shadows', 'shadows', [{ value: 'off', label: 'Off' }, { value: 'low', label: 'Soft' }, { value: 'high', label: 'Sharp' }, { value: 'ultra', label: 'Sharpest' }],
+          'The floodlights\' shadows: the players\' and the ball\'s on the court. Off is the quickest. Applies from the next match.'),
+          hidden: () => !this.creatorOn || s.quality !== 'custom' },
+        { ...ch('Glow', 'glow', onOff, 'The lens glow round the lights and bright glass. Off draws a little quicker. Applies from the next match.'),
+          hidden: () => !this.creatorOn || s.quality !== 'custom' },
+        { ...ch('Field of view', 'fov', [{ value: -10, label: '-10°' }, { value: -5, label: '-5°' }, { value: 0, label: 'Standard' }, { value: 5, label: '+5°' }, { value: 10, label: '+10°' }, { value: 15, label: '+15°' }],
+          'How wide the camera sees in play, from where it stands: wider shows more of the court round you, narrower brings the players nearer. Replays and the shots between points keep their own lenses.'),
+          hidden: () => !this.creatorOn },
         ch('Frame rate meter', 'showFps', onOff, 'Frames per second and frame times, top right (also F3).'),
         ch('Camera', 'camera', [{ value: 'tv', label: 'TV' }, { value: 'near', label: 'TV close' }, { value: 'player', label: 'Player' },
           // (M7's cameras, behind ?creator=1 until the owner has seen them)
@@ -1185,9 +1203,12 @@ export class App {
         { ...ch('Captions', 'captions', onOff, 'The umpire\'s calls written at the foot of the screen, in the umpire\'s language (English when the umpire is off).'), hidden: () => !this.creatorOn },
         { kind: 'slider', label: 'Volume', get: () => s.volume, set: (v) => { s.volume = Number(v); }, step: 0.1, desc: 'Everything you hear.' },
         { kind: 'slider', label: 'Crowd', get: () => s.crowd, set: (v) => { s.crowd = Number(v); }, step: 0.1, desc: 'The crowd and the neighbouring courts, against the ball and the players.' },
+        { kind: 'slider', label: 'Voices', get: () => s.voices, set: (v) => { s.voices = Number(v); }, step: 0.1, desc: 'The players\' grunts as they hit. The ball, the racket and their feet stay as they are.', hidden: () => !this.creatorOn },
         { kind: 'group', label: 'Accessibility' },
         ch('Motion', 'motion', [{ value: 'system', label: 'As the system' }, { value: 'full', label: 'Full' }, { value: 'reduced', label: 'Reduced' }],
           'Reduced: no camera kick on smashes, no slam on the big calls, menus fade instead of sliding, no bouncing ball on the loading screen.'),
+        { ...ch('Camera shake', 'shake', onOff, 'The camera\'s kick on a hard smash. Off here, or with Motion reduced. (The game never blurs motion: there is no blur to turn off.)'),
+          hidden: () => !this.creatorOn },
         ch('Colours', 'safeColours', [{ value: false, label: 'Standard' }, { value: true, label: 'Colour-blind safe' }],
           'Timing colours a red-green colour-blind player can tell apart: blue for Good, cyan for Perfect, yellow for early or late, dark orange for a miss.'),
         ch('Panels', 'contrast', [{ value: false, label: 'Standard' }, { value: true, label: 'High contrast' }],
@@ -1221,6 +1242,27 @@ export class App {
           : 'Hold as the ball comes, release to hit.') + ' Keys kept by the game: Esc (pause), F3, H, P, M, Tab, Enter.',
       });
     }
+    // The pad's buttons (M8, behind ?creator=1 until the owner has seen it).
+    if (this.creatorOn) {
+      const pad = (): Record<string, number[]> => resolvePad(s.padKeys);
+      items.push({ kind: 'group', label: 'Gamepad (A to change a button)' });
+      for (const a of PAD_ACTIONS) {
+        items.push({
+          kind: 'key', label: a.label,
+          keys: () => pad()[a.id]!.map(padName).join(' / ') || 'None',
+          listen: () => {},
+          padListen: (b) => {
+            if (b === null) return;
+            const k = pad();
+            bindPad(k, a.id, b);
+            s.padKeys = k;
+          },
+          desc: 'Press A, then the pad button for this shot. A button another shot had moves here (that shot keeps any other it has). The left stick moves and aims; Start pauses.',
+        });
+      }
+      items.push({ kind: 'button', label: 'Reset pad', desc: 'Back to A drive, X topspin, B slice, Y lob, LB volley, RB overhead, RT power, LT precision and the right stick\'s click for the drop.',
+        action: () => { s.padKeys = {}; saveSettings(s); this.menu.refresh(); this.game?.applyPrefs(this.prefs()); } });
+    }
     const hintsBack: Item = { kind: 'button', label: 'Show hints again', desc: 'Each hint retires after six points. This brings them all back.', action: () => {
       resetHints();
       hintsBack.label = 'Hints are back';
@@ -1235,10 +1277,11 @@ export class App {
   }
 
   private padCard(): string {
-    const rows = [
-      ['Left stick', 'Move (aim while a shot is held)'], ['A', 'Drive'], ['X', 'Topspin'], ['B', 'Slice'], ['Y', 'Lob'],
-      ['Right stick click', 'Drop shot'], ['LB', 'Volley'], ['RB', 'Overhead'], ['RT', 'Power'], ['LT', 'Precision'], ['Start', 'Pause'],
-    ];
+    // (the buttons as bound: M8's rebinding is behind ?creator=1, the defaults without it)
+    const pad = resolvePad(this.creatorOn ? this.settings.padKeys : undefined);
+    const rows = [['Left stick', 'Move (aim while a shot is held)']];
+    for (const a of PAD_ACTIONS) for (const b of pad[a.id]!) if (b < 12) rows.push([padName(b), a.label]);
+    rows.push(['Start', 'Pause']);
     const more = [
       ['Overhead + power', 'Smash'], ['Overhead + precision', 'Víbora'], ['Topspin + precision', 'Chiquita'], ['Volley + power', 'Punch volley'],
     ];

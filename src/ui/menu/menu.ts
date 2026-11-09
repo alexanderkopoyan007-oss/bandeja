@@ -109,6 +109,9 @@ export interface Item {
   /** Key bindings: the keys' names now; `listen` starts a capture. */
   keys?: () => string;
   listen?: (code: string | null) => void;
+  /** A pad binding (M8): the capture takes the next pad button pressed (standard mapping; null: cancelled with Start
+   * or Esc), and keys don't count. */
+  padListen?: (button: number | null) => void;
   hidden?: () => boolean;
   disabled?: () => boolean;
   /** Called as the item takes the focus (a list whose focused entry shows elsewhere: the roster's turntable). */
@@ -480,6 +483,13 @@ export class Menu {
       this.listening = this.focusIdx;
       const b = this.els[this.focusIdx]!;
       b.classList.add('listening');
+      if (it.padListen) {
+        // Every pad button but Start (it cancels, as Esc does): the press that started this is down, not a press.
+        this.primePad();
+        b.querySelector('.v')!.textContent = 'Press a pad button · Start cancels';
+        if (this.descEl) this.descEl.textContent = 'Press the pad button to use. Start (or Esc) keeps the one there is.';
+        return;
+      }
       // Keys are pressed on the keyboard even from a pad; the pad's B cancels as Esc does.
       const cancel = this.usingPad ? 'B' : 'Esc';
       b.querySelector('.v')!.textContent = `Press a key · ${cancel} cancels`;
@@ -495,7 +505,11 @@ export class Menu {
       e.preventDefault();
       if (e.repeat) return;
       const it = this.items[this.listening]!;
-      it.listen?.(e.code === 'Escape' ? null : e.code);
+      if (it.padListen) {
+        // (a pad capture: only Esc, which cancels it)
+        if (e.code !== 'Escape') return;
+        it.padListen(null);
+      } else it.listen?.(e.code === 'Escape' ? null : e.code);
       this.refresh();
       this.onChange?.();
       return;
@@ -567,8 +581,19 @@ export class Menu {
     const start = edge(9, !!p.buttons[9]?.pressed);
     if (a || b || start) this.usingPad = true;
     if (this.listening >= 0) {
-      // Pad buttons can't be rebound here; B cancels a key capture.
-      if (b) { this.items[this.listening]!.listen?.(null); this.refresh(); }
+      const it = this.items[this.listening]!;
+      if (it.padListen) {
+        // A pad capture: the first button pressed (A and B too); Start cancels.
+        let got = start ? -2 : a ? 0 : b ? 1 : -1;
+        for (let k = 2; k < 16 && got === -1; k++) if (k !== 9 && edge(k, !!p.buttons[k]?.pressed)) got = k;
+        if (got === -1) return;
+        it.padListen(got === -2 ? null : got);
+        this.refresh();
+        this.onChange?.();
+        return;
+      }
+      // B cancels a key capture.
+      if (b) { it.listen?.(null); this.refresh(); }
       return;
     }
     if (a) this.activate();

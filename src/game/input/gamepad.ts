@@ -1,28 +1,8 @@
 // Gamepad input (standard mapping), polled once a frame. Button changes carry Gamepad.timestamp (the same
 // performance.now() time base as key events), so a release is judged at the moment the pad reported it. Rumble
 // goes through the pad's vibrationActuator where the browser has one (Chrome, Edge).
-import { BTN_DRIVE, BTN_TOPSPIN, BTN_SLICE, BTN_LOB, BTN_DROP, BTN_OVERHEAD, BTN_VOLLEY, BTN_POWER, BTN_PRECISION } from '../../sim/input.ts';
+import { DEFAULT_PAD, padTable } from './bindings.ts';
 import type { InputQueue } from './queue.ts';
-
-/**
- * Standard-mapping button index -> sim button. Face buttons are the four ground strokes and the lob, the bumpers
- * the two shots taken in the air (volley, overhead), the triggers the modifiers (power, precision) and the
- * right stick's click the touch shot (drop). The d-pad has it too, but that is under the thumb that aims, and a drop's
- * whole worth is where it lands.
- */
-const MAP: Array<[number, number]> = [
-  [0, BTN_DRIVE], // A / cross
-  [2, BTN_TOPSPIN], // X / square
-  [1, BTN_SLICE], // B / circle
-  [3, BTN_LOB], // Y / triangle
-  [4, BTN_VOLLEY], // left bumper
-  [5, BTN_OVERHEAD], // right bumper
-  [7, BTN_POWER], // right trigger
-  [6, BTN_PRECISION], // left trigger
-  [11, BTN_DROP], // right stick click
-  [13, BTN_DROP], // d-pad down
-  [12, BTN_DROP], // d-pad up
-];
 
 const DEADZONE = 0.22;
 
@@ -48,6 +28,15 @@ export class GamepadInput {
   private startDown = true;
   /** Rumble allowed (the Accessibility setting). */
   rumbleOn = true;
+  /** [pad button, sim button] pairs (input/bindings.ts; Controls > Gamepad, M8). Several pad buttons may share a shot
+   * (the drop: the right stick's click and the d-pad's up and down): it is held while any of them is. */
+  private map = padTable(DEFAULT_PAD);
+
+  /** The pad's bindings (resolvePad's). What is held carries over: a shot held under the old map is let go by the
+   * next poll if no button of the new one holds it. */
+  setMap(pad: Record<string, number[]>): void {
+    this.map = padTable(pad);
+  }
 
   /**
    * A menu used the Start press now down (Start on the pause screen resumes): the game must not take the same press
@@ -107,23 +96,25 @@ export class GamepadInput {
     const raw = pad.timestamp || now;
     const ts = raw > now ? now : raw < this.lastPoll ? this.lastPoll : raw;
     this.lastPoll = now;
-    for (let k = 0; k < MAP.length; k++) {
-      const m = MAP[k]!;
-      const b = pad.buttons[m[0]];
+    const map = this.map;
+    let want = 0;
+    for (let k = 0; k < map.length; k += 2) {
+      const i = map[k]!;
+      const b = pad.buttons[i];
       if (!b) continue;
       // Triggers are analogue (Chromium flips `pressed` early in their travel): held past half-way, let go below
       // 40%, so a trigger resting near the line doesn't chatter.
-      const trigger = m[0] === 6 || m[0] === 7;
-      const on = trigger ? (this.down[m[0]] ? b.value > 0.4 : b.value > 0.5) : b.pressed;
-      if (on === this.down[m[0]]) continue;
-      this.down[m[0]] = on;
-      const was = (this.held & m[1]) !== 0;
-      // Two pad buttons share the drop: it is held while either is.
-      const any = on || (m[1] === BTN_DROP && (this.down[11] || this.down[12] || this.down[13]));
-      if (any === was) continue;
-      this.held = any ? this.held | m[1] : this.held & ~m[1];
-      kb.inject(any, m[1], ts);
+      const on = i === 6 || i === 7 ? (this.down[i] ? b.value > 0.4 : b.value > 0.5) : b.pressed;
+      this.down[i] = on;
+      if (on) want |= map[k + 1]!;
     }
+    // Each shot's change, in the order of its bit (a shot held by two buttons changes once).
+    const changed = want ^ this.held;
+    for (let bit = 1; bit <= changed; bit <<= 1) {
+      if (!(changed & bit)) continue;
+      kb.inject((want & bit) !== 0, bit, ts);
+    }
+    this.held = want;
     // Start opens the pause menu (on the press; held from before, e.g. the press that closed a menu, it waits).
     const st = pad.buttons[9]?.pressed ?? false;
     if (st && !this.startDown) this.onStart?.();

@@ -154,6 +154,8 @@ export class Soundscape {
   /** Each player's pitch on that voice: four voices are shared by thirteen people. */
   private readonly tones: number[];
   /** When each player last grunted (sim s): the mouth goes with it (face.ts). */
+  /** The players' voices (Settings > Voices, M8): a gain on every grunt (the level squared, as the volume's). */
+  voiceGain = 1;
   readonly gruntAt = [-10, -10, -10, -10];
 
   constructor(out: AudioSink, arena: string, neighbours: number[], voices: number[] = [0, 1, 2, 3], tones: number[] = [1, 1, 1, 1]) {
@@ -279,7 +281,7 @@ export class Soundscape {
           this.gruntAt[player] = sim.time;
           const eb = binFor(GRUNT_E, effort, this.rand());
           const pitch = a === SHOT_SMASH || a === SHOT_VIBORA ? GRUNT_OVERHEAD : p.handSide < 0 ? GRUNT_BACKHAND : 1;
-          out.play('grunt', voice * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, voice >= GRUNT_WOMEN ? GRUNT_WOMEN_GAIN : 1, this.rate * pitch * this.tones[player]!, delay + 0.015, BUS_PLAYERS);
+          out.play('grunt', voice * 3 + eb.bin, p.pos.x, 1.6, p.pos.z, (voice >= GRUNT_WOMEN ? GRUNT_WOMEN_GAIN : 1) * this.voiceGain, this.rate * pitch * this.tones[player]!, delay + 0.015, BUS_PLAYERS);
         }
         // The crowd gasps at a great get: a smash or a ball off two walls sent back (never at a serve).
         if (this.big && !this.replaying && a !== SHOT_SERVE && sim.phase === PH_RALLY && this.lastHitTeam >= 0 && team !== this.lastHitTeam) {

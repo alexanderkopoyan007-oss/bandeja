@@ -39,8 +39,15 @@ export interface Settings {
   pro: boolean;
   mouseAim: boolean;
   // Video
-  /** auto: High with the render scale adapted to hold 60 Hz (Game.adapt); the others are fixed presets. */
-  quality: 'auto' | 'low' | 'medium' | 'high' | 'ultra';
+  /** auto: High with the render scale adapted to hold 60 Hz (Game.adapt); the others are fixed presets; custom (M8,
+   * behind ?creator=1) is the three below. */
+  quality: 'auto' | 'low' | 'medium' | 'high' | 'ultra' | 'custom';
+  /** Custom quality (render/quality.ts customPreset): pixels drawn, the key light's shadows, the lens glow. */
+  resolution: 'half' | 'three' | 'full' | 'sharp';
+  shadows: 'off' | 'low' | 'high' | 'ultra';
+  glow: boolean;
+  /** Field of view (M8, behind ?creator=1): degrees added to the match camera's own lens (views.ts). */
+  fov: -10 | -5 | 0 | 5 | 10 | 15;
   showFps: boolean;
   /** The match camera (render/views.ts CAMERA_PRESETS): TV, TV close, the player camera, and (M7, listed behind
    * ?creator=1 until the owner has seen them) the side and dynamic cameras. */
@@ -56,9 +63,14 @@ export interface Settings {
   // Sound (0..1)
   volume: number;
   crowd: number;
+  /** The players' grunts and calls (M8, behind ?creator=1). */
+  voices: number;
   // Accessibility
   /** Camera kick on smashes, the score banner's slam, sliding menus: 'system' follows prefers-reduced-motion. */
   motion: 'system' | 'full' | 'reduced';
+  /** The camera's kick on smashes (M8, behind ?creator=1): off by itself, or with reduced motion. The game draws no
+   * motion blur, so there is none to turn off. */
+  shake: boolean;
   /** Cue and grade colours a red-green colour-blind player can tell apart. */
   safeColours: boolean;
   /** High-contrast panels: the HUD's and menus' glass nearly opaque, a backing behind the HUD's loose words. */
@@ -71,6 +83,8 @@ export interface Settings {
   rumble: boolean;
   /** Keyboard bindings: action id (input/bindings.ts ACTIONS: drive, lob, up...) -> key codes. */
   keys: Record<string, string[]>;
+  /** Gamepad bindings (M8, behind ?creator=1): shot id -> standard-mapping button indices (bindings.ts resolvePad). */
+  padKeys: Record<string, number[]>;
   /** Which change of a default this save has been through (loadSettings). */
   defaultsV: number;
 }
@@ -84,10 +98,10 @@ export function defaultSettings(): Settings {
   return {
     setup: { ...DEFAULT_SETUP },
     timing: 'forgiving', assist: 'normal', autoTiming: false, swing: 'hold', pro: false, mouseAim: false,
-    quality: 'auto', showFps: false, camera: 'tv', replays: true, graphics: 'simple', umpire: 'off', captions: false,
-    volume: 1, crowd: 1,
-    motion: 'system', safeColours: false, contrast: false, textSize: 1, announce: true, rumble: true,
-    keys: {},
+    quality: 'auto', resolution: 'sharp', shadows: 'high', glow: true, fov: 0, showFps: false, camera: 'tv', replays: true, graphics: 'simple', umpire: 'off', captions: false,
+    volume: 1, crowd: 1, voices: 1,
+    motion: 'system', shake: true, safeColours: false, contrast: false, textSize: 1, announce: true, rumble: true,
+    keys: {}, padKeys: {},
     defaultsV: 1,
   };
 }
@@ -98,7 +112,8 @@ const CHOICES: Record<string, readonly unknown[]> = {
   arena: ['stadium', 'hall', 'club-day', 'club-night', 'club-dusk', 'final'], court: ['standard', 'panoramic', 'singles-narrow'],
   scoring: ['star', 'golden', 'advantage'], length: ['short', 'set', 'three'], hand: ['right', 'left'],
   timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'], swing: ['hold', 'tap'],
-  quality: ['auto', 'low', 'medium', 'high', 'ultra'], camera: ['tv', 'near', 'player', 'side', 'dynamic'], graphics: ['simple', 'tv'], umpire: ['off', 'en', 'es'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
+  quality: ['auto', 'low', 'medium', 'high', 'ultra', 'custom'], resolution: ['half', 'three', 'full', 'sharp'],
+  shadows: ['off', 'low', 'high', 'ultra'], fov: [-10, -5, 0, 5, 10, 15], camera: ['tv', 'near', 'player', 'side', 'dynamic'], graphics: ['simple', 'tv'], umpire: ['off', 'en', 'es'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
   // A partner's or the opponents' style: 'random' or a style that exists (data/ai.json).
   partner: ['random', ...STYLE_KEYS], opponents: ['random', ...STYLE_KEYS],
 };
@@ -122,6 +137,14 @@ function merge(dst: Record<string, unknown>, src: unknown): void {
         const out: Record<string, string[]> = {};
         for (const [b, codes] of Object.entries(v as Record<string, unknown>)) {
           if (Array.isArray(codes) && codes.every((c) => typeof c === 'string' && /^[A-Za-z0-9]{1,20}$/.test(c))) out[b] = codes.slice(0, 3) as string[];
+        }
+        dst[k] = out;
+      }
+    } else if (k === 'padKeys') {
+      if (v && typeof v === 'object') {
+        const out: Record<string, number[]> = {};
+        for (const [b, idx] of Object.entries(v as Record<string, unknown>)) {
+          if (Array.isArray(idx) && idx.every((i) => Number.isInteger(i) && i >= 0 && i <= 15)) out[b] = idx.slice(0, 3) as number[];
         }
         dst[k] = out;
       }

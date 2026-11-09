@@ -7,8 +7,8 @@ import { Rng } from '../sim/core/rng.ts';
 import { STYLE_KEYS } from '../sim/ai/styles.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
 import type { GameOptions } from '../game/game.ts';
-import { resolveKeys } from '../game/input/bindings.ts';
-import { qualityPreset } from '../render/quality.ts';
+import { resolveKeys, resolvePad } from '../game/input/bindings.ts';
+import { qualityPreset, customPreset } from '../render/quality.ts';
 import type { CameraPreset } from '../render/views.ts';
 import { type MatchSetup, type Settings, LEVEL_AI, PARTNER_AI, TIMING_SCALE, ASSIST_LEVEL, reducedMotion } from './settings.ts';
 import type { Wear } from '../render/avatar/costume.ts';
@@ -177,8 +177,12 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
   const calm = reducedMotion(s);
   // ?quality= (page-only: the menus stay) overrides the stored preset for this visit.
   const urlQ = params.get('quality');
-  const quality = urlQ && QUALITY_KEYS.includes(urlQ) ? urlQ : s.quality;
+  // (M8's settings are behind ?creator=1 until the owner has seen them: without it, Custom quality is Auto, and the
+  // field of view, the shake, the voices and the pad's buttons are the game's own)
+  const lab = params.get('creator') === '1';
+  const quality = urlQ && QUALITY_KEYS.includes(urlQ) ? urlQ : s.quality === 'custom' && !lab ? 'auto' : s.quality;
   const auto = quality === 'auto';
+  const preset = quality === 'custom' ? customPreset(s.resolution, s.shadows, s.glow) : qualityPreset(auto ? 'high' : quality);
   return {
     match: {
       seed,
@@ -214,8 +218,9 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
     avatar,
     attract,
     prefs: {
-      volume: s.volume, crowd: s.crowd, shake: !calm, rumble: s.rumble, announce: s.announce,
-      keys: resolveKeys(s.keys), quality: qualityPreset(auto ? 'high' : quality), adapt: auto, transitions: true,
+      volume: s.volume, crowd: s.crowd, voices: lab ? s.voices : 1, shake: !calm && (!lab || s.shake), rumble: s.rumble, announce: s.announce,
+      keys: resolveKeys(s.keys), pad: resolvePad(lab ? s.padKeys : undefined), fov: lab ? s.fov : 0,
+      quality: preset, adapt: auto, transitions: true,
       pro: s.pro, mouseAim: s.mouseAim, camera: s.camera, replays: s.replays, umpire: s.umpire, captions: s.captions,
     },
   };

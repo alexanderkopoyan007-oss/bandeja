@@ -549,12 +549,22 @@ export class BroadcastCamera {
   /** The player the 'player' camera slides with. */
   followPlayer = 0;
 
+  /** Settings > Field of view (M8): degrees added to every rig's own lens in play (cut-aways, establishing shots and
+   * replays keep theirs: they are the broadcast's shots, not the player's view). */
+  private fovAdd = 0;
+  private fovBase = FOV;
+  setFovAdd(deg: number): void {
+    this.fovAdd = Math.max(-10, Math.min(15, deg));
+    this.fov0 = this.fovBase + this.fovAdd;
+  }
+
   /** Settings > Camera. */
   setPreset(name: CameraPreset): void {
     const p = CAMERA_PRESETS[name] ?? CAMERA_PRESETS.tv;
     this.back = p.back;
     this.height = p.height;
-    this.fov0 = p.rig === 'side' ? SIDE_FOV : p.rig === 'dynamic' ? DYN_FOV : p.fov;
+    this.fovBase = p.rig === 'side' ? SIDE_FOV : p.rig === 'dynamic' ? DYN_FOV : p.fov;
+    this.fov0 = this.fovBase + this.fovAdd;
     this.follow = p.follow;
     if (p.rig !== this.rig) this.snapRig = true;
     this.rig = p.rig;

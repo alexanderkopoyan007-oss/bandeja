@@ -27,3 +27,21 @@ export type QualityKey = keyof typeof QUALITY;
 export function qualityPreset(key: string | null | undefined): QualityPreset {
   return (QUALITY as Record<string, QualityPreset>)[key ?? 'high'] ?? QUALITY.high;
 }
+
+/** Custom quality (Settings, M8): the preset's three costs chosen one by one. */
+export const RESOLUTIONS = {
+  /** Half the CSS pixels' width and height. */
+  half: { maxDpr: 1, scale: 0.5 },
+  /** Low's. */
+  three: { maxDpr: 1, scale: 0.75 },
+  /** One pixel per CSS pixel (Medium's). */
+  full: { maxDpr: 1, scale: 1 },
+  /** Every device pixel, up to two per CSS pixel (High's). */
+  sharp: { maxDpr: 2, scale: 1 },
+} as const;
+export const SHADOW_MAPS = { off: 0, low: 1024, high: 2048, ultra: 4096 } as const;
+
+export function customPreset(resolution: keyof typeof RESOLUTIONS, shadows: keyof typeof SHADOW_MAPS, glow: boolean): QualityPreset {
+  const r = RESOLUTIONS[resolution] ?? RESOLUTIONS.sharp;
+  return { name: 'Custom', maxDpr: r.maxDpr, scale: r.scale, shadow: SHADOW_MAPS[shadows] ?? 2048, bloom: glow };
+}

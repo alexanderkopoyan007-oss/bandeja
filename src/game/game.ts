@@ -146,6 +146,10 @@ export interface GamePrefs {
   /** Master volume and the crowd's level, 0..1. */
   volume?: number;
   crowd?: number;
+  /** The players' grunts, 0..1 (M8). */
+  voices?: number;
+  /** Degrees added to the match camera's lens (M8; views.ts BroadcastCamera.setFovAdd). */
+  fov?: number;
   /** Camera kick on smashes (off with reduced motion). */
   shake?: boolean;
   rumble?: boolean;
@@ -153,6 +157,8 @@ export interface GamePrefs {
   announce?: boolean;
   /** Keyboard bindings (input/bindings.ts). */
   keys?: Record<string, string[]>;
+  /** Gamepad bindings (input/bindings.ts resolvePad, M8): every pad of the game. */
+  pad?: Record<string, number[]>;
   /** Quality preset (render/quality.ts); the pixel ratio also adapts (render scale) when `adapt` is on. */
   quality?: QualityPreset;
   adapt?: boolean;
@@ -376,6 +382,7 @@ export class Game {
     BroadcastCamera.cutaways = opts.cutaway !== false;
     this.cam.establish = !!opts.establish;
     this.cam.setPreset(opts.camera ?? 'tv');
+    if (prefs.fov) this.cam.setFovAdd(prefs.fov);
     this.cam.followPlayer = opts.autoplay ? 0 : opts.human;
     // Replays re-run a point from a copy of the match (two more matches: about 2 MB, nothing per frame).
     this.replays = new Replays(opts.match, opts.autoplay ? [] : opts.locals?.map((l) => l.player) ?? [opts.human]);
@@ -430,6 +437,7 @@ export class Game {
     this.meterWho = this.locals[0]?.player ?? -1;
     for (const p of this.pads) {
       p.rumbleOn = prefs.rumble !== false;
+      if (prefs.pad) p.setMap(prefs.pad);
       // Start while a menu is up is the menu's (it resumes from the pause screen).
       p.onStart = () => { if (this.reelOn) this.endReel(false); else if (!this.menuPaused) this.onMenu?.(); };
       p.onLost = () => this.onMenu?.();
@@ -446,6 +454,7 @@ export class Game {
     this.audio.setLevels(prefs.volume ?? 1, prefs.crowd ?? 1);
     this.audio.load();
     this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? [], cast.voices, cast.tones);
+    if (prefs.voices !== undefined) this.soundscape.voiceGain = prefs.voices * prefs.voices;
     this.feetSrc = this.players.map((pv) => pv.avatar ?? { feet: null });
     const unlock = (): void => this.audio.unlock();
     addEventListener('keydown', unlock, { signal: sig });
@@ -482,7 +491,7 @@ export class Game {
     this.ball.showMarker = !opts.pro;
     this.debug = new DebugOverlay(hudRoot);
     // The help panel and the hints name the keys in use (remapped keys included) and the swing mode.
-    this.hud.setKeys(prefs.keys ?? DEFAULT_KEYS, !!(opts.match.tapSwing && opts.match.autoTiming));
+    this.hud.setKeys(prefs.keys ?? DEFAULT_KEYS, !!(opts.match.tapSwing && opts.match.autoTiming), prefs.pad);
     this.kb.onKey = (code) => this.onKey(code);
     this.transitions = prefs.transitions === false || opts.autoplay ? null : new Transitions(hudRoot, names);
     this.announcer = prefs.announce && !opts.autoplay ? new Announcer(hudRoot) : null;
@@ -602,9 +611,12 @@ export class Game {
     if (p.volume !== undefined || p.crowd !== undefined) this.audio.setLevels(p.volume ?? 1, p.crowd ?? 1);
     if (p.shake !== undefined) this.feedback.shake = p.shake;
     if (p.rumble !== undefined) for (const pad of this.pads) pad.rumbleOn = p.rumble;
+    if (p.pad) for (const pad of this.pads) pad.setMap(p.pad);
+    if (p.voices !== undefined) this.soundscape.voiceGain = p.voices * p.voices;
+    if (p.fov !== undefined) this.cam.setFovAdd(p.fov);
     if (p.keys) {
       this.kb.setKeys(p.keys);
-      this.hud.setKeys(p.keys, !!(this.opts.match.tapSwing && this.opts.match.autoTiming));
+      this.hud.setKeys(p.keys, !!(this.opts.match.tapSwing && this.opts.match.autoTiming), p.pad);
     }
     if (p.pro !== undefined && p.pro !== this.prefPro) { this.prefPro = p.pro; this.setPro(p.pro); }
     if (p.mouseAim !== undefined && p.mouseAim !== this.prefMouse) { this.prefMouse = p.mouseAim; this.mouseAim = p.mouseAim; }
