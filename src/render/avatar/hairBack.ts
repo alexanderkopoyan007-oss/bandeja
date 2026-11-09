@@ -215,7 +215,7 @@ export function backPush(clear: number, out: number): number {
  * posed this frame. The map is drawn once a frame, before the first draw that needs it (the shadow pass or the view's), from
  * the bones as three has them then.
  */
-export function hairOnBack(body: BackBody, p: THREE.Node<'vec3'>, hairGeometry: THREE.BufferGeometry): THREE.Node<'vec3'> {
+export function hairOnBack(body: BackBody, p: THREE.Node<'vec3'>, hairGeometry: THREE.BufferGeometry, owns?: THREE.Texture[]): THREE.Node<'vec3'> {
   if (!hairGeometry.hasAttribute('hairBack')) hairGeometry.setAttribute('hairBack', new THREE.BufferAttribute(body.hairClear, 1));
   const { nx, ny, cell, x0, y0 } = body;
   const half = new Uint16Array(nx * ny).fill(halfOf(BACK_NONE));
@@ -224,6 +224,8 @@ export function hairOnBack(body: BackBody, p: THREE.Node<'vec3'>, hairGeometry: 
   map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
   map.generateMipmaps = false;
   map.needsUpdate = true;
+  // (each avatar's own, used only inside the node: its material frees it, render/dispose.ts)
+  owns?.push(map);
   const toMap = uniform(new THREE.Matrix4()), backDir = uniform(new THREE.Vector3(0, 0, -1));
   const depth = new Float32Array(nx * ny), spare = new Float32Array(nx * ny), at = new Float32Array(body.verts.length * 3);
   const S = new Float32Array(body.bones.length * 16);

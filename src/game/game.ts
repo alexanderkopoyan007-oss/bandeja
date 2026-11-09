@@ -498,7 +498,8 @@ export class Game {
     if (this.disposed) return;
     this.disposed = true;
     this.running = false;
-    this.renderer.setAnimationLoop(null);
+    // (lent, the loop is the studio's)
+    if (!this.lent) this.renderer.setAnimationLoop(null);
     this.ac.abort();
     this.audio.close();
     this.announcer?.dispose();
@@ -536,8 +537,27 @@ export class Game {
       this.hud.announce(title, sub, performance.now() / 1000, 3);
     }
     this.epoch = performance.now() - this.sim.time * 1000;
-    this.renderer.setAnimationLoop(() => this.tick());
+    if (!this.lent) this.renderer.setAnimationLoop(() => this.tick());
     this.running = true;
+  }
+
+  /** The renderer is another scene's for a while (the creator's studio, game/studio.ts): no frames from this game, and
+   * none of its time passes, until `reclaim`. Before `start` too (a game built while the studio is up). */
+  private lent = false;
+  lend(): void {
+    if (this.lent) return;
+    this.lent = true;
+    if (this.running) this.renderer.setAnimationLoop(null);
+  }
+
+  /** The renderer back: the match goes on from where it was left. */
+  reclaim(): void {
+    if (!this.lent || this.disposed) return;
+    this.lent = false;
+    if (!this.running) return;
+    this.epoch = performance.now() - this.sim.time * 1000;
+    this.lastFrame = 0;
+    this.renderer.setAnimationLoop(() => this.tick());
   }
 
   /** Online: every player's first tick is at this moment (performance.now() time on this machine). */

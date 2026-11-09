@@ -13,6 +13,7 @@ import {
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import { modelledVertices, type KitCut, type PlayerAsset } from './asset.ts';
 import { backBody, hairOnBack } from './hairBack.ts';
+import { ownedTextures } from '../dispose.ts';
 import { armWeight, cutFor, patternAt, printBottom, printShirt, type Paint } from './paint.ts';
 import { FACE_T2, HANDLE_R, HANDLE_TOP, PROFILE_E, RACKET_BUTT, RACKET_TIP, RC, RC_H } from './racket.ts';
 
@@ -1068,7 +1069,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint)
   const onBody = hairBody(asset);
   const pushed = onBody ? hairPush(onBody, swung) : swung;
   const back = onBody ? backBody(asset, longHair) : null;
-  hair.positionNode = back ? hairOnBack(back, pushed, body.alphaGeometry) : pushed;
+  hair.positionNode = back ? hairOnBack(back, pushed, body.alphaGeometry, ownedTextures(hair)) : pushed;
   const ht = body.alphaMap ? texture(body.alphaMap, uv()) : vec4(0.16, 0.11, 0.08, 1);
   const hAO = body.alphaGeometry.hasAttribute('bodyAO') ? attribute<'float'>('bodyAO', 'float') : float(1);
   // Strands, not a cap: brightness varies across the cards (fine) and along them (slowly); pale texels at the edge of a

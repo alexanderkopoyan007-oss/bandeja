@@ -1,9 +1,16 @@
 // Freeing a scene's GPU resources when a game is torn down (Phase 8: back to the menu, a new match). Geometries,
 // materials, the textures materials hold as properties, instanced and skinned meshes' buffers and lights' shadow
-// maps. Textures used only inside TSL nodes are freed by their owners (NetView, Arena). Anything shared between
+// maps. Textures used only inside TSL nodes are freed by their owners (NetView, Arena), or with the material that
+// lists them as its own (ownedTextures). Anything shared between
 // games (the player body's geometry, cached textures) is safe to free: three uploads it again on its next use.
 import * as THREE from 'three/webgpu';
 import { isPooled } from './arena/lights.ts';
+
+/** The textures a material's nodes use that are its own (made for it, not shared): disposeTree frees them with it.
+ * Textures inside TSL nodes are otherwise out of its sight. */
+export function ownedTextures(mat: THREE.Material): THREE.Texture[] {
+  return ((mat.userData.owns as THREE.Texture[] | undefined) ??= []);
+}
 
 export function disposeTree(root: THREE.Object3D): void {
   const seen = new Set<object>();
@@ -27,6 +34,7 @@ export function disposeTree(root: THREE.Object3D): void {
       if (seen.has(mat)) continue;
       seen.add(mat);
       for (const v of Object.values(mat)) tex(v);
+      for (const v of (mat.userData.owns as THREE.Texture[] | undefined) ?? []) tex(v);
       mat.dispose();
     }
     // InstancedMesh (instance buffers), SkinnedMesh (bone texture), lights (shadow maps).

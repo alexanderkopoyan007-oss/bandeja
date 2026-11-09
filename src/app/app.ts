@@ -2,7 +2,7 @@
 // A game is built for each match and torn down after it (Game.dispose), so the title screen, a match, the results
 // and back again never reload the page. Settings live in localStorage (settings.ts).
 import * as THREE from 'three/webgpu';
-import { Game } from '../game/game.ts';
+import { Game, type GameOptions } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
 import { loadPeople, loadPlayerAsset, peopleWanted, type PlayerAsset } from '../render/avatar/asset.ts';
 import { bodiesParam, castParam, dealCast } from '../game/cast.ts';
@@ -17,6 +17,8 @@ import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
 import { applyCharacter, keepStyles, optionsFromSetup, wearParam } from './options.ts';
 import type { Character } from './character.ts';
+import { Creator } from './creator.ts';
+import { Studio } from '../game/studio.ts';
 import { Store } from './store.ts';
 import type { Cosmetic } from './unlocks.ts';
 import { OnlineSession, ROOM_LOST, SEATS, type OnlineStart } from '../net/session.ts';
@@ -93,6 +95,11 @@ export class App {
   private cupRound = -1;
   /** Progress and cosmetics (app/store.ts), opened in the background at start: null until it is. */
   private store: Store | null = null;
+  private readonly storeOpen: Promise<Store>;
+  /** The Players screens and the creator (app/creator.ts), and its turntable while it is up (game/studio.ts). */
+  private readonly creator: Creator;
+  private studio: Studio | null = null;
+  private studioOn = false;
   /** The game on court's drill (-1: not a drill), and its points already in the progress. */
   private gameDrill = -1;
   private drillLogged = 0;
@@ -136,7 +143,15 @@ export class App {
     this.menu.onChange = () => { saveSettings(this.settings); this.applyLook(); this.game?.applyPrefs(this.prefs()); };
     this.menu.onSound = (k) => this.uiSound(k);
     addEventListener('resize', () => this.game?.resize());
-    void Store.open().then((s) => { this.store = s; });
+    this.storeOpen = Store.open().then((s) => (this.store = s));
+    this.creator = new Creator({
+      menu: this.menu,
+      store: () => this.store,
+      studio: () => this.takeStudio(),
+      leaveStudio: () => this.leaveStudio(),
+      options: (c) => this.studioOptions(c),
+      confirm: (t, sub, yd, yes) => this.confirm(t, sub, yd, yes),
+    });
     // A drill's points are logged as it's left, the page being closed among the ways out.
     addEventListener('pagehide', () => this.logDrill());
     (window as unknown as { __app: App }).__app = this;
@@ -169,6 +184,49 @@ export class App {
     if (room && validCode(room)) this.connect(room);
     else if (this.params.get('online') === 'new') this.connect(null);
     else if (this.params.get('online') === 'find') this.findMatch();
+    else if (this.creatorOn && /[#&]p=/.test(location.hash)) {
+      // A friend's player (a link from Copy their code): onto the turntable, saved if they say so. The hash goes, so a
+      // reload doesn't bring them again.
+      const hash = location.hash;
+      history.replaceState(null, '', location.pathname + location.search);
+      void this.storeOpen.then(() => {
+        this.menu.open(this.creator.playersScreen());
+        return this.creator.addCode(hash);
+      });
+    }
+  }
+
+  /** The Players screens and the creator: behind ?creator=1 until the owner has seen them. */
+  private get creatorOn(): boolean {
+    return this.params.get('creator') === '1';
+  }
+
+  /** The renderer lent to the creator's turntable (the title's match waits, its time stopped). */
+  private takeStudio(): Studio | null {
+    if (!this.asset) return null;
+    this.studio ??= new Studio(this.renderer, this.asset);
+    if (!this.studioOn) {
+      this.studioOn = true;
+      this.game?.lend();
+      this.studio.start();
+    }
+    return this.studio;
+  }
+
+  private leaveStudio(): void {
+    if (!this.studioOn) return;
+    this.studioOn = false;
+    this.studio!.stop();
+    this.studio!.play(-1);
+    this.game?.reclaim();
+  }
+
+  /** What the turntable dresses a character from: a drill's options (singles, practice) with the character applied. */
+  private studioOptions(c: Character): GameOptions {
+    const setup: MatchSetup = { ...this.settings.setup, mode: 'singles', court: 'standard', level: 'club', arena: 'club-day' };
+    const opts = optionsFromSetup(setup, this.settings, 1, this.asset, false, this.params);
+    applyCharacter(opts, c);
+    return opts;
   }
 
   // ---- games ---------------------------------------------------------------------------------------------
@@ -249,6 +307,8 @@ export class App {
       // Not inside the game's own frame (the rebuild tears that game down): in a task of its own.
       else setTimeout(() => this.rebuildAttract(), 0);
     };
+    // (built while the creator's studio has the renderer: it waits for it)
+    if (this.studioOn) g.lend();
     g.start();
     if (attract) this.fetchAhead();
     this.playing = !attract;
@@ -265,7 +325,7 @@ export class App {
 
   /** The character that plays as the player: the store's active one, behind ?creator=1 (null: the dealt cast's). */
   private character(): Character | null {
-    if (this.params.get('creator') !== '1' || !this.store || this.store.active < 0) return null;
+    if (!this.creatorOn || !this.store || this.store.active < 0) return null;
     return this.store.characters[this.store.active] ?? null;
   }
 
@@ -665,6 +725,10 @@ export class App {
         { kind: 'button', label: 'Online', desc: 'Find a match with anyone looking, or send a friend a link. Up to four people.', action: () => this.menu.open(this.onlineScreen()) },
         { kind: 'button', label: 'Knock-out', desc: 'Three rounds, a short set each, against stronger players every round. Lose and you are out.', action: () => this.play(-1, 0) },
         { kind: 'button', label: 'Practice', desc: 'A coach feeds you the shots padel is made of: off the glass, overheads, volleys.', action: () => this.menu.open(this.practiceScreen()) },
+        {
+          kind: 'button', label: 'Players', hidden: () => !this.creatorOn, desc: 'Make your own player: their face, their body, what they wear, their racket. They play as you.',
+          action: () => this.menu.open(this.creator.playersScreen()),
+        },
         { kind: 'button', label: 'Settings', desc: 'Timing, assists, picture quality, sound and accessibility.', action: () => this.menu.open(this.settingsScreen()) },
         { kind: 'button', label: 'Controls', desc: 'Every shot on the keyboard and the gamepad; change any key.', action: () => this.menu.open(this.controlsScreen()) },
         { kind: 'button', label: 'Credits', desc: 'The libraries, assets and references the game is built from.', action: () => this.menu.open(this.creditsScreen()) },

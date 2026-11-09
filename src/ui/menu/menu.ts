@@ -98,9 +98,12 @@ export interface Item {
   set?: (v: unknown) => void;
   /** Text: a letter typed (null: rub one out), or something pasted. */
   type?: (letter: string | null) => void;
+  /** Text typed freely: any character the keyboard makes (a name's spaces and accents), not only A-Z by key. */
+  free?: boolean;
   paste?: (text: string) => void;
-  /** Sliders: 0..1 in `step`s. */
+  /** Sliders: 0..1 in `step`s, shown as a percentage unless `readout` says otherwise. */
   step?: number;
+  readout?: () => string;
   /** Key bindings: the keys' names now; `listen` starts a capture. */
   keys?: () => string;
   listen?: (code: string | null) => void;
@@ -379,9 +382,11 @@ export class Menu {
       b.setAttribute('aria-valuemin', '0');
       b.setAttribute('aria-valuemax', '100');
       b.setAttribute('aria-valuenow', String(pct));
-      b.setAttribute('aria-valuetext', `${pct}%`);
-      b.innerHTML = `<span class="lab"></span><span class="val"><span class="arw" data-d="-">◀</span><span class="bar"><i style="width:${pct}%"></i></span><span class="v">${pct}%</span><span class="arw" data-d="+">▶</span></span>`;
+      const shown = it.readout?.() ?? `${pct}%`;
+      b.setAttribute('aria-valuetext', shown);
+      b.innerHTML = `<span class="lab"></span><span class="val"><span class="arw" data-d="-">◀</span><span class="bar"><i style="width:${pct}%"></i></span><span class="v"></span><span class="arw" data-d="+">▶</span></span>`;
       b.querySelector('.lab')!.textContent = it.label;
+      b.querySelector('.v')!.textContent = shown;
     } else if (it.kind === 'key') {
       const k = it.keys?.() ?? '';
       b.setAttribute('aria-label', `${it.label}: ${k}. Press Enter to change.`);
@@ -465,11 +470,15 @@ export class Menu {
     }
     const c = e.code;
     const typing = this.items[this.focusIdx];
-    if (typing?.kind === 'text' && !e.metaKey && !e.ctrlKey && (/^Key[A-Z]$/.test(c) || c === 'Backspace')) {
-      e.preventDefault();
-      typing.type?.(c === 'Backspace' ? null : c.slice(3));
-      this.refresh();
-      return;
+    if (typing?.kind === 'text' && !e.metaKey && !e.ctrlKey) {
+      // (free: the character the layout makes, a dead key's accent included; else the key's letter, any layout)
+      const ch = typing.free ? (e.key.length === 1 ? e.key : null) : /^Key[A-Z]$/.test(c) ? c.slice(3) : null;
+      if (ch !== null || c === 'Backspace') {
+        e.preventDefault();
+        typing.type?.(c === 'Backspace' ? null : ch);
+        this.refresh();
+        return;
+      }
     }
     const handled = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'Enter', 'Space', 'Escape', 'Backspace', 'Tab'];
     if (!handled.includes(c)) return;
