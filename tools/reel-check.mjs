@@ -88,6 +88,8 @@ try {
   check('the results offer the highlights', atResults && list.some((x) => x.startsWith('Watch highlights')), list.join(' | '));
   check('watches them', await click('Watch highlights'));
   await page.waitForFunction(() => window.__bandeja.reelOn && window.__bandeja.reel.state === 2, { timeout: 30000, polling: 100 });
+  // (the reel shows from the click, its caption from the game's next frame: read after two frames)
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const first = await page.evaluate(() => ({ menu: window.__app.menu.isOpen, tag: document.querySelector('#hud .replay')?.textContent ?? '', on: document.querySelector('#hud .replay')?.classList.contains('on'), index: window.__bandeja.reel.index }));
   check('the reel is on court with its caption', !first.menu && first.on && /HIGHLIGHTS 1\//.test(first.tag), JSON.stringify(first));
   // It plays: the reel's clock runs on.

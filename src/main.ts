@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Game } from './game/game.ts';
-import { loadPlayerAsset, peopleWanted, type PlayerAsset } from './render/avatar/asset.ts';
+import { loadPlayerAsset, peopleWanted, prepareLow, type PlayerAsset } from './render/avatar/asset.ts';
+import { QUALITY } from './render/quality.ts';
 import { bodiesParam, castParam, dealCast } from './game/cast.ts';
 import { findPhoto, PhotoOverlay } from './game/photoMatch.ts';
 import { App, applyRootLook } from './app/app.ts';
@@ -110,6 +111,10 @@ async function start(): Promise<void> {
   const urlOptions = optionsFromUrl(params, await avatar);
   urlOptions.people = castParam(params);
   urlOptions.bodies = bodiesParam(params);
+  // (Low quality: the people's atlases at half size, asset.ts prepareLow)
+  if (urlOptions.avatar && urlOptions.prefs?.quality?.name === QUALITY.low.name) {
+    await prepareLow(urlOptions.avatar, dealCast(Number(params.get('seed')), castParam(params)).people);
+  }
   const game = new Game(urlOptions, renderer, document.getElementById('hud')!);
   // Exposed before the warm-up: tools that step the game themselves don't need it (and a hidden tab stalls it).
   (window as unknown as { __bandeja: Game }).__bandeja = game;

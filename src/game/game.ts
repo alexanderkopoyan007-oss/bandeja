@@ -34,6 +34,7 @@ import { makeBag, makeBottle } from '../render/props.ts';
 import { Hud } from '../ui/hud.ts';
 import { TvGraphics } from '../ui/tv.ts';
 import { Post } from '../render/post.ts';
+import { compileRounds } from '../render/compileUnits.ts';
 import { kitFor } from '../render/avatar/kit.ts';
 import { DebugOverlay } from '../ui/debug.ts';
 import { applyPhotoCam, type PhotoOverlay } from './photoMatch.ts';
@@ -64,6 +65,9 @@ const HUSH_OVER = 4;
 const WARM_MAX_MS = 20000;
 
 export interface GameOptions {
+  /** The players are built by `addPlayers()`, called once their people have loaded, not by the constructor (the app
+   * builds the rest of a match while they download). */
+  deferPlayers?: boolean;
   match: MatchConfig;
   /** Perf runs only: draw this many times the pixels (a slower GPU's stand-in; tools/perf.mjs igpu). */
   gpuLoad?: number;
@@ -218,9 +222,9 @@ export class Game {
   readonly net: NetView;
   readonly arena: Arena;
   readonly court: CourtView;
-  readonly players: PlayerView[];
+  readonly players: PlayerView[] = [];
   /** Contact shadows under the players (`?ground=1`, render/grounding.ts). */
-  private readonly grounding: Grounding | null;
+  private grounding: Grounding | null = null;
   /** Each local player's cues (their rings, spot and aim), by `locals`; one, showing nothing, with autoplay. */
   private readonly cues: AssistView[];
   readonly kb: KeyboardInput;
@@ -232,7 +236,9 @@ export class Game {
   readonly audio: AudioEngine;
   private audioFailed = false;
   readonly soundscape: Soundscape;
-  private readonly feetSrc: FeetSource[];
+  private feetSrc: FeetSource[] = [];
+  /** The people dealt to the players (built last: addPlayers). */
+  private readonly cast: Cast;
   readonly feedback: Feedback;
   readonly hud: Hud;
   readonly debug: DebugOverlay;
@@ -394,9 +400,7 @@ export class Game {
     this.highlights = new Highlights(opts.match, this.reelHumans);
     this.highlights.enabled = !opts.autoplay && !opts.playback && !opts.challenge && opts.match.practice === undefined && !opts.closeCam;
     this.ball = new BallView(this.scene, this.sim.world.spec.radius);
-    this.players = [];
-    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, cast, opts.match.rackets?.[i], opts.wear?.[i]));
-    this.grounding = Grounding.on ? new Grounding(this.scene, this.players) : null;
+    this.cast = cast;
     this.placeBags(cast);
     this.inputs = new Array<InputFrame | null>(this.sim.players.length).fill(null);
     this.aimMarker = new THREE.Mesh(
@@ -407,9 +411,8 @@ export class Game {
     this.aimMarker.position.y = 0.005;
     this.aimMarker.visible = false;
     this.scene.add(this.aimMarker);
-    // Reflections and ambient light from the arena itself (without the players, ball and cues).
+    // Reflections and ambient light from the arena itself (without the ball and cues; the players come after it).
     const moving: THREE.Object3D[] = [this.ball.mesh, this.ball.shadow, this.ball.trail, this.ball.marker, this.aimMarker, this.net.group];
-    for (const pv of this.players) moving.push(pv.root);
     this.court.setEnvironment(this.arena.bakeEnvironment(renderer, this.scene, moving));
     // A challenge: its run, its marks on court and its line on screen; the inputs kept (six minutes) or played back.
     this.run = opts.challenge ? new ChallengeRun(opts.challenge) : null;
@@ -444,8 +447,6 @@ export class Game {
     }
     this.cues = Array.from({ length: Math.max(1, this.locals.length) }, () => new AssistView(this.scene));
     for (const c of this.cues) c.enabled = !opts.pro;
-    // Who is who: a ring under the one player, or under each in their colour (P1-P4).
-    for (let k = 0; k < this.locals.length; k++) this.players[this.locals[k]!.player]!.markYou(this.locals.length > 1 ? LOCAL_COLOURS[k] : undefined);
     // Sound: the bank renders in a worker from now; audio starts at the first key, click or pad press (browsers
     // allow it only from a gesture). Autoplay too: a click and the AI match has sound.
     const floor = Math.max(0, FLOOR_NAMES.indexOf(opts.match.world?.floor ?? 'turf'));
@@ -455,7 +456,6 @@ export class Game {
     this.audio.load();
     this.soundscape = new Soundscape(this.audio, opts.arena ?? 'stadium', this.arena.def.neighbours ?? [], cast.voices, cast.tones);
     if (prefs.voices !== undefined) this.soundscape.voiceGain = prefs.voices * prefs.voices;
-    this.feetSrc = this.players.map((pv) => pv.avatar ?? { feet: null });
     const unlock = (): void => this.audio.unlock();
     addEventListener('keydown', unlock, { signal: sig });
     addEventListener('pointerdown', unlock, { signal: sig });
@@ -515,6 +515,24 @@ export class Game {
     this.probe.backend = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'WebGPU' : 'WebGL2';
     this.gpuTimed = (renderer.backend as { trackTimestamp?: boolean }).trackTimestamp === true;
     this.applyPixelRatio();
+    if (!opts.deferPlayers) this.addPlayers();
+  }
+
+  /**
+   * The players, built last: nothing else in a match needs them, so the app builds all the rest while their people
+   * download and calls this once they are in (GameOptions.deferPlayers); without it the constructor calls it. After
+   * the environment bake, which left them out of the reflections anyway. Before warmUp.
+   */
+  addPlayers(): void {
+    if (this.players.length) return;
+    const opts = this.opts;
+    // (Low quality draws the half-size atlases when the app made them: asset.ts prepareLow)
+    const low = this.preset.name === QUALITY.low.name;
+    for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, this.cast, opts.match.rackets?.[i], opts.wear?.[i], low));
+    this.grounding = Grounding.on ? new Grounding(this.scene, this.players) : null;
+    // Who is who: a ring under the one player, or under each in their colour (P1-P4).
+    for (let k = 0; k < this.locals.length; k++) this.players[this.locals[k]!.player]!.markYou(this.locals.length > 1 ? LOCAL_COLOURS[k] : undefined);
+    this.feetSrc = this.players.map((pv) => pv.avatar ?? { feet: null });
   }
 
   private onKey(code: string): void {
@@ -698,7 +716,11 @@ export class Game {
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     // (never a loading screen for ever, least of all with others waiting: what isn't done by then compiles as it's first drawn)
     // (into the post passes' target when there are post passes: what the frames draw into)
-    const compile = this.post ? this.post.compile(this.renderer) : this.renderer.compileAsync(this.scene, this.cam.camera);
+    // (in pieces side by side, one of each kind first, then the whole scene for anything they left: compileUnits.ts)
+    const compileIn = (units: THREE.Object3D[]): Promise<unknown> => (this.post ? this.post.compile(this.renderer, units)
+      : Promise.all(units.map((u) => this.renderer.compileAsync(u, this.cam.camera, this.scene))));
+    const [first, rest] = compileRounds(this.scene);
+    const compile = compileIn(first).then(() => compileIn(rest)).then(() => compileIn([this.scene]));
     await Promise.race([compile, new Promise((r) => setTimeout(r, WARM_MAX_MS))]);
     // The post passes' own shaders compile on their first frame: draw one now.
     if (this.post) this.post.render();

@@ -20,9 +20,13 @@ export class Post {
   private readonly canvas: HTMLCanvasElement;
   private readonly nodes: Array<{ dispose(): void }>;
   private readonly scenePass: ReturnType<typeof pass>;
+  private readonly scene: THREE.Scene;
+  private readonly camera: THREE.Camera;
 
   constructor(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, look: PostLook) {
     this.canvas = renderer.domElement;
+    this.scene = scene;
+    this.camera = camera;
     const scenePass = (this.scenePass = pass(scene, camera));
     const color = scenePass.getTextureNode('output');
     const glow = bloom(color, look.strength, look.radius, look.threshold);
@@ -37,23 +41,31 @@ export class Post {
    *
    * The scene pass draws inside the pipeline's own draw, one call deep, and three keys a draw's render context (and so
    * every shader built in it) by that depth, while `compileAsync` always asks for depth 0: its shaders were built again
-   * on the first frame all the same. So the compile's lookup of its context (made before its first await) asks for
+   * on the first frame all the same. So each compile's lookup of its context (made before its first await) asks for
    * depth 1. If three's internals change, the compile still runs, keyed as three keys it.
+   *
+   * `units` (compileUnits): the scene in pieces, compiled side by side. One compileAsync builds an object's shaders,
+   * then waits for the GPU to make its pipeline, then the next: with several going, one builds while another waits.
    */
-  async compile(renderer: THREE.WebGPURenderer): Promise<void> {
+  async compile(renderer: THREE.WebGPURenderer, units: THREE.Object3D[]): Promise<void> {
     const rt = this.scenePass.renderTarget;
     rt.samples = renderer.samples;
     rt.texture.type = renderer.getOutputBufferType();
     const contexts = (renderer as unknown as { _renderContexts?: { get(rt: unknown, mrt: unknown, depth?: number): unknown } })._renderContexts;
     const get = contexts?.get;
+    const was = renderer.getRenderTarget(), wasMrt = renderer.getMRT();
+    let done: Array<Promise<void>> = [];
+    renderer.setRenderTarget(rt);
+    renderer.setMRT(this.scenePass.getMRT());
     if (contexts && get) contexts.get = (target, mrt, depth = PASS_DEPTH) => get.call(contexts, target, mrt, depth);
-    let done: Promise<void>;
     try {
-      done = this.scenePass.compileAsync(renderer);
+      done = units.map((u) => renderer.compileAsync(u, this.camera, this.scene));
     } finally {
       if (contexts && get) contexts.get = get;
+      renderer.setRenderTarget(was);
+      renderer.setMRT(wasMrt);
     }
-    await done;
+    await Promise.all(done);
   }
 
   /** Free the HDR target and the bloom's targets. */

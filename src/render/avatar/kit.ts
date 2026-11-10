@@ -952,10 +952,12 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // (dark skin lifted a little: under the same floodlights its faces read as masks beside the others', mean luminance
   // 23 of 255 against 68 and 99)
   // (MakeHuman's women wear eye shadow in the source: the lids take the hue of the skin round them and keep their shading)
-  const round = body.opaqueMap ? texture(body.opaqueMap, uv()).level(float(LID_MIP)).xyz : tex.xyz;
+  // (the levels sampled by hand are the full atlas's: one down on Low's half-size copy, asset.ts lowPerson)
+  const shift = body.mipShift ?? 0;
+  const round = body.opaqueMap ? texture(body.opaqueMap, uv()).level(float(LID_MIP - shift)).xyz : tex.xyz;
   const shade = tex.xyz.dot(LUMA).div(round.dot(LUMA).max(0.02));
   // (and the chest in the collar takes the neck's: on some skins the source's torso is another colour, and read orange)
-  const neckTone = body.opaqueMap && frame.neckUv ? texture(body.opaqueMap, vec2(frame.neckUv.x, frame.neckUv.y)).level(float(4)).xyz : round;
+  const neckTone = body.opaqueMap && frame.neckUv ? texture(body.opaqueMap, vec2(frame.neckUv.x, frame.neckUv.y)).level(float(4 - shift)).xyz : round;
   const skinBase = mix(mix(tex.xyz, round.mul(shade), lids.mul(LID_PLAIN)), neckTone.mul(shade), bib.mul(BIB_PLAIN));
   // Skin isn't one even colour, and the source's millimetre texels are soft up close: blotches a few cm across, smaller
   // ones with a little red in them, and the pores' own shade (round 7, the critic: "waxy, even skin").
@@ -1153,7 +1155,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const onHead = step(uv().x, HAIR_U);
   const own = ht.xyz.add(HAIR_WARM.mul(max(float(HAIR_FLOOR).sub(ht.xyz.dot(LUMA)), 0)).mul(onHead));
   // Dyed (SelfLook): the head's hair in the dye's colour, each strand as much lighter or darker than its neighbours as it was.
-  const around = body.alphaMap ? texture(body.alphaMap, uv()).level(float(HAIR_DYE_MIP)).xyz.dot(LUMA) : ht.xyz.dot(LUMA);
+  const around = body.alphaMap ? texture(body.alphaMap, uv()).level(float(HAIR_DYE_MIP - (body.mipShift ?? 0))).xyz.dot(LUMA) : ht.xyz.dot(LUMA);
   const grain = ht.xyz.dot(LUMA).div(around.max(0.003)).clamp(HAIR_DYE_RANGE[0], HAIR_DYE_RANGE[1]);
   const dyed = selfHair.xyz.mul(mix(float(1), grain, HAIR_DYE_GRAIN));
   const base = mix(own, dyed, selfHair.w.mul(onHead));

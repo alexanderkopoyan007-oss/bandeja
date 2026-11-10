@@ -146,7 +146,27 @@ function shoulderStrap(sx: number, sy: number, sz: number, top: (x: number, z: n
  * A bag lying along x (its base on y = 0, centred) in the player's colours: `main` the body, `accent` the panels and
  * handle wrap; webbing, piping and zips dark, a rubberised base.
  */
+/** Each kind of bag's shape, made once: four players carry one each, mostly the same kind (a quarter of a second of a
+ * slow laptop's build per bag). Freed with a game like any geometry; three uploads it again for the next. */
+const BAG_SHAPES = new Map<string, THREE.BufferGeometry>();
+
 export function makeBag(id: string, main: number, accent: number): THREE.Mesh {
+  let shape = BAG_SHAPES.get(id);
+  if (!shape) BAG_SHAPES.set(id, (shape = bagShape(id)));
+  const mats: THREE.Material[] = [];
+  mats[B.body] = fabric('ripstop', main);
+  mats[B.accent] = fabric('ripstop', accent);
+  mats[B.trim] = fabric('webbing', 0x1d1e21);
+  mats[B.metal] = metal(0xa9adb4, 0.38);
+  mats[B.base] = fabric('grain', 0x151618);
+  const m = new THREE.Mesh(shape, mats);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  m.name = 'bag';
+  return m;
+}
+
+function bagShape(id: string): THREE.BufferGeometry {
   const parts: Part[] = [];
   let sx: number, sy: number, sz: number, r: number, o: BoxOpts;
   if (id === 'bag-backpack') {
@@ -182,17 +202,7 @@ export function makeBag(id: string, main: number, accent: number): THREE.Mesh {
     const topAt = (x: number, z: number): number => map(q.set(x, sy / 2, z), out).y;
     parts.push(...shoulderStrap(sx, sy, sz, topAt));
   }
-  const mats: THREE.Material[] = [];
-  mats[B.body] = fabric('ripstop', main);
-  mats[B.accent] = fabric('ripstop', accent);
-  mats[B.trim] = fabric('webbing', 0x1d1e21);
-  mats[B.metal] = metal(0xa9adb4, 0.38);
-  mats[B.base] = fabric('grain', 0x151618);
-  const m = new THREE.Mesh(mergeParts(parts), mats);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  m.name = 'bag';
-  return m;
+  return mergeParts(parts);
 }
 
 /** A squeeze bottle with a push-pull cap, standing on the floor by the bench. */

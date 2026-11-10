@@ -6,8 +6,9 @@ import { clipType, clipExt, saveFile, fileStem } from '../game/clipRecorder.ts';
 import * as THREE from 'three/webgpu';
 import { Game, type GameOptions, type GamePrefs } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
-import { loadPeople, loadPlayerAsset, peopleWanted, type PlayerAsset } from '../render/avatar/asset.ts';
+import { loadPeople, loadPlayerAsset, peopleWanted, prepareLow, startPeople, type PlayerAsset } from '../render/avatar/asset.ts';
 import { prepareRacket, racketLookFor } from '../render/avatar/racket.ts';
+import { QUALITY } from '../render/quality.ts';
 import { prewarmNet } from '../sim/setup.ts';
 import { bodiesParam, castParam, dealCast } from '../game/cast.ts';
 import practiceData from '../../data/practice.json';
@@ -384,7 +385,7 @@ export class App {
       applyRoster(opts, dealt, attract ? undefined : this.gameSetup());
     }
     const people = this.asset && peopleWanted(this.params)
-      ? loadPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f))
+      ? startPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f))
       : null;
     // While the players download, the match's work that doesn't need them: the net solver's warm-up and the rackets
     // (each in a task of its own, so the downloads' own work gets in between). On a cold load these were about a
@@ -394,10 +395,18 @@ export class App {
       await new Promise((r) => setTimeout(r, 0));
       prepareRacket(racketLookFor(i, opts.match.rackets?.[i]));
     }
-    await people;
+    // The match itself, all but its players, once their bodies are in (their textures still downloading): built
+    // before, it held the main thread while the bodies arrived, and their textures were asked for only after it. The
+    // players once they are in.
+    await people?.bodies;
+    opts.deferPlayers = people !== null;
     const g = new Game(opts, this.renderer, this.hud);
     (window as unknown as { __bandeja: Game }).__bandeja = g;
     this.game = g;
+    await people?.done;
+    // (Low quality: the people's atlases at half size, made off the main thread: asset.ts prepareLow)
+    if (this.asset && opts.prefs?.quality?.name === QUALITY.low.name) await prepareLow(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people);
+    g.addPlayers();
     this.gameDrill = attract ? -1 : this.drill;
     this.drillLogged = 0;
     if (on && this.online && this.online === this.buildingFor) {

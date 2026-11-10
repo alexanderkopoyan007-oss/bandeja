@@ -17,16 +17,16 @@ try {
   await page.setViewport({ width: 1920, height: 1080 });
   await page.evaluateOnNewDocument(() => {
     window.__misses = [];
-    let g0;
-    Object.defineProperty(window, '__bandeja', { configurable: true, get: () => g0, set: (g) => {
-      g0 = g;
-      const nodes = g.renderer._nodes;
+    let g0, a0;
+    // (hooked when the app is made, before the first Game: the environment bake inside the Game's build compiles too)
+    const hook = (R) => {
+      const nodes = R._nodes;
       if (!nodes || nodes.__patched) return;
       nodes.__patched = true;
-      const R = g.renderer;
-      window.__phase = 'pre';
+      window.__phase = 'build';
       const oc = R.compileAsync.bind(R);
-      R.compileAsync = async (...a) => { window.__phase = 'compileAsync'; try { return await oc(...a); } finally { window.__phase = 'after'; } };
+      let running = 0;
+      R.compileAsync = async (...a) => { running++; window.__phase = 'compileAsync'; try { return await oc(...a); } finally { if (--running === 0) window.__phase = 'after'; } };
       const orig = nodes.getForRender.bind(nodes);
       nodes.getForRender = (ro, a) => {
         const had = nodes.get(ro).nodeBuilderState !== undefined;
@@ -37,11 +37,13 @@ try {
         if (miss) {
           let path = [];
           for (let o = ro.object; o && path.length < 4; o = o.parent) path.push(o.name || o.type);
-          window.__misses.push({ key, ms: performance.now() - t0, obj: path.join('<'), mat: ro.material.type + (ro.material.name ? ':' + ro.material.name : ''), phase: window.__phase, rt: R.getRenderTarget() ? (R.getRenderTarget().texture?.type + '/' + (R.getRenderTarget().samples ?? 0)) : 'canvas', ctx: ro.context?.id ?? '', pass: ro.material.isShadowPassMaterial || ro.context?.isShadow ? 'shadow' : '', skinned: !!ro.object.isSkinnedMesh });
+          window.__misses.push({ key, ms: performance.now() - t0, obj: path.join('<'), mat: ro.material.type + (ro.material.name ? ':' + ro.material.name : ''), phase: window.__phase, rt: ro.context?.textures ? `${ro.context.textures[0]?.type}/${ro.context.sampleCount ?? 0}` : 'canvas', ctx: ro.context?.id ?? '', pass: ro.material.isShadowPassMaterial || ro.context?.isShadow ? 'shadow' : '', skinned: !!ro.object.isSkinnedMesh });
         }
         return r;
       };
-    } });
+    };
+    Object.defineProperty(window, '__app', { configurable: true, get: () => a0, set: (a) => { a0 = a; hook(a.renderer); } });
+    Object.defineProperty(window, '__bandeja', { configurable: true, get: () => g0, set: (g) => { g0 = g; hook(g.renderer); } });
   });
   await page.goto('http://localhost:4192/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__app?.menu?.isOpen, { timeout: 180000, polling: 100 });

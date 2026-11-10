@@ -155,6 +155,9 @@ export interface BodyLook {
   shoe?: ShoeFit | null;
   /** The trainer the feet's animation was tuned on (shoe.ts SoleRef), for soles.ts. */
   soleRef?: SoleRef | null;
+  /** The atlases at half size (Low quality: lowPerson), whose mips are each one level down from the full ones'. kit.ts
+   * subtracts this from the levels it samples by hand. */
+  mipShift?: number;
 }
 
 /** The roster (public/assets/people/, data/players/); a match loads the four it deals (game/cast.ts). */
@@ -200,14 +203,27 @@ export async function loadPlayerAsset(url: string, progress?: (frac: number) => 
   return base;
 }
 
+/** A person on the way: `body` once their file is in and parsed (their textures asked for), `done` once they are in
+ * `base.people` with their textures (or failed). */
+interface PersonJob { body: Promise<void>; done: Promise<void> }
+
 /** People being fetched, by name: a match and the title's fetch ahead (app.ts) share one download. */
-const fetching = new Map<string, Promise<void>>();
+const fetching = new Map<string, PersonJob>();
 
 /**
  * Loads the people a match needs into `base.people` (public/assets/people/, next to the asset's folder), those not
  * already there. A person that fails to load is left out (that player is the mannequin) and said in the console.
  */
 export async function loadPeople(base: PlayerAsset, people: string[], progress?: (frac: number) => void): Promise<void> {
+  await startPeople(base, people, progress).done;
+}
+
+/**
+ * loadPeople in two stages: `bodies` once every body file is in and parsed, with its textures asked for; `done` once
+ * the people are in `base.people`. The app builds the rest of a match between the two: built before the bodies were
+ * in, it held the main thread while they arrived, and the textures, asked for only once a body was parsed, waited too.
+ */
+export function startPeople(base: PlayerAsset, people: string[], progress?: (frac: number) => void): { bodies: Promise<void>; done: Promise<void> } {
   const wanted = [...new Set(people)].filter((n) => !base.people.some((p) => p.look!.name === n));
   const n = wanted.length;
   // All at once: one after another, four people waited about 6 s on a slow line before the shaders could start.
@@ -217,20 +233,22 @@ export async function loadPeople(base: PlayerAsset, people: string[], progress?:
     for (let i = 0; i < n; i++) s += got[i]!;
     progress(s / n);
   });
-  const jobs: Promise<void>[] = [];
+  const bodies: Promise<void>[] = [], done: Promise<void>[] = [];
   for (let i = 0; i < n; i++) {
     const name = wanted[i]!;
     let job = fetching.get(name);
     if (!job) {
-      job = loadPerson(base, name, report && ((f) => { got[i] = f; report(); })).finally(() => fetching.delete(name));
+      job = loadPerson(base, name, report && ((f) => { got[i] = f; report(); }));
+      void job.done.finally(() => fetching.delete(name));
       fetching.set(name, job);
     }
-    jobs.push(job.then(() => { got[i] = 1; report?.(); }));
+    bodies.push(job.body);
+    done.push(job.done.then(() => { got[i] = 1; report?.(); }));
   }
-  await Promise.all(jobs);
+  return { bodies: Promise.all(bodies).then(() => undefined), done: Promise.all(done).then(() => undefined) };
 }
 
-async function loadPerson(base: PlayerAsset, name: string, progress?: (frac: number) => void): Promise<void> {
+function loadPerson(base: PlayerAsset, name: string, progress?: (frac: number) => void): PersonJob {
   const dir = new URL('people/', base.url).href;
   // Decoded off the main thread, flipped there too (WebGL can't flip an ImageBitmap when it uploads one), straight alpha
   // (the alpha is the skin's occlusion). An <img> decodes on the main thread inside the first upload, in the warm-up.
@@ -243,17 +261,70 @@ async function loadPerson(base: PlayerAsset, name: string, progress?: (frac: num
     t.anisotropy = 4;
     return t;
   };
-  try {
-    const p = parseBodyAsset(await fetchGz(dir + name + '.bnz', progress), base);
+  let bodyIn = (): void => undefined;
+  const body = new Promise<void>((r) => { bodyIn = r; });
+  const done = (async (): Promise<void> => {
+    try {
+      const buf = await fetchGz(dir + name + '.bnz', progress);
+      // The textures first (their names are in the header): the parse below is a slow laptop's half second.
+      const h = bodyHeader(buf);
+      const tx = h.textures, hands = !!h.handsBox;
+      const maps = Promise.all([
+        texture(tx.opaque), texture(tx.alpha), suitNormal(texture, tx.cloth ?? 'suit-normal.webp'), tx.skin ? texture(tx.skin).then(linear) : null,
+        tx.hands && hands ? texture(tx.hands) : null, tx.handsN && hands ? texture(tx.handsN).then(linear) : null]);
+      // (a body that won't parse leaves its textures unwanted: no unhandled rejection for them)
+      maps.catch(() => undefined);
+      const p = parseBodyAsset(buf, base);
+      bodyIn();
+      const look = p.look!;
+      [look.opaqueMap, look.alphaMap, look.clothNormal, look.skinNormal, look.handsMap, look.handsNormal] = await maps;
+      base.people.push(p);
+    } catch (err) {
+      console.warn(`person ${name} not loaded, that player is the mannequin:`, err);
+    } finally {
+      bodyIn();
+    }
+  })();
+  return { body, done };
+}
+
+/**
+ * Low quality's copy of a person: the same body with its two atlases at half size (a quarter of the memory). Four
+ * people's full atlases were 203 MB of the Low preset's 316 MB of textures, against a budget of 256 (perf.mjs memory);
+ * at Low's render scale a player on the broadcast camera is about 150 px tall, a quarter of a half-size atlas's height.
+ * Made off the main thread from the full atlases (prepareLow), kept per person; the person itself is not changed, so
+ * every other game, and the creator, draws the full ones.
+ */
+const LOW = new WeakMap<PlayerAsset, PlayerAsset>();
+
+export async function prepareLow(base: PlayerAsset, names: string[]): Promise<void> {
+  await Promise.all(base.people.filter((p) => names.includes(p.look!.name) && !LOW.has(p)).map(async (p) => {
     const look = p.look!;
-    const tx = look.textures;
-    [look.opaqueMap, look.alphaMap, look.clothNormal, look.skinNormal, look.handsMap, look.handsNormal] = await Promise.all([
-      texture(tx.opaque), texture(tx.alpha), suitNormal(texture, tx.cloth ?? 'suit-normal.webp'), tx.skin ? texture(tx.skin).then(linear) : null,
-      tx.hands && look.handsBox ? texture(tx.hands) : null, tx.handsN && look.handsBox ? texture(tx.handsN).then(linear) : null]);
-    base.people.push(p);
-  } catch (err) {
-    console.warn(`person ${name} not loaded, that player is the mannequin:`, err);
-  }
+    const half = async (t: THREE.Texture | null): Promise<THREE.Texture | null> => {
+      const img = t?.image as ImageBitmap | undefined;
+      if (!t || !img || typeof createImageBitmap !== 'function' || !(img instanceof ImageBitmap)) return t;
+      // (already flipped when loaded, straight alpha: the alpha is the skin's occlusion and the hair's coverage)
+      const small = await createImageBitmap(img, { resizeWidth: Math.max(1, img.width >> 1), resizeHeight: Math.max(1, img.height >> 1),
+        resizeQuality: 'high', premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+      const c = new THREE.Texture(small);
+      c.flipY = false;
+      c.colorSpace = t.colorSpace;
+      c.anisotropy = t.anisotropy;
+      c.needsUpdate = true;
+      return c;
+    };
+    try {
+      const [opaqueMap, alphaMap] = await Promise.all([half(look.opaqueMap), half(look.alphaMap)]);
+      LOW.set(p, { ...p, look: { ...look, opaqueMap, alphaMap, mipShift: 1 } });
+    } catch (err) {
+      console.warn(`person ${look.name}: no half-size atlases, drawn with the full ones:`, err);
+    }
+  }));
+}
+
+/** A person as Low quality draws them: the half-size copy if prepareLow made one, else the person. */
+export function lowPerson(p: PlayerAsset): PlayerAsset {
+  return LOW.get(p) ?? p;
 }
 
 /** A normal map's texels are directions, not colours. */
@@ -461,13 +532,17 @@ interface BodyHeader {
   meshes: { opaque: MeshHeader; alpha: MeshHeader };
 }
 
-/** A person (version 2) on the mannequin's skeleton and clips. Its atlases are loaded separately (loadPlayerAsset). */
-export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): PlayerAsset {
+/** A person's header alone (what loadPerson needs before the parse: the textures' names). */
+function bodyHeader(buf: ArrayBuffer): BodyHeader {
   const head = new Uint32Array(buf, 0, 3);
   if (head[0] !== 0x4a444e42 || (head[1] !== 2 && head[1] !== 3)) throw new Error('person asset: bad header');
-  const jsonLen = head[2]!;
-  const h = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 12, jsonLen))) as BodyHeader;
-  const base = 12 + jsonLen;
+  return JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 12, head[2]!))) as BodyHeader;
+}
+
+/** A person (version 2) on the mannequin's skeleton and clips. Its atlases are loaded separately (loadPlayerAsset). */
+export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): PlayerAsset {
+  const h = bodyHeader(buf);
+  const base = 12 + new Uint32Array(buf, 0, 3)[2]!;
   if (h.bones.length !== mannequin.bones.length || h.bones.some((b, i) => b.name !== mannequin.bones[i]!.name))
     throw new Error(`person asset ${h.name}: not the game skeleton`);
   const geometry = decodeMesh(buf, base, h.meshes.opaque);

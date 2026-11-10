@@ -77,6 +77,29 @@ try {
       incl.set(k, (incl.get(k) ?? 0) + (dt[i] ?? 0));
     }
   }
+  // A timeline: every 250 ms, what the main thread was doing (the innermost of our functions on the stack, else what
+  // the sample was: idle, program, GC, three).
+  const BUCKET = 250e3;
+  const buckets = [];
+  let t = 0;
+  for (let i = 0; i < profile.samples.length; i++) {
+    t += dt[i] ?? 0;
+    const b = Math.floor(t / BUCKET);
+    buckets[b] ??= new Map();
+    let what = null;
+    for (let id = profile.samples[i]; id !== undefined && !what; id = parent.get(id)) {
+      const k = nameOf(id);
+      if (k.includes(' src/')) what = k.split(' ')[0] + ' ' + k.split(' ')[1].replace(/^src\//, '').replace(/:\d+$/, '');
+    }
+    if (!what) { const k = nameOf(profile.samples[i]); what = k.startsWith('(') ? k.split(' ')[0] : k.includes('three') ? 'three' : 'other'; }
+    buckets[b].set(what, (buckets[b].get(what) ?? 0) + (dt[i] ?? 0));
+  }
+  console.log("timeline (s from the profile's start; the page's own times start a little later):");
+  buckets.forEach((m, b) => {
+    if (!m) return;
+    const top = [...m].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([k, us]) => `${k} ${Math.round(us / 1e3)}`).join(', ');
+    console.log(`  ${(b * BUCKET / 1e6).toFixed(2).padStart(6)}  ${top}`);
+  });
   console.log('inclusive (our functions, with what they call):');
   for (const [k, us] of [...incl].sort((a, b) => b[1] - a[1]).slice(0, 50)) console.log(`  ${(us / 1e3).toFixed(0).padStart(7)} ms  ${k.slice(0, 110)}`);
 } finally { await browser.close(); server.kill(); }
