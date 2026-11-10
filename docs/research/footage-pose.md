@@ -68,3 +68,20 @@ A warning about these clips, learned the hard way. Until 31 Oct the serve here w
 coach's example of a club player just getting the rally started, and the bent-over serve around 33-34 s carries red crosses on
 screen. That moved the game's contact down to 0.70 m and bent the trunk to 33-41 degrees: the owner's "the serve motion is wrong".
 Read the coach's words before measuring a clip, and never trust a window nobody looked at. Clip 6's strokes after 2:05 are backhands.
+
+## Whole strokes from a clip's page (2026-11-10)
+The owner: "can you not find videos on youtube? i dont need to be the one doing it, the pros on youtube have textbook form". So the
+capture the motion plan asked the owner to film comes from public clips instead, read as above (pose on the clip's own page, numbers
+only), but now every frame of a stroke and all 33 points, not a few angles.
+- **Pilot:** The Padel School's slow-motion forehand (`JtSP9EGtz1c`, 43-101 s: one front-on stroke with held frames; 24-36 s is a
+  rally at real speed). In the page: jitter out (a median then a mean over under half a video second), the hips' path from the
+  picture (metres per picture height from the body's own size), the holds weighted out by the pose's speed (under 0.035 m per video
+  second counts for nothing, over 0.07 in full), and the slowing found two ways that agree: 12.5 from the wrist's speed in the real-speed rally,
+  11.9 from a 6 m/s hand. At 12.2 the stroke is 1.9 s, contact 1.30 s in. Handed over as 56 frames at 30 fps, 23 points, in mm.
+- **Tools:** `tools/assets/mocap/from_page.py` (the stroke out of the session's record into retarget.py's input, kept in
+  `~/bandeja-mocap/youtube/<clip>/`, outside the repo) and retarget.py's `UP=` (one camera's depth can't find the floor from planted
+  feet: up is given). The clip's camera looks down about 10 degrees: a plane through every heel and toe point gives up
+  (-0.06, 0.98, 0.18); with the picture's own up the whole body leaned.
+- **Limits seen:** depth is one camera's guess; the racket and wrist aren't tracked (the viewer's racket is the hand's default); feet
+  don't hold the floor exactly; a web page in the browser pane can't reach this machine, so the numbers come out through the tool's
+  result (compact: two characters a value).

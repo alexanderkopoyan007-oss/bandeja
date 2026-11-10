@@ -63,7 +63,12 @@ def perp(v, d):
 # hips' line and up.
 up_trunk = unit(np.nanmean(unit((P('Lsh') + P('Rsh')) / 2 - (P('Lhip') + P('Rhip')) / 2), axis=0))
 up_c, floor_note, _ = floor_up(body, FPS)
-if up_c is None:
+# One camera (a stroke measured on a clip's page, from_page.py): its depth is too poor to find the floor from the feet,
+# so up is given, the picture's own (UP=0,1,0: a level camera).
+if os.environ.get('UP'):
+    up_c = unit(np.array([float(x) for x in os.environ['UP'].split(',')]))
+    print('RETARGET up as given:', up_c)
+elif up_c is None:
     up_c = up_trunk
     print('RETARGET up from the trunk:', floor_note)
 else:
