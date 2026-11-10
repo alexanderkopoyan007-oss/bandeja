@@ -7,6 +7,8 @@ import * as THREE from 'three/webgpu';
 import { Game, type GameOptions, type GamePrefs } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
 import { loadPeople, loadPlayerAsset, peopleWanted, type PlayerAsset } from '../render/avatar/asset.ts';
+import { prepareRacket, racketLookFor } from '../render/avatar/racket.ts';
+import { prewarmNet } from '../sim/setup.ts';
 import { bodiesParam, castParam, dealCast } from '../game/cast.ts';
 import practiceData from '../../data/practice.json';
 import { LoadingScreen } from '../ui/loading.ts';
@@ -381,9 +383,18 @@ export class App {
       });
       applyRoster(opts, dealt, attract ? undefined : this.gameSetup());
     }
-    if (this.asset && peopleWanted(this.params)) {
-      await loadPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f));
+    const people = this.asset && peopleWanted(this.params)
+      ? loadPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f))
+      : null;
+    // While the players download, the match's work that doesn't need them: the net solver's warm-up and the rackets
+    // (each in a task of its own, so the downloads' own work gets in between). On a cold load these were about a
+    // second of a slow laptop's time after the last player arrived.
+    prewarmNet();
+    for (let i = 0; i < (opts.match.doubles ? 4 : 2); i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      prepareRacket(racketLookFor(i, opts.match.rackets?.[i]));
     }
+    await people;
     const g = new Game(opts, this.renderer, this.hud);
     (window as unknown as { __bandeja: Game }).__bandeja = g;
     this.game = g;

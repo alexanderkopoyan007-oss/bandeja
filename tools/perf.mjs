@@ -1,6 +1,6 @@
 // Performance run: builds nothing itself; serves dist/ with `vite preview`, plays AI-vs-AI autoplay in Chrome
 // and reports frame-time percentiles, the 1% and 0.1% lows, CPU work, sim time and GPU time (timestamp queries).
-// Usage: npm run build && node tools/perf.mjs [seconds] [standard|presets|igpu|igpu60|audio|autocap|trace|deopt|tris|load|explore]
+// Usage: npm run build && node tools/perf.mjs [seconds] [standard|presets|igpu|igpu60|audio|autocap|trace|deopt|tris|load|memory|explore]
 //   standard   medium-4x: 1080p, the Medium preset, CPU throttled 4x (stand-in for a mid-range laptop);
 //              high: 1080p at 2x pixel ratio, the High preset; both with the frame-rate limit off; and high paced
 //              at 120 Hz.
@@ -17,6 +17,7 @@
 //              function, reason and source line (the build's source map), no cap. DEOPT_WARM=s (default 30).
 //   tris       what the triangles are, by mesh, on each preset.
 //   load       cold-cache loads through the menus (title screen, then a match) on throttled networks and CPU.
+//   memory     GPU memory (textures, render targets, buffers) a match holds at each preset, against the budget.
 // Every run prints the machine's load average (other sessions share it).
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process';
@@ -244,6 +245,24 @@ async function deopt(name, { dpr, throttle, quality, warm }) {
  * Triangles by mesh on a preset (what the Low budget's 300k would have to cut): the scene's visible meshes, each
  * mesh's triangles times its instances, grouped by name (or its parent's, or its geometry's type).
  */
+/** GPU memory a match holds at a preset (three's own count: every texture and render target it made, by its format's
+ * bytes and mip chain; the buffers), against the budget in CLAUDE.md. */
+const TEX_BUDGET_MB = { low: 256, medium: 512, high: 1024, ultra: 2048 };
+async function memory(quality, dpr) {
+  const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal'] });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: dpr });
+  await page.goto(`http://localhost:${PORT}/?autoplay=1&seed=11&dpr=${dpr}&quality=${quality}&sound=0`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.__bandeja?.running, { timeout: 60000 });
+  await new Promise((r) => setTimeout(r, 5000));
+  const m = await page.evaluate(() => ({ ...window.__bandeja.renderer.info.memory }));
+  await browser.close();
+  const mb = (b) => (b / 1048576).toFixed(0);
+  const budget = TEX_BUDGET_MB[quality];
+  console.log(`\n[memory: ${quality}, pixel ratio ${dpr}] textures ${m.textures} (${mb(m.texturesSize)} MB, budget ${budget} MB: ${m.texturesSize / 1048576 <= budget ? 'within' : 'OVER'}), render targets ${m.renderTargets}`);
+  console.log(`  buffers: attributes ${mb(m.attributesSize)} MB, index ${mb(m.indexAttributesSize)} MB, uniforms ${mb(m.uniformBuffersSize ?? 0)} MB, storage ${mb(m.storageAttributesSize ?? 0)} MB; all GPU memory three counts ${mb(m.total)} MB`);
+}
+
 async function tris(quality) {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--disable-frame-rate-limit', '--disable-gpu-vsync'] });
   const page = await browser.newPage();
@@ -301,21 +320,37 @@ async function load(name, { down, up, rtt, throttle, noYield = false }) {
   // TITLE_WAIT=<ms>: stay on the title that long before Quick match, as a player does (the next cast fetches meanwhile).
   const r = await page.evaluate(async (wait) => {
     const title = performance.now();
+    // The first frames after each: a shader compiled on a first frame instead of in the warm-up shows here.
+    const frames = async (n) => {
+      const t0 = performance.now();
+      let last = t0, max = 0;
+      for (let i = 0; i < n; i++) {
+        await new Promise((res) => requestAnimationFrame(res));
+        const now = performance.now();
+        max = Math.max(max, now - last);
+        last = now;
+      }
+      return { max, total: last - t0 };
+    };
     const boot = window.__loadLog.map((e) => `${e.name} ${(e.t / 1000).toFixed(2)}`).join(' | ');
     const paint = performance.getEntriesByType('paint').find((e) => e.name === 'first-contentful-paint')?.startTime ?? -1;
     const bytes = performance.getEntriesByType('resource').reduce((a, e) => a + (e.encodedBodySize || 0), 0)
       + (performance.getEntriesByType('navigation')[0]?.encodedBodySize ?? 0);
+    const titleFrames = await frames(30);
     if (wait > 0) await new Promise((res) => setTimeout(res, wait));
     const t = performance.now();
     await window.__app.startMatch();
     await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    const match = performance.now() - t;
     const build = window.__loadLog.map((e) => `${e.name} +${((e.t - t) / 1000).toFixed(2)}`).join(' | ');
-    return { paint, title, match: performance.now() - t, bytes, boot, build };
+    const matchFrames = await frames(60);
+    return { paint, title, match, bytes, boot, build, titleFrames, matchFrames };
   }, Number(process.env.TITLE_WAIT ?? 0));
   await browser.close();
   const s = (ms) => `${(ms / 1000).toFixed(2)} s`;
   console.log(`\n[load: ${name}] ${down} Mbit/s down, ${rtt} ms RTT, CPU ${throttle}x`);
   console.log(`  first paint ${s(r.paint)}   title playable ${s(r.title)}   Quick match to its first frame ${s(r.match)}   total ${s(r.title + r.match)}`);
+  console.log(`  title's first 30 frames ${s(r.titleFrames.total)} (longest ${r.titleFrames.max.toFixed(0)} ms)   match's first 60 frames ${s(r.matchFrames.total)} (longest ${r.matchFrames.max.toFixed(0)} ms)`);
   console.log(`  downloaded ${(r.bytes / 1e6).toFixed(2)} MB (compressed)`);
   console.log(`  boot stages (s): ${r.boot}`);
   console.log(`  match stages (s after Quick match): ${r.build}`);
@@ -357,6 +392,8 @@ try {
     }
   } else if (which === 'autocap') {
     for (const cap of [30, 50]) await run(`auto paced at ${cap} Hz`, { dpr: 1, throttle: 1, unlimited: true, quality: 'auto', cap });
+  } else if (which === 'memory') {
+    for (const [q, dpr] of [['low', 1], ['medium', 1], ['high', 2], ['ultra', 2]]) await memory(q, dpr);
   } else if (which === 'tris') {
     for (const q of ['low', 'medium', 'high']) await tris(q);
   } else if (which === 'deopt') {

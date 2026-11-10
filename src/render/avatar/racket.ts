@@ -338,16 +338,56 @@ function joinRounded(pieces: V2[][], radii: number[]): V2[] {
   return out;
 }
 
-/** Distance from a point to a closed polyline. */
-function distToLoop(pl: V2[], x: number, y: number): number {
-  let best = Infinity;
-  for (let i = 0; i < pl.length; i++) {
-    const a = pl[i]!, b = pl[(i + 1) % pl.length]!;
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1)));
-    best = Math.min(best, Math.hypot(a[0] + dx * t - x, a[1] + dy * t - y));
+/** A closed polyline's segments as flat numbers (start x, y, step x, y, 1 / length²), and a grid of which segments
+ * cross each `GRID` cell, made once per loop. */
+interface Segs { f: Float64Array; x0: number; y0: number; nx: number; ny: number; cells: Int32Array[] }
+const GRID = 0.01;
+const SEGS = new WeakMap<V2[], Segs>();
+function segsOf(pl: V2[]): Segs {
+  let g = SEGS.get(pl);
+  if (!g) {
+    const n = pl.length;
+    const f = new Float64Array(n * 5);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of pl) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+    const nx = Math.floor((x1 - x0) / GRID) + 1, ny = Math.floor((y1 - y0) / GRID) + 1;
+    const lists: number[][] = Array.from({ length: nx * ny }, () => []);
+    for (let i = 0; i < n; i++) {
+      const a = pl[i]!, b = pl[(i + 1) % n]!;
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      f[i * 5] = a[0]; f[i * 5 + 1] = a[1]; f[i * 5 + 2] = dx; f[i * 5 + 3] = dy; f[i * 5 + 4] = 1 / (dx * dx + dy * dy || 1);
+      const cx0 = Math.floor((Math.min(a[0], b[0]) - x0) / GRID), cx1 = Math.floor((Math.max(a[0], b[0]) - x0) / GRID);
+      const cy0 = Math.floor((Math.min(a[1], b[1]) - y0) / GRID), cy1 = Math.floor((Math.max(a[1], b[1]) - y0) / GRID);
+      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) lists[cy * nx + cx]!.push(i * 5);
+    }
+    g = { f, x0, y0, nx, ny, cells: lists.map((l) => Int32Array.from(l)) };
+    SEGS.set(pl, g);
   }
-  return best;
+  return g;
+}
+
+/** Whether a point is closer than `d` to a closed polyline: only the segments in the grid cells within `d` are
+ * measured, and it stops at the first that is. The hole layout asks this of thousands of points against a face of
+ * a thousand segments; measured against every segment with a square root each, the racket's build was the biggest
+ * CPU cost before a first match could compile. */
+function nearLoop(pl: V2[], x: number, y: number, d: number): boolean {
+  const g = segsOf(pl), f = g.f, d2 = d * d;
+  const cx0 = Math.max(0, Math.floor((x - d - g.x0) / GRID)), cx1 = Math.min(g.nx - 1, Math.floor((x + d - g.x0) / GRID));
+  const cy0 = Math.max(0, Math.floor((y - d - g.y0) / GRID)), cy1 = Math.min(g.ny - 1, Math.floor((y + d - g.y0) / GRID));
+  for (let cy = cy0; cy <= cy1; cy++) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      const cell = g.cells[cy * g.nx + cx]!;
+      for (let j = 0; j < cell.length; j++) {
+        const k = cell[j]!;
+        const ax = f[k]!, ay = f[k + 1]!, dx = f[k + 2]!, dy = f[k + 3]!;
+        let t = ((x - ax) * dx + (y - ay) * dy) * f[k + 4]!;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const ex = ax + dx * t - x, ey = ay + dy * t - y;
+        if (ex * ex + ey * ey < d2) return true;
+      }
+    }
+  }
+  return false;
 }
 
 function inside(pl: V2[], x: number, y: number): boolean {
@@ -468,7 +508,7 @@ function layoutHoles(s: RacketShape, look: RacketLook): V2[] {
   const H = look.holes;
   const r = H.d / 2 + CHAMFER;
   const edge0 = H.margin + r;
-  const minGap = H.pitch * 0.86;
+  const minGap = H.pitch * 0.86, minGap2 = minGap * minGap;
   const out: V2[] = [];
   const blank = (x: number, y: number): boolean => {
     for (const b of H.blank) {
@@ -482,8 +522,11 @@ function layoutHoles(s: RacketShape, look: RacketLook): V2[] {
     return false;
   };
   const ok = (x: number, y: number, minEdge: number): boolean => {
-    if (!inside(s.face, x, y) || distToLoop(s.face, x, y) < minEdge - 1e-6 || blank(x, y)) return false;
-    for (const q of out) if (Math.hypot(q[0] - x, q[1] - y) < minGap) return false;
+    for (let j = 0; j < out.length; j++) {
+      const q = out[j]!, ex = q[0] - x, ey = q[1] - y;
+      if (ex * ex + ey * ey < minGap2) return false;
+    }
+    if (!inside(s.face, x, y) || nearLoop(s.face, x, y, minEdge - 1e-6) || blank(x, y)) return false;
     if (Math.abs(x) > 1e-4 && minGap > 2 * Math.abs(x) && Math.abs(x) > 0) return false;
     return true;
   };
@@ -509,7 +552,7 @@ function layoutHoles(s: RacketShape, look: RacketLook): V2[] {
   for (let k = 0; k < Math.max(H.rings, 0); k++) {
     const d = edge0 + k * rowGap;
     // The face's edge in by d; drop the points a tight corner folds back (closer to the edge than d).
-    const ring = offsetBy(s.face, faceN, d).filter((p) => distToLoop(s.face, p[0], p[1]) > d - 5e-4);
+    const ring = offsetBy(s.face, faceN, d).filter((p) => !nearLoop(s.face, p[0], p[1], d - 5e-4));
     if (ring.length < 8 || polyLength(ring, true) < H.pitch * 2.5) break;
     rows++;
     // Start at the top of the ring (on the axis), so a whole or half spacing there keeps it symmetric.
@@ -1233,8 +1276,13 @@ function keepDesign(design: string): void {
   }
 }
 
-/** Geometry and material of a look, shared by every racket of that look. */
-function parts(look: RacketLook): Parts {
+/** A look's outline, holes and both levels' geometry, built ahead: the app builds a match's rackets while its players
+ * download, off the path to the first frame. */
+export function prepareRacket(look: RacketLook): void {
+  built(look);
+}
+
+function built(look: RacketLook): Built {
   let b = BUILT.get(look.name);
   if (!b) {
     const s = racketShape(look);
@@ -1247,6 +1295,12 @@ function parts(look: RacketLook): Parts {
     b = { near: buildLevel(look, false, side, shape.perimeter), far: buildLevel(look, true, side, shape.perimeter), shape, lay };
     BUILT.set(look.name, b);
   }
+  return b;
+}
+
+/** Geometry and material of a look, shared by every racket of that look. */
+function parts(look: RacketLook): Parts {
+  const b = built(look);
   const printKey = `${look.name}|${look.design ?? ''}`;
   if (look.design) keepDesign(look.design);
   let art = PRINTS.get(printKey);

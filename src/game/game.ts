@@ -697,7 +697,9 @@ export class Game {
     this.cam.update(this.sim, this.team, null, 0);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     // (never a loading screen for ever, least of all with others waiting: what isn't done by then compiles as it's first drawn)
-    await Promise.race([this.renderer.compileAsync(this.scene, this.cam.camera), new Promise((r) => setTimeout(r, WARM_MAX_MS))]);
+    // (into the post passes' target when there are post passes: what the frames draw into)
+    const compile = this.post ? this.post.compile(this.renderer) : this.renderer.compileAsync(this.scene, this.cam.camera);
+    await Promise.race([compile, new Promise((r) => setTimeout(r, WARM_MAX_MS))]);
     // The post passes' own shaders compile on their first frame: draw one now.
     if (this.post) this.post.render();
   }

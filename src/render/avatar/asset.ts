@@ -194,6 +194,8 @@ export async function loadPlayerAsset(url: string, progress?: (frac: number) => 
   const base = parsePlayerAsset(await fetchGz(url, progress && ((f) => progress(f / n))));
   base.url = url;
   await loadPeople(base, people, progress && ((f) => progress((1 + f * people.length) / n)));
+  // (fetched together, they land as they finish: put them back in the order asked, which a view without a cast reads)
+  base.people.sort((a, b) => people.indexOf(a.look!.name) - people.indexOf(b.look!.name));
   progress?.(1);
   return base;
 }
@@ -208,15 +210,24 @@ const fetching = new Map<string, Promise<void>>();
 export async function loadPeople(base: PlayerAsset, people: string[], progress?: (frac: number) => void): Promise<void> {
   const wanted = [...new Set(people)].filter((n) => !base.people.some((p) => p.look!.name === n));
   const n = wanted.length;
+  // All at once: one after another, four people waited about 6 s on a slow line before the shaders could start.
+  const got = new Float64Array(n);
+  const report = progress && ((): void => {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += got[i]!;
+    progress(s / n);
+  });
+  const jobs: Promise<void>[] = [];
   for (let i = 0; i < n; i++) {
     const name = wanted[i]!;
     let job = fetching.get(name);
     if (!job) {
-      job = loadPerson(base, name, progress && ((f) => progress((i + f) / n))).finally(() => fetching.delete(name));
+      job = loadPerson(base, name, report && ((f) => { got[i] = f; report(); })).finally(() => fetching.delete(name));
       fetching.set(name, job);
     }
-    await job;
+    jobs.push(job.then(() => { got[i] = 1; report?.(); }));
   }
+  await Promise.all(jobs);
 }
 
 async function loadPerson(base: PlayerAsset, name: string, progress?: (frac: number) => void): Promise<void> {

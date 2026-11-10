@@ -77,6 +77,14 @@ export function makeNetCloth(world: BallWorld): NetCloth {
   return net;
 }
 
+/** The net solver's warm-up ahead of the first match (the app runs it while the players download); makeNetCloth then
+ * skips it. It throws balls into a net of its own in a world of its own, so it touches nothing a match uses. */
+export function prewarmNet(): void {
+  if (warmed) return;
+  warmed = true;
+  warmCloth(makeWorld());
+}
+
 function warmCloth(world: BallWorld): void {
   const net = new NetCloth(world.court, netClothSpec, world.rho);
   const b = new Ball();
