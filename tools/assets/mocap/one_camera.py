@@ -44,6 +44,37 @@ f = 0.5 / np.tan(np.radians(FOV) / 2)  # the focal length in picture heights
 scale = smooth(scale, 3)
 body = body - ((body[:, 23] + body[:, 24]) / 2)[:, None]
 
+# ---- the racket arm where the tracker lost it: placed by eye ----
+# Behind the head (an overhead's take-back seen from the net) the tracker puts the racket arm on the free one or hangs it
+# by the trunk. racket-keys.json may carry `arm`: at key times, the shoulder as the tracker marked it, the elbow and the
+# hand on the handle as read off the cut-out (its pixels, y down, px to the metre), and how far each is nearer the camera
+# than the shoulder (m; from the limb's length and the pose, by judgement). Between `arm_from` and the first key the
+# tracker's arm eases over to it; after the last it eases back by `arm_to` (video times, both among the keys).
+kp = os.path.join(src, 'racket-keys.json')
+rk = json.load(open(kp)) if os.path.exists(kp) else None
+if rk and rk.get('arm') and meta.get('key_t'):
+    from scipy.interpolate import PchipInterpolator
+    t_of = dict(zip([round(t, 3) for t in meta['key_t']], meta['key_out']))
+    sh, el, wr, fingers = ((12, 14, 16, (18, 20, 22)) if RACKET == 'Right' else (11, 13, 15, (17, 19, 21)))
+    ts, es, ws = [], [], []
+    for t, sx, sy, ex, ey, bx, by, ppm, ez, hz in rk['arm']:
+        e = np.array([(ex - sx) / ppm, -(ey - sy) / ppm, ez])
+        h = np.array([(bx - sx) / ppm, -(by - sy) / ppm, hz])
+        ts.append(t_of[round(t, 3)])
+        es.append(e)
+        ws.append(h - 0.07 * unit(h - e))  # the wrist, short of the middle of the grip
+    tt = np.arange(F) / fps
+    tc = np.clip(tt, ts[0], ts[-1])
+    E, Wn = PchipInterpolator(ts, np.array(es))(tc), PchipInterpolator(ts, np.array(ws))(tc)
+    t0, t1 = t_of[round(rk['arm_from'], 3)], t_of[round(rk['arm_to'], 3)]
+    ease = lambda x: np.clip(x, 0, 1) ** 2 * (3 - 2 * np.clip(x, 0, 1))
+    wgt = (ease((tt - t0) / max(ts[0] - t0, 1e-6)) * ease((t1 - tt) / max(t1 - ts[-1], 1e-6)))[:, None]
+    move = (body[:, sh] + Wn - body[:, wr]) * wgt
+    body[:, el] += (body[:, sh] + E - body[:, el]) * wgt
+    for j in (wr,) + fingers:
+        body[:, j] += move
+    print('ONE_CAMERA racket arm by eye: %d keys, %.2f to %.2f s (eased from %.2f, to %.2f)' % (len(ts), ts[0], ts[-1], t0, t1))
+
 # ---- limbs their own length ----
 # One camera's guess makes a limb that points at the camera or away too short (here: a thigh 0.33 m beside its fellow's
 # 0.43, an upper arm 0.20 on the way back): what it sees across the picture is right, the depth is pulled in. Each
@@ -188,9 +219,7 @@ hand[ok, 17] = wr[ok] + dv[ok] * 0.085 - av[ok] * 0.03
 np.save(os.path.join(out, 'mediapipe_%s_hand_3d_xyz.npy' % FREE.lower()), hand * 1000)
 
 # ---- the racket's keys, with the line of sight at each ----
-kp = os.path.join(src, 'racket-keys.json')
-if os.path.exists(kp) and meta.get('key_t'):
-    rk = json.load(open(kp))
+if rk and meta.get('key_t'):
     t_out = dict(zip([round(t, 3) for t in meta['key_t']], meta['key_out']))
     keys = []
     for t, bx, by, cx, cy, wd, near in rk['keys']:

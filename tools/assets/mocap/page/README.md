@@ -25,3 +25,20 @@ Each file is one `javascript_tool` call, in this order:
 
 Then: `from_page.py <session .jsonl> <clip folder>`, `one_camera.py <clip folder> <clip folder>/v2`,
 `FPS=60 CONTACT=<s> retarget.py <clip folder>/v2 public/assets/mocap-local/<name>.json <name>`.
+
+## A clip that hides the racket arm, or changes speed (the víbora `PihyQF3EnHk`, 10 Nov 2026)
+
+- **The speed is not one number.** A shadow swing has no ball to time (and this one's ball comes into the picture 8 frames before the
+  hit). What settled it: the clip's own real-speed run of the stroke, tracked too; the wrist's travel per frame there against the slow
+  part's (4.3-5.2); the racket's speed across the contact frame (0.21 m a frame: 25 m/s at 120 fps, 38 at 180); the ball's fall (9 m/s
+  at 120). So 120 fps at 25 (4.8), not the forehand's 7.2; the first part plays at half that again (the raise of the free arm: 73 frames
+  for the real run's 0.33 s); the second repeats frames (a frame whose difference from the one before is under 0.05 is the one before).
+- **Freezes can hide cuts.** A one-frame jump in the frame difference inside a freeze is a cut to another frozen frame: here to the
+  contact frame, four frames on (the hand's travel and the ball's fall both say four). `5b-stroke-parts.js` puts the cut frames back
+  (`gap`) and gives each part its own time a frame. Parts that start and stop at once are the slow motion; ones that ramp up and down
+  are captions and drawings moving over a frozen frame.
+- **Behind the head the tracker loses the racket arm** (it put the wrist on the free arm, then hung it by the trunk). `2b-cutout-head.js`
+  frames the head; the hand and elbow are read by eye and go into `racket-keys.json` as `arm`, which `one_camera.py` lays over the
+  tracker's arm. A hidden hand is placed between where it was last and next seen, a racket's length from the head's centre (that is
+  seen); a hidden elbow by the pose (out along the shoulder line as the trunk turns).
+- Another clip in the same page without losing the trackers: `movie_player.loadVideoById(id)`.
