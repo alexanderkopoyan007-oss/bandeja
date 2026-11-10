@@ -85,3 +85,43 @@ only), but now every frame of a stroke and all 33 points, not a few angles.
 - **Limits seen:** depth is one camera's guess; the racket and wrist aren't tracked (the viewer's racket is the hand's default); feet
   don't hold the floor exactly; a web page in the browser pane can't reach this machine, so the numbers come out through the tool's
   result (compact: two characters a value).
+
+## One camera, made to hold (2026-11-10)
+The pilot's forehand had three things wrong (a racket at any angle, feet that skated, a body that never came forward), and looking for their
+causes found two more that mattered more: the stroke was played at nearly half its real speed, and it faced 40 degrees off. What one fixed
+camera can still be made to give, each from something in the clip itself (`tools/assets/mocap/one_camera.py`, `retarget.py`,
+`page/README.md`):
+- **Which frames are frozen: the picture, not the pose.** Each frame against the one before (a 192 px grey copy): a held frame differs by
+  under 0.2, slow motion by 0.4 and more. The pilot weighed holds out by how fast the pose moved, and the tracker's own jitter on a frozen
+  picture passed for slow movement: of its 23 "moving" video seconds, 15.5 were (387 frames in four runs: 52.48-58.80, 67.00-72.48,
+  80.48-81.44, 89.44-92.00 s; the clip's first nine seconds are one frozen frame).
+- **The slowing: the ball's fall.** The largest yellow blob is the ball; its flight before contact runs straight through a freeze (the fit
+  from before the freeze lands within 2 px after it). A pinhole fit (the ball going away from the camera, 16% further by contact) gives its
+  fall in video seconds, and gravity gives 6.9-7.4 for the body's scale within its error: 7.2, a 180 fps camera played at 25. The pilot's
+  12.2 (a guessed 6 m/s hand, and a wrist speed from the rally) had the forward swing at 0.08 s; it is 0.14, the stroke 2.14 s, contact at
+  1.78.
+- **The camera does not move** (a background window matches itself through the clip to the pixel), so:
+  - **a foot still in the picture is standing**, whatever its guessed depth (ball of the foot under 0.16 m/s at the body's scale, four
+    frames or more; flat if the heel is still too). Eight spans here, a step pattern that reads as one: split step, right, left, left,
+    right on its toe through contact, left planted from just before it.
+  - **the floor is the plane through where they stood**: the camera 12.6 degrees down (the pilot's plane through every heel and toe
+    point: 10). The fit's sideways tilt is left out: 3-5 degrees either way between two readings of the same clip, on a tripod.
+  - **the body's size in the picture is its distance**: 17% bigger by contact, 0.85 m towards the camera at a 35 degree lens (the lens
+    is a guess; the travel scales with it; the legs would reach at any of them tried).
+- **Limbs their own length.** A limb pointing at the camera comes back short (a thigh 0.33 m beside its fellow's 0.43, an upper arm
+  0.20). Across the picture it is right, so the missing length is put back in depth, on the side the guess had it: up to 22 cm.
+- **Feet held** (`retarget.py`, `plants.json`): on the game's skeleton the hips give way in height (the legs' to say) and hardly across
+  the floor, and each standing leg is bent again to keep the ball of the foot on its spot (0.0 mm of stray; a flat foot lies flat). The
+  first try let the hips give way across the floor too, and they went back 24 cm to meet a leg's wrong depth.
+- **The racket, by eye.** No hand tracker finds a hand on a handle (tried at 2160p, five cut-outs). A magnified cut-out round the wrist
+  with rings every 10 cm reads cleanly instead: where the hand and the face's centre are, and how wide the head looks, at 24 moments.
+  Each reading is a racket in space up to its mirror images (leaning to or from the camera, the face turned either way, either face);
+  the game's grip makes each a hand, and the chain a wrist and forearm can hold, nearest its neighbours, is kept (every key's cost
+  under 1.5) and splined. The racket's known size checked the body's scale on the way (head 0.30 m long as read, 0.30 real).
+- **The head.** Front on, the ear point is the middle of the visible ear and the nose's depth a guess: the head read 16-18 degrees too
+  far up against the ready position (he looks level, at a camera at his eye height). `head_tilt_deg` in floor.json, measured on this
+  one clip.
+- **Forward is the net** (the camera's side), not the way the hips face as the clip starts.
+- **Still a guess:** the lens, so how far he comes forward; a limb's depth where the guess had it nearly square to the camera; the
+  racket's turn about its own handle where it points at the camera (three keys in the follow-through); the fingers of the racket hand
+  (the game's grip closes them).
