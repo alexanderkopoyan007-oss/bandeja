@@ -59,6 +59,8 @@ const RUN_OVER_HOLD_MS = 1400;
 const OVER_HOLD_MS = 1500;
 const OVER_MAX_MS = 16000;
 const OVER_SKIP_AFTER_MS = 800;
+/** How near its back glass (m, inside it) a court camera starts leaving that glass's seam posts out. */
+const BACK_POSTS_NEAR = 0.3;
 /** How long the match's sound takes to go under a menu (s): the crowd dies away under the results, it doesn't cut. */
 const HUSH_PAUSE = 0.15;
 const HUSH_OVER = 4;
@@ -1416,6 +1418,10 @@ export class Game {
       if (ctl.saveAsked) { ctl.saveAsked = false; this.shotWanted = true; }
       if (ctl.leaveAsked) { ctl.leaveAsked = false; this.exitPhoto(); }
     }
+    // A court camera at or behind its back glass looks through it without the seam posts (courtView hideBackPosts);
+    // the replays' low camera keeps them (its posts are the shot), as do photo mode's and the other rigs.
+    const cz = this.cam.camera.position.z;
+    this.court.hideBackPosts(!showing && !shot && this.cam.rig === 'court' && Math.abs(cz) > this.sim.world.court.halfL - BACK_POSTS_NEAR ? cz : 0);
     // Sound never takes a frame down: a browser's WebAudio quirk (Firefox has no listener.positionX) once threw on
     // every play and the frame's assists, HUD and draw were skipped.
     try {

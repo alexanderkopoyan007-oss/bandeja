@@ -74,6 +74,12 @@ export interface CourtView {
   group: THREE.Group;
   /** Hand the glass the arena's baked environment (Arena.bakeEnvironment) for its reflections. */
   setEnvironment(env: EnvProbe): void;
+  /**
+   * Leave out the posts at the glass seams of one back wall (end 1: +z, -1: -z; 0: none): the court cameras
+   * (views.ts COURT_*) look through that glass from just behind it, where an 8 cm post a metre from the lens is a black
+   * bar down the picture. The corner posts and the rails stay. Cheap to call every frame (nothing done unchanged).
+   */
+  hideBackPosts(end: number): void;
 }
 
 export function buildCourtView(court: Court, look: CourtLook = { frame: '#1b1e21', base: '#1b1e21' }): CourtView {
@@ -100,8 +106,25 @@ export function buildCourtView(court: Court, look: CourtLook = { frame: '#1b1e21
 
   // Steel frame: posts, rails, door frames and glass clamps, all one instanced mesh.
   const frame = new FrameBuilder();
-  buildFrame(court, frame);
-  g.add(frame.mesh(look.frame));
+  const backPosts = buildFrame(court, frame);
+  const frameMesh = frame.mesh(look.frame);
+  g.add(frameMesh);
+  let postsHidden = 0;
+  const kept = new THREE.Matrix4(), gone = new THREE.Matrix4().makeScale(0, 0, 0);
+  const hideBackPosts = (end: number): void => {
+    const want = end > 0 ? 1 : end < 0 ? -1 : 0;
+    if (want === postsHidden) return;
+    for (const [e, ids] of [[1, backPosts.near], [-1, backPosts.far]] as const) {
+      const hide = e === want, was = e === postsHidden;
+      if (hide === was) continue;
+      for (const i of ids) {
+        if (hide) frameMesh.setMatrixAt(i, gone);
+        else { frame.matrixOf(i, kept); frameMesh.setMatrixAt(i, kept); }
+      }
+    }
+    postsHidden = want;
+    frameMesh.instanceMatrix.needsUpdate = true;
+  };
   // The base the glass stands on: a flat steel channel along the foot of every glass panel.
   const base = new FrameBuilder();
   for (const p of court.panels) {
@@ -115,7 +138,7 @@ export function buildCourtView(court: Court, look: CourtLook = { frame: '#1b1e21
   g.add(base.mesh(look.base, 0.5, 0.35));
 
   // The net itself is render/netView.ts (it moves with the ball).
-  return { group: g, setEnvironment: (env) => glassLook(glassMat, env) };
+  return { group: g, setEnvironment: (env) => glassLook(glassMat, env), hideBackPosts };
 }
 
 let smudgeTex: THREE.CanvasTexture | null = null;
@@ -207,8 +230,10 @@ function glassLook(m: THREE.MeshBasicNodeMaterial, env: EnvProbe | null): void {
   m.needsUpdate = true;
 }
 
-/** Posts, rails, door frames and clamps for a framed (posts) or frameless (panoramic) court. */
-function buildFrame(court: Court, f: FrameBuilder): void {
+/** Posts, rails, door frames and clamps for a framed (posts) or frameless (panoramic) court. Returns the instances of
+ * the posts at each back wall's glass seams (near: +z). */
+function buildFrame(court: Court, f: FrameBuilder): { near: number[]; far: number[] } {
+  const seamPosts = { near: [] as number[], far: [] as number[] };
   const { halfW, halfL, def } = court;
   const framed = def.frame === 'posts';
   const bw = def.backWall;
@@ -219,7 +244,10 @@ function buildFrame(court: Court, f: FrameBuilder): void {
     const zb = s * (halfL + o); // posts sit just outside the glass line
     // Back wall: corner posts and (framed) a post at every glass seam; rails at the glass top and the enclosure top.
     for (const x of [-halfW - o, ...court.seams[WALL_BACK_NEAR]!, halfW + o]) {
-      if (framed || Math.abs(x) > halfW) f.box(x, bw.top / 2, zb, POST, bw.top, POST);
+      if (framed || Math.abs(x) > halfW) {
+        const i = f.box(x, bw.top / 2, zb, POST, bw.top, POST);
+        if (Math.abs(x) < halfW) (s > 0 ? seamPosts.near : seamPosts.far).push(i);
+      }
     }
     f.box(0, bw.top, zb, def.width + POST * 2, RAIL, RAIL);
     f.box(0, bw.glassHeight, zb, def.width, RAIL, RAIL * 0.8);
@@ -276,6 +304,7 @@ function buildFrame(court: Court, f: FrameBuilder): void {
   f.box(wx + 0.068, 0.62, 0, 0.016, 0.016, 0.016);
   f.box(wx + 0.076, 0.62, 0.035, 0.012, 0.012, 0.07);
   f.box(wx + 0.09, 0.62, 0.07, 0.03, 0.014, 0.014);
+  return seamPosts;
 }
 
 /** Two clamps per glass joint (frameless courts hold the panels with clamps, not posts). */
@@ -301,8 +330,16 @@ function sideTop(court: Court, fromBack: number): number {
 class FrameBuilder {
   private readonly items: number[] = [];
 
-  box(x: number, y: number, z: number, sx: number, sy: number, sz: number): void {
+  /** Returns the box's instance. */
+  box(x: number, y: number, z: number, sx: number, sy: number, sz: number): number {
     this.items.push(x, y, z, sx, sy, sz);
+    return this.items.length / 6 - 1;
+  }
+
+  /** Instance `i`'s matrix as built. */
+  matrixOf(i: number, out: THREE.Matrix4): THREE.Matrix4 {
+    const k = i * 6;
+    return out.makeScale(this.items[k + 3]!, this.items[k + 4]!, this.items[k + 5]!).setPosition(this.items[k]!, this.items[k + 1]!, this.items[k + 2]!);
   }
 
   mesh(colour: string, roughness = 0.42, metalness = 0.55): THREE.InstancedMesh {

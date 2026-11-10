@@ -392,6 +392,42 @@ const CAM_BACK = 15.5;
 const CAM_HEIGHT = 7.6;
 const FOV = 26;
 /**
+ * The glass camera (Settings > Camera "Glass", behind ?creator=1 until the owner has seen it): the padel video everyone
+ * films, a tripod pressed to the middle of the back glass's middle panel (GLASS_BACK out, so the panel's posts, 1 m
+ * either side, stay out of the picture) at GLASS_HEIGHT, under the glass's 3 m top so its edge never crosses the
+ * picture's middle. Fixed: it never pans or dollies, and it looks GLASS_LOOK_Z short of the net, down enough that a
+ * near player 2.5 m in from the glass is in the picture to the feet. A wide lens holds the far court and both side
+ * walls at the net (GLASS_FOV vertical; 90 degrees across at 16:9).
+ */
+const GLASS_BACK = 0.4;
+const GLASS_HEIGHT = 2.6;
+const GLASS_FOV = 60;
+const GLASS_LOOK_Z = 1;
+/**
+ * The court cameras (Settings > Camera "Court" and "Close", behind ?creator=1 until the owner has seen them): inside the
+ * court behind you, as a sports game's third-person camera stands. Each stands its preset's `back` behind you, its
+ * `height` up, at its `follow` of your x plus `offset` to your right ("Close" looks over your right shoulder), and looks
+ * down the court at COURT_LOOK_Z in the far half, a share of the way to the ball (COURT_LOOK_BALL), so it mostly moves
+ * rather than turns. As you go back to the back glass it goes through it, as the glass camera films (the glass
+ * drawn clear), to COURT_OUT behind it at most, short of a stand's first row (1.6 m), and never higher than its preset:
+ * the glass's top edge (3 m) stays out of the picture. (Held inside the glass at the serve, it stood half a metre
+ * behind the server, looking down on their head.) Inside the side glass by COURT_SIDE. Place and look
+ * go through critically damped springs (COURT_LAG, COURT_LOOK_LAG). It cuts, never swings, at a change of ends (a swing
+ * round from inside the court goes through the side glass). Lobs: it tilts up to COURT_TILT_MAX after the ball.
+ */
+const COURT_OUT = 1.4;
+const COURT_SIDE = 0.6;
+const COURT_LOOK_Z = -4;
+const COURT_LOOK_Y = 0.9;
+const COURT_LOOK_BALL = 0.25;
+const COURT_LAG = 0.4;
+const COURT_LOOK_LAG = 0.5;
+const COURT_TILT_MAX = (30 * Math.PI) / 180;
+const COURT_TILT_NEAR = 3;
+const COURT_TILT_FAR = 7;
+/** The court cameras tilt after a lob slower than the broadcast's (s): near the play, the same tilt is a bigger turn. */
+const COURT_TILT_LAG = 0.35;
+/**
  * The camera choices (Settings > Camera; review round 3, critic High #4: there was one locked camera).
  * - tv: the broadcast main camera above.
  * - near: TV close, the same end camera nearer (8 m back, 7.8 m up, 36°): the players bigger, the far court flatter.
@@ -404,11 +440,15 @@ const FOV = 26;
  * 1.6 m behind the glass, 0.42 m up every 0.82 m: 2.7 m and heads at 3.9 m at 6 m back).
  */
 export const CAMERA_PRESETS = {
-  tv: { rig: 'end', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0 },
-  near: { rig: 'end', back: 8.0, height: 7.8, fov: 36, follow: 0 },
-  player: { rig: 'end', back: 6.0, height: 5.8, fov: 44, follow: 0.55 },
-  side: { rig: 'side', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0 },
-  dynamic: { rig: 'dynamic', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0 },
+  tv: { rig: 'end', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0, offset: 0 },
+  near: { rig: 'end', back: 8.0, height: 7.8, fov: 36, follow: 0, offset: 0 },
+  player: { rig: 'end', back: 6.0, height: 5.8, fov: 44, follow: 0.55, offset: 0 },
+  side: { rig: 'side', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0, offset: 0 },
+  dynamic: { rig: 'dynamic', back: CAM_BACK, height: CAM_HEIGHT, fov: FOV, follow: 0, offset: 0 },
+  // (the court rig: `back` behind you, `height` up, `follow` of your x, `offset` to your right: see COURT_*)
+  court: { rig: 'court', back: 3.4, height: 2.2, fov: 50, follow: 0.85, offset: 0 },
+  close: { rig: 'court', back: 2.1, height: 1.9, fov: 54, follow: 1, offset: 0.75 },
+  glass: { rig: 'glass', back: GLASS_BACK, height: GLASS_HEIGHT, fov: GLASS_FOV, follow: 0, offset: 0 },
 } as const;
 export type CameraPreset = keyof typeof CAMERA_PRESETS;
 export type CameraRig = (typeof CAMERA_PRESETS)[CameraPreset]['rig'];
@@ -549,6 +589,8 @@ export class BroadcastCamera {
   private height = CAM_HEIGHT;
   private fov0 = FOV;
   private follow = 0;
+  /** The court cameras' place to your right (m). */
+  private offset = 0;
   private lastPan = -1;
   /** The player the 'player' camera slides with. */
   followPlayer = 0;
@@ -570,10 +612,12 @@ export class BroadcastCamera {
     this.fovBase = p.rig === 'side' ? SIDE_FOV : p.rig === 'dynamic' ? DYN_FOV : p.fov;
     this.fov0 = this.fovBase + this.fovAdd;
     this.follow = p.follow;
+    this.offset = p.offset;
     if (p.rig !== this.rig) this.snapRig = true;
     this.rig = p.rig;
   }
-  /** Which kind of camera: behind an end, beside the court, or behind an end and moving with you. */
+  /** Which kind of camera: behind an end, beside the court, behind an end and moving with you, inside the court
+   * behind you, or on a tripod against the back glass. */
   rig: CameraRig = 'end';
   /** The side camera's side of the court (1: +x). */
   readonly sideX: number;
@@ -729,11 +773,13 @@ export class BroadcastCamera {
     } else {
       this.angle = this.to;
     }
-    // (the side camera never swings round)
-    if (this.rig === 'side' && this.turnStart >= 0) {
+    // (the side camera never swings round; the court and glass cameras cut to the other end: swung round from where
+    // they stand they would go through the side glass)
+    if ((this.rig === 'side' || this.rig === 'court' || this.rig === 'glass') && this.turnStart >= 0) {
       this.turnStart = -1;
       this.angle = this.to;
       swing = 0;
+      if (this.rig === 'court') this.snapRig = true;
     }
     const court = sim.world.court;
     const Rz = court.halfL + this.back;
@@ -795,6 +841,36 @@ export class BroadcastCamera {
       this.camera.position.set(lx * ca + lz * sa, this.dynHigh.x + this.swingRise * swing + jolt, lz * ca - lx * sa);
       const tlx = this.dynLookX.x, tlz = this.dynLookZ.x;
       this.lookT.set(tlx * ca + tlz * sa, 0.6 + jolt * 0.5, tlz * ca - tlx * sa);
+    } else if (this.rig === 'court') {
+      // In the frame of the end the camera is behind (as the dynamic camera's): x across (its right), z out to this end.
+      const p = sim.players[this.followPlayer]!.pos;
+      const plx = p.x * ca - p.z * sa, plz = p.x * sa + p.z * ca;
+      const bx = ball ? ball.x : p.x, bz = ball ? ball.z : -court.halfL;
+      const blx = bx * ca - bz * sa, blz = bx * sa + bz * ca;
+      const zT = Math.min(court.halfL + COURT_OUT, plz + this.back);
+      const hT = this.height;
+      const edge = court.halfW - COURT_SIDE;
+      const xT = Math.max(-edge, Math.min(edge, plx * this.follow + this.offset));
+      // (always well ahead of the camera, whatever the ball does)
+      const lzT = Math.min(zT - 6, COURT_LOOK_Z + (Math.min(blz, plz - 2) - COURT_LOOK_Z) * COURT_LOOK_BALL);
+      const lxT = plx * this.follow * 0.6 + (blx - plx * this.follow * 0.6) * COURT_LOOK_BALL;
+      if (snap) {
+        this.dynX.snap(xT); this.dynBack.snap(zT); this.dynHigh.snap(hT); this.dynLookX.snap(lxT); this.dynLookZ.snap(lzT);
+      } else {
+        this.dynX.to(xT, rdt, COURT_LAG);
+        this.dynBack.to(zT, rdt, COURT_LAG);
+        this.dynHigh.to(hT, rdt, COURT_LAG);
+        this.dynLookX.to(lxT, rdt, COURT_LOOK_LAG);
+        this.dynLookZ.to(lzT, rdt, COURT_LOOK_LAG);
+      }
+      const lx = this.dynX.x, lz = this.dynBack.x;
+      this.camera.position.set(lx * ca + lz * sa, this.dynHigh.x + jolt, lz * ca - lx * sa);
+      const tlx = this.dynLookX.x, tlz = this.dynLookZ.x;
+      this.lookT.set(tlx * ca + tlz * sa, COURT_LOOK_Y + jolt * 0.5, tlz * ca - tlx * sa);
+    } else if (this.rig === 'glass') {
+      const gz = court.halfL + this.back;
+      this.camera.position.set(gz * sa, this.height + jolt, gz * ca);
+      this.lookT.set(GLASS_LOOK_Z * sa, 0.35 + jolt * 0.5, GLASS_LOOK_Z * ca);
     } else {
       const camY = this.height + this.swingRise * swing + jolt;
       this.lookT.set(this.lookX * ca * 0.8, 0.35 + jolt * 0.5, -ca * 1.1);
@@ -808,17 +884,23 @@ export class BroadcastCamera {
     const dt = this.lastNow < 0 ? 0 : Math.min(0.1, Math.max(0, sim.time - this.lastNow));
     this.lastNow = sim.time;
     let tiltWant = 0;
-    if (ball) {
+    // (the glass camera is a tripod: it never tilts)
+    if (ball && this.rig !== 'glass') {
       const p = this.camera.position;
       const hx = ball.x - p.x, hz = ball.z - p.z;
+      const hd = Math.sqrt(hx * hx + hz * hz);
       const lead = Math.max(0, sim.ball.vel.y) * TILT_LAG;
-      const ballPitch = Math.atan2(ball.y + lead - p.y, Math.sqrt(hx * hx + hz * hz));
+      const ballPitch = Math.atan2(ball.y + lead - p.y, hd);
       const vx = tx - p.x, vz = tz - p.z;
       const viewPitch = Math.atan2(ty - p.y, Math.sqrt(vx * vx + vz * vz));
       const top = viewPitch + ((this.fov0 / 2) * Math.PI) / 180 - TILT_MARGIN;
-      tiltWant = Math.min(TILT_MAX, Math.max(0, ballPitch - top));
+      tiltWant = Math.min(this.rig === 'court' ? COURT_TILT_MAX : TILT_MAX, Math.max(0, ballPitch - top));
+      // A court camera lets a ball near its lens go (one off the back glass, a metre away: chased, the view whipped
+      // round at 80-130 deg/s): COURT_TILT_NEAR to COURT_TILT_FAR away it eases in.
+      if (this.rig === 'court') tiltWant *= smooth((hd - COURT_TILT_NEAR) / (COURT_TILT_FAR - COURT_TILT_NEAR));
     }
-    this.tilt += (tiltWant - this.tilt) * (dt > 0 ? 1 - Math.exp(-dt / (tiltWant > this.tilt ? TILT_LAG : TILT_LAG * 2)) : 0);
+    const tiltLag = this.rig === 'court' ? COURT_TILT_LAG : TILT_LAG;
+    this.tilt += (tiltWant - this.tilt) * (dt > 0 ? 1 - Math.exp(-dt / (tiltWant > this.tilt ? tiltLag : tiltLag * 2)) : 0);
     if (this.tilt > 1e-5) this.camera.rotateX(this.tilt);
     const over = sim.phase === PH_OVER;
     const pw = over ? sim.score.winner : sim.pointWinner;

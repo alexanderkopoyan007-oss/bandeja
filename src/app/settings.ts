@@ -51,7 +51,7 @@ export interface Settings {
   showFps: boolean;
   /** The match camera (render/views.ts CAMERA_PRESETS): TV, TV close, the player camera, and (M7, listed behind
    * ?creator=1 until the owner has seen them) the side and dynamic cameras. */
-  camera: 'tv' | 'near' | 'player' | 'side' | 'dynamic';
+  camera: 'tv' | 'near' | 'player' | 'side' | 'dynamic' | 'court' | 'close' | 'glass';
   /** Instant replays of big points (game/replay.ts). */
   replays: boolean;
   /** The score graphics: simple (the HUD's) or a TV package (ui/tv.ts). Listed behind ?creator=1 (M7) until the owner has seen it. */
@@ -113,7 +113,7 @@ const CHOICES: Record<string, readonly unknown[]> = {
   scoring: ['star', 'golden', 'advantage'], length: ['short', 'set', 'three'], hand: ['right', 'left'],
   timing: ['forgiving', 'standard', 'strict'], assist: ['off', 'light', 'normal', 'strong'], swing: ['hold', 'tap'],
   quality: ['auto', 'low', 'medium', 'high', 'ultra', 'custom'], resolution: ['half', 'three', 'full', 'sharp'],
-  shadows: ['off', 'low', 'high', 'ultra'], fov: [-10, -5, 0, 5, 10, 15], camera: ['tv', 'near', 'player', 'side', 'dynamic'], graphics: ['simple', 'tv'], umpire: ['off', 'en', 'es'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
+  shadows: ['off', 'low', 'high', 'ultra'], fov: [-10, -5, 0, 5, 10, 15], camera: ['tv', 'near', 'player', 'side', 'dynamic', 'court', 'close', 'glass'], graphics: ['simple', 'tv'], umpire: ['off', 'en', 'es'], motion: ['system', 'full', 'reduced'], textSize: [1, 1.25, 1.5],
   // A partner's or the opponents' style: 'random' or a style that exists (data/ai.json).
   partner: ['random', ...STYLE_KEYS], opponents: ['random', ...STYLE_KEYS],
 };

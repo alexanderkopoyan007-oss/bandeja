@@ -134,7 +134,7 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
 
 /** `?camera=` (render/views.ts CAMERA_PRESETS), else the broadcast camera. */
 function cameraOf(v: string | null): CameraPreset {
-  return v === 'near' || v === 'player' || v === 'side' || v === 'dynamic' ? v : 'tv';
+  return v === 'near' || v === 'player' || v === 'side' || v === 'dynamic' || v === 'court' || v === 'close' || v === 'glass' ? v : 'tv';
 }
 
 /** Sets and games for the menu's match lengths. */

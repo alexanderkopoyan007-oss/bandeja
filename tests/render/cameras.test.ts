@@ -23,7 +23,7 @@ function worldStep(cam: BroadcastCamera, sim: MatchSim, team: number, cameraTeam
 }
 
 describe('steering follows the picture', () => {
-  for (const preset of ['tv', 'player', 'side', 'dynamic'] as CameraPreset[]) {
+  for (const preset of ['tv', 'player', 'side', 'dynamic', 'court', 'close', 'glass'] as CameraPreset[]) {
     for (const sideX of [1, -1]) {
       it(`${preset}, camera on ${sideX > 0 ? '+' : '-'}x: right is screen right, up is into the screen, for both teams at both ends`, () => {
         const sim = new MatchSim({ seed: 3, doubles: true, human: [true, false, false, false] });
@@ -69,7 +69,7 @@ describe('steering follows the picture', () => {
   });
 });
 
-interface Motion { turnMax: number; turnP99: number; accelP99: number; moveMax: number; frames: number }
+interface Motion { turnMax: number; turnP99: number; accelP99: number; moveMax: number; frames: number; inside: boolean; lowest: number }
 
 /** An AI match drawn at 60 Hz through a camera rig, rallies only: turn rate (deg/s) and its change (deg/s²), and how
  * fast the camera itself moves (m/s). */
@@ -82,7 +82,8 @@ function measure(preset: CameraPreset, seed: number, secs: number): Motion {
   const ball = new THREE.Vector3();
   const fwd = new THREE.Vector3(), last = new THREE.Vector3(), pos = new THREE.Vector3(), lastPos = new THREE.Vector3();
   const turns: number[] = [], accels: number[] = [];
-  let lastTurn = -1, moveMax = 0, frames = 0, wasLive = false;
+  let lastTurn = -1, moveMax = 0, frames = 0, wasLive = false, inside = true, lowest = Infinity;
+  const court = sim.world.court;
   const dt = 1 / 60;
   for (let k = 0; k < secs * 120; k++) {
     sim.step(NONE);
@@ -92,6 +93,9 @@ function measure(preset: CameraPreset, seed: number, secs: number): Motion {
     cam.camera.updateMatrixWorld();
     cam.camera.getWorldDirection(fwd);
     pos.copy(cam.camera.position);
+    // (the court cameras may stand up to 1.4 m behind the back glass, never past the side glass)
+    if (Math.abs(pos.x) > court.halfW || Math.abs(pos.z) > court.halfL + 1.4 + 1e-9) inside = false;
+    lowest = Math.min(lowest, pos.y);
     const live = sim.phase === PH_RALLY && !cam.swinging;
     if (live && wasLive) {
       const turn = (Math.acos(Math.min(1, Math.max(-1, fwd.dot(last)))) * 180) / Math.PI / dt;
@@ -107,7 +111,7 @@ function measure(preset: CameraPreset, seed: number, secs: number): Motion {
   }
   BroadcastCamera.cutaways = true;
   const q = (v: number[], p: number): number => { const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(s.length * p))] ?? 0; };
-  return { turnMax: Math.max(...turns), turnP99: q(turns, 0.99), accelP99: q(accels, 0.99), moveMax, frames };
+  return { turnMax: Math.max(...turns), turnP99: q(turns, 0.99), accelP99: q(accels, 0.99), moveMax, frames, inside, lowest };
 }
 
 describe('the cameras move smoothly', () => {
@@ -125,13 +129,25 @@ describe('the cameras move smoothly', () => {
   // deg/s²; the side camera, 16 m out panning 0.2 of the ball's z, 10 and 22 (at 9 m out panning 0.45 it was 25 and
   // 61); the dynamic camera 17 and 41. The limits leave room for other matches and hold every rig to a broadcast
   // operator's pace.
+  // The court cameras (court, close) are a third-person camera on the court a few metres behind the player: measured
+  // (seed 41, 150 s) 24-25 deg/s at most, a p99 change of 77 deg/s², moving up to 4.2-4.3 m/s (the player runs
+  // faster). Their own limits: slower than a head turns and than the player runs.
   it('turn at an operator’s pace', () => {
     for (const preset of rigs) {
       const m = got[preset]!;
-      expect(m.turnMax, `${preset} turn`).toBeLessThan(preset === 'dynamic' ? 22 : 14);
-      expect(m.accelP99, `${preset} turn change`).toBeLessThan(60);
-      expect(m.moveMax, `${preset} speed`).toBeLessThan(2);
+      const near = CAMERA_PRESETS[preset].rig === 'court';
+      expect(m.turnMax, `${preset} turn`).toBeLessThan(near ? 40 : preset === 'dynamic' ? 22 : 14);
+      expect(m.accelP99, `${preset} turn change`).toBeLessThan(near ? 130 : 60);
+      expect(m.moveMax, `${preset} speed`).toBeLessThan(near ? 5 : 2);
     }
+  });
+  it('the court cameras stay on the court or just behind its back glass, above the players\' heads; the glass camera is a tripod', () => {
+    for (const preset of ['court', 'close'] as CameraPreset[]) {
+      expect(got[preset]!.inside, `${preset} inside the glass`).toBe(true);
+      expect(got[preset]!.lowest, `${preset} lowest`).toBeGreaterThan(1.8);
+    }
+    expect(got.glass!.moveMax).toBe(0);
+    expect(got.glass!.turnMax).toBe(0);
   });
   it('the side camera stands still and pans; the dynamic one moves with the player, slower than they run', () => {
     expect(got.side!.moveMax).toBe(0);

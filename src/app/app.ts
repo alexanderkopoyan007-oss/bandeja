@@ -298,7 +298,7 @@ export class App {
     if (!this.creatorOn) {
       p.umpire = 'off';
       p.captions = false;
-      if (p.camera === 'side' || p.camera === 'dynamic') p.camera = 'tv';
+      if (p.camera === 'side' || p.camera === 'dynamic' || p.camera === 'court' || p.camera === 'close' || p.camera === 'glass') p.camera = 'tv';
     }
     return p;
   }
@@ -1227,10 +1227,11 @@ export class App {
           hidden: () => !this.creatorOn },
         ch('Frame rate meter', 'showFps', onOff, 'Frames per second and frame times, top right (also F3).'),
         ch('Camera', 'camera', [{ value: 'tv', label: 'TV' }, { value: 'near', label: 'TV close' }, { value: 'player', label: 'Player' },
-          // (M7's cameras, behind ?creator=1 until the owner has seen them)
-          ...(this.creatorOn ? [{ value: 'side', label: 'Side' }, { value: 'dynamic', label: 'Dynamic' }] : [])],
+          // (M7's cameras and the court ones, behind ?creator=1 until the owner has seen them)
+          ...(this.creatorOn ? [{ value: 'side', label: 'Side' }, { value: 'dynamic', label: 'Dynamic' },
+            { value: 'court', label: 'Court' }, { value: 'close', label: 'Close' }, { value: 'glass', label: 'Glass' }] : [])],
           this.creatorOn
-            ? 'TV: the broadcast camera high behind the glass. TV close: nearer and wider. Player: low behind your end, sliding with you. Side: high beside the court, your pair on the left or right. Dynamic: behind you, moving in and out with you.'
+            ? 'TV: the broadcast camera high behind the glass. TV close: nearer and wider. Player: low behind your end, sliding with you. Side: high beside the court, your pair on the left or right. Dynamic: behind you, moving in and out with you. Court: on the court a few metres behind you. Close: over your right shoulder. Glass: a tripod against the back glass, as a club video is filmed.'
             : 'TV: the broadcast camera high behind the glass. TV close: nearer and wider. Player: low behind your end, sliding with you.'),
         ch('Replays', 'replays', [{ value: true, label: 'Big points' }, { value: false, label: 'Off' }],
           'After a winner off the court, a hard overhead or a long rally, the point again from another angle, the winning shot slowed. Enter or Space skips one.'),
