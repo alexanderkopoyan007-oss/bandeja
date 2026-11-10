@@ -31,6 +31,8 @@ import { Feedback } from './feedback.ts';
 import type { PlayerAsset } from '../render/avatar/asset.ts';
 import type { Wear } from '../render/avatar/costume.ts';
 import { makeBag, makeBottle } from '../render/props.ts';
+import { lowerStatic } from '../render/lod.ts';
+import { PROP_LOD, pxPerMetreAt1 } from '../render/lodCore.ts';
 import { Hud } from '../ui/hud.ts';
 import { TvGraphics } from '../ui/tv.ts';
 import { Post } from '../render/post.ts';
@@ -225,6 +227,10 @@ export class Game {
   readonly players: PlayerView[] = [];
   /** Contact shadows under the players (`?ground=1`, render/grounding.ts). */
   private grounding: Grounding | null = null;
+  /** Low quality: the players' simpler triangles are picked each frame by their size on screen (Avatar.pickLod). */
+  private lodPick = false;
+  private readonly lodEye = new THREE.Vector3();
+  private readonly lodSize = new THREE.Vector2();
   /** Each local player's cues (their rings, spot and aim), by `locals`; one, showing nothing, with autoplay. */
   private readonly cues: AssistView[];
   readonly kb: KeyboardInput;
@@ -529,6 +535,7 @@ export class Game {
     // (Low quality draws the half-size atlases when the app made them: asset.ts prepareLow)
     const low = this.preset.name === QUALITY.low.name;
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, this.cast, opts.match.rackets?.[i], opts.wear?.[i], low));
+    this.lodPick = low;
     this.grounding = Grounding.on ? new Grounding(this.scene, this.players) : null;
     // Who is who: a ring under the one player, or under each in their colour (P1-P4).
     for (let k = 0; k < this.locals.length; k++) this.players[this.locals[k]!.player]!.markYou(this.locals.length > 1 ? LOCAL_COLOURS[k] : undefined);
@@ -704,6 +711,7 @@ export class Game {
     this.post?.dispose();
     this.net.dispose();
     this.arena.dispose();
+    for (const p of this.players) p.avatar?.dropLod();
     disposeTree(this.scene);
     this.scene.clear();
     this.scene.environment = null;
@@ -1053,6 +1061,12 @@ export class Game {
   }
 
   private draw(): void {
+    if (this.lodPick) {
+      const cam = this.cam.camera;
+      const k = pxPerMetreAt1(cam.fov, this.renderer.getDrawingBufferSize(this.lodSize).y);
+      this.lodEye.setFromMatrixPosition(cam.matrixWorld);
+      for (let i = 0; i < this.players.length; i++) this.players[i]!.avatar?.pickLod(this.lodEye, k);
+    }
     if (this.post) this.post.render();
     else this.renderer.render(this.scene, this.cam.camera);
   }
@@ -1072,6 +1086,8 @@ export class Game {
       used.set(bench, k + 1);
       const kit = kitFor(i, cast?.kits);
       const bag = makeBag(this.opts.wear?.[i]?.bag ?? 'bag-holdall', kit.shorts, kit.trim);
+      // (Low: a fifth of its triangles, made in a worker; 15k each were for close-ups no camera takes)
+      if (this.preset.name === QUALITY.low.name) void lowerStatic(bag, PROP_LOD);
       // The bag lies along the bench; a backpack stands on it.
       bag.rotation.y = Math.PI / 2;
       bag.position.set(bench.x, bench.y, bench.z + (k === 0 ? -0.45 : 0.45) * Math.sign(bench.z || 1));

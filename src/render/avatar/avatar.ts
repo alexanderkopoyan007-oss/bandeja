@@ -23,6 +23,9 @@ import { Matcher, WARP_REACH } from './matcher.ts';
 import { fitSoles, type SolePoint } from './soles.ts';
 import { applySelf, kitMaterial, personMaterial, type KitLook, type KitState, type SelfLook } from './kit.ts';
 import type { Dressing, Piece } from './costume.ts';
+import { indexAttribute, positionsOf, shapeOf, simplifyOffThread } from '../lod.ts';
+import { lodWanted, PERSON_LOD, POSE_WEIGHT } from '../lodCore.ts';
+import { LOD_MORPHS, lodSkins } from '../lodPose.ts';
 import { piecesFor, type Paint } from './paint.ts';
 import MANNERS from '../../../data/manners.json' with { type: 'json' };
 import { type OverArm,
@@ -1684,6 +1687,7 @@ export class Avatar {
 
   /** `self`: a player's own skin and hair (kit.ts SelfLook), changeable later with `setSelf`. */
   constructor(asset: PlayerAsset, look: number | KitLook, paint?: Paint, self?: SelfLook | null) {
+    this.lodAsset = asset;
     this.nb = asset.bones.length;
     this.pose = new Pose(this.nb);
     this.tmp = new Pose(this.nb);
@@ -1730,6 +1734,7 @@ export class Avatar {
     const morphed: THREE.SkinnedMesh[] = [];
     if (pm?.face) {
       const fm = new THREE.SkinnedMesh(pm.face, mat);
+      this.faceMesh = fm;
       fm.bind(skeleton, new THREE.Matrix4());
       fm.castShadow = true;
       fm.frustumCulled = false;
@@ -1964,6 +1969,63 @@ export class Avatar {
 
   /** The hair, brows and lashes (null for the mannequin). */
   private hairMesh: THREE.SkinnedMesh | null = null;
+  /** The face, with the expressions' morph targets (null without one). */
+  private faceMesh: THREE.SkinnedMesh | null = null;
+
+  /**
+   * Low quality's simpler triangles for the body and face (lodCore.ts PERSON_LOD), made in a worker; until they come, and
+   * wherever the camera is near enough to see the difference (pickLod), the full ones are drawn.
+   */
+  private lod: { meshes: THREE.Mesh[]; full: THREE.BufferAttribute[]; low: THREE.BufferAttribute[]; error: number } | null = null;
+  private lodOn = false;
+  /** (its skeleton, for the poses the simpler triangles are checked in) */
+  private readonly lodAsset: PlayerAsset;
+
+  /** Ask for the simpler triangles (after `wear`: they are made from the triangles worn). */
+  async makeLod(): Promise<void> {
+    const meshes: THREE.Mesh[] = [this.mesh];
+    if (this.faceMesh) meshes.push(this.faceMesh);
+    // (each its own geometry over the shared attributes: another player may be drawn from the same person)
+    for (const m of meshes) m.geometry = ownGeometry(m.geometry, null, null);
+    const full = meshes.map((m) => m.geometry.index!);
+    // (checked in a lunge, a wide stance with the arms up and a crouch, and the face with its mouth open, eyes shut and smiling)
+    const skins = lodSkins(this.lodAsset), morphs = this.lodAsset.look?.morphs ?? [];
+    const done = await Promise.all(meshes.map((m, i) =>
+      simplifyOffThread(full[i]!.array, positionsOf(m.geometry), PERSON_LOD, undefined, shapeOf(m.geometry, skins, morphs, LOD_MORPHS, POSE_WEIGHT))));
+    if (done.some((d) => !d) || meshes.some((m, i) => m.geometry.index !== full[i])) return;
+    this.lod = { meshes, full, low: done.map((d, i) => indexAttribute(d!.index, full[i]!)), error: Math.max(...done.map((d) => d!.error)) };
+  }
+
+  /** Draw the simpler triangles while they are within half a pixel of the full ones (`k`: lodCore pxPerMetreAt1). */
+  pickLod(camPos: THREE.Vector3, k: number): void {
+    const l = this.lod;
+    if (!l) return;
+    const on = lodWanted(l.error, v1.setFromMatrixPosition(this.hips.matrixWorld).distanceTo(camPos), k, this.lodOn);
+    if (on === this.lodOn) return;
+    this.lodOn = on;
+    for (let i = 0; i < l.meshes.length; i++) l.meshes[i]!.geometry.setIndex(on ? l.low[i]! : l.full[i]!);
+  }
+
+  /**
+   * Back to the full triangles for good, before the scene is freed: a geometry's dispose frees only the index it holds, so it
+   * should hold the larger (the simpler one, a fifth of it, goes with its arrays).
+   */
+  dropLod(): void {
+    const l = this.lod;
+    if (!l) return;
+    for (let i = 0; i < l.meshes.length; i++) l.meshes[i]!.geometry.setIndex(l.full[i]!);
+    this.lod = null;
+    this.lodOn = false;
+  }
+
+  /** Triangles the body and face draw now (tests, the perf tool). */
+  get lodState(): { on: boolean; error: number; full: number; low: number } | null {
+    const l = this.lod;
+    if (!l) return null;
+    let full = 0, low = 0;
+    for (let i = 0; i < l.meshes.length; i++) { full += l.full[i]!.count / 3; low += l.low[i]!.count / 3; }
+    return { on: this.lodOn, error: l.error, full, low };
+  }
 
   private readonly sided: Piece[] = [];
 

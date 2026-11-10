@@ -277,6 +277,8 @@ export class PlayerView {
       this.grip = w?.grip;
       dressRacket(this.avatar.racket, racketLookOf(idx, racket, own, w?.grip));
       if (w) this.avatar.wear(dressFor(who, w, kit, this.avatar.mesh.geometry.index));
+      // (Low: simpler triangles for when they are small on screen, made in a worker as the match loads)
+      if (low && person) void this.avatar.makeLod();
       this.root = this.avatar.root;
       scene.add(this.root);
       return;
