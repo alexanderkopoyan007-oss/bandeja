@@ -184,12 +184,13 @@ describe('the contrast cases are the CSS', () => {
     const g = decl(MENU, '#menu .shade', 'background');
     const stops = [...g.matchAll(/rgba\(5,7,10,([.\d]+)\) ([^,]+?(?:\([^)]*\))?[^,]*)(?=,|\)$)/g)].map((m) => ({ a: Number(m[1]), at: m[2]!.trim() }));
     expect(stops[0]!.a).toBeGreaterThanOrEqual(0.7);
-    // The second stop is at the column's right edge (6vw + its width) and beyond: tied to the column, not to a
-    // share of the window (34% passed under the 520 px column below about 1857 px).
+    // The second stop is at the column's right edge (the panel's left, 6% of the window, + its width) and beyond: tied
+    // to the column, not to a share of the window (34% passed under the 520 px column below about 1857 px). M8: in
+    // the menu's own (zoomed) pixels, --W, so it holds at any text size.
     expect(stops[1]!.a).toBeGreaterThanOrEqual(0.7);
-    expect(stops[1]!.at).toMatch(/calc\(6vw \+ var\(--col\) \+ \d+px\)/);
+    expect(stops[1]!.at).toMatch(/calc\(var\(--W\) \* \.06 \+ var\(--col\) \+ \d+px\)/);
     expect(decl(MENU, '#menu .panel', 'width')).toBe('var(--col)');
-    expect(decl(MENU, '#menu .panel', 'left')).toBe('6vw');
+    expect(decl(MENU, '#menu .panel', 'left')).toBe('calc(var(--W) * .06)');
   });
 });
 

@@ -45,6 +45,7 @@ try {
       axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })), vibrationActuator: null };
     window.__pressAt = 0;
     window.__padSet = (b, on) => { pad.buttons[b] = { pressed: on, touched: on, value: on ? 1 : 0 }; pad.timestamp = performance.now(); if (on) window.__pressAt = performance.now(); };
+    window.__padAxis = (a, v) => { pad.axes[a] = v; pad.timestamp = performance.now(); };
     Object.defineProperty(navigator, 'getGamepads', { value: () => [pad, null, null, null], configurable: true });
     // Nothing leaves the page: no rooms, no peers, no windows. A socket fails as an offline one does (an error, then
     // closed), never by throwing.
@@ -186,12 +187,21 @@ try {
       const vw = innerWidth, vh = innerHeight;
       const shown = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
       const t = (el) => JSON.stringify((el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 48));
-      for (const el of root.querySelectorAll('h1, .sub, .item, .item .lab, .item .v, .desc, .card, .card h2, .card td, .card p, .foot, .foot span')) {
+      // (inside a container that scrolls, what is out of sight is reached by scrolling: the list by moving the focus,
+      // a side card by the right stick or Page Up/Down; the container itself must be on the screen)
+      const scroller = (el) => {
+        for (let a = el.parentElement; a && a !== root; a = a.parentElement) {
+          const o = getComputedStyle(a).overflowY;
+          if ((o === 'auto' || o === 'scroll') && a.scrollHeight > a.clientHeight + 2) return a;
+        }
+        return null;
+      };
+      for (const el of root.querySelectorAll('h1, .sub, .list, .side, .item, .item .lab, .item .v, .desc, .card, .card h2, .card td, .card p, .foot, .foot span')) {
         if (!shown(el)) continue;
         const cs = getComputedStyle(el);
         if (cs.overflowX !== 'visible' && el.scrollWidth > el.clientWidth + 1) out.push(`clipped ${t(el)} (${el.scrollWidth} in ${el.clientWidth} px)`);
         const r = el.getBoundingClientRect();
-        if (r.width > 0 && (r.right > vw + 1 || r.left < -1 || r.bottom > vh + 1)) out.push(`off the screen ${t(el)}`);
+        if (r.width > 0 && !scroller(el) && (r.right > vw + 1 || r.left < -1 || r.bottom > vh + 1 || r.top < -1)) out.push(`off the screen ${t(el)}`);
       }
       for (const it of root.querySelectorAll('.item')) {
         if (!shown(it)) continue;
@@ -204,13 +214,28 @@ try {
         if (lab && val && shown(lab) && shown(val) && lab.getBoundingClientRect().right > val.getBoundingClientRect().left + 1) out.push(`label under its value ${t(lab)}`);
       }
       const side = root.querySelector('.side');
-      if (side && shown(side) && side.scrollHeight > side.clientHeight + 2) out.push(`side card taller than its column (${side.scrollHeight} in ${side.clientHeight} px): a pad can't scroll it`);
+      // A side card taller than its column must say so (its foot faded, the footer's Scroll the card).
+      if (side && shown(side) && side.scrollHeight > side.clientHeight + 2 && side.scrollTop === 0
+        && (!side.classList.contains('more') || !/Scroll the card/.test(root.querySelector('.foot')?.textContent ?? ''))) out.push(`side card taller than its column (${side.scrollHeight} in ${side.clientHeight} px), not marked as scrolling`);
       const panel = root.querySelector('.panel');
       if (side && panel && shown(side) && side.getBoundingClientRect().width > 0 && panel.getBoundingClientRect().right > side.getBoundingClientRect().left + 1) out.push('the list runs under the side card');
       const desc = root.querySelector('.desc');
       if (desc && panel && shown(desc) && desc.getBoundingClientRect().bottom > panel.getBoundingClientRect().bottom + 1) out.push(`the description runs past the panel ${t(desc)}`);
       return out;
     });
+    // A tall side card: the right stick takes it to its end and back.
+    const tall = await page.evaluate(() => { const s = document.querySelector('#menu.on .side'); return !!s && s.getClientRects().length > 0 && s.scrollHeight > s.clientHeight + 2; });
+    if (tall) {
+      await page.evaluate(() => window.__padAxis(3, 1));
+      await sleep(900);
+      await page.evaluate(() => window.__padAxis(3, 0));
+      const end = await page.evaluate(() => { const s = document.querySelector('#menu.on .side'); return s.scrollTop + s.clientHeight >= s.scrollHeight - 2 && !s.classList.contains('more'); });
+      await page.evaluate(() => window.__padAxis(3, -1));
+      await sleep(900);
+      await page.evaluate(() => window.__padAxis(3, 0));
+      const top = await page.evaluate(() => document.querySelector('#menu.on .side').scrollTop === 0);
+      if (!end || !top) found.push(`the right stick doesn't scroll the side card to its end and back (end ${end}, top ${top})`);
+    }
     for (const f of found) {
       const key = `${where.split(' > ').at(-1)}: ${f}`;
       if (layoutSeen.has(key)) continue;

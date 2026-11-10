@@ -50,9 +50,14 @@ const CSS = `
 #hud .tv .tvspeed .v { background: var(--tv-bg); padding: 6px 12px 5px; font: 800 26px/1 var(--tv-font); }
 #hud .tv .tvspeed .v small { font-size: 13px; color: var(--tv-dim); margin-left: 4px; letter-spacing: .08em; }
 /* Lower third. */
-#hud .tv .tvl3 { position: absolute; left: 3.2vw; bottom: 9vh; min-width: 360px; filter: drop-shadow(0 6px 18px rgba(0,0,0,.5));
+/* (it ends 160 px short of the middle, where the timing cues stand, at any text size: the HUD's zoom scales vw too,
+   so at 150% a 360 px minimum ran into the grade and the hints; M8's HUD check) */
+#hud .tv .tvl3 { position: absolute; left: 3.2vw; bottom: 9vh; --l3max: calc(46.8vw / var(--ui-scale, 1) - 160px);
+  min-width: min(360px, var(--l3max)); max-width: max(220px, var(--l3max)); filter: drop-shadow(0 6px 18px rgba(0,0,0,.5));
   clip-path: inset(0 100% 0 0); transition: clip-path .45s cubic-bezier(.2,.8,.2,1); }
 #hud .tv .tvl3.on { clip-path: inset(0 0 0 0); }
+#hud .tv .tvbug { transition: opacity .3s; }
+#hud .tv .tvbug.covered { opacity: 0; }
 #hud .tv .tvl3 .h { display: flex; align-items: center; gap: 10px; background: var(--tv-bg); padding: 10px 16px 9px;
   border-left: 5px solid var(--acc, var(--tv-gold)); font: 800 22px/1 var(--tv-font); letter-spacing: .05em; text-transform: uppercase; }
 #hud .tv .tvl3 .s { background: var(--tv-bg2); padding: 8px 16px 7px 21px; font: 600 14px/1 var(--tv-font); letter-spacing: .12em;
@@ -84,6 +89,8 @@ export class TvGraphics {
   private readonly speedK: HTMLElement;
   private readonly speedV: HTMLElement;
   private readonly l3: HTMLElement;
+  /** The score bug (it steps aside under a lower third tall enough to reach it). */
+  private readonly bugEl: HTMLElement;
   private readonly names: [string, string];
   private readonly colors: [string, string];
   private readonly stats: [TeamStats, TeamStats];
@@ -93,6 +100,8 @@ export class TvGraphics {
   private lastKey = '';
   private speedUntil = 0;
   private l3Until = 0;
+  /** When the lower third is next measured against the bug (s, as `now`). */
+  private l3Check = 0;
   private l3Queue: Array<{ html: string; acc: string; secs: number; passing?: boolean }> = [];
   private longest = 0;
   private readonly cache = new Map<HTMLElement, string>();
@@ -109,6 +118,7 @@ export class TvGraphics {
     this.colors = colors;
     this.root = el('div', 'tv', hud);
     const bug = el('div', 'tvbug', this.root);
+    this.bugEl = bug;
     const logo = el('div', 'tvlogo', bug);
     logo.innerHTML = 'BDJ<br>OPEN';
     const rows = el('div', 'tvrows', bug);
@@ -209,7 +219,19 @@ export class TvGraphics {
         this.l3.style.setProperty('--acc', next.acc);
         this.l3.classList.add('on');
         this.l3Until = now + next.secs;
-      } else this.l3.classList.remove('on');
+        this.l3Check = 0;
+      } else {
+        this.l3.classList.remove('on');
+        this.bugEl.classList.remove('covered');
+      }
+    }
+    // A tall lower third (the stats at the change of ends) at a large text size on a short window reaches the score
+    // bug: the bug steps aside while it is up, as TV's does under a full graphic (M8's HUD check). Measured twice a
+    // second while one is up (between points), since the HUD can be hidden as it comes up; never per frame.
+    if (this.l3.classList.contains('on') && now >= this.l3Check) {
+      this.l3Check = now + 0.5;
+      const a = this.l3.getBoundingClientRect(), b = this.bugEl.getBoundingClientRect();
+      if (a.height > 0 && b.height > 0) this.bugEl.classList.toggle('covered', a.top < b.bottom + 8 && a.left < b.right && b.left < a.right);
     }
   }
 

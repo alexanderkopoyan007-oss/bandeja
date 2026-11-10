@@ -128,6 +128,11 @@ const PAD_NAMES = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'View', 'Start', 
 export function padName(b: number): string {
   return PAD_NAMES[b] ?? `Button ${b}`;
 }
+/** The same, short, for a menu row's value (three buttons on the drop must fit beside its label at 125% text). */
+const PAD_SHORT = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'View', 'Start', 'LS', 'RS', 'D↑', 'D↓', 'D←', 'D→'];
+export function padShort(b: number): string {
+  return PAD_SHORT[b] ?? `B${b}`;
+}
 
 /** [pad button, sim button] pairs, flat (the pad's lookup table: read every frame, so no objects). */
 export function padTable(pad: Record<string, number[]>): Int32Array {

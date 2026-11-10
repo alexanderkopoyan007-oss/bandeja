@@ -607,8 +607,9 @@ export class Ball {
     this.checkExit(world);
   }
 
-  /** Restitution for rollWall's bounce (a field: see `best`). */
-  private rollE = 0;
+  /** Restitution for rollWall's bounce (a field: see `best`). -0, not 0: it first holds a fraction mid-match (the first
+   * rolling ball at a wall), and a small integer field changed the Ball's map then and deoptimised the sim (M8). */
+  private rollE = -0;
 
   /** A rolling ball meets a wall (zone: what is there): record it and set rollE for the normal speed. */
   private rollWall(world: BallWorld, wall: number): void {

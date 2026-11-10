@@ -8,18 +8,26 @@ export const MENU_CSS = `
 #menu { position: fixed; inset: 0; z-index: 10; display: none; font: 15px/1.3 ui-sans-serif, system-ui, sans-serif;
   color: #e8ecef; --display: "Avenir Next Condensed", "DIN Condensed", "Arial Narrow", system-ui, sans-serif;
   --accent: #ffd84a; --glass: rgba(9,12,17,.74); --edge: rgba(255,255,255,.12); zoom: var(--ui-scale, 1);
-  --col: min(520px, 88vw); }
+  /* The window's width in the menu's own (zoomed) pixels: vw inside a zoomed element is the window's, then zoomed
+     again, so at 150% text 6vw + the column + the side card ran 300 px past a 1280 px window (M8's layout walk). The
+     side card takes 260-420 px, and the list gives up width when it shares the window with one (at 100% text and
+     1280 px or wider, both are as they were). */
+  --W: calc(100vw / var(--ui-scale, 1));
+  --side: clamp(260px, calc(var(--W) * .34), 420px);
+  --col: min(520px, calc(var(--W) * .88)); }
 #menu.on { display: block; }
-#menu.wide { --col: min(760px, 88vw); }
+#menu.wide { --col: min(760px, calc(var(--W) * .88)); }
+#menu.has-side { --col: min(520px, calc(var(--W) * .87 - var(--side))); }
+#menu.has-side.wide { --col: min(760px, calc(var(--W) * .87 - var(--side))); }
 /* The shade stays at .7 or darker under the whole menu column at any width (its stop is tied to the column's
    right edge, plus a margin), then fades over the scene; at 1920 px this is where the old 34% stop was. */
-#menu .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,7,10,.8) 0, rgba(5,7,10,.7) calc(6vw + var(--col) + 40px),
-  rgba(5,7,10,.4) calc(6vw + var(--col) + 40px + 18vw), rgba(5,7,10,.08) 100%);
+#menu .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,7,10,.8) 0, rgba(5,7,10,.7) calc(var(--W) * .06 + var(--col) + 40px),
+  rgba(5,7,10,.4) calc(var(--W) * .24 + var(--col) + 40px), rgba(5,7,10,.08) 100%);
   opacity: 0; transition: opacity .35s; }
 #menu.on .shade { opacity: 1; }
-#menu .brand { position: absolute; left: 6vw; top: 6vh; font: italic 800 30px/1 var(--display); letter-spacing: .1em; color: #fff; }
+#menu .brand { position: absolute; left: calc(var(--W) * .06); top: 6vh; font: italic 800 30px/1 var(--display); letter-spacing: .1em; color: #fff; }
 #menu .brand b { color: var(--accent); font-weight: 800; }
-#menu .panel { position: absolute; left: 6vw; top: calc(6vh + 54px); bottom: calc(5vh + 34px); width: var(--col);
+#menu .panel { position: absolute; left: calc(var(--W) * .06); top: calc(6vh + 54px); bottom: calc(5vh + 34px); width: var(--col);
   display: flex; flex-direction: column; justify-content: center; }
 #menu .screen { animation: menu-in .22s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; min-height: 0; max-height: 100%; }
 #menu .screen.back { animation-name: menu-back; }
@@ -60,8 +68,14 @@ export const MENU_CSS = `
 #menu .group { margin: 14px 0 6px 4px; font: 700 11px/1 var(--display); letter-spacing: .26em; text-transform: uppercase; color: rgba(255,255,255,.72); }
 #menu .desc { min-height: 38px; flex: none; margin-top: 12px; font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; color: #d3d9de; max-width: 520px;
   text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.6); }
-#menu .side { position: absolute; left: calc(6vw + var(--col) + 4vw); top: calc(6vh + 54px); bottom: calc(5vh + 34px);
-  width: min(420px, 34vw); display: flex; flex-direction: column; justify-content: center; overflow-y: auto; }
+#menu .side { position: absolute; left: calc(var(--W) * .1 + var(--col)); top: calc(6vh + 54px); bottom: calc(5vh + 34px);
+  width: var(--side); display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; }
+/* Centred by auto margins, not justify-content: a centred column taller than the side spills above its top, where no
+   scrolling reaches (M8's layout walk: the Controls card at 150% text). Taller, it starts at the top and scrolls (the
+   right stick, Page Up/Down, the wheel), its foot faded while there is more below. */
+#menu .side > :first-child { margin-top: auto; }
+#menu .side > :last-child { margin-bottom: auto; }
+#menu .side.more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); }
 #menu .card { padding: 16px 18px; border-radius: 10px; background: var(--glass); box-shadow: inset 0 0 0 1px var(--edge); backdrop-filter: blur(12px); }
 #menu .card h2 { margin: 0 0 10px; font: 700 12px/1 var(--display); letter-spacing: .24em; text-transform: uppercase; color: var(--accent); }
 #menu .card table { width: 100%; border-collapse: collapse; font: 700 15px/1 var(--display); letter-spacing: .05em; }
@@ -69,7 +83,7 @@ export const MENU_CSS = `
 #menu .card tr:first-child td { border-top: 0; }
 #menu .card td.l { text-align: left; color: #fff; text-transform: uppercase; }
 #menu .card td.w { color: var(--accent); }
-#menu .foot { position: absolute; left: 6vw; bottom: 5vh; display: flex; gap: 18px; font: 700 12px/1 var(--display); letter-spacing: .14em;
+#menu .foot { position: absolute; left: calc(var(--W) * .06); bottom: 5vh; display: flex; gap: 18px; font: 700 12px/1 var(--display); letter-spacing: .14em;
   text-transform: uppercase; color: rgba(255,255,255,.72); }
 #menu .cap { display: inline-block; min-width: 20px; padding: 3px 6px 2px; margin-right: 6px; border-radius: 5px; text-align: center;
   font: 800 11px/1 var(--display); color: #0b0d10; background: linear-gradient(180deg, #fff, #cfd6dc); box-shadow: 0 2px 0 #8a939b; }
@@ -177,6 +191,8 @@ export class Menu {
     this.brand.setAttribute('aria-hidden', 'true');
     this.panel = this.root.appendChild(el('div', 'panel'));
     this.sideEl = this.root.appendChild(el('div', 'side'));
+    this.sideEl.addEventListener('scroll', () => { this.sideMore(); this.drawFoot(); }, { passive: true });
+    addEventListener('resize', () => { this.sideMore(); this.drawFoot(); });
     this.foot = this.root.appendChild(el('div', 'foot'));
     this.foot.setAttribute('aria-hidden', 'true');
     // Capture phase: menu keys never reach the game behind (its own listeners are on the bubble phase).
@@ -269,6 +285,8 @@ export class Menu {
     if (this.visible) return;
     this.visible = true;
     this.root.classList.add('on');
+    this.sideMore();
+    this.drawFoot();
     this.padPrev.clear();
     // A direction held from before (the stick still pushed as a menu opens) starts afresh: no repeat at once.
     this.repeatAt.clear();
@@ -366,6 +384,9 @@ export class Menu {
     this.panel.replaceChildren(scr);
     this.sideEl.innerHTML = side;
     this.sideEl.style.display = side ? '' : 'none';
+    this.root.classList.toggle('has-side', !!side);
+    this.sideEl.scrollTop = 0;
+    this.sideMore();
     this.drawFoot();
     let f = focus >= 0 ? focus : s.focus ?? 0;
     f = Math.max(0, Math.min(this.items.length - 1, f));
@@ -526,6 +547,11 @@ export class Menu {
         return;
       }
     }
+    if (c === 'PageDown' || c === 'PageUp') {
+      e.preventDefault();
+      this.scrollSide((c === 'PageDown' ? 1 : -1) * this.sideEl.clientHeight * 0.8);
+      return;
+    }
     const handled = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'Enter', 'Space', 'Escape', 'Backspace', 'Tab'];
     if (!handled.includes(c)) return;
     e.preventDefault();
@@ -552,6 +578,11 @@ export class Menu {
     if (!p) return;
     const now = performance.now();
     const ax = p.axes[0] ?? 0, ay = p.axes[1] ?? 0;
+    // The right stick scrolls a side card taller than its column (up to 900 px/s at full tilt, past a dead zone).
+    const ry = p.axes[3] ?? 0;
+    const sdt = this.stickAt ? Math.min(0.1, (now - this.stickAt) / 1000) : 0;
+    this.stickAt = now;
+    if (Math.abs(ry) > 0.25 && this.sideOver) { this.usingPad = true; this.scrollSide(ry * 900 * sdt); }
     // Directions as virtual buttons 100-103 (up, down, left, right): d-pad or stick past half-way.
     const dirs: Array<[number, boolean]> = [
       [100, !!p.buttons[12]?.pressed || ay < -0.5], [101, !!p.buttons[13]?.pressed || ay > 0.5],
@@ -610,14 +641,30 @@ export class Menu {
 
   private footShown = '';
 
+  /** The side card is taller than its column (it scrolls): its foot faded while there is more below. */
+  private sideOver = false;
+  private sideMore(): void {
+    const e = this.sideEl;
+    this.sideOver = e.style.display !== 'none' && e.scrollHeight > e.clientHeight + 2;
+    e.classList.toggle('more', this.sideOver && e.scrollTop + e.clientHeight < e.scrollHeight - 2);
+  }
+  /** Scroll the side card by `px` (the right stick, Page Up/Down). */
+  private scrollSide(px: number): void {
+    if (!this.sideOver) return;
+    this.sideEl.scrollTop += px;
+  }
+  private stickAt = 0;
+
   private drawFoot(): void {
     const pad = this.usingPad;
     const cap = (k: string, round = false): string => `<span class="cap${round ? ' pad' : ''}">${k}</span>`;
     const s = this.current;
     const canBack = s?.back !== null;
+    // (the card beside the list scrolls when it is taller than its column: said so)
+    const scroll = this.sideOver ? (pad ? `<span>${cap('R', true)}Scroll the card</span>` : `<span>${cap('PgUp')}${cap('PgDn')}Scroll the card</span>`) : '';
     const html = pad
-      ? `<span>${cap('✥', true)}Move</span><span>${cap('A', true)}Select</span>${canBack ? `<span>${cap('B', true)}Back</span>` : ''}`
-      : `<span>${cap('↑')}${cap('↓')}Move</span><span>${cap('←')}${cap('→')}Change</span><span>${cap('Enter')}Select</span>${canBack ? `<span>${cap('Esc')}Back</span>` : ''}`;
+      ? `<span>${cap('✥', true)}Move</span><span>${cap('A', true)}Select</span>${canBack ? `<span>${cap('B', true)}Back</span>` : ''}${scroll}`
+      : `<span>${cap('↑')}${cap('↓')}Move</span><span>${cap('←')}${cap('→')}Change</span><span>${cap('Enter')}Select</span>${canBack ? `<span>${cap('Esc')}Back</span>` : ''}${scroll}`;
     if (html === this.footShown) return;
     this.footShown = html;
     this.foot.innerHTML = html;
@@ -639,10 +686,13 @@ function anyPad(): PadState | null {
   try {
     for (const p of navigator.getGamepads?.() ?? []) {
       if (!p || !p.connected) continue;
-      if (!out) { out = { buttons: p.buttons.map((b) => ({ pressed: b.pressed })), axes: [p.axes[0] ?? 0, p.axes[1] ?? 0] }; continue; }
+      // (the left stick's two axes, and the right stick's up-down, axis 3: it scrolls a tall side card)
+      if (!out) { out = { buttons: p.buttons.map((b) => ({ pressed: b.pressed })), axes: [p.axes[0] ?? 0, p.axes[1] ?? 0, 0, p.axes[3] ?? 0] }; continue; }
       for (let b = 0; b < p.buttons.length; b++) if (p.buttons[b]?.pressed) (out.buttons[b] ??= { pressed: false }).pressed = true;
       const x = p.axes[0] ?? 0, y = p.axes[1] ?? 0;
       if (Math.hypot(x, y) > Math.hypot(out.axes[0]!, out.axes[1]!)) { out.axes[0] = x; out.axes[1] = y; }
+      const ry = p.axes[3] ?? 0;
+      if (Math.abs(ry) > Math.abs(out.axes[3]!)) out.axes[3] = ry;
     }
   } catch {
     // Blocked by a permissions policy: no pad.

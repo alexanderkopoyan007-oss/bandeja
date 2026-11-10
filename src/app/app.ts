@@ -14,7 +14,7 @@ import type { BackendGuard } from '../render/backend.ts';
 import { Menu, type Item, type Screen, type Choice } from '../ui/menu/menu.ts';
 import { setSafeColours } from '../ui/palette.ts';
 import { resetHints } from '../ui/hud.ts';
-import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys, PAD_ACTIONS, bindPad, padName, resolvePad } from '../game/input/bindings.ts';
+import { ACTIONS, DEFAULT_KEYS, RESERVED, bindKey, keyName, resolveKeys, PAD_ACTIONS, bindPad, padName, padShort, resolvePad } from '../game/input/bindings.ts';
 import { STYLES, STYLE_KEYS } from '../sim/ai/styles.ts';
 import { DEFAULT_SETUP, defaultSettings, loadSettings, saveSettings, reducedMotion, type Settings, type MatchSetup } from './settings.ts';
 import { rosterScreen } from './rosterScreen.ts';
@@ -1249,7 +1249,7 @@ export class App {
       for (const a of PAD_ACTIONS) {
         items.push({
           kind: 'key', label: a.label,
-          keys: () => pad()[a.id]!.map(padName).join(' / ') || 'None',
+          keys: () => pad()[a.id]!.map(padShort).join(' / ') || 'None',
           listen: () => {},
           padListen: (b) => {
             if (b === null) return;
@@ -1257,7 +1257,7 @@ export class App {
             bindPad(k, a.id, b);
             s.padKeys = k;
           },
-          desc: 'Press A, then the pad button for this shot. A button another shot had moves here (that shot keeps any other it has). The left stick moves and aims; Start pauses.',
+          desc: 'Press A, then the pad button for this shot. A button another shot had moves here (that shot keeps any other it has). LS and RS are the sticks pressed in, D the d-pad. The left stick moves and aims; Start pauses.',
         });
       }
       items.push({ kind: 'button', label: 'Reset pad', desc: 'Back to A drive, X topspin, B slice, Y lob, LB volley, RB overhead, RT power, LT precision and the right stick\'s click for the drop.',

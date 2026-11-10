@@ -197,6 +197,7 @@ export class ShotSolver {
   netY = NaN;
 
   constructor(world: BallWorld, rackets?: readonly string[], players = 4) {
+    this.cS = 20;
     this.world = world;
     this.racket = new Racket(RACKETS.standard!, world.spec.mass, world.spec.radius, world.spec.inertiaFactor);
     this.rackets = [];
@@ -493,7 +494,9 @@ export class ShotSolver {
   // that first glass was touched before the landing (net, posts, a second wall after crossing), and the landing.
   wallHit = -1;
   wallGlass = false;
-  wallY = 0;
+  // (-0, not 0: a field that starts as a small integer and first holds a fraction mid-match changes the class's map,
+  // and every optimised function using it deoptimises then; M8 found these by `--trace-generalization`)
+  wallY = -0;
   netTouched = false;
   lateWall = false;
   exited = false;
@@ -514,7 +517,7 @@ export class ShotSolver {
     this.netY = NaN;
     this.wallHit = -1;
     this.wallGlass = false;
-    this.wallY = 0;
+    this.wallY = -0;
     this.netTouched = false;
     this.lateWall = false;
     this.exited = false;
@@ -554,11 +557,12 @@ export class ShotSolver {
 
   // Residuals of the last evalContra(): landing distance and sideways miss in the unfolded plane (the court beyond
   // the glass mirrored back).
-  private cR = 0;
-  private cL = 0;
+  private cR = -0;
+  private cL = -0;
   // The last solveContra's best try (glass-height attempt, speed, yaw), where a quick re-solve starts.
   private cAttempt = 0;
-  private cS = 20;
+  // (stored as a double from the start: -0 here, then 20 in the constructor)
+  private cS = -0;
   private cYaw = -0;
   private cDir = new V3();
 

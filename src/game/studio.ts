@@ -48,7 +48,10 @@ const NARROW = 1000;
 /** The camera follows the player round the drill with this lag (s). */
 const FOLLOW = 0.3;
 /** A change waits this long (ms) before the player is built again: a slider being dragged builds once it rests. */
-const SETTLE_MS = 110;
+// (300, from 110: a build is one 130-190 ms task, and the pad's API reports only what is held, so a tap that starts
+// and ends inside one is lost; tapping down the Roster every 200-300 ms, each build fell on the next tap (M8's menu
+// walk). Taps at that pace now build nothing until they stop.)
+const SETTLE_MS = 300;
 /** The held moment: this far (s) into the drill, the player ready on their spot, the coach not yet feeding. */
 const HOLD_AT = 1.0;
 /** The drill the player stands in when held, and the drills "watch them play" offers (data/practice.json). */

@@ -38,8 +38,11 @@ export class UmpireVoice implements CallSink {
     this.el = document.createElement('div');
     this.el.className = 'umpire-caption';
     this.el.setAttribute('aria-hidden', 'true');
-    this.el.style.cssText = 'position:absolute;left:50%;bottom:11vh;transform:translateX(-50%);max-width:70vw;padding:.35em .8em;'
-      + 'border-radius:6px;background:rgba(8,10,14,.72);color:#f4f6f8;font:600 calc(17px * var(--ui-scale, 1))/1.3 system-ui, sans-serif;'
+    // At the foot of the screen, under the timing meter (at 11vh it sat in the cues' column: over the meter and the grade,
+    // M8's HUD check). The HUD is zoomed by the text size already: the font is not scaled again, and the width is
+    // the window's (vw inside the zoom is zoomed too).
+    this.el.style.cssText = 'position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:calc(64vw / var(--ui-scale, 1));padding:.35em .8em;'
+      + 'border-radius:6px;background:rgba(8,10,14,.72);color:#f4f6f8;font:600 17px/1.3 system-ui, sans-serif;'
       + 'text-align:center;letter-spacing:.01em;pointer-events:none;opacity:0;transition:opacity .25s;z-index:5';
     root.appendChild(this.el);
   }

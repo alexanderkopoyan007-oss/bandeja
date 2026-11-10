@@ -147,6 +147,10 @@ export const HUD_CSS = `
 :root.hc #hud { --glass: rgba(9,12,17,.94); }
 :root.hc #hud .bug { background: rgba(10,12,16,.95); }
 :root.hc #hud .grade, :root.hc #hud .shot, :root.hc #hud .mate, :root.hc #hud .ms { background: rgba(9,12,17,.9); padding: 5px 10px; border-radius: 6px; }
+/* (their panels' padding made the grade's overlap the ms readout's and the shot's: spaced out; M8's HUD check) */
+:root.hc #hud .grade { bottom: 125px; }
+:root.hc #hud .shot { bottom: 162px; }
+:root.hc #hud .hint { bottom: 190px; }
 `;
 
 /** The predicted path climbs well above head height over our half before it bounces: a lob. */
@@ -221,8 +225,12 @@ export class Hud {
     }
     const bug = el('div', 'bug');
     bug.style.setProperty('--sets', String(sets));
-    // Doubles rows name two players.
-    if (names[0].includes('·') || names[1].includes('·')) bug.style.setProperty('--name', '170px');
+    // Doubles rows name two players: the column as wide as the longer row needs, up to 260 px (a fixed 170 cut
+    // "K. Nakamura · P. Mouratoglou"; M8's HUD check).
+    const pair = names[0].includes('·') || names[1].includes('·');
+    const need = nameWidth(names);
+    const col = Math.max(pair ? 170 : 112, Math.min(260, Math.ceil(need + 10)));
+    if (col !== 112) bug.style.setProperty('--name', `${col}px`);
     for (let t = 0; t < 2; t++) {
       const row = el('div', 'row');
       const cells: HTMLElement[] = [el('span', 'dot'), el('span', 'name')];
@@ -583,4 +591,19 @@ function el(tag: string, cls: string): HTMLElement {
   const e = document.createElement(tag);
   e.className = cls;
   return e;
+}
+
+/** The width (px) of the longer of the score bug's names in its font (.bug: 600 14px, letter-spacing .02em), or 0 where
+ * nothing can measure it (tests without a canvas). */
+function nameWidth(names: readonly string[]): number {
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return 0;
+    ctx.font = '600 14px ui-sans-serif, system-ui, sans-serif';
+    let w = 0;
+    for (const n of names) w = Math.max(w, ctx.measureText(n).width + 0.28 * n.length);
+    return w;
+  } catch {
+    return 0;
+  }
 }

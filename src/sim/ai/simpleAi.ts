@@ -691,8 +691,10 @@ export class SimpleAi {
   /** When the planned ball reaches the glass on our side; negative if it is played before any glass. */
   private glassT = -1;
   /** The strike whose ball was read for going out, and how high on our glass it has to land to be read so (m). */
-  private outFor = -1;
-  private outAbove = 0;
+  // (fractions and -0, not -1 and 0: these first take fractions mid-match, and a field that starts as a small integer
+  // changes the class's map then, deoptimising every AI function at once; M8. No strike time is -1.5.)
+  private outFor = -1.5;
+  private outAbove = -0;
 
   /**
    * The ball hits our glass or mesh, or leaves over it, before it bounces: out, so whoever touches it first loses the point. Read as

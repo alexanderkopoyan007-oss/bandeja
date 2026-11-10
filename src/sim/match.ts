@@ -1566,7 +1566,9 @@ export class MatchSim {
   /** Where arrive() steers to, and how hard (fields, not arguments: V8 boxes doubles passed to calls). */
   private readonly form: Spot = { x: 0, z: 0 };
   private arriveK = 0;
-  private arriveV = 0;
+  // (-0: it first holds a fraction mid-match, the first assisted overhead, and as a small integer field that changed
+  // MatchSim's map then and deoptimised the whole sim; M8)
+  private arriveV = -0;
 
   /**
    * Steer towards `form` at strength `arriveK` into assistX/assistZ. Arrive, don't overshoot: ask only for the
