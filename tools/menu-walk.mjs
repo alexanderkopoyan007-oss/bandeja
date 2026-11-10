@@ -35,6 +35,11 @@ try {
   await page.setViewport({ width: VW, height: VH, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // Requests to the game's own origin that fail (a file the build doesn't have: the clean build CI makes has no
+  // MetaHuman packs, phase D of M8).
+  const failed = [];
+  page.on('response', (r) => { if (r.status() >= 400 && new URL(r.url()).origin === new URL(url).origin) failed.push(`${r.status()} ${new URL(r.url()).pathname}`); });
+  page.on('requestfailed', (r) => { if (new URL(r.url()).origin === new URL(url).origin) failed.push(`${r.failure()?.errorText ?? 'failed'} ${new URL(r.url()).pathname}`); });
   const stored = { ...(process.env.TEXT ? { textSize: Number(process.env.TEXT) } : {}), ...(process.env.CONTRAST === '1' ? { contrast: true } : {}) };
   await page.evaluateOnNewDocument((stored) => {
     try { localStorage.setItem('bandeja.settings.v1', JSON.stringify(stored)); } catch { /* none */ }
@@ -380,6 +385,7 @@ try {
   console.log(`long tasks (page busy > 50 ms) by screen: ${worst.map(([t, w]) => `${t || '(none)'} ${w.n}× max ${w.max.toFixed(0)} ms${w.over200 ? `, ${w.over200} over 200` : ''}`).join('; ')}`);
   if (notes.length) console.log(`\nnotes:\n  ${notes.join('\n  ')}`);
   if (errors.length) problem('page', errors.slice(0, 5).join(' / '));
+  if (failed.length) problem('requests', [...new Set(failed)].slice(0, 8).join(', '));
 } catch (e) {
   problem('walk', String(e?.stack ?? e).slice(0, 500));
 } finally {
