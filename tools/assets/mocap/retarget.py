@@ -165,7 +165,7 @@ def racket_hand(rk):
     """The racket hand's turn from rest, frame by frame, from keys read off the clip (one_camera.py): each key gives
     the handle's line in the picture, how much shorter than life it looks (its lean to or from the camera, either way
     unless the key says), and how wide the head looks (how far the face is turned from the camera, either way, either
-    face). Every reading of a key is a racket in space; the game's grip (grip.ts) makes it a hand; and the hand must be
+    face unless the key says which is seen). Every reading of a key is a racket in space; the game's grip (grip.ts) makes it a hand; and the hand must be
     one a wrist can hold on that forearm (bend, side bend, the forearm's own turn against the elbow), near the keys
     either side of it. The cheapest chain of readings is kept and splined."""
     side = rk['hand']
@@ -201,6 +201,7 @@ def racket_hand(rk):
         cc = float(np.mean([k['c'] for k in grp]))
         w = float(np.mean([k['w'] for k in grp]))
         near = max((k['near'] for k in grp), key=abs)
+        seen = max((k.get('face', 0) for k in grp), key=abs)  # which face the camera sees, where the key says: +1 the palm's
         x, y, z = (M @ np.array(grp[0][a]) for a in 'xyz')  # the picture's right and up and the way to the camera
         f0 = min(F - 1, max(0, int(round(t * FPS))))
         fr = slice(max(0, f0 - 1), min(F, f0 + 2))
@@ -220,6 +221,8 @@ def racket_hand(rk):
                 rolls = [(np.radians(d), 1) for d in range(0, 360, 30)]
             for rho, face in rolls:
                 n = face * (np.cos(rho) * n0 + np.sin(rho) * np.cross(a, n0))
+                if seen and (n @ z) * seen < 0.05:
+                    continue
                 D = np.stack([np.cross(a, n), a, n], -1) @ R0.T  # rest -> this racket, so this hand
                 Fw, Kw, Nw = D @ Fh, D @ Kh, D @ Nh
                 flex = np.degrees(np.arcsin(np.clip(-u @ Nw, -1, 1)))  # + to the palm
@@ -230,6 +233,9 @@ def racket_hand(rk):
                     tw = np.degrees(np.arctan2(u @ np.cross(r0, npp / nm), r0 @ (npp / nm)))
                     cost += min(1, bent / 0.25) * (max(0, abs(tw) - 80) / 15) ** 2
                 out.append((cost, Rot.from_matrix(D)))
+                if os.environ.get('RK_DEBUG'):
+                    print('RK %.3f cost %5.1f flex %4.0f dev %4.0f fwd %5.2f | forearm in the picture (right, up, to the camera) %s upper arm %s | handle %s normal %s'
+                          % (t, cost, flex, dev, Fw @ u, np.round([u @ x, u @ y, u @ z], 2), np.round([e @ x, e @ y, e @ z], 2), np.round([a @ x, a @ y, a @ z], 2), np.round([n @ x, n @ y, n @ z], 2)))
         times.append(t)
         cands.append(out)
     # the cheapest chain: each key's own cost and the turn between neighbours

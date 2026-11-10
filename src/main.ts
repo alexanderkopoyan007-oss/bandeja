@@ -11,6 +11,7 @@ import { loadSettings } from './app/settings.ts';
 import { sampleDisplay } from './render/display.ts';
 import { BackendGuard, wantWebGL } from './render/backend.ts';
 import { Avatar } from './render/avatar/avatar.ts';
+import { loadStrokeTracks } from './render/avatar/clipStroke.ts';
 import { Grounding } from './render/grounding.ts';
 
 // The display's refresh, from the frames while the page loads (Auto quality judges slow frames against it).
@@ -36,6 +37,9 @@ const num = (k: string, d: number): number => {
 };
 // ?motion=2: locomotion by motion matching (render/avatar/matcher.ts) until the owner has seen it.
 Avatar.motion = num('motion', 0);
+// ?motion=3: the forehand, the vibora and the bandeja drawn by swings measured off clips (render/avatar/clipStroke.ts), where
+// their tracks are on this machine (public/assets/mocap-local/tracks/), until the owner has seen them.
+const strokeTracks = Avatar.motion === 3 ? loadStrokeTracks(`${import.meta.env.BASE_URL}assets/mocap-local/tracks/`) : null;
 // ?ground=1: contact shadows under the players (render/grounding.ts) until the owner has seen them.
 Grounding.on = num('ground', 0) === 1;
 
@@ -73,6 +77,7 @@ async function startApp(): Promise<void> {
   const guard = new BackendGuard(renderer, params);
   guard.onRestart = () => loading.stage('Starting again on WebGL 2', 0.03);
   guard.onLostLater = (why) => loading.fail(`The graphics stopped working (${why}). Try again starts the game on WebGL 2.`);
+  if (strokeTracks) await strokeTracks;
   const app = new App(renderer, document.getElementById('hud')!, params, loading, guard);
   try {
     await app.boot();
@@ -115,6 +120,7 @@ async function start(): Promise<void> {
   if (urlOptions.avatar && urlOptions.prefs?.quality?.name === QUALITY.low.name) {
     await prepareLow(urlOptions.avatar, dealCast(Number(params.get('seed')), castParam(params)).people);
   }
+  if (strokeTracks) await strokeTracks;
   const game = new Game(urlOptions, renderer, document.getElementById('hud')!);
   // Exposed before the warm-up: tools that step the game themselves don't need it (and a hidden tab stalls it).
   (window as unknown as { __bandeja: Game }).__bandeja = game;

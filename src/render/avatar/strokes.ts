@@ -6,6 +6,7 @@
 // the elbow bends towards, the shoulder turn (yaw > 0 turns left), and where the free hand goes.
 // The contact key's position is the ball; its other values come from the family.
 import * as THREE from 'three/webgpu';
+import type { StrokeTrack } from './clipStroke.ts';
 
 export interface Key {
   p: THREE.Vector3;
@@ -87,6 +88,10 @@ export interface Family {
   /** How long the follow-through takes (s; default the avatar's FOLLOW), and how far it goes on through the ball (m; default 0.25). */
   follow?: number;
   through?: number;
+  /** A swing measured off a clip that draws this stroke instead of the keys and the curve between them (clipStroke.ts; only with ?motion=3). */
+  track?: StrokeTrack;
+  /** An overhead whose track took its chest-frame arm (`over`): what else the avatar does for an overhead still holds. */
+  high?: boolean;
 }
 
 const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);

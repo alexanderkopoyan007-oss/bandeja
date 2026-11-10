@@ -34,6 +34,7 @@ import { type OverArm,
   rightFamily,
   type Family, type Key,
 } from './strokes.ts';
+import { TS, sampleTrack, type StrokeTrack } from './clipStroke.ts';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const AXIS_Y = new THREE.Vector3(0, 1, 0);
@@ -369,6 +370,13 @@ const MIN_CAUGHT = 0.05;
 const SERVE_LATE = 0.05;
 /** The forward swing starts this long before the planned contact while the key is still held (s)... */
 const LEAD = 0.16;
+/** A stroke drawn by a clip's track (clipStroke.ts): by how far into the forward swing the clip's swing has been turned onto this
+ * ball (a share of the swing), over how much of the follow-through it turns back to the clip's own, and how much of the clip's
+ * trunk lean (sideways, forward) goes onto the spine over what the stance already has. */
+const TRACK_BEND = 0.6;
+const TRACK_UNBEND = 0.7;
+const TRACK_TILT = 0.8;
+const TRACK_BOW = 0.5;
 /** ...and, the release being anyone's guess, runs this share of the swing behind it at full speed... */
 const HOVER_BEHIND = 0.06;
 /** ...only braking once the moment has gone by with no release, over this share (it never parks: see hover). */
@@ -1412,6 +1420,14 @@ export class Avatar {
   private readonly overE = new THREE.Vector3();
   private readonly overQ = new THREE.Quaternion();
   private readonly finKey: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
+  /** A track's key (trackKey): the racket shoulder in the stance's frame, the turn onto this ball and its share, and the trunk's lean the track has now. */
+  private readonly trSh = new THREE.Vector3();
+  private readonly trA = new THREE.Vector3();
+  private readonly trB = new THREE.Vector3();
+  private readonly trTurn = new THREE.Quaternion();
+  private readonly trPart = new THREE.Quaternion();
+  private trTilt = 0.5;
+  private trBow = 0.5;
   /** What the player looks at (world), and how far their eyes are off a dead ball. */
   private readonly gaze = new THREE.Vector3();
   private readonly gazeWas = new THREE.Vector3();
@@ -2249,6 +2265,11 @@ export class Avatar {
   private swingKey(s: number): void {
     this.keyS = s;
     const f = this.fam;
+    // A measured swing: the clip's own way to the ball, in its own time.
+    if (f.track) {
+      this.trackKey(f.track, -(1 - s) * f.track.lead, smoothstep(0, TRACK_BEND, s));
+      return;
+    }
     const k = this.contactKey();
     // Accelerating into the ball along a curve below (groundstrokes). An overhead has the ball here, and overKey draws
     // the way to it.
@@ -2290,6 +2311,38 @@ export class Avatar {
     this.koff.copy(f.back.off).lerp(k.off, f.over ? smoothstep(0.1, 0.8, s) : e);
     if (f.free) this.freeKey(f.free, 0, e);
     this.kyaw = f.back.yaw + (k.yaw - f.back.yaw) * e;
+  }
+
+  /**
+   * The stroke's key off its track (clipStroke.ts) at `tau` seconds from the ball. The racket and the elbow are kept as the
+   * clip has them from the racket shoulder, and by `g` (0 the clip's own, 1 at the ball) that shape is turned about the
+   * shoulder and stretched so the racket's centre at the ball is this contact's: a higher ball is the same swing swung
+   * higher. The shoulder is last frame's (this frame's trunk isn't turned yet); the turn is worked out from the same one,
+   * so at the ball the key is the contact whatever the shoulder did.
+   */
+  private trackKey(tr: StrokeTrack, tau: number, g: number): void {
+    const k = this.contactKey();
+    sampleTrack(tr, tau);
+    const sh = this.trSh, rs = this.racketSh;
+    if (rs.x === 0 && rs.y === 0 && rs.z === 0) sh.copy(TS.sh);
+    else this.toModel(rs, sh);
+    const part = this.trPart.identity();
+    let stretch = 1;
+    if (g > 0) {
+      const c1 = this.trA.copy(k.p).sub(sh), l1 = c1.length();
+      if (l1 > 1e-4 && tr.c0len > 1e-4) {
+        this.trTurn.setFromUnitVectors(this.trB.copy(tr.c0).multiplyScalar(1 / tr.c0len), c1.multiplyScalar(1 / l1));
+        part.slerp(this.trTurn, g);
+        stretch = 1 + (l1 / tr.c0len - 1) * g;
+      }
+    }
+    this.kp.copy(TS.p).sub(TS.sh).applyQuaternion(part).multiplyScalar(stretch).add(sh);
+    this.kq.copy(part).multiply(TS.q);
+    this.kpole.copy(TS.pole).sub(TS.sh).applyQuaternion(part).add(sh);
+    this.koff.copy(TS.off);
+    this.kyaw = TS.yaw;
+    this.trTilt = TS.tilt;
+    this.trBow = TS.bow;
   }
 
   /**
@@ -2506,7 +2559,8 @@ export class Avatar {
         this.keyS = 0;
         this.setKey(f.back, f.back, 1);
         if (f.free) this.freeKey(f.free, 0, 0);
-        if (!f.wrist) this.kp.copy(this.backPoint());
+        if (f.track) this.trackKey(f.track, -f.track.lead, 0);
+        else if (!f.wrist) this.kp.copy(this.backPoint());
         else if (this.hasCon) {
           this.contactKey();
           this.kp.copy(this.backPoint());
@@ -2515,7 +2569,7 @@ export class Avatar {
       }
       if (this.prepFromW > 0 && u < 1) this.blendFrom(u);
       // (a serve is a stroke of its own, and an overhead is up with the free arm long before the ball)
-      const held = sim.phase !== PH_RALLY || f.over ? 1 : this.hasCon ? HOLD_CARRY + (1 - HOLD_CARRY) * smoothstep(HOLD_FAR, HOLD_NEAR, this.tPlan - t) : HOLD_CARRY;
+      const held = sim.phase !== PH_RALLY || f.over || f.high ? 1 : this.hasCon ? HOLD_CARRY + (1 - HOLD_CARRY) * smoothstep(HOLD_FAR, HOLD_NEAR, this.tPlan - t) : HOLD_CARRY;
       const lim = HOLD_RATE * this.dt, off = held - this.holdW;
       this.holdW = this.holdW < 0 ? held : this.holdW + (off > lim ? lim : off < -lim ? -lim : off);
       this.w = this.prepFromW + (this.holdW - this.prepFromW) * u;
@@ -2537,6 +2591,12 @@ export class Avatar {
       } else if (t < this.tCon + (f.follow ?? FOLLOW) * this.manner.follow) {
         // Follow-through, slowing down, carrying on through the ball before wrapping round.
         const s = clamp01((t - this.tCon) / ((f.follow ?? FOLLOW) * this.manner.follow));
+        if (f.track) {
+          // (the clip's own way out of the ball, in its own time, turning back from this ball's place to the clip's)
+          this.trackKey(f.track, s * f.track.follow, 1 - smoothstep(0, TRACK_UNBEND, s));
+          this.w = 1;
+          this.finishTo = s;
+        } else {
         const k = this.contactKey();
         const fin = this.finishKey(f, k);
         const hand = f.way || (f.over && !f.over.under);
@@ -2564,9 +2624,11 @@ export class Avatar {
         this.kyaw = k.yaw + (f.finish.yaw - k.yaw) * e;
         this.w = 1;
         this.finishTo = e;
+        }
       } else {
         const fin = this.finishKey(f, this.contactKey());
-        this.setKey(fin, fin, 1);
+        if (f.track) this.trackKey(f.track, f.track.follow, 0);
+        else this.setKey(fin, fin, 1);
         if (f.free) this.freeKey(f.free, 3, 1);
         this.fadeOut(this.tCon + (f.follow ?? FOLLOW) * this.manner.follow, 1);
         this.finishTo = 1;
@@ -2589,7 +2651,7 @@ export class Avatar {
     // Low balls: bend the knees (contact or plan height), scaled by the stroke's weight.
     const cy = this.hasCon ? this.conW.y : 1;
     const toBall = this.st === ST_SWING ? this.tCon - t : this.st === ST_PREP ? (this.hasCon ? this.tPlan - t : HOLD_FAR) : 0;
-    const nearOff = (sim.phase !== PH_RALLY || f.over ? 1 : smoothstep(LEAN_FROM, LEAN_FULL, toBall)) - this.nearW, nearLim = NEAR_RATE * this.dt;
+    const nearOff = (sim.phase !== PH_RALLY || f.over || f.high ? 1 : smoothstep(LEAN_FROM, LEAN_FULL, toBall)) - this.nearW, nearLim = NEAR_RATE * this.dt;
     this.nearW += nearOff > nearLim ? nearLim : nearOff < -nearLim ? -nearLim : nearOff;
     this.crouchC = (f.crouch * CROUCH_SHARE * Math.min(0.18 * this.legK, Math.max(0, (0.95 * this.legK - cy) * 0.4)) + (f.sit ?? 0)) * this.w;
     this.crouch = this.crouchC * this.nearW;
@@ -3123,6 +3185,11 @@ export class Avatar {
         const up0 = smoothstep(0.3, 1, this.keyS), fin = swing || this.st === ST_PREP ? 0 : this.finishTo;
         tilt = (o.tilt[0]! + (o.tilt[1]! - o.tilt[0]!) * up0 + (o.tilt[2]! - o.tilt[1]!) * fin) * this.w;
         bow = o.pitch * fin * this.w;
+      }
+      // (a measured stroke: the trunk's lean the clip has at this moment of it)
+      if (this.fam.track && this.w > 0 && this.st !== ST_NONE) {
+        tilt = this.trTilt * TRACK_TILT * this.w;
+        bow = this.trBow * TRACK_BOW * this.w;
       }
       const dt = this.dt, ease = dt > 0 ? 1 - Math.exp(-dt / OVER_TILT_EASE) : 1;
       this.overTilt += (tilt - this.overTilt) * ease;
@@ -5480,7 +5547,7 @@ export class Avatar {
       v2.x += fx; v2.y += fy; v2.z += fz;
     }
     // (all the way for an overhead: the free arm points at the ball, straight)
-    BL.u = this.fam.over || fr ? w : w * 0.85;
+    BL.u = this.fam.over || this.fam.high || fr ? w : w * 0.85;
     lerpV(v1, v2);
     // The free elbow hangs down and back from the chest, which has turned with the stroke (in the stance frame a
     // pole fixed square to the net comes into line with the arm when the body is side-on, and the elbow flips).

@@ -76,3 +76,32 @@ for t in ts:
         continue
     print('%+.2f  %s  %s  %s  %s  %+5.2f  %+5.2f  %s  %4.1f  %.2f' % (t, f3(centre[f] - stance[f]), f3(axis[f]), f3(normal[f]), f3(elbow[f] - stance[f]),
                                                                 yaw[f], hyaw[f], f3(off[f] - stance[f]), speed[f], hips[f, 1]))
+
+# TRACK=<out.json>: the same, every frame, for the game to draw the swing by (src/render/avatar/clipStroke.ts): the racket
+# (its face's centre about the stance and its turn: +y the handle's line to the tip, +z the face's normal on the palm's
+# side, as strokes.ts racketQuat), the elbow, the racket shoulder, the shoulders' turn, the free hand, and the trunk's lean in the chest's own
+# frame (tilt: the free shoulder up, about the chest's forward; bow: forward, about the shoulders' line). LEAD and FOLLOW
+# (s): how long before the contact the forward swing is taken from, and how long after it the follow-through runs.
+if os.environ.get('TRACK'):
+    lead, follow = float(os.environ.get('LEAD', 0.2)), float(os.environ.get('FOLLOW', 0.4))
+    quat = Rot.from_matrix(R).as_quat()
+    for f in range(1, F):  # one sign all the way (q and -q are one turn; a slerp between them is not)
+        if quat[f] @ quat[f - 1] < 0:
+            quat[f] = -quat[f]
+    neck = pos[:, IX['Neck']]
+    xc = np.array([unit(v) for v in sh])
+    upc = np.array([unit(u - x * (u @ x)) for u, x in zip(neck - hips, xc)])
+    fw = np.cross(xc, upc)
+    sgn = 1 if side == 'Right' else -1
+    tilt = np.arcsin(np.clip(xc[:, 1], -1, 1)) * sgn  # the free shoulder up
+    bow = np.arcsin(np.clip(-fw[:, 1], -1, 1))
+    a, b = int(round((tc - lead) * fps)), int(round((tc + follow) * fps))
+    assert a >= 0 and b < F, ('the clip runs %.2f s before the contact and %.2f after' % (tc, (F - 1) / fps - tc))
+    rnd = lambda x, n=4: np.round(np.asarray(x, float), n).reshape(-1).tolist()
+    sl = slice(a, b + 1)
+    json.dump({'name': os.path.basename(sys.argv[1]).replace('.json', ''), 'hand': side, 'fps': fps, 'frames': b - a + 1, 'lead': (int(round(tc * fps)) - a) / fps,
+               'follow': (b - int(round(tc * fps))) / fps, 'p': rnd(centre[sl] - stance[sl]), 'q': rnd(quat[sl], 5), 'pole': rnd(elbow[sl] - stance[sl]), 'sh': rnd(pos[sl, IX[side + 'Arm']] - stance[sl]),
+               'yaw': rnd(np.unwrap(yaw)[sl]), 'off': rnd(off[sl] - stance[sl]), 'tilt': rnd(tilt[sl]), 'bow': rnd(bow[sl]), 'hipsY': rnd(hips[sl, 1]),
+               'hipYaw': rnd(np.unwrap(hyaw)[sl]), 'speed': rnd(speed[sl], 2)}, open(os.environ['TRACK'], 'w'))
+    print('TRACK', os.environ['TRACK'], b - a + 1, 'frames: %.3f s before the contact, %.3f after; tilt %.2f..%.2f, bow %.2f..%.2f at the contact %.2f, %.2f'
+          % ((int(round(tc * fps)) - a) / fps, (b - int(round(tc * fps))) / fps, tilt[sl].min(), tilt[sl].max(), bow[sl].min(), bow[sl].max(), tilt[int(round(tc * fps))], bow[int(round(tc * fps))]))

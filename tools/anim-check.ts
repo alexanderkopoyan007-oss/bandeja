@@ -1,14 +1,22 @@
 // Animation QA report (Phase 3): plays AI matches with the animated bodies (no browser) and writes what looks wrong
 // in motion to docs/lab/anim-check-<tag>.md and .json. See src/render/avatar/animQa.ts for what each number is.
 // node tools/anim-check.ts [tag] [seconds] [seeds]
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { parsePlayerAsset } from '../src/render/avatar/asset.ts';
 import { runAnimQa, bodyModel, type QaReport } from '../src/render/avatar/animQa.ts';
 import { Avatar } from '../src/render/avatar/avatar.ts';
+import { TRACK_FILES, applyStrokeTrack, type TrackJson } from '../src/render/avatar/clipStroke.ts';
 if (process.env.INERT_MASK) Avatar.inertMask = Number(process.env.INERT_MASK);
 // MOTION=2: locomotion by motion matching (matcher.ts).
 if (process.env.MOTION) Avatar.motion = Number(process.env.MOTION);
+// TRACKS=<folder> (and STROKES=forehand,vibora to take only some): strokes drawn by the clips' tracks (clipStroke.ts, ?motion=3).
+if (process.env.TRACKS) {
+  for (const file of process.env.STROKES ? process.env.STROKES.split(',') : TRACK_FILES) {
+    const path = `${process.env.TRACKS}/${file}.json`;
+    if (existsSync(path)) applyStrokeTrack(file, JSON.parse(readFileSync(path, 'utf8')) as TrackJson);
+  }
+}
 
 const tag = process.argv[2] ?? 'now';
 const seconds = Number(process.argv[3] ?? 120);

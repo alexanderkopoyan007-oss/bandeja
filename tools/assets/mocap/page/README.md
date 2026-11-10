@@ -42,3 +42,24 @@ Then: `from_page.py <session .jsonl> <clip folder>`, `one_camera.py <clip folder
   tracker's arm. A hidden hand is placed between where it was last and next seen, a racket's length from the head's centre (that is
   seen); a hidden elbow by the pose (out along the shoulder line as the trunk turns).
 - Another clip in the same page without losing the trackers: `movie_player.loadVideoById(id)`.
+
+## The bandeja (`DVQL4hUMnjw`, 10 Nov 2026)
+
+- **An advert can play first** after `loadVideoById`: `movie_player.classList.contains('ad-showing')`, and `getDuration()` against the
+  clip's known length, before any scan (a whole survey ran over a 234 s advert).
+- Six slow parts between frozen frames with captions drawn over them: 47.84-49.52, 57.52-59.36, 67.36-71.36, 71.52-71.92, 79.92-80.96,
+  88.96-92.0 (`5b-stroke-parts.js` with these as `SEGS`, each `dt: 1/120`, no `dedupe`, no `gap`; rows from the pass over 38.6-101.6).
+  Each part's first frame is a new one (its difference from the frozen frame before is as large as the moving frames'), so nothing is
+  dropped or repeated at the joins. 120 fps at 25 again: the ball falls 0.08-0.10 m a frame into the hit (10-12 m/s; 180 fps would
+  make it 15-18, more than a lob can fall on a padel court).
+- Seen from the net and a little to the side the tracker keeps the racket arm nearly all the way (`2b-cutout-head.js` at `half` 1.0,
+  180 px to the metre: the head and the racket both in the cut-out). It dropped it for 20 frames behind the head (69.44-70.24: the
+  wrist's height from the shoulder goes from +0.3 to -0.4 and back): the `arm` rows carry it across from the tracker's own arm
+  either side.
+- `#__ov` removed and made again leaves `__showH` drawing into the old canvas (black cut-outs): evaluate `2b-cutout-head.js` again.
+  With the session open in no window the pane is hidden; cut-outs still paint and `computer zoom` still reads them.
+- **Which face is seen.** A key may carry an eighth number: +1 the palm's side of the racket is towards the camera, -1 the back
+  (`one_camera.py` passes it on as `face`, `retarget.py` keeps only such turns). Without it the fit turned the racket over about its
+  handle in the three frames after the hit: a wrist laid back like a tray (55 degrees; the stroke's name) costs more in its books than
+  the other face. `RK_DEBUG=1 retarget.py ...` prints every candidate turn of every key with the wrist it needs.
+

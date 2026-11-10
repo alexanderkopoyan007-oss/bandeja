@@ -4517,3 +4517,24 @@ The owner, after the Padel Simulator reel ("make there be a few diff camera opti
 - **Through the back glass.** Held inside the glass, the court camera stood half a metre behind the server, looking down on their head. It goes through it instead, up to 1.4 m behind (short of a stand's first row at 1.6 m), at its own height (so the glass's top edge stays out of the picture). From there the post at a glass seam a metre from the lens was a black bar down the picture: while a court camera is within 0.3 m of a back glass or behind it, that wall's seam posts are left out (`CourtView.hideBackPosts`, a zero-scale instance; the corner posts and rails stay; the replays' low camera keeps its posts, they are the shot). `tests/render/backPosts.test.ts`.
 - **Lobs.** The court cameras tilt after a lob up to 30° (the broadcast's 14°), slower (0.35 s), and let a ball within 3-7 m of the lens go: chasing a ball off the back glass a metre away whipped the view round at 80-130 deg/s.
 - **Measured** (seed 41, 150 s of an AI match, `tests/render/cameras.test.ts`): Court and Close turn at most 24-25 deg/s (p99 change 77 deg/s²), moving up to 4.2-4.3 m/s; the broadcast cameras 8-17 deg/s. Their own limits there (turn 40, change 130, speed 5), and they stay on the court or within 1.4 m behind its back glass, above 1.8 m; the glass camera never moves or turns.
+
+## Strokes drawn by the pros' clips, behind `?motion=3` (2026-11-10)
+
+The owner's plan: the forehand, the vibora and the bandeja measured off pros' YouTube clips (in the clip's own page, numbers only kept),
+then in the game behind a switch. docs/motion-clips-plan.md has the steps; tools/assets/mocap/page/README.md how each clip was read.
+
+- **A track, not a clip.** A clip laid over the body brings its own feet, its own contact and its own timing, and the sim owns all
+  three. What is kept is what the coded keys could not say: the racket's path and turn, the elbow, the racket shoulder, the shoulders'
+  turn, the free arm and the trunk's lean, 60 a second (`keys.py TRACK=`). The avatar draws the same things from it that it drew from
+  the three keys, so the IK, the reach, the planted feet and the head are unchanged.
+- **Bent to the sim's contact about the shoulder.** The clip's bandeja is met at 1.55 m, 0.79 m out; the sim's at 1.9-2.0 m. The
+  arm-and-racket shape from the racket shoulder is turned (the shortest way from the clip's contact direction to the sim's) and
+  stretched, wholly at the ball, eased in over the swing's first 60% and out over the follow's first 70%. A higher ball is the same
+  swing swung higher; sliding the path up instead would lift the take-back off the body.
+- **Families are changed in place** (`drawBy`): avatar.ts compares families by identity, and the left-handed ones are mirrors made at
+  load. A family with a track loses the coded shaping (dip, loop, the overhead's chest-frame arm, via keys); `high` keeps what the
+  avatar did for an overhead besides drawing it.
+- **Not live.** The tracks sit in `public/assets/mocap-local/` (not in the repository or a build); `?motion=3` without them plays the
+  coded strokes. Known: the racket passes 2-4 cm deeper into the trunk on some follow-throughs than the coded strokes did
+  (anim-check, six seeds); alloc and perf not measured with the switch on.
+
