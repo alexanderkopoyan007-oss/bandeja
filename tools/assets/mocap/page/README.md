@@ -63,3 +63,19 @@ Then: `from_page.py <session .jsonl> <clip folder>`, `one_camera.py <clip folder
   handle in the three frames after the hit: a wrist laid back like a tray (55 degrees; the stroke's name) costs more in its books than
   the other face. `RK_DEBUG=1 retarget.py ...` prints every candidate turn of every key with the wrist it needs.
 
+
+## The backhand (`5MH8RDf4qfg`, 10 Nov 2026)
+
+- Slow parts between frozen frames again (42.40-43.20, 51.24-52.72, 60.76-61.56, 69.56-72.16, 80.20-81.12, 91.12-94.24; the last three
+  are the stroke from the racket up by the head to the finish, and are what was converted). In the slow parts **a frame in three is the
+  one before again** (difference under 0.1 against 0.7-1.0 for a moving frame): `dedupe` with the threshold at 0.2.
+- **The speed from the ball against its own size.** The ball's rise to its top (70.8-72.16) by a yellow-pixel centroid in the page
+  (r>165, g>185, b<140 on a 960-wide frame), frame by unique frame: 0.25 px a frame squared; the ball is 15.5 px across (31 at 1080p) =
+  6.5 cm, so 238 px to the metre *at the ball* and 9.81 m/s2 makes a unique frame 1/96 s: a 100 fps camera (`dt: 1/100`). The body's
+  own scale (162 px/m) would have said 63 fps: the camera is close and wide, and the ball and the contact are a third nearer it than the
+  body is.
+- For the same reason **the racket is drawn bigger than the body's scale in front of the body** and its head's width reads narrower
+  than the face's turn (the camera looks well down on a racket at shin height): lengths count only where `near` is set, and the widths
+  either side of the contact are set for a face near upright (the swing is a flat drive, low to high), not as measured.
+- Return `window.__export` itself, not `JSON.stringify` of it: `from_page.py` looks for `"marker"` unescaped.
+- The cut-outs are head-centred, so a hand's place in two cut-outs is not its travel (the head moves): speeds from the tracker's rows.

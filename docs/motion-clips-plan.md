@@ -9,6 +9,10 @@ until they play in the game ("i just need to see the end"). Solo, no agents. Gol
   the forehand's 7.2; the racket arm by eye behind the head.
 - [x] bandeja `DVQL4hUMnjw` (the same channel) -> `yt-bandeja.json`, contact 1.9 s of 2.53; 120 fps at 25 again, six slow parts between
   frozen frames; the tracker's racket arm carried across 20 frames it dropped; contact at head height, 0.79 m out to the side.
+- [x] backhand `5MH8RDf4qfg` (the same channel) -> `yt-backhand.json`, contact 0.63 s of 1.17; a 100 fps camera with a frame in three
+  repeated; a flat drive met low (0.42 m) and in front, the racket up by the head 0.16 s before; `tracks/backhand.json` (lead 0.3,
+  follow 0.45) draws BACKHAND behind `?motion=3` (the owner, 10 Nov: "fix the rest of the shots", then the look pass).
+- [ ] forehand volley `p6SwYJQ5AYY`, backhand volley `jRkQB25IGPw`, smash, serve: next, the same way.
 - For each: frame differences + ball (which frames move, the slowing from the ball's fall), pose on the moving frames, the racket by eye
   (about 25 cut-outs), `from_page.py`, `one_camera.py`, `retarget.py`, then `keys.py <clip>` for the stroke in strokes.ts's terms.
 

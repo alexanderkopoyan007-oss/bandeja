@@ -10,7 +10,7 @@
 // Behind ?motion=3 (main.ts loads the tracks when Avatar.motion is 3) until the owner has seen it; the tracks live in public/assets/mocap-local/
 // (not in the repository, not in a build) until then. Without the switch nothing here runs.
 import * as THREE from 'three/webgpu';
-import { FOREHAND, OVERHEAD, VIBORA, leftFamily, type Family, type Key } from './strokes.ts';
+import { BACKHAND, FOREHAND, OVERHEAD, VIBORA, leftFamily, type Family, type Key } from './strokes.ts';
 
 export interface StrokeTrack {
   name: string;
@@ -124,7 +124,7 @@ function drawBy(f: Family, t: StrokeTrack): void {
 }
 
 /** The families the tracks are for, by the track's file. */
-const FAMILIES: Array<[string, Family]> = [['forehand', FOREHAND], ['vibora', VIBORA], ['bandeja', OVERHEAD]];
+const FAMILIES: Array<[string, Family]> = [['forehand', FOREHAND], ['backhand', BACKHAND], ['vibora', VIBORA], ['bandeja', OVERHEAD]];
 
 /**
  * Fetches the tracks there are under `base` (assets/mocap-local/tracks/) and hands each to its family, both hands. A
