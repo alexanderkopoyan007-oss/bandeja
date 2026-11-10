@@ -6,10 +6,10 @@ import { clipType, clipExt, saveFile, fileStem } from '../game/clipRecorder.ts';
 import * as THREE from 'three/webgpu';
 import { Game, type GameOptions, type GamePrefs } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
-import { loadPeople, loadPlayerAsset, peopleWanted, prepareLow, startPeople, type PlayerAsset } from '../render/avatar/asset.ts';
+import { loadPeople, loadPlayerAsset, peopleWanted, prepareLow, releasePeople, startPeople, type PlayerAsset } from '../render/avatar/asset.ts';
 import { prepareRacket, racketLookFor } from '../render/avatar/racket.ts';
 import { QUALITY } from '../render/quality.ts';
-import { prewarmNet } from '../sim/setup.ts';
+import { prewarmNetAsync, warmNetLater } from '../sim/setup.ts';
 import { bodiesParam, castParam, dealCast } from '../game/cast.ts';
 import practiceData from '../../data/practice.json';
 import { LoadingScreen } from '../ui/loading.ts';
@@ -45,6 +45,17 @@ import { QueueSocket, type Found } from '../net/queue.ts';
 import type { MatchConfig } from '../sim/match.ts';
 import { SECRET_ARENAS, SEASON, careerFrom, careerReach, finishEvent, ordinal, rankOf, recordTie, shortOf, type Career } from './career.ts';
 import { careerScreen, type CareerHost } from './careerScreen.ts';
+
+/**
+ * The next moment the page is idle (a frame's spare time), or a tenth of a second at most (a slow laptop's title has no
+ * spare time: at a fifth, the net's warm-up was still going 3 s after the title was up, and Quick match waited for it).
+ */
+function idleTurn(): Promise<void> {
+  return new Promise((r) => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => r(), { timeout: 100 });
+    else setTimeout(r, 16);
+  });
+}
 
 const ARENAS: Choice[] = [
   { value: 'stadium', label: 'Arena' }, { value: 'hall', label: 'Club hall' },
@@ -384,28 +395,32 @@ export class App {
       });
       applyRoster(opts, dealt, attract ? undefined : this.gameSetup());
     }
-    const people = this.asset && peopleWanted(this.params)
-      ? startPeople(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people, (f) => stage('Fetching the players', 0.1 + 0.4 * f))
-      : null;
-    // While the players download, the match's work that doesn't need them: the net solver's warm-up and the rackets
-    // (each in a task of its own, so the downloads' own work gets in between). On a cold load these were about a
-    // second of a slow laptop's time after the last player arrived.
-    prewarmNet();
+    const cast = this.asset && peopleWanted(this.params) ? dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people : null;
+    // (the last match's people this one hasn't: their textures off the GPU, or every person dealt since the page opened
+    // keeps theirs; not under the creator's studio, which draws a person of its own)
+    if (this.asset && !this.studioOn) releasePeople(this.asset, cast ?? []);
+    const people = this.asset && cast ? startPeople(this.asset, cast, (f) => stage('Fetching the players', 0.1 + 0.4 * f)) : null;
+    // While the players download, all the match's work that doesn't need them, in pieces (a task each, so a body that
+    // lands is parsed at once; their textures were asked for as their headers streamed in): the rackets, the match
+    // without its players, the environment bake with its shaders built first, and the shaders of all but the players.
+    // On a cold load these were most of a slow laptop's time after the last body landed. The net solver's warm-up
+    // (0.8 s of it) is the player's match's: the title's runs it in the background once it is up (below).
+    const turn = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+    warmNetLater();
+    if (!attract) await prewarmNetAsync(turn);
     for (let i = 0; i < (opts.match.doubles ? 4 : 2); i++) {
-      await new Promise((r) => setTimeout(r, 0));
+      await turn();
       prepareRacket(racketLookFor(i, opts.match.rackets?.[i]));
     }
-    // The match itself, all but its players, once their bodies are in (their textures still downloading): built
-    // before, it held the main thread while the bodies arrived, and their textures were asked for only after it. The
-    // players once they are in.
-    await people?.bodies;
     opts.deferPlayers = people !== null;
+    opts.deferBake = true;
     const g = new Game(opts, this.renderer, this.hud);
     (window as unknown as { __bandeja: Game }).__bandeja = g;
     this.game = g;
+    if (people) await g.warmScene();
     await people?.done;
     // (Low quality: the people's atlases at half size, made off the main thread: asset.ts prepareLow)
-    if (this.asset && opts.prefs?.quality?.name === QUALITY.low.name) await prepareLow(this.asset, dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people);
+    if (this.asset && cast && opts.prefs?.quality?.name === QUALITY.low.name) await prepareLow(this.asset, cast);
     g.addPlayers();
     this.gameDrill = attract ? -1 : this.drill;
     this.drillLogged = 0;
@@ -437,7 +452,12 @@ export class App {
     // (built while the creator's studio has the renderer: it waits for it)
     if (this.studioOn) g.lend();
     g.start();
-    if (attract) this.fetchAhead();
+    if (attract) {
+      this.fetchAhead();
+      // (the net solver's warm-up, a sliver at a time between the title's frames: done long before anyone starts a match,
+      // which waits for it if not)
+      void prewarmNetAsync(idleTurn);
+    }
     this.playing = !attract;
     this.inBuild = false;
     if (this.settings.showFps && !attract) g.debug.toggle();

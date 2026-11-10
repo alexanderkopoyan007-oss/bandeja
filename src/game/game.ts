@@ -70,6 +70,9 @@ export interface GameOptions {
   /** The players are built by `addPlayers()`, called once their people have loaded, not by the constructor (the app
    * builds the rest of a match while they download). */
   deferPlayers?: boolean;
+  /** The environment bake waits for `bake()` (the app runs it, its shaders built in pieces, while the players download);
+   * without it the constructor bakes. warmUp bakes first if nothing has. */
+  deferBake?: boolean;
   match: MatchConfig;
   /** Perf runs only: draw this many times the pixels (a slower GPU's stand-in; tools/perf.mjs igpu). */
   gpuLoad?: number;
@@ -227,6 +230,8 @@ export class Game {
   readonly players: PlayerView[] = [];
   /** Contact shadows under the players (`?ground=1`, render/grounding.ts). */
   private grounding: Grounding | null = null;
+  /** What the deferred bake leaves out (GameOptions.deferBake), until `bake` runs it. */
+  private bakeHide: THREE.Object3D[] | null = null;
   /** Low quality: the players' simpler triangles are picked each frame by their size on screen (Avatar.pickLod). */
   private lodPick = false;
   private readonly lodEye = new THREE.Vector3();
@@ -419,7 +424,8 @@ export class Game {
     this.scene.add(this.aimMarker);
     // Reflections and ambient light from the arena itself (without the ball and cues; the players come after it).
     const moving: THREE.Object3D[] = [this.ball.mesh, this.ball.shadow, this.ball.trail, this.ball.marker, this.aimMarker, this.net.group];
-    this.court.setEnvironment(this.arena.bakeEnvironment(renderer, this.scene, moving));
+    if (opts.deferBake) this.bakeHide = moving;
+    else this.court.setEnvironment(this.arena.bakeEnvironment(renderer, this.scene, moving));
     // A challenge: its run, its marks on court and its line on screen; the inputs kept (six minutes) or played back.
     this.run = opts.challenge ? new ChallengeRun(opts.challenge) : null;
     this.playback = opts.playback ? new LogPlayer(opts.playback) : null;
@@ -465,7 +471,8 @@ export class Game {
     const unlock = (): void => this.audio.unlock();
     addEventListener('keydown', unlock, { signal: sig });
     addEventListener('pointerdown', unlock, { signal: sig });
-    // The press that started this match came before it, so the match began silent until the next key.
+    // The press that started this match came before it, so the match began silent until the next key. (Here, not as the
+    // match starts: making the audio graph is a slow laptop's seventh of a second, a hitch in the title's first frames.)
     if (navigator.userActivation?.hasBeenActive) unlock();
     this.feedback = new Feedback(this.cam);
     for (const l of this.locals) this.feedback.pads[l.player] = l.pad;
@@ -720,18 +727,53 @@ export class Game {
 
   /** Compile every pipeline before the first point so nothing compiles mid-rally. */
   async warmUp(): Promise<void> {
+    await this.bake();
     this.cam.update(this.sim, this.team, null, 0);
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
-    // (never a loading screen for ever, least of all with others waiting: what isn't done by then compiles as it's first drawn)
-    // (into the post passes' target when there are post passes: what the frames draw into)
-    // (in pieces side by side, one of each kind first, then the whole scene for anything they left: compileUnits.ts)
-    const compileIn = (units: THREE.Object3D[]): Promise<unknown> => (this.post ? this.post.compile(this.renderer, units)
-      : Promise.all(units.map((u) => this.renderer.compileAsync(u, this.cam.camera, this.scene))));
-    const [first, rest] = compileRounds(this.scene);
-    const compile = compileIn(first).then(() => compileIn(rest)).then(() => compileIn([this.scene]));
-    await Promise.race([compile, new Promise((r) => setTimeout(r, WARM_MAX_MS))]);
+    await this.compileFor(this.cam.camera, true);
     // The post passes' own shaders compile on their first frame: draw one now.
     if (this.post) this.post.render();
+  }
+
+  /**
+   * The deferred environment bake (GameOptions.deferBake): its shaders built first, in pieces and asynchronously, into the
+   * target it draws into (Arena.bakeEnvironmentAsync), so the page keeps its turns. Once; warmUp calls it too.
+   */
+  async bake(until = performance.now() + WARM_MAX_MS): Promise<void> {
+    const hide = this.bakeHide;
+    if (!hide) return;
+    this.bakeHide = null;
+    this.court.setEnvironment(await this.arena.bakeEnvironmentAsync(this.renderer, this.scene, hide, (cam, whole) => this.compileFor(cam, false, whole, until)));
+  }
+
+  /**
+   * The match's shaders but its players' (GameOptions.deferPlayers), built while their textures download, after the bake
+   * (whose environment every material reads): warmUp then finds these built and builds the players'.
+   */
+  async warmScene(): Promise<void> {
+    // (the bake and this share one WARM_MAX_MS: they run back to back, waiting on nothing but the GPU)
+    const until = performance.now() + WARM_MAX_MS;
+    await this.bake(until);
+    this.cam.update(this.sim, this.team, null, 0);
+    await this.compileFor(this.cam.camera, true, false, until);
+  }
+
+  /**
+   * Build every shader the scene needs drawn through `camera`, into the post passes' target (`post`, when there are post
+   * passes: what the frames draw into) or the renderer's own; in pieces side by side, one of each kind first, then the
+   * whole scene for anything they left (compileUnits.ts); `whole`: the whole scene alone. Never past `until` (never a
+   * loading screen for ever, least of all with others waiting): what isn't done by then compiles as it's first drawn.
+   */
+  private compileFor(camera: THREE.Camera, post: boolean, whole = false, until = performance.now() + WARM_MAX_MS): Promise<unknown> {
+    const compileIn = (units: THREE.Object3D[]): Promise<unknown> => (post && this.post ? this.post.compile(this.renderer, units)
+      : Promise.all(units.map((u) => this.renderer.compileAsync(u, camera, this.scene))));
+    let compile: Promise<unknown>;
+    if (whole) compile = compileIn([this.scene]);
+    else {
+      const [first, rest] = compileRounds(this.scene);
+      compile = compileIn(first).then(() => compileIn(rest)).then(() => compileIn([this.scene]));
+    }
+    return Promise.race([compile, new Promise((r) => setTimeout(r, Math.max(0, until - performance.now())))]);
   }
 
   start(): void {

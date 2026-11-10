@@ -3,6 +3,8 @@
 // when it started and ended, and a CPU profile by source file and by function (mapped through the build's source maps).
 // What `npm run perf -- 0 load` times, this says where the time goes.
 //   OUTDIR=<a build with source maps> bash tools/one-chrome.sh node tools/boot-profile.mjs
+// MATCH=1: Quick match instead, profiled from the press to its first frame, pressed after the title's first 30 frames and
+// TITLE_WAIT ms (as `npm run perf -- 0 load` presses it).
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process';
 const OUT = process.env.OUTDIR;
@@ -21,9 +23,24 @@ try {
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
   await cdp.send('Profiler.enable');
   await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
-  await cdp.send('Profiler.start');
+  const MATCH = process.env.MATCH === '1';
+  if (!MATCH) await cdp.send('Profiler.start');
   await page.goto('http://localhost:4191/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__app?.menu?.isOpen, { timeout: 180000, polling: 100 });
+  if (MATCH) {
+    await page.evaluate(async (wait) => {
+      for (let i = 0; i < 30; i++) await new Promise((r) => requestAnimationFrame(r));
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    }, Number(process.env.TITLE_WAIT ?? 0));
+    await cdp.send('Profiler.start');
+    const t = await page.evaluate(async () => {
+      const t0 = performance.now();
+      await window.__app.startMatch();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return `match ${((performance.now() - t0) / 1000).toFixed(2)} s: ` + window.__loadLog.map((e) => `${e.name} +${((e.t - t0) / 1000).toFixed(2)}`).join(' | ');
+    });
+    console.log(t);
+  }
   const { profile } = await cdp.send('Profiler.stop');
   const res = await page.evaluate(() => performance.getEntriesByType('resource').map((e) => ({ n: e.name.replace(/^.*\/assets\//, ''), s: e.startTime, e: e.responseEnd, kb: e.encodedBodySize / 1024 })));
   const log = await page.evaluate(() => window.__loadLog.map((e) => `${e.name} ${(e.t / 1000).toFixed(2)}`).join(' | '));

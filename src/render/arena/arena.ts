@@ -13,6 +13,15 @@ import { buildOutdoor } from './outdoor.ts';
 import { buildHall } from './hall.ts';
 import { addArenaLights } from './lights.ts';
 
+/** The environment bake: where its cube camera stands (head height over the court's middle), its planes and its size. */
+const BAKE_AT = new THREE.Vector3(0, 1.6, 0);
+const BAKE_NEAR = 0.1, BAKE_FAR = 400, BAKE_SIZE = 256;
+/** The cube's six faces as PMREMGenerator turns its camera: [up, the way it looks]. */
+const CUBE_FACES: Array<[[number, number, number], [number, number, number]]> = [
+  [[0, 1, 0], [1, 0, 0]], [[0, 0, 1], [0, -1, 0]], [[0, 1, 0], [0, 0, 1]],
+  [[0, 1, 0], [-1, 0, 0]], [[0, 0, -1], [0, 1, 0]], [[0, 1, 0], [0, 0, -1]],
+];
+
 export interface LightDef {
   env: number;
   key: { color: string; intensity: number; dir: number[]; shadow: boolean; radius: number };
@@ -140,6 +149,47 @@ export class Arena {
   }
 
   bakeEnvironment(renderer: THREE.WebGPURenderer, scene: THREE.Scene, hide: THREE.Object3D[]): EnvProbe {
+    const b = this.bakeBegin(renderer, hide);
+    return this.bakeEnd(scene, hide, b, null);
+  }
+
+  /**
+   * bakeEnvironment, its shaders first built by `compile` into the very target the bake draws into, through `camera` (a
+   * cube face's; `whole`: the scene in one call, not in pieces): asynchronously (Game.bake), so the bake itself builds none. On a slow laptop the bake
+   * was a second of the main thread in one piece, its 36 shaders built as it drew.
+   */
+  async bakeEnvironmentAsync(renderer: THREE.WebGPURenderer, scene: THREE.Scene, hide: THREE.Object3D[],
+    compile: (camera: THREE.PerspectiveCamera, whole: boolean) => Promise<unknown>): Promise<EnvProbe> {
+    const b = this.bakeBegin(renderer, hide);
+    // (PMREMGenerator's own target, made as fromScene makes it: three keeps a shader's build per target)
+    const pm = b.pmrem as unknown as { _setSize?(n: number): void; _allocateTarget?(depth: boolean): THREE.RenderTarget };
+    let rt: THREE.RenderTarget | null = null;
+    if (pm._setSize && pm._allocateTarget) {
+      pm._setSize(BAKE_SIZE);
+      rt = pm._allocateTarget(true);
+      const cam = new THREE.PerspectiveCamera(90, 1, BAKE_NEAR, BAKE_FAR);
+      const prev = renderer.getRenderTarget();
+      renderer.setRenderTarget(rt);
+      try {
+        // (through each of the cube's faces, as fromScene turns its camera: a compile leaves out what its camera can't see;
+        // after the first, the whole scene in one call, which finds most of it built: every object a compile visits costs
+        // a turn of the main thread, built or not)
+        for (let k = 0; k < CUBE_FACES.length; k++) {
+          const [up, at] = CUBE_FACES[k]!;
+          cam.position.copy(BAKE_AT);
+          cam.up.set(up[0], up[1], up[2]);
+          cam.lookAt(BAKE_AT.x + at[0], BAKE_AT.y + at[1], BAKE_AT.z + at[2]);
+          cam.updateMatrixWorld();
+          await compile(cam, k > 0);
+        }
+      } finally {
+        renderer.setRenderTarget(prev);
+      }
+    }
+    return this.bakeEnd(scene, hide, b, rt);
+  }
+
+  private bakeBegin(renderer: THREE.WebGPURenderer, hide: THREE.Object3D[]): { pmrem: THREE.PMREMGenerator; was: boolean[] } {
     const was = hide.map((o) => o.visible);
     for (const o of hide) o.visible = false;
     const pmrem = new THREE.PMREMGenerator(renderer);
@@ -156,18 +206,21 @@ export class Arena {
         if (m && m.envMap === sky) m.envMap = filtered;
       });
     }
-    const at = new THREE.Vector3(0, 1.6, 0);
-    const rt = pmrem.fromScene(scene, 0.02, 0.1, 400, { size: 256, position: at });
+    return { pmrem, was };
+  }
+
+  private bakeEnd(scene: THREE.Scene, hide: THREE.Object3D[], b: { pmrem: THREE.PMREMGenerator; was: boolean[] }, target: THREE.RenderTarget | null): EnvProbe {
+    const rt = b.pmrem.fromScene(scene, 0.02, BAKE_NEAR, BAKE_FAR, { size: BAKE_SIZE, position: BAKE_AT, renderTarget: target });
     this.baked.push(rt);
-    hide.forEach((o, i) => { o.visible = was[i]!; });
-    pmrem.dispose();
+    hide.forEach((o, i) => { o.visible = b.was[i]!; });
+    b.pmrem.dispose();
     scene.environment = rt.texture;
     scene.environmentIntensity = this.def.light.env;
     // The box reflections are projected onto: the hall's walls and roof, or round an outdoor club its fence line out
     // to the trees.
     const h = this.def.hall;
     const half = h ? new THREE.Vector3(h.x, h.height + 2, h.z) : new THREE.Vector3(40, 25, 45);
-    return { texture: rt.texture, at, min: new THREE.Vector3(-half.x, -0.05, -half.z), max: half, intensity: this.def.light.env };
+    return { texture: rt.texture, at: BAKE_AT.clone(), min: new THREE.Vector3(-half.x, -0.05, -half.z), max: half, intensity: this.def.light.env };
   }
 
   /**

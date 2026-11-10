@@ -221,10 +221,15 @@ const titles = rows.filter((r) => r.at.startsWith('title '));
 const xs = titles.map((_, i) => i);
 const heapSlope = slope(xs, titles.map((r) => r.heapMB));
 const same = (key) => titles.every((r) => r[key] === titles[0][key]);
+// Textures: each match keeps only its own people's on the GPU (asset.ts releasePeople), and people differ by a few (hands
+// and skin maps), so the count at the title moves with who is dealt; a leak is a climb (before releasePeople, six cycles
+// went 77, 88, 86, 88, 93, 92).
+const tex = titles.map((r) => r.textures);
+const texNoClimb = tex.length > 0 && slope(xs, tex) < 0.5 && tex.at(-1) <= Math.max(...tex.slice(0, 3));
 const verdict = {
   heapMBPerCycle: +heapSlope.toFixed(3),
   heapFirst: titles[0]?.heapMB, heapLast: titles.at(-1)?.heapMB,
-  geometriesStable: same('geometries'), texturesStable: same('textures'),
+  geometriesStable: same('geometries'), texturesStable: texNoClimb, textures: tex,
   nodesStable: same('nodes'), listenersStable: same('listeners'), canvasesStable: same('canvases'), stylesStable: same('styles'),
   matchBuildMs: rows.filter((r) => r.at.startsWith('match ')).map((r) => r.buildMs),
   errors,

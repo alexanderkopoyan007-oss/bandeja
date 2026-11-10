@@ -265,19 +265,23 @@ function loadPerson(base: PlayerAsset, name: string, progress?: (frac: number) =
   const body = new Promise<void>((r) => { bodyIn = r; });
   const done = (async (): Promise<void> => {
     try {
-      const buf = await fetchGz(dir + name + '.bnz', progress);
-      // The textures first (their names are in the header): the parse below is a slow laptop's half second.
-      const h = bodyHeader(buf);
-      const tx = h.textures, hands = !!h.handsBox;
-      const maps = Promise.all([
-        texture(tx.opaque), texture(tx.alpha), suitNormal(texture, tx.cloth ?? 'suit-normal.webp'), tx.skin ? texture(tx.skin).then(linear) : null,
-        tx.hands && hands ? texture(tx.hands) : null, tx.handsN && hands ? texture(tx.handsN).then(linear) : null]);
-      // (a body that won't parse leaves its textures unwanted: no unhandled rejection for them)
-      maps.catch(() => undefined);
+      // The textures as soon as their names are in (the header, streamed: bodyHeader), the body's parse after them.
+      let maps: Promise<Array<THREE.Texture | null>> | null = null;
+      const ask = (h: BodyHeader): void => {
+        if (maps) return;
+        const tx = h.textures, hands = !!h.handsBox;
+        maps = Promise.all([
+          texture(tx.opaque), texture(tx.alpha), suitNormal(texture, tx.cloth ?? 'suit-normal.webp'), tx.skin ? texture(tx.skin).then(linear) : null,
+          tx.hands && hands ? texture(tx.hands) : null, tx.handsN && hands ? texture(tx.handsN).then(linear) : null]);
+        // (a body that won't parse leaves its textures unwanted: no unhandled rejection for them)
+        maps.catch(() => undefined);
+      };
+      const buf = await fetchGz(dir + name + '.bnz', progress, ask);
+      ask(bodyHeader(buf));
       const p = parseBodyAsset(buf, base);
       bodyIn();
       const look = p.look!;
-      [look.opaqueMap, look.alphaMap, look.clothNormal, look.skinNormal, look.handsMap, look.handsNormal] = await maps;
+      [look.opaqueMap, look.alphaMap, look.clothNormal, look.skinNormal, look.handsMap, look.handsNormal] = await maps!;
       base.people.push(p);
     } catch (err) {
       console.warn(`person ${name} not loaded, that player is the mannequin:`, err);
@@ -327,6 +331,22 @@ export function lowPerson(p: PlayerAsset): PlayerAsset {
   return LOW.get(p) ?? p;
 }
 
+/**
+ * The GPU's copies of the people's own textures (their atlases, skin and hands maps, and Low's half-size atlases) freed
+ * for everyone but `keep` (names). The textures themselves stay, and are uploaded again if a later match deals that
+ * person. The games' dispose can't see them (the materials read them through nodes, and other games share them), so
+ * every person dealt since the page opened kept theirs: a Quick match after the title held both casts' (Low 268-274 MB
+ * against its 256). The suits' normal maps are everybody's and stay.
+ */
+export function releasePeople(base: PlayerAsset, keep: readonly string[]): void {
+  for (const p of base.people) {
+    const look = p.look!;
+    if (keep.includes(look.name)) continue;
+    const low = LOW.get(p)?.look;
+    for (const t of [look.opaqueMap, look.alphaMap, look.skinNormal, look.handsMap, look.handsNormal, low?.opaqueMap, low?.alphaMap]) t?.dispose();
+  }
+}
+
 /** A normal map's texels are directions, not colours. */
 function linear(t: THREE.Texture): THREE.Texture {
   t.colorSpace = THREE.NoColorSpace;
@@ -345,7 +365,12 @@ function suitNormal(texture: (name: string) => Promise<THREE.Texture>, file: str
   return map;
 }
 
-async function fetchGz(url: string, progress?: (frac: number) => void): Promise<ArrayBuffer> {
+/**
+ * A gzipped file, whole. `onHeader`: a person's header (bodyHeader) as soon as its bytes have streamed in, long before the
+ * rest of the file (its textures can be asked for then: on a slow laptop the file's end, and a turn of the main thread
+ * after it, came a second or more later).
+ */
+async function fetchGz(url: string, progress?: (frac: number) => void, onHeader?: (h: BodyHeader) => void): Promise<ArrayBuffer> {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`player asset: HTTP ${res.status}`);
   const total = Number(res.headers.get('content-length') ?? 0);
@@ -360,9 +385,37 @@ async function fetchGz(url: string, progress?: (frac: number) => void): Promise<
       },
     }));
   }
-  const buf = await new Response(body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  let out = body.pipeThrough(new DecompressionStream('gzip'));
+  if (onHeader) {
+    const [whole, head] = out.tee();
+    out = whole;
+    void readHeader(head).then((h) => { if (h) onHeader(h); }, () => undefined);
+  }
+  const buf = await new Response(out).arrayBuffer();
   progress?.(1);
   return buf;
+}
+
+/** A person's header from the start of their file's bytes, as they stream (the rest isn't waited for). */
+export async function readHeader(stream: ReadableStream<Uint8Array>): Promise<BodyHeader | null> {
+  const reader = stream.getReader(), parts: Uint8Array[] = [];
+  let got = 0, need = 12;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done || !value) return null;
+      parts.push(value);
+      got += value.byteLength;
+      if (got < need) continue;
+      const all = new Uint8Array(got);
+      for (let i = 0, at = 0; i < parts.length; at += parts[i]!.byteLength, i++) all.set(parts[i]!, at);
+      if (need === 12) need = 12 + new DataView(all.buffer).getUint32(8, true);
+      if (got < need) continue;
+      return bodyHeader(all.buffer);
+    }
+  } finally {
+    void reader.cancel().catch(() => undefined);
+  }
 }
 
 export function parsePlayerAsset(buf: ArrayBuffer): PlayerAsset {
@@ -518,7 +571,7 @@ function decodeMesh(buf: ArrayBuffer, base: number, m: MeshHeader): THREE.Buffer
   return geometry;
 }
 
-interface BodyHeader {
+export interface BodyHeader {
   name: string;
   height: number;
   /** The body's hips height over the mannequin's: the clips' hips travel is scaled by it. */
@@ -533,7 +586,7 @@ interface BodyHeader {
 }
 
 /** A person's header alone (what loadPerson needs before the parse: the textures' names). */
-function bodyHeader(buf: ArrayBuffer): BodyHeader {
+export function bodyHeader(buf: ArrayBuffer): BodyHeader {
   const head = new Uint32Array(buf, 0, 3);
   if (head[0] !== 0x4a444e42 || (head[1] !== 2 && head[1] !== 3)) throw new Error('person asset: bad header');
   return JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 12, head[2]!))) as BodyHeader;
