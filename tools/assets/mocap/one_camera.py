@@ -199,8 +199,11 @@ if os.path.exists(kp) and meta.get('key_t'):
         to = t_out[round(t, 3)]
         fr = min(F - 1, max(0, int(round(to * fps))))
         dx, dy = cx - bx, cy - by
+        # (how much shorter than life the racket looks is read to 15% at best, which is 35 degrees of lean: it counts
+        # only where the key says the tip is plainly nearer or further; else the racket lies in the picture)
+        short = float(min(1.0, np.hypot(dx, dy) / rk['px_per_m'] / rk['grip_to_centre_m'])) if near else 1.0
         keys.append({'t': to, 'video_t': t, 'theta': float(np.arctan2(dy, dx)),
-                     'c': float(min(1.0, np.hypot(dx, dy) / rk['px_per_m'] / rk['grip_to_centre_m'])), 'near': near, 'w': wd,
+                     'c': short, 'near': near, 'w': wd,
                      'x': (xv[fr] @ R.T).tolist(), 'y': (yv[fr] @ R.T).tolist(), 'z': (zv[fr] @ R.T).tolist()})
     json.dump({'hand': RACKET, 'keys': keys}, open(os.path.join(out, 'racket_keys.json'), 'w'))
     print('ONE_CAMERA racket keys:', len(keys), 'from', round(keys[0]['t'], 2), 'to', round(keys[-1]['t'], 2), 's')
