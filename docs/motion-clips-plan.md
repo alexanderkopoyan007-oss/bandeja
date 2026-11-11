@@ -39,7 +39,7 @@ can't: the trunk's own timing (hips before shoulders), the head, the free arm's 
    The clip's legs and steps are not used: the game's feet go where the sim's player goes.
 3. Still to do if the owner takes it: the tracks as shipped assets beside player.bnz (they are 9 KB each as JSON), and the other
    strokes (the serve, and the lob / slice / drop / chiquita / off-the-glass variants are still the coded keys; the backhand and both
-   volleys were added 11 Nov, the smash the same day: DECISIONS.md "The smash from a clip").
+   volleys were added 11 Nov; the smash was tried the same day and taken out again on the owner's word: DECISIONS.md "The smash is the keyed one again").
 4. Checked: `tests/render/clipStroke.test.ts` (tracks made from the coded keys still meet the ball, either hand); the suite (the default
    path untouched: no track, no branch taken); `TRACKS=public/assets/mocap-local/tracks node tools/anim-check.ts m3 100 6` against the
    same without: racket to ball p50 0.6-0.9 cm either way, pops 10.8-18.2 a minute against 11.0-17.6 (threshold 30), no knee spins;

@@ -4657,3 +4657,13 @@ along the same line. The game: the spine 8-22 degrees off upright, the pelvis le
 - Any measured overhead that jumps gets it (the bandeja's and the vibora's hops are under PELVIS_AIR1, so little of it).
 - **My rule from this:** a clip stroke is shown only after the game has been tiled beside the real clip from the clip's own
   side and the whole outline compared: where the spine, the hips and the legs point, not one limb's joint numbers.
+
+## The smash is the keyed one again (2026-11-11, owner: "the old smash is a lot better, before you started working on it")
+Three films of the clip's smash, each with a real defect put right, and the owner's verdict on all of it: the keyed smash is
+a lot better, the clip's "looks awful, arms going places where they shouldnt". `smash` is out of clipStroke.ts's FAMILIES:
+under `?motion=3` the smash is the keyed one, as it is without. What stays: the jump a run took back (the keyed smash meets
+its ball closer for it), the swing hung from the drawn shoulder and turned for where that shoulder will be (the other six
+tracks), the pelvis's share of a lean in the air (only a measured overhead that jumps: the bandeja's and the vibora's small
+hops), keys.py TURN= and HELD=, the smash's racket keys and notes. A kick smash seen from behind, turned into a flat one, was
+never going to beat a stroke keyed for this game's ball. **My rule from this:** a clip replaces a keyed stroke only when the
+two have been put side by side and the clip's is plainly the better one; the new version is not shown otherwise.
