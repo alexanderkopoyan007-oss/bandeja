@@ -35,7 +35,9 @@ import { lowerStatic } from '../render/lod.ts';
 import { PROP_LOD, pxPerMetreAt1 } from '../render/lodCore.ts';
 import { Hud } from '../ui/hud.ts';
 import { TvGraphics } from '../ui/tv.ts';
-import { Post } from '../render/post.ts';
+import { FILM_LOOK, Post } from '../render/post.ts';
+import { addFilmRig, addHaze } from '../render/filmSet.ts';
+import { SandPuffs } from '../render/sand.ts';
 import { compileRounds } from '../render/compileUnits.ts';
 import { kitFor } from '../render/avatar/kit.ts';
 import { DebugOverlay } from '../ui/debug.ts';
@@ -134,6 +136,8 @@ export interface GameOptions {
   gfx?: string;
   /** Lens bloom (render/post.ts); `?bloom=0` renders straight to the screen. */
   bloom?: boolean;
+  /** `?look=2`: the look pass (render/post.ts FilmLook; the haze, the beams and the sand with it), until the owner has seen it. */
+  look?: number;
   /** The close camera while the players walk back between points (render/views.ts); `?cutaway=0` keeps the
    * broadcast angle. */
   cutaway?: boolean;
@@ -232,6 +236,8 @@ export class Game {
   readonly players: PlayerView[] = [];
   /** Contact shadows under the players (`?ground=1`, render/grounding.ts). */
   private grounding: Grounding | null = null;
+  /** The look pass's sand off the turf (`?look=2`). */
+  private sand: SandPuffs | null = null;
   /** What the deferred bake leaves out (GameOptions.deferBake), until `bake` runs it. */
   private bakeHide: THREE.Object3D[] | null = null;
   /** Low quality: the players' simpler triangles are picked each frame by their size on screen (Avatar.pickLod). */
@@ -384,6 +390,11 @@ export class Game {
 
     // The arena: floor, lights, surroundings; the court's glass, mesh and frame in its colours.
     this.arena = new Arena(arenaDef(opts.arena ?? 'stadium', opts.match.world?.floor), court, this.scene, renderer);
+    if (opts.look === 2) {
+      // The look pass's set (render/filmSet.ts): haze everywhere, and over an arena's court the show rig and its beams.
+      addHaze(this.scene);
+      if (this.arena.def.kind === 'stadium') addFilmRig(this.arena.group, court.halfW, court.halfL);
+    }
     // The preset's shadow map (before anything is drawn: the map is made at the first shadow pass).
     if (this.preset.shadow > 0) this.arena.key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
     else this.arena.key.castShadow = false;
@@ -397,7 +408,7 @@ export class Game {
     const sideX = (this.arena.def.neighbours ?? []).some((ox) => ox < 0) ? 1 : -1;
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0, sideX);
     const bl = this.arena.def.post?.bloom;
-    if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, bl);
+    if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, bl, opts.look === 2 ? FILM_LOOK : undefined);
     BroadcastCamera.cutaways = opts.cutaway !== false;
     this.cam.establish = !!opts.establish;
     this.cam.setPreset(opts.camera ?? 'tv');
@@ -545,7 +556,9 @@ export class Game {
     const low = this.preset.name === QUALITY.low.name;
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, this.cast, opts.match.rackets?.[i], opts.wear?.[i], low));
     this.lodPick = low;
-    this.grounding = Grounding.on ? new Grounding(this.scene, this.players) : null;
+    // (the look pass brings the contact shadows with it: feet that press on the floor are half of what it is for)
+    this.grounding = Grounding.on || opts.look === 2 ? new Grounding(this.scene, this.players) : null;
+    if (opts.look === 2 && this.arena.def.floor.kind === 'turf') this.sand = new SandPuffs(this.scene, this.arena.def.floor.sand);
     // Who is who: a ring under the one player, or under each in their colour (P1-P4).
     for (let k = 0; k < this.locals.length; k++) this.players[this.locals[k]!.player]!.markYou(this.locals.length > 1 ? LOCAL_COLOURS[k] : undefined);
     this.feetSrc = this.players.map((pv) => pv.avatar ?? { feet: null });
@@ -718,6 +731,7 @@ export class Game {
     this.umpireVoice?.dispose();
     this.hudLayer.remove();
     this.post?.dispose();
+    this.sand?.dispose();
     this.net.dispose();
     this.arena.dispose();
     for (const p of this.players) p.avatar?.dropLod();
@@ -1398,6 +1412,7 @@ export class Game {
     this.net.update(view, vAlpha);
     for (let i = 0; i < this.players.length; i++) this.players[i]!.update(view, view.players[i]!, i, vAlpha, vTime);
     this.grounding?.update();
+    if (this.sand) this.sand.update(showing ? rp.sim : reeling ? rl.sim : this.sim, showing ? rp.clock : reeling ? rl.clock : renderTime, this.feetSrc);
     const server = view.phase === PH_SETUP ? this.players[view.score.serverPlayer()]!.avatar : null;
     if (server) this.ball.carried(server.palm(palmAt), server.addressing);
     // Feedback before the camera, so a smash's kick starts in the frame that shows the hit (pan reads last

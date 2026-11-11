@@ -114,17 +114,20 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     // (M7's two-take replays, with the flag: tools/reel-check.mjs and the like)
     replayTakes: params.get('creator') === '1',
     bloom: params.get('bloom') !== '0',
+    look: num('look', 0),
     cutaway: params.get('cutaway') !== '0',
     mouseAim: params.get('aim') === 'mouse',
     runAhead: params.get('runahead') !== '0',
     sound: params.get('sound') !== '0',
     arena: params.get('arena') ?? 'stadium',
-    dprCap: num('dpr', 2),
+    // (the look pass draws more for every pixel: one and a half device pixels to a CSS one unless asked otherwise)
+    dprCap: num('dpr', num('look', 0) === 2 ? 1.5 : 2),
     gpuLoad: num('gpuload', 1),
     fpsCap: num('fpscap', 0),
     closeCam: params.get('cam') ?? undefined,
     closeCamPlayer: num('camp', 0),
-    camera: cameraOf(params.get('camera')),
+    // (the look pass's own camera is the one on the court, behind you, unless one is asked for)
+    camera: cameraOf(params.get('camera') ?? (num('look', 0) === 2 ? 'court' : null)),
     replays: params.get('replays') !== '0',
     avatar,
     // ?quality=auto: High with the dynamic resolution on, as the menus' Auto (perf runs measure it this way).
@@ -207,14 +210,16 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
     forceWebGL: params.get('backend') === 'webgl',
     pro: s.pro,
     bloom: params.get('bloom') !== '0',
+    look: params.get('look') === '2' ? 2 : 0,
     cutaway: params.get('cutaway') !== '0',
-    camera: s.camera,
+    // (the look pass's own camera is the one on the court; the title's match keeps the broadcast's)
+    camera: params.get('look') === '2' && !attract && s.camera === 'tv' ? 'court' : s.camera,
     replays: s.replays,
     mouseAim: s.mouseAim,
     runAhead: true,
     sound: true,
     arena: setup.arena,
-    dprCap: params.has('dpr') ? Number(params.get('dpr')) || 2 : 4,
+    dprCap: params.has('dpr') ? Number(params.get('dpr')) || 2 : params.get('look') === '2' ? 1.5 : 4,
     avatar,
     attract,
     prefs: {
