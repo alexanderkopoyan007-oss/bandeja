@@ -54,6 +54,8 @@ import { displayPeriod, stopDisplaySample } from '../render/display.ts';
 import type { NetHooks } from '../net/netMatch.ts';
 
 const MAX_TICKS_PER_FRAME = 12;
+/** The replay lens (look pass): never sharp nearer than this (m), how fast its focus follows (s), and the room left either end of what it follows (m). */
+const LENS_NEAR = 2.5, LENS_EASE = 0.18, LENS_SPARE = 1;
 /** After match point: the results come OVER_HOLD_MS after the players have played the end out (MatchSim.overStage 4),
  * at the latest OVER_MAX_MS after it; Enter or Space skips to them from OVER_SKIP_AFTER_MS. */
 /** A challenge's last ball is seen down before its results (ms). */
@@ -138,6 +140,8 @@ export interface GameOptions {
   bloom?: boolean;
   /** `?look=2`: the look pass (render/post.ts FilmLook; the haze, the beams and the sand with it), until the owner has seen it. */
   look?: number;
+  /** `?dof=1` with it: the replay camera's lens in play too (to look at it; the far pair goes soft). */
+  lens?: boolean;
   /** The close camera while the players walk back between points (render/views.ts); `?cutaway=0` keeps the
    * broadcast angle. */
   cutaway?: boolean;
@@ -230,6 +234,10 @@ export class Game {
   readonly ball: BallView;
   private tv: TvGraphics | null = null;
   private post: Post | null = null;
+  /** The stretch the replay lens holds sharp (m along the camera's line; near 0: out) and the replay cut it was last set on. */
+  private lensNear = 0;
+  private lensFar = 0;
+  private lensCut = -1;
   readonly net: NetView;
   readonly arena: Arena;
   readonly court: CourtView;
@@ -1421,6 +1429,24 @@ export class Game {
     if (showing) this.replayCam.aim(this.cam.camera, view, rp.hitter, rp.angle, this.ball.mesh.position, frameDt * rp.speed);
     else if (reeling) this.cam.update(rl.sim, team, this.ball.mesh.position, now / 1000);
     else this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
+    // The look pass's replay lens: sharp from the hitter to the ball (whichever is nearer first), a metre to spare
+    // either end, eased (a cut jumps to it); out again in play.
+    if (this.post && this.opts.look === 2) {
+      if (showing || this.opts.lens) {
+        const c = this.cam.camera, b = this.ball.mesh.position, e = c.matrixWorld.elements;
+        const along = (x: number, y: number, z: number): number => -((x - c.position.x) * e[8]! + (y - c.position.y) * e[9]! + (z - c.position.z) * e[10]!);
+        const db = along(b.x, b.y, b.z), h = showing ? view.players[rp.hitter]!.pos : null, dh = h ? along(h.x, 1.1, h.z) : db;
+        const near = Math.max(LENS_NEAR, Math.min(db, dh) - LENS_SPARE), far = Math.max(near, Math.max(db, dh) + LENS_SPARE);
+        const k = this.lensNear <= 0 || this.lensCut !== rp.cuts ? 1 : 1 - Math.exp(-frameDt / LENS_EASE);
+        this.lensNear += (near - this.lensNear) * k;
+        this.lensFar += (far - this.lensFar) * k;
+        this.lensCut = rp.cuts;
+        this.post.focus(this.lensNear, this.lensFar);
+      } else if (this.lensNear > 0) {
+        this.lensNear = 0;
+        this.post.focus(0);
+      }
+    }
     if (this.photo?.entry.cam) applyPhotoCam(this.cam.camera, this.photo.entry.cam, this.photo.aspect);
     if (this.opts.closeCam) this.aimCloseCam(this.opts.closeCam);
     // Photo mode: the free camera, over whatever the match's camera did (the match itself stands still: paused).

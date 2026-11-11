@@ -4,6 +4,7 @@
 import * as THREE from 'three/webgpu';
 import { colorToDirection, directionToColor, dot, float, fract, int, mix, mrt, normalView, output, pass, renderOutput, sample, screenCoordinate, screenUV, sin, smoothstep, uniform, vec2, vec3, vec4, velocity } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { motionBlur } from 'three/addons/tsl/display/MotionBlur.js';
 
@@ -32,9 +33,12 @@ export interface FilmLook {
   saturation: number;
   vignette: number;
   grain: number;
+  /** The replay camera's lens (Post.focus): how far outside the stretch it holds sharp things go fully soft (m), and the blur's size. */
+  focusRange: number;
+  bokeh: number;
 }
 
-export const FILM_LOOK: FilmLook = { ao: 0.85, aoRadius: 0.35, shutter: 0.45, contrast: 1.12, saturation: 1.06, vignette: 0.28, grain: 0.035 };
+export const FILM_LOOK: FilmLook = { ao: 0.85, aoRadius: 0.35, shutter: 0.45, contrast: 1.12, saturation: 1.06, vignette: 0.28, grain: 0.035, focusRange: 8, bokeh: 2.2 };
 /** The furthest a pixel smears (screen widths): a frame's worth of a fast racket, not a whip pan's. */
 const BLUR_MAX = 0.03;
 /** A cut: the camera more than this far (m) or turned more than about 7 degrees (the half-angle's cosine) in a frame. */
@@ -45,6 +49,11 @@ const PASS_DEPTH = 1;
 
 export class Post {
   private readonly pipeline: THREE.RenderPipeline;
+  /** The look pass's picture through the replay camera's lens (depth of field), drawn instead while it is focused (`focus`). */
+  private pipelineLens: THREE.RenderPipeline | null = null;
+  /** (the stretch the lens holds sharp: x its near end, y its far end, m along the camera's line.) */
+  private lens: THREE.UniformNode<'vec2', THREE.Vector2> | null = null;
+  private focused = false;
   private readonly canvas: HTMLCanvasElement;
   private readonly nodes: Array<{ dispose(): void }>;
   private readonly scenePass: ReturnType<typeof pass>;
@@ -95,10 +104,12 @@ export class Post {
     const v = scenePass.getTextureNode('velocity').xy.mul(f.x);
     const len = v.length().max(1e-6);
     const smear = motionBlur(color, v.mul(len.min(BLUR_MAX).div(len)), int(6)).mul(mix(float(1), occ.getTextureNode().r, film.ao));
-    const glow = bloom(smear, look.strength, look.radius, look.threshold);
+    // The same from here whether the lens is in or not: the bloom, the grade, the tone mapping, the grain.
+    const finish = (base: typeof smear): { out: ReturnType<typeof vec4>; glow: ReturnType<typeof bloom> } => {
+    const glow = bloom(base, look.strength, look.radius, look.threshold);
     // The grade, in the scene's own light (before the tone mapping): contrast about middle grey, the shadows a little
     // cool and the lights a little warm, the corners darker.
-    const lit = smear.add(glow).rgb;
+    const lit = base.add(glow).rgb;
     const luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));
     const sat = mix(vec3(luma), lit, film.saturation);
     const con = sat.div(0.18).max(0).pow(vec3(film.contrast)).mul(0.18);
@@ -111,9 +122,30 @@ export class Post {
     const noise = fract(sin(dot(seed, vec2(12.9898, 78.233))).mul(43758.5453)).sub(0.5);
     const mid = dot(shown.rgb, vec3(0.2126, 0.7152, 0.0722));
     const grained = shown.rgb.add(noise.mul(film.grain).mul(float(1).sub(mid.sub(0.5).abs().mul(1.2)).max(0.25)));
-    this.pipeline = new THREE.RenderPipeline(renderer, vec4(grained, 1));
+    return { out: vec4(grained, 1), glow };
+    };
+    const plain = finish(smear);
+    this.pipeline = new THREE.RenderPipeline(renderer, plain.out);
     this.pipeline.outputColorTransform = false;
-    this.nodes = [scenePass, pre, occ, glow];
+    // The replay camera's lens: what it is focused on sharp, the stands and the far wall soft, as a long lens on a
+    // slow-motion camera draws them. A second pipeline (the bloom's targets twice over), drawn only while a replay shows:
+    // in play both pairs stay sharp.
+    // Sharp from the nearer of the two it follows to the further (x to y, m along its line), not at one distance: the
+    // hitter and the ball are 10 m apart by the time the ball lands, and a lens focused on either lost the other. So the
+    // depth it is given is the distance outside that stretch (inside it: at the focus).
+    const lens = (this.lens = uniform(new THREE.Vector2(8, 12)));
+    const far = pre.getViewZNode().negate();
+    const soft = dof(smear, far.min(lens.x).add(far.sub(lens.y).max(0)).negate(), lens.x, film.focusRange, film.bokeh);
+    const lensed = finish(soft as unknown as typeof smear);
+    this.pipelineLens = new THREE.RenderPipeline(renderer, lensed.out);
+    this.pipelineLens.outputColorTransform = false;
+    this.nodes = [scenePass, pre, occ, plain.glow, soft, lensed.glow];
+  }
+
+  /** The lens sharp from `near` to `far` m along the camera's line (the look pass's replays), or out (0): everything sharp. */
+  focus(near: number, far = near): void {
+    this.focused = near > 0 && this.pipelineLens !== null;
+    if (this.focused) this.lens!.value.set(near, far > near ? far : near);
   }
 
   /** The camera has cut (or the view jumped): the next frames smear nothing, since their velocity is the jump's. */
@@ -140,6 +172,8 @@ export class Post {
     rt.texture.type = renderer.getOutputBufferType();
     await this.compileInto(renderer, this.scenePass, units);
     if (this.prePass) await this.compileInto(renderer, this.prePass, units);
+    // (the replay lens's own shaders built now, by one frame through it, not on the first replay's first frame)
+    if (this.pipelineLens && this.canvas.width > 0 && this.canvas.height > 0) this.pipelineLens.render();
   }
 
   private async compileInto(renderer: THREE.WebGPURenderer, into: ReturnType<typeof pass>, units: THREE.Object3D[]): Promise<void> {
@@ -183,6 +217,7 @@ export class Post {
   dispose(): void {
     for (const n of this.nodes) n.dispose();
     this.pipeline.dispose();
+    this.pipelineLens?.dispose();
   }
 
   render(): void {
@@ -209,6 +244,6 @@ export class Post {
       h.renderer.setMRT(h.mrt);
       return;
     }
-    this.pipeline.render();
+    (this.focused ? this.pipelineLens! : this.pipeline).render();
   }
 }

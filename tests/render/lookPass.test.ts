@@ -30,6 +30,9 @@ function alive(p: SandPuffs, t: number): number[][] {
 describe('the look pass', () => {
   it('is off unless asked for, and brings the court camera unless another is named', () => {
     expect(optionsFromUrl(new URLSearchParams('autoplay=1'), null)).toMatchObject({ look: 0, camera: 'tv' });
+    // (the replay camera's lens is the replays' alone unless asked for in play, to look at it)
+    expect(optionsFromUrl(new URLSearchParams('autoplay=1&look=2'), null).lens).toBe(false);
+    expect(optionsFromUrl(new URLSearchParams('autoplay=1&look=2&dof=1'), null).lens).toBe(true);
     expect(optionsFromUrl(new URLSearchParams('look=2'), null)).toMatchObject({ look: 2, camera: 'court' });
     expect(optionsFromUrl(new URLSearchParams('look=2&camera=court'), null)).toMatchObject({ look: 2, camera: 'court' });
     const s = defaultSettings();

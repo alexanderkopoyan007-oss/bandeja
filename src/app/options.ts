@@ -115,6 +115,7 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     replayTakes: params.get('creator') === '1',
     bloom: params.get('bloom') !== '0',
     look: num('look', 0),
+    lens: num('dof', 0) === 1,
     cutaway: params.get('cutaway') !== '0',
     mouseAim: params.get('aim') === 'mouse',
     runAhead: params.get('runahead') !== '0',
