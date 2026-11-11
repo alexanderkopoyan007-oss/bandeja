@@ -10,7 +10,7 @@
 // Behind ?motion=3 (main.ts loads the tracks when Avatar.motion is 3) until the owner has seen it; the tracks live in public/assets/mocap-local/
 // (not in the repository, not in a build) until then. Without the switch nothing here runs.
 import * as THREE from 'three/webgpu';
-import { BACKHAND, FOREHAND, OVERHEAD, VIBORA, VOLLEY_BH, VOLLEY_FH, keepCoded, leftFamily, type Family, type Key } from './strokes.ts';
+import { BACKHAND, FOREHAND, OVERHEAD, SMASH, VIBORA, VOLLEY_BH, VOLLEY_FH, keepCoded, leftFamily, type Family, type Key } from './strokes.ts';
 
 export interface StrokeTrack {
   name: string;
@@ -129,9 +129,11 @@ function drawBy(f: Family, t: StrokeTrack): void {
   f.track = t;
 }
 
-/** The families a track can draw, by the track's file (what the game loads of them: TRACKS_LIVE). The smash is not one: the
- * owner saw the clip's three times (11 Nov 2026) and the keyed smash "is a lot better" (DECISIONS.md). */
-const FAMILIES: Array<[string, Family]> = [['forehand', FOREHAND], ['backhand', BACKHAND], ['volley-fh', VOLLEY_FH], ['volley-bh', VOLLEY_BH], ['vibora', VIBORA], ['bandeja', OVERHEAD]];
+/** The families a track can draw, by the track's file (what the game loads of them: TRACKS_LIVE). The smash's first track,
+ * straight off the clip, the owner saw three times and the keyed smash "is a lot better" (11 Nov 2026, DECISIONS.md); the
+ * one here now is the test they asked for after: the clip re-fitted to the game's ball in Blender
+ * (tools/assets/mocap/blender/), for a look with &tracks=smash. */
+const FAMILIES: Array<[string, Family]> = [['forehand', FOREHAND], ['backhand', BACKHAND], ['volley-fh', VOLLEY_FH], ['volley-bh', VOLLEY_BH], ['vibora', VIBORA], ['bandeja', OVERHEAD], ['smash', SMASH]];
 
 /**
  * Fetches the tracks there are under `base` (assets/mocap-local/tracks/) and hands each to its family, both hands. A

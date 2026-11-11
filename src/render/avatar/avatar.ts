@@ -2192,6 +2192,9 @@ export class Avatar {
     const rs = this.racketSh;
     if (Avatar.trackAny || (rs.x === 0 && rs.y === 0 && rs.z === 0)) return true;
     const at = this.fitA.copy(rs).add(this.shLegs);
+    // (a jump's crouch before the take-off is not where the legs have the shoulder at the ball: asked from down there,
+    // 0.18 m low, a smash fitted to its ball to 5-11 degrees was 1.3 of its reach away and never played)
+    if (high) at.y -= this.shLegs.y;
     if (this.planOk) { at.x += this.planX - this.root.position.x; at.z += this.planZ - this.root.position.z; }
     this.toModel(at, at);
     at.x += tr.sh0.x - tr.sh[0]!;

@@ -4708,3 +4708,26 @@ ball, show only the plainly better ones, the rest go back to keyed. What the mea
   side at hip-to-waist height about level with the body, a bandeja overhead. Or the sim's stand plan moved to where players do
   meet the ball, which is the sim's physics and the owner's word. Or the clips used as what the keyed strokes are checked
   against (docs/footage-pose.md), which needs no fit at all.
+
+## A smash through Blender, as a test (2026-11-11, owner: "what if u do it in blender or sm", then "do just one, the smash, as a test")
+
+- **The pipeline** (`tools/assets/mocap/blender/`): `clip_to_blend.py` puts a converted clip on the game's own skeleton and
+  mannequin in a Blender file (the armature from player.bnz, the mesh skinned to it, the racket in the hand as grip.ts holds it,
+  the clip as an action, a marker at the contact and an empty where the ball must be); `blend_to_clip.py` writes the file's action
+  back as a clip (bones as posed in the end, constraints and all), and keys.py `TRACK=` makes the game's track of it. There and
+  back the clip is the same to 0.4 degrees. The file is where a pose is changed by hand; nothing in it is in the repository
+  (`tools/out/blender/smash.blend`).
+- **Where the game's smash meets its ball** (five keyed smashes, six seeds): 0.40 m to the racket side of the stance, 2.53 up,
+  0.44 towards the net, to a centimetre or two every time; from the hips (-0.30, 1.21, 0.31). The clip (a kick smash, side-on,
+  the ball over the head) has its racket at (0.29, 1.30, 0.15) from the hips.
+- **The re-fit** (`BALL=-0.30,1.21,0.31`): the whole body above the hips turned once, all through the stroke, by the shortest turn
+  that puts the racket on the ball's line from the hips (27 degrees), the legs left as they were. The arm on the chest is the
+  clip's own, untouched; the racket's face at the ball looks at the net and 17 degrees down. No turn of the shoulders' heading
+  (the first smash's `TURN=`), which had turned the racket's face away with it.
+- **In the game** (`&motion=3&tracks=smash`; a track can draw the smash again, `TRACK_FILES`; none is live): played under the
+  fit rule, turned 5-12 degrees onto its ball and 0.97-1.03 of its reach on four smashes of five (a left-hander's 32 degrees,
+  0.84). `trackFits` had asked a jump's fit from the crouch before the take-off (the shoulder 0.18 m low, 1.3 of the reach) and
+  refused every one: a jumping stroke's fit leaves the legs' height out.
+- Shown once, beside the keyed smash on the same ball (seed 6, four martillos, player 2 at 24.933 s), from the net side and from
+  behind. The legs are the game's own (the clip's feet were out of the picture), and the trunk takes the track's lean as it did.
+  The owner's verdict decides whether any other stroke goes this way.

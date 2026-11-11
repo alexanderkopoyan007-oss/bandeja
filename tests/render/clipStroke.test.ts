@@ -125,7 +125,7 @@ describe('a stroke drawn by a clip', () => {
   });
 
   it('still meets the ball where the sim struck it, either hand', () => {
-    expect(TRACK_FILES).toEqual(['forehand', 'backhand', 'volley-fh', 'volley-bh', 'vibora', 'bandeja']);
+    expect(TRACK_FILES).toEqual(['forehand', 'backhand', 'volley-fh', 'volley-bh', 'vibora', 'bandeja', 'smash']);
     // (none is loaded by the game: the owner's rule, 11 Nov 2026; clipStroke.ts TRACKS_LIVE)
     expect(TRACKS_LIVE).toEqual([]);
     applyStrokeTrack('forehand', fh);
