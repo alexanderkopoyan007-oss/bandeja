@@ -4634,3 +4634,26 @@ behind the shoulder. Three causes, none of them the clip:
   same of the keyed arms).
 
 
+
+
+## The smash is a whole body (2026-11-11, owner on the second film: "it still looks like shit, not realistic")
+Put beside the real clip from its own camera's side (which I had not done before either film), the arm was not what was
+wrong any more: the pro's whole body is the stroke, and the game drew his arm on a post. Measured off the converted clip
+(the spine from the hips to the neck, the hips' line, the feet from the hips): the spine 30-44 degrees off upright all
+through, the hips' line rolled 25 degrees one way in the drop, 11-15 the other at the ball and 30-35 after it, the legs out
+along the same line. The game: the spine 8-22 degrees off upright, the pelvis level, the legs straight down.
+- **Off the floor the lean is the pelvis's and the legs' too** (`TRACK_PELVIS`, in by the jump's height): that share turns
+  the hips bone about its own middle, the feet's targets go round the pelvis's middle by the same turn (and the feet turn
+  with them), and the spine bends by the rest. On the floor it is the spine's alone, as before.
+- **In the air the lean is whole** (the tilt 1 where the floor's is TRACK_TILT 0.8, the bow TRACK_BOW_AIR 0.85 for 0.5), and a
+  track's lean is no longer eased as the keyed one is (0.05 s: the shoulders were 0.40 rad over at the ball where the clip
+  has 0.63, and at their most 0.17 s after it).
+- After: the spine 30 degrees off upright at the ball and 41-43 after it, the hips' line 23 and 29-31 (the pro: 29-35 and
+  40-44; 11-15 and 30-35). The back's arch at the ball stays out (TURN's bow): his ball is over his head, the game's 0.6 m
+  in front, and the sim is not bent to the picture.
+- Checked: `anim-check` six seeds 100 s with seven tracks: pops 11.7-20.0 a minute, smashes 2.0-2.6 cm off (2.0 before), the
+  furthest contacts the same keyed ones; the arm's joints as before; the suite (lod and proportions each failed once under the
+  QA's load and pass alone); alloc 9 / 8 / 6.
+- Any measured overhead that jumps gets it (the bandeja's and the vibora's hops are under PELVIS_AIR1, so little of it).
+- **My rule from this:** a clip stroke is shown only after the game has been tiled beside the real clip from the clip's own
+  side and the whole outline compared: where the spine, the hips and the legs point, not one limb's joint numbers.

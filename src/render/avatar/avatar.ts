@@ -381,6 +381,15 @@ const TRACK_ARM = 0.97;
 const TRACK_RUSH = 0.6;
 const TRACK_TILT = 0.8;
 const TRACK_BOW = 0.5;
+/** In the air an overhead's lean is the whole body's, from the feet up: this share of it turns the pelvis about its own
+ * middle and the legs with it, the rest bends the spine as on the floor. The pro's smash (yRiT052FmVw): the spine 30-44
+ * degrees off upright all through, the hips' line rolled 11-35 of them, the legs out along the same line; with the
+ * pelvis upright and the legs straight down under it the swing was an arm on a post. In by the jump's height. */
+const TRACK_PELVIS = 0.55;
+const TRACK_BOW_AIR = 0.85;
+const TRACK_TILT_EASE = 0.02;
+const PELVIS_AIR0 = 0.02;
+const PELVIS_AIR1 = 0.14;
 /** ...and, the release being anyone's guess, runs this share of the swing behind it at full speed... */
 const HOVER_BEHIND = 0.06;
 /** ...only braking once the moment has gone by with no release, over this share (it never parks: see hover). */
@@ -1134,6 +1143,9 @@ export class Avatar {
   /** Smash jump: how far the ball is above the arm's reach (m, from the legs' solve), and the hop under way. */
   private upNeed = 0;
   private jumpH = 0;
+  /** The pelvis's share of a measured overhead's lean now (TRACK_PELVIS), and that turn in the world for the legs. */
+  private leanPelvis = 0;
+  private readonly leanW = new THREE.Quaternion();
   /** How high the jump has this player at the ball it is going up for (smashJump; 0 with none coming). */
   private liftBall = 0;
   private jumpT0 = -1;
@@ -3274,16 +3286,33 @@ export class Avatar {
         bow = o.pitch * fin * this.w;
       }
       // (a measured stroke: the trunk's lean the clip has at this moment of it)
-      if (this.fam.track && this.w > 0 && this.st !== ST_NONE) {
-        tilt = this.trTilt * TRACK_TILT * this.w;
-        bow = this.trBow * TRACK_BOW * this.w;
+      const tracked = this.fam.track !== undefined && this.w > 0 && this.st !== ST_NONE;
+      if (tracked) {
+        // (off the floor an overhead's lean is whole: nothing stands under it to be kept over)
+        const air = this.fam.high ? smoothstep(PELVIS_AIR0, PELVIS_AIR1, this.lift) : 0;
+        tilt = this.trTilt * (TRACK_TILT + (1 - TRACK_TILT) * air) * this.w;
+        bow = this.trBow * (TRACK_BOW + (TRACK_BOW_AIR - TRACK_BOW) * air) * this.w;
       }
-      const dt = this.dt, ease = dt > 0 ? 1 - Math.exp(-dt / OVER_TILT_EASE) : 1;
+      // (a track is smooth already: eased as the keyed tilt is, the shoulders were 0.4 rad over at the ball where the clip has 0.63, and 0.17 s late)
+      const dt = this.dt, ease = dt > 0 ? 1 - Math.exp(-dt / (tracked ? TRACK_TILT_EASE : OVER_TILT_EASE)) : 1;
       this.overTilt += (tilt - this.overTilt) * ease;
       this.overBow += (bow - this.overBow) * ease;
+      this.leanPelvis = 0;
       if (this.overTilt * this.overTilt + this.overBow * this.overBow > 1e-6) {
-        q2.setFromAxisAngle(AXIS_X, this.overBow / 3);
-        q1.setFromAxisAngle(AXIS_Z, (this.overTilt * this.handed) / 3);
+        const pa = this.fam.track && this.fam.high && this.st !== ST_NONE ? TRACK_PELVIS * smoothstep(PELVIS_AIR0, PELVIS_AIR1, this.lift) : 0;
+        if (pa > 1e-3) {
+          this.leanPelvis = pa;
+          q2.setFromAxisAngle(AXIS_X, this.overBow * pa);
+          q1.setFromAxisAngle(AXIS_Z, this.overTilt * this.handed * pa);
+          q2.multiply(q1);
+          // (in the world, for the feet: the root's turn and the hips' own either side of it)
+          q3.multiplyQuaternions(this.root.quaternion, this.hips.quaternion);
+          this.leanW.copy(q3).multiply(q2).multiply(q3.invert());
+          this.hips.quaternion.multiply(q2);
+        }
+        const sp = (1 - pa) / 3;
+        q2.setFromAxisAngle(AXIS_X, this.overBow * sp);
+        q1.setFromAxisAngle(AXIS_Z, this.overTilt * this.handed * sp);
         for (let j = 0; j < 3; j++) this.spine[j]!.quaternion.multiply(q2).multiply(q1);
         q1.setFromAxisAngle(AXIS_Z, -this.overTilt * this.handed * OVER_NECK);
         q2.setFromAxisAngle(AXIS_X, -this.overBow * OVER_NECK);
@@ -4193,6 +4222,16 @@ export class Avatar {
       }
     }
     this.scissor();
+    if (this.leanPelvis > 0) {
+      // The legs go with the pelvis: the feet about its middle by the same turn (they are off the floor, and no lower than it).
+      const H = this.hips.matrixWorld.elements, hx = H[12]!, hy = H[13]!, hz = H[14]!, floor = this.ankleY;
+      for (let f = 0; f < 2; f++) {
+        const A = f === 0 ? this.footL : this.footR;
+        v1.set(A.x - hx, A.y - hy, A.z - hz).applyQuaternion(this.leanW);
+        A.set(hx + v1.x, Math.max(floor, hy + v1.y), hz + v1.z);
+        (f === 0 ? this.footQL : this.footQR).premultiply(this.leanW);
+      }
+    }
     for (let f = 0; f < 2; f++) this.pinFoot(f);
     const moved = Math.abs(this.footL.x - fx0) + Math.abs(this.footL.z - fz0) + Math.abs(this.footR.x - gx0) + Math.abs(this.footR.z - gz0);
     if (drop < 0.005 && drop > -0.005 && pushed < 0.005 && !plant && !lifted && moved < 1e-4 && this.lockOn[0] === 0 && this.lockOn[1] === 0 && this.gaitW === 0) {
