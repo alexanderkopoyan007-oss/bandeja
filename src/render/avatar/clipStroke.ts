@@ -161,9 +161,10 @@ export function applyStrokeTrack(file: string, j: TrackJson): void {
  */
 export const TRACKS_LIVE: readonly string[] = [];
 
-export async function loadStrokeTracks(base: string): Promise<string[]> {
+export async function loadStrokeTracks(base: string, only?: readonly string[]): Promise<string[]> {
   const got: string[] = [];
-  await Promise.all(TRACKS_LIVE.map(async (file) => {
+  // (`only`: the ones asked for by name, for a look at them; of those a track can draw)
+  await Promise.all((only ? TRACK_FILES.filter((f) => only.includes(f)) : TRACKS_LIVE).map(async (file) => {
     try {
       const r = await fetch(`${base}${file}.json`);
       // (the dev server answers a missing file with the page itself)

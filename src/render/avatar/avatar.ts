@@ -1653,6 +1653,8 @@ export class Avatar {
   static inertMask = 63;
   /** Locomotion: 0 the sector blend; 2 motion matching (matcher.ts, ?motion=2, until the owner has seen it). */
   static motion = 0;
+  /** A look at the clips' swings on every ball (?motion=3&tracks=...&fit=0): trackFits says yes to all. Never set in a match anyone plays. */
+  static trackAny = false;
   /** The motion matcher over the five cycles (Avatar.motion 2 only). */
   private readonly matcher: Matcher | null;
   private readonly inertia: Inertializer;
@@ -2188,7 +2190,7 @@ export class Avatar {
    * player, the trunk's own way there off the track, a jump's rise). */
   private trackFits(tr: StrokeTrack, c: THREE.Vector3, high: boolean, margin: number): boolean {
     const rs = this.racketSh;
-    if (rs.x === 0 && rs.y === 0 && rs.z === 0) return true;
+    if (Avatar.trackAny || (rs.x === 0 && rs.y === 0 && rs.z === 0)) return true;
     const at = this.fitA.copy(rs).add(this.shLegs);
     if (this.planOk) { at.x += this.planX - this.root.position.x; at.z += this.planZ - this.root.position.z; }
     this.toModel(at, at);

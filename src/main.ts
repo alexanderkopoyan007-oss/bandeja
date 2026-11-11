@@ -39,7 +39,9 @@ const num = (k: string, d: number): number => {
 Avatar.motion = num('motion', 0);
 // ?motion=3: the forehand, the vibora and the bandeja drawn by swings measured off clips (render/avatar/clipStroke.ts), where
 // their tracks are on this machine (public/assets/mocap-local/tracks/), until the owner has seen them.
-const strokeTracks = Avatar.motion === 3 ? loadStrokeTracks(`${import.meta.env.BASE_URL}assets/mocap-local/tracks/`) : null;
+// (&tracks=forehand,volley-fh names the ones to load for a look: by itself ?motion=3 loads none, clipStroke.ts TRACKS_LIVE)
+Avatar.trackAny = Avatar.motion === 3 && params.get('tracks') !== null && params.get('fit') === '0';
+const strokeTracks = Avatar.motion === 3 ? loadStrokeTracks(`${import.meta.env.BASE_URL}assets/mocap-local/tracks/`, params.get('tracks')?.split(',')) : null;
 // ?ground=1: contact shadows under the players (render/grounding.ts) until the owner has seen them.
 Grounding.on = num('ground', 0) === 1;
 
