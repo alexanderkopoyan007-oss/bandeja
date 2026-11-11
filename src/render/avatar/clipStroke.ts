@@ -129,8 +129,8 @@ function drawBy(f: Family, t: StrokeTrack): void {
   f.track = t;
 }
 
-/** The families the tracks are for, by the track's file. The smash is not one: the owner saw the clip's three times (11 Nov 2026)
- * and the keyed smash "is a lot better" (DECISIONS.md). */
+/** The families a track can draw, by the track's file (what the game loads of them: TRACKS_LIVE). The smash is not one: the
+ * owner saw the clip's three times (11 Nov 2026) and the keyed smash "is a lot better" (DECISIONS.md). */
 const FAMILIES: Array<[string, Family]> = [['forehand', FOREHAND], ['backhand', BACKHAND], ['volley-fh', VOLLEY_FH], ['volley-bh', VOLLEY_BH], ['vibora', VIBORA], ['bandeja', OVERHEAD]];
 
 /**
@@ -149,9 +149,21 @@ export function applyStrokeTrack(file: string, j: TrackJson): void {
   drawBy(fam, t);
 }
 
+/**
+ * The tracks the game loads behind ?motion=3: none, as of 11 Nov 2026. Every clip met its ball somewhere the sim does not
+ * put one (a forehand close under the shoulder where the sim's is out to the side, a volley well in front where the sim's
+ * is beside the body, a bandeja at shoulder height out wide where the sim's is overhead): turned onto the sim's ball the
+ * swings were 25-65 degrees from their own, which is what the owner saw ("the arms dont move accuratley, theyre
+ * inverting, going into the body"), and kept to balls like their own (avatar.ts trackFits) a clip's swing was played 3
+ * times in 300 seconds. The owner's rule: a clip replaces a keyed stroke only where, side by side on the same ball, it is
+ * plainly better; the rest are keyed (DECISIONS.md). A stroke comes back by its file's name here, once there is a clip of
+ * it met where the sim meets it.
+ */
+export const TRACKS_LIVE: readonly string[] = [];
+
 export async function loadStrokeTracks(base: string): Promise<string[]> {
   const got: string[] = [];
-  await Promise.all(TRACK_FILES.map(async (file) => {
+  await Promise.all(TRACKS_LIVE.map(async (file) => {
     try {
       const r = await fetch(`${base}${file}.json`);
       // (the dev server answers a missing file with the page itself)

@@ -9,7 +9,7 @@ import { MatchSim, E_HIT } from '../../src/sim/match.ts';
 import { parsePlayerAsset } from '../../src/render/avatar/asset.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
 import { FOREHAND, OVERHEAD, SMASH, VIBORA, VOLLEY_FH, leftFamily, rightFamily, type Family, type Key } from '../../src/render/avatar/strokes.ts';
-import { TS, TRACK_FILES, applyStrokeTrack, mirrorTrack, parseTrack, sampleTrack, type TrackJson } from '../../src/render/avatar/clipStroke.ts';
+import { TS, TRACK_FILES, TRACKS_LIVE, applyStrokeTrack, mirrorTrack, parseTrack, sampleTrack, type TrackJson } from '../../src/render/avatar/clipStroke.ts';
 
 const FPS = 60;
 
@@ -126,6 +126,8 @@ describe('a stroke drawn by a clip', () => {
 
   it('still meets the ball where the sim struck it, either hand', () => {
     expect(TRACK_FILES).toEqual(['forehand', 'backhand', 'volley-fh', 'volley-bh', 'vibora', 'bandeja']);
+    // (none is loaded by the game: the owner's rule, 11 Nov 2026; clipStroke.ts TRACKS_LIVE)
+    expect(TRACKS_LIVE).toEqual([]);
     applyStrokeTrack('forehand', fh);
     applyStrokeTrack('vibora', trackOf('vibora', VIBORA, 0.32, 0.45));
     applyStrokeTrack('bandeja', trackOf('bandeja', OVERHEAD, 0.32, 0.45));
@@ -144,7 +146,10 @@ describe('a stroke drawn by a clip', () => {
     for (const v of av) scene.add(v.root);
     const NONE = [null, null, null, null];
     const racket = new THREE.Vector3(), was = av.map(() => new THREE.Vector3());
-    const drawn: number[] = [], hung: number[] = [];
+    const drawn: number[] = [], hung: number[] = [], turned: number[] = [];
+    const tracked = new Set<Family>([FOREHAND, VIBORA, OVERHEAD].flatMap((f) => [f.coded!, leftFamily(f).coded!]));
+    let keyed = 0;
+    const way = new THREE.Vector3();
     const sh = new THREE.Vector3(), key = new THREE.Vector3(), shape = new THREE.Vector3();
     let seen = 0, nan = 0;
     for (let k = 0; k < 120 * 150; k++) {
@@ -153,8 +158,10 @@ describe('a stroke drawn by a clip', () => {
         const e = m.events[seen % m.events.length]!;
         seen++;
         if (e.kind !== E_HIT) continue;
-        const who = av[e.player]! as unknown as { fam: Family };
+        const who = av[e.player]! as unknown as { fam: Family; kp: THREE.Vector3; trSh: THREE.Vector3 };
+        if (tracked.has(who.fam)) keyed++;
         if (!who.fam.track) continue;
+        turned.push(way.copy(who.kp).sub(who.trSh).angleTo(who.fam.track.c0));
         const p = m.players[e.player]!;
         // (the event comes a tick after the contact, so the frame that met the ball is the one before)
         drawn.push(was[e.player]!.distanceTo(new THREE.Vector3(p.lastContact.x, p.lastContact.y, p.lastContact.z)));
@@ -179,7 +186,14 @@ describe('a stroke drawn by a clip', () => {
     const q = (f: number) => drawn[Math.floor(f * (drawn.length - 1))]!;
     process.stderr.write(`track-drawn strokes: ${drawn.length} hits, racket to ball median ${q(0.5).toFixed(3)} p90 ${q(0.9).toFixed(3)} m\n`);
     expect(nan).toBe(0);
-    expect(drawn.length).toBeGreaterThan(4);
+    // A clip's swing is for a ball like its own (trackFits): the rest of these strokes' balls are the keyed stroke's, and
+    // the ones a clip drew were met near it (TRACK_FIT_TURN, 0.45 rad, is as foreseen at the swing's start, and a jump or a
+    // step after that adds to it: one foreseen at 0.19 was 0.46 at the ball; before
+    // the rule the swings were turned 0.4-1.4 rad onto their balls, the arm through the chest at the far end of that).
+    process.stderr.write(`of these strokes ${keyed} hits were the keyed one's; the clip's were turned ${turned.map((v) => v.toFixed(2)).join(' ')} rad onto the ball\n`);
+    expect(drawn.length).toBeGreaterThan(0);
+    expect(keyed).toBeGreaterThan(4);
+    expect(Math.max(...turned)).toBeLessThan(0.7);
     expect(q(0.5)).toBeLessThan(0.04);
     expect(q(0.9)).toBeLessThan(0.2);
     // Hung from the shoulder the stroke measures before the legs lean the hips in and stand them up, the swing sat where

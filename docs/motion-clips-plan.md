@@ -49,3 +49,11 @@ can't: the trunk's own timing (hips before shoulders), the head, the free arm's 
 ## C. The end
 One look for the owner: the strokes in a match (`/?motion=3`), and only then. Sent 10 Nov: one film (forehand, bandeja, vibora; each at
 full speed then half), and the address to play it.
+
+## D. Where it ended (11 Nov 2026)
+None of the six is loaded (`TRACKS_LIVE` in clipStroke.ts is empty; the smash went first, the same day). The owner on the strokes in a
+match: "the arms dont move accuratley, theyre inverting, going into the body". Measured: each clip met its ball 25-65 degrees (from
+the racket shoulder) from where the sim puts that stroke's ball, and the swing was turned that far about the shoulder to meet it.
+Kept to balls like its own (`trackFits`, 0.45 rad) a clip's swing played 3 times in 300 seconds. DECISIONS.md, "The clip strokes
+are keyed again", has the numbers and what would bring a stroke back: a clip met where the sim meets the ball, or the clips as the
+reference the keyed strokes are checked against.

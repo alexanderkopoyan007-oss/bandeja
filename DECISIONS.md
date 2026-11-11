@@ -4667,3 +4667,44 @@ tracks), the pelvis's share of a lean in the air (only a measured overhead that 
 hops), keys.py TURN= and HELD=, the smash's racket keys and notes. A kick smash seen from behind, turned into a flat one, was
 never going to beat a stroke keyed for this game's ball. **My rule from this:** a clip replaces a keyed stroke only when the
 two have been put side by side and the clip's is plainly the better one; the new version is not shown otherwise.
+
+## The clip strokes are keyed again: each clip met a ball the sim doesn't serve (2026-11-11, owner: "the arms dont move accuratley, theyre inverting, going into the body, not looking like it does irl")
+
+The owner chose: keep the clip arm out of the body as the keyed strokes are, film each clip stroke beside its keyed one on the same
+ball, show only the plainly better ones, the rest go back to keyed. What the measuring found:
+
+- **Where the arm went in.** The racket arm's elbow was inside the trunk in 4-13% of a clip stroke's frames (0-3% of a keyed one's;
+  `tools/out/yt/rom-scan.ts`, the elbow's centre inside an ellipse 0.15 m wide and 0.10 deep about the hips-to-neck line). Those
+  frames were the swings turned furthest onto their ball: a backhand's 62-65 degrees (median of the frames inside), a backhand
+  volley's 44-47, a forehand's 42. A backhand turned 62 degrees had its arm straight through the chest, the hand 0.42 m across from
+  the racket shoulder and level with it front to back.
+- **Why they are turned that far.** `trackKey` turns the clip's arm-and-racket shape about the racket shoulder so the racket meets
+  the sim's ball. From the racket shoulder, the clip's own ball and the sim's (three seeds, 100 s each, the mean way to the ball):
+  the forehand's clip met it close under the shoulder (0.17 to the side, 0.93 down, 0.33 in front, of 1) and the sim's is out to the
+  side (0.6, 0.7, 0.3): 23-34 degrees apart; the backhand 39-51; the forehand volley's clip well in front (0.76) and the sim's beside
+  the body (0.1-0.2), a third further out: 37-46; the backhand volley 24-33; the bandeja's clip at shoulder height out wide and the
+  sim's overhead: 36-65. Swing by swing the turn at the ball was 20-78 degrees, hardly one under 25. A turn about the vertical by
+  the whole player would take the sideways part of it and leave 10-60 degrees of height.
+- **Tried and not kept: the arm on the game's own chest.** The clip's chest frame written per frame (`cq`) and the shape turned by
+  what the game's chest is over the clip's (14 degrees on average, 57 at most). The elbow was inside as often as before (120, 173
+  and 70 frames on three seeds against 156, 172 and 87): the chest was not the cause. Taken out again.
+- **Also found: four of the six clips have the elbow inside the player's own ribs** (its centre 3-6 cm in front of the spine through
+  7-10 frames of the follow-through or the swing): one camera has depth least well, and the elbow's worst.
+- **What is in the code now** (all of it only where a family is drawn by a track):
+  - `trackFits` (avatar.ts, asked in `pickFamily` from 1.12 of the track's lead before the ball): a clip's swing is for a ball like
+    its own, within `TRACK_FIT_TURN` (0.45 rad) about the shoulder and 0.8-1.2 of the clip's reach, from where the shoulder will be
+    at the ball (the stand plan's place, the track's own shoulder travel, a jump's rise); any other ball is the keyed stroke's, and
+    once keyed a stroke stays so. Asked at every pick (the first go) no clip's swing was ever played: early on the player is still on
+    the way and the contact a guess.
+  - `elbowClear`: the elbow turned round the shoulder-to-hand line to the first place its centre is outside the trunk (an ellipse
+    0.175 by 0.125 m), quickly in and slowly out. On its own it took the frames inside from 120/173/70 to 72/99/30.
+  - With both, three seeds of 100 s: the elbow inside the trunk in 2 frames, and a clip's swing played 3 times (a backhand, a
+    forehand, a forehand volley) against some 250 keyed.
+- **The decision.** A stroke that plays once in eighty is not a stroke in the game, and there is no "same ball" to film it beside
+  the keyed one on for the other seventy-nine. By the owner's rule none of the six is shown and all are keyed: `TRACKS_LIVE` in
+  clipStroke.ts is empty, so `?motion=3` loads no track and plays the keyed strokes. `TRACK_FILES` (what a track can draw), the
+  export and the tests stay, and a stroke comes back by adding its file's name to `TRACKS_LIVE`.
+- **What would bring one back.** A clip of the stroke met where the sim meets it: a drive or a volley with the ball out to the
+  side at hip-to-waist height about level with the body, a bandeja overhead. Or the sim's stand plan moved to where players do
+  meet the ball, which is the sim's physics and the owner's word. Or the clips used as what the keyed strokes are checked
+  against (docs/footage-pose.md), which needs no fit at all.

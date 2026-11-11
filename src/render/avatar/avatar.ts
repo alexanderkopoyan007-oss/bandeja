@@ -379,6 +379,14 @@ const TRACK_UNBEND = 0.7;
 const TRACK_ARM = 0.97;
 /** The least of a track's lead a swing may have left when it is picked and still be drawn by it (pickFamily). */
 const TRACK_RUSH = 0.6;
+/** A measured swing is for a ball like its own (trackFits): no more than this turn about the shoulder from the clip's (rad),
+ * between these shares of the clip's reach; and how much nearer than that (rad) a ball must be once the keyed stroke has it. */
+const TRACK_FIT_TURN = 0.45;
+const TRACK_FIT_NEAR = 0.8;
+const TRACK_FIT_FAR = 1.2;
+const TRACK_FIT_MARGIN = 0.1;
+/** The fit is asked from this share of the swing's lead before the ball (just before the forward swing starts). */
+const TRACK_FIT_FROM = 1.12;
 const TRACK_TILT = 0.8;
 const TRACK_BOW = 0.5;
 /** In the air an overhead's lean is the whole body's, from the feet up: this share of it turns the pelvis about its own
@@ -388,6 +396,18 @@ const TRACK_BOW = 0.5;
 const TRACK_PELVIS = 0.55;
 const TRACK_BOW_AIR = 0.85;
 const TRACK_TILT_EASE = 0.02;
+/** A track's elbow out of the trunk (elbowClear): the trunk's half width and half depth for the elbow's centre (m) and the
+ * part of the hips-to-neck line it is kept out along; the turn's step and most (rad), how much shorter the other way
+ * round must be to change to it, and how fast the turn comes in and goes (s). */
+const TRACK_TRUNK_W = 0.175;
+const TRACK_TRUNK_D = 0.125;
+const TRACK_TRUNK_LO = 0.05;
+const TRACK_TRUNK_HI = 1.0;
+const TRACK_SWIVEL_STEP = 0.07;
+const TRACK_SWIVEL_MAX = 2.6;
+const TRACK_SWIVEL_KEEP = 0.5;
+const TRACK_SWIVEL_IN = 0.02;
+const TRACK_SWIVEL_OUT = 0.12;
 const PELVIS_AIR0 = 0.02;
 const PELVIS_AIR1 = 0.14;
 /** ...and, the release being anyone's guess, runs this share of the swing behind it at full speed... */
@@ -1443,8 +1463,12 @@ export class Avatar {
   private readonly trAt = new THREE.Vector3();
   /** How far the legs took the racket shoulder from where the stroke measured it (racketSh), last frame (world). */
   private readonly shLegs = new THREE.Vector3();
+  /** How far a track's elbow is turned about the shoulder-to-hand line to stand clear of the trunk (elbowClear; rad, eased). */
+  private swivel = 0;
   private readonly trA = new THREE.Vector3();
   private readonly trB = new THREE.Vector3();
+  private readonly fitA = new THREE.Vector3();
+  private readonly fitB = new THREE.Vector3();
   private readonly trTurn = new THREE.Quaternion();
   private readonly conTurn = new THREE.Quaternion();
   private readonly rchA = new THREE.Vector3();
@@ -2140,13 +2164,42 @@ export class Avatar {
 
   // ---- strokes ----
 
-  private pickFamily(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number, contra = false, left = Infinity): Family {
+  private pickFamily(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number, contra = false, left = Infinity, toBall = Infinity): Family {
     const f = contra ? (hand > 0 ? FH_CONTRA : BH_CONTRA) : this.pickRight(sim, p, idx, c, overhead, volley, hand);
     const fam = this.handed > 0 ? f : leftFamily(f);
     // A measured swing takes its own time: picked with `left` seconds to the ball, under TRACK_RUSH of its lead, it is the
     // keyed stroke (the only two clip-drawn hits in six hundred seconds that met the ball 11-12 cm off were the only two
     // picked under 0.2 s from it: a vibora at a ball by the ear in 0.135 s, the elbow at its rate's stop all the way).
-    return fam.track && fam.coded && left < fam.track.lead * TRACK_RUSH ? fam.coded : fam;
+    if (!fam.track || !fam.coded) return fam;
+    if (left < fam.track.lead * TRACK_RUSH) return fam.coded;
+    // And it is one swing, at one ball: turned about the shoulder onto a ball far from the one it was measured at, the
+    // whole arm goes where no arm does (11 Nov 2026, the owner: "inverting, going into the body"; the frames with the
+    // elbow inside the trunk were the swings turned 45-65 degrees, a backhand's arm straight through the chest). A ball
+    // further off than TRACK_FIT_TURN, or nearer or further than TRACK_FIT_NEAR to TRACK_FIT_FAR of the clip's reach, is
+    // the keyed stroke's, which is built to meet a ball anywhere. (Once keyed it stays so: the callers, and the margin.)
+    // Asked only once the forward swing is about to start or has (`toBall` seconds to the ball, within TRACK_FIT_FROM of
+    // the track's lead): before that the player is still on the way and the ball's place a guess (the first go asked at
+    // every pick, and no clip's swing was ever played).
+    return toBall >= fam.track.lead * TRACK_FIT_FROM || this.trackFits(fam.track, c, fam.high === true, this.fam === fam.coded ? TRACK_FIT_MARGIN : 0) ? fam : fam.coded;
+  }
+
+  /** Whether a track's swing meets the ball at `c` (world) nearly as the clip met its own: the turn about the racket shoulder
+   * and the stretch trackKey would give it, from where the shoulder will be at the ball (the stand plan's place for the
+   * player, the trunk's own way there off the track, a jump's rise). */
+  private trackFits(tr: StrokeTrack, c: THREE.Vector3, high: boolean, margin: number): boolean {
+    const rs = this.racketSh;
+    if (rs.x === 0 && rs.y === 0 && rs.z === 0) return true;
+    const at = this.fitA.copy(rs).add(this.shLegs);
+    if (this.planOk) { at.x += this.planX - this.root.position.x; at.z += this.planZ - this.root.position.z; }
+    this.toModel(at, at);
+    at.x += tr.sh0.x - tr.sh[0]!;
+    at.y += (tr.sh0.y - tr.sh[1]!) * TRACK_TILT + (high ? this.liftBall - this.lift : 0);
+    at.z += tr.sh0.z - tr.sh[2]!;
+    const c1 = this.toModel(c, this.fitB).sub(at), l1 = c1.length();
+    if (l1 < 1e-4 || tr.c0len < 1e-4) return true;
+    const k = l1 / tr.c0len;
+    if (k < TRACK_FIT_NEAR + margin * 0.3 || k > TRACK_FIT_FAR - margin * 0.3) return false;
+    return c1.dot(tr.c0) / (l1 * tr.c0len) >= Math.cos(TRACK_FIT_TURN - margin);
   }
 
   /** The stroke for a right-hander (`hand` +1 forehand, -1 backhand). */
@@ -2555,7 +2608,7 @@ export class Avatar {
         const hand = planned ? st.hand : this.handOf(sim, p, this.conW) * (contra ? -1 : 1);
         // (a stroke stays the one its backswing began as: only the first pick of a backswing can be the rushed one)
         const first = this.lastSwing !== SW_CHARGE;
-        let fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand, contra, first && this.hasCon ? tp - t : Infinity);
+        let fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand, contra, first && this.hasCon ? tp - t : Infinity, this.hasCon ? tp - t : Infinity);
         if (!first && fam.coded && this.fam === fam.coded) fam = fam.coded;
         if (fam !== this.fam && t - this.prepStart > 0.03) {
           this.snapshot();
@@ -2609,7 +2662,8 @@ export class Avatar {
           : st.volley;
         // (facing the glass the forehand is the other side)
         const hand = fresh ? this.handOf(sim, p, this.conW) * (contra ? -1 : 1) : st.hand;
-        const fam = this.pickFamily(sim, p, idx, this.conW, !fresh && st.overhead, vol && !contra, hand, contra, (hit ? p.lastContactTime : p.contactTime) - t);
+        let fam = this.pickFamily(sim, p, idx, this.conW, !fresh && st.overhead, vol && !contra, hand, contra, (hit ? p.lastContactTime : p.contactTime) - t, 0);
+        if (this.st === ST_PREP && fam.coded && this.fam === fam.coded) fam = fam.coded;
         if (this.st === ST_PREP && fam !== this.fam) { this.snapshot(); this.relBlend = true; }
         this.fam = fam;
       }
@@ -3363,6 +3417,7 @@ export class Avatar {
       this.elbowPush.set(0, 0, 0); this.elbowPushTo.set(0, 0, 0);
       this.racketQOk = false;
       this.shLegs.set(0, 0, 0);
+      this.swivel = 0;
       // (the next fade starts afresh, not from a frame long gone)
       this.fadeOk.fill(0);
     }
@@ -4962,6 +5017,82 @@ export class Avatar {
   }
 
   /**
+   * A measured swing's elbow kept out of the trunk. One camera has a joint's depth least well of all, and the elbow's
+   * worst: of the six clips' own swings, four have the elbow's centre 3-6 cm in front of the spine through part of the
+   * follow-through or the swing (inside the ribs: the game's player drew it there in 4-13% of a clip stroke's frames, a
+   * keyed stroke's in 0-3%; 11 Nov 2026, the owner: "going into the body"). The hand is where the swing has it, so the
+   * elbow is somewhere on its circle about the shoulder-to-hand line: it is turned round that line, the shorter way, to
+   * the first place its centre is outside the trunk (an ellipse about the hips-to-neck line: TRACK_TRUNK_W to the side,
+   * TRACK_TRUNK_D to the front and the back), quickly in and slowly out. elbowOut before it is a nudge by how deep the
+   * elbow is in a capsule, which a capsule narrower than the trunk is wide lets through at the flank.
+   */
+  private elbowClear(arm: THREE.Bone[], T: THREE.Vector3, P: THREE.Vector3): void {
+    const e = arm[0]!.matrixWorld.elements, A = arm[1]!.position, Hd = arm[2]!.position;
+    const sx = e[12]!, sy = e[13]!, sz = e[14]!;
+    let lx = T.x - sx, ly = T.y - sy, lz = T.z - sz;
+    const ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
+    const a2 = A.x * A.x + A.y * A.y + A.z * A.z, b2 = Hd.x * Hd.x + Hd.y * Hd.y + Hd.z * Hd.z, full = Math.sqrt(a2) + Math.sqrt(b2);
+    const c = ll < full ? ll : full, d = ll > 1e-6 ? (a2 - b2 + c * c) / (2 * c) : 0, h2 = a2 - d * d;
+    let px = P.x - sx, py = P.y - sy, pz = P.z - sz;
+    let pl = 0;
+    if (ll > 1e-6) {
+      lx /= ll; ly /= ll; lz /= ll;
+      const pd = px * lx + py * ly + pz * lz;
+      px -= lx * pd; py -= ly * pd; pz -= lz * pd;
+      pl = Math.sqrt(px * px + py * py + pz * pz);
+    }
+    const ease = (to: number): void => {
+      const k = this.dt > 0 ? 1 - Math.exp(-this.dt / (Math.abs(to) > Math.abs(this.swivel) ? TRACK_SWIVEL_IN : TRACK_SWIVEL_OUT)) : 1;
+      this.swivel += (to - this.swivel) * k;
+    };
+    if (ll < 1e-6 || h2 < 1e-4 || pl < 1e-6) { ease(0); return; }
+    px /= pl; py /= pl; pz /= pl;
+    // (the circle's other axis: the line crossed with the pole's side)
+    const qx = ly * pz - lz * py, qy = lz * px - lx * pz, qz = lx * py - ly * px;
+    const h = Math.sqrt(h2), cx = sx + lx * d, cy = sy + ly * d, cz = sz + lz * d;
+    // The trunk: the hips-to-neck line, the shoulders' line across it, and the way out of the chest.
+    const Hh = this.hips.matrixWorld.elements, N = this.neck.matrixWorld.elements, Sl = this.armL[0]!.matrixWorld.elements, Sr = this.armR[0]!.matrixWorld.elements;
+    const hx = Hh[12]!, hy = Hh[13]!, hz = Hh[14]!;
+    const ax = N[12]! - hx, ay = N[13]! - hy, az = N[14]! - hz, al2 = ax * ax + ay * ay + az * az;
+    if (al2 < 1e-6) { ease(0); return; }
+    let ox = Sl[12]! - Sr[12]!, oy = Sl[13]! - Sr[13]!, oz = Sl[14]! - Sr[14]!;
+    const od = (ox * ax + oy * ay + oz * az) / al2;
+    ox -= ax * od; oy -= ay * od; oz -= az * od;
+    const ol = Math.sqrt(ox * ox + oy * oy + oz * oz);
+    if (ol < 1e-6) { ease(0); return; }
+    ox /= ol; oy /= ol; oz /= ol;
+    const al = Math.sqrt(al2);
+    const fx = (oy * az - oz * ay) / al, fy = (oz * ax - ox * az) / al, fz = (ox * ay - oy * ax) / al;
+    // How far inside the trunk's ellipse the elbow is, turned by `t` (under 1: inside).
+    const at = (t: number): number => {
+      const ct = Math.cos(t) * h, st = Math.sin(t) * h;
+      const x = cx + px * ct + qx * st - hx, y = cy + py * ct + qy * st - hy, z = cz + pz * ct + qz * st - hz;
+      const u = (x * ax + y * ay + z * az) / al2;
+      if (u < TRACK_TRUNK_LO || u > TRACK_TRUNK_HI) return 2;
+      const w = (x * ox + y * oy + z * oz) / TRACK_TRUNK_W, f = (x * fx + y * fy + z * fz) / TRACK_TRUNK_D;
+      return w * w + f * f;
+    };
+    let need = 0;
+    if (at(0) < 1) {
+      // The first clear place either way; the way it already goes is kept unless the other is much the shorter.
+      let up = 0, dn = 0;
+      for (let t = TRACK_SWIVEL_STEP; t <= TRACK_SWIVEL_MAX; t += TRACK_SWIVEL_STEP) { if (at(t) >= 1) { up = t; break; } }
+      for (let t = TRACK_SWIVEL_STEP; t <= TRACK_SWIVEL_MAX; t += TRACK_SWIVEL_STEP) { if (at(-t) >= 1) { dn = t; break; } }
+      if (up === 0 && dn === 0) need = this.swivel;
+      else if (dn === 0) need = up;
+      else if (up === 0) need = -dn;
+      else if (this.swivel > 0.02) need = dn + TRACK_SWIVEL_KEEP < up ? -dn : up;
+      else if (this.swivel < -0.02) need = up + TRACK_SWIVEL_KEEP < dn ? up : -dn;
+      else need = up <= dn ? up : -dn;
+    }
+    ease(need);
+    const t = this.swivel;
+    if (Math.abs(t) < 1e-4) return;
+    const ct = Math.cos(t) * pl, st = Math.sin(t) * pl;
+    P.x = cx + px * ct + qx * st; P.y = cy + py * ct + qy * st; P.z = cz + pz * ct + qz * st;
+  }
+
+  /**
    * A hand target no nearer its shoulder than ARM_MIN of the arm's length. A key blend can pass the hand through the
    * shoulder (a left-hander's slice put the free hand 2 cm from it, a backhand's recovery the racket hand), and
    * there the line from the shoulder to the hand turns over in a frame, the whole arm with it. So the way from the
@@ -5628,6 +5759,7 @@ export class Avatar {
     this.tgt.add(ep);
     this.outOfTrunk(this.tgt);
     this.elbowOut(this.armRacket, this.tgt, this.pole);
+    if (this.fam.track) this.elbowClear(this.armRacket, this.tgt, this.pole); else this.swivel = 0;
     IK_TURN[0] = this.racketSideLimit();
     hingeIK(ua, fa, hand, this.tgt, this.pole, this.elbowRacket);
     IK_TURN[0] = this.dt > 0 ? ELBOW_SIDE_RATE * this.dt : Math.PI;
