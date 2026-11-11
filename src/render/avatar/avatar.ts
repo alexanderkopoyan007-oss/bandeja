@@ -1134,6 +1134,8 @@ export class Avatar {
   /** Smash jump: how far the ball is above the arm's reach (m, from the legs' solve), and the hop under way. */
   private upNeed = 0;
   private jumpH = 0;
+  /** How high the jump has this player at the ball it is going up for (smashJump; 0 with none coming). */
+  private liftBall = 0;
   private jumpT0 = -1;
   private jumpT = 0;
   private landAt = -1;
@@ -1426,6 +1428,9 @@ export class Avatar {
   private readonly finKey: Key = { p: new THREE.Vector3(), q: new THREE.Quaternion(), pole: new THREE.Vector3(), yaw: 0, off: new THREE.Vector3() };
   /** A track's key (trackKey): the racket shoulder in the stance's frame, the turn onto this ball and its share, and the trunk's lean the track has now. */
   private readonly trSh = new THREE.Vector3();
+  private readonly trAt = new THREE.Vector3();
+  /** How far the legs took the racket shoulder from where the stroke measured it (racketSh), last frame (world). */
+  private readonly shLegs = new THREE.Vector3();
   private readonly trA = new THREE.Vector3();
   private readonly trB = new THREE.Vector3();
   private readonly trTurn = new THREE.Quaternion();
@@ -2364,19 +2369,37 @@ export class Avatar {
    * The stroke's key off its track (clipStroke.ts) at `tau` seconds from the ball. The racket and the elbow are kept as the
    * clip has them from the racket shoulder, and by `g` (0 the clip's own, 1 at the ball) that shape is turned about the
    * shoulder and stretched so the racket's centre at the ball is this contact's: a higher ball is the same swing swung
-   * higher. The shoulder is last frame's (this frame's trunk isn't turned yet); the turn is worked out from the same one,
-   * so at the ball the key is the contact whatever the shoulder did.
+   * higher. The shoulder is last frame's (this frame's trunk isn't turned yet), as it was drawn; the turn is worked out
+   * from the same one, so at the ball the key is the contact whatever the shoulder did.
    */
   private trackKey(tr: StrokeTrack, tau: number, g: number): void {
     const k = this.contactKey();
     sampleTrack(tr, tau);
     const sh = this.trSh, rs = this.racketSh;
     if (rs.x === 0 && rs.y === 0 && rs.z === 0) sh.copy(TS.sh);
-    else this.toModel(rs, sh);
+    else {
+      // The shoulder as it is drawn: racketSh is taken before the legs lean the hips to the ball and stand them up
+      // (solveLegs), 17 cm from the drawn one at a smash's full reach, and a swing hung from there sat that far off the
+      // arm: the drop's hand 0.4 m behind the chest. (What solveArms adds of it after the ball is left to it.)
+      const c = this.stanceC, s = this.stanceS, L = this.shLegs, u = 1 - this.finishU;
+      this.toModel(rs, sh);
+      sh.x += (L.x * c - L.z * s) * u; sh.y += L.y * u; sh.z += (L.x * s + L.z * c) * u;
+    }
     const part = this.trPart.identity();
     let stretch = 1;
     if (g > 0) {
-      const c1 = this.trA.copy(k.p).sub(sh), l1 = c1.length();
+      // The turn and the stretch are the ball's from where the shoulder will be when it is met, not from where it is on
+      // the way: the trunk's own way there (the track's shoulder, as the trunk takes its tilt) and what is left of a
+      // jump's rise. From the shoulder of the moment, a smash's swing 0.2 s out (the shoulder 0.35 m under where it
+      // meets the ball: the jump just begun, the racket shoulder still the low one) was stretched by a half, the hand
+      // half a metre behind the spine on a straight arm where the clip has it folded by the neck.
+      const at = this.trAt.copy(sh);
+      if (tau < 0) {
+        at.x += tr.sh0.x - TS.sh.x;
+        at.y += (tr.sh0.y - TS.sh.y) * TRACK_TILT + this.liftBall - this.lift;
+        at.z += tr.sh0.z - TS.sh.z;
+      }
+      const c1 = this.trA.copy(k.p).sub(at), l1 = c1.length();
       if (l1 > 1e-4 && tr.c0len > 1e-4) {
         this.trTurn.setFromUnitVectors(this.trB.copy(tr.c0).multiplyScalar(1 / tr.c0len), c1.multiplyScalar(1 / l1));
         part.slerp(this.trTurn, g);
@@ -3310,6 +3333,7 @@ export class Avatar {
       this.clearOff.set(0, 0, 0);
       this.elbowPush.set(0, 0, 0); this.elbowPushTo.set(0, 0, 0);
       this.racketQOk = false;
+      this.shLegs.set(0, 0, 0);
       // (the next fade starts afresh, not from a frame long gone)
       this.fadeOk.fill(0);
     }
@@ -3872,9 +3896,10 @@ export class Avatar {
    * knees. Adds to lift and splitDrop (after splitStep). The feet leave their locks as the clip's soles leave the floor.
    */
   private smashJump(t: number): void {
+    this.liftBall = 0;
     if (this.jumpT0 >= 0) {
       const u = (t - this.jumpT0) / this.jumpT;
-      if (u >= 0 && u < 1) { this.lift += 4 * this.jumpH * u * (1 - u); return; }
+      if (u >= 0 && u < 1) { this.lift += 4 * this.jumpH * u * (1 - u); if (u < 0.5) this.liftBall = this.jumpH; return; }
       this.landAt = u >= 1 ? this.jumpT0 + this.jumpT : -1;
       this.jumpT0 = -1;
     }
@@ -3890,6 +3915,7 @@ export class Avatar {
     const h = Math.min(((fam === SMASH ? JUMP_MAX : JUMP_MAX_OH) + this.jumpMore) * this.legK, this.upNeed - JUMP_TOES);
     if (h < 0.03) return;
     const T = 2 * Math.sqrt((2 * h) / 9.81);
+    this.liftBall = h;
     if (t < tc - T / 2) {
       // The knees load before a smash's jump (on video 93 and 67 degrees about 0.65 s before the hit, then straight).
       const v = (t - (tc - T / 2 - JUMP_DIP_TIME)) / JUMP_DIP_TIME;
@@ -5373,6 +5399,10 @@ export class Avatar {
     AQ[0]!.copy(ua.quaternion); AQ[1]!.copy(fa.quaternion); AQ[2]!.copy(hand.quaternion);
     AQ[3]!.copy(this.armFree[0]!.quaternion); AQ[4]!.copy(this.armFree[1]!.quaternion); AQ[5]!.copy(this.armFree[2]!.quaternion);
     const ready = this.readyKey;
+    {
+      const m = ua.matrixWorld.elements;
+      this.shLegs.set(m[12]! - this.racketSh.x, m[13]! - this.racketSh.y, m[14]! - this.racketSh.z);
+    }
     // Where the animation has the racket, pulled to the ready position, then to the stroke's key (world).
     this.racket.updateMatrixWorld();
     v1.setFromMatrixPosition(this.racket.matrixWorld);

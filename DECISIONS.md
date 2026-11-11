@@ -4603,3 +4603,34 @@ Six seeds of 100 s with the tracks on (`TRACKS=public/assets/mocap-local/tracks 
 - Checked: `TRACKS=... anim-check` six seeds 100 s: pops 10.4-21.0 a minute with seven tracks against 10.2-21.9 with six (threshold
   30); no clip smash over 2.2 cm; the suite.
 
+## The clip smash's arm, on the chest it belongs to (2026-11-11, owner: "look at where that arm goes, not realistic at all")
+The owner's frames of the clip smash had the racket arm folded behind the back and the racket out at the far hip. Measured in the
+chest's own frame (the shoulders' line, the spine, forward): through the drop the upper arm 80-100 degrees behind the chest's
+plane and the hand half a metre behind the spine on a straight arm, where the clip has the elbow folded and the hand 0.17 m
+behind the shoulder. Three causes, none of them the clip:
+- **The turn was re-based and the arm was not** (the entry above: "the arm and the racket are not turned with it"). The chest came
+  round 88 degrees under an arm left where a side-on player had it. `keys.py TURN=` now turns everything the trunk carries with
+  the trunk. The ball's turn went from 0.05 to -0.4: with the arm on the chest the racket's way through the ball turns with it
+  (45 degrees across the net's line at 0.05, 27 at -0.4, 10 at -0.8).
+- **The swing was stretched to a ball the shoulder had not risen to yet.** trackKey turns and stretches the clip's arm-and-racket
+  shape so that at the ball the racket is on it, and worked that out from the shoulder of the moment: 0.2 s out a smash's shoulder
+  is 0.35 m under where it meets the ball (the jump just begun, the racket shoulder still the low one), so the shape was stretched
+  by a half. It is worked out now from where the shoulder will be at the ball: the track's own shoulder from here to its ball (the
+  height by TRACK_TILT, as the trunk takes the tilt) and what is left of the jump's rise (`liftBall`, smashJump). The stretch
+  through a smash: 1.49 at most before, 0.98-1.05 after.
+- **The swing hung from a shoulder that is not the drawn one.** `racketSh` is taken before solveLegs leans the hips to the ball
+  and stands them up: 10 cm from the drawn shoulder through an overhead's hold, 17 at a smash's full reach (the reach is what
+  makes up the game's contact being further out than an arm). Every track's swing sat that far off its arm. The legs' part of
+  the shoulder's place is kept from the frame before (`shLegs`) and the shape hung from the shoulder as drawn; after the ball
+  solveArms already carried the key with the shoulder by `finishU`, so trackKey adds the rest. All seven tracks.
+- Checked: six smashes (both hands): the upper arm at most 34 degrees behind the chest's plane while raised (44 once, low, in the
+  follow-through), the hand 0.22-0.28 m behind the chest at the drop (the clip: 0.25), the wrist under 95. `anim-check` six seeds
+  100 s with seven tracks: pops 11.6-20.1 a minute (10.4-21.0 before), smashes 2.0 cm or under, the furthest contacts the keyed
+  strokes' own (the same without tracks). clipStroke.test.ts: held at the take-back the racket is where the track has it from
+  the drawn shoulder (median 2.1 cm, a frame's lag; 5.9 from the measured one), and the track strokes' racket to ball p90 0.6 cm
+  (1.6). Looked at from the net's side and from behind (tools/out/yt/film.mjs, AZ=).
+- **My interpretation, for the next clip:** a track is a body, not a racket path. Whatever is done to the trunk at export is done to
+  everything on it, and a pose is judged in the chest's frame from two sides before it is shown (the 31 Oct overheads said the
+  same of the keyed arms).
+
+

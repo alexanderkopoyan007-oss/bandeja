@@ -144,7 +144,8 @@ describe('a stroke drawn by a clip', () => {
     for (const v of av) scene.add(v.root);
     const NONE = [null, null, null, null];
     const racket = new THREE.Vector3(), was = av.map(() => new THREE.Vector3());
-    const drawn: number[] = [];
+    const drawn: number[] = [], hung: number[] = [];
+    const sh = new THREE.Vector3(), key = new THREE.Vector3(), shape = new THREE.Vector3();
     let seen = 0, nan = 0;
     for (let k = 0; k < 120 * 150; k++) {
       m.step(NONE);
@@ -160,6 +161,18 @@ describe('a stroke drawn by a clip', () => {
       }
       for (let i = 0; i < 4; i++) av[i]!.update(m, m.players[i]!, i, 1, m.time);
       for (let i = 0; i < 4; i++) was[i]!.copy(racket.setFromMatrixPosition(av[i]!.racket.matrixWorld));
+      // Held at the take-back's end, the racket is where the track has it from the racket shoulder as that shoulder is drawn.
+      for (const v of av) {
+        const A = v as unknown as { fam: Family; st: number; keyS: number; w: number; kp: THREE.Vector3; armRacket: THREE.Bone[]; stanceQ: THREE.Quaternion;
+          toWorld(m: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 };
+        const tr = A.fam.track;
+        if (!tr || A.st !== 1 || A.keyS !== 0 || A.w < 0.999) continue;
+        A.armRacket[0]!.updateWorldMatrix(true, false);
+        sh.setFromMatrixPosition(A.armRacket[0]!.matrixWorld);
+        sampleTrack(tr, -tr.lead);
+        shape.copy(TS.p).sub(TS.sh).applyQuaternion(A.stanceQ);
+        hung.push(A.toWorld(A.kp, key).sub(sh).distanceTo(shape));
+      }
       if (k % 60 === 0) for (const v of av) v.root.traverse((o) => { if (!Number.isFinite(o.quaternion.w) || !Number.isFinite(o.position.x)) nan++; });
     }
     drawn.sort((x, y) => x - y);
@@ -169,5 +182,13 @@ describe('a stroke drawn by a clip', () => {
     expect(drawn.length).toBeGreaterThan(4);
     expect(q(0.5)).toBeLessThan(0.04);
     expect(q(0.9)).toBeLessThan(0.2);
+    // Hung from the shoulder the stroke measures before the legs lean the hips in and stand them up, the swing sat where
+    // that shoulder was: 10 cm off the drawn one through an overhead's hold, 17 by its ball.
+    hung.sort((x, y) => x - y);
+    process.stderr.write(`held at the take-back: ${hung.length} frames, off the drawn shoulder's place median ${hung[hung.length >> 1]!.toFixed(3)} p90 ${hung[Math.floor(hung.length * 0.9)]!.toFixed(3)} m\n`);
+    expect(hung.length).toBeGreaterThan(20);
+    // (0.021 and 0.033 m: a frame's lag; 0.059 and 0.073 from the measured shoulder)
+    expect(hung[hung.length >> 1]!).toBeLessThan(0.04);
+    expect(hung[Math.floor(hung.length * 0.9)]!).toBeLessThan(0.05);
   }, 120000);
 });

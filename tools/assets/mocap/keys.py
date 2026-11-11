@@ -94,15 +94,15 @@ if os.environ.get('TRACK'):
     a, b = int(round((tc - lead) * fps)), int(round((tc + follow) * fps))
     assert a >= 0 and b < F, ('the clip runs %.2f s before the contact and %.2f after' % (tc, (F - 1) / fps - tc))
     yaw, hyaw = np.unwrap(yaw), np.unwrap(hyaw)
-    # TURN=back,ball,finish[,bow at the ball]: the shoulders' turn re-based: the given turns at the take-back's end, the ball
-    # and the finish (the ball's is the keyed stroke's, strokes.ts: the one that reaches the game's ball), the clip's own turn
-    # kept as the change between them, and the trunk's bow taken to the given one at the ball. For a clip whose body meets
-    # its ball elsewhere than the game's does: a kick smash is hit side-on, leaning back, the ball over the head
-    # (yRiT052FmVw: 85 degrees from the net at the ball), and the game's smash 0.6 m out in front of a player square to the
-    # net; as the clip has it the racket shoulder was 1.06 m from that ball (reach 0.87). The arm and the racket stay where
-    # the clip has them about the stance: they already swing at the net (turned round with the chest, the racket crossed
-    # the body at the ball, 60 degrees off the net), and the racket's drop, behind the side-on player's back, is behind
-    # the squarer one's too.
+    # TURN=back,ball,finish[,bow at the ball]: the player turned to another heading: the shoulders' turn re-based to the given
+    # turns at the take-back's end, the ball and the finish (the clip's own turn kept as the change between them), the
+    # trunk's bow taken to the given one at the ball, and everything the trunk carries (the racket arm, the racket, the
+    # free hand) turned about the stance with it, frame by frame: the arm stays where the clip has it on the chest. For a
+    # clip whose body meets its ball elsewhere than the game's does: a kick smash is hit side-on, leaning back, the ball
+    # over the head (yRiT052FmVw: 85 degrees from the net at the ball), the game's smash 0.6 m out in front; as the clip
+    # has it the racket shoulder was 1.06 m from that ball (reach 0.87). Turning the shoulders alone (11 Nov, the first
+    # go) left the arm where the side-on player had it while the chest came round under it: through the drop the upper
+    # arm stood 80-100 degrees behind the chest's plane, the hand half a metre behind the spine, the racket at the far hip.
     if os.environ.get('TURN'):
         from scipy.interpolate import PchipInterpolator
         tn = [float(x) for x in os.environ['TURN'].split(',')]
@@ -114,6 +114,10 @@ if os.environ.get('TRACK'):
         after = tn[1] + (tn[2] - tn[1]) * np.clip((yaw - yaw[ic]) / (yaw[b] - yaw[ic]), 0, 1)
         dy = np.where(fr > ic, after - yaw, dy)
         yaw, hyaw = yaw + dy, hyaw + dy
+        about = Rot.from_euler('y', dy)  # (+ to the left, as the turn is counted)
+        centre, elbow, off = stance + about.apply(centre - stance), stance + about.apply(elbow - stance), stance + about.apply(off - stance)
+        pos[:, IX[side + 'Arm']] = stance + about.apply(pos[:, IX[side + 'Arm']] - stance)
+        R = about.as_matrix() @ R
         print('TRACK turn re-based: %+.2f, %+.2f, %+.2f rad added at the take-back, the ball, the finish' % (dy[a], dy[ic], dy[b]))
         if len(tn) > 3:
             x = np.clip(np.where(fr <= ic, (fr - a) / max(ic - a, 1), (b - fr) / max(b - ic, 1)), 0, 1)

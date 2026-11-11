@@ -34,6 +34,8 @@ export interface StrokeTrack {
   /** The racket's centre from the racket shoulder at the ball, and how far that is. */
   c0: THREE.Vector3;
   c0len: number;
+  /** The racket shoulder at the ball (about the stance). */
+  sh0: THREE.Vector3;
 }
 
 export interface TrackJson {
@@ -47,10 +49,10 @@ export const TS = {
   yaw: 0.5, tilt: 0.5, bow: 0.5, hipsY: 0.5,
 };
 
-function finish(t: Omit<StrokeTrack, 'c0' | 'c0len'>): StrokeTrack {
+function finish(t: Omit<StrokeTrack, 'c0' | 'c0len' | 'sh0'>): StrokeTrack {
   const i = Math.round(t.lead * t.fps) * 3;
   const c0 = new THREE.Vector3(t.p[i]! - t.sh[i]!, t.p[i + 1]! - t.sh[i + 1]!, t.p[i + 2]! - t.sh[i + 2]!);
-  return { ...t, c0, c0len: c0.length() };
+  return { ...t, c0, c0len: c0.length(), sh0: new THREE.Vector3(t.sh[i]!, t.sh[i + 1]!, t.sh[i + 2]!) };
 }
 
 export function parseTrack(j: TrackJson): StrokeTrack {

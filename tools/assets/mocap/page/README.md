@@ -120,7 +120,14 @@ Then: `from_page.py <session .jsonl> <clip folder>`, `one_camera.py <clip folder
   against black shorts: placed between 706 and 790.
 - **A kick smash is not the game's smash.** He hits it side-on (the shoulders 85 degrees from the net at the ball), leaning back,
   the ball over his head; the game's smash is met 0.6 m out in front. As the clip has it the racket shoulder was 1.06 m from the
-  game's ball (reach 0.87). `TURN=-1.6,0.05,0.3,0 keys.py` re-bases the shoulders' turn (the keyed smash's at the ball) and takes
-  the bow to nothing at the ball; the arm and the racket stay as the clip has them about the stance (they already swing at the net).
-  `TURN=-1.6,0.05,0.3,0 TRACK=public/assets/mocap-local/tracks/smash.json LEAD=0.32 FOLLOW=0.45 keys.py public/assets/mocap-local/yt-smash.json 0`.
+  game's ball (reach 0.87). `TURN=back,ball,finish,bow keys.py` turns the player to another heading: the shoulders' turn re-based
+  (the clip's own change kept either side of the ball), the bow taken to nothing at the ball, and **the racket, the elbow, the
+  racket shoulder and the free hand turned about the stance with it**, so the arm stays where he has it on his chest. The first
+  go (owner, 11 Nov: "look at where that arm goes, not realistic at all") turned the shoulders alone: through the drop the upper
+  arm stood 80-100 degrees behind the chest's plane. The ball's turn is -0.4 (the chest 23 degrees short of square): the racket
+  goes through the ball 27 degrees across the net's line (45 at 0.05, 10 at -0.8; his own is 45 the other way).
+  `TURN=-1.6,-0.4,0.3,0 TRACK=public/assets/mocap-local/tracks/smash.json LEAD=0.32 FOLLOW=0.45 keys.py public/assets/mocap-local/yt-smash.json 0`.
+  Check a track's arm in the chest's own frame before wiring it: `ROM=1 node tools/out/yt/vib-dbg.ts <seed> <player> <t>` (scratch)
+  prints the upper arm's elevation and its angle off the chest's plane, the hand and the racket from the shoulder; the clip's own
+  come from keys.py's bones the same way.
 
