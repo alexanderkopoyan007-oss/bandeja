@@ -16,7 +16,10 @@ until they play in the game ("i just need to see the end"). Solo, no agents. Gol
   down across after it) and backhand volley `jRkQB25IGPw` -> `yt-volley-bh.json` (contact 1.1 s of 1.42, 0.79 m up); tracks lead 0.3,
   follow 0.3: VOLLEY_FH and VOLLEY_BH behind `?motion=3`. A track-drawn volley follows through as the clip does (the coded one stops
   short by the ball: `wrist` goes with the other shaping).
-- [ ] smash, serve: next, the same way.
+- [ ] smash, serve: **no usable clip yet** (11 Nov). Tried `EVErNSuvpmE` (EverythingPadel, flat smash), `5l0vMSN2Mek` and `m996plIjcz0`
+  (The Padel School): talk-throughs with swings at real speed (8 blurred frames a swing at 25 fps) and match footage from far off, no
+  slow-motion breakdown; the serve search turned up only `gvxuqyt_hn0` (tips, the same format). Both stay the coded keys (the smash is
+  the chest-frame throw, the serve the toss-timed one) until a slow-motion clip of each is found or the owner names one.
 - For each: frame differences + ball (which frames move, the slowing from the ball's fall), pose on the moving frames, the racket by eye
   (about 25 cut-outs), `from_page.py`, `one_camera.py`, `retarget.py`, then `keys.py <clip>` for the stroke in strokes.ts's terms.
 
@@ -35,7 +38,8 @@ can't: the trunk's own timing (hips before shoulders), the head, the free arm's 
    Everything after the key is the avatar's own as before (the IK, the hips' reach, the feet, the body's turn, the head on the ball).
    The clip's legs and steps are not used: the game's feet go where the sim's player goes.
 3. Still to do if the owner takes it: the tracks as shipped assets beside player.bnz (they are 9 KB each as JSON), and the other
-   strokes (backhand, volleys, smash, serve, the forehand's lob / slice / topspin variants are still the coded keys).
+   strokes (smash, serve, and the lob / slice / drop / chiquita / off-the-glass variants are still the coded keys; the backhand and both
+   volleys were added 11 Nov).
 4. Checked: `tests/render/clipStroke.test.ts` (tracks made from the coded keys still meet the ball, either hand); the suite (the default
    path untouched: no track, no branch taken); `TRACKS=public/assets/mocap-local/tracks node tools/anim-check.ts m3 100 6` against the
    same without: racket to ball p50 0.6-0.9 cm either way, pops 10.8-18.2 a minute against 11.0-17.6 (threshold 30), no knee spins;

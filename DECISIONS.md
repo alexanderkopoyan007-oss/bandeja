@@ -4538,3 +4538,16 @@ then in the game behind a switch. docs/motion-clips-plan.md has the steps; tools
   coded strokes. Known: the racket passes 2-4 cm deeper into the trunk on some follow-throughs than the coded strokes did
   (anim-check, six seeds); alloc and perf not measured with the switch on.
 
+
+## The rest of the strokes from clips: backhand and volleys in, smash and serve not yet (2026-11-11)
+
+The owner, 10 Nov: "fix the rest of the shots", then the look pass. Behind `?motion=3` the forehand, backhand, both volleys, the vibora
+and the bandeja are now drawn by tracks measured off The Padel School's slow-motion breakdowns (2bdb955, 9c796e5).
+
+- **The smash and the serve stay coded.** Three smash clips and the one serve clip found are talk-throughs at real speed; a swing is
+  eight blurred frames there, and a track made of them would be a guess wearing a measurement's name. They wait for a slow-motion clip.
+- **Variants stay coded** (lob, slice, drop, chiquita, contrapared): they are copies of the base families made when the module loads,
+  with their own finishes; a track on the base does not reach them. Giving each its own track needs its own clip.
+- **A track-drawn volley follows through as the pro's does** (a chop down across the body), where the coded volley stops short by
+  the ball. It reads as a real slice volley; the cost is the hand passing closer to the trunk (hand in torso up to 7.8 cm, as before).
+- Known, not fixed: one vibora a seed meets the ball 11-12 cm off with its track on (2.5 cm without, seed 1).
