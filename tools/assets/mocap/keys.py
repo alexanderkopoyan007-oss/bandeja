@@ -84,10 +84,6 @@ for t in ts:
 # (s): how long before the contact the forward swing is taken from, and how long after it the follow-through runs.
 if os.environ.get('TRACK'):
     lead, follow = float(os.environ.get('LEAD', 0.2)), float(os.environ.get('FOLLOW', 0.4))
-    quat = Rot.from_matrix(R).as_quat()
-    for f in range(1, F):  # one sign all the way (q and -q are one turn; a slerp between them is not)
-        if quat[f] @ quat[f - 1] < 0:
-            quat[f] = -quat[f]
     neck = pos[:, IX['Neck']]
     xc = np.array([unit(v) for v in sh])
     upc = np.array([unit(u - x * (u @ x)) for u, x in zip(neck - hips, xc)])
@@ -97,11 +93,40 @@ if os.environ.get('TRACK'):
     bow = np.arcsin(np.clip(-fw[:, 1], -1, 1))
     a, b = int(round((tc - lead) * fps)), int(round((tc + follow) * fps))
     assert a >= 0 and b < F, ('the clip runs %.2f s before the contact and %.2f after' % (tc, (F - 1) / fps - tc))
+    yaw, hyaw = np.unwrap(yaw), np.unwrap(hyaw)
+    # TURN=back,ball,finish[,bow at the ball]: the shoulders' turn re-based: the given turns at the take-back's end, the ball
+    # and the finish (the ball's is the keyed stroke's, strokes.ts: the one that reaches the game's ball), the clip's own turn
+    # kept as the change between them, and the trunk's bow taken to the given one at the ball. For a clip whose body meets
+    # its ball elsewhere than the game's does: a kick smash is hit side-on, leaning back, the ball over the head
+    # (yRiT052FmVw: 85 degrees from the net at the ball), and the game's smash 0.6 m out in front of a player square to the
+    # net; as the clip has it the racket shoulder was 1.06 m from that ball (reach 0.87). The arm and the racket stay where
+    # the clip has them about the stance: they already swing at the net (turned round with the chest, the racket crossed
+    # the body at the ball, 60 degrees off the net), and the racket's drop, behind the side-on player's back, is behind
+    # the squarer one's too.
+    if os.environ.get('TURN'):
+        from scipy.interpolate import PchipInterpolator
+        tn = [float(x) for x in os.environ['TURN'].split(',')]
+        ic = int(round(tc * fps))
+        # (into the ball the clip's turn plus a smooth extra; after it the clip's own turn, which mostly comes then, scaled
+        # onto the way left: an extra on top of that one went 50 degrees past the finish and back)
+        fr = np.arange(F)
+        dy = PchipInterpolator([a, ic], [tn[0] - yaw[a], tn[1] - yaw[ic]])(np.clip(fr, a, ic))
+        after = tn[1] + (tn[2] - tn[1]) * np.clip((yaw - yaw[ic]) / (yaw[b] - yaw[ic]), 0, 1)
+        dy = np.where(fr > ic, after - yaw, dy)
+        yaw, hyaw = yaw + dy, hyaw + dy
+        print('TRACK turn re-based: %+.2f, %+.2f, %+.2f rad added at the take-back, the ball, the finish' % (dy[a], dy[ic], dy[b]))
+        if len(tn) > 3:
+            x = np.clip(np.where(fr <= ic, (fr - a) / max(ic - a, 1), (b - fr) / max(b - ic, 1)), 0, 1)
+            bow = bow + (tn[3] - bow[ic]) * x * x * (3 - 2 * x)
+    quat = Rot.from_matrix(R).as_quat()
+    for f in range(1, F):  # one sign all the way (q and -q are one turn; a slerp between them is not)
+        if quat[f] @ quat[f - 1] < 0:
+            quat[f] = -quat[f]
     rnd = lambda x, n=4: np.round(np.asarray(x, float), n).reshape(-1).tolist()
     sl = slice(a, b + 1)
     json.dump({'name': os.path.basename(sys.argv[1]).replace('.json', ''), 'hand': side, 'fps': fps, 'frames': b - a + 1, 'lead': (int(round(tc * fps)) - a) / fps,
                'follow': (b - int(round(tc * fps))) / fps, 'p': rnd(centre[sl] - stance[sl]), 'q': rnd(quat[sl], 5), 'pole': rnd(elbow[sl] - stance[sl]), 'sh': rnd(pos[sl, IX[side + 'Arm']] - stance[sl]),
-               'yaw': rnd(np.unwrap(yaw)[sl]), 'off': rnd(off[sl] - stance[sl]), 'tilt': rnd(tilt[sl]), 'bow': rnd(bow[sl]), 'hipsY': rnd(hips[sl, 1]),
-               'hipYaw': rnd(np.unwrap(hyaw)[sl]), 'speed': rnd(speed[sl], 2)}, open(os.environ['TRACK'], 'w'))
+               'yaw': rnd(yaw[sl]), 'off': rnd(off[sl] - stance[sl]), 'tilt': rnd(tilt[sl]), 'bow': rnd(bow[sl]), 'hipsY': rnd(hips[sl, 1]),
+               'hipYaw': rnd(hyaw[sl]), 'speed': rnd(speed[sl], 2)}, open(os.environ['TRACK'], 'w'))
     print('TRACK', os.environ['TRACK'], b - a + 1, 'frames: %.3f s before the contact, %.3f after; tilt %.2f..%.2f, bow %.2f..%.2f at the contact %.2f, %.2f'
           % ((int(round(tc * fps)) - a) / fps, (b - int(round(tc * fps))) / fps, tilt[sl].min(), tilt[sl].max(), bow[sl].min(), bow[sl].max(), tilt[int(round(tc * fps))], bow[int(round(tc * fps))]))

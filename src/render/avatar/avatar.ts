@@ -2690,7 +2690,20 @@ export class Avatar {
       this.setKey(this.from, this.from, 1);
       const u = smoothstep(this.fadeStart, this.fadeStart + this.fadeLen, t);
       this.w = this.fadeFromW * (1 - u);
-      if (u >= 1) { this.st = ST_NONE; this.w = 0; }
+      if (u >= 1) {
+        this.st = ST_NONE;
+        this.w = 0;
+        // A measured stroke leaves the key the keyed one would have. The next stroke starts from the last one's final key however long
+        // ago that was (none of it shows by then, but its way up to the new take-back begins there): a slice 15 s after a smash that the
+        // clip finishes by the racket-side hip took its racket up from there, through the body, and the arm, pushed clear of it for a
+        // quarter of a second, met the ball 27 cm off (6 after the keyed smash, which finishes in front of the free hip).
+        // (from the ready position instead, for every stroke: that slice the same 6 cm, but a vibora from rest 23.6 cm off where it was 4.4)
+        const c = this.fam.track ? this.fam.coded : undefined;
+        if (c) {
+          this.setKey(c.finish, c.finish, 1);
+          this.kpI.reset(); this.kqI.reset(); this.kpoleI.reset(); this.koffI.reset(); this.kyawI.reset();
+        }
+      }
     } else if (this.st === ST_NONE) {
       this.w = 0;
     }
@@ -4079,7 +4092,8 @@ export class Avatar {
     if (this.gaitH > 0) {
       // The walk's hips: over the foot that is down, lowest with both down.
       const ph = this.gaitPhase, h = this.gaitH;
-      const y = (this.legL[0]!.matrixWorld.elements[13]! + this.legR[0]!.matrixWorld.elements[13]!) * 0.5;
+      // (over the floor the jump has left: see the run's)
+      const y = (this.legL[0]!.matrixWorld.elements[13]! + this.legR[0]!.matrixWorld.elements[13]!) * 0.5 - this.lift;
       const want = this.legLen * WALK_HIP + this.ankleY - WALK_BOB * this.legK * 0.5 * (1 + Math.cos(4 * Math.PI * (ph - (WALK_STANCE - 0.5) / 2)));
       drop += (y - want) * h;
       const sway = WALK_SWAY * h * Math.cos(2 * Math.PI * (ph - WALK_STANCE / 2));
@@ -4087,7 +4101,9 @@ export class Avatar {
       hipZ -= this.stanceS * sway;
     }
     if (this.gaitRunH > 0) {
-      const y = (this.legL[0]!.matrixWorld.elements[13]! + this.legR[0]!.matrixWorld.elements[13]!) * 0.5;
+      // (the hips' height without a jump's lift: a smash jumped out of a run had the run's hips, a height over the floor, pulled back down
+      // by all the jump lifted them while the run faded: 0.13 m at the ball, the feet hanging that much lower and the racket 10-19 cm short)
+      const y = (this.legL[0]!.matrixWorld.elements[13]! + this.legR[0]!.matrixWorld.elements[13]!) * 0.5 - this.lift;
       const fast = smoothstep(RUN_V0, RUN_V1, this.sp), stance = RUN_DUTY0 + (RUN_DUTY1 - RUN_DUTY0) * fast;
       const low = (this.legLen + this.ankleY) * (RUN_HIP0 + (RUN_HIP1 - RUN_HIP0) * fast);
       // (on the feet's own clock, the time since the last landing: gaitPhase is the arms' and lags the landings, and on it the hips rode

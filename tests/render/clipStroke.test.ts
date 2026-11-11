@@ -125,7 +125,7 @@ describe('a stroke drawn by a clip', () => {
   });
 
   it('still meets the ball where the sim struck it, either hand', () => {
-    expect(TRACK_FILES).toEqual(['forehand', 'backhand', 'volley-fh', 'volley-bh', 'vibora', 'bandeja']);
+    expect(TRACK_FILES).toEqual(['forehand', 'backhand', 'volley-fh', 'volley-bh', 'vibora', 'bandeja', 'smash']);
     applyStrokeTrack('forehand', fh);
     applyStrokeTrack('vibora', trackOf('vibora', VIBORA, 0.32, 0.45));
     applyStrokeTrack('bandeja', trackOf('bandeja', OVERHEAD, 0.32, 0.45));

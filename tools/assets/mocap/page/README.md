@@ -95,3 +95,32 @@ Then: `from_page.py <session .jsonl> <clip folder>`, `one_camera.py <clip folder
 - `window.__mkExport(job, SEGS, contact, clip, KT, k)`: `5b-stroke-parts.js` as a function (dedupe threshold 0.2).
 - **Keys either side of a frozen frame are 0.01 s apart**: two readings 15 degrees apart there are 1500 degrees a second to the
   spline, and the racket swung round a loop before them. One of each such pair is kept.
+
+
+## The smash (`yRiT052FmVw`, 11 Nov 2026)
+
+- **A hand-held camera behind the player, close: the feet are out of the picture.** One unbroken slow-motion take (no freezes, no
+  captions). The speed from the jump itself: the hips' rise and fall is 76 frames for a rise of 0.11 m, which gravity makes 0.30 s:
+  a 240 fps camera at 30 (`dt: 1/240`, 8 x). The net's tape stays on one row (586-598 of 1080) and level: the camera is square to
+  the net and looks about 2 degrees down, so `UP=0,0.9994,0.035 FORWARD=0,0,-1`, and `HELD=0.93` (one_camera.py: the hips held over
+  one spot at that height, no foot said to stand: the legs are the tracker's guess, and the game draws its own legs and jump).
+- **The scan re-detects each frame in a square cut round the body** (704 px of the 1080: the body fills the frame and a raised arm
+  left the model's own crop), frames 450-795, every one tracked; the stroke is 566-790, the ball on the strings at 658.
+- **A seek can be answered by the seek before it**: wait 0.7 s after `seeked` before drawing a still for the eye (a sheet drawn at
+  0.15 s showed other frames and read as a camera tilting 10 degrees). `movie_player.pauseVideo()` as well as the video's own pause,
+  autoplay-next off (`.ytp-autonav-toggle-button`), and the scan checks `getVideoData().video_id` each frame: the page went on to
+  another clip in the middle of one.
+- **The tracker's world points squash a raised arm seen from behind** (an upper arm of 0.12-0.20 m from the drop to the
+  follow-through; the length fix then pushed the elbow at the camera): `arm` rows for 622-692 from the picture (the tracker's own
+  picture marks, by eye where it put the wrist on the elbow), depths from the limbs' lengths. The racket's lag settles the side:
+  at 650 the racket hangs from the raised hand, edge on, along the forearm in the picture; a wrist lays back 90 degrees at most, so
+  forearm and racket both lean at the camera (the forearm 26 degrees). Away from it the fit's wrist cost was 23.7.
+- Cut-outs for the racket: two 512-px tiles a call centred on the racket shoulder (`__two(frames, half, up, dx)`, read with
+  `computer zoom` of [0,0,800,400]), 267-364 px to the metre. 646 and 666 are blurs: no key. 706-766: the black racket hangs
+  against black shorts: placed between 706 and 790.
+- **A kick smash is not the game's smash.** He hits it side-on (the shoulders 85 degrees from the net at the ball), leaning back,
+  the ball over his head; the game's smash is met 0.6 m out in front. As the clip has it the racket shoulder was 1.06 m from the
+  game's ball (reach 0.87). `TURN=-1.6,0.05,0.3,0 keys.py` re-bases the shoulders' turn (the keyed smash's at the ball) and takes
+  the bow to nothing at the ball; the arm and the racket stay as the clip has them about the stance (they already swing at the net).
+  `TURN=-1.6,0.05,0.3,0 TRACK=public/assets/mocap-local/tracks/smash.json LEAD=0.32 FOLLOW=0.45 keys.py public/assets/mocap-local/yt-smash.json 0`.
+

@@ -8,7 +8,8 @@
 #   - the racket: keys read by eye off the clip's frames (racket-keys.json), handed on with the camera's line of sight;
 #   - the free hand's direction.
 #   ~/bandeja-mocap/venv/bin/python -I tools/assets/mocap/one_camera.py <clip folder> [out folder]
-#   FOV=35 (the lens, a guess), UP=x,y,z (the floor's up in the camera's frame), FORWARD=0,0,-1 (filmed from behind), HEAD_TILT=-3.
+#   FOV=35 (the lens, a guess), UP=x,y,z (the floor's up in the camera's frame), FORWARD=0,0,-1 (filmed from behind), HEAD_TILT=-3,
+#   HELD=0.93 (the feet out of the picture: the hips held at this height, no foot standing; needs UP).
 # Out (FreeMoCap's layout, in the floor's frame: y up from the floor, x the picture's right, mm):
 #   mediapipe_body_3d_xyz.npy, mediapipe_left_hand_3d_xyz.npy (or right: the free hand's wrist, knuckles' line and
 #   direction only), plants.json, floor.json, racket_keys.json.
@@ -145,11 +146,17 @@ for side, ix in SIDES.items():
     plants[side] = spans
     report.append('%s %s' % (side, ' '.join('%d-%d%s' % (s['a'], s['b'], '' if s['flat'] else '(toe)') for s in spans)))
 print('ONE_CAMERA feet standing (frames):', '; '.join(report))
+# HELD=<m>: the feet are out of the picture (a jump filmed close: the legs are the tracker's guess, and a hand-held camera's
+# picture gives no path): the hips are held at this height over one spot, no foot is said to stand, and UP must be given.
+HELD = float(os.environ['HELD']) if os.environ.get('HELD') else None
+if HELD is not None:
+    assert os.environ.get('UP'), 'HELD needs UP=x,y,z'
+    plants = {}
 
 # ---- the floor: the plane through where they stood ----
 on = []
 for side, ix in SIDES.items():
-    for s in plants[side]:
+    for s in plants.get(side, []):
         on.append(np.median(pts[s['a']:s['b'] + 1, ix['toe']], axis=0))
         if s['flat']:
             on.append(np.median(pts[s['a']:s['b'] + 1, ix['heel']], axis=0))
@@ -181,7 +188,7 @@ pitch = np.degrees(np.arctan2(up[2], up[1]))
 if len(on) >= 2:
     rows_v, rows_s = [], []
     for side, ix in SIDES.items():
-        for s in plants[side]:
+        for s in plants.get(side, []):
             rows_v.append(np.median(img[s['a']:s['b'] + 1, ix['toe'], 1]) - 0.5)
             rows_s.append(np.median(scale[s['a']:s['b'] + 1]))
     if np.ptp(rows_s) > 0.01:
@@ -196,6 +203,9 @@ floor0 = float(np.median(on @ up)) if len(on) else float(np.nanmin(pts[:, [29, 3
 o = root[0]
 w = (pts - o) @ R.T
 w[..., 1] = pts @ up - floor0
+if HELD is not None:
+    w = body @ R.T
+    w[..., 1] += HELD
 os.makedirs(out, exist_ok=True)
 np.save(os.path.join(out, 'mediapipe_body_3d_xyz.npy'), w * 1000)
 json.dump(plants, open(os.path.join(out, 'plants.json'), 'w'))

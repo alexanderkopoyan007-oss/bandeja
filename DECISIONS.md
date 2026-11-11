@@ -4578,3 +4578,28 @@ Six seeds of 100 s with the tracks on (`TRACKS=public/assets/mocap-local/tracks 
 - **Not this:** the keyed smash meets the same ball 3.6 cm off or 12.4 depending on where the hips' bob happens to be when the hop starts (the hips 9 cm lower at the ball after a different rally before it; the hop itself the same 0.288 m). Seen here because tracks change what came before; it is the smash's own, and goes with the smash's track.
 - **Allocation with the tracks on** (`ALLOC_TRACKS=<folder> node tools/alloc-check.mjs 100000 avatars`, new): 6 collections in 100,000 ticks, budget 10.
 - **A slow-motion smash was found** (`yRiT052FmVw`: one por tres from behind, 1080p, 28 s of slow motion in one take; `7wUIstpz450` is another at 360p). Not measured yet: running the pose tracker in the page was refused in this session and waits for the owner's word again. No slow-motion padel serve turned up in three more searches (`LDCDAQEgGQE` is a talk-through, `MTPA1oPcVkc` a 480p compilation).
+
+## The smash from a clip, and a jump that the run took back (2026-11-11)
+- **The smash is drawn by a clip too, behind `?motion=3`** (`tracks/smash.json`, `FAMILIES` in clipStroke.ts): a pro's kick smash off
+  a 240 fps clip filmed from behind him (`yRiT052FmVw`; how it was measured: tools/assets/mocap/page/README.md). The serve is still
+  the keyed one (no slow-motion padel serve found).
+- **The clip's turn is re-based, the rest kept.** He meets the ball side-on and over his head, the game 0.6 m out in front of a player
+  square to the net: with the clip's own turn the racket shoulder was 1.06 m from the ball and every smash 18-22 cm off. `keys.py
+  TURN=` gives the shoulders the keyed stroke's turn at the ball (the clip's own change either side) and no bow there. The arm and the
+  racket are not turned with it: they already swing at the net, and turned with the chest the racket crossed the body at the ball.
+  What is lost: his lean back and his back half turned to the net in the take-back; the racket's loop runs wide behind the free
+  shoulder, as his did behind a body side-on.
+- **A smash jumped out of a run lost its jump at the hips** (the keyed one as well: the 3.6-12.4 cm misses "with the hips' bob" noted
+  before). The run's and the walk's hips are a height over the floor, and were measured with the jump's lift in them, so while the
+  gait faded they pulled the hips back down by all the jump raised them: 0.13 m at the ball, the feet hanging that much lower.
+  `solveLegs` takes the lift out first. Six seeds, 100 s, no tracks: smashes 4.2 / 2.7 / 3.6 / 1.9 cm off before, 1.6 or under
+  after; pops and everything else to the digit the same. With the tracks: smashes 2.2 cm or under (18-22 before the turn and this).
+- **A measured stroke leaves the keyed stroke's last key behind it.** The next stroke starts its way up from the last one's final key
+  however long ago that was. After the clip's smash (finished by the racket-side hip) a slice 15 s later went up through the body,
+  was pushed clear for a quarter of a second and met its ball 27 cm off (6 after the keyed smash). When a measured stroke has faded
+  out, the key is set to its keyed stroke's finish. Tried for every stroke, from the ready position: that slice the same 6 cm, but
+  a vibora from rest 23.6 cm off where it was 4.4, so the keyed strokes are as they were. Open: why a stroke from the ready key can
+  do worse than from a stale one.
+- Checked: `TRACKS=... anim-check` six seeds 100 s: pops 10.4-21.0 a minute with seven tracks against 10.2-21.9 with six (threshold
+  30); no clip smash over 2.2 cm; the suite.
+
