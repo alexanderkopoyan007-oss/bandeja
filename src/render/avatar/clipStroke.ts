@@ -10,7 +10,7 @@
 // Behind ?motion=3 (main.ts loads the tracks when Avatar.motion is 3) until the owner has seen it; the tracks live in public/assets/mocap-local/
 // (not in the repository, not in a build) until then. Without the switch nothing here runs.
 import * as THREE from 'three/webgpu';
-import { BACKHAND, FOREHAND, OVERHEAD, VIBORA, VOLLEY_BH, VOLLEY_FH, leftFamily, type Family, type Key } from './strokes.ts';
+import { BACKHAND, FOREHAND, OVERHEAD, VIBORA, VOLLEY_BH, VOLLEY_FH, keepCoded, leftFamily, type Family, type Key } from './strokes.ts';
 
 export interface StrokeTrack {
   name: string;
@@ -108,15 +108,19 @@ function keyAt(t: StrokeTrack, tau: number): Key {
  * A family drawn by a track from now on: its three keys become the track's own at the take-back's end, the ball and the
  * finish (what the rest of the avatar reads: the hold, the fade, the reach), its times the track's, and the ways the
  * coded swing was shaped (the curve's dip and loop, the overhead's chest-frame arm, the low ball's dropped head) go:
- * the track has them in it. `high` keeps what the avatar did for an overhead besides drawing it.
+ * the track has them in it. `high` keeps what the avatar did for an overhead besides drawing it, `volley` what it did for a
+ * volley (the body going to the ball). The keyed stroke is kept under `coded`: a swing that starts with less than TRACK_RUSH of
+ * the track's lead to its ball (avatar.ts pickFamily) is the keyed one.
  */
 function drawBy(f: Family, t: StrokeTrack): void {
+  keepCoded(f);
   f.back = keyAt(t, -t.lead);
   f.contact = keyAt(t, 0);
   f.finish = keyAt(t, t.follow);
   f.lead = t.lead;
   f.follow = t.follow;
   f.high = f.over !== undefined || f.high === true;
+  f.volley = f.wrist !== undefined || f.volley === true;
   f.dip = 0;
   f.loop = 0;
   delete f.over; delete f.via; delete f.viaS; delete f.byHand; delete f.way; delete f.free; delete f.low; delete f.wrist; delete f.tip; delete f.through;

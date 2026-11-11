@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import { MatchSim, E_HIT } from '../../src/sim/match.ts';
 import { parsePlayerAsset } from '../../src/render/avatar/asset.ts';
 import { Avatar } from '../../src/render/avatar/avatar.ts';
-import { FOREHAND, OVERHEAD, VIBORA, leftFamily, type Family, type Key } from '../../src/render/avatar/strokes.ts';
+import { FOREHAND, OVERHEAD, SMASH, VIBORA, VOLLEY_FH, leftFamily, rightFamily, type Family, type Key } from '../../src/render/avatar/strokes.ts';
 import { TS, TRACK_FILES, applyStrokeTrack, mirrorTrack, parseTrack, sampleTrack, type TrackJson } from '../../src/render/avatar/clipStroke.ts';
 
 const FPS = 60;
@@ -82,6 +82,46 @@ describe('a stroke drawn by a clip', () => {
     expect(TS.q.angleTo(new THREE.Quaternion(q.x, -q.y, -q.z, q.w))).toBeLessThan(1e-4);
     expect(TS.yaw).toBeCloseTo(-yaw, 6);
     expect(m.c0.x).toBeCloseTo(-t.c0.x, 6);
+  });
+
+  it('keeps the keyed stroke beside the track, and a volley a volley', () => {
+    const wrist = VOLLEY_FH.wrist;
+    expect(wrist).toBeDefined();
+    applyStrokeTrack('volley-fh', trackOf('volley-fh', VOLLEY_FH, 0.3, 0.3));
+    for (const f of [VOLLEY_FH, leftFamily(VOLLEY_FH)]) {
+      // (the track took the hand's place; the legs and the trunk still go to the ball as a volley's do)
+      expect(f.wrist).toBeUndefined();
+      expect(f.volley).toBe(true);
+      expect(f.coded).toBeDefined();
+      expect(f.coded!.track).toBeUndefined();
+      expect(f.coded!.wrist).toBeDefined();
+      expect(f.coded!.coded).toBeUndefined();
+      expect(rightFamily(f.coded!)).toBe(VOLLEY_FH);
+    }
+    expect(VOLLEY_FH.coded!.wrist).toBe(wrist);
+    // (handed over again: still the keyed stroke, not the track before)
+    const kept = VOLLEY_FH.coded;
+    applyStrokeTrack('volley-fh', trackOf('volley-fh', VOLLEY_FH, 0.3, 0.3));
+    expect(VOLLEY_FH.coded).toBe(kept);
+    expect(kept!.track).toBeUndefined();
+  });
+
+  it('gives a swing picked too late for its track the keyed stroke', () => {
+    applyStrokeTrack('vibora', trackOf('vibora', VIBORA.coded ?? VIBORA, 0.32, 0.45));
+    applyStrokeTrack('bandeja', trackOf('bandeja', OVERHEAD.coded ?? OVERHEAD, 0.32, 0.45));
+    const m = new MatchSim({ seed: 2, doubles: true, human: [false, false, false, false] });
+    const idx = (m.score.serverPlayer() + 1) % 4;
+    const av = new Avatar(asset(), 0xffffff) as unknown as { pickFamily(sim: MatchSim, p: unknown, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number, contra?: boolean, left?: number): Family };
+    const c = new THREE.Vector3(0, 2.2, 5);
+    const pick = (left?: number): Family => av.pickFamily(m, m.players[idx]!, idx, c, true, false, 1, false, left);
+    const f = pick();
+    expect(rightFamily(f)).not.toBe(SMASH);
+    expect(f.track).toBeDefined();
+    expect(pick(1)).toBe(f);
+    expect(pick(f.track!.lead * 0.7)).toBe(f);
+    // (0.135 s to a ball by the ear was met 11 cm off, the elbow at its rate's stop: under 0.6 of the lead it is the keyed one)
+    expect(pick(f.track!.lead * 0.5)).toBe(f.coded);
+    expect(pick(0)).toBe(f.coded);
   });
 
   it('still meets the ball where the sim struck it, either hand', () => {

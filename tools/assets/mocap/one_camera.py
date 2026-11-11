@@ -8,6 +8,7 @@
 #   - the racket: keys read by eye off the clip's frames (racket-keys.json), handed on with the camera's line of sight;
 #   - the free hand's direction.
 #   ~/bandeja-mocap/venv/bin/python -I tools/assets/mocap/one_camera.py <clip folder> [out folder]
+#   FOV=35 (the lens, a guess), UP=x,y,z (the floor's up in the camera's frame), FORWARD=0,0,-1 (filmed from behind), HEAD_TILT=-3.
 # Out (FreeMoCap's layout, in the floor's frame: y up from the floor, x the picture's right, mm):
 #   mediapipe_body_3d_xyz.npy, mediapipe_left_hand_3d_xyz.npy (or right: the free hand's wrist, knuckles' line and
 #   direction only), plants.json, floor.json, racket_keys.json.
@@ -201,7 +202,9 @@ json.dump(plants, open(os.path.join(out, 'plants.json'), 'w'))
 # (head_tilt_deg: retarget.py's lift of the head from the line ears to nose; 13 with real 3D points, 16 less here)
 # (forward: the way to the camera along the floor. These clips are filmed from the net's side, and a stroke's forward is
 # the net, whichever way the player happens to stand as the clip starts: here 40 degrees round already.)
-json.dump({'up': [0, 1, 0], 'y': 0, 'forward': [0, 0, 1], 'note': up_note, 'camera_pitch_deg': round(float(pitch), 2), 'fov_deg': FOV,
+# FORWARD=0,0,-1: a clip filmed from behind the player (the net beyond them): forward is away from the camera.
+forward = [float(x) for x in os.environ['FORWARD'].split(',')] if os.environ.get('FORWARD') else [0, 0, 1]
+json.dump({'up': [0, 1, 0], 'y': 0, 'forward': forward, 'note': up_note, 'camera_pitch_deg': round(float(pitch), 2), 'fov_deg': FOV,
            'head_tilt_deg': float(os.environ.get('HEAD_TILT', -3))}, open(os.path.join(out, 'floor.json'), 'w'))
 hipw = (w[:, 23] + w[:, 24]) / 2
 print('ONE_CAMERA hips travel: %.2f m across, %.2f m towards the camera, height %.2f to %.2f m'

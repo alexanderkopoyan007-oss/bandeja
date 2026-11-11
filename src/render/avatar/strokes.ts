@@ -92,6 +92,10 @@ export interface Family {
   track?: StrokeTrack;
   /** An overhead whose track took its chest-frame arm (`over`): what else the avatar does for an overhead still holds. */
   high?: boolean;
+  /** The keyed stroke a track replaced (clipStroke.ts), kept for the ball a measured swing has no time for. */
+  coded?: Family;
+  /** A volley whose track took its hand's place (`wrist`): the body still goes to the ball as a volley's does (the legs down under a low one, the trunk to a wide one). */
+  volley?: boolean;
 }
 
 const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
@@ -622,6 +626,15 @@ export function leftFamily(f: Family): Family {
  * then missed by 25-37 cm: review round 3, critic #2). */
 export function rightFamily(f: Family): Family {
   return RIGHT.get(f) ?? f;
+}
+
+/** A family as it stands, kept beside it under `coded` before a track replaces its keys (clipStroke.ts). The copy counts as
+ * the same family (rightFamily). Once only: a track handed over again keeps the keyed stroke, not the track before. */
+export function keepCoded(f: Family): void {
+  if (f.coded) return;
+  const c = { ...f };
+  RIGHT.set(c, rightFamily(f));
+  f.coded = c;
 }
 
 export const READY_LEFT: Key = mirrorKey(READY);

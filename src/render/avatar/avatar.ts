@@ -375,6 +375,10 @@ const LEAD = 0.16;
  * trunk lean (sideways, forward) goes onto the spine over what the stance already has. */
 const TRACK_BEND = 0.6;
 const TRACK_UNBEND = 0.7;
+/** The share of the arm's length a measured swing's hand may be from the shoulder before its racket is turned in (reachIn). */
+const TRACK_ARM = 0.97;
+/** The least of a track's lead a swing may have left when it is picked and still be drawn by it (pickFamily). */
+const TRACK_RUSH = 0.6;
 const TRACK_TILT = 0.8;
 const TRACK_BOW = 0.5;
 /** ...and, the release being anyone's guess, runs this share of the swing behind it at full speed... */
@@ -1425,6 +1429,13 @@ export class Avatar {
   private readonly trA = new THREE.Vector3();
   private readonly trB = new THREE.Vector3();
   private readonly trTurn = new THREE.Quaternion();
+  private readonly conTurn = new THREE.Quaternion();
+  private readonly rchA = new THREE.Vector3();
+  private readonly rchB = new THREE.Vector3();
+  private readonly rchC = new THREE.Vector3();
+  private readonly rchQ = new THREE.Quaternion();
+  private readonly conA = new THREE.Vector3();
+  private readonly conB = new THREE.Vector3();
   private readonly trPart = new THREE.Quaternion();
   private trTilt = 0.5;
   private trBow = 0.5;
@@ -2112,9 +2123,13 @@ export class Avatar {
 
   // ---- strokes ----
 
-  private pickFamily(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number, contra = false): Family {
+  private pickFamily(sim: MatchSim, p: Player, idx: number, c: THREE.Vector3, overhead: boolean, volley: boolean, hand: number, contra = false, left = Infinity): Family {
     const f = contra ? (hand > 0 ? FH_CONTRA : BH_CONTRA) : this.pickRight(sim, p, idx, c, overhead, volley, hand);
-    return this.handed > 0 ? f : leftFamily(f);
+    const fam = this.handed > 0 ? f : leftFamily(f);
+    // A measured swing takes its own time: picked with `left` seconds to the ball, under TRACK_RUSH of its lead, it is the
+    // keyed stroke (the only two clip-drawn hits in six hundred seconds that met the ball 11-12 cm off were the only two
+    // picked under 0.2 s from it: a vibora at a ball by the ear in 0.135 s, the elbow at its rate's stop all the way).
+    return fam.track && fam.coded && left < fam.track.lead * TRACK_RUSH ? fam.coded : fam;
   }
 
   /** The stroke for a right-hander (`hand` +1 forehand, -1 backhand). */
@@ -2210,6 +2225,14 @@ export class Avatar {
       this.toModel(cc, k.p);
     } else this.toModel(cw, k.p);
     k.q.copy(f.contact.q);
+    // A measured swing is turned about the racket shoulder onto this ball (trackKey), and its racket at the ball with it:
+    // the legs work the reach out from this key, and with the clip's own turn they put the hips where a racket turned
+    // 50 degrees another way would have wanted them.
+    if (f.track && !(sh.x === 0 && sh.y === 0 && sh.z === 0)) {
+      const c1 = this.toModel(sh, this.conA).negate().add(k.p), l1 = c1.length(), tr = f.track;
+      if (l1 > 1e-4 && tr.c0len > 1e-4) k.q.premultiply(this.conTurn.setFromUnitVectors(this.conB.copy(tr.c0).multiplyScalar(1 / tr.c0len), c1.multiplyScalar(1 / l1)));
+      this.reachIn(k.p, k.q, this.toModel(sh, this.conA), 1);
+    }
     if (f.wrist) this.reachFrom(k, f.wrist);
     else if (f.low) k.q.slerp(f.low, smoothstep(0.95, 0.4, k.p.y));
     if (f.tip) k.q.multiply(f.tip);
@@ -2314,6 +2337,30 @@ export class Avatar {
   }
 
   /**
+   * A measured swing's racket whose hand the arm cannot get to (a ball further out than the clip's swing reaches, the
+   * racket across the arm's line as the clip held it): turned about its face's centre, the least way and by `g` of it,
+   * until the arm can. The handle comes round towards the shoulder, as a player at full stretch holds it; the face's centre
+   * stays on the ball. A backhand volley 1.5 m from the shoulder was met 12 cm off without (the hand 0.3 m short of its place).
+   */
+  private reachIn(p: THREE.Vector3, q: THREE.Quaternion, sh: THREE.Vector3, g: number): void {
+    const u = this.rchA.copy(this.grip.pos).applyQuaternion(this.rchQ.multiplyQuaternions(q, this.grip.qInv)), r = u.length();
+    const A = this.armLen * TRACK_ARM;
+    const wx = p.x - u.x - sh.x, wy = p.y - u.y - sh.y, wz = p.z - u.z - sh.z;
+    if (r < 1e-4 || wx * wx + wy * wy + wz * wz <= A * A) return;
+    const to = this.rchB.copy(sh).sub(p), l = to.length();
+    if (l < 1e-4) return;
+    // (the hand on the sphere about the ball, the shoulder l from the ball: within the arm's length of it inside this cone)
+    const cmin = Math.min(1, (l * l + r * r - A * A) / (2 * l * r));
+    u.multiplyScalar(-1 / r);
+    to.multiplyScalar(1 / l);
+    const c0 = u.dot(to);
+    if (c0 >= cmin) return;
+    const axis = this.rchC.crossVectors(u, to), al = axis.length();
+    if (al < 1e-5) return;
+    q.premultiply(this.rchQ.setFromAxisAngle(axis.multiplyScalar(1 / al), (Math.acos(c0 < -1 ? -1 : c0) - Math.acos(cmin < -1 ? -1 : cmin)) * g));
+  }
+
+  /**
    * The stroke's key off its track (clipStroke.ts) at `tau` seconds from the ball. The racket and the elbow are kept as the
    * clip has them from the racket shoulder, and by `g` (0 the clip's own, 1 at the ball) that shape is turned about the
    * shoulder and stretched so the racket's centre at the ball is this contact's: a higher ball is the same swing swung
@@ -2338,6 +2385,7 @@ export class Avatar {
     }
     this.kp.copy(TS.p).sub(TS.sh).applyQuaternion(part).multiplyScalar(stretch).add(sh);
     this.kq.copy(part).multiply(TS.q);
+    if (g > 0) this.reachIn(this.kp, this.kq, sh, g);
     this.kpole.copy(TS.pole).sub(TS.sh).applyQuaternion(part).add(sh);
     this.koff.copy(TS.off);
     this.kyaw = TS.yaw;
@@ -2470,7 +2518,10 @@ export class Avatar {
         // over from wherever the racket is rather than jumping.
         if (!this.hasCon) this.conW.set(sim.ball.pos.x, sim.ball.pos.y, sim.ball.pos.z);
         const hand = planned ? st.hand : this.handOf(sim, p, this.conW) * (contra ? -1 : 1);
-        const fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand, contra);
+        // (a stroke stays the one its backswing began as: only the first pick of a backswing can be the rushed one)
+        const first = this.lastSwing !== SW_CHARGE;
+        let fam = this.pickFamily(sim, p, idx, this.conW, st.valid && st.overhead, st.valid && st.volley, hand, contra, first && this.hasCon ? tp - t : Infinity);
+        if (!first && fam.coded && this.fam === fam.coded) fam = fam.coded;
         if (fam !== this.fam && t - this.prepStart > 0.03) {
           this.snapshot();
           this.prepStart = t;
@@ -2523,7 +2574,7 @@ export class Avatar {
           : st.volley;
         // (facing the glass the forehand is the other side)
         const hand = fresh ? this.handOf(sim, p, this.conW) * (contra ? -1 : 1) : st.hand;
-        const fam = this.pickFamily(sim, p, idx, this.conW, !fresh && st.overhead, vol && !contra, hand, contra);
+        const fam = this.pickFamily(sim, p, idx, this.conW, !fresh && st.overhead, vol && !contra, hand, contra, (hit ? p.lastContactTime : p.contactTime) - t);
         if (this.st === ST_PREP && fam !== this.fam) { this.snapshot(); this.relBlend = true; }
         this.fam = fam;
       }
@@ -3953,7 +4004,7 @@ export class Avatar {
     // the hips leaned 18 cm towards a ball 0.4 s away at p90, and 20-29 cm through a serve's toss).
     const lean = before ? smoothstep(LEAN_FROM, LEAN_FULL, left) : 1;
     // (a volley is punched from a bent arm, elbow 63 on video: the body goes to the ball, not the arm)
-    const armTo = this.armLen * (this.fam.arm ?? (this.fam.wrist ? VOLLEY_ARM : 0.96));
+    const armTo = this.armLen * (this.fam.arm ?? (this.fam.wrist || this.fam.volley ? VOLLEY_ARM : 0.96));
     const short = len > 1e-3 ? Math.max(0, len - armTo) * this.w * lean : 0;
     // How far above the arm's reach the contact is, whole (the smash's hop is decided before the lean is in).
     this.upNeed = before && len > 1e-3 && dy > 0 ? (Math.max(0, len - armTo) * dy) / len : 0;
@@ -3975,7 +4026,7 @@ export class Avatar {
     }
     this.reachX = rx;
     this.reachZ = rz;
-    const share = (this.fam.wrist ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y);
+    const share = (this.fam.wrist || this.fam.volley ? VOLLEY_DOWN : DOWN_SHARE) + DOWN_LOW * smoothstep(DOWN_LOW0, DOWN_LOW1, v1.y);
     const K = this.legK;
     let down = dy < 0 ? Math.min(0.3 * K, (short * -dy) / len) * share : 0;
     if (before) {
@@ -3987,7 +4038,7 @@ export class Avatar {
     // A volley's finish stays down where it met the ball, and the hips went on following that key: lowest 0.3 s after
     // the ball, back 0.55 s after it, and four volleys in ten ran off still sitting. The drop was for the ball. A serve the same: 7 cm down and back
     // in a quarter of a second after every ball (review round 27).
-    if (this.fam.wrist || rightFamily(this.fam).name === 'serve') {
+    if (this.fam.wrist || this.fam.volley || rightFamily(this.fam).name === 'serve') {
       if (before) this.downAt = down;
       else down = this.downAt * (1 - smoothstep(0, VOLLEY_UP, this.lastT - this.tCon));
     }
@@ -4949,7 +5000,7 @@ export class Avatar {
       let best = 0, sx2 = 0, sy2 = 0, sz2 = 0;
       // (the forearm too, each point going with the hand by its share of the way from the elbow)
       // (not in the forward swing, a fast arm's push came and went in a frame: serves popped 30 times a minute for 5)
-      const nR = RACKET_P.length / 3, nF = this.st === ST_SWING && this.lastT < this.tCon + (this.fam.wrist ? 0 : FOREARM_AFTER) ? 0 : FOREARM_T.length;
+      const nR = RACKET_P.length / 3, nF = this.st === ST_SWING && this.lastT < this.tCon + (this.fam.wrist || this.fam.volley ? 0 : FOREARM_AFTER) ? 0 : FOREARM_T.length;
       for (let r = 0; r < nR + nF; r++) {
         let px: number, py: number, pz: number, along = 1, room = RACKET_CLEAR;
         if (r < nR) {
@@ -5386,7 +5437,7 @@ export class Avatar {
     const mu = ua.matrixWorld.elements;
     const sx = mu[12]! - this.tgt.x, sy = mu[13]! - this.tgt.y, sz = mu[14]! - this.tgt.z;
     // (a volley bends over the ball before it straightens the arm: elbow 63 on video, 30 at every ball under 0.85 m)
-    const excess = Math.sqrt(sx * sx + sy * sy + sz * sz) - this.armLen * (0.98 - (0.98 - (this.fam.wrist ? VOLLEY_BEND : this.fam.bend ?? 0.98)) * w * w);
+    const excess = Math.sqrt(sx * sx + sy * sy + sz * sz) - this.armLen * (0.98 - (0.98 - (this.fam.wrist || this.fam.volley ? VOLLEY_BEND : this.fam.bend ?? 0.98)) * w * w);
     const base = this.spine[0]!;
     this.leanT.identity();
     if (excess > 0) {
@@ -5411,7 +5462,7 @@ export class Avatar {
     const LN = this.lean, LT = this.leanT;
     if (this.leanOk && this.dt > 0) {
       const d = Math.min(1, Math.abs(LN.x * LT.x + LN.y * LT.y + LN.z * LT.z + LN.w * LT.w));
-      const ang = 2 * Math.acos(d), lim = (this.fam.wrist ? VOLLEY_BEND_RATE : SPINE_REACH_RATE) * this.dt;
+      const ang = 2 * Math.acos(d), lim = (this.fam.wrist || this.fam.volley ? VOLLEY_BEND_RATE : SPINE_REACH_RATE) * this.dt;
       if (ang > lim) LN.slerp(LT, lim / ang);
       else LN.copy(LT);
     } else LN.copy(LT);

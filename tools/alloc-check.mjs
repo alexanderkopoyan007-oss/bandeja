@@ -6,6 +6,7 @@
 // ALLOC_PROFILE=1 lists the top allocation sites of the measured stretch, garbage included. ALLOC_RACKETS=id,id,..
 // gives the players those rackets (data/rackets.json; default `standard` for all).
 // ALLOC_MOTION=2 animates them by motion matching (render/avatar/matcher.ts, ?motion=2).
+// ALLOC_TRACKS=<folder> draws the strokes by the clips' tracks there (render/avatar/clipStroke.ts, ?motion=3).
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +23,11 @@ if (process.argv[2] === '--child') {
     const { parsePlayerAsset, parseBodyAsset, PEOPLE } = await import('../src/render/avatar/asset.ts');
     const { Avatar } = await import('../src/render/avatar/avatar.ts');
     if (process.env.ALLOC_MOTION) Avatar.motion = Number(process.env.ALLOC_MOTION);
+    if (process.env.ALLOC_TRACKS) {
+      const { existsSync } = await import('node:fs');
+      const { TRACK_FILES, applyStrokeTrack } = await import('../src/render/avatar/clipStroke.ts');
+      for (const file of TRACK_FILES) { const path = `${process.env.ALLOC_TRACKS}/${file}.json`; if (existsSync(path)) applyStrokeTrack(file, JSON.parse(readFileSync(path, 'utf8'))); }
+    }
     const { kitFor } = await import('../src/render/avatar/kit.ts');
     const gz = (f) => { const raw = gunzipSync(readFileSync(new URL('../public/assets/' + f, import.meta.url))); return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength); };
     const asset = parsePlayerAsset(gz('player.bnz'));
