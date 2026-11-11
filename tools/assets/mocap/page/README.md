@@ -79,3 +79,19 @@ Then: `from_page.py <session .jsonl> <clip folder>`, `one_camera.py <clip folder
   either side of the contact are set for a face near upright (the swing is a flat drive, low to high), not as measured.
 - Return `window.__export` itself, not `JSON.stringify` of it: `from_page.py` looks for `"marker"` unescaped.
 - The cut-outs are head-centred, so a hand's place in two cut-outs is not its travel (the head moves): speeds from the tracker's rows.
+
+## The volleys (`p6SwYJQ5AYY` forehand, `jRkQB25IGPw` backhand, 11 Nov 2026)
+
+- These two are cut into fifteen and more "moving" parts, most of them **drawing over a frozen frame** (lines, circles, captions fading
+  in: frame differences of 0.25-1.1 with nobody moving). The parts where the *body* moves are found from the pass's own rows: the
+  racket wrist's travel across a run of rows (hundreds of pixels against 0-10 for a drawn-over freeze). Forehand volley: 58.12-60.28,
+  68.28-68.92, 78.96-79.60, 87.64-89.56; backhand volley: 62.56-65.20, 73.20-74.64, 84.56-85.20, 93.20-94.44. No frame repeated
+  (a 100 fps camera at 25, 4x); contact the frozen frame with the ball on the strings (79.60, 85.20).
+- **Frames cut after the frozen contact frame**: the wrist's step across the freeze is 45 px against 11-14 either side (forehand
+  volley: three frames, put back by re-timing page.npz, the same as `{gap: 3}` in SEGS) and 30 against 15-20 (backhand: `{gap: 1}`).
+- `window.__sheet(times, half, job, cols, up)` (made in the page, not kept as a file: it is twenty lines): body-centred tiles of
+  several frames on one canvas, one `computer zoom` of [0,0,750,500] for all of them (24 tiles of 125 px to find what a part is; six of
+  250 px, 131.6 px to the metre at half 0.95, to read the racket). A third of the pictures the single cut-outs took.
+- `window.__mkExport(job, SEGS, contact, clip, KT, k)`: `5b-stroke-parts.js` as a function (dedupe threshold 0.2).
+- **Keys either side of a frozen frame are 0.01 s apart**: two readings 15 degrees apart there are 1500 degrees a second to the
+  spline, and the racket swung round a loop before them. One of each such pair is kept.

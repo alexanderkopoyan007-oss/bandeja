@@ -12,7 +12,11 @@ until they play in the game ("i just need to see the end"). Solo, no agents. Gol
 - [x] backhand `5MH8RDf4qfg` (the same channel) -> `yt-backhand.json`, contact 0.63 s of 1.17; a 100 fps camera with a frame in three
   repeated; a flat drive met low (0.42 m) and in front, the racket up by the head 0.16 s before; `tracks/backhand.json` (lead 0.3,
   follow 0.45) draws BACKHAND behind `?motion=3` (the owner, 10 Nov: "fix the rest of the shots", then the look pass).
-- [ ] forehand volley `p6SwYJQ5AYY`, backhand volley `jRkQB25IGPw`, smash, serve: next, the same way.
+- [x] forehand volley `p6SwYJQ5AYY` -> `yt-volley-fh.json` (contact 0.87 s of 1.37, 1.09 m up, the face open 28 degrees; a long chop
+  down across after it) and backhand volley `jRkQB25IGPw` -> `yt-volley-bh.json` (contact 1.1 s of 1.42, 0.79 m up); tracks lead 0.3,
+  follow 0.3: VOLLEY_FH and VOLLEY_BH behind `?motion=3`. A track-drawn volley follows through as the clip does (the coded one stops
+  short by the ball: `wrist` goes with the other shaping).
+- [ ] smash, serve: next, the same way.
 - For each: frame differences + ball (which frames move, the slowing from the ball's fall), pose on the moving frames, the racket by eye
   (about 25 cut-outs), `from_page.py`, `one_camera.py`, `retarget.py`, then `keys.py <clip>` for the stroke in strokes.ts's terms.
 
