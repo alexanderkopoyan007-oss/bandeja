@@ -14,7 +14,7 @@ import { BroadcastCamera, CAMERA_PRESETS, type CameraPreset } from '../../src/re
 import { MatchSim } from '../../src/sim/match.ts';
 
 const flag = new URLSearchParams('creator=1');
-const none = new URLSearchParams('');
+const none = new URLSearchParams('creator=0');
 
 describe('the new settings are stored and checked', () => {
   it('keeps known values and ignores anything else', () => {
@@ -35,16 +35,16 @@ describe('the new settings are stored and checked', () => {
     expect(customPreset('half', 'off', false)).toMatchObject({ maxDpr: 1, scale: 0.5, shadow: 0, bloom: false });
   });
 
-  it('play as the game\'s own without ?creator=1, as set with it', () => {
+  it('play as the game\'s own with ?creator=0, as set without it (on for everyone since 12 Nov 2026)', () => {
     const s = defaultSettings();
     Object.assign(s, { quality: 'custom', resolution: 'three', shadows: 'low', glow: false, fov: -5, shake: false, voices: 0.5, padKeys: { drive: [3] } });
     const off = optionsFromSetup(s.setup, s, 1, null, false, none).prefs!;
-    // (Custom stored, no flag: Auto)
+    // (Custom stored, switched off: Auto)
     expect(off.quality!.name).toBe('High');
     expect(off.adapt).toBe(true);
     expect(off).toMatchObject({ fov: 0, voices: 1, shake: true });
     expect(off.pad).toEqual(DEFAULT_PAD);
-    const on = optionsFromSetup(s.setup, s, 1, null, false, flag).prefs!;
+    const on = optionsFromSetup(s.setup, s, 1, null, false, new URLSearchParams('')).prefs!;
     expect(on.quality).toMatchObject({ name: 'Custom', maxDpr: 1, scale: 0.75, shadow: 1024, bloom: false });
     expect(on.adapt).toBe(false);
     expect(on).toMatchObject({ fov: -5, voices: 0.5, shake: false });

@@ -4731,3 +4731,17 @@ ball, show only the plainly better ones, the rest go back to keyed. What the mea
 - Shown once, beside the keyed smash on the same ball (seed 6, four martillos, player 2 at 24.933 s), from the net side and from
   behind. The legs are the game's own (the clip's feet were out of the picture), and the trunk takes the track's lean as it did.
   The owner's verdict decides whether any other stroke goes this way.
+
+## Everything behind `?creator=1` is on for everyone (2026-11-12, owner: "ok yea, ship them")
+
+The owner was given the list of what waited for a verdict (the night look, the new court cameras, the realism sheets, and M5-M8's
+screens and features) and said to ship them. `?creator=1` is now the default (`params.get('creator') !== '0'` in app.ts and
+options.ts; `?creator=0` is the game without them): the Players screens and the creator, the roster and rackets, local multiplayer,
+tournament, challenges, academy, career, the Court / Close / Glass cameras (TV stays the default), TV graphics as a setting, two-take
+replays, highlights, photo mode and clips, the deep stats, the umpire's calls (off by default), and M8's settings. main went from
+558510e to this commit. Checked in the default state: the suite, the build, `tools/menu-walk.mjs` (PASS).
+
+**Not switched on: the night look (`?look=2`).** It stays a link. Measured 11 Nov it costs half the frame rate at 2x pixels (47 fps
+against 100) and the laptop proxy falls under 60 Hz (19.5 ms against 14.3); on by default it would slow the game for anyone on a
+weaker machine. Next: make it cheaper (the antialiased velocity target, the second scene drawing for the occlusion), then a setting.
+The clip strokes (`?motion=3`) and motion matching (`?motion=2`) stay switched off as before.

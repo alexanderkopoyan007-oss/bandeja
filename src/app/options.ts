@@ -112,7 +112,7 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     // (the title's establishing shots, for stills of them: tools/cam-stills.mjs WAIT=walk)
     establish: params.get('establish') === '1',
     // (M7's two-take replays, with the flag: tools/reel-check.mjs and the like)
-    replayTakes: params.get('creator') === '1',
+    replayTakes: params.get('creator') !== '0',
     bloom: params.get('bloom') !== '0',
     look: num('look', 0),
     lens: num('dof', 0) === 1,
@@ -183,7 +183,7 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
   const urlQ = params.get('quality');
   // (M8's settings are behind ?creator=1 until the owner has seen them: without it, Custom quality is Auto, and the
   // field of view, the shake, the voices and the pad's buttons are the game's own)
-  const lab = params.get('creator') === '1';
+  const lab = params.get('creator') !== '0';
   const quality = urlQ && QUALITY_KEYS.includes(urlQ) ? urlQ : s.quality === 'custom' && !lab ? 'auto' : s.quality;
   const auto = quality === 'auto';
   const preset = quality === 'custom' ? customPreset(s.resolution, s.shadows, s.glow) : qualityPreset(auto ? 'high' : quality);

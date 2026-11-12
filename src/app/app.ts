@@ -251,9 +251,10 @@ export class App {
     }
   }
 
-  /** The Players screens and the creator: behind ?creator=1 until the owner has seen them. */
+  /** The Players screens, the creator and everything else that waited behind ?creator=1: on for everyone since 12 Nov 2026
+   * (the owner: "ok yea, ship them"); ?creator=0 is the game without them. */
   private get creatorOn(): boolean {
-    return this.params.get('creator') === '1';
+    return this.params.get('creator') !== '0';
   }
 
   /** The renderer lent to the creator's turntable (the title's match waits, its time stopped). */
@@ -1456,7 +1457,7 @@ export class App {
     // The opponents by the surnames dealt them (game/names.ts).
     const them = sim.doubles ? `${g.names[1]?.last ?? ''} · ${g.names[3]?.last ?? ''}` : (g.names[1]?.last ?? 'Opponent');
     // What the match earned (the locker comes with the creator: behind ?creator=1 until the owner has seen it).
-    const earnedNow = this.params.get('creator') === '1' && this.earnedNow.length
+    const earnedNow = this.params.get('creator') !== '0' && this.earnedNow.length
       ? `<div class="card"><h2>New in your locker</h2><p>${this.earnedNow.map((c) => c.name).join(' · ')}</p></div>` : '';
     const side = earnedNow + `<div class="card"><h2>${mins} min · longest rally ${st.longestRally} shots</h2><table>`
       + `<tr><td class="l"></td><td class="w">${g.localPlayers.length > 1 ? g.teamName(0) : sim.doubles ? 'Your pair' : 'You'}</td><td class="w">${g.localPlayers.length > 1 ? g.teamName(1) : them}</td></tr>`
