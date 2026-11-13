@@ -174,6 +174,8 @@ interface MeshHeader {
   pos: number[]; nrm: number[]; skinIndex: number[]; skinWeight: number[]; index: number[];
   shade?: number[]; uv?: number[]; part?: number[];
   ao?: number[]; mask?: number[];
+  /** Trainers modelled round the feet (mh_shoe.py): bodyX for the `count` vertices from `first`, as floats, and their fit. */
+  shoe?: { first: number; count: number; fit: ShoeFit; x: number[] };
   face?: { vertices: number; indices: number; verts: number[]; index: number[]; bodyIndices: number; bodyIndex: number[] };
   morphs?: { name: string; pos: number; nrm: number; data: number[] }[];
   wardrobe?: { pieces: string[]; worn: string[]; ranges: Array<[number, number]>; piece: number[]; hide: number[]; vneck?: [number, number] };
@@ -683,6 +685,8 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
     else if (c === P_SHORTS && mk) X[v * 4] = mk.array[v * 4]!;
     else if (c === P_EYE || c === P_SHOE || c === P_SOCK) X[v * 4] = ao ? ao.array[v]! : 1;
   }
+  const modelled = h.meshes.opaque.shoe;
+  if (modelled) X.set(new Float32Array(buf.slice(base + modelled.x[0]!, base + modelled.x[0]! + modelled.count * 16)), modelled.first * 4);
   geometry.deleteAttribute('bodyAO');
   geometry.deleteAttribute('skinMask');
   geometry.setAttribute('bodyX', new THREE.BufferAttribute(X, 4));
@@ -702,12 +706,13 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
   } : null;
   // Their trainers, swapped for shoes made to their feet (shoe.ts).
   const restWorld = restOf(h.bones);
-  const shoes = remakeShoes(geometry, face?.bodyIndex ?? null, wardrobe, restWorld.map((r, i) => r.clone().multiply(boneInverses[i]!)));
+  // (unless the file brings its own, modelled round the feet: mh_shoe.py)
+  const shoes = modelled ? null : remakeShoes(geometry, face?.bodyIndex ?? null, wardrobe, restWorld.map((r, i) => r.clone().multiply(boneInverses[i]!)));
   if (face && shoes?.bodyIndex) face.bodyIndex = shoes.bodyIndex;
   const asset = assemble(h.bones, geometry, boneInverses, restWorld, clips, {
     name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, skinNormal: null,
     handsMap: null, handsNormal: null, handsBox: h.handsBox ?? null, textures: h.textures, morphs, face,
-    wardrobe, shoe: shoes?.fit ?? null, soleRef: shoes?.soleRef ?? null,
+    wardrobe, shoe: modelled?.fit ?? shoes?.fit ?? null, soleRef: shoes?.soleRef ?? null,
   });
   SOURCES.set(asset, { buf, mannequin });
   return asset;

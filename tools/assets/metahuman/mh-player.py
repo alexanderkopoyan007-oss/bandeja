@@ -28,6 +28,10 @@ from mathutils.kdtree import KDTree
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mpfb'))
 import person_kit as pk  # the skirt's and the band's geometry, shared with the MPFB players
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mh_shoe  # the trainer, modelled round each foot
+import person_wear as pw  # the wardrobe's cuts and the skin each hides, shared with the MPFB players
+from mathutils.interpolate import poly_3d_calc
 import ao_bake  # the occlusion bakes, shared with the MPFB players
 
 args = sys.argv[sys.argv.index('--') + 1:]
@@ -459,11 +463,6 @@ for o in dst.objects:
     for m in o.modifiers:
         if m.type == 'MASK':  # (p1's saved body hides the feet the shoes cover: the box is measured on the feet)
             m.show_viewport = False
-    if o.name == 'Human.shoes05' and spec.get('shoe_round', 1) > 0:
-        # The detail pass (13 Nov 2026): shoes05 is a few flat planes a shoe (a squared toe, a sole in facets), and a close
-        # camera shows every one. One Catmull-Clark step rounds the toe box, the sole's edge and the sock's cuff.
-        sub = o.modifiers.new('round', 'SUBSURF')
-        sub.levels = sub.render_levels = int(spec.get('shoe_round', 1))
 dg = bpy.context.evaluated_depsgraph_get()
 
 
@@ -487,26 +486,44 @@ SOCK_FROM = 0.118  # finish-player.py: shoes05's crew sock is the tube above 11.
 FOOT_TOP = 0.11
 
 
-def foot_box(co, sole, side):
+def foot_frame(co, sole, side):
+    """A foot as it stands: its middle on the floor, the unit vector along it (heel to toe, level) and its length, width
+    and height box in that frame, from the skin under FOOT_TOP. The axis is the footprint's long axis (its points'
+    principal direction), not the model's: a MetaHuman stands with its feet turned out 10 degrees or so, and the box round a
+    turned foot in the model's axes is a good deal wider than the foot (p1mh: 15%, and the trainer made that much too wide
+    stood a finger off the ankle all round)."""
     m = (co[:, 2] < sole + FOOT_TOP) & ((co[:, 0] > 0) if side == 'Left' else (co[:, 0] < 0))
-    return co[m].min(0), co[m].max(0)
+    pts = co[m]
+    low = pts[pts[:, 2] < sole + 0.03][:, :2]
+    c = low.mean(0)
+    w, v = np.linalg.eigh(np.cov((low - c).T))
+    ax = v[:, int(np.argmax(w))]
+    if ax[1] > 0:  # (forward is -y)
+        ax = -ax
+    across = np.array([-ax[1], ax[0]])
+    u, t = (pts[:, :2] - c) @ ax, (pts[:, :2] - c) @ across
+    lo = np.array([u.min(), t.min()])
+    hi = np.array([u.max(), t.max()])
+    mid = c + ax * (lo[0] + hi[0]) / 2 + across * (lo[1] + hi[1]) / 2
+    return mid, ax, across, hi - lo
 
 
 sco = coords(shoe_src)
-shoe_parts = []
 new_co = sco.copy()
+FOOT_FRAME = {}
 for s, _ in SIDES:
-    a0, a1 = foot_box(p1co, p1_sole, s)
-    b0, b1 = foot_box(bco, mh_sole, s)
-    k = (b1 - b0) / (a1 - a0)
-    k[2] = (k[0] + k[1]) / 2  # the foot's height in the shoe goes with its size, not with the box's (ankle) cut
+    c0, ax0, ac0, d0 = foot_frame(p1co, p1_sole, s)
+    c1, ax1, ac1, d1 = foot_frame(bco, mh_sole, s)
+    k = d1 / d0
+    kz = (k[0] + k[1]) / 2  # the foot's height in the shoe goes with its size
     sel = (sco[:, 0] > 0) if s == 'Left' else (sco[:, 0] < 0)
-    c = (a0 + a1) / 2
-    c[2] = p1_sole
-    d = (b0 + b1) / 2
-    d[2] = mh_sole
-    new_co[sel] = (sco[sel] - c) * k + d
-    say('shoe', s, 'scale', k.round(3))
+    rel = sco[sel, :2] - c0
+    u, t = rel @ ax0 * k[0], rel @ ac0 * k[1]
+    new_co[sel, :2] = c1 + u[:, None] * ax1 + t[:, None] * ac1
+    new_co[sel, 2] = (sco[sel, 2] - p1_sole) * kz + mh_sole
+    FOOT_FRAME[s] = (c1, ax1, ac1, d1)
+    say('shoe', s, 'scale along, across, up', [round(float(x), 3) for x in (k[0], k[1], kz)], 'turned',
+        round(math.degrees(math.atan2(ax1[0], -ax1[1]) - math.atan2(ax0[0], -ax0[1])), 1), 'deg; foot', (d1 * 100).round(1), 'cm')
 shoe_sock = (sco[:, 2] - p1_sole) > SOCK_FROM
 shoe_src.data.vertices.foreach_set('co', new_co.ravel())
 shoe_src.data.update()
@@ -526,6 +543,251 @@ for i, c in enumerate(new_co):
     _, j, _ = kd.find(c)
     for n, w in bw[j].items():
         vg[n].add([i], w, 'REPLACE')
+
+# ---------------------------------------------------------------- the crew sock, from the leg's own skin ---------------------------
+# (13 Nov 2026, the owner, of a close still: "the limbs aren't even attached".) shoes05's sock is a tube made round p1's
+# MakeHuman leg. Scaled by the foot's box onto a MetaHuman it stood a centimetre and more off the calf all round, a stovepipe
+# with the leg loose in it and the dark of its inside showing at the top, and the game's trainer (shoe.ts) fits its collar
+# round the sock, so the shoe gaped as wide. A sock is the leg's own shape: this body's skin from the sock's top down over the
+# foot, laid SOCK_EASE out along its normals (SOCK_RIB more over the cuff), its top turned back in onto the skin, moving with
+# the skin's own weights (as person_wear.py's skin_shell makes the MPFB players' ankle and knee socks). The tube goes.
+SOCK_EASE, SOCK_RIB, SOCK_RIB_LEN, TURN_IN, TURN_BACK, SOCK_TOES = 0.0022, 0.0008, 0.05, 0.0018, 0.011, 0.7
+LEG_BONES = ('UpLeg', 'Leg', 'Foot', 'ToeBase')
+
+
+def skin_shell(name, z_hi, ease, rib, rib_len):
+    leg_tree = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices], [tuple(p_.vertices) for p_ in body.data.polygons])
+    dom = [max(d, key=d.get) if d else '' for d in bw]
+    leg = [any(n.endswith(x) for x in LEG_BONES) for n in dom]
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    orig = bm.verts.layers.int.new('orig')
+    for v in bm.verts:
+        v[orig] = v.index + 1
+
+    def toes(co):
+        # (past SOCK_TOES of the foot's length: always under the toe box, and a sock drawn over five toes came out through it)
+        c, ax, _, d = FOOT_FRAME['Left' if co.x > 0 else 'Right']
+        return co.z < mh_sole + FOOT_TOP and (co.x - c[0]) * ax[0] + (co.y - c[1]) * ax[1] > (SOCK_TOES - 0.5) * d[0]
+    dead = [f for f in bm.faces if not all(leg[v.index] for v in f.verts) or min(v.co.z for v in f.verts) > z_hi + 0.02
+            or all(toes(v.co) for v in f.verts)]
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    # (Unreal's export has the skin's vertices doubled along its UV seams: pushed out along two different normals, a seam
+    # opened as a dark line down the sock)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5)
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, z_hi), plane_no=(0, 0, 1), clear_outer=True)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    # (a vertex the cut made carries a number mixed from its edge's two ends: some vertex elsewhere on the body, and with
+    # that one's weights the cuff's ring flew off as spikes. It takes the nearest skin's instead, as the turned rings do)
+    for v in bm.verts:
+        if abs(v.co.z - z_hi) < 1e-5:
+            v[orig] = 0
+    bm.normal_update()
+    for v in bm.verts:
+        t = min(1.0, max(0.0, (v.co.z - (z_hi - rib_len)) / 0.006))
+        v.co = v.co + v.normal * (ease + rib * t)
+    # The top, turned back in: a ring TURN_IN under the cuff's edge, and one on the skin TURN_BACK further down.
+    bm.edges.ensure_lookup_table()
+    rim = [e for e in bm.edges if e.is_boundary and min(v.co.z for v in e.verts) > z_hi - 0.004]
+    ring1, ring2 = {}, {}
+    for e in rim:
+        for v in e.verts:
+            if v in ring1:
+                continue
+            p1 = v.co - v.normal * TURN_IN
+            q, qn, _, _ = leg_tree.find_nearest(p1 - Vector((0, 0, TURN_BACK)))
+            ring1[v] = bm.verts.new(p1)
+            ring2[v] = bm.verts.new(q + qn * 0.0006)
+    for e in rim:
+        a, b = e.verts
+        # (wound as the face the edge belongs to, turned over the edge)
+        l = e.link_loops[0]
+        if l.vert is not a:
+            a, b = b, a
+        for A, B in ((lambda v: v, ring1.get), (ring1.get, ring2.get)):
+            bm.faces.new((A(b), A(a), B(a), B(b)))
+    bm.normal_update()
+    bm.verts.index_update()
+    src = [v[orig] - 1 for v in bm.verts]
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    rigid(o, None)
+    g = {n: o.vertex_groups[P + n] for n in BONES}
+    made = 0
+    for i, v in enumerate(me.vertices):
+        j = src[i]
+        if j < 0:
+            _, j, _ = kd.find(v.co)
+            made += 1
+        for n, w in bw[j].items():
+            g[n].add([i], w, 'REPLACE')
+    for p_ in me.polygons:
+        p_.use_smooth = True
+    say('sock', name, len(me.vertices), 'vertices', len(me.polygons), 'faces to', round(z_hi - mh_sole, 3), 'm over the sole;', made, 'cut or turned')
+    return o
+
+
+sock = skin_shell('sock', sock_top, SOCK_EASE, SOCK_RIB, SOCK_RIB_LEN)
+# shoes05's own tubes out of the trainer: every piece that reaches the sock's height.
+bm = bmesh.new()
+bm.from_mesh(shoes.data)
+bm.verts.ensure_lookup_table()
+seen_v, tube = set(), []
+for v0 in bm.verts:
+    if v0 in seen_v:
+        continue
+    piece, stack = [], [v0]
+    seen_v.add(v0)
+    while stack:
+        v = stack.pop()
+        piece.append(v)
+        for e in v.link_edges:
+            w = e.other_vert(v)
+            if w not in seen_v:
+                seen_v.add(w)
+                stack.append(w)
+    if any(shoe_sock[v.index] for v in piece):
+        tube += piece
+say('shoes05 sock tubes out:', len(tube), 'of', len(bm.verts), 'vertices')
+bmesh.ops.delete(bm, geom=tube, context='VERTS')
+bm.to_mesh(shoes.data)
+bm.free()
+shoes.data.update()
+shoe_sock = None  # (the trainer alone is left)
+
+# ---------------------------------------------------------------- the trainers, modelled round the feet ---------------------------
+# (mh_shoe.py; spec trainer 0 keeps shoes05 for the game's own builder, shoe.ts, to remake.) Each vertex's (occlusion, where
+# on the shoe, along, across) goes into the file for kit.ts, with the fit it laces by; the sole moves with the foot and the toes
+# (it bends at their joint), the collar and the tongue's top with the sock in them.
+TRAINER = int(spec.get('trainer', 1))
+shoe_x, shoe_fit = None, None
+if TRAINER:
+    leg_polys = [tuple(p_.vertices) for p_ in body.data.polygons]
+    leg_bvh = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices], leg_polys)
+    all_co, all_faces, all_x, all_w, fits = [], [], [], [], []
+    for s, _ in SIDES:
+        c1, ax1, ac1, d1 = FOOT_FRAME[s]
+        lat = ac1 * (1.0 if s == 'Left' else -1.0)
+        heel0 = Vector((c1[0] - ax1[0] * d1[0] / 2, c1[1] - ax1[1] * d1[0] / 2, mh_sole))
+        ft = mh_shoe.Foot(heel0, ax1, lat, float(d1[0]), leg_bvh)
+        a_ball = ft.local(J[s + 'ToeBase'])[0]
+        t = mh_shoe.build(ft, J[s + 'Foot'].z - mh_sole, a_ball, say)
+        # Faces outward: made in the foot's frame, each shell turned to face out, then into the model's (a mirror for one foot).
+        tb = bmesh.new()
+        tv = [tb.verts.new(c) for c in t['co']]
+        for f in t['faces']:
+            try:
+                tb.faces.new([tv[i] for i in f])
+            except ValueError:
+                pass
+        bmesh.ops.recalc_face_normals(tb, faces=tb.faces[:])
+        tb.normal_update()
+        tb.faces.ensure_lookup_table()
+        down = sum(f.normal.z for f in tb.faces if all(t['where'][v.index] < 0.25 and v.co.z < t['lowest'] + 0.004 for v in f.verts))
+        if down > 0:
+            for f in tb.faces:
+                f.normal_flip()
+        tongue = [f for f in tb.faces if all(15 < t['where'][v.index] < 35 for v in f.verts)]
+        if sum(f.normal.z + 0.5 * f.normal.x for f in tongue) < 0:
+            for f in tongue:
+                f.normal_flip()
+        mirrored = ax1[0] * lat[1] - ax1[1] * lat[0] < 0
+        base = len(all_co)
+        for f in tb.faces:
+            ids = [v.index + base for v in f.verts]
+            all_faces.append(ids[::-1] if mirrored else ids)
+        tb.free()
+        for i, c in enumerate(t['co']):
+            pw_ = ft.world(*c)
+            all_co.append(pw_)
+            all_x.append((t['ao'][i], t['where'][i], t['along'][i], t['across'][i]))
+            wt = mh_shoe.smooth(a_ball - 0.035, a_ball + 0.02, c[0])
+            d = {s + 'Foot': 1 - wt, s + 'ToeBase': wt}
+            hd = float(t['hold'][i])
+            if hd > 0:
+                q, _, fi, _ = leg_bvh.find_nearest(pw_)
+                vs = leg_polys[fi]
+                ws = poly_3d_calc([body.data.vertices[j].co for j in vs], q)
+                d = {n: w * (1 - hd) for n, w in d.items()}
+                for j, wj in zip(vs, ws):
+                    for n, w in bw[j].items():
+                        d[n] = d.get(n, 0.0) + hd * wj * w
+            all_w.append(d)
+        fits.append(t['fit'])
+    me = bpy.data.meshes.new('trainers')
+    me.from_pydata([tuple(c) for c in all_co], [], all_faces)
+    me.update()
+    for p_ in me.polygons:
+        p_.use_smooth = True
+    bpy.data.objects.remove(shoes, do_unlink=True)
+    shoes = bpy.data.objects.new('shoes', me)
+    bpy.context.scene.collection.objects.link(shoes)
+    rigid(shoes, None)
+    vg = {n: shoes.vertex_groups[P + n] for n in BONES}
+    for i, d in enumerate(all_w):
+        for n, w in d.items():
+            if w > 1e-4:
+                vg[n].add([i], w, 'REPLACE')
+    shoe_x = np.array(all_x, dtype=np.float32)
+    shoe_fit = {key: (True if key == 'modelled' else round(float(np.mean([f[key] for f in fits])), 5)) for key in fits[0]}
+    new_co = np.array([tuple(c) for c in all_co])
+    say('trainers', len(all_co), 'vertices', len(all_faces), 'faces; soles', round(float(mh_sole - new_co[:, 2].min()) * 1000, 1), 'mm under the bare feet')
+if os.environ.get('MH_STOP') == 'feet':
+    # A look at the feet alone (the trainer's zones as flat colours), from a few sides.
+    def flat(name, rgb, rough=0.6):
+        m = bpy.data.materials.new(name)
+        m.use_nodes = True
+        m.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (*rgb, 1)
+        m.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = rough
+        return m
+    body.data.materials.append(flat('skin', (0.62, 0.42, 0.32)))
+    sock.data.materials.append(flat('sock', (0.9, 0.9, 0.9), 0.9))
+    if TRAINER:
+        zones = [(0.25, flat('outsole', (0.12, 0.11, 0.1))), (0.75, flat('midsole', (0.93, 0.93, 0.9))), (15, flat('upper', (0.85, 0.87, 0.9))),
+                 (35, flat('tongue', (0.85, 0.5, 0.2) if os.environ.get('MH_DEBUG') else (0.7, 0.72, 0.76))), (42.5, flat('lace', (0.2, 0.25, 0.6))),
+                 (99, flat('lining', (0.2, 0.6, 0.3) if os.environ.get('MH_DEBUG') else (0.55, 0.57, 0.62), 0.9))]
+        for _, m in zones:
+            shoes.data.materials.append(m)
+        for p_ in shoes.data.polygons:
+            w = float(np.mean([shoe_x[v, 1] for v in p_.vertices]))
+            p_.material_index = next(i for i, (lim, _) in enumerate(zones) if w < lim)
+    else:
+        shoes.data.materials.append(flat('shoe', (0.85, 0.87, 0.9)))
+    scn = bpy.context.scene
+    eng = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
+    scn.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else 'BLENDER_EEVEE'
+    scn.render.image_settings.file_format = 'PNG'
+    scn.render.resolution_x, scn.render.resolution_y = 1100, 800
+    scn.world = scn.world or bpy.data.worlds.new('w')
+    scn.world.use_nodes = True
+    scn.world.node_tree.nodes['Background'].inputs[0].default_value = (0.5, 0.52, 0.56, 1)
+    scn.world.node_tree.nodes['Background'].inputs[1].default_value = 0.9
+    sun = bpy.data.objects.new('sun', bpy.data.lights.new('sun', 'SUN'))
+    sun.data.energy = 3.0
+    sun.rotation_euler = (math.radians(48), 0, math.radians(35))
+    scn.collection.objects.link(sun)
+    cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam'))
+    scn.collection.objects.link(cam)
+    scn.camera = cam
+    cam.data.lens = 70
+    c1, ax1, ac1, d1 = FOOT_FRAME['Left']
+    at = Vector((c1[0], c1[1], mh_sole + 0.045))
+    fa, fc = Vector((ax1[0], ax1[1], 0)), Vector((ac1[0], ac1[1], 0))
+    for tag, d, dist in (('out', (0.1, 1, 0.12), 1.0), ('front34', (0.8, 0.62, 0.42), 0.95), ('front', (1, 0.08, 0.35), 0.95), ('in', (0.1, -1, 0.12), 1.0),
+                         ('back34', (-0.8, 0.55, 0.3), 0.95), ('top', (0.3, 0.12, 1), 0.95), ('laces', (0.45, 0.25, 1), 0.5)):
+        if os.environ.get('MH_VIEWS') and tag not in os.environ['MH_VIEWS'].split(','):
+            continue
+        v = (fa * d[0] + fc * d[1] + Vector((0, 0, d[2]))).normalized()
+        cam.location = at + v * dist
+        cam.rotation_euler = (at - cam.location).to_track_quat('-Z', 'Y').to_euler()
+        scn.render.filepath = os.path.join(OUT, f'feet-{tag}.png')
+        bpy.ops.render.render(write_still=True)
+    say('feet preview written')
+    sys.exit(0)
 
 # ---------------------------------------------------------------- tank, skirt, band or visor ------------------------------------
 # The kit the MPFB players have and MetaHuman's garment hasn't (spec kit, as person_kit.py makes it there; the game draws the
@@ -671,18 +933,33 @@ if spec.get('top_hem') == 'hips':
     bisect(shirt, Vector((0, 0, J['Hips'].z - TOP_HEM_UNDER_HIPS)), Vector((0, 0, 1)), inner=True)
     say('top cut level with the hips at', round(J['Hips'].z - TOP_HEM_UNDER_HIPS, 3))
 
-tank_planes = []
-if KIT.get('top') == 'tank':
+# The wardrobe (13 Nov 2026, the owner: "build the wardrobe on the detailed bodies"): every cut a player can choose, built on
+# this body as person_wear.py builds them on the MPFB players, so costumes.ts bodyFor can draw a MetaHuman whatever they wear.
+# The tops are Epic's tee cut again (tank, sleeveless), laid on the chest round a V (vneck), or carried on to the wrists (long);
+# both skirts; ankle and knee socks and tights from the legs' own skin; a polo's collar. The skin stays whole under them, with
+# the garments that hide each vertex (asset.ts Wardrobe: `piece`, `tpiece`, `hide`), where a build with one cut dropped it.
+WARDROBE = int(os.environ.get('MH_WARDROBE', spec.get('wardrobe', 0)))
+WOMEN = not spec.get('drape')
+pw.N_BODY = pk.N_BODY = 10 ** 9  # (MakeHuman's count of skin vertices before its helpers: here a body is all skin)
+# (the armhole's line by the LeftArm joint, out and up: kit.ts tankCut; person_wear.SLEEVELESS for the wider cut)
+TANK_PTS = ((-0.035, 0.07), (-0.01, -0.15))
+tee_whole = pw.copy_of(shirt, 'Wear.tee') if WARDROBE and KIT.get('top') == 'tank' else None
+
+
+def cut_armholes(shirt, pts, what):
+    """A top's sleeves off on the planes through `pts` (out from the arm joint, up from it: top and bottom of each armhole), the
+    armholes laid on the skin. Returns the planes (a point, the outward normal)."""
+    tank_planes = []
     n0 = len(shirt.data.polygons)
     for side in (1, -1):
-        a = Vector((chest_x + side * (arm_x0 - 0.035), 0, arm_j.z + 0.07))
-        b = Vector((chest_x + side * (arm_x0 - 0.01), 0, arm_j.z - 0.15))
+        a = Vector((chest_x + side * (arm_x0 + pts[0][0]), 0, arm_j.z + pts[0][1]))
+        b = Vector((chest_x + side * (arm_x0 + pts[1][0]), 0, arm_j.z + pts[1][1]))
         no = Vector((0, 1, 0)).cross((b - a).normalized()) * side
         if no.x * side < 0:
             no = -no
         tank_planes.append((a, no))
         bisect(shirt, a, no, outer=True, lowest=ARMHOLE_FROM)
-    say('tank: sleeves off, shirt faces', n0, '->', len(shirt.data.polygons))
+    say(what + ': sleeves off, shirt faces', n0, '->', len(shirt.data.polygons))
     # The armhole on the skin (person_kit.hug_armholes): the tee stood off the shoulder and the torso is hollow under it, so
     # the cut edge goes to ARMHOLE_LIFT off the skin, in the cut's plane (where the shader's binding and skin cut are), with
     # the nearest skin's weights; the shirt eases to it over ARMHOLE_REACH.
@@ -751,44 +1028,60 @@ if KIT.get('top') == 'tank':
         'of', len(band), '; under 3 mm', sum(1 for o in band if o < 0.003))
     lows = [(round(z - arm_j.z, 2), round(d, 3)) for o, d, z in offs if o < 0.001]
     say('tank: where the shirt is on the skin (z from the arm joint, plane distance) sample', lows[::max(1, len(lows) // 25)])
-    say('tank: armhole on the skin,', len(ids), 'vertices, moved up to', round(max(gap) * 1000, 1), 'mm, median',
+    say(what + ': armhole on the skin,', len(ids), 'vertices, moved up to', round(max(gap) * 1000, 1), 'mm, median',
         round(float(np.median(gap)) * 1000, 1), 'mm;', pushed, 'eased vertices kept off the skin;', inside,
         'shirt vertices within 1 mm of the skin or under it')
+    return tank_planes
 
-skirt, skirt_hang = None, None
-if KIT.get('bottom') in ('pleated', 'aline'):
-    pleated = KIT['bottom'] == 'pleated'
+
+tank_planes = cut_armholes(shirt, TANK_PTS, 'tank') if KIT.get('top') == 'tank' else []
+
+def make_skirt(style, top, hem, band):
+    """A skirt (person_kit's rings and mesh) from `top` to `hem` round the body without its arms and the shorts, which stand off
+    MetaHuman's legs as MPFB's fitted ones didn't; `band`: its strip of the atlas (person_kit.SKIRT_BANDS), None the whole of it."""
+    pleated = style == 'pleated'
     shirt_co = coords(shirt)
-    shirt_hem = shirt_co[:, 2].min()
-    # (kit.skirt and shorts_hem are the MPFB player's heights over the shoes' soles; here the bare feet stand at 0)
-    sole_z = float(new_co[:, 2].min())
-    top, hem = shirt_hem + pk.SKIRT_TUCK, KIT['skirt'] + sole_z
+    shorts_co = coords(shorts)
+    cols = pk.PLEATS if pleated else pk.ALINE_COLS
+    R, c, th, zs = pk.skirt_rings(np.concatenate([bco[~on_arm], shorts_co]), shirt_co, top, hem, 0.15 if pleated else 0.11,
+                                  cols, cx=J['Hips'].x)
+    sme, sverts, hang, bad = pk.skirt_mesh(R, c, th, zs, pleated, cols, *([band] if band else []))
+    o = bpy.data.objects.new('Skirt.' + style, sme)
+    bpy.context.scene.collection.objects.link(o)
+    rigid(o, None)
+    # (person_kit's weighting: the hips at the top, more and more the thigh on its side by the hem)
+    hx, side = J['Hips'].x, (1 if J['LeftUpLeg'].x > J['Hips'].x else -1)
+    for i, (co, h) in enumerate(zip(sverts, hang)):
+        w = 0.85 * max(0.0, min(1.0, (h - 0.1) / 0.75)) ** 1.2
+        s = max(0.0, min(1.0, 0.5 + (co[0] - hx) * side / 0.13))
+        o.vertex_groups[P + 'Hips'].add([i], 1 - w, 'REPLACE')
+        if w > 0:
+            o.vertex_groups[P + 'LeftUpLeg'].add([i], w * s, 'REPLACE')
+            o.vertex_groups[P + 'RightUpLeg'].add([i], w * (1 - s), 'REPLACE')
+    say('skirt', style, 'top', round(top, 3), 'hem', round(hem, 3), 'radius at the hem',
+        round(float(R[-1].min()), 3), '..', round(float(R[-1].max()), 3), 'faces', len(sme.polygons), 'wrong way', bad)
+    return o, hang
+
+
+SKIRT_STYLE = KIT.get('bottom') if KIT.get('bottom') in ('pleated', 'aline') else None
+shirt_hem = float(coords(shirt)[:, 2].min())
+# (kit.skirt and shorts_hem are the MPFB player's heights over the shoes' soles; here the bare feet stand at 0)
+sole_z = float(new_co[:, 2].min())
+if SKIRT_STYLE:
     # (the shorts' top came through the shirt's back in a bend, and the skirt covers it)
     bisect(shorts, Vector((0, 0, shirt_hem - 0.03)), Vector((0, 0, 1)), outer=True)
     if spec.get('shorts_hem'):
         bisect(shorts, Vector((0, 0, spec['shorts_hem'] + sole_z)), Vector((0, 0, 1)), inner=True)
-    shorts_co = coords(shorts)
-    say('skirt over shorts from', round(float(shorts_co[:, 2].min()), 3), 'to', round(float(shorts_co[:, 2].max()), 3))
-    # (the outline it hangs round: the body without its arms, and the shorts, which stand off MetaHuman's legs as MPFB's
-    # fitted ones didn't)
-    cols = pk.PLEATS if pleated else pk.ALINE_COLS
-    R, c, th, zs = pk.skirt_rings(np.concatenate([bco[~on_arm], shorts_co]), shirt_co, top, hem, 0.15 if pleated else 0.11,
-                                  cols, cx=J['Hips'].x)
-    sme, sverts, skirt_hang, bad = pk.skirt_mesh(R, c, th, zs, pleated, cols)
-    skirt = bpy.data.objects.new('skirt', sme)
-    bpy.context.scene.collection.objects.link(skirt)
-    rigid(skirt, None)
-    # (person_kit's weighting: the hips at the top, more and more the thigh on its side by the hem)
-    hx, side = J['Hips'].x, (1 if J['LeftUpLeg'].x > J['Hips'].x else -1)
-    for i, (co, h) in enumerate(zip(sverts, skirt_hang)):
-        w = 0.85 * max(0.0, min(1.0, (h - 0.1) / 0.75)) ** 1.2
-        s = max(0.0, min(1.0, 0.5 + (co[0] - hx) * side / 0.13))
-        skirt.vertex_groups[P + 'Hips'].add([i], 1 - w, 'REPLACE')
-        if w > 0:
-            skirt.vertex_groups[P + 'LeftUpLeg'].add([i], w * s, 'REPLACE')
-            skirt.vertex_groups[P + 'RightUpLeg'].add([i], w * (1 - s), 'REPLACE')
-    say('skirt', KIT['bottom'], 'top', round(top, 3), 'hem', round(hem, 3), 'over the soles', KIT['skirt'], 'shirt hem', round(float(shirt_hem), 3), 'radius at the hem',
-        round(float(R[-1].min()), 3), '..', round(float(R[-1].max()), 3), 'faces', len(sme.polygons), 'wrong way', bad)
+    say('skirt over shorts from', round(float(coords(shorts)[:, 2].min()), 3), 'to', round(float(coords(shorts)[:, 2].max()), 3))
+    skirt_top, skirt_hem = shirt_hem + pk.SKIRT_TUCK, KIT['skirt'] + sole_z
+else:
+    # (a skirt chosen over shorts: its hem SKIRT_BELOW under theirs, finish-player.py)
+    skirt_top, skirt_hem = shirt_hem + pk.SKIRT_TUCK, float(coords(shorts)[:, 2].min()) - pk.SKIRT_BELOW
+skirts = {}  # style: (object, hang); with a wardrobe both, each on its band of the atlas
+for style in ('pleated', 'aline'):
+    if WARDROBE or style == SKIRT_STYLE:
+        skirts[style] = make_skirt(style, skirt_top, skirt_hem, pk.SKIRT_BANDS[style] if WARDROBE else None)
+skirt, skirt_hang = skirts.get(SKIRT_STYLE, (None, None))
 
 head_piece, head_shade = None, None
 if KIT.get('head'):
@@ -816,56 +1109,313 @@ if KIT.get('head'):
     rigid(head_piece, 'Head')
     say('head piece', KIT['head'], 'band radius', round(float(rad.min()), 3), '..', round(float(rad.max()), 3), 'faces', len(hfaces))
 
+# ---------------------------------------------------------------- the wardrobe's other cuts -----------------------------------------
+wear = {}      # piece name: its object (the modelled top, shorts, trainers and crew sock aside)
+collar = None
+TOP0 = 'tank' if KIT.get('top') == 'tank' else 'tee'
+sleeveless_planes, wear_tank_planes = [], []
+if WARDROBE:
+    # (person_wear and person_kit read joints off a rig: a stand-in with this body's joints, the real one is made further down)
+    bpy.ops.object.armature_add(enter_editmode=True)
+    wear_rig = bpy.context.object
+    wear_rig.name = 'wear_rig'
+    eb = wear_rig.data.edit_bones
+    eb.remove(eb[0])
+    for n in BONES:
+        b = eb.new(P + n)
+        b.head = J[n]
+        b.tail = J[n] + Vector((0, 0, 0.02))
+    bpy.ops.object.mode_set(mode='OBJECT')
+    tee = tee_whole or shirt
+    if tee_whole:
+        wear['tee'] = tee_whole
+    else:
+        wear['tank'] = pw.copy_of(shirt, 'Wear.tank')
+        wear_tank_planes = cut_armholes(wear['tank'], TANK_PTS, 'tank (wardrobe)')
+    wear['sleeveless'] = pw.copy_of(tee, 'Wear.sleeveless')
+    sleeveless_planes = cut_armholes(wear['sleeveless'], pw.SLEEVELESS, 'sleeveless')
+    wear['vneck'] = pw.make_vneck(None, pw.copy_of(tee, 'Wear.vneck'), wear_rig, WOMEN, skin_tree)
+
+    # Long sleeves: the tee's sleeves carried on to cuffs at the wrists (person_wear.make_long). Epic's sleeve ends in a hem
+    # turned up inside, whose open edge is inside the sleeve: the lining goes first (cloth on the arm facing the arm's own
+    # line), so the edge carried on is the sleeve's outside. New cloth takes one plain place on the sleeve in the atlas.
+    lo = pw.copy_of(tee, 'Wear.long')
+    lw = weights(lo)
+    ldom = [max(w, key=w.get) if w else '' for w in lw]
+    bm = bmesh.new()
+    bm.from_mesh(lo.data)
+    bm.normal_update()
+    dead = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        lr = 'Left' if (c.x - chest_x) * (J['LeftArm'].x - chest_x) > 0 else 'Right'
+        if not all(ldom[v.index] in (lr + 'Arm', lr + 'ForeArm') for v in f.verts):
+            continue
+        a0, a1 = J[lr + 'Arm'], J[lr + 'ForeArm']
+        t = (a1 - a0).normalized()
+        out = c - (a0 + t * (c - a0).dot(t))
+        if out.length > 1e-4 and f.normal.dot(out.normalized()) < -0.3:
+            dead.append(f)
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(lo.data)
+    bm.free()
+    lo.data.update()
+    # (a plain place: the sleeve's cloth nearest halfway down the upper arm, on top)
+    uvl = lo.data.uv_layers[0].data
+    mid = (J['LeftArm'] + J['LeftForeArm']) / 2 + Vector((0, 0, 0.05))
+    best = min(lo.data.loops, key=lambda l: (lo.data.vertices[l.vertex_index].co - mid).length)
+    plain = tuple(uvl[best.index].uv)
+    arm_tree = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices], [tuple(p_.vertices) for p_ in body.data.polygons])
+    sw_ = pw.SkinWeights(body)
+    bm = bmesh.new()
+    bm.from_mesh(lo.data)
+    added, loops_n = [], 0
+    for lr in ('Left', 'Right'):
+        sx = 1.0 if J[lr + 'Arm'].x > chest_x else -1.0
+        axis = pw.Axis([J[lr + 'Arm'], J[lr + 'ForeArm'], J[lr + 'Hand']])
+        # (the sleeve's own edge: of the open loops out on this arm, the widest round the arm's line; what is left of the
+        # lining has a smaller one inside it, and carried on too it made a second sleeve inside the first)
+        mine = [l for l in pw.boundary_loops(bm) if (sum(v.co.x for v in l) / len(l) - chest_x) * sx > arm_x0 + 0.04
+                and sum(v.co.z for v in l) / len(l) < J[lr + 'Arm'].z and len(l) > 8]
+        loops_n += len(mine)
+        if not mine:
+            continue
+        radius = lambda l: sum((v.co - axis.at(axis.project(v.co))).length for v in l) / len(l)
+        loop = max(mine, key=radius)
+        s_end = axis.total - pw.CUFF_BACK
+
+        def ease(f, s_, e0, s_end=s_end):
+            # (person_wear.make_long's: from the sleeve's own hang to a forearm's ease by halfway, closing to the cuff)
+            u = min(1.0, f * 2.0)
+            u = u * u * (3 - 2 * u)
+            c = min(1.0, max(0.0, (s_ - (s_end - 0.06)) / 0.06))
+            return (e0 * (1 - u) + pw.FOREARM_EASE * u) * (1 - c) + pw.CUFF_EASE * c
+        # (rings 3.2 cm apart: Epic's sleeve has 70 vertices round its edge, and at person_wear's 1.8 cm two sleeves were 3,300)
+        ring_was, pw.RING = pw.RING, 0.032
+        new = pw.extend_loop(bm, loop, axis, arm_tree, s_end, ease, rib=0.0006, rib_len=0.016, uv=lambda f: plain)
+        pw.RING = ring_was
+        added.append((len(new), pw.limb_ok(sx, lr, ('Arm', 'ForeArm', 'Hand'))))
+    bm.to_mesh(lo.data)
+    bm.free()
+    lo.data.update()
+    first = len(lo.data.vertices) - sum(a[0] for a in added)
+    for count, ok in added:
+        ids = list(range(first, first + count))
+        sw_.bind(lo, ids, [lo.data.vertices[j_].co.copy() for j_ in ids], ok)
+        first += count
+    for p_ in lo.data.polygons:
+        p_.use_smooth = True
+    wear['long'] = lo
+    say('long sleeves: lining faces out', len(dead), '; open loops on the arms', loops_n, '; vertices added', sum(a[0] for a in added),
+        '; new cloth at uv', [round(x, 3) for x in plain])
+
+    # A polo's collar on the tee (person_kit.make_collar), measured on the skin of the body and the neck together.
+    sk_me = bpy.data.meshes.new('skin_all')
+    sk_me.from_pydata([v.co.copy() for v in body.data.vertices] + [v.co.copy() for v in head_skin.data.vertices], [],
+                      [tuple(p_.vertices) for p_ in body.data.polygons] + [tuple(i + nb for i in p_.vertices) for p_ in head_skin.data.polygons])
+    sk_me.update()
+    skin_all = bpy.data.objects.new('skin_all', sk_me)
+    bpy.context.scene.collection.objects.link(skin_all)
+    collar = pk.make_collar(skin_all, tee, wear_rig, WOMEN, whole=True)
+    for m in list(collar.modifiers):
+        collar.modifiers.remove(m)
+    bpy.data.objects.remove(skin_all)
+
+    # Ankle and knee socks and tights: the legs' skin again (skin_shell above, person_wear's heights).
+    shoe_top = float(new_co[:, 2].max())
+    wear['ankle'] = skin_shell('Wear.ankle', shoe_top + pw.ANKLE_UP, SOCK_EASE, 0.0008, pw.ANKLE_RIB)
+    wear['knee'] = skin_shell('Wear.knee', min(J['LeftLeg'].z, J['RightLeg'].z) - pw.KNEE_DOWN, SOCK_EASE, 0.0008, pw.KNEE_RIB)
+    wear['tights'] = skin_shell('Wear.tights', float(coords(shorts)[:, 2].min()) + pw.TIGHTS_IN, pw.TIGHTS_EASE, 0.0, 0.0)
+    for o in list(wear.values()) + [collar]:
+        for m in list(o.modifiers):
+            o.modifiers.remove(m)
+    for k, o in wear.items():
+        say('wear', k, len(o.data.vertices), 'vertices', len(o.data.polygons), 'faces')
+    bpy.data.objects.remove(wear_rig)
+
+if os.environ.get('MH_STOP') == 'wear':
+    # (a look at each cut on the body, in Blender: MH_VIEWS=tank,long... picks)
+    scn = bpy.context.scene
+    scn.render.engine = 'BLENDER_EEVEE'
+    scn.render.resolution_x, scn.render.resolution_y = 900, 1100
+    scn.world = bpy.data.worlds.new('w')
+    scn.world.use_nodes = True
+    scn.world.node_tree.nodes['Background'].inputs[0].default_value = (0.62, 0.63, 0.66, 1)
+    scn.world.node_tree.nodes['Background'].inputs[1].default_value = 1.0
+    sun = bpy.data.objects.new('sun', bpy.data.lights.new('sun', 'SUN'))
+    sun.data.energy = 2.5
+    sun.rotation_euler = (math.radians(50), 0, math.radians(-30))
+    scn.collection.objects.link(sun)
+
+    def flat(name, rgb):
+        m = bpy.data.materials.new(name)
+        m.diffuse_color = (*rgb, 1)
+        m.use_nodes = True
+        m.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (*rgb, 1)
+        m.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = 0.8
+        return m
+    everything = [o for o in bpy.data.objects if o.type == 'MESH']
+    tones = {'skin': flat('skin', (0.75, 0.55, 0.45)), 'top': flat('top', (0.75, 0.12, 0.2)), 'bottom': flat('bottom', (0.1, 0.12, 0.3)),
+             'white': flat('white', (0.9, 0.9, 0.9)), 'trim': flat('trim', (0.95, 0.8, 0.2))}
+
+    def dress(o, tone):
+        o.data.materials.clear()
+        o.data.materials.append(tones[tone])
+        for p_ in o.data.polygons:
+            p_.use_smooth = True
+    cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam'))
+    scn.collection.objects.link(cam)
+    scn.camera = cam
+    cam.data.lens = 85
+    tops_all = {TOP0: shirt, **{k: v for k, v in wear.items() if k in pw.TOPS}}
+    looks_ = {}
+    for k in tops_all:
+        looks_[k] = [(tops_all[k], 'top'), (shorts, 'bottom'), (sock, 'white')]
+    looks_['polo'] = [(tops_all['tee'], 'top'), (collar, 'trim'), (shorts, 'bottom'), (sock, 'white')] if collar else []
+    for st, (so, _) in skirts.items():
+        looks_[st] = [(shirt, 'top'), (shorts, 'bottom'), (so, 'bottom'), (sock, 'white')]
+    for k in ('ankle', 'knee'):
+        if k in wear:
+            looks_[k] = [(shirt, 'top'), (shorts, 'bottom'), (wear[k], 'white')]
+    if 'tights' in wear:
+        looks_['tights'] = [(shirt, 'top'), (shorts, 'bottom'), (wear['tights'], 'trim'), (sock, 'white')]
+    pick = [x for x in os.environ.get('MH_VIEWS', '').split(',') if x]
+    for k, parts in looks_.items():
+        if not parts or (pick and k not in pick):
+            continue
+        for o in everything:
+            o.hide_render = True
+        for o, tone in parts + [(body, 'skin'), (head_skin, 'skin'), (shoes, 'white')]:
+            o.hide_render = False
+            dress(o, tone)
+        for tag, at, look in (('front', (0.6, -3.6, 1.25), (0, 0, 1.0)), ('side', (-3.4, -1.2, 1.25), (0, 0, 1.0))):
+            cam.location = Vector(at)
+            cam.rotation_euler = (Vector(look) - cam.location).to_track_quat('-Z', 'Y').to_euler()
+            scn.render.filepath = os.path.join(OUT, f'wear-{k}-{tag}.png')
+            bpy.ops.render.render(write_still=True)
+    say('wear preview written')
+    sys.exit(0)
+
 # ---------------------------------------------------------------- skin under the kit out ---------------------------------------------
 # Skin that sees cloth within 3 cm straight out from it goes, except a 2.5 cm band next to skin that stays: looking into a
 # sleeve or a leg of the shorts never shows a hole. Inside the shoes and socks everything goes below the sock's top.
-cloth_bm = bmesh.new()
-for o in (shirt, shorts):
-    tmp = bmesh.new()
-    tmp.from_mesh(o.data)
-    m = bpy.data.meshes.new('t')
-    tmp.to_mesh(m)
-    cloth_bm.from_mesh(m)
-    bpy.data.meshes.remove(m)
-    tmp.free()
-bvh = BVHTree.FromBMesh(cloth_bm)
-body.data.update()
-covered = np.zeros(len(bco), dtype=bool)
-for v in body.data.vertices:
-    hit = bvh.ray_cast(v.co + v.normal * 0.001, v.normal, 0.03)
-    covered[v.index] = hit[0] is not None
-kd_open = KDTree(int((~covered).sum()))
-for i in np.nonzero(~covered)[0]:
-    kd_open.insert(bco[i], int(i))
-kd_open.balance()
-for i in np.nonzero(covered)[0]:
-    if kd_open.find(bco[i])[2] < 0.025:
-        covered[i] = False
-# The skin behind the neckline stays, as finish-player.py keeps it: the game opens the collar lower than the garment's own
-# neck hole (kit.ts personFrame, a smooth cut in the shader), and with this skin gone the opening showed the shirt's
-# dark inside in jagged pieces. (finish-player's box in this file's axes, z up and forward -y, but reaching the chest's
-# front: MetaHuman's neck joint stands further back in the neck than MPFB's, and 3 cm in front of it kept no chest)
-nk = J['Neck']
-# (and out to where the shoulders start, 16 cm: a loose crew neck seen from above showed the void past 10.5 cm as a dark
-# wedge at the side of the neck)
-behind_collar = ((np.abs(bco[:, 0] - nk.x) < 0.16) & (-bco[:, 1] > -nk.y - 0.1) & (-bco[:, 1] < -nk.y + 0.2)
-                 & (bco[:, 2] > nk.z - 0.16) & (bco[:, 2] < nk.z + 0.025))
-covered &= ~behind_collar
-if tank_planes:
-    # A tank: the arms are bare, and the skin under the armhole stays TANK_SKIN in (the shader cuts it at 2 cm), in the band
-    # the shader's skin cut covers (kit.ts kitDetail: out from armX - 0.09, from the plane's top down to over the hem).
-    # (outside the plane the arm's skin all stays: from the inside of the arm the torso's shirt is within the ray's reach)
-    ax = np.abs(bco[:, 0] - chest_x)
+TANK_SKIN_IN = 0.09
+
+
+def armhole_keep(planes, top_dx, co, arm):
+    """Skin a tank or a sleeveless top leaves bare or its armhole's shader cut uncovers (kit.ts kitDetail: out from armX -
+    0.09 for a tank, from the plane's top down to over the hem; outside the plane the arm's skin all stays: from the inside
+    of the arm the torso's shirt is within a ray's reach)."""
+    keep = np.zeros(len(co), dtype=bool)
+    ax = np.abs(co[:, 0] - chest_x)
     hem_z = coords(shirt)[:, 2].min()
-    for a, no in tank_planes:
-        d = (bco[:, 0] - a.x) * no.x + (bco[:, 2] - a.z) * no.z
-        this_side = (bco[:, 0] - chest_x) * no.x > 0
-        cut_band = (bco[:, 2] < a.z + 0.005) & (bco[:, 2] > hem_z + 0.06) & (ax > arm_x0 - 0.09)
-        covered &= ~(this_side & (((d > 0) & on_arm) | ((d > -TANK_SKIN) & cut_band)))
-in_shoe = bco[:, 2] < sock_top - 0.015
-say('skin removed: under the kit', int(covered.sum()), 'in the shoes', int((in_shoe & ~covered).sum()), 'of', len(bco))
-delete_verts(body, covered | in_shoe)
-cloth_bm.free()
+    for a, no in planes:
+        d = (co[:, 0] - a.x) * no.x + (co[:, 2] - a.z) * no.z
+        this_side = (co[:, 0] - chest_x) * no.x > 0
+        cut_band = (co[:, 2] < a.z + 0.005) & (co[:, 2] > hem_z + 0.06) & (ax > arm_x0 + top_dx - 0.055)
+        keep |= this_side & (((d > 0) & arm) | ((d > -TANK_SKIN) & cut_band))
+    return keep
+
+
+hide = None
+if WARDROBE:
+    # The skin stays, but for what no cut ever shows: the feet and ankles from 3 cm under the trainer's collar down (a
+    # no-show sock leaves the ankle bare into the collar). Cut level, as the sock's line was: the shin's rings are far apart.
+    SKIN_IN_SHOE = 0.03
+    z_cut = min(J['LeftFoot'].z, J['RightFoot'].z) - 0.024 - SKIN_IN_SHOE
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, z_cut), plane_no=(0, 0, 1), clear_inner=True)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(body.data)
+    bm.free()
+    body.data.update()
+    # Which garments hide each skin vertex (person_wear.hide_masks: skin that sees a garment within 3 cm straight out from it,
+    # except a 2.5 cm band next to skin that shows, so looking into a sleeve or a leg of the shorts never shows a hole).
+    co2 = coords(body)
+    pw.N_BODY = pk.N_BODY = len(co2)
+    dom2 = [max(w, key=w.get) if w else '' for w in weights(body)]
+    arm2 = np.array([('Arm' in d or 'Hand' in d) for d in dom2])
+    leg2 = np.array([('Leg' in d) for d in dom2])
+    piece_obj = {**wear, 'crew': sock, 'shoe': shoes}
+    cover = {TOP0: pw.covered_by(body, shirt), 'shorts': pw.covered_by(body, shorts)}
+    for name, o in piece_obj.items():
+        cover[name] = pw.covered_by(body, o)
+    nk = J['Neck']
+    # (the skin behind the neckline stays, as before: the game opens the collar lower than the garment's own neck hole)
+    keep_always = ((np.abs(co2[:, 0] - nk.x) < 0.16) & (-co2[:, 1] > -nk.y - 0.1) & (-co2[:, 1] < -nk.y + 0.2)
+                   & (co2[:, 2] > nk.z - 0.16) & (co2[:, 2] < nk.z + 0.025))
+    hem_z = float(coords(shorts)[:, 2].min())
+    keep_in_hem = leg2 & (co2[:, 2] > hem_z - 0.05) & (co2[:, 2] < hem_z + 0.06)
+    vfield = pw.vneck_field(type('R', (), {'data': type('D', (), {'bones': {P + 'Neck': type('B', (), {'head_local': nk})()}})()})(), WOMEN)
+    keep_for = {'vneck': np.array([vfield(Vector(c)) > -0.02 and c[1] < nk.y - 0.01 for c in co2]),
+                'tank': armhole_keep(tank_planes or wear_tank_planes, TANK_PTS[0][0], co2, arm2),
+                'sleeveless': armhole_keep(sleeveless_planes, pw.SLEEVELESS[0][0], co2, arm2)}
+    base_others = {'top': ['shorts', 'crew', 'shoe'], 'shorts': [TOP0, 'crew', 'shoe'], 'tights': ['shorts', TOP0, 'crew', 'shoe'],
+                   'socks': [TOP0, 'shorts', 'shoe'], 'shoe': [TOP0, 'shorts']}
+    union_of = {name: base_others['top' if name in pw.TOPS else 'socks' if name in pw.SOCKS else name] for name in cover}
+    hide = pw.hide_masks(body, cover, {}, union_of, keep_always, keep_in_hem, keep_for)
+    worn_bits = sum(1 << pw.PIECES.index(n) for n in ('shoe', TOP0, 'shorts', 'crew'))
+    say('skin kept whole:', len(co2), 'vertices; hidden as modelled', int(((hide & worn_bits) != 0).sum()))
+else:
+    cloth_bm = bmesh.new()
+    for o in (shirt, shorts):
+        tmp = bmesh.new()
+        tmp.from_mesh(o.data)
+        m = bpy.data.meshes.new('t')
+        tmp.to_mesh(m)
+        cloth_bm.from_mesh(m)
+        bpy.data.meshes.remove(m)
+        tmp.free()
+    bvh = BVHTree.FromBMesh(cloth_bm)
+    body.data.update()
+    covered = np.zeros(len(bco), dtype=bool)
+    for v in body.data.vertices:
+        hit = bvh.ray_cast(v.co + v.normal * 0.001, v.normal, 0.03)
+        covered[v.index] = hit[0] is not None
+    kd_open = KDTree(int((~covered).sum()))
+    for i in np.nonzero(~covered)[0]:
+        kd_open.insert(bco[i], int(i))
+    kd_open.balance()
+    for i in np.nonzero(covered)[0]:
+        if kd_open.find(bco[i])[2] < 0.025:
+            covered[i] = False
+    # The skin behind the neckline stays, as finish-player.py keeps it: the game opens the collar lower than the garment's own
+    # neck hole (kit.ts personFrame, a smooth cut in the shader), and with this skin gone the opening showed the shirt's
+    # dark inside in jagged pieces. (finish-player's box in this file's axes, z up and forward -y, but reaching the chest's
+    # front: MetaHuman's neck joint stands further back in the neck than MPFB's, and 3 cm in front of it kept no chest)
+    nk = J['Neck']
+    # (and out to where the shoulders start, 16 cm: a loose crew neck seen from above showed the void past 10.5 cm as a dark
+    # wedge at the side of the neck)
+    behind_collar = ((np.abs(bco[:, 0] - nk.x) < 0.16) & (-bco[:, 1] > -nk.y - 0.1) & (-bco[:, 1] < -nk.y + 0.2)
+                     & (bco[:, 2] > nk.z - 0.16) & (bco[:, 2] < nk.z + 0.025))
+    covered &= ~behind_collar
+    if tank_planes:
+        # A tank: the arms are bare, and the skin under the armhole stays TANK_SKIN in (the shader cuts it at 2 cm), in the band
+        # the shader's skin cut covers (kit.ts kitDetail: out from armX - 0.09, from the plane's top down to over the hem).
+        # (outside the plane the arm's skin all stays: from the inside of the arm the torso's shirt is within the ray's reach)
+        ax = np.abs(bco[:, 0] - chest_x)
+        hem_z = coords(shirt)[:, 2].min()
+        for a, no in tank_planes:
+            d = (bco[:, 0] - a.x) * no.x + (bco[:, 2] - a.z) * no.z
+            this_side = (bco[:, 0] - chest_x) * no.x > 0
+            cut_band = (bco[:, 2] < a.z + 0.005) & (bco[:, 2] > hem_z + 0.06) & (ax > arm_x0 - 0.09)
+            covered &= ~(this_side & (((d > 0) & on_arm) | ((d > -TANK_SKIN) & cut_band)))
+    say('skin removed: under the kit', int(covered.sum()), 'of', len(bco))
+    delete_verts(body, covered)
+    cloth_bm.free()
+    # Inside the sock the skin goes, cut level SOCK_SKIN under the sock's top (the turned edge lies on it to TURN_BACK). Cut, not
+    # dropped by vertex: the shin's rings are 2-3 cm apart, and losing every triangle that touched a vertex below the line could
+    # leave the skin's edge above the sock's.
+    SOCK_SKIN = 0.015
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, sock_top - SOCK_SKIN), plane_no=(0, 0, 1), clear_inner=True)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(body.data)
+    bm.free()
+    body.data.update()
 
 # ---------------------------------------------------------------- rig, posed into the game's T-pose ------------------------------
 bpy.ops.object.armature_add(enter_editmode=True)
@@ -888,7 +1438,8 @@ for n in BONES:
         eb[P + n].parent = eb[P + PARENT[n]]
 bpy.ops.object.mode_set(mode='OBJECT')
 
-skinned = [body, head_skin, eyes, teeth, lashes, shirt, shorts, shoes, hair] + [o for o in (brows, helmet, skirt, head_piece) if o]
+skinned = ([body, head_skin, eyes, teeth, lashes, shirt, shorts, shoes, sock, hair] + [o for o in (brows, helmet, head_piece, collar) if o]
+           + [so for so, _ in skirts.values()] + list(wear.values()))
 for o in skinned:
     o.parent = rig
     m = o.modifiers.new('rig', 'ARMATURE')
@@ -1245,6 +1796,10 @@ def bake_skin_ao(o, rect):
 
 
 cards_out = [o for o in (hair, brows, lashes, helmet) if o]
+if WARDROBE:
+    # (and no garment: the skin is whole under every cut, and baked under the modelled tee a player in a tank had dark shoulders,
+    # as finish-player.py keeps its unworn cuts out of every bake)
+    cards_out += [shirt, shorts, sock, shoes] + [o for o in (collar, head_piece) if o] + [so for so, _ in skirts.values()] + list(wear.values())
 for o in cards_out:
     o.hide_render = True
 ao_bake.cycles_setup()
@@ -1436,16 +1991,17 @@ paste(op, RECT['teeth'], load_px(os.path.join(MAPS, 'Teeth_Color.png'), RECT['te
 for k in ('shirt', 'shorts'):
     x, y, w, h = RECT[k]
     op[y:y + h, x:x + w] = 1.0  # the kit's occlusion: none baked yet
-if skirt:
-    # (person_kit's: darker up under the shirt, in each pleat's valley and on the lining; drawn square and halved across)
-    sao = pk.skirt_ao(RECT['skirt'][3], KIT['bottom'] == 'pleated')
+if skirts:
+    # (person_kit's: darker up under the shirt, in each pleat's valley and on the lining; drawn square and halved across.
+    # With a wardrobe both skirts, each on its band)
+    sao = pk.skirts_ao(RECT['skirt'][3]) if WARDROBE else pk.skirt_ao(RECT['skirt'][3], KIT['bottom'] == 'pleated')
     w = RECT['skirt'][2]
     paste(op, RECT['skirt'], sao.reshape(sao.shape[0], w, -1, 4).mean(2))
 op[..., 3] = 1
 for k, a in skin_ao.items():
     x, y, w, h = RECT[k]
     op[y:y + h, x:x + w, 3] = a
-fill_gutters(op, [RECT[k] for k in ('head', 'body', 'eye', 'teeth', 'shirt', 'shorts')] + ([RECT['skirt']] if skirt else []))
+fill_gutters(op, [RECT[k] for k in ('head', 'body', 'eye', 'teeth', 'shirt', 'shorts')] + ([RECT['skirt']] if skirts else []))
 save(op, os.path.join(OUT, 'opaque.webp'), 'opaque')
 
 
@@ -1875,54 +2431,79 @@ say('neck seam vertices', len(seam) // 2, 'closest body-to-head distances (mm)',
 
 # ---------------------------------------------------------------- export ----------------------------------------------------------
 bone_ix = {n: i for i, n in enumerate(BONES)}
-KINDS = [(body, 'skin', 'body'), (head_skin, 'skin', 'head'), (eyes, 'eye', 'eye'), (teeth, 'teeth', 'teeth'),
-         (shirt, 'shirt', 'shirt'), (shorts, 'shorts', 'shorts'), (shoes, None, None), (lashes, 'lash', 'lash'),
-         (hair, 'hair', 'hair'), (brows, 'brow', 'brow'), (helmet, 'hair', 'helmet'), (skirt, 'shorts', 'skirt'),
-         (head_piece, 'sock', None)]
-
-
 def uv_to(rect, size, u, v):
     x0, y0, w, h = rect
     return ((x0 + min(max(u, 0), 1) * w) / size[0], (y0 + min(max(v, 0), 1) * h) / size[1])
 
 
+KINDS = [(body, 'skin', 'body'), (head_skin, 'skin', 'head'), (eyes, 'eye', 'eye'), (teeth, 'teeth', 'teeth'),
+         (shirt, 'shirt', 'shirt'), (shorts, 'shorts', 'shorts'), (shoes, 'shoe', None), (sock, 'sock', None), (lashes, 'lash', 'lash'),
+         (hair, 'hair', 'hair'), (brows, 'brow', 'brow'), (helmet, 'hair', 'helmet'), (head_piece, 'sock', None)]
+KINDS += [(so, 'shorts', 'skirt') for so, _ in skirts.values()]
+# The wardrobe's cuts (person_wear.PIECES; the game draws the ones worn): a top is the shirt's part on the shirt's atlas, tights
+# the shorts' part at one plain place on the shorts (a skin shell has no UVs), socks and the collar the sock's part.
+KINDS += [(o, 'shirt' if k in pw.TOPS else 'shorts' if k == 'tights' else 'sock', 'shirt' if k in pw.TOPS else None) for k, o in wear.items()]
+if collar:
+    KINDS.append((collar, 'sock', None))
+PIECE_OF = {shirt: TOP0, shorts: 'shorts', shoes: 'shoe', sock: 'crew', **{o: k for k, o in wear.items()}, **{so: st for st, (so, _) in skirts.items()}}
+if collar:
+    PIECE_OF[collar] = 'collar'
+HANG = {so: hg for so, hg in skirts.values()}
+collar_shade = [d.value for d in collar.data.attributes['shade'].data] if collar else None
+tights_uv = None
+if 'tights' in wear:
+    # (the shorts' cloth at the front of the thigh, halfway down a leg)
+    suv = shorts.data.uv_layers[0].data
+    at = Vector((J['LeftUpLeg'].x, coords(shorts)[:, 1].min(), (J['LeftUpLeg'].z + coords(shorts)[:, 2].min()) / 2))
+    l0 = min(shorts.data.loops, key=lambda l: (shorts.data.vertices[l.vertex_index].co - at).length)
+    u_, v_ = suv[l0.index].uv
+    tights_uv = uv_to(RECT['shorts'], OPAQUE_SIZE, u_ - math.floor(u_), v_ - math.floor(v_))
+
+
 def fresh():
-    return {'pos': [], 'nrm': [], 'uv': [], 'si': [], 'sw': [], 'part': [], 'index': [], 'ao': [], 'mask': [], 'morph': []}
+    return {'pos': [], 'nrm': [], 'uv': [], 'si': [], 'sw': [], 'part': [], 'index': [], 'ao': [], 'mask': [], 'morph': [],
+            'piece': [], 'tpiece': [], 'hide': []}
 
 
 buffers = {'opaque': fresh(), 'alpha': fresh()}
+shoe_out, shoe_first = [], 0
 for o, part, rect in KINDS:
     if o is None:
         continue
     me = o.data
     me.calc_loop_triangles()
-    uvl = me.uv_layers[0].data
+    uvl = me.uv_layers[0].data if rect else None
     gname = {g.index: g.name[len(P):] for g in o.vertex_groups}
     kind = 'alpha' if part in ALPHA_PARTS else 'opaque'
     size = ALPHA_SIZE if kind == 'alpha' else OPAQUE_SIZE
     B = buffers[kind]
     base = len(B['part'])
     seen = {}
+    if o is shoes:
+        shoe_first = base
     tag = 'body' if o is body else 'head' if o is head_skin else None
     # (MetaHuman's body UVs sit in the next tile over, u 1-2, UDIM style: each mesh is brought back into 0-1)
-    allu = np.empty(len(uvl) * 2, dtype=np.float32)
-    uvl.foreach_get('uv', allu)
-    tile = np.floor(np.median(allu.reshape(-1, 2), axis=0))
+    tile = np.zeros(2)
+    if uvl is not None:
+        allu = np.empty(len(uvl) * 2, dtype=np.float32)
+        uvl.foreach_get('uv', allu)
+        tile = np.floor(np.median(allu.reshape(-1, 2), axis=0))
     if tile.any():
         say('uv tile', o.name, tile.tolist())
+    piece_ix = pw.PIECES.index(PIECE_OF.get(o, 'body'))
     for tri in me.loop_triangles:
+        B['tpiece'].append(piece_ix)
         for li, vi in zip(tri.loops, tri.vertices):
-            u, v = uvl[li].uv
+            u, v = uvl[li].uv if uvl is not None else (0.0, 0.0)
             u, v = u - tile[0], v - tile[1]
             key = (vi, round(u, 5), round(v, 5))
             if key in seen:
                 B['index'].append(seen[key])
                 continue
             vert = me.vertices[vi]
-            if o is shoes:
-                pt, uv = ('sock' if shoe_sock[vi] else 'shoe'), (0.0, 0.0)
-            elif o is head_piece:
-                pt, uv = 'sock', (0.0, 0.0)  # (kit.ts: a sock above the hips takes the trim colour)
+            if rect is None:
+                # (the trainer, the socks; a head piece: kit.ts, a sock above the hips takes the trim colour)
+                pt, uv = part, (tights_uv if part == 'shorts' and tights_uv else (0.0, 0.0))
             else:
                 pt, uv = part, uv_to(RECT[rect], size, u, v)
             ws = sorted(((g.weight, gname[g.group]) for g in vert.groups if g.weight > 1e-4), reverse=True)[:4]
@@ -1940,10 +2521,16 @@ for o, part, rect in KINDS:
             B['si'] += si
             B['sw'] += sw
             B['part'].append(PART[pt])
-            B['ao'].append(float(head_shade[vi]) if o is head_piece else float(eye_ao[vi]) if o is eyes else 1.0)
+            B['ao'].append(float(head_shade[vi]) if o is head_piece else float(eye_ao[vi]) if o is eyes else
+                           float(shoe_x[vi, 0]) if o is shoes and shoe_x is not None else
+                           float(collar_shade[vi]) if o is collar else 1.0)
+            B['piece'].append(piece_ix)
+            B['hide'].append(int(hide[vi]) if o is body and hide is not None else 0)
+            if o is shoes and shoe_x is not None:
+                shoe_out.append(shoe_x[vi])
             # (a skirt's hang, 0 at its top to 1 at the hem, in the mask's x: kit.ts swings it and keeps it off the thighs)
             B['mask'] += ([float(x) for x in regions[vi]] if o is head_skin else
-                          [float(skirt_hang[vi]) if o is skirt else 0.0, 0.0, 0.0, 0.0])
+                          [float(HANG[o][vi]) if o in HANG else 0.0, 0.0, 0.0, 0.0])
             B['index'].append(seen[key])
     say('mesh', o.name, len(seen), 'vertices', len(me.loop_triangles), 'triangles')
 
@@ -1965,14 +2552,22 @@ header = {'name': spec['name'], 'height': round(float(height), 4), 'bones': BONE
                        **({'hands': 'hands.webp', 'handsN': 'hands-n.webp'} if hands else {})},
           **({'handsBox': hands} if hands else {}),
           'parts': PART, 'morphs': [], 'kit': spec.get('kit', {}), 'meshes': {}}
+if WARDROBE:
+    worn = ['body', 'shoe', TOP0, 'shorts', 'crew'] + (['collar'] if KIT.get('top') == 'polo' else []) + ([SKIRT_STYLE] if SKIRT_STYLE else [])
+    header['wardrobe'] = {'pieces': list(pw.PIECES), 'worn': worn, 'vneck': [pw.VNECK_DROP[WOMEN], pw.VNECK_SLOPE]}
 for kind, B in buffers.items():
     ent = {'vertices': len(B['part']), 'indices': len(B['index'])}
     for key, fmt in (('pos', 'f'), ('nrm', 'f'), ('uv', 'f'), ('si', 'B'), ('sw', 'f'), ('part', 'B'), ('index', 'I'),
-                     ('ao', 'f'), ('mask', 'f'), ('morph', 'f')):
-        data = np.asarray(B[key], dtype={'f': '<f4', 'B': 'u1', 'I': '<u4'}[fmt]).tobytes()
+                     ('ao', 'f'), ('mask', 'f'), ('morph', 'f')) + ((('piece', 'B'), ('tpiece', 'B'), ('hide', 'H')) if WARDROBE else ()):
+        data = np.asarray(B[key], dtype={'f': '<f4', 'B': 'u1', 'I': '<u4', 'H': '<u2'}[fmt]).tobytes()
         ent[key] = [len(blob), len(data)]
         blob += data
         blob += b'\0' * ((4 - len(blob) % 4) % 4)
+    if kind == 'opaque' and shoe_out:
+        # (the modelled trainers: bodyX for their vertices, which follow one another from `first`, and the fit kit.ts laces by)
+        data = np.asarray(shoe_out, dtype='<f4').tobytes()
+        ent['shoe'] = {'first': shoe_first, 'count': len(shoe_out), 'x': [len(blob), len(data)], 'fit': shoe_fit}
+        blob += data
     header['meshes'][kind] = ent
 open(os.path.join(OUT, 'body.bin'), 'wb').write(bytes(blob))
 json.dump(header, open(os.path.join(OUT, 'body.json'), 'w'))
@@ -2002,7 +2597,7 @@ if PREVIEW:
              eyes: mat('e', image=os.path.join(MAPS, 'Eyes_Color.png')),
              teeth: mat('t', (0.8, 0.78, 0.7, 1)), lashes: mat('l', (0.05, 0.04, 0.03, 1)),
              shirt: mat('s', (0.75, 0.15, 0.12, 1)), shorts: mat('sh', (0.08, 0.1, 0.2, 1)),
-             shoes: mat('sho', (0.9, 0.9, 0.88, 1)), hair: mat('ha', (0.12, 0.08, 0.05, 1))}
+             shoes: mat('sho', (0.9, 0.9, 0.88, 1)), sock: mat('so', (0.95, 0.95, 0.95, 1)), hair: mat('ha', (0.12, 0.08, 0.05, 1))}
     if brows:
         looks[brows] = mat('br', (0.08, 0.06, 0.04, 1))
     if helmet:

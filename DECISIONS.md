@@ -4827,3 +4827,48 @@ why each:
 
 Not in it: the look pass's haze, blur, grade and screen-space occlusion (`?look=2`, the costly half), the cage, the roof.
 Off, nothing changes: the same shaders, no map fetched (the suite and the golden hashes run with it off).
+
+## Socks from the skin, trainers modelled round the feet (2026-11-13, owner, of a close still: "does that seriously look good to you?", "the limbs aren't even attached")
+
+It didn't. The still showed a MetaHuman player's feet: a stovepipe sock with the calf loose in it and a dark gap at its top, and a
+shoe that read as a pink clog. What was wrong, and what was done:
+
+- **The "rounded shoes" commit (767cd73) did nothing.** It subdivided `shoes05`, MakeHuman's trainer, which the game never draws:
+  `shoe.ts remakeShoes` replaces it at load with its own. The block is out of `mh-player.py`.
+- **The sock was MakeHuman's tube**, made round p1's MakeHuman leg and scaled onto each MetaHuman by the foot's box: 1 cm and
+  more off the calf all round. It is now the leg's own skin (`mh-player.py skin_shell`, as `person_wear.py` makes the MPFB
+  players' ankle and knee socks): the skin's faces from the sock's top down over the foot (toes past 70% of the foot's length
+  left out: under the toe box, and a sock over five toes came through it), welded (Unreal doubles vertices along UV seams, and
+  pushed out along two normals a seam opened as a dark line), cut level at the top, laid 2.2 mm out, the cuff's ring turned back
+  in onto the skin, each vertex with its skin vertex's weights (a vertex the cut made takes the nearest skin's: its number is
+  mixed from its edge's ends and pointed at some vertex elsewhere, and the cuff flew off as spikes).
+- **A MetaHuman stands with its feet turned out about 12 degrees**, and the old fit measured the foot by an axis-aligned box:
+  15% too wide. `foot_frame` takes the foot's own axis from its footprint (PCA of the points under 3 cm).
+- **The trainer is modelled per foot in Blender** (`tools/assets/metahuman/mh_shoe.py`, called from `mh-player.py`): the
+  footprint from casts against the skin, an outsole and midsole with toe spring and a heel bevel, a toe bumper, an upper laid
+  6 mm off the skin (over the toes on a smoothed cover of the foot's top: laid on each toe it creased), a padded collar with a
+  heel tab dipping under the ankle bones, eyestays either side of a throat, a padded tongue that bridges the ankle's crease and
+  lies on the shin, and laces that are cords: six crossings, a bar and a tied bow. About 2,400 vertices a foot. It ships in the
+  person's file with its own data per vertex (`meshes.opaque.shoe`: occlusion, a code for which part, along and across the
+  foot) and its fit; `asset.ts` skips `remakeShoes` when a file brings its own, and `kit.ts` paints it (`ShoeFit.modelled`:
+  the cords take the lace colour, the old painted laces and eyelets are off, an eyestay band with stitching and a midsole
+  groove are added). The shoe moves with the foot and the toe, its collar and the tongue's top with the skin beside them
+  (`hold`), so the collar stays on the sock as the ankle bends.
+- **Why not `shoe.ts` for these bodies**: it measures the sock by its vertices and takes the collar's weights from the
+  nearest sock vertices, and a MetaHuman's shin has rings 2-3 cm apart, so its collar stood off the sock whatever was tried
+  (a cloud of surface points, a wider ankle band, weights on the surface: reverted). `shoe.ts` is unchanged and still makes
+  the MakeHuman builds' shoes.
+- **Tests** (`tests/render/shoe.test.ts`): the same five things held for both kinds. Where a modelled trainer is laid out
+  differently the measure says so: the sock is "inside" when a ray out of it meets shoe within 3 cm (sectors round the ankle
+  misjudge a mesh with rings 17 mm apart); the tongue's roll is found by its code. `surfaceNear` takes a `reach`: it files
+  triangles under their corners' cells and missed a shin's 3 cm triangles.
+
+Seen in the game at 1600 x 900 on a man's and a woman's feet (21.6 cm): laced trainers, the sock on the leg, nothing loose.
+Still plain: the upper has no panel geometry (panels are paint), and the MakeHuman builds keep `shoe.ts`'s shoes.
+
+## The arena's detail pass is on by default (2026-11-13, owner: "yes push it live")
+
+`?detail=0` turns it off; Low never has it. Its cost on the laptop stand-in (Medium, CPU 4x) was the second key light's shadow,
+which draws every caster again (60 more draw calls, 270 thousand triangles: frames over 20 ms went from about 1% to 8-30% with
+other sessions loading the machine). So `arenaDetail.full` (High and Ultra, where the preset draws every device pixel) holds
+that shadow and the seats' brackets; Medium keeps the surfaces, the floor, both lights and the contact shadows.

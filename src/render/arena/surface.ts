@@ -8,12 +8,16 @@
 // takes the one it lies in (blended where it lies between, by its normal). The relief is the map's own normals turned into
 // each plane's frame ("whiteout" blending; Golus, "Normal Mapping for a Triplanar Shader", 2017).
 //
-// Behind `arenaDetail.on` (?detail=1) until the owner has seen it: off, nothing here runs and no map is fetched.
+// On by default since the owner saw it (13 Nov 2026: "yes push it live"); `?detail=0` or the Low preset turns it off, and then
+// nothing here runs and no map is fetched.
 import * as THREE from 'three/webgpu';
 import { abs, cameraViewMatrix, float, mix, normalWorldGeometry, positionWorld, texture, vec3, vec4, vertexColor } from 'three/tsl';
 
-/** The switch: `want` is what was asked for (main.ts, from the URL), `on` what the match being built has (Game: not on Low quality). */
-export const arenaDetail = { want: false, on: false };
+/** The switch: `want` is what was asked for (main.ts, from the URL), `on` what the match being built has (Game: not on Low quality),
+ * `full` with the parts a mid-range laptop can't pay for (Game: only where the preset draws every device pixel, High and Ultra):
+ * the second key light's shadow, which draws every shadow caster again (60 more draw calls, 270 thousand triangles: on the 4x
+ * CPU stand-in at Medium, frames over 20 ms went from 1% to 8-30%, tools/perf.mjs, 13 Nov 2026), and the seats' brackets. */
+export const arenaDetail = { want: false, on: false, full: false };
 
 /** The sets there are, with the mean of each colour map (linear luminance: what a tint is divided by) and its tile (m). */
 const SETS = {

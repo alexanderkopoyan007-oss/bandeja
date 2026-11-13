@@ -376,6 +376,7 @@ export class Game {
     this.preset = prefs.quality ?? QUALITY.high;
     // The detail pass (render/arena/surface.ts): asked for, and not on Low quality (its maps, its second shadow map).
     arenaDetail.on = arenaDetail.want && this.preset.name !== QUALITY.low.name;
+    arenaDetail.full = arenaDetail.on && this.preset.maxDpr >= 2;
     this.detail = arenaDetail.on;
     // The display's period as measured while the page loaded (frames get expensive from here on).
     stopDisplaySample();
@@ -413,8 +414,10 @@ export class Game {
       addFilmRig(this.arena.group, court.halfW, court.halfL, FILM_SET, false);
     }
     // The preset's shadow map (before anything is drawn: the map is made at the first shadow pass).
-    for (const key of this.arena.keys) {
-      if (this.preset.shadow > 0) key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
+    for (let i = 0; i < this.arena.keys.length; i++) {
+      const key = this.arena.keys[i]!;
+      // (the crossed pair's second light casts its shadow only on the full detail pass: surface.ts arenaDetail.full)
+      if (this.preset.shadow > 0 && (i === 0 || arenaDetail.full)) key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
       else key.castShadow = false;
     }
     this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base });

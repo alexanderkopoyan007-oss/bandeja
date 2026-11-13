@@ -43,7 +43,7 @@ export function drawnTriangles(p: PlayerAsset, paint?: Paint): number[] {
  * negative inside. (A nearest vertex's normal gave false hits beside steep slopes.) The normals are the bind pose's: in the rest
  * pose the feet turn 2-4 degrees, which moves `along` by under a tenth of a millimetre at these distances.
  */
-export function surfaceNear(p: PlayerAsset, tris: ArrayLike<number>, at?: THREE.BufferAttribute): (q: THREE.Vector3) => { d: number; along: number } {
+export function surfaceNear(p: PlayerAsset, tris: ArrayLike<number>, at?: THREE.BufferAttribute, reach = 2): (q: THREE.Vector3) => { d: number; along: number } {
   const pos = at ?? p.geometry.getAttribute('position'), nrm = p.geometry.getAttribute('normal');
   const cells = new Map<string, number[]>(), key = (x: number, y: number, z: number): string => `${x},${y},${z}`;
   const P = (v: number): THREE.Vector3 => new THREE.Vector3().fromBufferAttribute(pos, v);
@@ -63,7 +63,9 @@ export function surfaceNear(p: PlayerAsset, tris: ArrayLike<number>, at?: THREE.
     const cx = Math.floor(q.x / 0.01), cy = Math.floor(q.y / 0.01), cz = Math.floor(q.z / 0.01);
     let bd = Infinity, along = Infinity;
     const done = new Set<number>();
-    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) {
+    // (triangles are filed under their corners' cells: `reach` cells each way finds those whose corners are that near, so a
+    // surface with triangles over 2 cm across, a MetaHuman's shin, needs more)
+    for (let dx = -reach; dx <= reach; dx++) for (let dy = -reach; dy <= reach; dy++) for (let dz = -reach; dz <= reach; dz++) {
       for (const t of cells.get(key(cx + dx, cy + dy, cz + dz)) ?? []) {
         if (done.has(t)) continue;
         done.add(t);

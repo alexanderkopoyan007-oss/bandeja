@@ -127,6 +127,8 @@ for (const name of names) {
     const me = meshes[kind];
     if (AO) me.ao = chunk(Uint8Array.from(AO, (a) => Math.round(Math.min(1, Math.max(0, a)) * 255)));
     if (MASK) me.mask = chunk(Uint8Array.from(MASK, (a) => Math.round(Math.min(1, Math.max(0, a)) * 255)));
+    // (trainers modelled round the feet, mh_shoe.py: their vertices' bodyX as floats, and the fit kit.ts laces by)
+    if (m.shoe) me.shoe = { first: m.shoe.first, count: m.shoe.count, fit: m.shoe.fit, x: chunk(arr(Float32Array, m.shoe.x)) };
     if (MORPH && NM) {
       // Which vertices any key moves (> 0.01 mm), and for the opaque mesh the triangles touching them: the face.
       const moving = new Uint8Array(n);

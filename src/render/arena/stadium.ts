@@ -236,7 +236,9 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     back.rotateX(0.1);
     leg.translate(0, 0.18, 0.12);
     seatGeo.dispose();
-    seatGeo = mergeGeometries([pan, back, leg]);
+    // (the bracket under the pan only on the full pass: a third of the seats' 168 thousand triangles, seen from nowhere a match's
+    // cameras stand)
+    seatGeo = mergeGeometries(arenaDetail.full ? [pan, back, leg] : [pan, back]);
     for (const g of [pan, back, leg]) g.dispose();
   }
   const seatMesh = new THREE.InstancedMesh(seatGeo, new THREE.MeshStandardMaterial({ color: new THREE.Color(st.seat).multiplyScalar(STAND_LIGHT * 1.3), roughness: 0.6 }), seats.length);

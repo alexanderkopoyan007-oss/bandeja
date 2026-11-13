@@ -39,6 +39,9 @@ export interface ShoeFit {
   eyelets: number;
   /** This foot's length over a size 43's. */
   k: number;
+  /** A trainer modelled round the foot in the person's file (tools/assets/metahuman/mh_shoe.py), not made here: its laces are
+   * cords of their own (where 40), its collar has a lining (45), and kit.ts paints neither on. */
+  modelled?: boolean;
 }
 
 /** Points round every ring. */

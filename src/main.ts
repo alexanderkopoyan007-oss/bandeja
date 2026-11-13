@@ -43,8 +43,8 @@ Avatar.motion = num('motion', 0);
 // their tracks are on this machine (public/assets/mocap-local/tracks/), until the owner has seen them.
 // (&tracks=forehand,volley-fh names the ones to load for a look: by itself ?motion=3 loads none, clipStroke.ts TRACKS_LIVE)
 classicBodies.on = params.get('classic') === '1';
-// The arena's detail pass (render/arena/surface.ts): behind ?detail=1 until the owner has seen it.
-arenaDetail.want = params.get('detail') === '1';
+// The arena's detail pass (render/arena/surface.ts): on (the owner's word, 13 Nov 2026) unless ?detail=0; never on Low (Game).
+arenaDetail.want = params.get('detail') !== '0';
 Avatar.trackAny = Avatar.motion === 3 && params.get('tracks') !== null && params.get('fit') === '0';
 const strokeTracks = Avatar.motion === 3 ? loadStrokeTracks(`${import.meta.env.BASE_URL}assets/mocap-local/tracks/`, params.get('tracks')?.split(',')) : null;
 // ?ground=1: contact shadows under the players (render/grounding.ts) until the owner has seen them.
