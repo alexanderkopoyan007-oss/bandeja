@@ -11,9 +11,7 @@ scratch/
 reference/photos/
 __pycache__/
 .wrangler/
-# MetaHuman players (tools/assets/metahuman/): packed locally, not published until the owner has settled the licence
-# question (Epic Content License's MetaHuman addendum vs the engine EULA's Non-Engine Products; see DECISIONS.md)
-public/assets/people/mh*
-public/assets/people/*mh.bnz
-public/assets/people/*mh-*
+# The MetaHuman pilot (tools/assets/metahuman/): local only. The ten cast builds (p1mh-p10mh) are published since
+# 13 Nov 2026, on the owner's word (DECISIONS.md).
+public/assets/people/mh1*
 public/assets/mocap-local/

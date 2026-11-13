@@ -9,6 +9,7 @@
 // - the rolls the carpet was laid in: faint stripes along the court where two rolls meet;
 // - lines tufted in white fibre: bright, slightly speckled, with the court's sheen.
 import * as THREE from 'three/webgpu';
+import { arenaDetail } from './arena/surface.ts';
 import {
   positionWorld, cameraPosition, texture, vec2, float, abs, fract, floor, max, mix, smoothstep, fwidth,
   saturate, normalize, exp, pow, color,
@@ -154,6 +155,22 @@ export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: nu
       .add(graze.mul(look.sandAmount * 0.8)),
   );
   col = mix(col, sandC, sandShow.mul(0.55));
+  // The detail pass (arena/surface.ts arenaDetail; 13 Nov 2026): everything above is finer than a pixel from where a camera
+  // stands (2.5 mm tufts) or too faint to see (a 5% mottle over metres), so the floor was one flat colour at every distance.
+  // What a real carpet shows in between: the pile lying this way and that in hand-sized clumps, sand gathered in patches a
+  // foot or two across, and broad lighter and darker reaches where it has been brushed and walked. The same two maps, laid
+  // larger; and the roof's lights fall off beyond the court, the surround's outer edge well under the court's own light.
+  let sheen: F = float(0);
+  if (arenaDetail.on && turf) {
+    const clump = texture(dTex, p.div(2.9)), patch = texture(mTex, p.div(3.7)), reach = texture(mTex, p.div(23).add(vec2(0.31, 0.57)));
+    const pile = clump.r.sub(0.55).mul(0.5).add(patch.r.sub(0.5).mul(0.34)).add(reach.r.sub(0.5).mul(0.3));
+    col = col.mul(float(1).add(pile));
+    const dust = saturate(clump.g.mul(0.9).add(patch.g.sub(0.45).mul(1.6))).mul(look.sandAmount * 2.2);
+    col = mix(col, sandC, saturate(dust.mul(float(0.35).add(graze.mul(0.5)))));
+    sheen = patch.r.sub(0.5).mul(0.16).add(clump.b.sub(0.5).mul(0.1));
+    const out = max(max(abs(p.x).sub(5), abs(p.y).sub(10)), 0);
+    col = col.mul(float(1).sub(smoothstep(0.3, 9, out).mul(0.42)));
+  }
 
   if (court && look.line) {
     // Lines: the two service lines across, the centre line between them (20 cm past each); anti-aliased by the
@@ -169,7 +186,7 @@ export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: nu
     col = mix(col, lineC, line);
   }
   m.colorNode = col;
-  m.roughnessNode = float(look.roughness).sub(graze.mul(0.25));
+  m.roughnessNode = float(look.roughness).sub(graze.mul(0.25)).add(sheen).clamp(0.3, 1);
   m.metalnessNode = float(0);
   return m;
 }

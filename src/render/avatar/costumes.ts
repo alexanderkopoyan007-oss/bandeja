@@ -12,7 +12,8 @@
 // body under it (costume.ts skinLike); what stands off it (the pack, the box, the ring, the tail) and what is on the head
 // rides one bone. All of it is ours.
 import * as THREE from 'three/webgpu';
-import { dressedIndex, type PlayerAsset } from './asset.ts';
+import WARDROBES from '../../../data/wardrobes.json';
+import { dressedIndex, metaHumanOf, type PlayerAsset, type Wardrobe } from './asset.ts';
 import { personFrame, type KitFrame, type KitLook } from './kit.ts';
 import { lathe, mergeParts, roundedBox, surface, tube, type Part } from '../geom.ts';
 import { fabric, metal, plastic } from './clothTex.ts';
@@ -75,6 +76,29 @@ export function costumed(look: KitLook, wear?: Wear): { look: KitLook; wear?: We
   if (c.covers.head) w.head = null;
   if (c.covers.eyes) w.eyes = null;
   return { look: { ...look, ...c.look }, wear: w };
+}
+
+/** A roster person's MakeHuman wardrobe as far as piecesFor reads it (data/wardrobes.json: no file is in yet when a build is chosen). */
+function wardrobeOf(person: string): Wardrobe | null {
+  const w = (WARDROBES.people as Record<string, { worn: string[]; missing: string[] } | undefined>)[person];
+  if (!w) return null;
+  const ranges = WARDROBES.pieces.map((p): [number, number] => [0, w.missing.includes(p) ? 0 : 3]);
+  return { pieces: WARDROBES.pieces, worn: w.worn, ranges, piece: new Uint8Array(0), hide: new Uint16Array(0) };
+}
+
+/**
+ * The build of a person a player is drawn as (its file's name, and its `look.name`): their MetaHuman build (asset.ts
+ * metaHumanOf) when what they wear is what it was modelled in, since that is the only cut it has: any colours, pattern, shoes,
+ * head piece, glasses and wristbands, but no costume and no top, skirt, tights or socks that would be other garments
+ * (paint.ts piecesFor, on the wardrobe the MakeHuman build has; the two were modelled in the same cut). Otherwise the person
+ * as named: the MakeHuman build, or a guest.
+ */
+export function bodyFor(person: string, wear?: Wear): string {
+  const mh = metaHumanOf(person);
+  if (!mh || wear?.costume) return person;
+  const paint = wear?.paint;
+  if (paint && (paint.top === 'dress' || paint.print || piecesFor(wardrobeOf(person), paint))) return person;
+  return mh;
 }
 
 /** Dress a person (costume.ts worn) with their costume's pieces too, and the hair under its hood or toque pressed in. */

@@ -4745,3 +4745,51 @@ replays, highlights, photo mode and clips, the deep stats, the umpire's calls (o
 against 100) and the laptop proxy falls under 60 Hz (19.5 ms against 14.3); on by default it would slow the game for anyone on a
 weaker machine. Next: make it cheaper (the antialiased velocity target, the second scene drawing for the occlusion), then a setting.
 The clip strokes (`?motion=3`) and motion matching (`?motion=2`) stay switched off as before.
+
+## The MetaHuman builds draw the players, wherever they have what the player wears (2026-11-13, owner: "fix all of these, I want it to look more detailed", then "Publish them")
+
+The owner asked why the game looks blocky and low in detail and was given five causes (the clothes painted on the body, the arena
+built of plain shapes with flat materials, the Auto quality lowering the resolution, the download kept small, and the detailed
+bodies sitting unused on one machine); they said to fix all of them. Asked whether the MetaHuman builds of the cast may go in the
+public repository and on the live site, they chose "Publish them" (what I could read of the licence is in DECISIONS "The cast as
+MetaHumans" and memory; I told them I could not read Epic's own EULA page that day and am not a lawyer).
+
+**What was done.** The ten packs (`public/assets/people/p1mh` .. `p10mh`, about 3.9 MB each) are in the repository; `mh1`, the
+pilot, stays out. `data/people.json` gives each roster person a `body`; `costumes.ts bodyFor(person, wear)` chooses the build a
+player is drawn as and `app.ts`, `main.ts`, `studio.ts` and `views.ts` load and find that one. `?classic=1` draws everyone as the
+MakeHuman builds.
+
+**Not everyone, and why.** A MetaHuman has only the cut it was modelled in. The MakeHuman builds have a wardrobe (M5 phase C: sixteen
+garments each, `person_wear.py`), and 15 of the roster's 22 pros with those faces wear a cut that is another garment (a polo on a
+tee body, long sleeves, a V-neck, a dress, a skirt put on or taken off, tights, knee or ankle socks). Drawn as MetaHumans they would
+all have been in their face's one outfit, and the creator's cut choices would have done nothing. So the rule is by outfit: the
+MetaHuman build when what they wear is what it was modelled in (any colours, pattern, shoes, head piece, glasses, wristbands), the
+MakeHuman build otherwise and under a costume. `data/wardrobes.json` holds what each MakeHuman build was modelled in, so the choice
+is made before any file is fetched (`piecesFor` on it; `metaHumans.test.ts` holds the table to the files). Today that is 7 of the
+28 pros (Boris, Mouratoglou, Netanyahu, Acosta, Garza, Vidal, Rocha), anyone dealt without an outfit, and a creator's character in
+the default cut. The other six pros are the generated (Meshy) people as before. **Next for this to be everyone: the wardrobe built
+on the MetaHuman bodies** (the same sixteen pieces in `mh-player.py`; it touches `person_kit.py`, the skirts session's).
+
+**Their faces move now.** A MetaHuman build had no face keys (its own rig is 874 joints and 859 shapes, none on the game's skeleton),
+so it never blinked, opened its mouth or looked anywhere; the MakeHuman builds do all of that. `tools/assets/metahuman/face-keys.mjs`
+carries the sixteen keys over from the same person's MakeHuman build (the MetaHuman was conformed to that face): skin from the
+nearest moving skin, laid over by the eyes (in depth by the eyeballs' fronts: centre on centre the lids were 3-4 mm apart and a blink
+came out at 1.7 mm of 10), never across the mouth's line; the lower teeth, lower gum and tongue with the jaw as one piece each, told
+from the upper by mesh piece and its middle vertex's height (the rows bite over each other); each eyeball about its own centre by the
+turn the other's makes; lashes with their own lid. Measured on all ten: blink 6.2-9.3 mm at the lid's edge (the lids meet at the
+eye's middle), looks 6-7 mm. Looked at in close-ups (`tools/still.mjs` `VIEW=face:N FACE=blinkL:1,...`, new) for a man and a woman
+beside their MakeHuman builds.
+
+**The lips part 6 mm at most.** At the face's level of detail a MetaHuman's lips are joined by a strip of 46-131 small triangles.
+With the whole jaw key (the lower lip 3-4 cm down) the strip stretched into a pink sheet that read as a tongue hung over the chin, and
+a grimace (1 cm) did the same in small; with the strip taken out the lips stood apart at rest and the mouth showed that detail
+level's teeth, few triangles and dark, which was worse. So any key that parts the lips is scaled down, whole, until it parts them
+6 mm (`PART`): the jaw to 0.15-0.19 of the MakeHuman's, the grimace to 0.57-0.82; the rest are whole. A mouth that opens wants its
+inside built in `mh-player.py` (the rims apart, a dark lining).
+
+**Known, not fixed.** Close up a MetaHuman's eyes are dark (little white shows, and the lid's rim is painted dark, so a closed eye
+still reads dark). As modelled, arms out, p3mh has a 4-ray gap where a sleeve's hem stands off the arm (none in play). Reshaped far past real (the creator's
+ridiculous bodies), a MetaHuman's thighs overlap in 7.5-7.9% of frames against the 7% the MakeHuman builds are held to
+(`bodiesQa`), and three gait measures sit just past their marks (hips falling at 1.56 g against 1.5; a long step's speed 9.45 against
+9; the front foot down late in 20.7% of slow strokes against 20%). The standard animation QA passes on them.
+

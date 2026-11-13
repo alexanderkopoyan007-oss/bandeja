@@ -10,7 +10,7 @@ import { MOD_POWER, MOD_PRECISION, SHOT_BANDEJA, SHOT_DRIVE, SHOT_DROP, SHOT_LOB
 import type { StandPlan } from '../../sim/player/positioning.ts';
 import { STRETCH_DIVE, STRETCH_JUMP } from '../../sim/contact/windows.ts';
 import { DT } from '../../sim/core/constants.ts';
-import { dressedIndex, personMeshes, type Clip, type PlayerAsset } from './asset.ts';
+import { dressedIndex, personMeshes, personOf, type Clip, type PlayerAsset } from './asset.ts';
 import { FaceDriver, type FaceInput } from './face.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { hingeIK, IK_BEND, IK_SOFT, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
@@ -1921,7 +1921,7 @@ export class Avatar {
     const bp = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(rw[asset.bone(n)]!);
     this.armLen = bp('RightArm').distanceTo(bp('RightForeArm')) + bp('RightForeArm').distanceTo(bp('RightHand'));
     this.shoulderUp = bp('RightArm').y - READY_SHOULDER;
-    this.manner = (MANNERS as unknown as Record<string, Manner>)[asset.look?.name ?? ''] ?? PLAIN_MANNER;
+    this.manner = (MANNERS as unknown as Record<string, Manner>)[personOf(asset.look?.name ?? '')] ?? PLAIN_MANNER;
     // (from the person as modelled: a body the creator shortened had the whole difference, a 0.65 m hop on a 0.43 m leg, the knee spun round)
     this.jumpMore = Math.max(0, JUMP_HEIGHT - (asset.look?.height ?? JUMP_HEIGHT) / (asset.heightScale ?? 1)) * JUMP_SHORT;
     this.grips = [this.makeGrip(asset, 'Right'), this.makeGrip(asset, 'Left')];

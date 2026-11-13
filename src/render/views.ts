@@ -12,10 +12,10 @@ import { Avatar } from './avatar/avatar.ts';
 import { reproportion } from './avatar/proportions.ts';
 import { dressRacket, makeRacketModel, racketLookFor, type RacketLook } from './avatar/racket.ts';
 import { designed, designKey, type RacketColours } from './avatar/racketDesign.ts';
-import { lowPerson, type PlayerAsset } from './avatar/asset.ts';
+import { lowPerson, personOf, type PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
 import type { Wear } from './avatar/costume.ts';
-import { costumed, dressFor } from './avatar/costumes.ts';
+import { bodyFor, costumed, dressFor } from './avatar/costumes.ts';
 import type { Cast } from '../game/cast.ts';
 import { makeBall, spinBall } from './ballLook.ts';
 import { DT } from '../sim/core/constants.ts';
@@ -263,7 +263,9 @@ export class PlayerView {
     this.design = own ? designKey(own) : '';
     if (asset) {
       // Dressed as the person dealt to them (game/cast.ts) when they loaded, else the mannequin.
-      const dealt = cast ? asset.people.find((p) => p.look!.name === cast.people[idx]) : asset.people[idx];
+      // (as the build of them that has what they wear, costumes.ts bodyFor; whichever of their builds is in, if that one isn't)
+      const named = cast?.people[idx], build = named ? bodyFor(named, wear) : undefined;
+      const dealt = cast ? asset.people.find((p) => p.look!.name === build) ?? asset.people.find((p) => personOf(p.look!.name) === named) : asset.people[idx];
       // (Low quality: their atlases at half size, asset.ts lowPerson)
       const person = dealt && low ? lowPerson(dealt) : dealt;
       // In their own proportions, when they have them (proportions.ts: built once, at load).

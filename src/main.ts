@@ -1,12 +1,14 @@
 import * as THREE from 'three/webgpu';
 import { Game } from './game/game.ts';
-import { loadPlayerAsset, peopleWanted, prepareLow, type PlayerAsset } from './render/avatar/asset.ts';
+import { classicBodies, loadPlayerAsset, peopleWanted, prepareLow, type PlayerAsset } from './render/avatar/asset.ts';
 import { QUALITY } from './render/quality.ts';
+import { arenaDetail } from './render/arena/surface.ts';
 import { bodiesParam, castParam, dealCast } from './game/cast.ts';
 import { findPhoto, PhotoOverlay } from './game/photoMatch.ts';
 import { App, applyRootLook } from './app/app.ts';
 import { LoadingScreen } from './ui/loading.ts';
-import { directLaunch, optionsFromUrl } from './app/options.ts';
+import { directLaunch, optionsFromUrl, wearParam } from './app/options.ts';
+import { bodyFor } from './render/avatar/costumes.ts';
 import { loadSettings } from './app/settings.ts';
 import { sampleDisplay } from './render/display.ts';
 import { BackendGuard, wantWebGL } from './render/backend.ts';
@@ -40,6 +42,9 @@ Avatar.motion = num('motion', 0);
 // ?motion=3: the forehand, the vibora and the bandeja drawn by swings measured off clips (render/avatar/clipStroke.ts), where
 // their tracks are on this machine (public/assets/mocap-local/tracks/), until the owner has seen them.
 // (&tracks=forehand,volley-fh names the ones to load for a look: by itself ?motion=3 loads none, clipStroke.ts TRACKS_LIVE)
+classicBodies.on = params.get('classic') === '1';
+// The arena's detail pass (render/arena/surface.ts): behind ?detail=1 until the owner has seen it.
+arenaDetail.on = params.get('detail') === '1';
 Avatar.trackAny = Avatar.motion === 3 && params.get('tracks') !== null && params.get('fit') === '0';
 const strokeTracks = Avatar.motion === 3 ? loadStrokeTracks(`${import.meta.env.BASE_URL}assets/mocap-local/tracks/`, params.get('tracks')?.split(',')) : null;
 // ?ground=1: contact shadows under the players (render/grounding.ts) until the owner has seen them.
@@ -101,9 +106,12 @@ async function start(): Promise<void> {
   }
   // (the cast comes from the seed, so it is fixed here: the people load before the options are read)
   if (!params.has('seed')) params.set('seed', String((Math.random() * 2 ** 31) | 0));
+  // (each as the build of them that has what they wear: costumes.ts bodyFor)
+  const urlWear = wearParam(params);
+  const urlBuilds = (): string[] => dealCast(Number(params.get('seed')), castParam(params)).people.map((n, i) => bodyFor(n, urlWear?.[i]));
   // The player body loads alongside the renderer; ?avatar=0 (or a failed load) plays with the M1 capsules.
   const avatar = params.get('avatar') === '0' ? Promise.resolve(null)
-    : loadPlayerAsset(new URL('assets/player.bnz', document.baseURI).href, undefined, peopleWanted(params) ? dealCast(Number(params.get('seed')), castParam(params)).people : []).catch((err: unknown): PlayerAsset | null => {
+    : loadPlayerAsset(new URL('assets/player.bnz', document.baseURI).href, undefined, peopleWanted(params) ? urlBuilds() : []).catch((err: unknown): PlayerAsset | null => {
       console.warn('player body not loaded, using capsules:', err);
       return null;
     });
@@ -120,7 +128,7 @@ async function start(): Promise<void> {
   urlOptions.bodies = bodiesParam(params);
   // (Low quality: the people's atlases at half size, asset.ts prepareLow)
   if (urlOptions.avatar && urlOptions.prefs?.quality?.name === QUALITY.low.name) {
-    await prepareLow(urlOptions.avatar, dealCast(Number(params.get('seed')), castParam(params)).people);
+    await prepareLow(urlOptions.avatar, urlBuilds());
   }
   if (strokeTracks) await strokeTracks;
   const game = new Game(urlOptions, renderer, document.getElementById('hud')!);

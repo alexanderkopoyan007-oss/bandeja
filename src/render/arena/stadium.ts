@@ -5,6 +5,7 @@ import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
 import type { Court } from '../../sim/court/court.ts';
 import type { ArenaDef, ArenaPart, CrowdState } from './arena.ts';
+import { arenaDetail, surfaceMaterial } from './surface.ts';
 import { buildCrowd, type Spectator } from './crowd.ts';
 
 /** A merged mesh of axis-aligned boxes (one draw call), with per-box colours. */
@@ -63,6 +64,9 @@ function boardTexture(base: string): THREE.CanvasTexture {
   return t;
 }
 
+/** The detail pass: the stands' rails (stainless, dimmed as the stands are) and the stairs' nosing lights. */
+const RAIL_STEEL = '#565b63', NOSING = '#9fc0ff';
+
 /** The umpire sits in the court's light, not the stands'. */
 const UMPIRE_LIGHT = 1;
 export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): ArenaPart {
@@ -73,12 +77,15 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   const STAND_LIGHT = st.light, CROWD_LIGHT = st.crowdLight;
   // Boards round the surround (with gaps at the corners for the players' way in).
   const boardMat = new THREE.MeshStandardMaterial({ map: boardTexture(b.color), roughness: 0.55 });
+  // (the detail pass: the boards are LED screens, lit from inside, not painted panels under the hall's light)
+  if (arenaDetail.on) { boardMat.emissiveMap = boardMat.map; boardMat.emissive = new THREE.Color(1, 1, 1); boardMat.emissiveIntensity = 0.85; boardMat.roughness = 0.3; }
   const boards = new THREE.Group();
   const board = (x: number, z: number, len: number, rot: number): void => {
     const mat = boardMat.clone();
     mat.map = boardMat.map!.clone();
     mat.map.repeat.set(len / 30, 1);
     mat.map.needsUpdate = true;
+    if (mat.emissiveMap) mat.emissiveMap = mat.map;
     const m = new THREE.Mesh(new THREE.BoxGeometry(len, b.height, 0.08), mat);
     m.position.set(x, b.height / 2, z);
     m.rotation.y = rot;
@@ -110,6 +117,13 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     { n: new THREE.Vector3(0, 0, -1), at: b.z + st.from, half: b.x - 0.5, yaw: 0 },
   ];
   const standDepth = st.rows * st.depth;
+  // The detail pass (surface.ts arenaDetail): what a stand has besides its steps and seats. Aisles every AISLE m, AISLE_W wide,
+  // each with a half step between rows and a lit nosing on every step's edge (the line of lights down an arena's stairs);
+  // the front wall an upstand with a steel rail on posts over it, in place of one dark slab.
+  const detail = arenaDetail.on;
+  const AISLE = 9, AISLE_W = 1.2;
+  const inAisle = (t: number): boolean => detail && ((((t + AISLE_W / 2) % AISLE) + AISLE) % AISLE) < AISLE_W;
+  const steel = new BoxBatch(), nosing = new BoxBatch();
   for (let bi = 0; bi < blocks.length; bi++) {
     const bl = blocks[bi]!;
     const along = new THREE.Vector3(bl.n.z, 0, -bl.n.x); // perpendicular in the floor plane
@@ -120,15 +134,37 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
       const len = bl.half * 2;
       if (Math.abs(bl.n.x) > 0) tiers.box(c.x, top / 2, c.z, st.depth, top, len, r % 2 ? st.riser : '#4c5057');
       else tiers.box(c.x, top / 2, c.z, len, top, st.depth, r % 2 ? st.riser : '#4c5057');
-      if (r === 0) {
+      // (a box lying along the stand: `d` deep across it, `l` long, its middle `t` along it)
+      const lay = (batch: BoxBatch, o: number, y: number, t: number, d: number, hgt: number, l: number, colour: string): void => {
+        const at = new THREE.Vector3().copy(bl.n).multiplyScalar(o).addScaledVector(along, t);
+        if (Math.abs(bl.n.x) > 0) batch.box(at.x, y, at.z, d, hgt, l, colour);
+        else batch.box(at.x, y, at.z, l, hgt, d, colour);
+      };
+      if (r === 0 && !detail) {
         // The stand's front: a dark wall below the first row, a rail on top.
         const f = new THREE.Vector3().copy(bl.n).multiplyScalar(out - 0.05);
         if (Math.abs(bl.n.x) > 0) tiers.box(f.x, top / 2 + 0.5, f.z, 0.1, top + 1, len, '#141a33');
         else tiers.box(f.x, top / 2 + 0.5, f.z, len, top + 1, 0.1, '#141a33');
       }
+      if (r === 0 && detail) {
+        // The stand's front: a concrete upstand to knee height over the first row, a steel rail on posts over it.
+        lay(tiers, out - 0.06, (top + 0.45) / 2, 0, 0.12, top + 0.45, len, '#2a2f45');
+        for (const y of [top + 0.75, top + 1.05]) lay(steel, out - 0.06, y, 0, 0.045, 0.045, len, RAIL_STEEL);
+        for (let t = -bl.half + 0.4; t < bl.half; t += 1.6) lay(steel, out - 0.06, top + 0.76, t, 0.04, 0.62, 0.04, RAIL_STEEL);
+      }
+      if (detail) {
+        // The aisles: a half step up to the next row, a rail post every other row, and the nosings' lights.
+        for (let t = Math.ceil((-bl.half + 1) / AISLE) * AISLE; t < bl.half - 1; t += AISLE) {
+          lay(tiers, out + st.depth * 0.75, top + st.rise / 4, t, st.depth / 2, st.rise / 2, AISLE_W - 0.06, '#5d626b');
+          lay(nosing, out + 0.012, top + 0.004, t, 0.024, 0.012, AISLE_W - 0.1, NOSING);
+          lay(nosing, out + st.depth * 0.5 + 0.012, top + st.rise / 2 + 0.004, t, 0.024, 0.012, AISLE_W - 0.1, NOSING);
+          if (r % 4 === 1) lay(steel, out + st.depth * 0.5, top + 0.5, t + AISLE_W / 2 - 0.03, 0.04, 1.0, 0.04, RAIL_STEEL);
+        }
+      }
       const n = Math.floor(len / 0.52);
       for (let k = 0; k < n; k++) {
         const t = -bl.half + (k + 0.5) * (len / n);
+        if (inAisle(t)) continue;
         pos.copy(bl.n).multiplyScalar(out + st.depth * 0.55).addScaledVector(along, t);
         pos.y = top;
         q.setFromAxisAngle(up, bl.yaw);
@@ -141,15 +177,32 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
       }
     }
   }
-  const tierMesh = tiers.mesh();
+  // (the detail pass: the steps are cast concrete, surface.ts)
+  const tierMesh = tiers.mesh(arenaDetail.on ? surfaceMaterial({ set: 'concrete', vertexColors: true, tile: 2.4 }) : undefined);
   tierMesh.receiveShadow = true;
   root.add(tierMesh);
 
-  const seatGeo = new THREE.BoxGeometry(0.44, 0.42, 0.42);
+  let seatGeo: THREE.BufferGeometry = new THREE.BoxGeometry(0.44, 0.42, 0.42);
   seatGeo.translate(0, 0.21, 0.1);
+  if (detail) {
+    // A tip-up seat: the pan on its bracket and a back, in place of one block.
+    const pan = new THREE.BoxGeometry(0.44, 0.07, 0.4), back = new THREE.BoxGeometry(0.44, 0.44, 0.06), leg = new THREE.BoxGeometry(0.07, 0.36, 0.26);
+    pan.translate(0, 0.4, 0.06);
+    back.translate(0, 0.62, 0.29);
+    back.rotateX(0.1);
+    leg.translate(0, 0.18, 0.12);
+    seatGeo.dispose();
+    seatGeo = mergeGeometries([pan, back, leg]);
+    for (const g of [pan, back, leg]) g.dispose();
+  }
   const seatMesh = new THREE.InstancedMesh(seatGeo, new THREE.MeshStandardMaterial({ color: new THREE.Color(st.seat).multiplyScalar(STAND_LIGHT * 1.3), roughness: 0.6 }), seats.length);
   seats.forEach((m, i) => seatMesh.setMatrixAt(i, m));
   root.add(seatMesh);
+  if (detail) {
+    root.add(steel.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.85 })));
+    // (the nosings are lamps: unlit, a little over white so the glow picks them out)
+    root.add(nosing.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1, 1, 1).multiplyScalar(1.6) })));
+  }
 
   // The crowd: MakeHuman spectators as sprites (crowd.ts), one instanced mesh a stand. They sway a little, clap and
   // stand up after a point by the crowd's mood (game/crowdMood.ts).
@@ -159,11 +212,14 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
 
   // The hall: walls with a band of windows, a white roof with rows of lights and trusses.
   const hall = new BoxBatch();
+  // (the detail pass: the walls are profiled steel cladding, their own mesh; the trusses stay plain steel)
+  const walls = arenaDetail.on ? new BoxBatch() : hall;
   const wallC = h.wall;
   for (const s of [1, -1]) {
-    hall.box(s * h.x, h.height / 2, 0, 0.4, h.height, h.z * 2, wallC);
-    hall.box(0, h.height / 2, s * h.z, h.x * 2, h.height, 0.4, wallC);
+    walls.box(s * h.x, h.height / 2, 0, 0.4, h.height, h.z * 2, wallC);
+    walls.box(0, h.height / 2, s * h.z, h.x * 2, h.height, 0.4, wallC);
   }
+  if (walls !== hall) root.add(walls.mesh(surfaceMaterial({ set: 'corrugated', vertexColors: true, tile: 3.6, variation: 0.7 })));
   for (let x = -h.x; x <= h.x + 0.01; x += 6) hall.box(x, h.height - 0.5, 0, 0.18, 0.9, h.z * 2, h.steel!);
   for (let z = -h.z; z <= h.z + 0.01; z += 8) hall.box(0, h.height - 1.2, z, h.x * 2, 0.15, 0.15, h.steel!);
   const hallMesh = hall.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));

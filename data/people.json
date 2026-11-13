@@ -1,23 +1,34 @@
 {
-  "//": "Who can be dealt to a match (src/game/cast.ts): the people in data/players/, and the nations their names may come from, so that a name fits the face. A match is men or women throughout. Generated people (tools/assets/meshy/) are guests: dealt only if `dealt`, modelled with the arms held out; the first was modelled with them down, his sleeve is fused to his ribs, and he plays only when named (?people=).",
+  "//": "Who can be dealt to a match (src/game/cast.ts): the people in data/players/, and the nations their names may come from, so that a name fits the face. A match is men or women throughout. Generated people (tools/assets/meshy/) are guests: dealt only if `dealt`, modelled with the arms held out; the first was modelled with them down, his sleeve is fused to his ribs, and he plays only when named (?people=). `body`: a person's MetaHuman build (tools/assets/metahuman/; its file, also listed under guests so it can be named), which draws them wherever their outfit is the cut it was modelled in (src/render/avatar/costumes.ts bodyFor); in any other cut or a costume they are drawn as the MakeHuman build of their own name, which has those garments.",
   "men": [
-    { "name": "p1", "voice": 2, "tone": 1.0, "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] },
-    { "name": "p2", "voice": 1, "tone": 1.0, "nations": ["BRA", "FRA", "POR", "NED"] },
-    { "name": "p3", "voice": 0, "tone": 0.95, "nations": ["ESP", "SWE", "NED", "ITA", "ARG"] },
-    { "name": "p4", "voice": 3, "tone": 1.0, "nations": ["JPN", "KOR"] },
-    { "name": "p5", "voice": 2, "tone": 0.95, "nations": ["ESP", "ARG", "MEX", "BRA"] },
-    { "name": "p6", "voice": 3, "tone": 0.95, "nations": ["MEX", "ARG", "BRA"] }
+    { "name": "p1", "body": "p1mh", "voice": 2, "tone": 1.0, "nations": ["ESP", "ARG", "ITA", "FRA", "POR"] },
+    { "name": "p2", "body": "p2mh", "voice": 1, "tone": 1.0, "nations": ["BRA", "FRA", "POR", "NED"] },
+    { "name": "p3", "body": "p3mh", "voice": 0, "tone": 0.95, "nations": ["ESP", "SWE", "NED", "ITA", "ARG"] },
+    { "name": "p4", "body": "p4mh", "voice": 3, "tone": 1.0, "nations": ["JPN", "KOR"] },
+    { "name": "p5", "body": "p5mh", "voice": 2, "tone": 0.95, "nations": ["ESP", "ARG", "MEX", "BRA"] },
+    { "name": "p6", "body": "p6mh", "voice": 3, "tone": 0.95, "nations": ["MEX", "ARG", "BRA"] }
   ],
   "women": [
-    { "name": "p7", "voice": 0, "tone": 1.05, "nations": ["ESP", "ITA", "FRA", "SWE", "NED", "ARG"] },
-    { "name": "p8", "voice": 1, "tone": 0.95, "nations": ["BRA", "FRA", "POR"] },
-    { "name": "p9", "voice": 2, "tone": 1.05, "nations": ["JPN", "KOR"] },
-    { "name": "p10", "voice": 3, "tone": 1.05, "nations": ["ESP", "ARG", "MEX", "POR"] }
+    { "name": "p7", "body": "p7mh", "voice": 0, "tone": 1.05, "nations": ["ESP", "ITA", "FRA", "SWE", "NED", "ARG"] },
+    { "name": "p8", "body": "p8mh", "voice": 1, "tone": 0.95, "nations": ["BRA", "FRA", "POR"] },
+    { "name": "p9", "body": "p9mh", "voice": 2, "tone": 1.05, "nations": ["JPN", "KOR"] },
+    { "name": "p10", "body": "p10mh", "voice": 3, "tone": 1.05, "nations": ["ESP", "ARG", "MEX", "POR"] }
   ],
   "guests": [
     { "name": "meshy", "voice": 0, "tone": 1.0, "nations": ["ESP", "ARG", "ITA", "FRA", "POR"], "dealt": true },
     { "name": "meshy2", "voice": 1, "tone": 1.05, "nations": ["ESP", "ITA", "ARG", "POR"], "woman": true, "dealt": true },
-    { "name": "meshy3", "voice": 1, "tone": 1.05, "nations": ["BRA", "FRA", "POR", "NED"], "dealt": true }
+    { "name": "meshy3", "voice": 1, "tone": 1.05, "nations": ["BRA", "FRA", "POR", "NED"], "dealt": true },
+    { "name": "p1mh", "voice": 2, "tone": 1.0, "nations": ["ESP", "ARG", "ITA", "FRA", "POR"], "dealt": false, "//": "p1 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own" },
+    {"name": "p2mh", "voice": 1, "tone": 1.0, "nations": ["BRA", "FRA", "POR", "NED"], "dealt": false, "//": "p2 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    {"name": "p3mh", "voice": 0, "tone": 0.95, "nations": ["ESP", "SWE", "NED", "ITA", "ARG"], "dealt": false, "//": "p3 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    {"name": "p4mh", "voice": 3, "tone": 1.0, "nations": ["JPN", "KOR"], "dealt": false, "//": "p4 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    {"name": "p5mh", "voice": 2, "tone": 0.95, "nations": ["ESP", "ARG", "MEX", "BRA"], "dealt": false, "//": "p5 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    {"name": "p6mh", "voice": 3, "tone": 0.95, "nations": ["MEX", "ARG", "BRA"], "dealt": false, "//": "p6 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    {"name": "p7mh", "voice": 0, "tone": 1.05, "nations": ["ESP", "ITA", "FRA", "SWE", "NED", "ARG"], "woman": true, "dealt": false, "//": "p7 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    {"name": "p8mh", "voice": 1, "tone": 0.95, "nations": ["BRA", "FRA", "POR"], "woman": true, "dealt": false, "//": "p8 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    {"name": "p9mh", "voice": 2, "tone": 1.05, "nations": ["JPN", "KOR"], "woman": true, "dealt": false, "//": "p9 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    {"name": "p10mh", "voice": 3, "tone": 1.05, "nations": ["ESP", "ARG", "MEX", "POR"], "woman": true, "dealt": false, "//": "p10 as a MetaHuman (tools/assets/metahuman/): that person's `body`; never dealt as a person of its own"},
+    { "name": "mh1", "voice": 0, "tone": 1.0, "nations": ["ESP", "ARG", "ITA"], "dealt": false, "//": "MetaHuman pilot (tools/assets/metahuman/): only when named (?people=mh1)" }
   ],
   "womensMatches": 0.35
 }

@@ -12,6 +12,7 @@ import { makeBench } from '../props.ts';
 import { buildOutdoor } from './outdoor.ts';
 import { buildHall } from './hall.ts';
 import { addArenaLights } from './lights.ts';
+import { arenaDetail, surfaceMaterial } from './surface.ts';
 
 /** The environment bake: where its cube camera stands (head height over the court's middle), its planes and its size. */
 const BAKE_AT = new THREE.Vector3(0, 1.6, 0);
@@ -117,7 +118,8 @@ export class Arena {
     plane(cd.width, cd.length, floorMaterial(def.floor, look), 0);
     plane(cd.width + 0.7, cd.length + 0.7, floorMaterial({ ...def.floor, color: def.rim, line: null }, null), -0.002);
     plane(def.surround.x * 2, def.surround.z * 2, floorMaterial(def.surround, null), -0.004);
-    const hf = new THREE.MeshStandardMaterial({ color: def.hallFloor, roughness: 0.9 });
+    // (the detail pass: the hall's floor beyond the surround is sealed concrete, surface.ts)
+    const hf = arenaDetail.on && def.kind !== 'outdoor' ? surfaceMaterial({ set: 'concrete', color: def.hallFloor, tile: 3 }) : new THREE.MeshStandardMaterial({ color: def.hallFloor, roughness: 0.9 });
     plane(400, 400, hf, -0.006);
 
     // Lights: a key light (the sun, or the roof's main lights) for the shadows, a hemisphere fill; the rest of the

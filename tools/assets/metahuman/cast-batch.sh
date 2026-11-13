@@ -3,7 +3,7 @@
 # body and portrait out (cast-export.py), then in the open
 # MHPilot editor (the queue watcher unreal/mhwatch.py running; the owner signed in to Epic for the cloud steps) conform,
 # rig + textures + wardrobe + Optimized build (finish), DCC maps, the outfit-less full build; then the game's body
-# (mh-player.py) and the pack (build-people.mjs) as <name>mh. Settings per name in cast.json.
+# (mh-player.py), its face's keys (face-keys.mjs) and the pack (build-people.mjs) as <name>mh. Settings per name in cast.json.
 #   sh tools/assets/metahuman/cast-batch.sh p2 p3 ...
 # Logs go to ~/bandeja-people-src/cast/<name>/*.log; a step that fails stops that name and moves to the next.
 cd "$(dirname "$0")/../../.."
@@ -39,6 +39,8 @@ SKIN = ($SKIN)" || continue
   "$BLENDER" -b --python tools/assets/metahuman/mh-player.py -- tools/assets/metahuman/people/${n}mh.json assets-src/people/${n}mh "$YB" </dev/null \
     > "$CAST/$n/player.log" 2>&1
   grep -E "^MH wrote|Error|Traceback" "$CAST/$n/player.log"
+  # (the face's keys, from the same person's MakeHuman build: public/assets/people/$n.bnz)
+  node tools/assets/metahuman/face-keys.mjs $n 2>&1 | tail -1 | cut -c1-200
   node tools/assets/build-people.mjs ${n}mh 2>&1 | tail -1
 done
 echo "== done $(date +%H:%M:%S)"

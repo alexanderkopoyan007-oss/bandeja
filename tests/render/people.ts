@@ -17,7 +17,7 @@ export function guestAsset(name: string, base: PlayerAsset): PlayerAsset {
   return parseBodyAsset(gz(`people/${name}.bnz`), base);
 }
 
-/** The MetaHuman people on this machine (their packs never leave it: no licence to ship them, so CI has none). */
+/** The roster's people as their MetaHuman builds (in the repository since 13 Nov 2026; before, only on the owner's machine). */
 export function metaHumansHere(base: PlayerAsset): PlayerAsset[] {
   return PEOPLE.map((n) => n + 'mh').filter((n) => existsSync(new URL('../../public/assets/people/' + n + '.bnz', import.meta.url)))
     .map((n) => parseBodyAsset(gz(`people/${n}.bnz`), base));

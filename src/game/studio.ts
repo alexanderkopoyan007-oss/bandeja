@@ -14,6 +14,7 @@ import { BallView, PlayerView } from '../render/views.ts';
 import { pooledLight } from '../render/arena/lights.ts';
 import { disposeTree } from '../render/dispose.ts';
 import { loadPeople, type PlayerAsset } from '../render/avatar/asset.ts';
+import { bodyFor } from '../render/avatar/costumes.ts';
 import { hasTattoo } from '../render/avatar/kit.ts';
 import { dealCast } from './cast.ts';
 import type { GameOptions } from './game.ts';
@@ -206,7 +207,7 @@ export class Studio {
         while (this.pending && !this.disposed) {
           const opts = this.pending;
           this.pending = null;
-          if (opts.me) await loadPeople(this.asset, [opts.me.face]);
+          if (opts.me) await loadPeople(this.asset, [bodyFor(opts.me.face, opts.wear?.[0])]);
           if (this.disposed || this.pending) continue;
           this.place(opts);
         }

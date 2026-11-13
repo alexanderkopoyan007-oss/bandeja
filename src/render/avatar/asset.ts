@@ -9,6 +9,7 @@
 // scaled to their height. Version 3 adds per-vertex occlusion and skin regions, and the face's expression and gaze
 // keys: the opaque mesh's moving part is drawn as its own mesh with morph targets (`personMeshes`).
 import * as THREE from 'three/webgpu';
+import ROSTER from '../../../data/people.json';
 import { remakeShoes, type ShoeFit, type SoleRef } from './shoe.ts';
 
 export interface BoneDef {
@@ -246,6 +247,30 @@ export function startPeople(base: PlayerAsset, people: string[], progress?: (fra
     done.push(job.done.then(() => { got[i] = 1; report?.(); }));
   }
   return { bodies: Promise.all(bodies).then(() => undefined), done: Promise.all(done).then(() => undefined) };
+}
+
+/**
+ * The roster's people as their MetaHuman builds (data/people.json `body`: p1's is p1mh, tools/assets/metahuman/). Since
+ * 13 Nov 2026 a player is drawn as that build wherever it has everything they wear (costumes.ts bodyFor): the generated
+ * MakeHuman bodies were what the owner called boxy and low in detail, and the MetaHuman ones (a modelled outfit with its
+ * folds, skin and hands with their own relief, hair in cards) had sat unused on one machine. A MetaHuman has only the cut
+ * it was modelled in, so a player in another top, a skirt of their choosing, tights, other socks or a costume is still the
+ * MakeHuman build, which has those garments (Wardrobe). `?classic=1` draws everyone as the old builds, to set the two
+ * side by side.
+ */
+const BUILDS = new Map<string, string>([...ROSTER.men, ...ROSTER.women].flatMap((p) => {
+  const body = (p as { body?: string }).body;
+  return body ? [[p.name, body] as [string, string]] : [];
+}));
+const PERSON_OF = new Map<string, string>([...BUILDS].map(([person, build]) => [build, person]));
+export const classicBodies = { on: false };
+/** A person's MetaHuman build's name (its file, and its `look.name`), if they have one and the old builds aren't asked for. */
+export function metaHumanOf(person: string): string | undefined {
+  return classicBodies.on ? undefined : BUILDS.get(person);
+}
+/** The person a build is of (p1mh is p1; anyone else is themself): what is theirs whichever build draws them. */
+export function personOf(build: string): string {
+  return PERSON_OF.get(build) ?? build;
 }
 
 function loadPerson(base: PlayerAsset, name: string, progress?: (frac: number) => void): PersonJob {

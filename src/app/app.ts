@@ -7,6 +7,7 @@ import * as THREE from 'three/webgpu';
 import { Game, type GameOptions, type GamePrefs } from '../game/game.ts';
 import type { MatchStats } from '../game/stats.ts';
 import { loadPeople, loadPlayerAsset, peopleWanted, prepareLow, releasePeople, startPeople, type PlayerAsset } from '../render/avatar/asset.ts';
+import { bodyFor } from '../render/avatar/costumes.ts';
 import { prepareRacket, racketLookFor } from '../render/avatar/racket.ts';
 import { QUALITY } from '../render/quality.ts';
 import { prewarmNetAsync, warmNetLater } from '../sim/setup.ts';
@@ -396,7 +397,8 @@ export class App {
       });
       applyRoster(opts, dealt, attract ? undefined : this.gameSetup());
     }
-    const cast = this.asset && peopleWanted(this.params) ? dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people : null;
+    // (each as the build of them that has what they wear: costumes.ts bodyFor)
+    const cast = this.asset && peopleWanted(this.params) ? dealCast(this.castSeed, opts.people, opts.rivals, opts.me?.face).people.map((n, i) => bodyFor(n, opts.wear?.[i])) : null;
     // (the last match's people this one hasn't: their textures off the GPU, or every person dealt since the page opened
     // keeps theirs; not under the creator's studio, which draws a person of its own)
     if (this.asset && !this.studioOn) releasePeople(this.asset, cast ?? []);
@@ -468,7 +470,7 @@ export class App {
 
   /** The next match's people, fetched while nothing is at stake, so starting it doesn't wait for the network. */
   private fetchAhead(): void {
-    if (this.asset && peopleWanted(this.params)) void loadPeople(this.asset, dealCast(nextSeed(this.seedBase), castParam(this.params)).people);
+    if (this.asset && peopleWanted(this.params)) void loadPeople(this.asset, dealCast(nextSeed(this.seedBase), castParam(this.params)).people.map((n) => bodyFor(n)));
   }
 
   /** The character that plays as the player: the store's active one, behind ?creator=1 (null: the dealt cast's). */

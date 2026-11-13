@@ -1,0 +1,25 @@
+{
+ "//": "What each of the roster's MakeHuman builds was modelled in (worn) and which garments it has no build of (missing), from the files' own wardrobes (asset.ts Wardrobe; tests/render/wardrobe.test.ts holds the two together): costumes.ts bodyFor reads it to tell, before any file is fetched, whether a player's outfit is the one their MetaHuman build was modelled in.", "pieces": ["body", "shoe", "tee", "tank", "sleeveless", "vneck", "long", "collar", "shorts", "under", "pleated", "aline", "tights", "crew", "ankle", "knee"], "people": {
+  "p1": {
+   "worn": ["body", "shoe", "tee", "shorts", "crew"], "missing": []
+  }, "p2": {
+   "worn": ["body", "shoe", "tee", "shorts", "crew", "collar"], "missing": []
+  }, "p3": {
+   "worn": ["body", "shoe", "tee", "shorts", "crew", "collar"], "missing": []
+  }, "p4": {
+   "worn": ["body", "shoe", "tee", "shorts", "crew"], "missing": []
+  }, "p5": {
+   "worn": ["body", "shoe", "tee", "shorts", "crew"], "missing": []
+  }, "p6": {
+   "worn": ["body", "shoe", "tee", "shorts", "crew", "collar"], "missing": []
+  }, "p7": {
+   "worn": ["body", "shoe", "tank", "shorts", "crew", "pleated"], "missing": ["under"]
+  }, "p8": {
+   "worn": ["body", "shoe", "tee", "shorts", "crew"], "missing": []
+  }, "p9": {
+   "worn": ["body", "shoe", "tee", "shorts", "crew", "aline"], "missing": ["under"]
+  }, "p10": {
+   "worn": ["body", "shoe", "tank", "shorts", "crew", "pleated"], "missing": ["under"]
+  }
+ }
+}
