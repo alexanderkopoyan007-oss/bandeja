@@ -4794,6 +4794,13 @@ ridiculous bodies), a MetaHuman's thighs overlap in 7.5-7.9% of frames against t
 9; the front foot down late in 20.7% of slow strokes against 20%). The standard animation QA passes on them.
 
 
+**The shoes, rounded (13 Nov, later).** A close camera on the feet showed the blockiest thing on a player: MakeHuman's `shoes05`
+is a few flat planes a shoe (a squared toe, a sole in facets, a sock's cuff in eight sides). `mh-player.py` now gives the shoe
+one Catmull-Clark step before it is fitted (`shoe_round` in a person's spec, default 1; 1,738 to 6,571 vertices for the pair
+with their socks, a build 46-65k triangles). All ten MetaHuman builds rebuilt (mh-player, face-keys, build-people: half a
+minute each). The MakeHuman builds keep the old shoe until they are next rebuilt (their sources are not in this checkout), and
+the shape is still a slip-on's: a modelled trainer is its own piece of work.
+
 ## The arena's detail pass, behind `?detail=1` (2026-11-13, owner: "fix all of these, I want it to look more detailed and not as ass")
 
 The second of the five causes: the arena was boxes in one flat colour each, under one light. What the switch turns on

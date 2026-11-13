@@ -459,6 +459,11 @@ for o in dst.objects:
     for m in o.modifiers:
         if m.type == 'MASK':  # (p1's saved body hides the feet the shoes cover: the box is measured on the feet)
             m.show_viewport = False
+    if o.name == 'Human.shoes05' and spec.get('shoe_round', 1) > 0:
+        # The detail pass (13 Nov 2026): shoes05 is a few flat planes a shoe (a squared toe, a sole in facets), and a close
+        # camera shows every one. One Catmull-Clark step rounds the toe box, the sole's edge and the sock's cuff.
+        sub = o.modifiers.new('round', 'SUBSURF')
+        sub.levels = sub.render_levels = int(spec.get('shoe_round', 1))
 dg = bpy.context.evaluated_depsgraph_get()
 
 
