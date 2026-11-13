@@ -4793,3 +4793,30 @@ ridiculous bodies), a MetaHuman's thighs overlap in 7.5-7.9% of frames against t
 (`bodiesQa`), and three gait measures sit just past their marks (hips falling at 1.56 g against 1.5; a long step's speed 9.45 against
 9; the front foot down late in 20.7% of slow strokes against 20%). The standard animation QA passes on them.
 
+
+## The arena's detail pass, behind `?detail=1` (2026-11-13, owner: "fix all of these, I want it to look more detailed and not as ass")
+
+The second of the five causes: the arena was boxes in one flat colour each, under one light. What the switch turns on
+(`render/arena/surface.ts arenaDetail`: `want` from the URL, `on` for the match being built; never on Low quality), and
+why each:
+
+- **Photographed surfaces** on the stands' steps, the hall's floor and its walls (`surfaceMaterial`): two CC0 Poly Haven
+  sets (worn concrete, corrugated cladding; CREDITS.md), laid on by place in three planes since the arena's boxes have no
+  UVs, tinted to each shape's own colour from `data/arenas.json`. Six 1k maps, 0.5 MB, fetched only with the switch on.
+- **The stands** (`stadium.ts`): aisles every 9 m with half steps and lit nosings, a concrete upstand and a steel rail on
+  posts where one dark slab was, tip-up seats (pan, back, bracket) where blocks were. The back is 0.34 m, not a real seat's
+  0.45: a taller one hid the row behind to the lap, and the crowd read as half empty.
+- **The boards** are lit from inside (emissive), as an event's LED boards are; **the surround** carries the event's name
+  behind each end, set for the main camera.
+- **The floor** (`turf.ts`): the two maps the turf already had, laid at the scales a camera sees (hand-sized clumps of
+  pile, sand in patches a foot or two across, brushed reaches of metres). The first amounts made a camouflage of the
+  sandy club courts, so the patches' sand is capped at a dusting and the pile's swing is +-12%. Under an indoor rig
+  (`rigLit`) the light falls off beyond the court to 58% at the surround's edge.
+- **Two key lights across the court** indoors (`lights.ts addArenaLights(..., crossed)`): 60% and 44% of the one key's
+  light from opposite sides of the roof, each with a softer shadow. A player throws two shadows that cross, as under a
+  hall's rows of floods, and the side of a body away from the old key is no longer black. One more shadow map.
+- **Contact shadows and sand** (`Grounding`, `SandPuffs`): built for the look pass, one instanced draw each; they come on
+  here too. The look pass's rig hangs over the court without its beams (no haze here).
+
+Not in it: the look pass's haze, blur, grade and screen-space occlusion (`?look=2`, the costly half), the cage, the roof.
+Off, nothing changes: the same shaders, no map fetched (the suite and the golden hashes run with it off).

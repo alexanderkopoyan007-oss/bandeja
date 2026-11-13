@@ -12,8 +12,8 @@
 import * as THREE from 'three/webgpu';
 import { abs, cameraViewMatrix, float, mix, normalWorldGeometry, positionWorld, texture, vec3, vec4, vertexColor } from 'three/tsl';
 
-/** The switch (main.ts sets it from the URL before anything is built). */
-export const arenaDetail = { on: false };
+/** The switch: `want` is what was asked for (main.ts, from the URL), `on` what the match being built has (Game: not on Low quality). */
+export const arenaDetail = { want: false, on: false };
 
 /** The sets there are, with the mean of each colour map (linear luminance: what a tint is divided by) and its tile (m). */
 const SETS = {

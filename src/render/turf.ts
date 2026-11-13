@@ -121,9 +121,10 @@ function wearAt(p: THREE.Node<'vec2'>): F {
 
 /**
  * The floor's material. `lines`: the court (service lines and the centre line, `lineW` wide) or none (the
- * surround). Court geometry in metres, world space: the floor must be drawn in court coordinates.
+ * surround). Court geometry in metres, world space: the floor must be drawn in court coordinates. `rigLit`: the detail
+ * pass's fall-off of light beyond the court (an indoor arena's).
  */
-export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: number; serviceZ: number; centreExt: number; lineW: number } | null, originX = 0): THREE.MeshStandardNodeMaterial {
+export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: number; serviceZ: number; centreExt: number; lineW: number } | null, originX = 0, rigLit = false): THREE.MeshStandardNodeMaterial {
   const [dTex, mTex] = textures();
   const m = new THREE.MeshStandardNodeMaterial();
   // Court coordinates (a neighbour court stands originX along x).
@@ -163,13 +164,17 @@ export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: nu
   let sheen: F = float(0);
   if (arenaDetail.on && turf) {
     const clump = texture(dTex, p.div(2.9)), patch = texture(mTex, p.div(3.7)), reach = texture(mTex, p.div(23).add(vec2(0.31, 0.57)));
-    const pile = clump.r.sub(0.55).mul(0.5).add(patch.r.sub(0.5).mul(0.34)).add(reach.r.sub(0.5).mul(0.3));
+    const pile = clump.r.sub(0.55).mul(0.3).add(patch.r.sub(0.5).mul(0.2)).add(reach.r.sub(0.5).mul(0.24));
     col = col.mul(float(1).add(pile));
-    const dust = saturate(clump.g.mul(0.9).add(patch.g.sub(0.45).mul(1.6))).mul(look.sandAmount * 2.2);
+    // (a sandy club court shows it everywhere already: the patches add no more than a dusting)
+    const dust = saturate(clump.g.mul(0.9).add(patch.g.sub(0.45).mul(1.6))).mul(Math.min(look.sandAmount * 2.2, 0.2));
     col = mix(col, sandC, saturate(dust.mul(float(0.35).add(graze.mul(0.5)))));
     sheen = patch.r.sub(0.5).mul(0.16).add(clump.b.sub(0.5).mul(0.1));
-    const out = max(max(abs(p.x).sub(5), abs(p.y).sub(10)), 0);
-    col = col.mul(float(1).sub(smoothstep(0.3, 9, out).mul(0.42)));
+    if (rigLit) {
+      // (`rigLit`: under a hall's rig, whose light is on the court; a club's daylight and floodlights fall evenly)
+      const out = max(max(abs(p.x).sub(5), abs(p.y).sub(10)), 0);
+      col = col.mul(float(1).sub(smoothstep(0.3, 9, out).mul(0.42)));
+    }
   }
 
   if (court && look.line) {

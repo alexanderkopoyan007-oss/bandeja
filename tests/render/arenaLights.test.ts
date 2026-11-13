@@ -35,7 +35,7 @@ describe('arena lights kept between matches', () => {
     let key: THREE.DirectionalLight | null = null;
     for (const k of order) {
       const g = new THREE.Group();
-      const l = addArenaLights(g, arenaDef(k).light);
+      const l = addArenaLights(g, arenaDef(k).light)[0]!;
       expect(snap(g)).toEqual(fresh[k]);
       if (key) expect(l).toBe(key);
       key = l;
@@ -47,6 +47,27 @@ describe('arena lights kept between matches', () => {
       l.position.set(1, 2, 3);
       l.target.position.set(4, 5, 6);
     }
+  });
+  it('the detail pass\'s crossed pair is the same light from two sides, and a plain match after it is as new', () => {
+    const L = arenaDef('stadium').light;
+    lightPool.on = false;
+    const g0 = new THREE.Group(); addArenaLights(g0, L);
+    const plain = snap(g0);
+    lightPool.on = true;
+    const g1 = new THREE.Group();
+    const pair = addArenaLights(g1, L, true);
+    expect(pair).toHaveLength(2);
+    expect(pair[0]).not.toBe(pair[1]);
+    // (about the single key's light in all, each casting a softer shadow, from opposite sides of the court)
+    const sum = pair[0]!.intensity + pair[1]!.intensity;
+    expect(sum).toBeGreaterThan(L.key.intensity * 0.95);
+    expect(sum).toBeLessThan(L.key.intensity * 1.1);
+    for (const k of pair) { expect(k.castShadow).toBe(true); expect(k.shadow.radius).toBeGreaterThan(L.key.radius); expect(k.position.y).toBeGreaterThan(15); }
+    expect(pair[0]!.position.x * pair[1]!.position.x).toBeLessThan(0);
+    expect(pair[0]!.position.z * pair[1]!.position.z).toBeLessThan(0);
+    const g2 = new THREE.Group(); addArenaLights(g2, L);
+    expect(snap(g2)).toEqual(plain);
+    expect(pair[1]!.parent).toBe(g1);
   });
   it('a kept light leaves its last group', () => {
     const a = new THREE.Group(), b = new THREE.Group();

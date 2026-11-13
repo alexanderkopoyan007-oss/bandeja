@@ -36,7 +36,8 @@ import { PROP_LOD, pxPerMetreAt1 } from '../render/lodCore.ts';
 import { Hud } from '../ui/hud.ts';
 import { TvGraphics } from '../ui/tv.ts';
 import { FILM_LOOK, Post } from '../render/post.ts';
-import { addFilmRig, addHaze } from '../render/filmSet.ts';
+import { addFilmRig, addHaze, FILM_SET } from '../render/filmSet.ts';
+import { arenaDetail } from '../render/arena/surface.ts';
 import { SandPuffs } from '../render/sand.ts';
 import { compileRounds } from '../render/compileUnits.ts';
 import { kitFor } from '../render/avatar/kit.ts';
@@ -359,6 +360,8 @@ export class Game {
   /** Render scale under the preset's pixel ratio (1 = full); adapted when frames run long (prefs.adapt). */
   renderScale = 1;
   private readonly preset: QualityPreset;
+  /** The detail pass is on for this match (arena/surface.ts arenaDetail). */
+  private readonly detail: boolean;
   private slowFrames = 0;
   private fastFrames = 0;
   private disposed = false;
@@ -371,6 +374,9 @@ export class Game {
     this.prefMouse = opts.mouseAim;
     const prefs = opts.prefs ?? {};
     this.preset = prefs.quality ?? QUALITY.high;
+    // The detail pass (render/arena/surface.ts): asked for, and not on Low quality (its maps, its second shadow map).
+    arenaDetail.on = arenaDetail.want && this.preset.name !== QUALITY.low.name;
+    this.detail = arenaDetail.on;
     // The display's period as measured while the page loaded (frames get expensive from here on).
     stopDisplaySample();
     this.period = displayPeriod();
@@ -402,10 +408,15 @@ export class Game {
       // The look pass's set (render/filmSet.ts): haze everywhere, and over an arena's court the show rig and its beams.
       addHaze(this.scene);
       if (this.arena.def.kind === 'stadium') addFilmRig(this.arena.group, court.halfW, court.halfL);
+    } else if (this.detail && this.arena.def.kind === 'stadium') {
+      // (the detail pass: the rig and its lamps over the court, seen from the court's own cameras; no haze, so no beams)
+      addFilmRig(this.arena.group, court.halfW, court.halfL, FILM_SET, false);
     }
     // The preset's shadow map (before anything is drawn: the map is made at the first shadow pass).
-    if (this.preset.shadow > 0) this.arena.key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
-    else this.arena.key.castShadow = false;
+    for (const key of this.arena.keys) {
+      if (this.preset.shadow > 0) key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
+      else key.castShadow = false;
+    }
     this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base });
     this.scene.add(this.court.group);
     this.arena.addNeighbours(this.court.group, court);
@@ -565,8 +576,9 @@ export class Game {
     for (let i = 0; i < this.sim.players.length; i++) this.players.push(new PlayerView(this.scene, i, opts.avatar, this.cast, opts.match.rackets?.[i], opts.wear?.[i], low));
     this.lodPick = low;
     // (the look pass brings the contact shadows with it: feet that press on the floor are half of what it is for)
-    this.grounding = Grounding.on || opts.look === 2 ? new Grounding(this.scene, this.players) : null;
-    if (opts.look === 2 && this.arena.def.floor.kind === 'turf') this.sand = new SandPuffs(this.scene, this.arena.def.floor.sand);
+    // (and so does the detail pass, with the sand the feet and the ball kick up: both are one instanced draw)
+    this.grounding = Grounding.on || opts.look === 2 || this.detail ? new Grounding(this.scene, this.players) : null;
+    if ((opts.look === 2 || this.detail) && this.arena.def.floor.kind === 'turf') this.sand = new SandPuffs(this.scene, this.arena.def.floor.sand);
     // Who is who: a ring under the one player, or under each in their colour (P1-P4).
     for (let k = 0; k < this.locals.length; k++) this.players[this.locals[k]!.player]!.markYou(this.locals.length > 1 ? LOCAL_COLOURS[k] : undefined);
     this.feetSrc = this.players.map((pv) => pv.avatar ?? { feet: null });

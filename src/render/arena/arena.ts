@@ -88,7 +88,8 @@ export interface ArenaPart {
 export class Arena {
   readonly group = new THREE.Group();
   readonly def: ArenaDef;
-  readonly key: THREE.DirectionalLight;
+  /** The key light, or (the detail pass, indoors) the two it comes from: they cast the shadows. */
+  readonly keys: THREE.DirectionalLight[];
   /** The courtside benches' seats (the middle of each top), outside the side glass by the net: the bags go there. */
   readonly benches: THREE.Vector3[] = [];
   private readonly parts: ArenaPart[] = [];
@@ -115,16 +116,17 @@ export class Arena {
       this.group.add(m);
       return m;
     };
-    plane(cd.width, cd.length, floorMaterial(def.floor, look), 0);
-    plane(cd.width + 0.7, cd.length + 0.7, floorMaterial({ ...def.floor, color: def.rim, line: null }, null), -0.002);
-    plane(def.surround.x * 2, def.surround.z * 2, floorMaterial(def.surround, null), -0.004);
+    const rig = def.kind === 'stadium';
+    plane(cd.width, cd.length, floorMaterial(def.floor, look, 0, rig), 0);
+    plane(cd.width + 0.7, cd.length + 0.7, floorMaterial({ ...def.floor, color: def.rim, line: null }, null, 0, rig), -0.002);
+    plane(def.surround.x * 2, def.surround.z * 2, floorMaterial(def.surround, null, 0, rig), -0.004);
     // (the detail pass: the hall's floor beyond the surround is sealed concrete, surface.ts)
     const hf = arenaDetail.on && def.kind !== 'outdoor' ? surfaceMaterial({ set: 'concrete', color: def.hallFloor, tile: 3 }) : new THREE.MeshStandardMaterial({ color: def.hallFloor, roughness: 0.9 });
     plane(400, 400, hf, -0.006);
 
     // Lights: a key light (the sun, or the roof's main lights) for the shadows, a hemisphere fill; the rest of the
     // light, and every reflection, comes from the environment map baked from the arena itself (bakeEnvironment).
-    this.key = addArenaLights(this.group, def.light);
+    this.keys = addArenaLights(this.group, def.light, arenaDetail.on && def.kind === 'stadium');
 
     if (def.kind === 'stadium') this.parts.push(buildStadium(this.group, def, court));
     else if (def.kind === 'hall') this.parts.push(buildHall(this.group, def, court));

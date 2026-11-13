@@ -43,7 +43,7 @@ export function addHaze(scene: THREE.Scene, L: FilmSetLook = FILM_SET): void {
  * The rig and its beams over a court `halfW` by `halfL`, into `group`. Each lamp points at the court, a little past
  * the middle of its own side, as a show's wash lights are set.
  */
-export function addFilmRig(group: THREE.Group, halfW: number, halfL: number, L: FilmSetLook = FILM_SET): void {
+export function addFilmRig(group: THREE.Group, halfW: number, halfL: number, L: FilmSetLook = FILM_SET, beamsToo = true): void {
   const x = halfW + L.out, z = halfL + L.out, y = L.height;
   const steel = new BoxBatch();
   for (const s of [1, -1]) {
@@ -69,6 +69,8 @@ export function addFilmRig(group: THREE.Group, halfW: number, halfL: number, L: 
   group.add(steel.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.3 })));
   const face = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(...L.tint).multiplyScalar(L.lamp), fog: false });
   group.add(faces.mesh(face));
+  // (clear air shows no beam: the detail pass hangs the rig without the haze)
+  if (!beamsToo) return;
 
   // The beams: open cones, lamp to floor, one geometry. uv.y runs 0 at the lamp to 1 at the floor.
   const n = lamps.length, ring = SIDES + 1;

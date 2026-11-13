@@ -64,13 +64,43 @@ function boardTexture(base: string): THREE.CanvasTexture {
   return t;
 }
 
+/** The surround's lettering: how wide it lies (m) and its texture's shape. */
+const MARK_W = 11, MARK_ASPECT = 6.5;
+
+/** Lettering for the floor: white, widely spaced, a rule over and under it. */
+function floorMark(text: string): THREE.MeshStandardMaterial {
+  const c = document.createElement('canvas');
+  c.width = 2304; c.height = Math.round(c.width / MARK_ASPECT);
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#ffffff';
+  g.textBaseline = 'middle';
+  // (spaced by hand: canvas letter-spacing is not in every browser; sized to fill the width, whatever the font measures)
+  const gap = 40;
+  const wide = (px: number): number => {
+    g.font = `900 ${px}px ui-sans-serif, system-ui, sans-serif`;
+    let w = -gap;
+    for (const ch of text) w += g.measureText(ch).width + gap;
+    return w;
+  };
+  const px = Math.min(320, Math.floor(300 * (c.width * 0.95) / wide(300)));
+  const w = wide(px);
+  let x = (c.width - w) / 2;
+  for (const ch of text) { g.fillText(ch, x, c.height / 2 + px * 0.04); x += g.measureText(ch).width + gap; }
+  const rule = Math.max(8, Math.round(px * 0.055)), off = c.height / 2 - px * 0.5 - rule * 1.6;
+  g.fillRect((c.width - w) / 2, off, w, rule);
+  g.fillRect((c.width - w) / 2, c.height - off - rule, w, rule);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return new THREE.MeshStandardMaterial({ map: t, transparent: true, opacity: 0.86, depthWrite: false, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+}
+
 /** The detail pass: the stands' rails (stainless, dimmed as the stands are) and the stairs' nosing lights. */
 const RAIL_STEEL = '#565b63', NOSING = '#9fc0ff';
 
 /** The umpire sits in the court's light, not the stands'. */
 const UMPIRE_LIGHT = 1;
 export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): ArenaPart {
-  void court;
   const b = def.boards!, st = def.stands!, h = def.hall!;
   // The stands are lit far less than the court; their albedo is scaled down to stand in for that rather than lighting
   // them separately. The crowd's sprites have their light baked in.
@@ -98,6 +128,20 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
     board(0, s * b.z, b.x * 2 - 3, 0);
   }
   root.add(boards);
+  if (arenaDetail.on) {
+    // The surround's lettering: an event's name tufted into the carpet behind each end, set for the main camera (the one
+    // behind the near end) as a broadcast court's is. The carpet's own mottle shows through it.
+    const mark = floorMark('BANDEJA OPEN');
+    const deep = def.surround.z - court.halfL;
+    for (const s of [1, -1]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(MARK_W, MARK_W / MARK_ASPECT), mark);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(0, 0.001, s * (court.halfL + deep * 0.55));
+      m.receiveShadow = true;
+      m.renderOrder = 1;
+      root.add(m);
+    }
+  }
 
   // Stands: a block on each side, rows rising away from the court; seats and a seated crowd, instanced.
   const tiers = new BoxBatch();
@@ -186,9 +230,9 @@ export function buildStadium(root: THREE.Group, def: ArenaDef, court: Court): Ar
   seatGeo.translate(0, 0.21, 0.1);
   if (detail) {
     // A tip-up seat: the pan on its bracket and a back, in place of one block.
-    const pan = new THREE.BoxGeometry(0.44, 0.07, 0.4), back = new THREE.BoxGeometry(0.44, 0.44, 0.06), leg = new THREE.BoxGeometry(0.07, 0.36, 0.26);
+    const pan = new THREE.BoxGeometry(0.44, 0.07, 0.4), back = new THREE.BoxGeometry(0.44, 0.34, 0.06), leg = new THREE.BoxGeometry(0.07, 0.36, 0.26);
     pan.translate(0, 0.4, 0.06);
-    back.translate(0, 0.62, 0.29);
+    back.translate(0, 0.56, 0.29);
     back.rotateX(0.1);
     leg.translate(0, 0.18, 0.12);
     seatGeo.dispose();
