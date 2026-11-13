@@ -1889,6 +1889,11 @@ for o in cards_out:
 ao_bake.cycles_setup()
 skin_ao = {'head': bake_skin_ao(head_skin, RECT['head']), 'body': bake_skin_ao(body, RECT['body'])}
 eye_ao = ao_bake.bake_ao_vertices(eyes)
+# The white of the eye either side of the iris bakes at 0.1 to 0.3 (the lids close round a MetaHuman's eyeball far tighter
+# than round a MakeHuman one, whose whites bake at 0.6 to 0.7, and 242 vertices an eye spread the lids' dark over what
+# shows): kit.ts takes it off the eye's colour and its light both, and every eye was a brown-black slot with no white in it.
+# What sees a quarter of the sky or more is open (1); under that the shade comes on as a lid's shadow does, by the root.
+eye_ao = np.sqrt(np.clip(eye_ao * 4.0, 0.0, 1.0))
 for o in cards_out:
     o.hide_render = False
 say('occlusion: head mean', round(float(skin_ao['head'].mean()), 3), 'body', round(float(skin_ao['body'].mean()), 3),
@@ -1900,6 +1905,36 @@ op[..., 3] = 1
 # The skin from the build's baked textures: the DCC export's Head_Basecolor can come out as a placeholder checker.
 BROW_TINT, BROW_WEIGHT = 0.65, 0.8
 head_px = load_px(os.path.join(SRC, spec['head_bc']), RECT['head'][2:])
+
+
+def box_blur(a, r):
+    """An (h, w[, c]) array blurred over r texels each way (a box, twice: near enough a tent), its edges held."""
+    def once(x, axis):
+        pad = [(0, 0)] * x.ndim
+        pad[axis] = (r + 1, r)
+        c = np.cumsum(np.pad(x, pad, mode='edge'), axis=axis, dtype=np.float64)
+        n = x.shape[axis]
+        return ((np.take(c, np.arange(2 * r + 1, 2 * r + 1 + n), axis=axis) - np.take(c, np.arange(n), axis=axis)) / (2 * r + 1)).astype(np.float32)
+    for _ in range(2):
+        a = once(once(a, 0), 1)
+    return a
+
+
+# Epic's head texture carries a dozen orange moles, the same dozen on every MetaHuman made from one preset: under the hall's
+# light they stood out as bright orange specks on every forehead. A texel redder (red over green) than the skin round it by
+# SPECK goes to that skin's colour.
+SPECK, SPECK_R = (0.05, 0.1), int(round(RECT['head'][2] * 12 / 2048))
+warm = lambda px: px[..., 0] - px[..., 1]
+speck = np.clip((warm(head_px) - warm(box_blur(head_px[..., :3], SPECK_R // 2)) - SPECK[0]) / (SPECK[1] - SPECK[0]), 0, 1)
+# (and what its ring of such texels encloses: a mole is orange round a dark middle, which was left standing as a brown dot)
+speck = np.clip(box_blur(speck, max(1, SPECK_R // 2)) * 6, 0, 1)
+# (the skin round it: the blur of the skin without the mole, over the blur of where there is no mole)
+clear = (1 - speck)[..., None]
+around = box_blur(head_px[..., :3] * clear, SPECK_R * 2) / np.maximum(box_blur(clear, SPECK_R * 2), 1e-3)
+head_px[..., :3] = head_px[..., :3] * clear + around * speck[..., None]
+say('moles out of the head texture:', int((speck > 0.5).sum()), 'texels')
+# (the skin before anything is painted on it: the lift round the eyes, below, is measured here)
+head_base = head_px[..., :3].copy()
 if spec.get('head_brows'):
     # Brows painted in, from the far LODs' head texture (Unreal's brow cards use an atlas the build doesn't export):
     # its texels that differ from the near head's, in the brows' band only, feathered.
@@ -1908,7 +1943,9 @@ if spec.get('head_brows'):
     hh, ww = diff.shape
     vv, uu = np.mgrid[0:hh, 0:ww]
     band = ((vv / hh > 0.63) & (vv / hh < 0.75) & (uu / ww > 0.22) & (uu / ww < 0.78)).astype(np.float32)
-    k = np.clip((diff - 0.03) / 0.08, 0, 1) * band
+    # (not where a mole was taken out of the near texture: the far one still has it, and the difference was painted in as
+    # a dot of brow in the hair's colour on the forehead)
+    k = np.clip((diff - 0.03) / 0.08, 0, 1) * band * (1 - speck)
     # (in the hair's colour: the far texture paints this MetaHuman's own brows, lighter than the hair given here; the
     # strokes keep their shading as the far texels' brightness over the brows' mean)
     brow_tone = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32)
@@ -2056,6 +2093,18 @@ def from_eye_holes():
 
 
 head_from_hole = from_eye_holes()
+# The texture is also dark round the eyes, a grey as wide as the socket (in Unreal the skin's scatter and a lit face carry
+# it; here, under lights overhead, with the lids' own shade and the lashes on top, every player, the men too, wore smoky
+# eye shadow). Within ORBIT_IN of an eye's hole along the skin, easing off by ORBIT_OUT, the skin's broad colour goes
+# ORBIT_LIFT of the way to the broad colour of the face round it; its pores and creases stay as they are.
+ORBIT_IN, ORBIT_OUT, ORBIT_LIFT = 0.011, 0.02, 0.6
+d_orbit = np.nan_to_num(vertex_raster(head_skin, head_from_hole, RECT['head'][2:], lambda v: v.min() < ORBIT_OUT), nan=1.0)
+orbit = np.clip((ORBIT_OUT - d_orbit) / (ORBIT_OUT - ORBIT_IN), 0, 1)
+orbit = box_blur(orbit * orbit * (3 - 2 * orbit), int(round(RECT['head'][2] * 6 / 2048)))
+k_ = RECT['head'][2] / 2048
+lift = (box_blur(head_base, int(round(160 * k_))) - box_blur(head_base, int(round(20 * k_)))) * (ORBIT_LIFT * orbit)[..., None]
+head_px[..., :3] = np.clip(head_px[..., :3] + np.maximum(lift, 0), 0, 1)
+say('round the eyes: texels lifted', int((orbit > 0.5).sum()), 'by up to', round(float(lift.max()), 3))
 d_tex = vertex_raster(head_skin, head_from_hole, RECT['head'][2:], lambda v: v.min() < EYE_SHELL_REACH)
 t = np.clip((EYE_SHELL_REACH - np.nan_to_num(d_tex, nan=1.0)) / (EYE_SHELL_REACH - EYE_SHELL_IN), 0, 1)
 shade = 1 - EYE_SHELL * t * t * (3 - 2 * t)

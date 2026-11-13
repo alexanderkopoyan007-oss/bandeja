@@ -4925,3 +4925,26 @@ wears; a costume or a print is still made on the MakeHuman build.
   `tools/still.mjs VIEW=body:N` is a player head to knee in the game.
 - `tests/render/metaHumans.test.ts` also holds every garment vertex to its own side's limb (cloth on a left arm is moved by
   the left arm), which the torn sleeves would have failed; checked by turning the sign over (13,574 wrong on one body).
+
+## The detailed players' eyes and the skin round them (2026-11-13, owner: "keep going and make it more detailed")
+
+Close up, every MetaHuman build had brown-black slots for eyes, no white in them, smoky shadow round them (the men too) and
+the same dozen orange specks on every forehead. Three causes, all in the bake (`mh-player.py`), none in the shader:
+
+- **The eye's occlusion.** The white either side of the iris baked at 0.1 to 0.3, against 0.6 to 0.7 on a MakeHuman build
+  (measured per bearing across the eye, `tools/out/eye/ao.mts`): a MetaHuman's lids close round the ball far tighter, and
+  242 vertices an eye spread the lids' dark over what shows. `kit.ts` takes that off the eye's colour and off its light, so
+  the whites went out. Tried first in the shader with the bake as it was: no occlusion at all showed the whites; a gentle
+  curve changed nothing (the values really are that low). The bake now reads `sqrt(min(1, 4 ao))`: what sees a quarter of
+  the sky is open, and the shade comes on under that as a lid's shadow does. The shader and the MakeHuman builds are as
+  they were.
+- **Moles.** Epic's head texture has a dozen, orange round a dark middle, the same on every character from one preset. A
+  texel redder than the skin round it, and what a ring of them encloses, takes the colour of the skin round it (the blur
+  of the skin without the moles). The brows are painted from where the far head texture differs from the near one, and
+  the far one still has the moles: the first try painted each back as a dot of brow in the hair's colour, so the brows'
+  step skips where a mole was.
+- **The sockets.** The texture is grey round the eyes as wide as the socket; under lights overhead, with the lids' shade
+  and the lashes on top, it read as eye shadow. Within 1.1 cm of an eye's hole along the skin, easing off by 2 cm, the
+  skin's broad colour goes 60% of the way to the face's round it; pores and creases stay. The sockets are still in shadow,
+  as they are under a hall's lights: that part is light, not paint.
+- Not done: the bright line of the lower lid's wet rim on some faces; the lashes' weight; a mouth inside.
