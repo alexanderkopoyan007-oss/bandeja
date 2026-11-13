@@ -8,6 +8,8 @@ import { gunzipSync } from 'node:zlib';
 import ROSTER from '../../data/people.json';
 import { classicBodies, PEOPLE, personOf } from '../../src/render/avatar/asset.ts';
 import { bodyFor } from '../../src/render/avatar/costumes.ts';
+import { personFrame, skirtFallen } from '../../src/render/avatar/kit.ts';
+import { piecesFor } from '../../src/render/avatar/paint.ts';
 import { mannequinWithPeople, metaHumansHere } from './people.ts';
 
 const header = (name: string): { kit: Record<string, unknown>; meshes: { opaque: { wardrobe?: { pieces: string[]; worn: string[]; ranges: Array<[number, number]> } } } } => {
@@ -32,18 +34,60 @@ describe('the MetaHuman builds', () => {
     expect(personOf('meshy')).toBe('meshy');
   });
 
-  it('carry the wardrobe their MakeHuman build has: the same cut worn, every garment built but the pair under a skirt', () => {
-    // (tools/assets/metahuman/mh-player.py; `under` is the tight shorts a MakeHuman build in loose ones wears under a skirt:
-    // a MetaHuman's shorts are worn under both)
-    for (const n of PEOPLE) {
+  it('carry the wardrobe their MakeHuman build has: the same cut worn, every garment built, a tight pair under a skirt', () => {
+    // (tools/assets/metahuman/mh-player.py. `under` is the tight shorts worn under a skirt: Epic's shorts stand 2-4 cm off the
+    // leg, and a skirt over them stood out from the hips like a lampshade, the owner's "this looks awful", 13 Nov. A build
+    // modelled in a skirt wears them as modelled; one who then chooses shorts gets Epic's.)
+    for (const [k, n] of PEOPLE.entries()) {
       const a = header(n).meshes.opaque.wardrobe!, b = header(n + 'mh').meshes.opaque.wardrobe!;
       expect(b.pieces).toEqual(a.pieces);
-      expect(b.worn, n).toEqual(a.worn);
-      for (const [i, piece] of b.pieces.entries()) {
-        if (piece === 'under') expect(b.ranges[i]![1], `${n}mh under`).toBe(0);
-        else expect(b.ranges[i]![1], `${n}mh ${piece}`).toBeGreaterThan(0);
+      const skirted = a.worn.some((x) => x === 'pleated' || x === 'aline');
+      expect(b.worn, n).toEqual(a.worn.map((x) => (skirted && x === 'shorts' ? 'under' : x)));
+      for (const [i, piece] of b.pieces.entries()) expect(b.ranges[i]![1], `${n}mh ${piece}`).toBeGreaterThan(0);
+      const w = mh[k]!.look!.wardrobe!;
+      for (const style of ['pleated', 'aline'] as const) {
+        const on = piecesFor(w, { bottom: style }) ?? w.worn;
+        expect(on, `${n}mh ${style}`).toContain('under');
+        expect(on, `${n}mh ${style}`).not.toContain('shorts');
       }
+      const inShorts = piecesFor(w, { bottom: 'shorts' }) ?? w.worn;
+      expect(inShorts, `${n}mh shorts`).toContain('shorts');
+      expect(inShorts, `${n}mh shorts`).not.toContain('under');
     }
+  });
+
+  it('push a skirt off a thigh, not off the seat: the capsule at the hip is a leg\'s', () => {
+    // (13 Nov 2026: measured through the ring at the seat, the capsule was a ball 15-18 cm in radius at each hip joint, and
+    // every skirt stood off the waist on it. A thigh under the seat is 10-12 cm.)
+    // (the MakeHuman men aside: the pair they'd wear under a skirt is their suit's trousers cut off, 14 cm round the thigh)
+    for (const [n, p] of [...base.people.filter((x) => x.look!.kit.bottom !== 'shorts'), ...mh].entries()) {
+      const [r0, r1] = personFrame(p).thighR!;
+      expect(r0, `person ${n} at the hip`).toBeLessThan(0.128);
+      expect(r0, `person ${n} at the hip`).toBeGreaterThan(0.085);
+      expect(r1, `person ${n} at the knee`).toBeLessThanOrEqual(r0);
+    }
+    for (const [n, p] of mh.entries()) expect(personFrame(p).thighR![0], `build ${n}`).toBeLessThan(0.11);
+  });
+
+  it('let a skirt hang plumb from a pelvis that leans, its cloth its own length and never inside the hips', () => {
+    const c = new THREE.Vector3(0, 0.95, 0.02), span: [number, number] = [0.98, 0.68];
+    const hem = (a: number): THREE.Vector3 => new THREE.Vector3(Math.sin(a) * 0.2, 0.68, 0.02 + Math.cos(a) * 0.2);
+    // Upright nothing moves.
+    for (const a of [0, 1, 2, 3, 4, 5]) expect(skirtFallen(hem(a), c, span, new THREE.Vector3(0, -1, 0)).distanceTo(hem(a))).toBeLessThan(1e-9);
+    // The pelvis tipped 30 degrees forward: plumb, in its frame, points down and to the front.
+    const g = new THREE.Vector3(0, -Math.cos(Math.PI / 6), Math.sin(Math.PI / 6));
+    const drop = 0.98 - 0.2 * 0.3 - 0.68;
+    const front = skirtFallen(hem(0), c, span, g), back = skirtFallen(hem(Math.PI), c, span, g);
+    // (the front swings out with plumb, a column of cloth as long as it was)
+    expect(front.z - hem(0).z).toBeCloseTo(drop * 0.5, 3);
+    expect(front.distanceTo(new THREE.Vector3(0, 0.68 + drop, 0.22))).toBeCloseTo(drop, 3);
+    // (the back falls in towards the seat no further than its flare lets it)
+    const rBack = Math.hypot(back.x - c.x, back.z - c.z);
+    expect(rBack).toBeGreaterThan(0.2 - drop * 0.15 - 0.004 - 1e-6);
+    expect(rBack).toBeLessThan(0.2);
+    // (above where the cloth leaves the waist nothing moves)
+    const waist = new THREE.Vector3(0, 0.97, 0.15);
+    expect(skirtFallen(waist, c, span, g).distanceTo(waist)).toBeLessThan(1e-9);
   });
 
   it('hang every garment on the side of the body it is on: cloth on a left arm moves with the left arm', () => {

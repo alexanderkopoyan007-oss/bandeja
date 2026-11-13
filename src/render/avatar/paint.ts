@@ -135,6 +135,8 @@ export function piecesFor(w: Wardrobe | null, paint?: Paint): string[] | null {
   const skirt = skirtOf(paint);
   if (skirt !== undefined) out = [...out.filter((p) => !SKIRTS.has(p)), ...(skirt ? [skirt] : [])];
   if (skirt && built(w, 'under')) out = out.map((p) => (p === 'shorts' ? 'under' : p));
+  // (a MetaHuman build modelled in a skirt wears the tight pair as modelled: shorts chosen are its own, Epic's)
+  if (skirt === null && built(w, 'shorts')) out = out.map((p) => (p === 'under' ? 'shorts' : p));
   if (paint.bottom === 'tights') out.push('tights');
   if (paint.socks) {
     out = out.filter((p) => !SOCKS.has(p));

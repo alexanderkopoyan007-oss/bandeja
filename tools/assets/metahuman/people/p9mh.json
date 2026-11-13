@@ -19,6 +19,7 @@
   0.03
  ],
  "helmet": "export/Hair_L_Straight_Helmet_LOD5.fbx",
+ "fringe": true,
  "helmet_shade": 0.62,
  "maps": "dcc/MHC_p9/Maps",
  "head_bc": "export/tex/T_Head_LOD3_BC.png",

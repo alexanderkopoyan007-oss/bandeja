@@ -390,6 +390,7 @@ if helmet:
     # deep volume (p8mh's quarter-depth hit is 3-8 cm in), and sunk to it the afro lost its mass and read as a sparse
     # spiky halo; held 1.5 cm under its outside, its outer cards are a fuzz over the dark mass.)
     HELMET_Q, HELMET_UNDER, HELMET_REACH, HELMET_FRONT, HELMET_SINK = 0.25, 0.0015, 0.08, 0.7, 0.015
+    FRINGE = bool(spec.get('fringe'))
     ahead = Vector((0, -1, 0))
     cb = bmesh.new()
     cb.from_mesh(hair.data)
@@ -413,7 +414,11 @@ if helmet:
             t0 = t + 0.0002
         if not hits:
             continue
-        if nrm.dot(ahead) > HELMET_FRONT:
+        # (only of hair that has a fringe, the spec's `fringe`. A brush cut's shell is its hairline, on skin that faces
+        # ahead as a forehead does, and dropped as a fringe's it left p6 a bare patch of scalp between jagged teeth. Not
+        # by height: kept above a line 6 cm over the eyes, p5's shell stayed over the top of his forehead, each corner sunk
+        # its own depth under the cards, a crumpled black sheet)
+        if FRINGE and nrm.dot(ahead) > HELMET_FRONT:
             over_face.add(v.index)
             continue
         want = max(HELMET_OFF, s - HELMET_SINK, min(s, float(np.quantile(hits, HELMET_Q)) - HELMET_UNDER))
@@ -424,7 +429,9 @@ if helmet:
     n_shell = len(helmet.data.vertices)
     hb = bmesh.new()
     hb.from_mesh(helmet.data)
-    gone = [f for f in hb.faces if all(v.index in over_face for v in f.verts)]
+    # (a face with any corner there: one that kept a corner up on the crown ran from it down to a corner left out on the
+    # fringe's outside, through the cards, a black shard across p10's fringe)
+    gone = [f for f in hb.faces if any(v.index in over_face for v in f.verts)]
     bmesh.ops.delete(hb, geom=gone, context='FACES')
     bmesh.ops.delete(hb, geom=[v for v in hb.verts if not v.link_faces], context='VERTS')
     hb.to_mesh(helmet.data)
@@ -673,6 +680,68 @@ def skin_shell(name, z_hi, ease, rib, rib_len):
 
 
 sock = skin_shell('sock', sock_top, SOCK_EASE, SOCK_RIB, SOCK_RIB_LEN)
+
+# The shorts worn under a skirt (person_wear.PIECES 'under'): the hips' and thighs' own skin from `z_hi` down to `z_lo`, UNDER_EASE
+# out, its hem closed back onto the leg. Epic's shorts stand 2-4 cm off the leg, and a skirt sized to go over them stood out
+# from the hips like a lampshade (0.22 m from the middle at the hem, on hips 0.17 wide: the owner, 13 Nov, "this looks awful").
+UNDER_EASE = 0.002
+
+
+def under_shell(name, z_lo, z_hi):
+    dom = [max(d, key=d.get) if d else '' for d in bw]
+    arm = [('Arm' in n or 'Hand' in n or 'Shoulder' in n) for n in dom]
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    orig = bm.verts.layers.int.new('orig')
+    for v in bm.verts:
+        v[orig] = v.index + 1
+    dead = [f for f in bm.faces if any(arm[v.index] for v in f.verts) or min(v.co.z for v in f.verts) > z_hi + 0.02
+            or max(v.co.z for v in f.verts) < z_lo - 0.02]
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5)
+    for z, no in ((z_hi, 1), (z_lo, -1)):
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, z), plane_no=(0, 0, no), clear_outer=True)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    for v in bm.verts:
+        if abs(v.co.z - z_hi) < 1e-5 or abs(v.co.z - z_lo) < 1e-5:
+            v[orig] = 0
+    bm.normal_update()
+    at_skin = {v: v.co.copy() for v in bm.verts}
+    for v in bm.verts:
+        v.co = v.co + v.normal * UNDER_EASE
+    bm.edges.ensure_lookup_table()
+    rim = [e for e in bm.edges if e.is_boundary and max(v.co.z for v in e.verts) < z_lo + 0.004]
+    ring = {}
+    for e in rim:
+        for v in e.verts:
+            if v not in ring:
+                ring[v] = bm.verts.new(at_skin[v] + v.normal * 0.0003)
+    for e in rim:
+        a, b = e.verts
+        if e.link_loops[0].vert is not a:
+            a, b = b, a
+        bm.faces.new((b, a, ring[a], ring[b]))
+    bm.normal_update()
+    bm.verts.index_update()
+    src = [v[orig] - 1 for v in bm.verts]
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    rigid(o, None)
+    g = {n: o.vertex_groups[P + n] for n in BONES}
+    for i, v in enumerate(me.vertices):
+        j = src[i]
+        if j < 0:
+            _, j, _ = kd.find(v.co)
+        for n, w in bw[j].items():
+            g[n].add([i], w, 'REPLACE')
+    for p_ in me.polygons:
+        p_.use_smooth = True
+    say('under', name, len(me.vertices), 'vertices', len(me.polygons), 'faces from', round(z_lo, 3), 'to', round(z_hi, 3))
+    return o
 # shoes05's own tubes out of the trainer: every piece that reaches the sock's height.
 bm = bmesh.new()
 bm.from_mesh(shoes.data)
@@ -1082,7 +1151,8 @@ def make_skirt(style, top, hem, band):
     MetaHuman's legs as MPFB's fitted ones didn't; `band`: its strip of the atlas (person_kit.SKIRT_BANDS), None the whole of it."""
     pleated = style == 'pleated'
     shirt_co = coords(shirt)
-    shorts_co = coords(shorts)
+    # (over the tight pair worn under it, `under`; with no wardrobe, over Epic's shorts, which stay on)
+    shorts_co = pk._surface_points(under, range(len(under.data.polygons))) if under else coords(shorts)
     cols = pk.PLEATS if pleated else pk.ALINE_COLS
     R, c, th, zs = pk.skirt_rings(np.concatenate([bco[~on_arm], shorts_co]), shirt_co, top, hem, 0.15 if pleated else 0.11,
                                   cols, cx=J['Hips'].x)
@@ -1120,6 +1190,7 @@ if SKIRT_STYLE:
 else:
     # (a skirt chosen over shorts: its hem SKIRT_BELOW under theirs, finish-player.py)
     skirt_top, skirt_hem = shirt_hem + pk.SKIRT_TUCK, float(coords(shorts)[:, 2].min()) - pk.SKIRT_BELOW
+under = under_shell('Wear.under', float(coords(shorts)[:, 2].min()), skirt_top + 0.01) if WARDROBE else None
 skirts = {}  # style: (object, hang); with a wardrobe both, each on its band of the atlas
 for style in ('pleated', 'aline'):
     if WARDROBE or style == SKIRT_STYLE:
@@ -1311,6 +1382,7 @@ if WARDROBE:
     wear['ankle'] = skin_shell('Wear.ankle', shoe_top + pw.ANKLE_UP, SOCK_EASE, 0.0008, pw.ANKLE_RIB)
     wear['knee'] = skin_shell('Wear.knee', min(J['LeftLeg'].z, J['RightLeg'].z) - pw.KNEE_DOWN, SOCK_EASE, 0.0008, pw.KNEE_RIB)
     wear['tights'] = skin_shell('Wear.tights', float(coords(shorts)[:, 2].min()) + pw.TIGHTS_IN, pw.TIGHTS_EASE, 0.0, 0.0)
+    wear['under'] = under
     for o in list(wear.values()) + [collar]:
         for m in list(o.modifiers):
             o.modifiers.remove(m)
@@ -1358,7 +1430,7 @@ if os.environ.get('MH_STOP') == 'wear':
         looks_[k] = [(tops_all[k], 'top'), (shorts, 'bottom'), (sock, 'white')]
     looks_['polo'] = [(tops_all['tee'], 'top'), (collar, 'trim'), (shorts, 'bottom'), (sock, 'white')] if collar else []
     for st, (so, _) in skirts.items():
-        looks_[st] = [(shirt, 'top'), (shorts, 'bottom'), (so, 'bottom'), (sock, 'white')]
+        looks_[st] = [(shirt, 'top'), (under or shorts, 'trim'), (so, 'bottom'), (sock, 'white')]
     for k in ('ankle', 'knee'):
         if k in wear:
             looks_[k] = [(shirt, 'top'), (shorts, 'bottom'), (wear[k], 'white')]
@@ -1436,7 +1508,7 @@ if WARDROBE:
     keep_for = {'vneck': np.array([vfield(Vector(c)) > -0.02 and c[1] < nk.y - 0.01 for c in co2]),
                 'tank': armhole_keep(tank_planes or wear_tank_planes, TANK_PTS[0][0], co2, arm2),
                 'sleeveless': armhole_keep(sleeveless_planes, pw.SLEEVELESS[0][0], co2, arm2)}
-    base_others = {'top': ['shorts', 'crew', 'shoe'], 'shorts': [TOP0, 'crew', 'shoe'], 'tights': ['shorts', TOP0, 'crew', 'shoe'],
+    base_others = {'top': ['shorts', 'crew', 'shoe'], 'shorts': [TOP0, 'crew', 'shoe'], 'under': [TOP0, 'crew', 'shoe'], 'tights': ['shorts', TOP0, 'crew', 'shoe'],
                    'socks': [TOP0, 'shorts', 'shoe'], 'shoe': [TOP0, 'shorts']}
     union_of = {name: base_others['top' if name in pw.TOPS else 'socks' if name in pw.SOCKS else name] for name in cover}
     hide = pw.hide_masks(body, cover, {}, union_of, keep_always, keep_in_hem, keep_for)
@@ -1667,7 +1739,10 @@ def save(atlas, path, name, quality=92):
     bpy.data.images.remove(im)
 
 
-SCALP_REACH, SCALP_SHADE, SCALP_COVER = 0.03, 0.6, 0.9
+# (within 1.2 cm: at 3, the skin under hair that stands over the forehead, a slicked-back front or a fringe, was painted as
+# scalp, a black band like a marker's along p4's hairline under the hair's edge)
+SCALP_REACH, SCALP_SHADE, SCALP_COVER = 0.012, 0.6, 0.9
+SCALP_CLOSE, SCALP_SOFT = 56, 18
 
 
 def scalp_mask(head_o, shell, cov_path, size):
@@ -1963,6 +2038,14 @@ if helmet:
     # out from the head, baked onto the head's UVs by Cycles (selected to active), darkened to the hair's shade in
     # shadow, and feathered with the helmet's own coverage.
     cov_mask = scalp_mask(head_skin, helmet, HELMET_COV, RECT['head'][2:])
+    # (its holes closed and its edge soft: the bake is the helmet's far triangles seen from the scalp, and it left bare
+    # islands inside the hairline, a patch of pink scalp 3 cm wide in p6's brush cut, and an edge in their corners, which
+    # under a fringe's gaps read as black shards on the forehead. Closed over SCALP_CLOSE texels of 2048, feathered SCALP_SOFT.)
+    k_ = RECT['head'][2] / 2048
+    grown = box_blur((cov_mask > 0.35).astype(np.float32), int(round(SCALP_CLOSE * k_))) > 0.25
+    closed = box_blur(grown.astype(np.float32), int(round(SCALP_CLOSE * k_))) > 0.75
+    say('scalp closed over', int((closed & (cov_mask <= 0.35)).sum()), 'texels')
+    cov_mask = box_blur(np.maximum(cov_mask, closed.astype(np.float32)), int(round(SCALP_SOFT * k_)))
     cov_mask *= ears_out(head_skin, eyes, RECT['head'][2:])
     scalp = np.array(spec.get('hair_rgb', [0.24, 0.16, 0.1]), dtype=np.float32) * SCALP_SHADE
     m = np.clip(cov_mask * SCALP_COVER, 0, 1)[..., None]
@@ -2119,7 +2202,32 @@ if os.environ.get('MH_DEBUG'):
 
 paste(op, RECT['head'], head_px)
 paste(op, RECT['body'], load_px(os.path.join(SRC, spec['body_bc']), RECT['body'][2:]))
-paste(op, RECT['eye'], load_px(os.path.join(MAPS, 'Eyes_Color.png'), RECT['eye'][2:]))
+# The white of the eye, white. Epic's Eyes_Color has it a dim pink grey (163, 150, 148 of 255, a third of white in linear
+# light, reddening to 160, 104, 100 towards the corners): Unreal's eye shader brightens it, and here it is the albedo as it
+# stands, half the MakeHuman eyes' (225, 220, 210), so under the hall's top light an eye read as one dark slot with no white
+# in it whatever the lighting did (the owner, 13 Nov: "keep going on the eyes"). Outside the iris and its dark ring it becomes
+# SCLERA, the texture's own fine light and dark and a little of its veins' red kept. The iris is left as it is.
+SCLERA, IRIS_R, VEINS = (0.87, 0.85, 0.82), (0.158, 0.2), 0.5
+
+
+def white_of_eye(px):
+    h, w = px.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    r = np.hypot((xx + 0.5) / w - 0.5, (yy + 0.5) / h - 0.5)
+    rgb = px[..., :3].copy()
+    lum, warm = rgb.mean(-1), rgb[..., 0] - rgb[..., 1]
+    near = max(1, w // 32)
+    fine = np.clip(lum / np.maximum(box_blur(lum, near), 1e-3), 0.85, 1.05)
+    vein = np.clip(warm - box_blur(warm, near), 0, 0.15) * VEINS
+    white = np.array(SCLERA, dtype=np.float32) * fine[..., None]
+    white[..., 1:] -= vein[..., None]
+    k = np.clip((r - IRIS_R[0]) / (IRIS_R[1] - IRIS_R[0]), 0, 1)
+    k = (k * k * (3 - 2 * k))[..., None]
+    px[..., :3] = rgb * (1 - k) + white * k
+    return px
+
+
+paste(op, RECT['eye'], white_of_eye(load_px(os.path.join(MAPS, 'Eyes_Color.png'), RECT['eye'][2:])))
 paste(op, RECT['teeth'], load_px(os.path.join(MAPS, 'Teeth_Color.png'), RECT['teeth'][2:]))
 for k in ('shirt', 'shorts'):
     x, y, w, h = RECT[k]
@@ -2575,7 +2683,7 @@ KINDS = [(body, 'skin', 'body'), (head_skin, 'skin', 'head'), (eyes, 'eye', 'eye
 KINDS += [(so, 'shorts', 'skirt') for so, _ in skirts.values()]
 # The wardrobe's cuts (person_wear.PIECES; the game draws the ones worn): a top is the shirt's part on the shirt's atlas, tights
 # the shorts' part at one plain place on the shorts (a skin shell has no UVs), socks and the collar the sock's part.
-KINDS += [(o, 'shirt' if k in pw.TOPS else 'shorts' if k == 'tights' else 'sock', 'shirt' if k in pw.TOPS else None) for k, o in wear.items()]
+KINDS += [(o, 'shirt' if k in pw.TOPS else 'shorts' if k in ('tights', 'under') else 'sock', 'shirt' if k in pw.TOPS else None) for k, o in wear.items()]
 if collar:
     KINDS.append((collar, 'sock', None))
 PIECE_OF = {shirt: TOP0, shorts: 'shorts', shoes: 'shoe', sock: 'crew', **{o: k for k, o in wear.items()}, **{so: st for st, (so, _) in skirts.items()}}
@@ -2686,7 +2794,8 @@ header = {'name': spec['name'], 'height': round(float(height), 4), 'bones': BONE
           **({'handsBox': hands} if hands else {}),
           'parts': PART, 'morphs': [], 'kit': spec.get('kit', {}), 'meshes': {}}
 if WARDROBE:
-    worn = ['body', 'shoe', TOP0, 'shorts', 'crew'] + (['collar'] if KIT.get('top') == 'polo' else []) + ([SKIRT_STYLE] if SKIRT_STYLE else [])
+    # (under a modelled skirt the tight pair: paint.ts piecesFor puts Epic's shorts back on a player who chooses shorts)
+    worn = ['body', 'shoe', TOP0, 'under' if SKIRT_STYLE else 'shorts', 'crew'] + (['collar'] if KIT.get('top') == 'polo' else []) + ([SKIRT_STYLE] if SKIRT_STYLE else [])
     header['wardrobe'] = {'pieces': list(pw.PIECES), 'worn': worn, 'vneck': [pw.VNECK_DROP[WOMEN], pw.VNECK_SLOPE]}
 for kind, B in buffers.items():
     ent = {'vertices': len(B['part']), 'indices': len(B['index'])}

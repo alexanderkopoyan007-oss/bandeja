@@ -4948,3 +4948,53 @@ the same dozen orange specks on every forehead. Three causes, all in the bake (`
   skin's broad colour goes 60% of the way to the face's round it; pores and creases stay. The sockets are still in shadow,
   as they are under a hall's lights: that part is light, not paint.
 - Not done: the bright line of the lower lid's wet rim on some faces; the lashes' weight; a mouth inside.
+
+## Skirts that hang, eyes with whites, hairlines without shards (2026-11-13, owner, of the wardrobe sheet: "this looks awful"; "keep going on the eyes and hair")
+
+The owner's crop was two skirts mid-rally: each stood off the waist like a lampshade, tipped up behind a bent player. Put
+beside the MakeHuman builds in the same frame, theirs did it too, less. Three causes, found in that order.
+
+- **The thigh a skirt is pushed off was a ball.** `personFrame`'s `thighR` drew a line through the ring 0.2 of the way down
+  the thigh and the ring by the shorts' hem and ran it up to the hip. The ring at 0.2 is the seat, 12.6-14.5 cm from the
+  leg's line where the thigh under it is 10: the capsule at the hip joint came out 13.6 cm on a MakeHuman build and 15-18
+  on a MetaHuman, a ball at each hip that `thighsPush` stood the skirt off, starting at the waist. It is now measured from
+  the ring at 0.3 (`THIGH_FROM`), no more than a centimetre wider at the hip: 10.5-12.4 cm. The seat is the pelvis's, and
+  the skirt's rings are made to clear it. This number showed the fault before any picture explained it.
+- **Epic's shorts under it.** A MetaHuman's shorts stand 2-4 cm off the leg, and the skirt was sized over them and pushed
+  off them. It now has what the MakeHuman builds in loose shorts have, a tight pair for under a skirt (`under`, the hips'
+  and thighs' own skin 2 mm out, `mh-player.py under_shell`); the skirts are sized over it, and a build modelled in a skirt
+  wears it as modelled (`paint.ts piecesFor` gives Epic's shorts back to a player who chooses shorts).
+- **A cone fixed to the pelvis.** Weighted to the hips and thighs alone, the skirt tipped with the pelvis: a player bent at
+  the hips lifted the hem behind them, and the back of it followed the thighs forward under the seat. `kit.ts skirtHang`
+  puts each vertex below the waistband where it would hang: its drop turned from the pelvis's down to plumb, in the
+  pelvis's modelled frame (a shear, so a column of cloth keeps its length), no nearer the pelvis's axis than its ring's
+  radius less its flare. Where a thigh has carried the cloth outwards (the front in a crouch) it stays on the thigh, as
+  skinned; where the thigh has gone from under it (the back) it hangs. `thighsPush` follows. The lean is followed to 50
+  degrees (a dive lays the pelvis flat). Both builds get it. `skirtFallen` is the same fall in plain numbers, for the test.
+
+Not done: a skirt is still a smooth cone with painted pleats, near black in most kits, so it shows little form; cloth that
+folds needs geometry or a normal map of its own.
+
+**Eyes.** The eye pass of the same afternoon lifted the bake and the lids; the whites stayed dark, and the reason was the
+texture: Epic's Eyes_Color has the white a dim pink grey (163, 150, 148 of 255, a third of white in linear light; Unreal's
+eye shader brightens it), half the MakeHuman eyes'. `mh-player.py white_of_eye` makes it white outside the iris, its fine
+light and dark and a little of its veins kept. In the shader the white of the eye takes `EYE_FILL` times more of the
+ambient light (what comes up off the cheeks and the court, which one probe over the court has none of); the iris does
+not, or it shines amber. A share of the ambient, not a glow: a dark hall keeps dark eyes. The lashes and brows lose nine
+tenths of the hair's shine, and the cornea none under a lid (`EYE_WET`).
+
+**Hair.** Two faults with one root: the shell under the cards (Unreal's far "helmet") and the scalp painted from it.
+- The shell's faces over the face under a fringe are dropped, and were dropped only if all their corners were there: a
+  face with one corner up on the crown ran down through the cards to a corner left on the fringe's outside, a black shard
+  across p10's fringe. Any corner now. And only for hair that has a fringe (the spec's `fringe`: p1, p5, p9, p10): a
+  brush cut's shell is its hairline, and dropped as a fringe's it left p6 a patch of bare scalp between jagged teeth.
+  (A line 6 cm over the eyes was tried in the flag's place: above it p5's shell stayed, each corner sunk its own depth
+  under the cards, a crumpled black sheet over the top of his forehead.)
+- The scalp's paint is a bake of that shell seen from the skin, with holes and corners. It is closed (holes up to about a
+  centimetre) and feathered (3 mm), and reaches 1.2 cm out from the skin, not 3: skin under hair that stands over the
+  forehead (a slicked-back front, a fringe) was painted as scalp, a black band like a marker's along p4's hairline, and
+  under p10's fringe the forehead between the strands was black where it is now skin.
+
+Not done: p8's headband goes into her afro (the hair should be pressed under it); the lower lid's bright rim; the mouths'
+insides; every face's mouth turns down at rest.
+

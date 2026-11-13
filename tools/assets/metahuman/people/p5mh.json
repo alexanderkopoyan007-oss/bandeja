@@ -18,6 +18,7 @@
   0.06
  ],
  "helmet": "export/Hair_S_Casual_Helmet_LOD5.fbx",
+ "fringe": true,
  "helmet_cov": "export/tex/Hair_S_Casual_RootUVSeedCoverage.png",
  "maps": "dcc/MHC_p5/Maps",
  "head_bc": "export/tex/T_Head_LOD3_BC.png",

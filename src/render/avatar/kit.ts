@@ -601,10 +601,12 @@ export function kitFor(idx: number, kits: readonly [number, number] = [0, 0]): K
 class SkinLighting extends THREE.PhysicalLightingModel {
   scatter: THREE.Node<'float'>;
   ambientFix: THREE.Node<'float'>;
-  constructor(scatter: THREE.Node<'float'>, ambientFix: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
+  fill: THREE.Node<'float'>;
+  constructor(scatter: THREE.Node<'float'>, ambientFix: THREE.Node<'float'>, fill: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
     super(clearcoat, sheen, false, false, false, false);
     this.scatter = scatter;
     this.ambientFix = ambientFix;
+    this.fill = fill;
   }
 
   /** Skin and eyes take the ambient's brightness, not its colour: the court's probe is lit by a blue and a red floor,
@@ -614,7 +616,7 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   override indirectDiffuse(builder: THREE.NodeBuilder): void {
     const c = builder.context as unknown as { irradiance: THREE.Node<'vec3'> };
     const irradiance = c.irradiance;
-    c.irradiance = this.ambient(irradiance);
+    c.irradiance = this.ambient(irradiance).mul(this.fill.add(1));
     super.indirectDiffuse(builder);
     c.irradiance = irradiance;
   }
@@ -624,7 +626,7 @@ class SkinLighting extends THREE.PhysicalLightingModel {
     const c = builder.context as unknown as { iblIrradiance: THREE.Node<'vec3'>; radiance: THREE.Node<'vec3'> };
     const ibl = c.iblIrradiance;
     const radiance = c.radiance;
-    c.iblIrradiance = this.ambient(ibl);
+    c.iblIrradiance = this.ambient(ibl).mul(this.fill.add(1));
     // (skin facing down has the body under it, not the bright floor the probe saw: at a grazing view the bare reflection
     // drew a pale band under every jaw)
     c.radiance = this.ambient(radiance).mul(mix(float(1), smoothstep(-0.75, 0.05, normalWorld.y), this.ambientFix));
@@ -807,6 +809,16 @@ const CATCHLIGHT_SHARP = 500;
 /** The cornea's share of three's clearcoat: it reflects 2.5% head on (index 1.376), the clearcoat's 1.5 index 4%. At the full
  * clearcoat, an eye looking up at the lit roof had its iris under a silver sheet once the reflection lost its colour. */
 const CORNEA = 0.625;
+/** The eyeball takes this much more of the ambient light than the probe gives it. Under a hall's top lights an eye is in the
+ * brow's shadow and is lit by what comes up off the cheeks, the nose and the court, close to it and bright; the one probe over
+ * the court has none of the face in it, and with it alone the whites came out the grey of the lids round them (13 Nov; a
+ * share of the ambient, so a dark hall keeps dark eyes). */
+const EYE_FILL = 2.0;
+/** How much of the hair's shine and sheen a MetaHuman's lashes and brows keep. */
+const HAIR_FINE_SPEC = 0.1;
+/** The cornea's shine by the eye's baked occlusion: none up under a lid, where the lashes and the lid are between it and the
+ * lights (it mirrored the roof's lamps there as white dots along the lash line), all of it in the open. */
+const EYE_WET: [number, number] = [0.45, 0.8];
 
 /** A person's body: MeshPhysicalNodeMaterial with the skin's lighting model (clearcoat for oil, sweat and the wet
  * eyes, mouth; sheen for the fabric). */
@@ -814,9 +826,11 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
   static override get type(): string { return 'PersonNodeMaterial'; }
   scatterNode: THREE.Node<'float'> = float(0);
   ambientFixNode: THREE.Node<'float'> = float(0);
+  /** The ambient light's diffuse this much over (`EYE_FILL` on the eyes). */
+  fillNode: THREE.Node<'float'> = float(0);
   toneBackNode: THREE.Node<'float'> = float(0);
   override setupLightingModel(): THREE.PhysicalLightingModel {
-    return new SkinLighting(this.scatterNode, this.ambientFixNode, this.useClearcoat, this.useSheen);
+    return new SkinLighting(this.scatterNode, this.ambientFixNode, this.fillNode, this.useClearcoat, this.useSheen);
   }
 
   /**
@@ -1059,7 +1073,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   m.specularIntensityNode = mix(float(1), smoothstep(0.05, 0.55, tex.w).mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
   m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
-    .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW.mul(CORNEA)).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
+    .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
   m.clearcoatRoughnessNode = skinW.mul(mix(float(0.32).sub(sweat.mul(0.1)), float(NAIL_COAT_ROUGH), nail)).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
   // Cotton and polyester's soft rim.
   // (less on the shorts and skirts, which are often near black: at a grazing view the white in it turned them grey; and none
@@ -1070,6 +1084,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   m.scatterNode = skinW.mul(float(SKIN_SCATTER).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85))).mul(float(1).sub(nail.mul(1 - NAIL_SCATTER)));
   // (the mouth too: the sky's blue on teeth turned them blue-black with the head bowed)
   m.ambientFixNode = skinW.add(eyeW).add(mouthW);
+  // (the white of the eye: an iris lies behind the cornea in its own shadow, and filled with the white it shone amber)
+  const eyeLo = min(tex.x, min(tex.y, tex.z)), eyeHi = max(tex.x, max(tex.y, tex.z));
+  m.fillNode = eyeW.mul(EYE_FILL).mul(smoothstep(0.5, 0.85, eyeLo.div(eyeHi.max(0.05))));
   m.toneBackNode = skinW.mul(SKIN_TONE_BACK);
   // The catchlight: a floodlit cornea always holds a bright point, and a face without one reads as dead. The light it
   // would mirror isn't in the probe, so it is drawn: fixed in view space, where the eyeball's normal meets it.
@@ -1112,7 +1129,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // (the thighs push all of the skirt that shows: it comes out under the shirt's hem about 0.15 down (person_kit.py SKIRT_TUCK
   // over its length), and pushed only from 0.4 down, in a ready stance the thighs carried the shorts out through its top half)
   const lining = step(SKIRT_OUT_V, uv().y).mul(SKIRT_LINING_IN);
-  m.positionNode = cut.bottom === 'pleated' || cut.bottom === 'aline' ? hung.add(thighsPush(asset, frame, hung, lining).mul(smoothstep(SKIRT_PUSH[0], SKIRT_PUSH[1], hang))) : hung;
+  if (cut.bottom === 'pleated' || cut.bottom === 'aline') {
+    // (hung by its own weight first: skirtHang; then off the thighs)
+    const fallen = hung.add(skirtHang(asset, positionLocal, hang).sub(positionLocal));
+    m.positionNode = fallen.add(thighsPush(asset, frame, fallen, lining).mul(smoothstep(SKIRT_PUSH[0], SKIRT_PUSH[1], hang)));
+  } else m.positionNode = hung;
   // (and the arms off the racket: racketPush)
   m.positionNode = (m.positionNode as THREE.Node<'vec3'>).add(racketPush(asset, m.positionNode as THREE.Node<'vec3'>));
 
@@ -1219,12 +1240,13 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
     const card = onHead.mul(mix(smoothstep(0.08, 0.35, edgeOn), float(1), far));
     hair.iorNode = mix(float(1.5), float(HAIR_IOR), onHead);
     hair.specularColorNode = mix(tinted, vec3(1, 1, 1).add(base.mul(HAIR_TRT)), onHead);
-    hair.specularIntensityNode = mix(dimmed, hAO.mul(card), onHead);
+    // (the lashes and brows none: lit from above, a lash's card shone along its length as grey-white dots on the lid, 13 Nov)
+    hair.specularIntensityNode = mix(dimmed.mul(HAIR_FINE_SPEC), hAO.mul(card), onHead);
   } else {
     hair.specularIntensityNode = dimmed;
     hair.specularColorNode = tinted;
   }
-  hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO);
+  hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO).mul(shell ? mix(float(HAIR_FINE_SPEC), float(1), onHead) : float(1));
   hair.sheenRoughnessNode = float(0.45);
   return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU, hang: longHair, ponyAt, pony, self: { skin: selfSkin, hair: selfHair }, tattoo: ink?.state } };
 }
@@ -1325,6 +1347,86 @@ function bakedMaterial(asset: PlayerAsset, look: KitLook): { material: PersonNod
   m.ambientFixNode = mix(float(BAKED_CLOTH_AMBIENT), float(1), skin);
   m.toneBackNode = skin.mul(SKIN_TONE_BACK);
   return { material: m, hair: new PersonNodeMaterial(), state: { sweat: sweatU, lag: uniform(new THREE.Vector3()), sway: uniform(new THREE.Vector3()), face: faceU } };
+}
+
+/** A skirt's extent in the modelled pose (y of its top and its hem), from the geometry; null: none built. */
+function skirtSpan(asset: PlayerAsset): [number, number] | null {
+  const g = asset.geometry, pos = g.getAttribute('position'), A = g.getAttribute('bodyA'), X = g.getAttribute('bodyX');
+  if (!A || !X) return null;
+  let top = -Infinity, hem = Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    if (A.getY(i) < 0.5 || X.getX(i) <= 0) continue;
+    const y = pos.getY(i);
+    if (y > top) top = y;
+    if (y < hem) hem = y;
+  }
+  return top > hem ? [top, hem] : null;
+}
+
+/** Skirts: down it (0 its top, 1 its hem) where the cloth leaves the waist and hangs free; the furthest the pelvis's lean is followed
+ * (cos of the angle from plumb: a dive lays the pelvis flat); how far in towards the body the cloth can fall, per metre hung
+ * (person_kit.py's flare is 0.11-0.15) and at least; how far out a thigh has carried the cloth (m) from where it is left hanging to
+ * where it lies on the thigh. */
+const THIGH_FROM = 0.3;
+const SKIRT_FREE = 0.2;
+const SKIRT_LEAN_COS = Math.cos((50 * Math.PI) / 180);
+const SKIRT_IN: [number, number] = [0.15, 0.004];
+const SKIRT_CARRIED: [number, number] = [-0.005, 0.02];
+const HANG_T = new THREE.Matrix4(), HANG_V = new THREE.Vector3();
+
+/**
+ * A skirt hangs by its own weight (the owner, 13 Nov: "this looks awful", of skirts that stood out behind a bent player like a
+ * lampshade). Weighted to the hips and thighs alone it was a cone fixed to the pelvis: a player bent at the hips tipped all of it
+ * with them, the hem lifting behind, and the back of it followed the thighs forward under the seat. Here each vertex below the
+ * waistband is put where it would hang from the pelvis: its drop turned from the pelvis's down to plumb (a shear in the
+ * pelvis's modelled frame, which keeps a column of cloth its length), no nearer the pelvis's axis than the body under it lets
+ * it (its ring's radius less its flare). Where a thigh has carried the cloth outwards (the front in a crouch, the side of a leg
+ * stepped wide) it lies on the thigh, as skinned; where the thigh has gone from under it (the back, in a crouch) it is left
+ * hanging. `thighsPush` then keeps what hangs off the legs. Returns the skinned position `at` moved.
+ */
+function skirtHang(asset: PlayerAsset, at: THREE.Node<'vec3'>, hang: THREE.Node<'float'>): THREE.Node<'vec3'> {
+  const span = skirtSpan(asset);
+  if (!span) return at;
+  const hips = asset.bone('Hips'), inv = asset.boneInverses[hips]!;
+  const c = new THREE.Vector3().setFromMatrixPosition(inv.clone().invert());
+  const H = uniform(new THREE.Matrix4()), g = uniform(new THREE.Vector3(0, -1, 0));
+  H.onObjectUpdate((f) => {
+    const mesh = f.object as THREE.SkinnedMesh;
+    const m = H.value as THREE.Matrix4;
+    m.copy(mesh.bindMatrixInverse).multiply(mesh.skeleton.bones[hips]!.matrixWorld).multiply(inv).multiply(mesh.bindMatrix);
+    // (plumb in the pelvis's modelled frame, its lean followed no further than SKIRT_LEAN_COS)
+    const v = HANG_V.set(0, -1, 0).transformDirection(HANG_T.copy(mesh.matrixWorld).multiply(m).invert());
+    const flat = Math.hypot(v.x, v.z);
+    if (-v.y < SKIRT_LEAN_COS && flat > 1e-6) {
+      const k = Math.sqrt(1 - SKIRT_LEAN_COS * SKIRT_LEAN_COS) / flat;
+      v.set(v.x * k, -SKIRT_LEAN_COS, v.z * k);
+    }
+    (g.value as THREE.Vector3).copy(v);
+  });
+  const q = positionGeometry;
+  const drop = max(float(span[0] - SKIRT_FREE * (span[0] - span[1])).sub(q.y), 0).mul(step(0.001, hang));
+  const fell = q.add(g.sub(vec3(0, -1, 0)).mul(drop));
+  const r0 = vec2(q.x.sub(c.x), q.z.sub(c.z)), r1 = vec2(fell.x.sub(c.x), fell.z.sub(c.z));
+  const least = r0.length().sub(drop.mul(SKIRT_IN[0]).add(SKIRT_IN[1]));
+  const out = r1.mul(max(least.div(r1.length().max(1e-4)), 1));
+  const hungAt = H.mul(vec4(out.x.add(c.x), fell.y, out.y.add(c.z), 1)).xyz;
+  const rigid = H.mul(vec4(q, 1)).xyz;
+  const outward = H.mul(vec4(r0.x, 0, r0.y, 0)).xyz.normalize();
+  const carried = smoothstep(SKIRT_CARRIED[0], SKIRT_CARRIED[1], at.sub(rigid).dot(outward));
+  return mix(at, mix(hungAt, at, carried), step(0.001, hang));
+}
+
+/**
+ * `skirtHang`'s fall in plain numbers, for a test: in the pelvis's modelled frame, where a skirt's vertex modelled at `q` hangs
+ * when plumb is `g` there (a unit vector; (0, -1, 0) standing upright), about the pelvis's axis through `c`, the skirt from
+ * `span[0]` (its top) to `span[1]` (its hem).
+ */
+export function skirtFallen(q: THREE.Vector3, c: THREE.Vector3, span: [number, number], g: THREE.Vector3): THREE.Vector3 {
+  const drop = Math.max(span[0] - SKIRT_FREE * (span[0] - span[1]) - q.y, 0);
+  const f = new THREE.Vector3(q.x + g.x * drop, q.y + (g.y + 1) * drop, q.z + g.z * drop);
+  const r0 = Math.hypot(q.x - c.x, q.z - c.z), r1 = Math.max(Math.hypot(f.x - c.x, f.z - c.z), 1e-4);
+  const k = Math.max((r0 - (drop * SKIRT_IN[0] + SKIRT_IN[1])) / r1, 1);
+  return f.set(c.x + (f.x - c.x) * k, f.y, c.z + (f.z - c.z) * k);
 }
 
 /**
@@ -1816,11 +1918,14 @@ export function personFrame(asset: PlayerAsset): KitFrame {
   };
   // (a line through the ring at 0.2 and the shorts' near their hem, so the capsule doesn't narrow inside them; never under the
   // skin's at the knee)
+  // (from the ring at THIGH_FROM, under the seat: the ring at 0.2 is the seat itself, 12.6-14.5 cm from the leg's line against the
+  // thigh's 10, and a line through it gave the capsule a ball 15-18 cm in radius at the hip, which stood a skirt off the waist
+  // like a lampshade, the owner's "this looks awful", 13 Nov. The seat is the pelvis's, and the skirt is made to clear it.)
   const thighR = ((): [number, number] => {
-    const rA = thighAt(0.2), tH = Math.min(0.92, shortsEnd - 0.05);
-    if (!(tH > 0.4)) return [rA, thighAt(0.92)];
-    const k = (thighAt(tH) - rA) / (tH - 0.2);
-    return [rA - 0.2 * k, Math.max(rA + 0.8 * k, thighAt(0.92))];
+    const rA = thighAt(THIGH_FROM), tH = Math.min(0.92, shortsEnd - 0.05);
+    if (!(tH > THIGH_FROM + 0.1)) return [rA, Math.max(thighAt(0.92), rA - 0.03)];
+    const k = Math.min(0, (thighAt(tH) - rA) / (tH - THIGH_FROM));
+    return [Math.min(rA - THIGH_FROM * k, rA + 0.01), Math.max(rA + (1 - THIGH_FROM) * k, thighAt(0.92))];
   })();
   // The shirt's outline at a height: the middle of the front's and back's extents.
   const midZ = (y0: number): number => {
