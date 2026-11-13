@@ -305,6 +305,47 @@ lashes = join(head['lash'], 'lashes')
 shirt_shorts = split_by_material(outfit, [(lambda n: 'Shirt' in n, 'shirt'), (lambda n: 'Short' in n, 'shorts')])
 shirt = join(shirt_shorts['shirt'], 'shirt')
 shorts = join(shirt_shorts['shorts'], 'shorts')
+
+
+def drop_sleeve_insides(ob):
+    """What Epic puts inside a sleeve, out of the shirt as it is read. Returns (fans, lining faces).
+    - A fan of triangles from one vertex in the middle closes each sleeve (so nobody sees up an empty one). Here an arm
+      fills the sleeve, the fan lies through it, and on one woman its middle stood 4 cm out through her left sleeve, a dark
+      chip on the cloth. (The fan that closes the hem, on the body's axis, stays.)
+    - The sleeve's end is turned in and runs 6 cm back up inside as a lining, a millimetre or two under the cloth. Put 3 mm
+      off the skin with the rest (below), lining and cloth lie in the one place, and as an arm bent the lining came through
+      in dark scraps. Cloth on the arm that faces the arm's own line goes; the game draws the inside of a sleeve from the
+      back of its outside."""
+    dom = [max(w, key=w.get) if w else '' for w in weights(ob)]
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bm.normal_update()
+    out_x = 0.6 * abs(MHJ['upperarm_l'].x)
+    mids = [v for v in bm.verts if len(v.link_edges) >= 12 and not v.is_boundary and abs(v.co.x) > out_x
+            and sum(e.other_vert(v).is_boundary for e in v.link_edges) >= 0.8 * len(v.link_edges)]
+    left = 1.0 if MHJ['upperarm_l'].x > 0 else -1.0
+    lining = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        lr, s_ = ('Left', '_l') if c.x * left > 0 else ('Right', '_r')
+        if not all(dom[v.index] in (lr + 'Arm', lr + 'ForeArm', lr + 'Shoulder') for v in f.verts):
+            continue
+        a0 = MHJ['upperarm' + s_]
+        t = (MHJ['lowerarm' + s_] - a0).normalized()
+        out = c - (a0 + t * (c - a0).dot(t))
+        if (c - a0).dot(t) > 0.03 and out.length > 1e-4 and f.normal.dot(out.normalized()) < -0.3:
+            lining.append(f)
+    n = (len(mids), len(lining))
+    bmesh.ops.delete(bm, geom=lining, context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in mids if v.is_valid], context='VERTS')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(ob.data)
+    bm.free()
+    ob.data.update()
+    return n
+
+
+say('sleeve fans and lining faces out of the shirt', drop_sleeve_insides(shirt))
 if spec.get('teeth_decimate'):
     # (the face's LOD gives the teeth and gums 3k triangles: more than a closed mouth shows. They ride the head and
     # carry no expressions yet, so the shape keys go and a collapse decimate thins them)
@@ -938,7 +979,7 @@ if spec.get('top_hem') == 'hips':
 # The tops are Epic's tee cut again (tank, sleeveless), laid on the chest round a V (vneck), or carried on to the wrists (long);
 # both skirts; ankle and knee socks and tights from the legs' own skin; a polo's collar. The skin stays whole under them, with
 # the garments that hide each vertex (asset.ts Wardrobe: `piece`, `tpiece`, `hide`), where a build with one cut dropped it.
-WARDROBE = int(os.environ.get('MH_WARDROBE', spec.get('wardrobe', 0)))
+WARDROBE = int(os.environ.get('MH_WARDROBE', spec.get('wardrobe', 1)))
 WOMEN = not spec.get('drape')
 pw.N_BODY = pk.N_BODY = 10 ** 9  # (MakeHuman's count of skin vertices before its helpers: here a body is all skin)
 # (the armhole's line by the LeftArm joint, out and up: kit.ts tankCut; person_wear.SLEEVELESS for the wider cut)
@@ -1069,7 +1110,9 @@ shirt_hem = float(coords(shirt)[:, 2].min())
 sole_z = float(new_co[:, 2].min())
 if SKIRT_STYLE:
     # (the shorts' top came through the shirt's back in a bend, and the skirt covers it)
-    bisect(shorts, Vector((0, 0, shirt_hem - 0.03)), Vector((0, 0, 1)), outer=True)
+    # (with a wardrobe the skirt can come off, and cut 3 cm under the top's hem the shorts left a band of bare skin round the
+    # hips: there they keep 2 cm up inside the hem, which the skirt's top, 5 cm up, still covers)
+    bisect(shorts, Vector((0, 0, shirt_hem + (0.02 if WARDROBE else -0.03))), Vector((0, 0, 1)), outer=True)
     if spec.get('shorts_hem'):
         bisect(shorts, Vector((0, 0, spec['shorts_hem'] + sole_z)), Vector((0, 0, 1)), inner=True)
     say('skirt over shorts from', round(float(coords(shorts)[:, 2].min()), 3), 'to', round(float(coords(shorts)[:, 2].max()), 3))
@@ -1136,52 +1179,54 @@ if WARDROBE:
     sleeveless_planes = cut_armholes(wear['sleeveless'], pw.SLEEVELESS, 'sleeveless')
     wear['vneck'] = pw.make_vneck(None, pw.copy_of(tee, 'Wear.vneck'), wear_rig, WOMEN, skin_tree)
 
-    # Long sleeves: the tee's sleeves carried on to cuffs at the wrists (person_wear.make_long). Epic's sleeve ends in a hem
-    # turned up inside, whose open edge is inside the sleeve: the lining goes first (cloth on the arm facing the arm's own
-    # line), so the edge carried on is the sleeve's outside. New cloth takes one plain place on the sleeve in the atlas.
+    # Long sleeves: the tee's sleeves carried on to cuffs at the wrists (person_wear.make_long). New cloth takes one plain
+    # place on the sleeve in the atlas.
     lo = pw.copy_of(tee, 'Wear.long')
-    lw = weights(lo)
-    ldom = [max(w, key=w.get) if w else '' for w in lw]
-    bm = bmesh.new()
-    bm.from_mesh(lo.data)
-    bm.normal_update()
-    dead = []
-    for f in bm.faces:
-        c = f.calc_center_median()
-        lr = 'Left' if (c.x - chest_x) * (J['LeftArm'].x - chest_x) > 0 else 'Right'
-        if not all(ldom[v.index] in (lr + 'Arm', lr + 'ForeArm') for v in f.verts):
-            continue
-        a0, a1 = J[lr + 'Arm'], J[lr + 'ForeArm']
-        t = (a1 - a0).normalized()
-        out = c - (a0 + t * (c - a0).dot(t))
-        if out.length > 1e-4 and f.normal.dot(out.normalized()) < -0.3:
-            dead.append(f)
-    bmesh.ops.delete(bm, geom=dead, context='FACES')
-    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
-    bm.to_mesh(lo.data)
-    bm.free()
-    lo.data.update()
     # (a plain place: the sleeve's cloth nearest halfway down the upper arm, on top)
     uvl = lo.data.uv_layers[0].data
     mid = (J['LeftArm'] + J['LeftForeArm']) / 2 + Vector((0, 0, 0.05))
     best = min(lo.data.loops, key=lambda l: (lo.data.vertices[l.vertex_index].co - mid).length)
     plain = tuple(uvl[best.index].uv)
+    # (and how much of the atlas a metre of that cloth takes)
+    bp = next(p_ for p_ in lo.data.polygons if best.index in p_.loop_indices)
+    li = list(bp.loop_indices)
+    dens = [(Vector(uvl[a_].uv) - Vector(uvl[b_].uv)).length / max(1e-6, (lo.data.vertices[lo.data.loops[a_].vertex_index].co - lo.data.vertices[lo.data.loops[b_].vertex_index].co).length)
+            for a_, b_ in zip(li, li[1:] + li[:1])]
+    UV_PER_M, UV_PATCH = float(np.median(dens)), 0.03
+    fold_uv = lambda x: UV_PATCH * 2 * abs(x / (2 * UV_PATCH) - math.floor(x / (2 * UV_PATCH) + 0.5)) - UV_PATCH / 2
     arm_tree = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices], [tuple(p_.vertices) for p_ in body.data.polygons])
     sw_ = pw.SkinWeights(body)
+    ldom = [max(w, key=w.get) if w else '' for w in weights(lo)]
     bm = bmesh.new()
     bm.from_mesh(lo.data)
+    dom_l, ext_l = bm.verts.layers.int.new('dom'), bm.verts.layers.int.new('ext')
+    for v in bm.verts:
+        v[dom_l] = {'LeftArm': 1, 'LeftForeArm': 1, 'RightArm': 2, 'RightForeArm': 2}.get(ldom[v.index], 0)
+    # Epic's sleeve is a panel of its own: its seam under the arm and round the shoulder are two rows of vertices in the
+    # one place, not one. Unsewn, the sleeve's open edge was the cuff, up the seam, round the armhole and back, and carried
+    # on to the wrist it made two sleeves in the one place, the armhole's inside out: the blotches the game drew.
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=0.0001)
     added, loops_n = [], 0
     for lr in ('Left', 'Right'):
         sx = 1.0 if J[lr + 'Arm'].x > chest_x else -1.0
         axis = pw.Axis([J[lr + 'Arm'], J[lr + 'ForeArm'], J[lr + 'Hand']])
-        # (the sleeve's own edge: of the open loops out on this arm, the widest round the arm's line; what is left of the
-        # lining has a smaller one inside it, and carried on too it made a second sleeve inside the first)
-        mine = [l for l in pw.boundary_loops(bm) if (sum(v.co.x for v in l) / len(l) - chest_x) * sx > arm_x0 + 0.04
-                and sum(v.co.z for v in l) / len(l) < J[lr + 'Arm'].z and len(l) > 8]
+        # The sleeve's end comes off first, 1.2 cm of it: Epic hems a sleeve by turning the cloth in (a woman's), or lines it
+        # (a man's, the lining cut out above), and the open edge that leaves is inside the sleeve, a centimetre or six up;
+        # carried on from there the long sleeve came out of a short one like a vest under a tee. Cut square, the cloth's own
+        # edge is the widest loop at the cut.
+        # (the arm's cloth by its weights, not by how near the arm's line it lies: a woman's tee passes within 13 cm of it
+        # under the arm, and the cut took a bite out of her side and carried a ribbon of it to the wrist)
+        arm_f = [f for f in bm.faces if all(v[dom_l] == (1 if lr == 'Left' else 2) for v in f.verts)]
+        s_cut = max(axis.project(v.co) for f in arm_f for v in f.verts) - 0.012
+        geom = list({v for f in arm_f for v in f.verts}) + list({e for f in arm_f for e in f.edges}) + arm_f
+        bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=axis.at(s_cut), plane_no=axis.tangent(s_cut), clear_outer=True)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+        radius = lambda l: sum((v.co - axis.at(axis.project(v.co))).length for v in l) / len(l)
+        mine = [l for l in pw.boundary_loops(bm) if len(l) > 8 and (sum(v.co.x for v in l) / len(l) - chest_x) * sx > 0
+                and max(abs(axis.project(v.co) - s_cut) for v in l) < 0.001]
         loops_n += len(mine)
         if not mine:
             continue
-        radius = lambda l: sum((v.co - axis.at(axis.project(v.co))).length for v in l) / len(l)
         loop = max(mine, key=radius)
         s_end = axis.total - pw.CUFF_BACK
 
@@ -1191,23 +1236,62 @@ if WARDROBE:
             u = u * u * (3 - 2 * u)
             c = min(1.0, max(0.0, (s_ - (s_end - 0.06)) / 0.06))
             return (e0 * (1 - u) + pw.FOREARM_EASE * u) * (1 - c) + pw.CUFF_EASE * c
-        # (rings 3.2 cm apart: Epic's sleeve has 70 vertices round its edge, and at person_wear's 1.8 cm two sleeves were 3,300)
-        ring_was, pw.RING = pw.RING, 0.032
+        # (rings 3 cm apart: the cut leaves some 46 vertices round the sleeve, and at person_wear's 1.8 cm two were 2,000)
+        ring_was, pw.RING = pw.RING, 0.03
         new = pw.extend_loop(bm, loop, axis, arm_tree, s_end, ease, rib=0.0006, rib_len=0.016, uv=lambda f: plain)
         pw.RING = ring_was
-        added.append((len(new), pw.limb_ok(sx, lr, ('Arm', 'ForeArm', 'Hand'))))
+        # The new cloth's place in the atlas: a patch UV_PATCH across round the plain place, walked over at the sleeve's own
+        # scale round the arm and along it, folded back at its edges. (All of it at the one point, the folds' normal map had no
+        # direction to lie in, kit.ts takes its frame from how the UVs change across a pixel, and the sleeves came out blotched.)
+        for v in new:
+            v[ext_l] = 1 if lr == 'Left' else 2
+        uvb = bm.loops.layers.uv.active
+        fresh_v = set(new)
+        # (and facing out, whatever the face its first edge joins: inside out, the game draws it as the sleeve's inside)
+        fresh_f = [f for f in bm.faces if any(v in fresh_v for v in f.verts)]
+        bm.normal_update()
+        facing = sum(1 for f in fresh_f if f.normal.dot(f.calc_center_median() - axis.at(axis.project(f.calc_center_median()))) > 0)
+        if facing < len(fresh_f) / 2:
+            bmesh.ops.reverse_faces(bm, faces=fresh_f)
+        for f in fresh_f:
+            th0 = None
+            for l in f.loops:
+                s_ = axis.project(l.vert.co)
+                t_ = axis.tangent(s_)
+                ref = (Vector((0, 1, 0)) - t_ * t_.y).normalized()
+                off = l.vert.co - axis.at(s_)
+                th = math.atan2(off.dot(t_.cross(ref)), off.dot(ref))
+                if th0 is None:
+                    th0 = th
+                th += 2 * math.pi * round((th0 - th) / (2 * math.pi))
+                l[uvb].uv = (plain[0] + fold_uv(th * 0.05 * UV_PER_M), plain[1] + fold_uv(s_ * UV_PER_M))
+        added.append((1 if lr == 'Left' else 2, pw.limb_ok(sx, lr, ('Arm', 'ForeArm', 'Hand'))))
     bm.to_mesh(lo.data)
     bm.free()
     lo.data.update()
-    first = len(lo.data.vertices) - sum(a[0] for a in added)
-    for count, ok in added:
-        ids = list(range(first, first + count))
+    # (the new cloth by its mark, not by its place at the end of the list: the cut's own new vertices lie among it, and
+    # counted from the end each arm's cloth was bound as the other's, to tear apart the moment an arm moved)
+    ext = [d.value for d in lo.data.attributes['ext'].data]
+    for mark, ok in added:
+        ids = [k for k, e in enumerate(ext) if e == mark]
         sw_.bind(lo, ids, [lo.data.vertices[j_].co.copy() for j_ in ids], ok)
-        first += count
     for p_ in lo.data.polygons:
         p_.use_smooth = True
+    # (which way the new cloth faces: out from the arm's line, or the game draws it as the sleeve's inside)
+    faces_out, faces_new = 0, 0
+    for p_ in lo.data.polygons:
+        if not all(ext[k] for k in p_.vertices):
+            continue
+        lr = 'Left' if ext[p_.vertices[0]] == 1 else 'Right'
+        ax_ = pw.Axis([J[lr + 'Arm'], J[lr + 'ForeArm'], J[lr + 'Hand']])
+        faces_new += 1
+        faces_out += p_.normal.dot(p_.center - ax_.at(ax_.project(p_.center))) > 0
+    say('long sleeves: new faces facing out', faces_out, 'of', faces_new)
+    n_added = sum(1 for e in ext if e)
+    for name in ('ext', 'dom'):
+        lo.data.attributes.remove(lo.data.attributes[name])
     wear['long'] = lo
-    say('long sleeves: lining faces out', len(dead), '; open loops on the arms', loops_n, '; vertices added', sum(a[0] for a in added),
+    say('long sleeves: open loops on the arms', loops_n, '; vertices added', n_added,
         '; new cloth at uv', [round(x, 3) for x in plain])
 
     # A polo's collar on the tee (person_kit.make_collar), measured on the skin of the body and the neck together.

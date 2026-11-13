@@ -4872,3 +4872,56 @@ Still plain: the upper has no panel geometry (panels are paint), and the MakeHum
 which draws every caster again (60 more draw calls, 270 thousand triangles: frames over 20 ms went from about 1% to 8-30% with
 other sessions loading the machine). So `arenaDetail.full` (High and Ultra, where the preset draws every device pixel) holds
 that shadow and the seats' brackets; Medium keeps the surfaces, the floor, both lights and the contact shadows.
+
+## The wardrobe on the MetaHuman builds (2026-11-13, owner: "build the wardrobe on the detailed bodies")
+
+Until now a MetaHuman build had the one cut it was modelled in, so `bodyFor` drew a player as it only when their outfit was
+that cut: 7 of the 28 pros, and anyone as dealt. Every MetaHuman build now carries the 16 pieces a MakeHuman build does
+(`person_wear.PIECES`; `mh-player.py`, the section after the tank and the skirt), and `bodyFor` picks it whatever the player
+wears; a costume or a print is still made on the MakeHuman build.
+
+- **Tops** are Epic's tee again: `tank` and `sleeveless` by the armhole cut the modelled tank already had (`cut_armholes`,
+  the tank's line and `person_wear.SLEEVELESS`), `vneck` laid on the chest round the V (`person_wear.make_vneck`; the game
+  cuts the V), `long` with its sleeves carried on to cuffs at the wrists (`person_wear.extend_loop`).
+- **The long sleeves took six tries**, most wrong in a way a number showed before a picture did:
+  - Epic's sleeve is a panel of its own, its seam under the arm and round the shoulder two rows of vertices in one place.
+    Unsewn, its open edge ran round the cuff, up the seam, round the armhole and back, and carried on to the wrist it made
+    two sleeves in the one place, the armhole's inside out: the game drew dark blotches (`new faces facing out 935 of
+    1848`, half in every ring, said so; the UVs and the skin beneath, blamed first, were fine). The copy is welded first.
+  - Epic hems a sleeve by turning the cloth in or lining it, so the open edge left is inside the sleeve, 1 to 6 cm up, and
+    the long sleeve came out of a short one like a vest under a tee. Picking among the loops (the widest, the furthest
+    down) was wrong on one body or another; the sleeve's last 1.2 cm is cut off square instead and the widest loop at the
+    cut carried on.
+  - That cut takes the arm's cloth by its weights. By nearness to the arm's line it bit into a woman's side under her
+    arm and carried a ribbon of it to her wrist.
+  - Epic also closes each sleeve inside with a fan of triangles from one middle vertex. An arm fills the sleeve here, and
+    on p7 the fan's middle stood 4 cm out through her left sleeve, a dark chip in every top: `drop_sleeve_insides`
+    takes them out of the shirt as it is read (the fan closing the hem, on the body's axis, stays).
+  - The same step takes out the sleeve's lining (its end turned in and run 6 cm back up inside, some 500 faces). Put
+    3 mm off the skin with the rest of the garment, lining and cloth lay in the one place, and as an arm bent the lining
+    came through in dark scraps on a short sleeve too. The game draws a sleeve's inside from the back of its outside.
+  - The new cloth is bound to the arm by a mark on its vertices (an integer layer), not by its place at the end of the
+    vertex list: the square cut's own new vertices lie among it, and counted from the end each arm's cloth was bound as
+    the other's. Blender's renders, all in the rest pose, showed a clean sleeve; in the game it tore into ribbons the
+    moment an arm moved. **A cut is checked in the game, in a pose, before it is called built.**
+  The new cloth takes a 3% patch of the atlas round a plain place on the sleeve, walked over at the sleeve's own scale.
+- **A collar** (`person_kit.make_collar`) on the tee, measured on the body's and the head's skin together (a MetaHuman's
+  neck is the head mesh's). A build whose kit says polo now wears one; before, a MetaHuman polo had none.
+- **Both skirts** (`make_skirt`, each on its band of the skirt's strip, `person_kit.skirts_ao`); one chosen over shorts
+  hangs `SKIRT_BELOW` under their hem. A body modelled in a skirt keeps 2 cm of its shorts up inside the top's hem (it was
+  cut 3 cm under it, which left a band of bare skin round the hips once the skirt could come off). No `under` pair: a
+  MetaHuman's shorts go under both skirts.
+- **Ankle and knee socks and tights** are the legs' skin again (`skin_shell`, `person_wear`'s heights). Tights are the shorts'
+  part at one plain place on the shorts in the atlas.
+- **The skin stays whole** under all of it, cut only 3 cm under the trainer's collar (a no-show sock leaves the ankle bare),
+  with the garments that hide each vertex (`person_wear.covered_by` and `hide_masks`: seen within 3 cm straight out, but for
+  a 2.5 cm band next to skin that shows; a tank's and a sleeveless top's armholes keep what the shader's cut uncovers).
+  Its occlusion is baked with no garment on: under the modelled tee, a player in a tank had dark shoulders.
+- **The cost**: a file goes from about 1.1 MB to 1.6 MB (44 thousand vertices in the file against 22; what is drawn is the
+  worn cuts, as before). Four tops are four copies of the tee; sharing their vertices is the download-size work still owed.
+- `data/wardrobes.json` is gone: it told `bodyFor` what the MakeHuman builds had before any file was fetched, and nothing
+  asks any more. `tests/render/metaHumans.test.ts` holds a MetaHuman build's wardrobe to its MakeHuman build's instead.
+- `MH_STOP=wear` renders each cut on the body in Blender without a full build (`MH_VIEWS=long,polo` picks);
+  `tools/still.mjs VIEW=body:N` is a player head to knee in the game.
+- `tests/render/metaHumans.test.ts` also holds every garment vertex to its own side's limb (cloth on a left arm is moved by
+  the left arm), which the torn sleeves would have failed; checked by turning the sign over (13,574 wrong on one body).

@@ -1,11 +1,11 @@
-// The roster's people as their MetaHuman builds (13 Nov 2026: the owner's "publish them"): which build a player is drawn
-// as, that the table the choice reads says what the files do, and that a MetaHuman's face has the keys its MakeHuman
-// build's has (tools/assets/metahuman/face-keys.mjs), moving what they should.
+// The roster's people as their MetaHuman builds (13 Nov 2026: the owner's "publish them", then "build the wardrobe on the
+// detailed bodies"): which build a player is drawn as, that a MetaHuman build has the garments its MakeHuman build has, and
+// that its face has the keys its MakeHuman build's has (tools/assets/metahuman/face-keys.mjs), moving what they should.
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import ROSTER from '../../data/people.json';
-import WARDROBES from '../../data/wardrobes.json';
 import { classicBodies, PEOPLE, personOf } from '../../src/render/avatar/asset.ts';
 import { bodyFor } from '../../src/render/avatar/costumes.ts';
 import { mannequinWithPeople, metaHumansHere } from './people.ts';
@@ -32,34 +32,56 @@ describe('the MetaHuman builds', () => {
     expect(personOf('meshy')).toBe('meshy');
   });
 
-  it('data/wardrobes.json says what the MakeHuman builds\' own wardrobes do', () => {
+  it('carry the wardrobe their MakeHuman build has: the same cut worn, every garment built but the pair under a skirt', () => {
+    // (tools/assets/metahuman/mh-player.py; `under` is the tight shorts a MakeHuman build in loose ones wears under a skirt:
+    // a MetaHuman's shorts are worn under both)
     for (const n of PEOPLE) {
-      const w = header(n).meshes.opaque.wardrobe!;
-      expect(w.pieces).toEqual(WARDROBES.pieces);
-      const t = (WARDROBES.people as Record<string, { worn: string[]; missing: string[] }>)[n]!;
-      expect(t.worn).toEqual(w.worn);
-      expect(t.missing).toEqual(w.pieces.filter((_, i) => w.ranges[i]![1] === 0));
+      const a = header(n).meshes.opaque.wardrobe!, b = header(n + 'mh').meshes.opaque.wardrobe!;
+      expect(b.pieces).toEqual(a.pieces);
+      expect(b.worn, n).toEqual(a.worn);
+      for (const [i, piece] of b.pieces.entries()) {
+        if (piece === 'under') expect(b.ranges[i]![1], `${n}mh under`).toBe(0);
+        else expect(b.ranges[i]![1], `${n}mh ${piece}`).toBeGreaterThan(0);
+      }
     }
   });
 
-  it('draw a player whose outfit is the modelled one, and no one in another cut or a costume', () => {
-    // (as dealt, in any colours, pattern, shoes, head piece, wristband)
+  it('hang every garment on the side of the body it is on: cloth on a left arm moves with the left arm', () => {
+    // (13 Nov 2026: the long sleeves' new cloth was bound each arm's as the other's, by a count from the end of the vertex
+    // list that a cut had moved. Blender's renders, in the rest pose, showed clean sleeves; in a rally they tore into ribbons.)
+    for (const [n, p] of mh.entries()) {
+      const r = p.restPos, w = p.look!.wardrobe!;
+      const si = p.geometry.getAttribute('skinIndex').array as Uint16Array, sw = p.geometry.getAttribute('skinWeight').array as Float32Array;
+      const mid = new THREE.Vector3().setFromMatrixPosition(p.restWorld[p.bone('Spine2')]!).x;
+      const left = Math.sign(new THREE.Vector3().setFromMatrixPosition(p.restWorld[p.bone('LeftArm')]!).x - mid);
+      const side = new Map<number, number>();
+      for (const [lr, s] of [['Left', left], ['Right', -left]] as const) for (const part of ['Arm', 'ForeArm', 'Hand', 'UpLeg', 'Leg', 'Foot']) side.set(p.bone(lr + part), s);
+      let wrong = 0, seen = 0;
+      for (let v = 0; v < w.piece.length; v++) {
+        if (w.pieces[w.piece[v]!] === 'body') continue;
+        let top = 0;
+        for (let k = 1; k < 4; k++) if (sw[v * 4 + k]! > sw[v * 4 + top]!) top = k;
+        const s = side.get(si[v * 4 + top]!);
+        if (s === undefined) continue;
+        seen++;
+        if ((r[v * 3]! - mid) * s < -0.02) wrong++;
+      }
+      expect(seen, `build ${n}`).toBeGreaterThan(2000);
+      expect(wrong, `build ${n}: garment vertices on one side moved by the other side's limb`).toBe(0);
+    }
+  });
+
+  it('draw a player whatever they wear, but in a costume or a print', () => {
     expect(bodyFor('p1')).toBe('p1mh');
     expect(bodyFor('p1', { head: 'head-cap', wrist: 'wrist-pair', paint: { pattern: 'hoops' } })).toBe('p1mh');
-    expect(bodyFor('p1', { paint: { top: 'tee', socks: 'crew' } })).toBe('p1mh');
-    // (striped crew socks are the crew socks, painted; a raglan is the tee, its seam painted)
-    expect(bodyFor('p5', { paint: { top: 'tee', socks: 'stripe' } })).toBe('p5mh');
-    expect(bodyFor('p2', { paint: { top: 'polo' } })).toBe('p2mh');
-    expect(bodyFor('p7', { paint: { top: 'tank', bottom: 'pleated' } })).toBe('p7mh');
-    expect(bodyFor('p8', { paint: { top: 'tee', bottom: 'shorts' } })).toBe('p8mh');
-    // (another top, a skirt on or off, tights, other socks, a dress, a costume: garments only the MakeHuman build has)
-    expect(bodyFor('p1', { paint: { top: 'polo' } })).toBe('p1');
-    expect(bodyFor('p2', { paint: { top: 'tee' } })).toBe('p2');
-    expect(bodyFor('p4', { paint: { top: 'tee', socks: 'knee' } })).toBe('p4');
-    expect(bodyFor('p6', { paint: { top: 'long', bottom: 'tights' } })).toBe('p6');
-    expect(bodyFor('p7', { paint: { top: 'dress' } })).toBe('p7');
-    expect(bodyFor('p9', { paint: { top: 'tee', bottom: 'shorts' } })).toBe('p9');
-    expect(bodyFor('p10', { paint: { top: 'tank', bottom: 'aline' } })).toBe('p10');
+    // (another top, a skirt on or off, tights, other socks, a dress: garments both builds have since 13 Nov 2026)
+    expect(bodyFor('p1', { paint: { top: 'polo' } })).toBe('p1mh');
+    expect(bodyFor('p4', { paint: { top: 'tee', socks: 'knee' } })).toBe('p4mh');
+    expect(bodyFor('p6', { paint: { top: 'long', bottom: 'tights' } })).toBe('p6mh');
+    expect(bodyFor('p7', { paint: { top: 'dress' } })).toBe('p7mh');
+    expect(bodyFor('p9', { paint: { top: 'tee', bottom: 'shorts' } })).toBe('p9mh');
+    expect(bodyFor('p10', { paint: { top: 'tank', bottom: 'aline' } })).toBe('p10mh');
+    // (a costume's suit and a print are made on the MakeHuman build)
     expect(bodyFor('p1', { costume: 'costume-banana' })).toBe('p1');
     // (guests are themselves; ?classic=1 is everyone's MakeHuman build)
     expect(bodyFor('meshy')).toBe('meshy');
