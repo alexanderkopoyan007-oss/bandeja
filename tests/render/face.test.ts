@@ -1,6 +1,6 @@
 // The face driver (src/render/avatar/face.ts): the mouth a MetaHuman build holds at rest.
 import { describe, expect, it } from 'vitest';
-import { FaceDriver, REST_SMILE, type FaceInput } from '../../src/render/avatar/face.ts';
+import { FaceDriver, REST_SMILE, restSmileOf, type FaceInput } from '../../src/render/avatar/face.ts';
 
 const NAMES = ['blinkL', 'blinkR', 'squint', 'browDown', 'browInnerUp', 'browUp', 'jawOpen', 'mouthPress', 'smile', 'grimace', 'sneer', 'neckTense', 'lookLeft', 'lookRight', 'lookUp', 'lookDown'];
 const SMILE = NAMES.indexOf('smile'), PRESS = NAMES.indexOf('mouthPress');
@@ -21,6 +21,16 @@ describe('face: the mouth at rest', () => {
     const d = new FaceDriver(NAMES, 3);
     d.update(1 / 60, idle);
     expect(d.influences[SMILE]).toBe(0);
+  });
+
+  it('holds more for the two mouths that still turned down (p2, p8), under a smirk, and the same for the rest', () => {
+    for (const p of ['p2', 'p8']) {
+      expect(restSmileOf(p)).toBeGreaterThan(REST_SMILE);
+      expect(restSmileOf(p)).toBeLessThan(0.55);
+      expect(after(restSmileOf(p), { toContact: 0, strain: 1 })[SMILE]).toBeCloseTo(0, 6);
+      expect(after(restSmileOf(p), { mood: 1, moodT: 1 })[SMILE]).toBeCloseTo(0.75, 6);
+    }
+    for (const p of ['p1', 'p3', 'p4', 'p5', 'p6', 'p7', 'p9', 'p10']) expect(restSmileOf(p)).toBe(REST_SMILE);
   });
 
   it('gives way to effort at a contact, to a grunt and to a lost point; a won point smiles more', () => {

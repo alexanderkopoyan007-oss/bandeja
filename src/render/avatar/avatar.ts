@@ -11,7 +11,7 @@ import type { StandPlan } from '../../sim/player/positioning.ts';
 import { STRETCH_DIVE, STRETCH_JUMP } from '../../sim/contact/windows.ts';
 import { DT } from '../../sim/core/constants.ts';
 import { dressedIndex, personMeshes, personOf, type Clip, type PlayerAsset } from './asset.ts';
-import { FaceDriver, REST_SMILE, type FaceInput } from './face.ts';
+import { FaceDriver, restSmileOf, type FaceInput } from './face.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { hingeIK, IK_BEND, IK_SOFT, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
 import { fitCapsules, RACKET_PTS } from './capsules.ts';
@@ -1824,8 +1824,8 @@ export class Avatar {
     if (pm?.face && asset.look) {
       let seed = 7;
       for (let i = 0; i < asset.look.name.length; i++) seed = seed * 31 + asset.look.name.charCodeAt(i);
-      // (a MetaHuman build's mouth is levelled at rest: face.ts REST_SMILE)
-      this.face = new FaceDriver(asset.look.morphs, seed, personOf(asset.look.name) !== asset.look.name ? REST_SMILE : 0);
+      // (a MetaHuman build's mouth is levelled at rest: face.ts REST_SMILE, more for p2 and p8: restSmileOf)
+      this.face = new FaceDriver(asset.look.morphs, seed, personOf(asset.look.name) !== asset.look.name ? restSmileOf(personOf(asset.look.name)) : 0);
       for (const m of morphed) m.morphTargetInfluences = this.face.influences as unknown as number[];
       // The eyes' midpoint at rest, into the head bone's frame.
       const B = asset.geometry.getAttribute('bodyB') as THREE.BufferAttribute;

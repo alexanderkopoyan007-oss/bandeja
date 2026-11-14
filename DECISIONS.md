@@ -5155,3 +5155,12 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
   them darker (kit.ts `bulky`). Every other head is untouched (bulk 0).
 - p8mh takes LOD1 cards (cast.json hairLod 1, +120 KB): on LOD3 the band showed through a gap at the back and the shell's lower
   edge was one straight line.
+- (later the same day) Her cards kept a straight head's fibre shine, and from the low face camera they caught the hall's lights
+  as glassy blue shards round the head. Coily hair has little lustre: on a bulky head the cards are rough 0.85, keep 10% of the
+  shine and 15% of the sheen, lose the anisotropy, and fade where seen edge on as the shell does (kit.ts `coily`). From four
+  sides the afro is fuller and warmer for it, not thinner.
+
+## Two mouths that still turned down (2026-11-14)
+- REST_SMILE 0.3 levelled eight of the ten MetaHuman mouths; p2's and p8's corners still turned down at the face camera. Held
+  at 0.3, 0.45 and 0.6: 0.45 levels them, 0.6 is a smirk. face.ts `restSmileOf` gives those two 0.45; effort, grunts and a lost
+  point still take the mouth whole, and a won point is the same 0.75 smile for everyone.

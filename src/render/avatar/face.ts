@@ -37,6 +37,17 @@ const SACCADE = 0.02;
  */
 export const REST_SMILE = 0.3;
 
+/**
+ * Where that isn't enough: p2's and p8's mouths, the two whose corners sit lowest under their lips' middle, still turned
+ * down at 0.3 (14 Nov, the face camera at 0.3, 0.45 and 0.6): 0.45 levels them, 0.6 was a smirk.
+ */
+const REST_SMILE_OF: Readonly<Record<string, number>> = { p2: 0.45, p8: 0.45 };
+
+/** The smile a MetaHuman build of this person holds at rest. */
+export function restSmileOf(person: string): number {
+  return REST_SMILE_OF[person] ?? REST_SMILE;
+}
+
 export class FaceDriver {
   /** Every morphed mesh's influences (the face and the hair share them). */
   readonly influences: Float32Array;
