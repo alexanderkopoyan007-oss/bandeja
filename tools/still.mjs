@@ -39,7 +39,7 @@ const t = await page.evaluate(async (T, view, faceKeys, fov) => {
   }
   // VIEW=waist:N, chest:N or feet:N: the camera in front of player N's body (1.2 m; the feet 0.75 m, from above), a little to one side.
   if (view) {
-    const [kind, n, lift = '0'] = view.split(':');
+    const [kind, n, lift = '0', turn = '0'] = view.split(':');
     const r = g.players[+n].root, c = g.cam.camera;
     const fx = Math.sin(r.rotation.y), fz = Math.cos(r.rotation.y), y = kind === 'chest' ? 1.3 : kind === 'feet' ? 0.08 : kind === 'skirt' ? 0.8 : 0.95;
     const d = kind === 'feet' ? 0.95 : kind === 'body' ? 2.6 : kind === 'skirt' ? 1.05 : 1.2;  // (body:N: all of them, from 2.6 m)
@@ -57,12 +57,14 @@ const t = await page.evaluate(async (T, view, faceKeys, fov) => {
       c.lookAt(at[0], at[1], at[2]);
       c.updateMatrixWorld();
     } else if (kind === 'far' && av) {
-      // (far:N[:metres]: the head and shoulders from in front at a playing distance, 4 m by default, lens 14 deg)
+      // (far:N[:metres[:degrees round]]: the head and shoulders at a playing distance, 4 m by default, lens 14 deg, from in
+      // front or turned round the player: 180 is from behind)
       av.root.updateMatrixWorld(true);
       const e = av.bones.find((b) => b.name === 'Head').matrixWorld.elements;
       const m = +lift || 4, at = [e[12], e[13] + 0.02, e[14]];
+      const ta = (+turn * Math.PI) / 180, gx = fx * Math.cos(ta) + fz * Math.sin(ta), gz = fz * Math.cos(ta) - fx * Math.sin(ta);
       c.fov = 14; c.near = 0.05; c.updateProjectionMatrix();
-      c.position.set(at[0] + fx * m + fz * 0.3, at[1] + 0.15, at[2] + fz * m - fx * 0.3);
+      c.position.set(at[0] + gx * m + gz * 0.3, at[1] + 0.15, at[2] + gz * m - gx * 0.3);
       c.up.set(0, 1, 0);
       c.lookAt(at[0], at[1] - 0.12, at[2]);
       c.updateMatrixWorld();

@@ -868,7 +868,13 @@ export const SKIN_BAND = 0.025;
  */
 const TUCK_REACH = 0.017;
 /** The band's deepest tuck, at the hidden skin, against the hidden skin's 1 (nobody sees that, however far it goes). */
-const TUCK_BAND = 0.5;
+const TUCK_BAND = 0.27;
+/**
+ * The most a vertex that shares a triangle with skin that shows is taken in (8 mm of TUCK_SINK's 3 cm, the band's deepest): `tuckOf`.
+ * Both ways it shows: at 3 cm the slope was a dark notch under p1's hem, at 3 mm p6's arm came back through his sleeves just over
+ * theirs (14 Nov). A shadow under a hem reads better than skin through a shirt.
+ */
+const TUCK_EDGE = TUCK_BAND;
 /** Garments whose kept skin isn't tucked: the shoes and socks (skin in a sock is cut level under its top by the build). */
 const TUCK_NOT = new Set(['body', 'shoe', 'crew', 'ankle', 'knee']);
 
@@ -926,6 +932,15 @@ export function tuckOf(asset: PlayerAsset, pieces: readonly string[]): Float32Ar
     const t = Math.min(1, Math.max(0, (TUCK_REACH - Math.sqrt(best)) / TUCK_REACH));
     out[v] = TUCK_BAND * t * t * (3 - 2 * t);
   }
+  // Hardly anything beside skin that shows: where a triangle is longer than the reach, one corner showing
+  // below a sleeve's hem and one hidden, the hidden corner taken in whole drew the slope as a dark notch under the hem (p1's
+  // arm from the side, 14 Nov).
+  const tri = dressedIndex(asset, pieces), cap = new Uint8Array(n);
+  for (let k = 0; k < tri.length; k += 3) {
+    const a = tri[k]!, b = tri[k + 1]!, c = tri[k + 2]!;
+    if ((out[a] === 0 && w.piece[a] === 0) || (out[b] === 0 && w.piece[b] === 0) || (out[c] === 0 && w.piece[c] === 0)) cap[a] = cap[b] = cap[c] = 1;
+  }
+  for (let v = 0; v < n; v++) if (cap[v] && out[v]! > TUCK_EDGE) out[v] = TUCK_EDGE;
   return out;
 }
 

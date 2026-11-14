@@ -5173,8 +5173,11 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
 - asset.ts `tuckOf`, at load for what each avatar wears, in the modelled pose (in the T-pose its distances tucked skin below
   the hems): hidden skin 1, islands (skin that shows, welded over UV seams, 600 vertices or fewer, meeting skin a sleeved top
   hides: 3-192 found, an arm or the head 1,777 at least) 1, and the band from 0 TUCK_REACH (1.7 cm) out from hidden skin to
-  0.5 at it (the build's covered test reaches 3 cm, so the skin just under a hem counts as covered and shows: from 2.5 cm it
-  sank there, tinted to check). kit.ts sinks it TUCK_SINK x that (3 cm) along its normal. Not behind the collar or down a V,
-  never under shoes and socks. 4-13 ms a player at load.
+  0.27 at it (the build's covered test reaches 3 cm, so the skin just under a hem counts as covered and shows: from 2.5 cm it
+  sank there, tinted to check). kit.ts sinks it TUCK_SINK x that (3 cm: islands and hidden skin, which nobody sees; the band
+  8 mm at most) along its normal. A vertex sharing a triangle with skin that shows goes no deeper than the band's 8 mm: where
+  triangles are longer than the reach, a hidden corner taken in 3 cm drew a dark notch under p1's hem from the side; at 3 mm
+  p6's sleeves showed skin again. Not behind the collar or down a V, never under shoes and socks. 4-13 ms a player at load.
+- Shipped first as b508eb0 (band 0.5 of 3 cm, no cap): the notch under the hem from the side is in that one.
 - WebGPU allows 8 vertex buffers and a person uses all 8: an attribute of its own failed every pipeline. The value rides in
   bodyX.w as a negative (on skin w is the ears' weight on the head, 0 wherever a tuck can be).
