@@ -56,6 +56,16 @@ const t = await page.evaluate(async (T, view, faceKeys, fov) => {
       c.up.set(e[4], e[5], e[6]);
       c.lookAt(at[0], at[1], at[2]);
       c.updateMatrixWorld();
+    } else if (kind === 'far' && av) {
+      // (far:N[:metres]: the head and shoulders from in front at a playing distance, 4 m by default, lens 14 deg)
+      av.root.updateMatrixWorld(true);
+      const e = av.bones.find((b) => b.name === 'Head').matrixWorld.elements;
+      const m = +lift || 4, at = [e[12], e[13] + 0.02, e[14]];
+      c.fov = 14; c.near = 0.05; c.updateProjectionMatrix();
+      c.position.set(at[0] + fx * m + fz * 0.3, at[1] + 0.15, at[2] + fz * m - fx * 0.3);
+      c.up.set(0, 1, 0);
+      c.lookAt(at[0], at[1] - 0.12, at[2]);
+      c.updateMatrixWorld();
     } else if (kind === 'face' && av) {
       // (in the head's own frame, so a bowed head is still seen from in front: 0.42 m off the face along the Head bone's
       // forward, a narrow lens, aimed between the eyes and the mouth)

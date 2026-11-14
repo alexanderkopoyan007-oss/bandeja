@@ -10,7 +10,7 @@ import { MOD_POWER, MOD_PRECISION, SHOT_BANDEJA, SHOT_DRIVE, SHOT_DROP, SHOT_LOB
 import type { StandPlan } from '../../sim/player/positioning.ts';
 import { STRETCH_DIVE, STRETCH_JUMP } from '../../sim/contact/windows.ts';
 import { DT } from '../../sim/core/constants.ts';
-import { dressedIndex, personMeshes, personOf, type Clip, type PlayerAsset } from './asset.ts';
+import { dressedIndex, personMeshes, personOf, tuckInto, type Clip, type PlayerAsset } from './asset.ts';
 import { FaceDriver, restSmileOf, type FaceInput } from './face.ts';
 import { Pose, accumulate, blendMasked, normalize, sampleClip, sampleCycle } from './pose.ts';
 import { hingeIK, IK_BEND, IK_SOFT, IK_TURN, rotateWorld, setWorldQuat, twoBoneIK, worldQuat } from './ik.ts';
@@ -1795,6 +1795,12 @@ export class Avatar {
     // (the cuts chosen, drawn from the garments built for this body: triangles of this avatar's own over the shared attributes)
     const pieces = pm && typeof look !== 'number' ? piecesFor(asset.look!.wardrobe, paint) : null;
     const body = pm && pieces ? ownGeometry(pm.body, new THREE.BufferAttribute(dressedIndex(asset, pieces), 1), null) : pm?.body;
+    // (the skin kept under the edges of what this one wears, not what the body was modelled in: asset.ts tuckOf)
+    // (into its own copy of bodyX: tuckInto)
+    if (pm && pieces && body) {
+      const xa = body.getAttribute('bodyX') as THREE.BufferAttribute;
+      body.setAttribute('bodyX', new THREE.BufferAttribute(tuckInto(asset, (xa.array as Float32Array).slice(), pieces), 4));
+    }
     this.mesh = new THREE.SkinnedMesh(body ?? asset.geometry, mat);
     this.mesh.add(this.bones[0]!);
     this.mesh.bind(skeleton, new THREE.Matrix4());

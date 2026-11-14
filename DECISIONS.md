@@ -5164,3 +5164,17 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
 - REST_SMILE 0.3 levelled eight of the ten MetaHuman mouths; p2's and p8's corners still turned down at the face camera. Held
   at 0.3, 0.45 and 0.6: 0.45 levels them, 0.6 is a smirk. face.ts `restSmileOf` gives those two 0.45; effort, grunts and a lost
   point still take the mouth whole, and a won point is the same 0.75 smile for everyone.
+
+## Skin kept under a sleeve's edge goes in under it (2026-11-14)
+- From 4 m (tools/still.mjs `VIEW=far:N`) p6's polo showed tan patches on both sleeves and p1's on the shoulder as she crouched:
+  the arm's skin through the cloth. Two causes, both in what the build keeps (person_wear hide_masks): the band of covered skin
+  within SKIN_BAND (2.5 cm) of skin that shows, kept so a look up a sleeve never finds a hole; and islands where the sleeve
+  stood more than its 3 cm reach off the skin in the modelled pose, left as skin that shows (p1mh's shoulder, 118 vertices).
+- asset.ts `tuckOf`, at load for what each avatar wears, in the modelled pose (in the T-pose its distances tucked skin below
+  the hems): hidden skin 1, islands (skin that shows, welded over UV seams, 600 vertices or fewer, meeting skin a sleeved top
+  hides: 3-192 found, an arm or the head 1,777 at least) 1, and the band from 0 TUCK_REACH (1.7 cm) out from hidden skin to
+  0.5 at it (the build's covered test reaches 3 cm, so the skin just under a hem counts as covered and shows: from 2.5 cm it
+  sank there, tinted to check). kit.ts sinks it TUCK_SINK x that (3 cm) along its normal. Not behind the collar or down a V,
+  never under shoes and socks. 4-13 ms a player at load.
+- WebGPU allows 8 vertex buffers and a person uses all 8: an attribute of its own failed every pipeline. The value rides in
+  bodyX.w as a negative (on skin w is the ears' weight on the head, 0 wherever a tuck can be).

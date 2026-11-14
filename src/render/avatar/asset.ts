@@ -858,3 +858,135 @@ export function wornVertices(asset: PlayerAsset, pieces: readonly string[] | nul
   const on = new Set(['body', 'shoe', ...pieces].map((p) => w.pieces.indexOf(p)));
   return Uint8Array.from(w.piece, (k) => (on.has(k) ? 1 : 0));
 }
+
+/** How far the build keeps covered skin on under a garment next to skin that shows (m): person_wear.py SKIN_BAND. */
+export const SKIN_BAND = 0.025;
+/**
+ * How far from hidden skin the band is tucked at all (m): `tuckOf`. Not the whole band: the build's test for covered skin reaches
+ * 3 cm out along the normal (person_wear REACH), so the skin just under a sleeve's hem, which shows, counted as covered, and
+ * tucked from 2.5 cm it sank in under the hem as a pinch (14 Nov, tinted).
+ */
+const TUCK_REACH = 0.017;
+/** The band's deepest tuck, at the hidden skin, against the hidden skin's 1 (nobody sees that, however far it goes). */
+const TUCK_BAND = 0.5;
+/** Garments whose kept skin isn't tucked: the shoes and socks (skin in a sock is cut level under its top by the build). */
+const TUCK_NOT = new Set(['body', 'shoe', 'crew', 'ankle', 'knee']);
+
+/**
+ * Per vertex of `asset.geometry`, how far into the skin a person wearing `pieces` keeps under their clothes it is (0..1):
+ * 1 where the worn garments hide it, and in the band the build keeps under each edge (so a look up a sleeve or a leg of
+ * the shorts never finds a hole) from 0 TUCK_REACH out from the hidden skin to TUCK_BAND at it. kit.ts sinks it that far under the cloth
+ * (TUCK_SINK): kept at full size, the band's arm came out through the sleeves in tan patches as an elbow bent (14 Nov).
+ * The band is found as the build made it: skin not hidden but within SKIN_BAND of skin that is (hidden skin is all more
+ * than SKIN_BAND from skin that shows). Behind the collar the skin is kept whole by the build and left as it is: the game
+ * opens the neckline lower than the garment's. All 0 for a person without a wardrobe.
+ */
+export function tuckOf(asset: PlayerAsset, pieces: readonly string[]): Float32Array {
+  // (in the modelled pose, where the build measured its band)
+  const pos = asset.geometry.getAttribute('position').array as Float32Array, n = pos.length / 3;
+  const out = new Float32Array(n);
+  const w = asset.look?.wardrobe;
+  if (!w || w.hide.length !== n) return out;
+  let bits = 0;
+  for (const p of pieces) {
+    const i = w.pieces.indexOf(p);
+    if (i >= 0 && !TUCK_NOT.has(p)) bits |= 1 << i;
+  }
+  if (!bits) return out;
+  for (let v = 0; v < n; v++) if (w.piece[v] === 0 && (w.hide[v]! & bits) !== 0) out[v] = 1;
+  // Islands: where a garment stood more than the build's reach (person_wear REACH, 3 cm) off the skin in the modelled pose, the
+  // skin under it was left as showing, a patch with nothing but hidden skin round it (p1's shoulder as she crouched, 14 Nov).
+  // A piece of skin that shows, welded across its UV seams, too small to be an arm, a leg or the head, is hidden skin too.
+  for (const isl of skinIslands(asset, pieces, out)) for (const v of isl) out[v] = 1;
+  const cell = SKIN_BAND, key = (x: number, y: number, z: number): number => ((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512);
+  const grid = new Map<number, number[]>();
+  for (let v = 0; v < n; v++) {
+    if (out[v] !== 1) continue;
+    const k = key(Math.floor(pos[v * 3]! / cell), Math.floor(pos[v * 3 + 1]! / cell), Math.floor(pos[v * 3 + 2]! / cell));
+    const l = grid.get(k);
+    if (l) l.push(v); else grid.set(k, [v]);
+  }
+  const neck = asset.restWorld[asset.bone('Neck')]?.elements;
+  // (and down a V-neck's opening: the build keeps the skin in the V, kit.ts cuts the garment there)
+  const collarDown = Math.max(0.17, pieces.includes('vneck') && w.vneck ? w.vneck[0] + 0.03 : 0);
+  for (let v = 0; v < n; v++) {
+    if (w.piece[v] !== 0 || out[v] === 1) continue;
+    const x = pos[v * 3]!, y = pos[v * 3 + 1]!, z = pos[v * 3 + 2]!;
+    if (neck && Math.abs(x - neck[12]!) < 0.17 && y > neck[13]! - collarDown && y < neck[13]! + 0.04) continue;
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
+    let best = SKIN_BAND * SKIN_BAND;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+      const l = grid.get(key(cx + a, cy + b, cz + c));
+      if (!l) continue;
+      for (const u of l) {
+        const dx = pos[u * 3]! - x, dy = pos[u * 3 + 1]! - y, dz = pos[u * 3 + 2]! - z, d = dx * dx + dy * dy + dz * dz;
+        if (d < best) best = d;
+      }
+    }
+    const t = Math.min(1, Math.max(0, (TUCK_REACH - Math.sqrt(best)) / TUCK_REACH));
+    out[v] = TUCK_BAND * t * t * (3 - 2 * t);
+  }
+  return out;
+}
+
+/**
+ * `tuckOf` into a person's bodyX (WebGPU's 8 vertex buffers are all taken): as minus its value in w, which on skin is the ears'
+ * weight on the head and 0 everywhere a tuck can be (kit.ts reads max(w, 0) and max(-w, 0)). In place; returns `X`.
+ */
+export function tuckInto(asset: PlayerAsset, X: Float32Array, pieces: readonly string[]): Float32Array {
+  const t = tuckOf(asset, pieces);
+  for (let v = 0; v < t.length; v++) {
+    const w = X[v * 4 + 3]!;
+    if (t[v]! > 0) { if (w <= 0) X[v * 4 + 3] = -t[v]!; } else if (w < 0) X[v * 4 + 3] = 0;
+  }
+  return X;
+}
+
+/** The most vertices a piece of skin that shows can have and still be an island under the clothes (`tuckOf`): the largest
+ * found is 192 (p5mh's shoulder); what shows round a sleeve, an arm with its hand or the head, 1,777 at least. */
+export const SKIN_ISLAND = 600;
+
+/**
+ * The pieces of skin drawn for `pieces` that aren't `hidden` (1), meet skin a sleeved top hides and have SKIN_ISLAND vertices or fewer,
+ * joined across their triangles and welded where the UVs split one place into several vertices (positions to 0.1 mm).
+ */
+export function skinIslands(asset: PlayerAsset, pieces: readonly string[], hidden: Float32Array): number[][] {
+  const w = asset.look?.wardrobe;
+  if (!w) return [];
+  const pos = asset.geometry.getAttribute('position').array as Float32Array, n = pos.length / 3;
+  const up = new Int32Array(n).map((_, i) => i);
+  const find = (i: number): number => { while (up[i] !== i) { up[i] = up[up[i]!]!; i = up[i]!; } return i; };
+  const join = (a: number, b: number): void => { const ra = find(a), rb = find(b); if (ra !== rb) up[ra] = rb; };
+  const A = asset.geometry.getAttribute('bodyA').array as Float32Array;
+  const open = (v: number): boolean => w.piece[v] === 0 && hidden[v] !== 1 && A[v * 4 + 2]! > 0.5;
+  const weld = new Map<string, number>();
+  for (let v = 0; v < n; v++) {
+    if (!open(v)) continue;
+    const k = `${Math.round(pos[v * 3]! * 1e4)},${Math.round(pos[v * 3 + 1]! * 1e4)},${Math.round(pos[v * 3 + 2]! * 1e4)}`;
+    const o = weld.get(k);
+    if (o === undefined) weld.set(k, v); else join(v, o);
+  }
+  // (only under a sleeve: a tank's or a sleeveless top's kept skin at the armhole is the shader's to cut, and shows)
+  let sleeved = 0;
+  for (const p of ['tee', 'vneck', 'long', 'collar']) if (pieces.includes(p) && w.pieces.includes(p)) sleeved |= 1 << w.pieces.indexOf(p);
+  if (!sleeved) return [];
+  const under = (v: number): boolean => hidden[v] === 1 && (w.hide[v]! & sleeved) !== 0;
+  const tri = dressedIndex(asset, pieces);
+  const drawn = new Uint8Array(n), edge = new Uint8Array(n);
+  for (let t = 0; t < tri.length; t += 3) {
+    const a = tri[t]!, b = tri[t + 1]!, c = tri[t + 2]!;
+    drawn[a] = drawn[b] = drawn[c] = 1;
+    // (one that meets hidden skin: a hand or the teeth are pieces of their own, with nothing round them)
+    if (under(a) || under(b) || under(c)) edge[a] = edge[b] = edge[c] = 1;
+    if (open(a) && open(b)) join(a, b);
+    if (open(b) && open(c)) join(b, c);
+    if (open(a) && open(c)) join(a, c);
+  }
+  const groups = new Map<number, number[]>();
+  for (let v = 0; v < n; v++) {
+    if (!open(v) || !drawn[v]) continue;
+    const r = find(v), g = groups.get(r);
+    if (g) g.push(v); else groups.set(r, [v]);
+  }
+  return [...groups.values()].filter((g) => g.length <= SKIN_ISLAND && g.some((v) => edge[v]));
+}

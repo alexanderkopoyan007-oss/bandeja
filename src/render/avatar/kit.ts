@@ -11,7 +11,7 @@ import {
   mx_noise_float, texture, uv, max, min, dot, exp, normalView, normalWorld, normalLocal, normalGeometry, diffuseColor, frontFacing, faceDirection, positionViewDirection,
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
-import { modelledVertices, type KitCut, type PlayerAsset } from './asset.ts';
+import { modelledVertices, tuckInto, type KitCut, type PlayerAsset } from './asset.ts';
 import { backBody, hairOnBack } from './hairBack.ts';
 import { hairBulk } from './costume.ts';
 import { ownedTextures } from '../dispose.ts';
@@ -817,6 +817,13 @@ const HAIR_CURL_ROUGH = 0.92, HAIR_CURL_SCALE = 110, HAIR_CURL_TILT = 0.7;
  * highlight to line up), its roughness and the share of the straight hair's shine it keeps. */
 const HAIR_COIL_ROUGH = 0.85, HAIR_COIL_SPEC = 0.1;
 const HAIR_HELMET_SPEC = 0.35;
+/**
+ * How far the skin kept under a garment's edge goes in under the cloth (m): asset.ts tuckOf. The sleeves stand about 3 mm off
+ * the arm (person_wear PUSH) and a bent arm's muscle swells past that; at full size the band came out through p6's and p1's
+ * sleeves in tan patches (14 Nov, from 4 m).
+ */
+const TUCK_SINK = 0.03;
+const TUCKED = new WeakSet<PlayerAsset>();
 /** Where the helmet's rectangle starts (v; u past HAIR_U), and how edge on (|n.v|) it has fully faded near. */
 const HAIR_HELMET_V = 0.75;
 /** The lashes' rectangle in a MetaHuman's hair atlas (v, from and to; u past HAIR_U): mh-player.py RECT `lash`. */
@@ -901,7 +908,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const mouthW = teethW.add(tongueW);
   const fabric = shirtW.add(shortsW).add(sockW);
   const vAO = mix(float(1), X.x, eyeW.add(shoeW).add(sockW));
-  const lips = X.x.mul(skinW), tzone = X.y.mul(skinW), lids = X.z.mul(skinW), ears = X.w.mul(skinW);
+  const lips = X.x.mul(skinW), tzone = X.y.mul(skinW), lids = X.z.mul(skinW), ears = max(X.w, 0).mul(skinW);
   const p = positionGeometry; // the modelled pose: patterns stay on the body as it moves
   const sweatU = uniform(new THREE.Vector2());
   const sweat = sweatU.x;
@@ -1173,6 +1180,17 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   } else m.positionNode = hung;
   // (and the arms off the racket: racketPush)
   m.positionNode = (m.positionNode as THREE.Node<'vec3'>).add(racketPush(asset, m.positionNode as THREE.Node<'vec3'>));
+  // (and the skin kept under a garment's edge in under the cloth: asset.ts tuckOf, set per avatar for what it wears)
+  const wd = asset.look?.wardrobe;
+  if (wd) {
+    if (!TUCKED.has(asset)) {
+      TUCKED.add(asset);
+      const xa = asset.geometry.getAttribute('bodyX') as THREE.BufferAttribute;
+      tuckInto(asset, xa.array as Float32Array, wd.worn);
+      xa.needsUpdate = true;
+    }
+    m.positionNode = (m.positionNode as THREE.Node<'vec3'>).sub(normalLocal.normalize().mul(max(X.w.negate(), 0).mul(TUCK_SINK).mul(skinW)));
+  }
 
   const hair = new PersonNodeMaterial();
   // A MetaHuman's grooms: cards whose strands run along v, over a helmet (`hasHelmet`). They take the fibre's shine and the
