@@ -9,7 +9,7 @@
  "outfit": "export/MHC_p8_Outfits.fbx",
  "outfit_lod": 1,
  "hair": [
-  "export/Hair_L_AfroCurly_CardsMesh_Group0_LOD3.fbx"
+  "export/Hair_L_AfroCurly_CardsMesh_Group0_LOD1.fbx"
  ],
  "hair_atlas": "export/tex/Hair_L_AfroCurly_CardsAtlas_Attribute.png",
  "hair_rgb": [

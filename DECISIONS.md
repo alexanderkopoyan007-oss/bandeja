@@ -5142,3 +5142,16 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
   and stops at the iris's dark rim (past it the texture is the white's; tinted it made a halo).
 - The white's fill (kit.ts fillNode) now needs a bright texel as well as a grey one: a grey-blue iris is as grey as a white and,
   filled like one, shone out like a doll's.
+
+## An afro, not two tufts and plates (2026-11-14)
+- p8's band pressed her whole afro in to the head, so from behind it was two tufts with a white ring between them. On a head that is
+  mostly volume (costume.ts `hairBulk`: the median depth of the hair above the eyes, 2-3 cm; p8mh 36 mm, every other head 11 at
+  most) a band now goes under the hair wherever the hair over its line is deep (`buriedBy`, median over 23 degrees, 18-25 mm):
+  the temples and back. There the hair is neither pressed, slid nor cut, wholly or not at all (half pressed at the ends, 75 cards
+  stood through the band). The forehead shows the band as before. Gated by hairBulk because without it a few strands over the
+  line (p10's bob at the back, the classic bodies' cards) buried other bands the owner has seen pressed.
+- What read as the afro was mostly its shell (tinted red to find it): 370 vertices 4-8 cm off the head, lit as dark glossy plates.
+  On a bulky head the shell is matte (rough 0.92, shine x0.15), its normal broken into curl-sized lumps and the gaps between
+  them darker (kit.ts `bulky`). Every other head is untouched (bulk 0).
+- p8mh takes LOD1 cards (cast.json hairLod 1, +120 KB): on LOD3 the band showed through a gap at the back and the shell's lower
+  edge was one straight line.

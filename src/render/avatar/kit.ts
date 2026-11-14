@@ -13,6 +13,7 @@ import {
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import { modelledVertices, type KitCut, type PlayerAsset } from './asset.ts';
 import { backBody, hairOnBack } from './hairBack.ts';
+import { hairBulk } from './costume.ts';
 import { ownedTextures } from '../dispose.ts';
 import { setTattoos, tattooed, type TattooChoice, type TattooState } from './tattoo.ts';
 import { armWeight, cutFor, patternAt, printBottom, printShirt, type Paint } from './paint.ts';
@@ -809,6 +810,9 @@ const HAIR_IOR = 1.55;
 const HAIR_TRT = 2.2;
 /** Near, the helmet's (and brows' and lashes') roughness and its highlight's share. */
 const HAIR_HELMET_ROUGH = 0.6;
+/** A bulky head's shell (hairBulk): its roughness, the lumps' size (noise frequency per metre: clumps about a centimetre)
+ * and how far they tilt its normal. */
+const HAIR_CURL_ROUGH = 0.92, HAIR_CURL_SCALE = 110, HAIR_CURL_TILT = 0.7;
 const HAIR_HELMET_SPEC = 0.35;
 /** Where the helmet's rectangle starts (v; u past HAIR_U), and how edge on (|n.v|) it has fully faded near. */
 const HAIR_HELMET_V = 0.75;
@@ -1247,6 +1251,13 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // Near, the helmet (a MetaHuman's shell under its cards, tools/assets/metahuman/ RECT; MPFB atlases have nothing there) fades
   // where it is seen edge on: its outline was a shell's hard edge round the head, and now the cards' strands make it.
   const helmet = step(HAIR_U, uv().x).mul(step(HAIR_HELMET_V, uv().y));
+  // A head of hair that is mostly volume (costume.ts hairBulk: p8's afro, 36 mm deep where every other head's is 11 at most)
+  // has a shell 4-8 cm off the head of faces 2-5 cm across, lit as a few dark glossy plates between the curls (14 Nov). Coily
+  // hair is matte, and its mass is clumps: on that shell the shine goes, the facets break into curl-sized lumps, and the
+  // gaps between the clumps go darker.
+  const bulky = helmet.mul(shell ? hairBulk(asset) : 0);
+  const curls = mx_noise_float(p.mul(HAIR_CURL_SCALE)), curls2 = mx_noise_float(p.mul(HAIR_CURL_SCALE).add(7.3));
+  hair.colorNode = (hair.colorNode as THREE.Node<'vec3'>).mul(mix(float(1), smoothstep(-0.6, 0.5, curls).mul(0.55).add(0.45), bulky));
   const nearOpacity = smoothstep(0.06, 0.7, ht.w).mul(mix(float(1), smoothstep(0.04, HAIR_HELMET_EDGE, edgeOn), helmet));
   hair.opacityNode = mix(nearOpacity, smoothstep(0.03, 0.72, ht.w).mul(smoothstep(0, HAIR_FRINGE, edgeOn)), far);
   hair.alphaToCoverage = true;
@@ -1261,10 +1272,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // cards' gloss and strand tilt the lashes' tips caught the sky as a row of blue-white dots along each lid, 7 Nov)
   const fine = shell ? float(1).sub(onHead) : helmet;
   const nearRough = shell ? mix(float(HAIR_ROUGH).sub(strands.mul(0.12)), float(HAIR_HELMET_ROUGH), fine) : float(0.52).sub(strands.mul(0.18));
-  hair.roughnessNode = mix(nearRough, float(HAIR_FAR_ROUGH), far);
+  hair.roughnessNode = mix(mix(nearRough, float(HAIR_CURL_ROUGH), bulky), float(HAIR_FAR_ROUGH), far);
   if (shell) hair.anisotropyNode = vec2(float(HAIR_ANISO).mul(float(1).sub(far)).mul(onHead).mul(smoothstep(0.08, 0.35, edgeOn)), 0);
   // Each strand tilts its own way across the card, so the shine comes in fine broken lines and not one band over a helmet.
-  hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT).mul(float(1).sub(far)).mul(float(1).sub(fine)), float(0)), strandUv);
+  hair.normalNode = uvNormal(vec2(strands.sub(0.1).mul(HAIR_TILT).mul(float(1).sub(far)).mul(float(1).sub(fine)).add(curls.mul(HAIR_CURL_TILT).mul(bulky)),
+    curls2.mul(HAIR_CURL_TILT).mul(bulky)), strandUv);
   hair.metalnessNode = float(0);
   // (a light hair's shine is white, not brighter than white: dyed light, base x 2.2 went past 1 and washed it out)
   const tinted = mix(vec3(1, 1, 1), base.mul(2.2).min(vec3(1, 1, 1)), mix(float(0.6), float(0.85), far)).mul(mix(float(1), float(HAIR_FAR_SPEC), far));
@@ -1276,12 +1288,13 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
     hair.iorNode = mix(float(1.5), float(HAIR_IOR), onHead);
     hair.specularColorNode = mix(tinted, vec3(1, 1, 1).add(base.mul(HAIR_TRT)), onHead);
     // (the lashes and brows none: lit from above, a lash's card shone along its length as grey-white dots on the lid, 13 Nov)
-    hair.specularIntensityNode = mix(dimmed.mul(HAIR_FINE_SPEC), hAO.mul(card), onHead);
+    hair.specularIntensityNode = mix(dimmed.mul(HAIR_FINE_SPEC), hAO.mul(card), onHead).mul(float(1).sub(bulky.mul(0.85)));
   } else {
     hair.specularIntensityNode = dimmed;
     hair.specularColorNode = tinted;
   }
   hair.sheenNode = base.mul(0.5).add(vec3(1, 0.93, 0.85).mul(far.mul(HAIR_SHEEN))).mul(hAO).mul(shell ? mix(float(HAIR_FINE_SPEC), float(1), onHead) : float(1));
+  hair.sheenNode = (hair.sheenNode as THREE.Node<'vec3'>).mul(float(1).sub(bulky.mul(0.7)));
   hair.sheenRoughnessNode = float(0.45);
   return { material: m, hair, state: { sweat: sweatU, lag, sway, wrist: wristU, hang: longHair, ponyAt, pony, self: { skin: selfSkin, hair: selfHair }, tattoo: ink?.state } };
 }

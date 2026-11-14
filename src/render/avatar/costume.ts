@@ -121,6 +121,25 @@ export function fitHead(asset: PlayerAsset): HeadFit | null {
   return { c, skin, hair, shell: envelope(hair), pts: new Float32Array(pts), hairPts: new Float32Array(hp), eyeL, eyeR };
 }
 
+/**
+ * How much of a head of hair is volume rather than hair lying on the head, 0 to 1: the median depth of its points above the
+ * eyes, from the skin, between 2 and 3 cm. p8mh's afro is 36 mm; every other head's is 11 mm at most.
+ */
+export function hairBulk(asset: PlayerAsset): number {
+  const f = fitHead(asset);
+  if (!f) return 0;
+  const eyeY = (f.eyeL.y + f.eyeR.y) / 2, d: number[] = [], hp = f.hairPts;
+  for (let i = 0; i < hp.length; i += 3) {
+    if (hp[i + 1]! < eyeY) continue;
+    const dx = hp[i]! - f.c.x, dy = hp[i + 1]! - f.c.y, dz = hp[i + 2]! - f.c.z, r = Math.hypot(dx, dy, dz);
+    if (r < 1e-6) continue;
+    d.push(r - radius(f.skin, Math.atan2(dx, dz), Math.asin(dy / r)));
+  }
+  if (!d.length) return 0;
+  d.sort((a, b) => a - b);
+  return smooth(0.02, 0.03, d[d.length >> 1]!);
+}
+
 /** A smooth table over `t`: blurred and lifted back to `t` wherever it dips under, a few times over. */
 function envelope(t: Float32Array): Float32Array {
   let s = t.slice();
@@ -850,6 +869,40 @@ const SLIDE_FROM = 0.025;
 /** Pressed hair is never nearer the scalp than this (m). It was 4 mm, as far out as a visor's strap is thick where the
  * table is the scalp itself. */
 const HAIR_OFF = 0.003;
+/** A band goes under hair this deep (m, the median of the hair's points over its line, from the skin): the hair stands
+ * over it there, unpressed, as an afro does over a band at the temples and the back. Pressed in to the band, p8's afro was
+ * two tufts with a white ring between them (14 Nov). Her hair is 30-39 mm deep over the band's line from the temples
+ * round; everyone else's at most 15. */
+const BURIED: [number, number] = [0.018, 0.025];
+
+/**
+ * How far a band (a head piece with an upper edge) at each azimuth is under the hair (0 on it, 1 under it), by the median
+ * depth of the hair's points over its line within a few degrees either way. Over the crown nothing is buried: a cap goes
+ * over the hair however deep.
+ */
+export function buriedBy(f: HeadFit, hw: Headwear, edges: (az: number) => [number, number]): (az: number) => number {
+  if (hw.up === null) return () => 0;
+  const N = 72, at = new Float32Array(N), hp = f.hairPts;
+  const depths: number[][] = Array.from({ length: N }, () => []);
+  for (let i = 0; i < hp.length; i += 3) {
+    const dx = hp[i]! - f.c.x, dy = hp[i + 1]! - f.c.y, dz = hp[i + 2]! - f.c.z, r = Math.hypot(dx, dy, dz);
+    if (r < 1e-6) continue;
+    const az = Math.atan2(dx, dz), [lo, hi] = edges(az);
+    if (hp[i + 1]! < lo - 0.005 || hp[i + 1]! > hi + 0.005) continue;
+    const d = r - radius(f.skin, az, Math.asin(dy / r));
+    // (into each bin within 0.2 rad of it: the median of a 23-degree window)
+    const b = ((az + Math.PI) / (2 * Math.PI)) * N;
+    for (let k = Math.ceil(b - 2.3); k <= Math.floor(b + 2.3); k++) depths[((k % N) + N) % N]!.push(d);
+  }
+  for (let k = 0; k < N; k++) {
+    const d = depths[k]!.sort((a, b) => a - b);
+    at[k] = d.length ? smooth(BURIED[0], BURIED[1], d[d.length >> 1]!) : 0;
+  }
+  return (az) => {
+    const b = (((az + Math.PI) / (2 * Math.PI)) * N + N) % N, k0 = Math.floor(b) % N, t = b - Math.floor(b);
+    return at[k0]! * (1 - t) + at[(k0 + 1) % N]! * t;
+  };
+}
 
 /**
  * The hair (its alpha mesh's, bind pose) under a head piece: what the cloth covers pressed in under it (2 mm inside it),
@@ -875,10 +928,15 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHai
   const head = asset.bone('Head');
   const n = pos.count;
   const out = new Float32Array(n * 3);
-  // Per vertex: where it is by the cloth (under it 0, below its lower edge -1, above its upper one 1), whether it stands
+  // Per vertex: where it is by the cloth (under it 0, below its lower edge -1, above its upper one 1, the band under it 2), whether it stands
   // free there once pressed, and which edge it is slid to (0: none).
   const side = new Int8Array(n), free = new Uint8Array(n), slide = new Int8Array(n), mine = new Uint8Array(n), past = new Float32Array(n);
   const edges = clothEdges(f, hw);
+  // (only on a head that is mostly volume, hairBulk: on the others, a few strands standing off the head over the band's
+  // line, p10's bob at the back, a classic body's cards running every way, made a median over it, and their bands, which the
+  // owner has seen pressed as they are, would have gone under them)
+  const bulk = hairBulk(asset);
+  const buried = bulk > 0 ? buriedBy(f, hw, edges) : (): number => 0;
   // (never closer to the scalp than HAIR_OFF: what lies on it, the brows and lashes among it, stays)
   const held = (az: number, el: number): number => Math.max(radius(t, az, el) - 0.002, radius(f.skin, az, el) + HAIR_OFF);
   let moved = 0;
@@ -901,6 +959,9 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHai
     if (r <= R) continue;
     let k = smooth(lo - 0.012, lo, on);
     if (hw.up !== null) k *= 1 - smooth(hi, hi + 0.012, on);
+    // (where the band is under the hair, the hair stands as it is, over it. Wholly or not at all: half pressed at the ends
+    // of that stretch, 75 of p8's cards stood through the band)
+    if (buried(az) * bulk > 0.5) { side[i] = 2; continue; }
     free[i] = side[i] !== 0 && (1 - k) * (r - R) > HAIR_STANDS ? 1 : 0;
     if (k <= 0) continue;
     const s = (r - k * (r - R)) / r;
@@ -918,7 +979,7 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHai
     const above = (free[a]! && side[a]! > 0) || (free[b]! && side[b]! > 0) || (free[c]! && side[c]! > 0);
     if (below === above) continue;
     const to = below ? -1 : 1;
-    for (const i of [a, b, c]) if (mine[i] && !free[i] && !slide[i] && side[i] !== to && past[i]! <= SLIDE_FROM) slide[i] = to;
+    for (const i of [a, b, c]) if (mine[i] && !free[i] && !slide[i] && side[i] !== to && side[i] !== 2 && past[i]! <= SLIDE_FROM) slide[i] = to;
   }
   const v = new THREE.Vector3();
   for (let i = 0; i < n; i++) {
@@ -939,6 +1000,8 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHai
   for (let q = 0; q < index.count; q += 3) {
     const a = index.getX(q), b = index.getX(q + 1), c = index.getX(q + 2);
     // (one wholly past an edge can't; one wholly under the cloth only if it is long, a chord over a hollow, or not the head's)
+    // (nor hair the band is under: it stands over the band)
+    if (side[a] === 2 || side[b] === 2 || side[c] === 2) continue;
     if (side[a] === side[b] && side[b] === side[c]) {
       if (side[a] !== 0) continue;
       if (mine[a] && mine[b] && mine[c] && A.fromArray(out, a * 3).distanceToSquared(B.fromArray(out, b * 3)) < 4e-4

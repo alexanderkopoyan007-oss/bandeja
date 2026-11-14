@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three/webgpu';
 import { mannequinWithPeople, guestAsset, metaHumansHere, GUESTS } from './people.ts';
-import { clothEdges, clothTable, dress, fitHead, hasBakedHead, ownHead, pressHair, radius, tableY, throughCloth, worn, HEAD_PIECES, HEADWEAR, type HeadFit } from '../../src/render/avatar/costume.ts';
+import { buriedBy, clothEdges, clothTable, dress, fitHead, hairBulk, hasBakedHead, ownHead, pressHair, radius, tableY, throughCloth, worn, HEAD_PIECES, HEADWEAR, type HeadFit } from '../../src/render/avatar/costume.ts';
 import { kitFor } from '../../src/render/avatar/kit.ts';
 import { modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 
@@ -145,10 +145,14 @@ describe('costume: fitting', () => {
       const f = fitHead(p)!, t = clothTable(f, HEADWEAR[id]!.under), edges = clothEdges(f, HEADWEAR[id]!);
       const index = p.look!.alphaGeometry.index!, drawn = pressed.index ?? index;
       const at = (i: number): THREE.Vector3 => new THREE.Vector3().fromArray(pressed.position, i * 3);
+      // (not where the band is under the hair, an afro's at the temples and back: it stands over the band there)
+      const bulk = hairBulk(p), buried = buriedBy(f, HEADWEAR[id]!, edges);
+      const over = (i: number): boolean => bulk * buried(Math.atan2(pressed.position[i * 3]! - f.c.x, pressed.position[i * 3 + 2]! - f.c.z)) > 0.5;
       let through = 0, cut = 0;
       for (let q = 0; q < index.count; q += 3) {
         const [a, b, c] = [drawn.getX(q), drawn.getX(q + 1), drawn.getX(q + 2)];
         if (a === b && b === c) { cut++; continue; }
+        if (over(a) || over(b) || over(c)) continue;
         // (4.5 mm off the table: under the outside of the thinnest of the three, a cap's crown at 5 mm)
         if (throughCloth(f, t, edges, at(a), at(b), at(c), undefined, 0.0045)) through++;
       }
@@ -159,6 +163,34 @@ describe('costume: fitting', () => {
     }
     expect(people).toBeGreaterThan(40);
     expect(mostCut).toBeGreaterThan(0);
+  });
+
+  // p8's afro, 14 Nov: pressed in to her band all the way round, it was two tufts with a white ring between them. On a head
+  // that is mostly volume the band goes under the hair where it is deep (the temples and the back), and shows on the forehead.
+  it('puts a band under an afro at the back, not across the forehead, and under no one else\'s hair', () => {
+    let afros = 0;
+    for (const p of builds) {
+      const f = fitHead(p);
+      if (!f) continue;
+      const hw = HEADWEAR['head-band']!, buried = buriedBy(f, hw, clothEdges(f, hw)), bulk = hairBulk(p);
+      if (nameOf(p) !== 'p8mh') { expect(bulk, nameOf(p)).toBe(0); continue; }
+      afros++;
+      expect(bulk).toBeGreaterThan(0.9);
+      for (const deg of [120, 150, 180, -150, -120]) expect(buried((deg * Math.PI) / 180), `${deg}`).toBeGreaterThan(0.9);
+      for (const deg of [-30, 0, 30]) expect(buried((deg * Math.PI) / 180), `${deg}`).toBe(0);
+      // (and there the hair is not pressed: the back of her afro stands where it was built)
+      const pressed = pressHair(p, 'head-band')!, pos = p.look!.alphaGeometry.getAttribute('position');
+      let back = 0, moved = 0;
+      for (let i = 0; i < pos.count; i++) {
+        const az = Math.atan2(pos.getX(i) - f.c.x, pos.getZ(i) - f.c.z);
+        if (Math.abs(az) < (150 * Math.PI) / 180) continue;
+        back++;
+        if (Math.hypot(pressed.position[i * 3]! - pos.getX(i), pressed.position[i * 3 + 1]! - pos.getY(i), pressed.position[i * 3 + 2]! - pos.getZ(i)) > 1e-4) moved++;
+      }
+      expect(back).toBeGreaterThan(1000);
+      expect(moved / back).toBeLessThan(0.01);
+    }
+    expect(afros).toBe(1);
   });
 
   it('a MetaHuman build wears the band or visor it is named with as a piece made here, its hair pressed under it', () => {
