@@ -8,7 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import ROSTER from '../../data/people.json';
 import { classicBodies, PEOPLE, personOf } from '../../src/render/avatar/asset.ts';
 import { bodyFor } from '../../src/render/avatar/costumes.ts';
-import { personFrame, skirtFallen } from '../../src/render/avatar/kit.ts';
+import { personFrame, skirtFallen, thighPushed } from '../../src/render/avatar/kit.ts';
 import { piecesFor } from '../../src/render/avatar/paint.ts';
 import { mannequinWithPeople, metaHumansHere } from './people.ts';
 
@@ -88,6 +88,77 @@ describe('the MetaHuman builds', () => {
     // (above where the cloth leaves the waist nothing moves)
     const waist = new THREE.Vector3(0, 0.97, 0.15);
     expect(skirtFallen(waist, c, span, g).distanceTo(waist)).toBeLessThan(1e-9);
+  });
+
+  it('move a skirt out of a thigh the way cloth goes: to its far side from the pelvis, over its top when it is raised', () => {
+    // (14 Nov 2026: pushed the nearest way out, cloth a leg had stepped past came out under the thigh while the cloth beside
+    // it lay over it, and the leg stood through the skirt in a torn pocket. kit.ts thighsPush, in plain numbers: thighPushed.)
+    const hips = new THREE.Vector3(0, 0.95, 0), hip = new THREE.Vector3(0.09, 0.9, 0), r0 = 0.1, r1 = 0.07, clear = 0.012, L = 0.42;
+    const knee = (out: number, fwd: number): THREE.Vector3 => {
+      const d = new THREE.Vector3(Math.sin(out), -Math.cos(out) * Math.cos(fwd), Math.cos(out) * Math.sin(fwd));
+      return hip.clone().addScaledVector(d, L);
+    };
+    /** Where `p` is from the thigh's axis: along it (0-1), how far off it, and that as a vector. */
+    const off = (p: THREE.Vector3, k: THREE.Vector3): { t: number; d: THREE.Vector3 } => {
+      const ab = k.clone().sub(hip), t = Math.min(1, Math.max(0, p.clone().sub(hip).dot(ab) / ab.dot(ab)));
+      return { t, d: p.clone().sub(hip.clone().addScaledVector(ab, t)) };
+    };
+    // Standing: cloth clear of the leg isn't moved, and cloth just inside it comes straight out to its surface.
+    const down = knee(0, 0);
+    expect(thighPushed(new THREE.Vector3(0.25, 0.75, 0), hips, hip, down, r0, r1).length()).toBe(0);
+    const side = new THREE.Vector3(0.16, 0.75, 0), s = thighPushed(side, hips, hip, down, r0, r1);
+    const rAt = (t: number): number => r0 + (r1 - r0) * t + clear;
+    expect(s.x).toBeCloseTo(rAt(off(side, down).t) - 0.07, 4);
+    expect(Math.hypot(s.y, s.z)).toBeLessThan(1e-9);
+    // A step out to the side, 40 degrees: the leg has gone past cloth that hung by the hip, which is now inside it and on
+    // the pelvis's side of its axis. It comes out on the far side, not under the leg.
+    const wide = knee((40 * Math.PI) / 180, 0);
+    const past = new THREE.Vector3(0.19, 0.72, -0.03);
+    const before = off(past, wide);
+    expect(before.d.length()).toBeLessThan(rAt(before.t));
+    expect(before.d.x).toBeLessThan(0);
+    const moved = past.clone().add(thighPushed(past, hips, hip, wide, r0, r1)), after = off(moved, wide);
+    expect(after.d.x, 'on the far side of the leg').toBeGreaterThan(0);
+    expect(after.d.length(), 'out of the leg').toBeGreaterThan(rAt(after.t) - 0.012);
+    expect(moved.y, 'not dropped under it').toBeGreaterThan(past.y - 0.005);
+    // A thigh raised to the front, 80 degrees: cloth that hung in front of the hip is inside it, under its axis. It goes
+    // up over the top.
+    const raised = knee(0, (80 * Math.PI) / 180);
+    const front = new THREE.Vector3(0.09, 0.8, 0.2);
+    expect(off(front, raised).d.y).toBeLessThan(0);
+    const lifted = front.clone().add(thighPushed(front, hips, hip, raised, r0, r1)), on = off(lifted, raised);
+    expect(on.d.y, 'over the thigh').toBeGreaterThan(0.05);
+    expect(on.d.length(), 'on its surface').toBeGreaterThan(rAt(on.t) - 0.012);
+    // The other leg's cloth, on the far side of the pelvis, is left alone by all three.
+    for (const k of [down, wide, raised]) expect(thighPushed(new THREE.Vector3(-0.2, 0.75, 0.02), hips, hip, k, r0, r1).length()).toBe(0);
+  });
+
+  it('have their shirts and shorts sewn: vertices in one place along a seam share a normal', () => {
+    // (14 Nov 2026: Epic's garments are sewing panels, their seams two rows of vertices in the one place with a normal each,
+    // up to 90 degrees apart. The hem's swing moves a vertex along its normal (kit.ts hemLag), and a shirt's side seam opened
+    // into dark slits a hand long. mh-player.py `sewn`. Cloth turned back on itself, a hem's inside, keeps its own.)
+    for (const p of mh) {
+      const w = p.look!.wardrobe!, pos = p.geometry.getAttribute('position'), nrm = p.geometry.getAttribute('normal');
+      for (const piece of ['tee', 'sleeveless', 'vneck', 'long', 'tank', 'shorts']) {
+        const k = w.pieces.indexOf(piece);
+        if (k < 0) continue;
+        const at = new Map<string, number[]>();
+        for (let v = 0; v < w.piece.length; v++) if (w.piece[v] === k) {
+          const key = `${Math.round(pos.getX(v) * 2e4)},${Math.round(pos.getY(v) * 2e4)},${Math.round(pos.getZ(v) * 2e4)}`;
+          const vs = at.get(key);
+          if (vs) vs.push(v); else at.set(key, [v]);
+        }
+        let open = 0, shared = 0;
+        const a = new THREE.Vector3(), b = new THREE.Vector3();
+        for (const vs of at.values()) for (let i = 1; i < vs.length; i++) {
+          const d = a.fromBufferAttribute(nrm, vs[0]!).angleTo(b.fromBufferAttribute(nrm, vs[i]!));
+          shared++;
+          if (d > 0.1 && d < 1.5) open++;
+        }
+        expect(shared, `${p.look!.name} ${piece}: it has seams`).toBeGreaterThan(50);
+        expect(open, `${p.look!.name} ${piece}: seam vertices with normals of their own`).toBeLessThan(8);
+      }
+    }
   });
 
   it('hang every garment on the side of the body it is on: cloth on a left arm moves with the left arm', () => {

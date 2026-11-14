@@ -674,7 +674,7 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
   geometry.setAttribute('bodyB', new THREE.BufferAttribute(pb, 4));
   // Per part, packed into one attribute (WebGPU allows 8 vertex buffers, skinning takes 5 of them): skin (lips,
   // T-zone, eyelids, ears); eyes, shoes and socks: x = their baked occlusion; the skirt: x = how far down it, 0 at the waist
-  // to 1 at the hem (`mask` in the file, 0 on shorts); the shirt: x = where it gets wet first, z = out from the chest and
+  // to 1 at the hem, y = how far a pleat's folded edge stands out of its ring (kit.ts SKIRT_PROUD; `mask` in the file, 0 on shorts); the shirt: x = where it gets wet first, z = out from the chest and
   // w = height in the T-pose (kit.ts fills them in).
   const X = new Float32Array(n * 4);
   const ao = geometry.getAttribute('bodyAO') as THREE.BufferAttribute | undefined;
@@ -682,7 +682,7 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
   for (let v = 0; v < n; v++) {
     const c = part[v]!;
     if (c === P_SKIN && mk) for (let k = 0; k < 4; k++) X[v * 4 + k] = mk.array[v * 4 + k]!;
-    else if (c === P_SHORTS && mk) X[v * 4] = mk.array[v * 4]!;
+    else if (c === P_SHORTS && mk) { X[v * 4] = mk.array[v * 4]!; X[v * 4 + 1] = mk.array[v * 4 + 1]!; }
     else if (c === P_EYE || c === P_SHOE || c === P_SOCK) X[v * 4] = ao ? ao.array[v]! : 1;
   }
   const modelled = h.meshes.opaque.shoe;

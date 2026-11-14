@@ -679,7 +679,8 @@ def finish(yb, spec, out, preview=False):
             r[:, :, 3] = 1 if a is None else (a if a.shape == r.shape[:2] else face.resize(a[:, :, None], r.shape[1], r.shape[0])[:, :, 0])
         elif kd == 'skirt':
             # (both skirts' shading, each on its band of the rectangle: person_kit.SKIRT_BANDS)
-            paste(opaque, kit.skirts_ao(RECT['skirt'][2]), RECT['skirt'])
+            seeds = {m.name[len('Skirt.'):]: m.data.get('seed', 0) for m in meshes if kinds[m.name] == 'skirt'}
+            paste(opaque, kit.skirts_ao(RECT['skirt'][2], seeds), RECT['skirt'])
         elif kd in ALPHA_PARTS:
             r = paste(alpha, img_of(o), RECT[kd])
             if kd == 'hair' and spec.get('hair_tone'):

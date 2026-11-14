@@ -242,16 +242,31 @@ def hug_armholes(suit, body, planes, women, reach=0.04, lift=0.002, floor=None):
 # ---------------------------------------------------------------------------------------------------------------
 # A skirt: rings round the pelvis from under the shirt's hem down, each no narrower than the body it passes nor than the ring
 # above (cloth hangs from the widest place it has been), and then flaring. Knife pleats below a smooth yoke, each pleat a
-# strip of its own so it shades flat; or an A-line with soft folds. A plain inner lining closes it from below, and all of it
+# strip of its own so it shades flat; or an A-line with soft folds. All of it
 # is weighted to the hips at the top and more and more to the thighs by the hem. `hang` (0 at the top, 1 at the hem) goes to
 # the game: the swing and the thighs pushing the cloth out are done in the vertex shader (kit.ts).
-SKIRT_RINGS = (0.0, 0.11, 0.22, 0.34, 0.47, 0.6, 0.73, 0.87, 1.0)
+# (close rings from the yoke down: the game hangs the cloth and moves it off the thighs a vertex at a time, and with a ring every
+# 4 cm a pleat's edge that should curve round a thigh went down it in lightning bolts)
+SKIRT_RINGS = (0.0, 0.11, 0.22, 0.3, 0.37, 0.44, 0.51, 0.58, 0.65, 0.72, 0.79, 0.86, 0.93, 1.0)
 SKIRT_YOKE = 0.3
 SKIRT_GAP = 0.005
 SKIRT_TUCK = 0.05  # how far up under the shirt's hem the skirt's top goes
 SKIRT_UNDER = 0.01  # how far inside the shirt it stays there
 PLEATS = 34
-ALINE_COLS = 60
+ALINE_COLS = 120
+# A knife pleat at the hem: how far its folded edge stands out of the pleat it lies on (m), and how much of its width the cloth
+# folded back under it shows as the skirt flares and the pleat opens. Stitched flat at the yoke, both grow from there down, and
+# no two pleats alike (a pleat's own share of each, `_skirt_rand`). At 5 mm and shut, 34 pleats were a cone with lines on it
+# (the owner's list, 14 Nov: "smooth near-black cones, painted pleats").
+PLEAT_DEPTH = 0.013
+PLEAT_OPEN = 0.3
+# The unit a vertex's 'proud' goes to the game in (m; a byte's range: kit.ts SKIRT_PROUD).
+PROUD_UNIT = 0.05
+# An A-line's folds: flutes, each a ridge that starts narrow under the hips and widens and deepens to the hem, the cloth between
+# them lying on the ring (the least that clears what is under it). How many round the skirt, and the deepest at the hem (m).
+# Their places, widths and depths are the body's own (`aline_flutes`, seeded from its rings).
+ALINE_FLUTES = 9
+ALINE_DEEP = 0.038
 LINING_V = 0.97
 SKIRT_V = 0.92
 # Every body carries both skirts (any player can choose one, M5 phase C step 5), shaded in the one rectangle: each skirt's
@@ -375,59 +390,98 @@ def make_skirt(body, suit, rig, spec, women, style=None, hem=None, under=None):
     return o
 
 
+def _skirt_rand(i, seed):
+    """A number from 0 to 1 for item `i` of the skirt seeded `seed`: the same every build."""
+    x = math.sin(i * 127.1 + seed * 311.7) * 43758.5453
+    return x - math.floor(x)
+
+
+def skirt_seed(R):
+    """A skirt's own seed, from its rings (the body it was measured round)."""
+    return int(round(float(R[-1].sum()) * 1e4)) % 9973
+
+
+def aline_flutes(seed):
+    """An A-line skirt's flutes: each ridge's place round it (rad), its half-width at the hem (rad) and its depth (0-1)."""
+    n, step = ALINE_FLUTES, 2 * math.pi / ALINE_FLUTES
+    return [((k + 0.5 + 0.5 * (_skirt_rand(k, seed) - 0.5)) * step, (0.3 + 0.18 * _skirt_rand(k + 31, seed)) * step,
+             0.5 + 0.5 * _skirt_rand(k + 53, seed)) for k in range(n)]
+
+
+def aline_fold(t, grown, flutes):
+    """How far out of its ring an A-line's cloth stands at `t` round it (rad; numbers or arrays), 0-1 of the deepest, where the
+    flutes are `grown` (0 where they start, 1 at the hem): the nearest ridge's own smooth hump, narrower the higher up."""
+    t = np.asarray(t, dtype=np.float64)
+    f = np.zeros(np.broadcast(t, grown).shape)
+    for tk, wk, hk in flutes:
+        d = np.abs((t - tk + math.pi) % (2 * math.pi) - math.pi)
+        f = np.maximum(f, hk * np.clip(1 - (d / (wk * (0.45 + 0.55 * grown))) ** 2, 0, 1) ** 2)
+    return f
+
+
+def skirt_grown(u):
+    """How far a skirt's folds have grown at `u` down it: none in the yoke, whole at the hem."""
+    return np.clip((np.asarray(u, dtype=np.float64) - SKIRT_YOKE) / (1 - SKIRT_YOKE), 0, 1)
+
+
 def skirt_mesh(R, c, th, zs, pleated, cols, band=(0.0, SKIRT_V)):
-    """The skirt from its rings (skirt_rings): knife pleats or an A-line's soft folds outside, the lining in, its UVs (u round,
+    """The skirt from its rings (skirt_rings): knife pleats or an A-line's flutes outside, the lining in, its UVs (u round,
     v from band[0] at the top to band[1] at the hem, SKIRT_BANDS; the lining at LINING_V) and 'hang' (0 at the top, 1 at the
-    hem). Returns the mesh, its vertices, their hang and how many faces wind the wrong way."""
+    hem). The folds go out from the rings only: a ring is the least that clears what is under it. Returns the mesh (its
+    'seed': skirt_seed, for the shading), its vertices, their hang and how many faces wind the wrong way."""
     nr = len(zs)
     v_at = lambda u: band[0] + (band[1] - band[0]) * u
-    verts, faces, uvs, hang, leg_w = [], [], [], [], []
+    verts, faces, uvs, hang, proud = [], [], [], [], []
+    seed = skirt_seed(R)
 
-    def add(theta, r, z, u, v, h):
+    def add(theta, r, z, u, v, h, out=0.0):
         verts.append((c[0] + r * math.cos(theta), c[1] + r * math.sin(theta), z))
         uvs.append((u, v))
         hang.append(h)
+        proud.append(out)
         return len(verts) - 1
 
-    pleat = lambda u: 0.0 if u <= SKIRT_YOKE else min(1.0, (u - SKIRT_YOKE) / 0.35)
     if pleated:
-        depth = 0.005
+        step = 2 * math.pi / cols
+        deep = [PLEAT_DEPTH * (0.7 + 0.6 * _skirt_rand(p, seed)) for p in range(cols)]
         for p in range(cols):
-            a, b = th[p], th[p] + 2 * math.pi / cols
-            q = (p + 1) % cols
+            a, q = th[p], (p + 1) % cols
+            show = PLEAT_OPEN * (0.6 + 0.8 * _skirt_rand(p + 77, seed))
             s0, s1, t0, t1 = [], [], [], []
             for i, u in enumerate(SKIRT_RINGS):
-                d = depth * pleat(u)
-                sag = 0.0
-                z = zs[i] - sag
-                rq = R[i, q]
-                s0.append(add(a, R[i, p], z, p / cols, v_at(u), u))
-                s1.append(add(b, rq - d, z, (p + 0.92) / cols, v_at(u), u))
-                t0.append(add(b, rq - d, z, (p + 0.96) / cols, v_at(u), u))
-                t1.append(add(b + 0.0005, rq, z, (p + 0.99) / cols, v_at(u), u))
+                w = float(skirt_grown(u))
+                # (the pleat's face, from its folded edge, proud of the ring, round to where it goes in under the next pleat's;
+                # then the cloth folded back under that one, out to its edge: shut and radial at the yoke, open by the hem)
+                f = 1 - show * w
+                r_in = R[i, p] * (1 - f) + R[i, q] * f
+                dp, dq = deep[p] * w ** 1.3, deep[q] * w ** 1.3
+                s0.append(add(a, R[i, p] + dp, zs[i], p / cols, v_at(u), u, dp))
+                s1.append(add(a + f * step, r_in, zs[i], (p + 0.92) / cols, v_at(u), u))
+                t0.append(add(a + f * step, r_in, zs[i], (p + 0.96) / cols, v_at(u), u))
+                t1.append(add(a + step + 0.0005, R[i, q] + dq, zs[i], (p + 0.99) / cols, v_at(u), u, dq))
             for i in range(nr - 1):
                 faces.append((s0[i], s0[i + 1], s1[i + 1], s1[i]))
                 faces.append((t0[i], t0[i + 1], t1[i + 1], t1[i]))
     else:
+        flutes = aline_flutes(seed)
         rows = []
         for i, u in enumerate(SKIRT_RINGS):
             row = []
+            g = float(skirt_grown(u))
             for j in range(cols + 1):
                 t = 2 * math.pi * j / cols
-                a = pleat(u) * 0.012
-                # (out from the ring only, as deep as before: the ring is the least that clears what is under it, and folds
-                # either side of it went up to 7 mm into the shorts)
-                fold = a * (1 + 0.62 * math.sin(7 * t + 0.6) + 0.38 * math.sin(13 * t + 2.1))
+                fold = ALINE_DEEP * g ** 1.4 * float(aline_fold(t, g, flutes))
                 row.append(add(t, R[i, j % cols] + fold, zs[i], j / cols, v_at(u), u))
             rows.append(row)
         for i in range(nr - 1):
             for j in range(cols):
                 faces.append((rows[i][j], rows[i + 1][j], rows[i + 1][j + 1], rows[i][j + 1]))
-    # The lining: seen only up under the hem.
+    # No lining (none since 14 Nov 2026: a coarse tube 12 mm inside the skirt, which came out through the cloth wherever a
+    # thigh creased it; the game draws the cloth's own inside, and the shorts are under it).
     n_lin = 36
     ltheta = np.arange(n_lin) * 2 * math.pi / n_lin
     rows = []
-    lining_rings = [i for i, u in enumerate(SKIRT_RINGS) if u >= 0.47]
+    lining_rings = []
     for i in lining_rings:
         row = []
         for j in range(n_lin):
@@ -444,7 +498,7 @@ def skirt_mesh(R, c, th, zs, pleated, cols, band=(0.0, SKIRT_V)):
     me.update()
     # (windings, as built, run outwards for the outside and inwards for the lining; checked here)
     bad = 0
-    n_out = len(faces) - (len(rows) - 1) * n_lin
+    n_out = len(faces) - max(len(rows) - 1, 0) * n_lin
     for pi, po in enumerate(me.polygons):
         cen = po.center
         radial = Vector((cen.x - c[0], cen.y - c[1], 0))
@@ -456,21 +510,27 @@ def skirt_mesh(R, c, th, zs, pleated, cols, band=(0.0, SKIRT_V)):
         uvl.data[lo.index].uv = uvs[lo.vertex_index]
     at = me.attributes.new('hang', 'FLOAT', 'POINT')
     at.data.foreach_set('value', np.array(hang, dtype=np.float32))
+    # (how far a pleat's folded edge stands out of its ring, m: the game moves a pleat off a thigh whole, kit.ts thighsPush)
+    at = me.attributes.new('proud', 'FLOAT', 'POINT')
+    at.data.foreach_set('value', np.array(proud, dtype=np.float32))
+    me['seed'] = seed
     return me, verts, hang, bad
 
-def _skirt_shade(uv_u, h, pleated):
-    """A skirt's outside's shading at u round it and h down it (0 at the top, 1 at the hem)."""
+def _skirt_shade(uv_u, h, pleated, seed=0):
+    """A skirt's outside's shading at u round it and h down it (0 at the top, 1 at the hem): the cloth's own shadow on itself,
+    which the game's lights don't cast at this size. `seed`: the skirt's (skirt_mesh), for an A-line's flutes."""
     under = 0.55 + 0.45 * np.clip(h / 0.12, 0, 1)
+    deep = skirt_grown(h)
     if pleated:
         t = (uv_u * PLEATS) % 1
-        deep = np.clip((h - SKIRT_YOKE) / 0.3, 0, 1)
-        valley = 1 - 0.42 * deep * np.clip((t - 0.45) / 0.5, 0, 1) ** 1.5
-        # (the fold's own side, the narrow strip at the end of each pleat, is deep in shadow)
-        valley = np.where(t > 0.94, 1 - 0.6 * deep, valley)
+        # (a pleat's face darkens towards where it goes in under the next one's edge, whose shadow lies on it)
+        valley = 1 - 0.5 * deep * np.clip((t - 0.5) / 0.42, 0, 1) ** 1.5
+        # (the cloth folded back under, the narrow strip at the end of each pleat, is deep in that shadow, deepest at the fold)
+        valley = np.where(t > 0.94, 1 - deep * (0.75 - 0.3 * np.clip((t - 0.96) / 0.03, 0, 1)), valley)
     else:
-        a = uv_u * 2 * math.pi
-        fold = 0.62 * np.sin(7 * a + 0.6) + 0.38 * np.sin(13 * a + 2.1)
-        valley = 1 - 0.2 * np.clip((h - SKIRT_YOKE) / 0.3, 0, 1) * np.clip(-fold, 0, 1)
+        f = aline_fold(uv_u * 2 * math.pi, deep, aline_flutes(seed))
+        # (between the flutes the cloth lies in under them; a ridge's own crest is open to the light)
+        valley = 1 - 0.32 * deep * (1 - f) ** 2
     return under * valley
 
 
@@ -481,26 +541,27 @@ def _grey(g):
     return px
 
 
-def skirt_ao(size, pleated):
+def skirt_ao(size, pleated, seed=0):
     """The skirt's shading in the atlas (grey): darker up under the shirt, in each pleat's valley and on the lining. One skirt, v
-    from 0 down to SKIRT_V (mh-player.py); skirts_ao for both."""
+    from 0 down to SKIRT_V (mh-player.py); skirts_ao for both. `seed`: the skirt's own (its mesh's 'seed')."""
     v = (np.arange(size) + 0.5) / size
     u = (np.arange(size) + 0.5) / size
     uv_u, uv_v = np.meshgrid(u, v)
-    g = _skirt_shade(uv_u, np.clip(uv_v / SKIRT_V, 0, 1), pleated)
+    g = _skirt_shade(uv_u, np.clip(uv_v / SKIRT_V, 0, 1), pleated, seed)
     g[uv_v > (SKIRT_V + LINING_V) / 2 - 0.02] = 0.3
     return _grey(g)
 
 
-def skirts_ao(size):
-    """Both skirts' shading in the one rectangle, each on its band (SKIRT_BANDS), and the linings'."""
+def skirts_ao(size, seeds=None):
+    """Both skirts' shading in the one rectangle, each on its band (SKIRT_BANDS), and the linings'. `seeds`: each style's own
+    (its mesh's 'seed')."""
     v = (np.arange(size) + 0.5) / size
     u = (np.arange(size) + 0.5) / size
     uv_u, uv_v = np.meshgrid(u, v)
     g = np.full((size, size), 0.55)  # (between the bands: both tops, up under the shirt)
     for style, (v0, v1) in SKIRT_BANDS.items():
         h = (uv_v - v0) / (v1 - v0)
-        g = np.where((h >= 0) & (h <= 1), _skirt_shade(uv_u, np.clip(h, 0, 1), style == 'pleated'), g)
+        g = np.where((h >= 0) & (h <= 1), _skirt_shade(uv_u, np.clip(h, 0, 1), style == 'pleated', (seeds or {}).get(style, 0)), g)
     g[uv_v > (max(b[1] for b in SKIRT_BANDS.values()) + LINING_V) / 2 - 0.02] = 0.3
     return _grey(g.astype(np.float32))
 

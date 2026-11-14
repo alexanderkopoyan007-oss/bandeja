@@ -2299,7 +2299,8 @@ for k in ('shirt', 'shorts'):
 if skirts:
     # (person_kit's: darker up under the shirt, in each pleat's valley and on the lining; drawn square and halved across.
     # With a wardrobe both skirts, each on its band)
-    sao = pk.skirts_ao(RECT['skirt'][3]) if WARDROBE else pk.skirt_ao(RECT['skirt'][3], KIT['bottom'] == 'pleated')
+    seeds = {st: so.data['seed'] for st, (so, _) in skirts.items()}
+    sao = pk.skirts_ao(RECT['skirt'][3], seeds) if WARDROBE else pk.skirt_ao(RECT['skirt'][3], KIT['bottom'] == 'pleated', seeds[KIT['bottom']])
     w = RECT['skirt'][2]
     paste(op, RECT['skirt'], sao.reshape(sao.shape[0], w, -1, 4).mean(2))
 op[..., 3] = 1
@@ -2764,6 +2765,7 @@ PIECE_OF = {shirt: TOP0, shorts: 'shorts', shoes: 'shoe', sock: 'crew', **{o: k 
 if collar:
     PIECE_OF[collar] = 'collar'
 HANG = {so: hg for so, hg in skirts.values()}
+PROUD = {so: [d.value for d in so.data.attributes['proud'].data] for so, _ in skirts.values()}
 collar_shade = [d.value for d in collar.data.attributes['shade'].data] if collar else None
 tights_uv = None
 if 'tights' in wear:
@@ -2773,6 +2775,9 @@ if 'tights' in wear:
     l0 = min(shorts.data.loops, key=lambda l: (shorts.data.vertices[l.vertex_index].co - at).length)
     u_, v_ = suv[l0.index].uv
     tights_uv = uv_to(RECT['shorts'], OPAQUE_SIZE, u_ - math.floor(u_), v_ - math.floor(v_))
+
+
+SEWN_MOST = math.radians(100)
 
 
 def fresh():
@@ -2797,6 +2802,29 @@ for o, part, rect in KINDS:
     if o is shoes:
         shoe_first = base
     tag = 'body' if o is body else 'head' if o is head_skin else None
+    # A garment's panels are sewn here. Epic's shirt and shorts are panels whose seams are two rows of vertices in the one
+    # place, each with its own panel's normal; the hem's swing goes along the normal (kit.ts hemLag), and it pulled a side
+    # seam open into dark slits a hand long (seen 14 Nov on every build: about 240 such vertices a shirt). Vertices in one
+    # place take one normal, but for cloth turned back on itself (a hem's inside: over SEWN_MOST from it) and a skirt's
+    # pleats, which are folds.
+    sewn = {}
+    if part in ('shirt', 'shorts') and o not in HANG:
+        place = {}
+        for v_ in me.vertices:
+            place.setdefault(tuple(int(round(x * 2e4)) for x in v_.co), []).append(v_.index)
+        for vs in place.values():
+            if len(vs) < 2:
+                continue
+            for vi in vs:
+                n0 = me.vertices[vi].normal
+                tot = Vector((0, 0, 0))
+                for vj in vs:
+                    if n0.angle(me.vertices[vj].normal, 0.0) < SEWN_MOST:
+                        tot += me.vertices[vj].normal
+                if tot.length > 1e-6 and tot.normalized().angle(n0, 0.0) > 1e-4:
+                    sewn[vi] = tot.normalized()
+        if sewn:
+            say('sewn', o.name, len(sewn), 'vertices share a normal across a seam')
     # (MetaHuman's body UVs sit in the next tile over, u 1-2, UDIM style: each mesh is brought back into 0-1)
     tile = np.zeros(2)
     if uvl is not None:
@@ -2827,7 +2855,7 @@ for o, part, rect in KINDS:
             sw = [w / tot for w, _ in ws] + [0] * (4 - len(ws))
             if not ws:
                 si, sw = [bone_ix['Hips'], 0, 0, 0], [1, 0, 0, 0]
-            nrm = seam.get((tag, vi), vert.normal)
+            nrm = seam.get((tag, vi), sewn.get(vi, vert.normal))
             co = vert.co
             seen[key] = base + len(seen)
             B['pos'] += [co.x, co.z, -co.y]
@@ -2844,8 +2872,9 @@ for o, part, rect in KINDS:
             if o is shoes and shoe_x is not None:
                 shoe_out.append(shoe_x[vi])
             # (a skirt's hang, 0 at its top to 1 at the hem, in the mask's x: kit.ts swings it and keeps it off the thighs)
+            # (and how far a pleat's folded edge stands out of its ring, in y, as a share of person_kit.PROUD_UNIT)
             B['mask'] += ([float(x) for x in regions[vi]] if o is head_skin else
-                          [float(HANG[o][vi]) if o in HANG else 0.0, 0.0, 0.0, 0.0])
+                          [float(HANG[o][vi]), min(1.0, PROUD[o][vi] / pk.PROUD_UNIT), 0.0, 0.0] if o in HANG else [0.0, 0.0, 0.0, 0.0])
             B['index'].append(seen[key])
     say('mesh', o.name, len(seen), 'vertices', len(me.loop_triangles), 'triangles')
 

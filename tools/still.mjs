@@ -1,6 +1,6 @@
 // The same frame of an autoplay match every time: the game is held at its start and stepped by hand, 1/60 s a frame,
 // to sim time T, then shot without the HUD. For before/after stills of a look change between builds (`?cam=` for close
-// cameras; VIEW=waist:N, chest:N, body:N, feet:N or face:N[:metres up], in front of player N, head:N[:degrees round]; FACE=blinkL:1,jawOpen:0.6 holds those face keys on (FOV=8 with face:N:-0.012 is the eyes at 3x)
+// cameras; VIEW=waist:N, skirt:N, chest:N, body:N, feet:N or face:N[:metres up], in front of player N, head:N[:degrees round], skirt:N[:degrees round]; FACE=blinkL:1,jawOpen:0.6 holds those face keys on (FOV=8 with face:N:-0.012 is the eyes at 3x)
 // that player, the rest at 0). Bodies can still differ a little between runs; judge a look, not a pose.
 //   bash tools/one-chrome.sh node tools/still.mjs <url> <out.png> <T seconds> [w] [h]
 import puppeteer from 'puppeteer-core';
@@ -41,8 +41,8 @@ const t = await page.evaluate(async (T, view, faceKeys, fov) => {
   if (view) {
     const [kind, n, lift = '0'] = view.split(':');
     const r = g.players[+n].root, c = g.cam.camera;
-    const fx = Math.sin(r.rotation.y), fz = Math.cos(r.rotation.y), y = kind === 'chest' ? 1.3 : kind === 'feet' ? 0.08 : 0.95;
-    const d = kind === 'feet' ? 0.95 : kind === 'body' ? 2.6 : 1.2;  // (body:N: all of them, from 2.6 m)
+    const fx = Math.sin(r.rotation.y), fz = Math.cos(r.rotation.y), y = kind === 'chest' ? 1.3 : kind === 'feet' ? 0.08 : kind === 'skirt' ? 0.8 : 0.95;
+    const d = kind === 'feet' ? 0.95 : kind === 'body' ? 2.6 : kind === 'skirt' ? 1.05 : 1.2;  // (body:N: all of them, from 2.6 m)
     const av = g.players[+n].avatar;
     if (kind === 'head' && av) {
       // (head:N[:degrees round]: the whole head and its hair from 0.8 m, turned round the head's own up)
@@ -77,9 +77,17 @@ const t = await page.evaluate(async (T, view, faceKeys, fov) => {
     } else {
     // (the feet: aimed between the soles, Avatar.feet)
     const f = kind === 'feet' ? g.players[+n].avatar?.feet : null;
-    const ax = f ? (f[0] + f[3]) / 2 : r.position.x, az = f ? (f[2] + f[5]) / 2 : r.position.z;
-    c.position.set(ax + fx * d + fz * 0.35, y + (kind === 'feet' ? 0.4 : 0.1), az + fz * d - fx * 0.35);
-    c.lookAt(ax, y, az);
+    let ax = f ? (f[0] + f[3]) / 2 : r.position.x, az = f ? (f[2] + f[5]) / 2 : r.position.z, ay = y;
+    if (kind === 'skirt' && av) {
+      // (skirt:N[:degrees round]: under the pelvis wherever the pose has it, from 1.5 m)
+      av.root.updateMatrixWorld(true);
+      const e = av.bones.find((b) => b.name === 'Hips').matrixWorld.elements;
+      ax = e[12]; ay = e[13] - 0.1; az = e[14];
+      const a = (+lift * Math.PI) / 180 + 0.25, cs = Math.cos(a), sn = Math.sin(a);
+      c.fov = 28; c.updateProjectionMatrix();
+      c.position.set(ax + (fx * cs + fz * sn) * 1.5, ay + 0.12, az + (fz * cs - fx * sn) * 1.5);
+    } else c.position.set(ax + fx * d + fz * 0.35, y + (kind === 'feet' ? 0.4 : 0.1), az + fz * d - fx * 0.35);
+    c.lookAt(ax, ay, az);
     c.updateMatrixWorld();
     }
   }

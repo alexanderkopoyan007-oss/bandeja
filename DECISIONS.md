@@ -5069,3 +5069,67 @@ Not done: p7 still has a thin bright line at the foot of the eyeball (not the li
 above); the sockets are dark under the hall's top light
 (the bounce off the court that fills them in a real hall is not drawn); every iris is the same brown.
 
+
+## Skirts with folds you can see (2026-11-14, owner: "push it, and keep going")
+
+Next on the owner's list after the band and the mouths: "smooth near-black cones, painted pleats". Four things were
+wrong, and only the first was the folds.
+
+- **A dark skirt was black because the tone map took its colour.** The kits' dark bottoms are charcoal and navy
+  (0x22252b is 1.6% linear). Khronos Neutral takes 6.25x² off anything under 4%, the share a dielectric's specular would
+  add under a white sky; lit in full, the charcoal came out at 5 of 255. Measured over a skirt in a still: median 7 of
+  255, the 90th centile 19. A pleat facing the lamps and one turned from them were the same black, so no fold of any
+  depth could show. Dark cloth below the waist now keeps its tone through the tone map as skin and hair do
+  (`kit.ts DARK_CLOTH_TONE_BACK` 0.85, on the shorts' part where its colour is under 3-12% linear, so a hem's band in
+  the shirt's colour is rendered as the shirt is). Men's dark shorts are charcoal with their folds showing for the same
+  reason. A skirt's cloth is smoother than the shirt's knit (`SKIRT_ROUGH` 0.62 against 0.88) and shines on its folds'
+  crests only (its baked shade is its specular's occlusion).
+- **The folds themselves** (`person_kit.py skirt_mesh`, which both builds' skirts come from). Knife pleats were 5 mm
+  steps, shut, cut inwards from the ring that clears the body. A pleat's folded edge now stands `PLEAT_DEPTH` (13 mm)
+  out of the next pleat's face at the hem, and `PLEAT_OPEN` (0.3) of its width is the cloth folded back under it,
+  showing as the skirt flares; stitched flat at the yoke, both grow from there down, and each pleat has its own share of
+  each. The A-line's folds were two sine waves (7 and 13 round), 12 mm; it has `ALINE_FLUTES` (9) ridges now, each with
+  its own place, width and depth (to 38 mm at the hem), narrow under the hips and widening to the hem, the cloth between
+  them on the ring. Both go outwards only: the ring is the least that clears what is under the skirt. A skirt's folds
+  are its body's own (`skirt_seed`, from its rings), and its baked shade is drawn from the same flutes.
+- **The skirt's top came out through the shirt's back** in blocks when a player bent: its top 5 cm are tucked up inside
+  the shirt, which is skinned to the spine while the skirt is the pelvis's. A skirt is now drawn only to 5 mm above the
+  shirt's hem (`SKIRT_TOP`, a mask in the modelled pose). If the shirt rides up, what shows is the tight pair under the
+  skirt, in the same cloth, like a waistband.
+- **A leg stood through the skirt in a lunge.** `thighsPush` moved cloth out of a thigh's capsule the nearest way.
+  Cloth a leg had stepped past (the back of the hip, in a step out to the side) is on the pelvis's side of the thigh's
+  axis, so its nearest way out is under the leg, while the cloth beside it lay over it: a torn pocket with the thigh
+  in it. It had been there since the skirts were made; black on black hid it. Each vertex now leaves along its own way
+  out: outwards from the pelvis's axis, less whatever of that runs along the thigh, and up as far as it did, so a
+  thigh raised to the front lifts the cloth in front of it over its top. It goes to the capsule's surface that way
+  whenever the thigh is in its way, from inside it and from behind it, eased in over 3 cm at the capsule's edge (a
+  step there turned one triangle's back: a dark tuck). `skirtHang`'s band between cloth left hanging and cloth carried
+  by a thigh is 7 cm of outward travel, not 2.5 (`SKIRT_CARRIED`): the cliff between the two was a slab at the hip.
+
+- **A pleat moves off a thigh whole.** Each vertex pushed from where it stood, the fold under a pleat (on the ring) came
+  out past the pleat's own folded edge (13 mm proud of it and already clear), the pleat turned inside out, and down a
+  thigh the pleats' lit edges zig-zagged from one side to the other. A skirt's vertex now carries how far it stands
+  out of its ring (`proud`, bodyX.y on the shorts' part, in units of 5 cm: `person_kit.PROUD_UNIT`, `kit.ts
+  SKIRT_PROUD`), and `thighsPush` moves it as the ring under it would move. An A-line's flutes carry none: over a
+  thigh they are pressed flat, as cloth is.
+- **The lining is not drawn.** It was a 36-sided tube 12 mm inside the skirt from its middle down, from before the
+  cloth's own inside was drawn (both sides are, since round 8). Coarser than the cloth, it came out through it wherever
+  a thigh creased it: a black comma on the front of an A-line. A real padel skirt has no lining either, it has the
+  shorts, which are there. Masked in the shader (atlas v over `SKIRT_OUT_V`), so the old builds lose theirs too, and
+  `skirt_mesh` no longer makes one.
+- **Fourteen rings down a skirt, not nine** (`SKIRT_RINGS`, close from the yoke down). The game hangs the cloth and moves
+  it off the thighs a vertex at a time; with a ring every 4 cm, a pleat's edge that should curve round a thigh went
+  down it in lightning bolts.
+
+**The shirt's side seam opened into slits.** Seen in the same close-ups: dark diamonds a hand long down the white side
+panel, the shirt's own inside showing. Epic's shirt and shorts are sewing panels whose seams are two rows of vertices
+in the one place, each with its own panel's normal (about 240 such vertices a shirt, up to 90 degrees apart), and the
+hem's swing moves a vertex along its normal (`hemLag`), so the two rows parted wherever the hem swung.
+`mh-player.py` gives vertices in one place one normal as it writes a garment (`sewn`; not across cloth turned back on
+itself, over 100 degrees, nor a skirt's pleats, which are folds).
+
+Stills: `VIEW=skirt:N[:degrees round] node tools/still.mjs` aims under the pelvis wherever the pose has it.
+
+Not done: the MakeHuman builds (`?classic=1`) keep their old skirt meshes until they are rebuilt (they get the tone,
+the masks and the new push, which are the game's); the cloth's normals are the modelled pose's, so an A-line's flute
+pressed flat over a thigh is still lit as a flute; no cloth simulation.

@@ -659,6 +659,19 @@ const SKIN_WRAP = 0.55;
 const SKIN_SCATTER = 0.22;
 /** How much of the tone map's offset skin gets back (`PersonNodeMaterial.setupOutput`): all of it turned dark skin ashen, and a little of the toe's depth is what keeps skin rich in shadow. */
 const SKIN_TONE_BACK = 0.65;
+/**
+ * Dark cloth below the waist (shorts, skirts, tights): how much of its tone it keeps through the tone map, as skin and hair do
+ * (`toneBackNode`). The kits' dark bottoms are charcoal and navy (0x22252b: 1.6% linear), and Khronos Neutral takes 6.25x² off
+ * anything under 4%: lit in full it came out at 5 of 255, a pleat facing the lamps and one turned from them the same black,
+ * and a skirt was a cut-out with a hem (the owner's list, 14 Nov: "smooth near-black cones"; measured, the median over a skirt
+ * was 7 of 255). With its tone kept, the folds' own light and shade is there to see, on shorts as on skirts.
+ */
+const DARK_CLOTH_TONE_BACK = 0.85;
+/** How far up under the shirt's hem a skirt is drawn (m): the rest of its top is tucked in there, and came out through the
+ * shirt's back in blocks when a player bent; what shows if the shirt rides up is the shorts under it, in the same cloth. */
+const SKIRT_TOP = 0.005;
+/** A skirt's roughness, smoother than the shirt's knit (0.88): woven polyester, its highlight down the crest of each fold. */
+const SKIRT_ROUGH = 0.62;
 /** How dark the inside of the cloth is: it sits in the body's shadow, and no bake covers it. */
 const BODY_INSIDE = 0.3;
 /** The same for a skirt, a fold's own shade: a thigh pushes a skirt through itself, its back comes out in front, and at 0.3 that was a dark slash on white cloth. */
@@ -1054,7 +1067,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
     .mul(smoothstep(0.17, 0.15, vec3(p.x.abs(), p.y, p.z).sub(vec3(wristAt.x, wristAt.y, wristAt.z)).length())).mul(wristU.x);
   col = mix(col, color(look.shirt).mul(float(0.92).add(p.x.mul(2400).sin().mul(0.08))), band);
   const m = new PersonNodeMaterial();
-  m.maskNode = neckline.lessThan(COLLAR_MID).and(underShirt.lessThan(0.5)).and(skinCut.mul(skinW).lessThan(0.5));
+  m.maskNode = neckline.lessThan(COLLAR_MID).and(underShirt.lessThan(0.5)).and(skinCut.mul(skinW).lessThan(0.5))
+    // (nor is a skirt's lining drawn: a coarse tube inside it, from before the cloth's own inside was (both sides are, above),
+    // which came out through the cloth wherever a thigh creased it, a black mark on the front of the skirt)
+    .and(step(0.001, hang).mul(step(frame.hemY + SKIRT_TOP, p.y).add(step(SKIRT_OUT_V, uv().y))).lessThan(0.5));
   // Both sides are drawn. A body here is a shell, hollow under the clothes: wherever a camera saw past an edge, into a collar
   // or up a sleeve or a skirt, it met the far side's back, and culled that showed the court through the player (round 8).
   // Closed surfaces hide their own backs, so this only shows at those edges, as the cloth's inside in its own shadow. The
@@ -1067,7 +1083,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
   const skinRough = mix(mix(float(0.5), float(0.33), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07))
     .add(mottle.mul(0.07)).add(poreFine.mul(0.05)), float(NAIL_ROUGH), nail);
-  m.roughnessNode = fabric.mul(float(0.88).sub(wet.mul(0.25)))
+  const skirtW = step(0.001, hang);
+  m.roughnessNode = fabric.mul(mix(float(0.88), float(SKIRT_ROUGH), skirtW).sub(wet.mul(0.25)))
     .add(skinW.mul(mix(skinRough, float(0.9), band)))
     .add(eyeW.mul(0.2)).add(teethW.mul(0.3)).add(tongueW.mul(0.38)).add(shoeW.mul(0.45));
   m.metalnessNode = float(0);
@@ -1078,7 +1095,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // eyeball and the lashes stand over it; lit as open skin its wet edge drew a pale line under every eye, which went
   // when the lids' shine was taken off and stayed when their colour was darkened, 14 Nov)
   const creased = mix(smoothstep(0.05, 0.55, tex.w), smoothstep(LID_RIM[0], LID_RIM[1], tex.w), lids);
-  m.specularIntensityNode = mix(float(1), creased.mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
+  // (a skirt's folds shine on their crests, not in under each other: its baked shade, person_kit.py _skirt_shade)
+  m.specularIntensityNode = mix(mix(float(1), smoothstep(0.3, 0.9, tex.x), skirtW), creased.mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
   m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
     .mul(creased).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
@@ -1095,7 +1113,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // (the white of the eye: an iris lies behind the cornea in its own shadow, and filled with the white it shone amber)
   const eyeLo = min(tex.x, min(tex.y, tex.z)), eyeHi = max(tex.x, max(tex.y, tex.z));
   m.fillNode = eyeW.mul(EYE_FILL).mul(smoothstep(0.5, 0.85, eyeLo.div(eyeHi.max(0.05))));
-  m.toneBackNode = skinW.mul(SKIN_TONE_BACK);
+  // (dark cloth only: a hem's band in the shirt's colour keeps the shirt's rendering)
+  const darkCloth = float(1).sub(smoothstep(0.03, 0.12, max(shortsC.x, max(shortsC.y, shortsC.z))));
+  m.toneBackNode = skinW.mul(SKIN_TONE_BACK).add(shortsW.mul(darkCloth).mul(DARK_CLOTH_TONE_BACK));
   // The catchlight: a floodlit cornea always holds a bright point, and a face without one reads as dead. The light it
   // would mirror isn't in the probe, so it is drawn: fixed in view space, where the eyeball's normal meets it.
   // (10 degrees up and over from the view, on the iris: at 24 up it fell under the upper lid and no eye showed one, 7 Nov; a
@@ -1140,7 +1160,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   if (cut.bottom === 'pleated' || cut.bottom === 'aline') {
     // (hung by its own weight first: skirtHang; then off the thighs)
     const fallen = hung.add(skirtHang(asset, positionLocal, hang).sub(positionLocal));
-    m.positionNode = fallen.add(thighsPush(asset, frame, fallen, lining).mul(smoothstep(SKIRT_PUSH[0], SKIRT_PUSH[1], hang)));
+    m.positionNode = fallen.add(thighsPush(asset, frame, fallen, lining, X.y.mul(shortsW).mul(SKIRT_PROUD)).mul(smoothstep(SKIRT_PUSH[0], SKIRT_PUSH[1], hang)));
   } else m.positionNode = hung;
   // (and the arms off the racket: racketPush)
   m.positionNode = (m.positionNode as THREE.Node<'vec3'>).add(racketPush(asset, m.positionNode as THREE.Node<'vec3'>));
@@ -1384,7 +1404,7 @@ const THIGH_FROM = 0.3;
 const SKIRT_FREE = 0.2;
 const SKIRT_LEAN_COS = Math.cos((50 * Math.PI) / 180);
 const SKIRT_IN: [number, number] = [0.15, 0.004];
-const SKIRT_CARRIED: [number, number] = [-0.005, 0.02];
+const SKIRT_CARRIED: [number, number] = [0, 0.07];
 const HANG_T = new THREE.Matrix4(), HANG_V = new THREE.Vector3();
 
 /**
@@ -1443,30 +1463,72 @@ export function skirtFallen(q: THREE.Vector3, c: THREE.Vector3, span: [number, n
 }
 
 /**
- * A skirt stays off the legs: each thigh, a tapered capsule from the hip to the knee where the skeleton has it this frame,
- * pushes the cloth out of itself (the weights alone leave a raised knee through the hem). The result is an offset for the
- * skinned position `at`. The bones are read where the mesh is drawn, so the capsules are the skeleton's own pose. `inset`: how far
- * inside that the cloth stops (the lining, which pushed onto the same surface as the skirt came through it in dark slivers).
+ * A skirt stays off the legs, and outside them: each thigh, a tapered capsule from the hip to the knee where the skeleton has it
+ * this frame, moves the cloth out of itself (the weights alone leave a raised knee through the hem). The result is an offset for
+ * the skinned position `at`. The bones are read where the mesh is drawn, so the capsules are the skeleton's own pose. `inset`: how
+ * far inside that the cloth stops (the lining, which pushed onto the same surface as the skirt came through it in dark slivers).
+ *
+ * Which way out: a skirt goes round both legs, so its cloth is always on the far side of a thigh from the pelvis, or on top of
+ * one raised. Pushed the nearest way out of the capsule, cloth a leg had stepped past (the back of the hip in a lunge to the
+ * side) came out under the thigh while the cloth beside it lay over it, and the leg stood through the skirt in a torn pocket
+ * (seen 14 Nov, once a dark skirt's folds could be seen at all). Here each vertex leaves along its own way out, `dir`: outwards
+ * from the pelvis's axis, less whatever of that runs along the thigh, and up as far as it did (a thigh raised to the front
+ * lifts the cloth in front of it over its top). It goes to the capsule's surface that way whenever the thigh is in its way:
+ * from inside the capsule, and from behind it too.
  */
-function thighsPush(asset: PlayerAsset, frame: KitFrame, at: THREE.Node<'vec3'>, inset: THREE.Node<'float'>): THREE.Node<'vec3'> {
-  const ids = [asset.bone('LeftUpLeg'), asset.bone('LeftLeg'), asset.bone('RightUpLeg'), asset.bone('RightLeg')];
+function thighsPush(asset: PlayerAsset, frame: KitFrame, cloth: THREE.Node<'vec3'>, inset: THREE.Node<'float'>, proud: THREE.Node<'float'>): THREE.Node<'vec3'> {
+  const ids = [asset.bone('LeftUpLeg'), asset.bone('LeftLeg'), asset.bone('RightUpLeg'), asset.bone('RightLeg'), asset.bone('Hips')];
   const ends = ids.map(() => uniform(new THREE.Vector3()));
   ends[0]!.onObjectUpdate((f) => {
     const mesh = f.object as THREE.SkinnedMesh;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < ids.length; i++) {
       const v = ends[i]!.value as THREE.Vector3;
       v.setFromMatrixPosition(mesh.skeleton.bones[ids[i]!]!.matrixWorld).applyMatrix4(mesh.bindMatrixInverse);
     }
   });
   const [r0, r1] = frame.thighR ?? [0.09, 0.06];
+  const from = cloth.sub(ends[4]!);
+  const out = vec3(from.x, 0, from.z).div(vec2(from.x, from.z).length().max(1e-4));
+  // (a pleat moves whole: each of its vertices as the ring under it would, `proud` in from a folded edge (bodyX.y). Moved each
+  // from where it stood, the fold under a pleat came out past the pleat's own edge, the pleat turned inside out, and down a
+  // thigh the pleats' lit edges zig-zagged from one side to the other)
+  const at = cloth.sub(out.mul(proud));
   const push = (a: THREE.Node<'vec3'>, b: THREE.Node<'vec3'>): THREE.Node<'vec3'> => {
     const ab = b.sub(a);
     const t = at.sub(a).dot(ab).div(ab.dot(ab)).clamp();
     const d = at.sub(a.add(ab.mul(t)));
-    const l = d.length().max(1e-4);
-    return d.mul(max(mix(float(r0), float(r1), t).add(SKIRT_CLEAR).sub(inset).sub(l), 0).div(l));
+    const ax = ab.normalize(), along = out.dot(ax);
+    const way = out.sub(ax.mul(along)).add(vec3(0, 1, 0).sub(ax.mul(ax.y)).mul(along.max(0)));
+    const len = way.length(), dir = way.div(len.max(1e-4));
+    const r = mix(float(r0), float(r1), t).add(SKIRT_CLEAR).sub(inset);
+    // (to where the line from the vertex along `dir` leaves the sphere at the axis's nearest point; none if it never meets it)
+    const half = d.dot(dir), disc = half.mul(half).add(r.mul(r)).sub(d.dot(d));
+    // (eased in over the capsule's edge as seen along `dir`: cloth just past it stays where it hangs, and with a step there the
+    // one triangle between turned its back, a dark tuck in the cloth)
+    const reach = disc.max(0).sqrt();
+    return dir.mul(reach.sub(half).max(0).mul(smoothstep(0, PUSH_EDGE, reach)).mul(smoothstep(0.05, 0.2, len)));
   };
   return push(ends[0]!, ends[1]!).add(push(ends[2]!, ends[3]!));
+}
+
+/**
+ * `thighsPush`'s way out in plain numbers, for a test: how far along which unit direction a vertex at `p` moves to clear the
+ * capsule from `a` (radius `r0`) to `b` (`r1`), the pelvis at `hips`. Zero where the thigh isn't in its way.
+ */
+export function thighPushed(p: THREE.Vector3, hips: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number): THREE.Vector3 {
+  const out = new THREE.Vector3(p.x - hips.x, 0, p.z - hips.z);
+  out.divideScalar(Math.max(out.length(), 1e-4));
+  const ab = b.clone().sub(a), t = Math.min(1, Math.max(0, p.clone().sub(a).dot(ab) / ab.dot(ab)));
+  const d = p.clone().sub(a.clone().addScaledVector(ab, t));
+  const ax = ab.clone().normalize(), along = out.dot(ax);
+  const way = out.clone().addScaledVector(ax, -along).add(new THREE.Vector3(0, 1, 0).addScaledVector(ax, -ax.y).multiplyScalar(Math.max(along, 0)));
+  const len = way.length(), dir = way.divideScalar(Math.max(len, 1e-4));
+  const r = r0 + (r1 - r0) * t + SKIRT_CLEAR;
+  const half = d.dot(dir), disc = half * half + r * r - d.dot(d);
+  if (disc < 0) return dir.multiplyScalar(0);
+  const ease = (x: number): number => { const k = Math.min(1, Math.max(0, x)); return k * k * (3 - 2 * k); };
+  const reach = Math.sqrt(disc);
+  return dir.multiplyScalar(Math.max(reach - half, 0) * ease(reach / PUSH_EDGE) * ease((len - 0.05) / 0.15));
 }
 
 /**
@@ -1776,6 +1838,10 @@ const MARK_Y = 0.07;
 /** How far a skirt's hem trails as a multiple of the hems' lag; how far it stands off a thigh (m); where its hem's band starts (0-1 down the skirt). */
 const SKIRT_SWING = 1.6;
 const SKIRT_CLEAR = 0.012;
+/** bodyX.y's unit on a skirt (m): person_kit.py PROUD_UNIT. */
+const SKIRT_PROUD = 0.05;
+/** How far inside a thigh's edge, seen along the cloth's way out, its push is whole (m): `thighsPush`. */
+const PUSH_EDGE = 0.03;
 /** Down a skirt (its hang), where the thighs' push starts and where it is whole; how far inside the skirt its lining stops (m). */
 const SKIRT_PUSH: [number, number] = [0.1, 0.2];
 const SKIRT_LINING_IN = 0.006;
