@@ -799,6 +799,8 @@ const HAIR_HELMET_ROUGH = 0.6;
 const HAIR_HELMET_SPEC = 0.35;
 /** Where the helmet's rectangle starts (v; u past HAIR_U), and how edge on (|n.v|) it has fully faded near. */
 const HAIR_HELMET_V = 0.75;
+/** The lashes' rectangle in a MetaHuman's hair atlas (v, from and to; u past HAIR_U): mh-player.py RECT `lash`. */
+const HAIR_LASH_V: [number, number] = [0.25, 0.5];
 const HAIR_HELMET_EDGE = 0.45;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;
@@ -1205,7 +1207,12 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const dyeLit = mix(float(1), mix(dyeShade, float(1), far), selfHair.w.mul(onHead));
   hair.colorNode = base.mul(mix(smoothstep(0.1, 0.62, ht.w), float(1), far)).mul(mix(hAO, hAO.sqrt(), far)).mul(strandLit).mul(dyeLit);
   hair.aoNode = hAO;
-  hair.toneBackNode = float(1);
+  // (not a MetaHuman's lashes. A lash is near black against the lid, and kept from the tone map's toe, as a head of hair
+  // is so that it isn't a black ball from the broadcast camera, the lower lashes came out a neutral grey lighter than the
+  // shaded skin under the eye: measured on the lashes' own pixels, 42, 36, 33 of 255 on skin at 46, 25, 19, and 30, 21, 15
+  // without it. Their light, shine and sheen were tried too and change nothing that can be measured: left as they were)
+  const lash = shell ? step(HAIR_U, uv().x).mul(step(HAIR_LASH_V[0], uv().y)).mul(step(uv().y, HAIR_LASH_V[1])) : float(0);
+  hair.toneBackNode = float(1).sub(lash);
   // Coverage from the cards' alpha over the MSAA samples: strands fade out instead of being cut at a threshold. The
   // nearly clear texels are dropped outright, and the shadow keeps a hard cut (the shadow map has no samples).
   const edgeOn = normalView.dot(positionViewDirection).abs().add(lump.mul(0.14));

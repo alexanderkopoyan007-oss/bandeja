@@ -838,12 +838,31 @@ export function clothTable(f: HeadFit, under: number): Float32Array {
 }
 
 
+/** Hair under a head piece (pressHair): its positions, and its triangles when some are no longer drawn (null: as they are). */
+export interface PressedHair { position: Float32Array; index: THREE.BufferAttribute | null }
+
+/** A corner of hair this far off where the cloth would hold it (m) stands free: its card comes out from under the cloth. */
+const HAIR_STANDS = 0.003;
+/** A slid root's place past the cloth's edge (m), and how far into the cloth hair may be before it is through it (m). */
+const SLID_PAST = 0.002, THROUGH = 0.0035;
+/** A corner on the scalp the far side of the cloth is slid across it from no further than this past its edge (m). */
+const SLIDE_FROM = 0.025;
+/** Pressed hair is never nearer the scalp than this (m). It was 4 mm, as far out as a visor's strap is thick where the
+ * table is the scalp itself. */
+const HAIR_OFF = 0.003;
+
 /**
- * The hair's positions (its alpha mesh's, bind pose) with what a head piece covers pressed in under the cloth (2 mm
- * inside it), easing out over a centimetre past the cloth's edges so the hair that shows under it bulges as hair does;
- * null when nothing moves. Brows and lashes lie on the skin and never move.
+ * The hair (its alpha mesh's, bind pose) under a head piece: what the cloth covers pressed in under it (2 mm inside it),
+ * easing out over a centimetre past the cloth's edges so the hair that shows bulges as hair does; null when nothing moves.
+ * Brows and lashes lie on the skin and never move.
+ *
+ * And no triangle of it passes out through the cloth. Pressed corner by corner, a card rooted under a band with its tip
+ * free rose through the band (an afro's cards are 8-13 cm long: p8's band showed across her forehead and nowhere else,
+ * 13 Nov 2026). So a corner under the cloth whose triangle has a corner standing free past an edge is slid, on the scalp,
+ * to just past that edge: the card comes out from under the band there, as hair held by a band does. What still passes
+ * through after that (a card with a free corner either side of a band, lying across it) is not drawn.
  */
-export function pressHair(asset: PlayerAsset, id: string | Headwear): Float32Array | null {
+export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHair | null {
   const hw = typeof id === 'string' ? HEADWEAR[id] : id;
   const f = fitHead(asset);
   const ag = asset.look?.alphaGeometry;
@@ -854,26 +873,112 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): Float32Arr
   const sw = ag.getAttribute('skinWeight') as THREE.BufferAttribute | undefined;
   if (!pos || !si || !sw) return null;
   const head = asset.bone('Head');
-  const out = new Float32Array(pos.count * 3);
+  const n = pos.count;
+  const out = new Float32Array(n * 3);
+  // Per vertex: where it is by the cloth (under it 0, below its lower edge -1, above its upper one 1), whether it stands
+  // free there once pressed, and which edge it is slid to (0: none).
+  const side = new Int8Array(n), free = new Uint8Array(n), slide = new Int8Array(n), mine = new Uint8Array(n), past = new Float32Array(n);
+  const edges = clothEdges(f, hw);
+  // (never closer to the scalp than HAIR_OFF: what lies on it, the brows and lashes among it, stays)
+  const held = (az: number, el: number): number => Math.max(radius(t, az, el) - 0.002, radius(f.skin, az, el) + HAIR_OFF);
   let moved = 0;
-  for (let i = 0; i < pos.count; i++) {
+  for (let i = 0; i < n; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     out[i * 3] = x; out[i * 3 + 1] = y; out[i * 3 + 2] = z;
-    if (weightOf(si, sw, i, head) < 0.3) continue;
     const dx = x - f.c.x, dy = y - f.c.y, dz = z - f.c.z, r = Math.hypot(dx, dy, dz);
     if (r < 1e-6) continue;
     const az = Math.atan2(dx, dz), el = Math.asin(Math.max(-1, Math.min(1, dy / r)));
-    const lo = hw.edge ? hw.edge(f, az) : edgeY(f, hw.front, hw.back, az);
-    let k = smooth(lo - 0.012, lo, y);
-    if (hw.up !== null) { const up = upAt(hw, az); k *= 1 - smooth(lo + up, lo + up + 0.012, y); }
-    // (never closer to the scalp than 4 mm: what lies on it, the brows and lashes among it, stays)
-    const R = Math.max(radius(t, az, el) - 0.002, radius(f.skin, az, el) + 0.004);
-    if (k <= 0 || r <= R) continue;
+    const [lo, hi] = edges(az);
+    // (by where on the head it is, the height of the cloth's table under it: by its own height, hair below the head's
+    // middle rose into the cloth's span as it was pressed in, half pressed, and stood through the cloth's lower edge)
+    const on = tableY(f, t, az, el);
+    side[i] = on < lo ? -1 : on > hi ? 1 : 0;
+    past[i] = on < lo ? lo - on : on > hi ? on - hi : 0;
+    // (hair on another bone, a ponytail's length, is never pressed: it stands free wherever it is)
+    if (weightOf(si, sw, i, head) < 0.3) { free[i] = side[i] !== 0 ? 1 : 0; continue; }
+    mine[i] = 1;
+    const R = held(az, el);
+    if (r <= R) continue;
+    let k = smooth(lo - 0.012, lo, on);
+    if (hw.up !== null) k *= 1 - smooth(hi, hi + 0.012, on);
+    free[i] = side[i] !== 0 && (1 - k) * (r - R) > HAIR_STANDS ? 1 : 0;
+    if (k <= 0) continue;
     const s = (r - k * (r - R)) / r;
     out[i * 3] = f.c.x + dx * s; out[i * 3 + 1] = f.c.y + dy * s; out[i * 3 + 2] = f.c.z + dz * s;
     moved++;
   }
-  return moved ? out : null;
+  const index = ag.index;
+  if (!index) return moved ? { position: out, index: null } : null;
+  // A card that comes out past one edge has its other corners, the ones held under the cloth or on the scalp the other
+  // side of it (within SLIDE_FROM of that edge), slid to that edge: the first card that asks, when two share a corner.
+  // One with free corners past both edges lies across the cloth whatever is done, and is not drawn (below).
+  for (let q = 0; q < index.count; q += 3) {
+    const a = index.getX(q), b = index.getX(q + 1), c = index.getX(q + 2);
+    const below = (free[a]! && side[a]! < 0) || (free[b]! && side[b]! < 0) || (free[c]! && side[c]! < 0);
+    const above = (free[a]! && side[a]! > 0) || (free[b]! && side[b]! > 0) || (free[c]! && side[c]! > 0);
+    if (below === above) continue;
+    const to = below ? -1 : 1;
+    for (const i of [a, b, c]) if (mine[i] && !free[i] && !slide[i] && side[i] !== to && past[i]! <= SLIDE_FROM) slide[i] = to;
+  }
+  const v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    if (!slide[i]) continue;
+    const az = Math.atan2(out[i * 3]! - f.c.x, out[i * 3 + 2]! - f.c.z);
+    const [lo, hi] = edges(az);
+    const y = slide[i]! < 0 ? lo - SLID_PAST : hi + SLID_PAST;
+    const el = elAt(f, t, az, y, -0.002);
+    dirOf(az, el, v).multiplyScalar(held(az, el)).add(f.c);
+    out[i * 3] = v.x; out[i * 3 + 1] = v.y; out[i * 3 + 2] = v.z;
+    side[i] = slide[i]!;
+    moved++;
+  }
+  // What still passes through the cloth is not drawn: its three corners made one (the count of triangles, and any
+  // groups over them, stay as they are).
+  let cut: Uint16Array | Uint32Array | null = null;
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
+  for (let q = 0; q < index.count; q += 3) {
+    const a = index.getX(q), b = index.getX(q + 1), c = index.getX(q + 2);
+    // (one wholly past an edge can't; one wholly under the cloth only if it is long, a chord over a hollow, or not the head's)
+    if (side[a] === side[b] && side[b] === side[c]) {
+      if (side[a] !== 0) continue;
+      if (mine[a] && mine[b] && mine[c] && A.fromArray(out, a * 3).distanceToSquared(B.fromArray(out, b * 3)) < 4e-4
+        && B.distanceToSquared(C.fromArray(out, c * 3)) < 4e-4 && C.distanceToSquared(A) < 4e-4) continue;
+    }
+    if (!throughCloth(f, t, edges, A.fromArray(out, a * 3), B.fromArray(out, b * 3), C.fromArray(out, c * 3), v)) continue;
+    cut ??= (index.array as Uint16Array | Uint32Array).slice();
+    cut[q + 1] = a; cut[q + 2] = a;
+  }
+  return moved || cut ? { position: out, index: cut ? new THREE.BufferAttribute(cut, 1) : null } : null;
+}
+
+/** Whether a triangle of hair passes through a head piece's cloth: some point of it under the cloth's span stands more than `over` off the table the cloth lies on. */
+export function throughCloth(f: HeadFit, t: Float32Array, edges: (az: number) => [number, number], a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, v = new THREE.Vector3(), over = THROUGH): boolean {
+  const N = 8;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N - i; j++) {
+    v.set(0, 0, 0).addScaledVector(a, i / N).addScaledVector(b, j / N).addScaledVector(c, (N - i - j) / N).sub(f.c);
+    const r = v.length();
+    if (r < 1e-6) continue;
+    const az = Math.atan2(v.x, v.z), el = Math.asin(Math.max(-1, Math.min(1, v.y / r)));
+    // (not at the very top: the table's bins meet there, 4 mm apart on an afro, and it is no one surface to be through)
+    if (el > E1 - 0.12) continue;
+    const [lo, hi] = edges(az), R = radius(t, az, el), y = f.c.y + Math.sin(el) * R;
+    if (y < lo + 0.001 || y > hi - 0.001) continue;
+    if (r > R + over) return true;
+  }
+  return false;
+}
+
+/** The height of the cloth's table in a direction from the head's middle: where on the head a point that way is, by a head piece's edges. */
+export function tableY(f: HeadFit, t: Float32Array, az: number, el: number): number {
+  return f.c.y + Math.sin(el) * radius(t, az, el);
+}
+
+/** A head piece's edges by azimuth: its lower one's height and its upper one's (Infinity over the crown). */
+export function clothEdges(f: HeadFit, hw: Headwear): (az: number) => [number, number] {
+  return (az) => {
+    const lo = hw.edge ? hw.edge(f, az) : edgeY(f, hw.front, hw.back, az);
+    return [lo, hw.up === null ? Infinity : lo + upAt(hw, az)];
+  };
 }
 
 /** A shade of a colour (k < 1 darker). */
@@ -988,14 +1093,40 @@ export function withoutBakedHead(asset: PlayerAsset, index: THREE.BufferAttribut
  * they were modelled in comes off (null: draw them as they are). The modelled one is kept when it is what they wear.
  */
 export function worn(asset: PlayerAsset, wear: Wear, look: KitLook, index: THREE.BufferAttribute | null): Dressing {
-  const own = asset.look?.kit.head ? `head-${asset.look.kit.head}` : null;
+  const own = ownHead(asset);
   const w: Wear = { ...wear };
   let bodyIndex: THREE.BufferAttribute | null = null;
-  if (w.head !== undefined && own) {
+  if (own && !hasBakedHead(asset)) {
+    // (theirs in name only, a MetaHuman build's: put on as anyone's is, unless they wear something else or nothing)
+    if (w.head === undefined) w.head = own;
+  } else if (w.head !== undefined && own) {
     if (w.head === own) delete w.head;
     else if (index) bodyIndex = withoutBakedHead(asset, index);
   }
   return { pieces: dress(asset, w, look), bodyIndex, hair: w.head ? pressHair(asset, w.head) : null, paintedWrists: wear.wrist === undefined };
+}
+
+/** The head piece a person is modelled with, as the cosmetic it is ('head-band' | 'head-visor'); null without one. */
+export function ownHead(asset: PlayerAsset): string | null {
+  return asset.look?.kit.head ? `head-${asset.look.kit.head}` : null;
+}
+
+const BAKED = new WeakMap<THREE.BufferGeometry, boolean>();
+/**
+ * Whether the person's own headband or visor is in their mesh. The MakeHuman builds' is; a MetaHuman build's is not
+ * (mh-player.py makes none since 13 Nov 2026: baked, it was a paper loop that an afro's cards stood through), and theirs
+ * is the piece made here, the hair pressed under it.
+ */
+export function hasBakedHead(asset: PlayerAsset): boolean {
+  const g = asset.geometry;
+  let has = BAKED.get(g);
+  if (has === undefined) {
+    const baked = bakedHead(asset);
+    has = false;
+    if (baked) for (let v = 0, n = g.getAttribute('position').count; v < n && !has; v++) has = baked(v);
+    BAKED.set(g, has);
+  }
+  return has;
 }
 
 /** What dressing a person changes on their avatar (Avatar.wear). */
@@ -1003,8 +1134,8 @@ export interface Dressing {
   pieces: Piece[];
   /** The opaque mesh's triangles without a modelled headband (null: as they are). */
   bodyIndex: THREE.BufferAttribute | null;
-  /** The hair's positions pressed under a head piece (null: as they are). */
-  hair: Float32Array | null;
+  /** The hair pressed under a head piece (null: as it is). */
+  hair: PressedHair | null;
   /** Whether the towelling bands painted on the wrists stay: not when a wristband, or bare wrists, is chosen. */
   paintedWrists: boolean;
 }

@@ -4998,3 +4998,68 @@ tenths of the hair's shine, and the cornea none under a lid (`EYE_WET`).
 Not done: p8's headband goes into her afro (the hair should be pressed under it); the lower lid's bright rim; the mouths'
 insides; every face's mouth turns down at rest.
 
+## A band the hair is held under, and a mouth that doesn't turn down (2026-11-14, owner: "push it, and keep going")
+
+Two of the faults listed as still wrong on 13 Nov, each with a cause one step back from where it showed.
+
+**The headband.** p8's band showed across her forehead and nowhere else; from the side and the back her afro covered it,
+and along its top edge the hair cut dark notches into it.
+
+- **It was the wrong band.** A MetaHuman build's band or visor was made in Blender (`person_kit.head_piece_mesh`): a flat
+  loop three rows wide on the hair's shell, one flat colour. The game has had its own head pieces since M5
+  (`costume.ts`): a rolled towelling band, a visor with a stitched bill, fitted to the head and with the hair pressed in
+  under them (`pressHair`). `mh-player.py` makes none now (`MH_HEAD=1` makes the old one, to compare). The header's
+  `kit.head` still names it, and `costume.ts worn` puts the game's own on any build whose mesh has none
+  (`hasBakedHead`), unless the player wears something else or `nohead`. `views.ts` dresses such a player even when
+  nothing is chosen. The MakeHuman builds keep theirs in the mesh, as before.
+- **The press was corner by corner.** With the game's band on her the notches were still there: 255 triangles of her hair
+  passed out through the cloth. An afro's cards are 8-13 cm long, two triangles each; a card rooted under the band with
+  its tip in the afro had one corner pressed and the next free, and rose through the band between them. The press now
+  works on triangles:
+  - Where a point is by the cloth goes by where on the head it is (`tableY`: the height of the cloth's table under it),
+    not by its own height. Hair below the head's middle rose as it was pressed in, and half-pressed hair from under the
+    edge ended up in the cloth's span standing 1 cm proud.
+  - A card that comes out past one edge has its other corners, the ones under the cloth or on the scalp just the other
+    side, slid along the scalp to just past that edge. The card comes out from under the band there, which is what hair
+    held by a band does.
+  - A card with free corners past both edges lies across the band whatever is moved, and is not drawn (its three
+    corners made one, so the triangle count and any groups stay). On p8 that is 15 of 18,254 triangles under a band, 40
+    under a visor.
+  - Pressed hair's floor off the scalp went from 4 mm to 3 (`HAIR_OFF`): at 4 it was as far out as a visor's strap is
+    thick wherever the table is the scalp.
+- The number that drives it: triangles through the cloth (`throughCloth`, sampled over each triangle), 0 for every build
+  of every person under a band, a visor and a cap, with under 0.5% of anyone's hair left undrawn
+  (tests/render/costume.test.ts; each rule taken out in turn fails it).
+
+Not done: the shell under an afro still shows as a few flat dark plates above the band from the side (Unreal's far
+stand-in, large triangles); a bandana's cloth is 3.2 mm off the table, thinner than the floor.
+
+**The mouths.** Every MetaHuman face read as glum. Measured (the corners against the middle of the lips' line): Epic's
+neutral mouth has its corners 2-9 mm under the middle, a MakeHuman build's 0-3. The face keys were carried over from the
+MakeHuman builds, so the smile key is there; `face.ts REST_SMILE` holds 0.3 of it on a MetaHuman build when nothing else
+has the mouth (effort at a contact, a grunt and a lost point each take it away; a won point's smile is larger and wins).
+Chosen by holding 0, 0.25 and 0.4 on all ten side by side: 0.25 just levels the corners, 0.4 starts to smile on the
+thinner mouths.
+
+Not done: p2's and p8's fuller lips still arc down a little at 0.3 (their upper lip's form, not its corners); one value
+for all ten, not one each; the measure above disagrees with the eye on those two, so it is not used to set it.
+
+**Three more seen close up the same night** (the eyes at 3x and 12x: `FOV=8 VIEW=face:N:-0.012 node tools/still.mjs`).
+
+- **The pale line under every eye was the texture's, not the light's.** The lids' rims are darkened in the head's texture
+  (the "eye shell", 7 Nov), by distance from the eye's hole along the skin. The texels in the hole itself, the sliver
+  between the two lids' edges, are under no triangle, so they kept Epic's pale pink of the lid's inside, and the rim's
+  own texels are filtered with them. `mh-player.py into_gaps` gives them the edge's shade. What is left along the lower
+  lid is the wet rim's own soft shine.
+- **The lower lashes were grey because hair keeps its tone.** `toneBackNode` holds a head of hair off the tone map's toe
+  so that it isn't a black ball from the broadcast camera; on a lash it is a neutral lift over near black. Measured on
+  the lashes' own pixels (a second still with the lash material tinted red gives the mask): 42, 36, 33 of 255 on skin
+  at 46, 25, 19 before; 30, 21, 15 with none for the lashes (`HAIR_LASH_V`, their rectangle in the atlas). Cutting
+  their light, shine and sheen as well changed nothing measurable and was taken back out.
+- **Black chips on p5's hairline** were the teeth of the shell where it is cut from over the face (`fringe`): its faces
+  are 2-5 cm across and the texture's own feather is a few millimetres. Each shell vertex keeps its distance along the
+  shell from the cut (`rimd`) and the coverage fades over 3 cm towards it.
+
+Not done: the lid's rim still catches a line of light on some faces; the sockets are dark under the hall's top light
+(the bounce off the court that fills them in a real hall is not drawn); every iris is the same brown.
+

@@ -14,7 +14,7 @@ import { dressRacket, makeRacketModel, racketLookFor, type RacketLook } from './
 import { designed, designKey, type RacketColours } from './avatar/racketDesign.ts';
 import { lowPerson, personOf, type PlayerAsset } from './avatar/asset.ts';
 import { kitFor } from './avatar/kit.ts';
-import type { Wear } from './avatar/costume.ts';
+import { ownHead, type Wear } from './avatar/costume.ts';
 import { bodyFor, costumed, dressFor } from './avatar/costumes.ts';
 import type { Cast } from '../game/cast.ts';
 import { makeBall, spinBall } from './ballLook.ts';
@@ -278,7 +278,8 @@ export class PlayerView {
       // Each player's own racket, in their own colours and overgrip if they chose them.
       this.grip = w?.grip;
       dressRacket(this.avatar.racket, racketLookOf(idx, racket, own, w?.grip));
-      if (w) this.avatar.wear(dressFor(who, w, kit, this.avatar.mesh.geometry.index));
+      // (dressed even with nothing chosen when the band or visor they are modelled with is made here: costume.ts worn)
+      if (w || ownHead(who)) this.avatar.wear(dressFor(who, w ?? {}, kit, this.avatar.mesh.geometry.index));
       // (Low: simpler triangles for when they are small on screen, made in a worker as the match loads)
       if (low && person) void this.avatar.makeLod();
       this.root = this.avatar.root;

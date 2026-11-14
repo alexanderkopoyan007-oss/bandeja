@@ -3,16 +3,20 @@
 // headband taken off when something else is worn.
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three/webgpu';
-import { mannequinWithPeople, guestAsset, GUESTS } from './people.ts';
-import { clothTable, dress, fitHead, pressHair, radius, worn, HEAD_PIECES, HEADWEAR, type HeadFit } from '../../src/render/avatar/costume.ts';
+import { mannequinWithPeople, guestAsset, metaHumansHere, GUESTS } from './people.ts';
+import { clothEdges, clothTable, dress, fitHead, hasBakedHead, ownHead, pressHair, radius, tableY, throughCloth, worn, HEAD_PIECES, HEADWEAR, type HeadFit } from '../../src/render/avatar/costume.ts';
 import { kitFor } from '../../src/render/avatar/kit.ts';
 import { modelledVertices, type PlayerAsset } from '../../src/render/avatar/asset.ts';
 
 const base = mannequinWithPeople();
 const guests = new Set(GUESTS.map((g) => guestAsset(g, base)));
 const everyone: PlayerAsset[] = [...base.people, ...guests];
+/** Both builds of the roster's people: MakeHuman's and MetaHuman's. */
+const builds: PlayerAsset[] = [...base.people, ...metaHumansHere(base)];
 const nameOf = (p: PlayerAsset): string => p.look!.name;
 const look = kitFor(0);
+/** The most of a person's hair triangles left undrawn under a head piece (the share that lies across it). */
+const CUT_MOST = 0.005;
 
 /**
  * A body's vertices weighted at least `min` to these bones (bind pose), without a modelled headband or visor (in the
@@ -83,7 +87,7 @@ describe('costume: fitting', () => {
       expect(n, nameOf(p)).toBeGreaterThan(200);
       expect(over / n, nameOf(p)).toBeLessThan(0.002);
       // The hair above the edge, pressed, is inside the cap too.
-      const pressed = pressHair(p, 'head-cap');
+      const pressed = pressHair(p, 'head-cap')?.position;
       if (!pressed) continue;
       let out = 0, m = 0;
       for (let i = 0; i < pressed.length; i += 3) {
@@ -98,24 +102,91 @@ describe('costume: fitting', () => {
   });
 
   it('pressing leaves the brows, the lashes and the hair clear of the piece where they were', () => {
-    let moved = 0;
-    for (const p of base.people) for (const id of ['head-band', 'head-cap']) {
-      const pressed = pressHair(p, id);
+    let moved = 0, stayed = 0;
+    for (const p of builds) for (const id of ['head-band', 'head-cap']) {
+      const pressed = pressHair(p, id)?.position;
       if (!pressed) continue;
-      const f = fitHead(p)!, hw = HEADWEAR[id]!;
-      const eyeY = (f.eyeL.y + f.eyeR.y) / 2;
-      const pos = p.look!.alphaGeometry.getAttribute('position');
+      const f = fitHead(p)!, edges = clothEdges(f, HEADWEAR[id]!), t = clothTable(f, HEADWEAR[id]!.under);
+      const g = p.look!.alphaGeometry, pos = g.getAttribute('position'), index = g.index!;
+      // Per vertex: how far past the cloth's edge it is, by where on the head (0 under it); whether it stands off the
+      // scalp there; and whether a triangle ties it to hair that does, past an edge (its card comes out from under the
+      // cloth, and a corner of it on the scalp may be slid to that edge).
+      const off = new Float32Array(pos.count), stands = new Uint8Array(pos.count), tied = new Uint8Array(pos.count);
       for (let i = 0; i < pos.count; i++) {
-        const v = new THREE.Vector3().fromBufferAttribute(pos, i);
-        const [az, el, r] = polar(f, v);
-        const lo = eyeY + hw.front + (hw.back - hw.front) * (1 - Math.cos(az)) / 2;
-        const clear = v.y < lo - 0.0121 || (hw.up !== null && v.y > lo + hw.up + 0.0121) || r < radius(f.skin, az, el) + 0.003;
-        const same = pressed[i * 3] === v.x && pressed[i * 3 + 1] === v.y && pressed[i * 3 + 2] === v.z;
-        if (clear) expect(same, `${id} ${nameOf(p)}`).toBe(true);
-        else if (!same) moved++;
+        const [az, el, r] = polar(f, new THREE.Vector3().fromBufferAttribute(pos, i));
+        const [lo, hi] = edges(az), on = tableY(f, t, az, el);
+        off[i] = Math.max(lo - on, on - hi, 0);
+        stands[i] = r > radius(f.skin, az, el) + 0.003 ? 1 : 0;
+      }
+      for (let q = 0; q < index.count; q += 3) {
+        const tri = [index.getX(q), index.getX(q + 1), index.getX(q + 2)];
+        if (tri.some((i) => off[i]! > 0 && stands[i])) for (const i of tri) tied[i] = 1;
+      }
+      for (let i = 0; i < pos.count; i++) {
+        // Clear of it: more than the ease past an edge and standing; or past an edge on the skin, as a brow is, with
+        // no card tied to it.
+        const clear = (off[i]! > 0.0121 && stands[i]) || (off[i]! > 0 && !stands[i] && !tied[i]);
+        const same = pressed[i * 3] === pos.getX(i) && pressed[i * 3 + 1] === pos.getY(i) && pressed[i * 3 + 2] === pos.getZ(i);
+        if (clear) { expect(same, `${id} ${nameOf(p)}`).toBe(true); stayed++; } else if (!same) moved++;
       }
     }
     expect(moved).toBeGreaterThan(1000);
+    expect(stayed).toBeGreaterThan(50000);
+  });
+
+  it('no hair passes through a band, a visor or a cap, and all but a little of it is still drawn', () => {
+    // (p8's afro, 13 Nov 2026: pressed corner by corner, a card rooted under her band with its tip free rose out through
+    // the cloth, 255 of them, and the band showed across her forehead and nowhere else. Roots are slid to the edge now:
+    // without that, every one of those cards would be cut out round the band, 1.4% of her afro; with it, 15)
+    let people = 0, mostCut = 0;
+    for (const p of builds) for (const id of ['head-band', 'head-visor', 'head-cap']) {
+      const pressed = pressHair(p, id);
+      if (!pressed) continue;
+      const f = fitHead(p)!, t = clothTable(f, HEADWEAR[id]!.under), edges = clothEdges(f, HEADWEAR[id]!);
+      const index = p.look!.alphaGeometry.index!, drawn = pressed.index ?? index;
+      const at = (i: number): THREE.Vector3 => new THREE.Vector3().fromArray(pressed.position, i * 3);
+      let through = 0, cut = 0;
+      for (let q = 0; q < index.count; q += 3) {
+        const [a, b, c] = [drawn.getX(q), drawn.getX(q + 1), drawn.getX(q + 2)];
+        if (a === b && b === c) { cut++; continue; }
+        // (4.5 mm off the table: under the outside of the thinnest of the three, a cap's crown at 5 mm)
+        if (throughCloth(f, t, edges, at(a), at(b), at(c), undefined, 0.0045)) through++;
+      }
+      people++;
+      expect(through, `${id} ${nameOf(p)}`).toBe(0);
+      mostCut = Math.max(mostCut, cut / (index.count / 3));
+      expect(cut / (index.count / 3), `${id} ${nameOf(p)}: ${cut} of ${index.count / 3} not drawn`).toBeLessThan(CUT_MOST);
+    }
+    expect(people).toBeGreaterThan(40);
+    expect(mostCut).toBeGreaterThan(0);
+  });
+
+  it('a MetaHuman build wears the band or visor it is named with as a piece made here, its hair pressed under it', () => {
+    let mh = 0, mk = 0;
+    for (const p of builds) {
+      const own = ownHead(p);
+      if (!own) continue;
+      const plain = worn(p, {}, look, p.geometry.index);
+      if (hasBakedHead(p)) {
+        // (a MakeHuman build's is in its mesh: nothing is added, and it comes off under something else)
+        mk++;
+        expect(plain.pieces.length, nameOf(p)).toBe(0);
+        expect(plain.hair, nameOf(p)).toBeNull();
+        continue;
+      }
+      mh++;
+      expect(nameOf(p)).toMatch(/mh$/);
+      expect(plain.pieces.map((x) => x.bone), nameOf(p)).toEqual(['Head']);
+      expect(plain.bodyIndex, nameOf(p)).toBeNull();
+      expect(plain.hair, nameOf(p)).not.toBeNull();
+      // (the same piece as when it is asked for by name; none when it is taken off; another when another is worn)
+      expect(worn(p, { head: own }, look, p.geometry.index).pieces.length, nameOf(p)).toBe(1);
+      expect(worn(p, { head: null }, look, p.geometry.index).pieces.length, nameOf(p)).toBe(0);
+      expect(worn(p, { head: null }, look, p.geometry.index).hair, nameOf(p)).toBeNull();
+      expect(worn(p, { head: 'head-cap' }, look, p.geometry.index).bodyIndex, nameOf(p)).toBeNull();
+    }
+    expect(mh).toBe(2);
+    expect(mk).toBeGreaterThan(0);
   });
 
   it('sunglasses sit in front of the eyes, clear of the face', () => {

@@ -1,6 +1,6 @@
 // The same frame of an autoplay match every time: the game is held at its start and stepped by hand, 1/60 s a frame,
 // to sim time T, then shot without the HUD. For before/after stills of a look change between builds (`?cam=` for close
-// cameras; VIEW=waist:N, chest:N, body:N, feet:N or face:N[:metres up], in front of player N; FACE=blinkL:1,jawOpen:0.6 holds those face keys on
+// cameras; VIEW=waist:N, chest:N, body:N, feet:N or face:N[:metres up], in front of player N, head:N[:degrees round]; FACE=blinkL:1,jawOpen:0.6 holds those face keys on (FOV=8 with face:N:-0.012 is the eyes at 3x)
 // that player, the rest at 0). Bodies can still differ a little between runs; judge a look, not a pose.
 //   bash tools/one-chrome.sh node tools/still.mjs <url> <out.png> <T seconds> [w] [h]
 import puppeteer from 'puppeteer-core';
@@ -27,7 +27,7 @@ await page.evaluateOnNewDocument(() => {
 });
 await page.goto(url, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__held === true, { timeout: 120000, polling: 100 });
-const t = await page.evaluate(async (T, view, faceKeys) => {
+const t = await page.evaluate(async (T, view, faceKeys, fov) => {
   const g = window.__bandeja;
   const t0 = g.sim.time;
   document.querySelectorAll('.hint, .pill').forEach((e) => { e.style.display = 'none'; });
@@ -44,13 +44,25 @@ const t = await page.evaluate(async (T, view, faceKeys) => {
     const fx = Math.sin(r.rotation.y), fz = Math.cos(r.rotation.y), y = kind === 'chest' ? 1.3 : kind === 'feet' ? 0.08 : 0.95;
     const d = kind === 'feet' ? 0.95 : kind === 'body' ? 2.6 : 1.2;  // (body:N: all of them, from 2.6 m)
     const av = g.players[+n].avatar;
-    if (kind === 'face' && av) {
+    if (kind === 'head' && av) {
+      // (head:N[:degrees round]: the whole head and its hair from 0.8 m, turned round the head's own up)
+      av.root.updateMatrixWorld(true);
+      const e = av.bones.find((b) => b.name === 'Head').matrixWorld.elements;
+      const a = (+lift * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
+      const at = [0, 1, 2].map((k) => e[12 + k] + e[4 + k] * 0.1);
+      const dir = [0, 1, 2].map((k) => e[8 + k] * cs + e[k] * sn);
+      c.fov = 28; c.near = 0.05; c.updateProjectionMatrix();
+      c.position.set(at[0] + dir[0] * 0.8 + e[4] * 0.06, at[1] + dir[1] * 0.8 + e[5] * 0.06, at[2] + dir[2] * 0.8 + e[6] * 0.06);
+      c.up.set(e[4], e[5], e[6]);
+      c.lookAt(at[0], at[1], at[2]);
+      c.updateMatrixWorld();
+    } else if (kind === 'face' && av) {
       // (in the head's own frame, so a bowed head is still seen from in front: 0.42 m off the face along the Head bone's
       // forward, a narrow lens, aimed between the eyes and the mouth)
       av.root.updateMatrixWorld(true);
       const e = av.bones.find((b) => b.name === 'Head').matrixWorld.elements;
       const at = [0, 1, 2].map((a) => e[12 + a] + e[4 + a] * (0.075 + +lift) + e[8 + a] * 0.07);
-      c.fov = 28; c.near = 0.05; c.updateProjectionMatrix();
+      c.fov = fov || 28; c.near = 0.05; c.updateProjectionMatrix();
       c.position.set(at[0] + e[8] * 0.42 + e[0] * 0.08, at[1] + e[9] * 0.42 + e[1] * 0.08, at[2] + e[10] * 0.42 + e[2] * 0.08);
       c.up.set(e[4], e[5], e[6]);
       c.lookAt(at[0], at[1], at[2]);
@@ -76,7 +88,7 @@ const t = await page.evaluate(async (T, view, faceKeys) => {
   g.renderOnce();
   await new Promise((r) => requestAnimationFrame(() => r()));
   return [g.sim.time, t0];
-}, +T, process.env.VIEW ?? '', process.env.FACE ?? '');
+}, +T, process.env.VIEW ?? '', process.env.FACE ?? '', +(process.env.FOV ?? 0));
 await new Promise((r) => setTimeout(r, 300));
 await page.screenshot({ path: out });
 await browser.close();

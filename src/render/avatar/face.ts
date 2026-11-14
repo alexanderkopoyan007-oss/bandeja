@@ -28,6 +28,15 @@ const KEY_YAW = (30 * Math.PI) / 180, KEY_PITCH = (25 * Math.PI) / 180;
 /** Saccade time constant (s): the eyes reach a new target in about 60 ms. */
 const SACCADE = 0.02;
 
+/**
+ * How much of its smile a MetaHuman build's face holds at rest. Epic's neutral mouth is slack, its corners 2-9 mm under
+ * the middle of its lips where a MakeHuman build's are 0-3 (measured on the ten of each), and under the hall's lights
+ * from above every one of them read as glum (13 Nov 2026: "every face's mouth turns down"). Held beside 0.25 and 0.4 on
+ * all ten: 0.25 just levels the corners, 0.4 is the start of a smile on the thinner mouths. It gives way to effort, a
+ * grunt and a lost point, which have the mouth to themselves.
+ */
+export const REST_SMILE = 0.3;
+
 export class FaceDriver {
   /** Every morphed mesh's influences (the face and the hair share them). */
   readonly influences: Float32Array;
@@ -43,7 +52,11 @@ export class FaceDriver {
   private eyePitch = 0;
   private t = 0;
 
-  constructor(names: string[], seed: number) {
+  /** The smile held at rest (0: none; REST_SMILE for a MetaHuman build). */
+  private readonly rest: number;
+
+  constructor(names: string[], seed: number, rest = 0) {
+    this.rest = rest;
     this.influences = new Float32Array(names.length);
     const want = ['blinkL', 'blinkR', 'squint', 'browDown', 'browInnerUp', 'browUp', 'jawOpen', 'mouthPress', 'smile',
       'grimace', 'sneer', 'neckTense', 'lookLeft', 'lookRight', 'lookUp', 'lookDown'];
@@ -116,7 +129,8 @@ export class FaceDriver {
     this.set(5, won * 0.35);
     this.set(6, this.jaw);
     this.set(7, e * (1 - g) * 0.6 + lost * 0.45);
-    this.set(8, won * 0.75);
+    const calm = this.rest * (1 - e) * (1 - g) * (1 - lost);
+    this.set(8, won * 0.75 > calm ? won * 0.75 : calm);
     this.set(9, g * 0.6 + e * 0.15);
     this.set(10, g * 0.35 + e * 0.1);
     this.set(11, g * 0.6 + e * 0.3);

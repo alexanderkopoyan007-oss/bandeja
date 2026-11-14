@@ -397,6 +397,7 @@ if helmet:
     card_bvh = BVHTree.FromBMesh(cb)
     cb.free()
     sink, over_face = [], set()
+    layers = np.zeros(len(helmet.data.vertices), dtype=np.float32)   # the cards over each vertex, counted along its line out
     for v in helmet.data.vertices:
         loc, nrm, _, _ = head_bvh.find_nearest(v.co)
         if loc is None:
@@ -412,6 +413,7 @@ if helmet:
             t = (hit[0] - loc).dot(nrm)
             hits.append(t)
             t0 = t + 0.0002
+        layers[v.index] = len(hits)
         if not hits:
             continue
         # (only of hair that has a fringe, the spec's `fringe`. A brush cut's shell is its hairline, on skin that faces
@@ -431,12 +433,47 @@ if helmet:
     hb.from_mesh(helmet.data)
     # (a face with any corner there: one that kept a corner up on the crown ran from it down to a corner left out on the
     # fringe's outside, through the cards, a black shard across p10's fringe)
+    # (a new layer first: making one takes every vertex and face held from before it away)
+    rimd = hb.verts.layers.float.new('rimd')
     gone = [f for f in hb.faces if any(v.index in over_face for v in f.verts)]
+    # (and the shell fades out towards where it was cut, over FRINGE_FADE along it: its faces are 2-5 cm across, so the cut
+    # is a row of teeth, and where the cards over them are thin, at p5's temple and parting, they stood as black chips on
+    # the hairline (13 Nov, seen at 2x). The texture's own feather at the rim is 14 texels, a few millimetres. Each
+    # vertex keeps its distance from the cut, `rimd`, which the helmet's coverage is multiplied by below)
+    FRINGE_FADE = 0.03
+    gone_set = set(gone)
+    cut = [v for v in hb.verts if any(f in gone_set for f in v.link_faces) and any(f not in gone_set for f in v.link_faces)]
+    for v in hb.verts:
+        v[rimd] = 1.0
+    import heapq
+    heap = [(0.0, v.index) for v in cut]
+    hb.verts.ensure_lookup_table()
+    for v in cut:
+        v[rimd] = 0.0
+    heapq.heapify(heap)
+    while heap:
+        dv, i = heapq.heappop(heap)
+        if dv > hb.verts[i][rimd] or dv > FRINGE_FADE:
+            continue
+        for e in hb.verts[i].link_edges:
+            if all(f in gone_set for f in e.link_faces):
+                continue
+            o_ = e.other_vert(hb.verts[i])
+            nd = dv + e.calc_length()
+            if nd < o_[rimd]:
+                o_[rimd] = nd
+                heapq.heappush(heap, (nd, o_.index))
+    for v in hb.verts:
+        v[rimd] = min(1.0, v[rimd] / FRINGE_FADE)
     bmesh.ops.delete(hb, geom=gone, context='FACES')
     bmesh.ops.delete(hb, geom=[v for v in hb.verts if not v.link_faces], context='VERTS')
     hb.to_mesh(helmet.data)
     hb.free()
     helmet.data.update()
+    say('helmet: vertices on the cut over the face', len(cut), '; fading within', FRINGE_FADE, 'm of it:',
+        int(sum(1 for a in helmet.data.attributes['rimd'].data if a.value < 1)))
+    say('helmet: cards over its vertices, share with 0 / 1 / 2 / 3-5 / 6+', [round(float(((layers >= a) & (layers <= b)).mean()), 2)
+                                                                           for a, b in ((0, 0), (1, 1), (2, 2), (3, 5), (6, 999))])
     say('helmet vertices sunk under the cards', len(sink), 'of', n_shell,
         'by (mm) percentile 10/50/90', [round(float(np.percentile(sink, q)) * 1000, 1) for q in (10, 50, 90)] if sink else [],
         '; faces over the face under cards dropped', len(gone))
@@ -1197,8 +1234,12 @@ for style in ('pleated', 'aline'):
         skirts[style] = make_skirt(style, skirt_top, skirt_hem, pk.SKIRT_BANDS[style] if WARDROBE else None)
 skirt, skirt_hang = skirts.get(SKIRT_STYLE, (None, None))
 
+# (no band or visor is made here since 13 Nov 2026: the spec's `kit.head` goes to the header, and the game puts its own on
+# them, costume.ts worn: a rolled towelling band or a visor with a bill, the hair pressed in under it. Made here, on the
+# hair's shell, it was a paper loop that an afro's cards stood through: p8's showed across her forehead and nowhere else.
+# MH_HEAD=1 makes the old one, to compare)
 head_piece, head_shade = None, None
-if KIT.get('head'):
+if KIT.get('head') and os.environ.get('MH_HEAD') == '1':
     hb = bmesh.new()
     hb.from_mesh(head_skin.data)
     head_tree = BVHTree.FromBMesh(hb)
@@ -2132,6 +2173,22 @@ def vertex_raster(o, values, size, keep):
     return out
 
 
+def into_gaps(a, n):
+    """`a` with its NaN texels within `n` of a value given the least value beside them, a texel a pass."""
+    a = a.copy()
+    for _ in range(n):
+        gap = np.isnan(a)
+        if not gap.any():
+            break
+        near = np.full(a.shape, np.inf, dtype=np.float32)
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            sh = np.roll(a, (dy, dx), axis=(0, 1))
+            near = np.where(np.isnan(sh), near, np.minimum(near, sh))
+        fill = gap & np.isfinite(near)
+        a[fill] = near[fill]
+    return a
+
+
 # The eye's occlusion: Unreal lays a shell over each eye that darkens the eyeball's edge and the lids' rims, where the lashes
 # and the eyeball shade them; without it the lower lid's rim, facing the overhead key, drew a white line under every eye
 # (7 Nov). The rims are the skin between the eye's hole in the head (its open edge, round the eyeball) and the lash line,
@@ -2189,6 +2246,13 @@ lift = (box_blur(head_base, int(round(160 * k_))) - box_blur(head_base, int(roun
 head_px[..., :3] = np.clip(head_px[..., :3] + np.maximum(lift, 0), 0, 1)
 say('round the eyes: texels lifted', int((orbit > 0.5).sum()), 'by up to', round(float(lift.max()), 3))
 d_tex = vertex_raster(head_skin, head_from_hole, RECT['head'][2:], lambda v: v.min() < EYE_SHELL_REACH)
+# (and the texels in the hole itself, between the two lids' edges in the texture: no triangle covers them, so they kept the
+# texture's pale pink of the lid's inside, and the rim's texels are filtered with them: under every eye, along the lower
+# lid's edge, a pale line the shell was put there to take away (13 Nov, seen at 3x). They take the edge's own distance, 0)
+EYE_GAP = int(round(24 * RECT['head'][2] / 2048))
+n_gap = int(np.isnan(d_tex).sum())
+d_tex = into_gaps(d_tex, EYE_GAP)
+say('eye shell: texels in the eyes\' holes given the edge\'s shade', n_gap - int(np.isnan(d_tex).sum()))
 t = np.clip((EYE_SHELL_REACH - np.nan_to_num(d_tex, nan=1.0)) / (EYE_SHELL_REACH - EYE_SHELL_IN), 0, 1)
 shade = 1 - EYE_SHELL * t * t * (3 - 2 * t)
 head_px[..., :3] *= shade[..., None]
@@ -2497,6 +2561,16 @@ if helmet:
     # (fading out over HELMET_FEATHER texels in from the shell's open rim, the hairline, sideburns and nape: cut off at full
     # coverage it drew a hard line across the forehead)
     hp[..., 3] = np.clip(cov[..., 3] * 1.15, 0, 1) * rim_feather(helmet, RECT['helmet'][2:], HELMET_FEATHER)
+    # (and towards where the shell was cut from over the face, a fringe's: `rimd` above)
+    rd = helmet.data.attributes.get('rimd')
+    if rd is not None and len(rd.data) == len(helmet.data.vertices):
+        rv = np.array([a.value for a in rd.data], dtype=np.float32)
+        if (rv < 1).any():
+            fr = np.nan_to_num(into_gaps(vertex_raster(helmet, rv, RECT['helmet'][2:], lambda v: True), 4), nan=1.0)
+            hp[..., 3] *= fr * fr * (3 - 2 * fr)
+            say('helmet: coverage faded towards the cut, texels under half', int((fr < 0.5).sum()))
+    else:
+        say('helmet: no cut to fade towards' if rd is None else 'helmet: rimd LOST (vertex count changed)')
     paste(al, RECT['helmet'], hp)
 save(al, os.path.join(OUT, 'alpha.webp'), 'alpha')
 # ---------------------------------------------------------------- the garments' folds, seams and hems -------------------------------
