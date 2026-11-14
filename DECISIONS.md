@@ -5133,3 +5133,12 @@ Stills: `VIEW=skirt:N[:degrees round] node tools/still.mjs` aims under the pelvi
 Not done: the MakeHuman builds (`?classic=1`) keep their old skirt meshes until they are rebuilt (they get the tone,
 the masks and the new push, which are the game's); the cloth's normals are the modelled pose's, so an A-line's flute
 pressed flat over a thigh is still lit as a flute; no cloth simulation.
+
+## Eyes of their own colour (2026-11-14, owner: "push it, and keep going")
+- Epic's Eyes_Color is one brown iris for every MetaHuman (119, 84, 36 of 255 in all ten builds; only the whites differed).
+  Each player now has an iris colour in cast.json (and in the stored spec the build reads, tools/assets/metahuman/people/pNmh.json):
+  grey-blue p1, green-hazel p3, hazel p5, blue p7, grey-green p10, dark brown p2/p4/p6/p8/p9. mh-player.py `iris_colour` puts the
+  colour on the texture's own fibres (each texel's grey over the ring's mean), with an amber inner ring for the lighter eyes,
+  and stops at the iris's dark rim (past it the texture is the white's; tinted it made a halo).
+- The white's fill (kit.ts fillNode) now needs a bright texel as well as a grey one: a grey-blue iris is as grey as a white and,
+  filled like one, shone out like a doll's.

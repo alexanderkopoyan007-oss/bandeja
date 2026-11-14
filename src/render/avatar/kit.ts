@@ -1110,9 +1110,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   m.scatterNode = skinW.mul(float(SKIN_SCATTER).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85))).mul(float(1).sub(nail.mul(1 - NAIL_SCATTER)));
   // (the mouth too: the sky's blue on teeth turned them blue-black with the head bowed)
   m.ambientFixNode = skinW.add(eyeW).add(mouthW);
-  // (the white of the eye: an iris lies behind the cornea in its own shadow, and filled with the white it shone amber)
+  // (the white of the eye: an iris lies behind the cornea in its own shadow, and filled with the white it shone amber.
+  // Bright as well as grey: a grey-blue iris, 0.27 linear at its brightest against the white's 0.7, is as grey as a white
+  // and lit as one shone out like a doll's, 14 Nov)
   const eyeLo = min(tex.x, min(tex.y, tex.z)), eyeHi = max(tex.x, max(tex.y, tex.z));
-  m.fillNode = eyeW.mul(EYE_FILL).mul(smoothstep(0.5, 0.85, eyeLo.div(eyeHi.max(0.05))));
+  m.fillNode = eyeW.mul(EYE_FILL).mul(smoothstep(0.5, 0.85, eyeLo.div(eyeHi.max(0.05)))).mul(smoothstep(0.32, 0.5, eyeHi));
   // (dark cloth only: a hem's band in the shirt's colour keeps the shirt's rendering)
   const darkCloth = float(1).sub(smoothstep(0.03, 0.12, max(shortsC.x, max(shortsC.y, shortsC.z))));
   m.toneBackNode = skinW.mul(SKIN_TONE_BACK).add(shortsW.mul(darkCloth).mul(DARK_CLOTH_TONE_BACK));

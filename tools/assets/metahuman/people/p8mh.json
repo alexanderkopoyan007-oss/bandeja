@@ -20,6 +20,7 @@
  "helmet": "export/Hair_L_AfroCurly_Helmet_LOD5.fbx",
  "helmet_cov": "export/tex/Hair_L_AfroCurly_RootUVSeedCoverage.png",
  "maps": "dcc/MHC_p8/Maps",
+ "iris": [[0.26, 0.15, 0.07]],
  "head_bc": "export/tex/T_Head_LOD3_BC.png",
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",

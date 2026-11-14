@@ -21,6 +21,7 @@
  "helmet_cov": "export/tex/Hair_S_LowPonytail_RootUVSeedCoverage.png",
  "helmet_shade": 0.62,
  "maps": "dcc/MHC_p7/Maps",
+ "iris": [[0.39, 0.48, 0.56], [0.48, 0.45, 0.36]],
  "head_bc": "export/tex/T_Head_LOD3_BC.png",
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",

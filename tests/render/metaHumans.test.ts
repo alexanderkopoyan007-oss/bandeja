@@ -269,4 +269,28 @@ describe('the MetaHuman builds', () => {
       }
     }
   });
+
+  // Epic's eye texture is one brown iris for all ten (119, 84, 36 of 255 in every build): each player's own colour is
+  // cast.json's iris, which mh-player.py puts on the texture's fibres (white_of_eye). A colour an eye can be: brown has more
+  // red than blue, a light eye more blue than a brown, none brighter than a pale grey-blue.
+  it('look out of eyes of their own colour', () => {
+    const cast = JSON.parse(readFileSync(new URL('../../tools/assets/metahuman/cast.json', import.meta.url), 'utf8')) as Record<string, { iris?: number[][] }>;
+    const irises = Object.entries(cast).filter(([k]) => k !== '//').map(([k, c]) => {
+      expect(c.iris, k).toBeTruthy();
+      // (the build reads the stored spec, not cast-spec.mjs's: with the colour only in cast.json all ten came out brown)
+      const spec = JSON.parse(readFileSync(new URL(`../../tools/assets/metahuman/people/${k}mh.json`, import.meta.url), 'utf8')) as { iris?: number[][] };
+      expect(spec.iris, k).toEqual(c.iris);
+      for (const ring of c.iris!) {
+        expect(ring.length).toBe(3);
+        expect(Math.max(...ring), k).toBeLessThan(0.7);
+        expect(Math.max(...ring), k).toBeGreaterThan(0.2);
+      }
+      return c.iris![0]!;
+    });
+    expect(irises.length).toBe(10);
+    expect(new Set(irises.map((c) => c.join())).size).toBeGreaterThanOrEqual(8);
+    const light = irises.filter(([r, , b]) => b! > r!), brown = irises.filter(([r, , b]) => r! > b! * 2);
+    expect(light.length).toBeGreaterThanOrEqual(2);
+    expect(brown.length).toBeGreaterThanOrEqual(4);
+  });
 });

@@ -1,13 +1,13 @@
 {
-  "//": "The current cast as MetaHumans (tools/assets/metahuman/cast-batch.sh): MetaHuman's hair and brows nearest each player's MPFB ones as the game shows them, the skin-tone point fitted to their atlas's skin (MetaHuman's bias is the skin's mean linear colour x255), hair colour measured from their alpha atlas; hairLod: the hair cards' level of detail (cast-spec.mjs, 3 if not given); helmetShade: how dark the helmet under those cards is (mh-player.py, 1 if not given).",
-  "p1": {"hair": "WI_Hair_S_SideSweptFringe", "brows": "WI_Eyebrows_M_Full", "skin": [0.03, 0.0], "hair_rgb": [0.29, 0.235, 0.19]},
-  "p2": {"hair": "WI_Hair_S_Coil", "brows": "WI_Eyebrows_M_Thick", "skin": [0.76, 1.0], "hair_rgb": [0.07, 0.035, 0.03]},
-  "p3": {"hair": "WI_Hair_S_Clean", "brows": "WI_Eyebrows_M_Natural", "skin": [0.08, 0.30], "hair_rgb": [0.11, 0.105, 0.1]},
-  "p4": {"hair": "WI_Hair_S_SlickBack", "brows": "WI_Eyebrows_M_Natural", "skin": [0.12, 0.50], "hair_rgb": [0.13, 0.13, 0.13]},
-  "p5": {"hair": "WI_Hair_S_Casual", "brows": "WI_Eyebrows_M_Full", "skin": [0.13, 0.55], "hair_rgb": [0.13, 0.08, 0.06]},
-  "p6": {"hair": "WI_Hair_S_BrushCut", "brows": "WI_Eyebrows_M_Thick", "skin": [0.06, 0.20], "hair_rgb": [0.1, 0.1, 0.1]},
-  "p7": {"hair": "WI_Hair_S_LowPonytail", "hairLod": 1, "helmetShade": 0.62, "brows": "WI_Eyebrows_M_SlightArch", "skin": [0.0, 0.55], "hair_rgb": [0.335, 0.228, 0.16]},
-  "p8": {"hair": "WI_Hair_L_AfroCurly", "brows": "WI_Eyebrows_M_Fine", "skin": [0.73, 0.85], "hair_rgb": [0.058, 0.02, 0.019]},
-  "p9": {"hair": "WI_Hair_L_Straight", "hairLod": 1, "helmetShade": 0.62, "brows": "WI_Eyebrows_S_FlatThin", "skin": [0.04, 0.25], "hair_rgb": [0.073, 0.04, 0.03]},
-  "p10": {"hair": "WI_Hair_M_BobBangs", "hairLod": 1, "helmetShade": 0.62, "brows": "WI_Eyebrows_M_Thin", "skin": [0.0, 0.5], "hair_rgb": [0.094, 0.077, 0.063]}
+  "//": "The current cast as MetaHumans (tools/assets/metahuman/cast-batch.sh): MetaHuman's hair and brows nearest each player's MPFB ones as the game shows them, the skin-tone point fitted to their atlas's skin (MetaHuman's bias is the skin's mean linear colour x255), hair colour measured from their alpha atlas; hairLod: the hair cards' level of detail (cast-spec.mjs, 3 if not given); helmetShade: how dark the helmet under those cards is (mh-player.py, 1 if not given); iris: the iris's own colour as sRGB 0-1, the outer and (if given) the inner ring by the pupil (mh-player.py white_of_eye; Epic's eye texture is one brown for all ten).",
+  "p1": {"hair": "WI_Hair_S_SideSweptFringe", "brows": "WI_Eyebrows_M_Full", "skin": [0.03, 0.0], "hair_rgb": [0.29, 0.235, 0.19], "iris": [[0.42, 0.48, 0.53], [0.5, 0.44, 0.3]]},
+  "p2": {"hair": "WI_Hair_S_Coil", "brows": "WI_Eyebrows_M_Thick", "skin": [0.76, 1.0], "hair_rgb": [0.07, 0.035, 0.03], "iris": [[0.3, 0.18, 0.08]]},
+  "p3": {"hair": "WI_Hair_S_Clean", "brows": "WI_Eyebrows_M_Natural", "skin": [0.08, 0.30], "hair_rgb": [0.11, 0.105, 0.1], "iris": [[0.42, 0.44, 0.28], [0.52, 0.38, 0.16]]},
+  "p4": {"hair": "WI_Hair_S_SlickBack", "brows": "WI_Eyebrows_M_Natural", "skin": [0.12, 0.50], "hair_rgb": [0.13, 0.13, 0.13], "iris": [[0.28, 0.17, 0.08]]},
+  "p5": {"hair": "WI_Hair_S_Casual", "brows": "WI_Eyebrows_M_Full", "skin": [0.13, 0.55], "hair_rgb": [0.13, 0.08, 0.06], "iris": [[0.45, 0.37, 0.19], [0.5, 0.32, 0.13]]},
+  "p6": {"hair": "WI_Hair_S_BrushCut", "brows": "WI_Eyebrows_M_Thick", "skin": [0.06, 0.20], "hair_rgb": [0.1, 0.1, 0.1], "iris": [[0.27, 0.17, 0.09]]},
+  "p7": {"hair": "WI_Hair_S_LowPonytail", "hairLod": 1, "helmetShade": 0.62, "brows": "WI_Eyebrows_M_SlightArch", "skin": [0.0, 0.55], "hair_rgb": [0.335, 0.228, 0.16], "iris": [[0.39, 0.48, 0.56], [0.48, 0.45, 0.36]]},
+  "p8": {"hair": "WI_Hair_L_AfroCurly", "brows": "WI_Eyebrows_M_Fine", "skin": [0.73, 0.85], "hair_rgb": [0.058, 0.02, 0.019], "iris": [[0.26, 0.15, 0.07]]},
+  "p9": {"hair": "WI_Hair_L_Straight", "hairLod": 1, "helmetShade": 0.62, "brows": "WI_Eyebrows_S_FlatThin", "skin": [0.04, 0.25], "hair_rgb": [0.073, 0.04, 0.03], "iris": [[0.32, 0.2, 0.1]]},
+  "p10": {"hair": "WI_Hair_M_BobBangs", "hairLod": 1, "helmetShade": 0.62, "brows": "WI_Eyebrows_M_Thin", "skin": [0.0, 0.5], "hair_rgb": [0.094, 0.077, 0.063], "iris": [[0.42, 0.48, 0.42], [0.5, 0.4, 0.22]]}
 }

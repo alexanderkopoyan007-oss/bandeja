@@ -2272,14 +2272,36 @@ paste(op, RECT['body'], load_px(os.path.join(SRC, spec['body_bc']), RECT['body']
 # in it whatever the lighting did (the owner, 13 Nov: "keep going on the eyes"). Outside the iris and its dark ring it becomes
 # SCLERA, the texture's own fine light and dark and a little of its veins' red kept. The iris is left as it is.
 SCLERA, IRIS_R, VEINS = (0.87, 0.85, 0.82), (0.158, 0.2), 0.5
+# The iris's own colour (cast.json iris): Epic's Eyes_Color is one brown iris for all ten (119, 84, 36 of 255 between 6 and
+# 14% of the texture out from its middle, in every build), so every player looked out of the same eyes. The texture's own
+# fibres and dark outer ring are kept as light and dark (each texel's grey over the ring's mean) on the spec's colour; the
+# inner colour, given for lighter eyes, is the amber round a hazel, green or blue eye's pupil, out to IRIS_INNER.
+# The colour stops at the iris's own dark rim (IRIS_EDGE): past it the texture is the white's, which tinted made a halo.
+IRIS_RING, IRIS_INNER, IRIS_EDGE, IRIS_DETAIL = (0.06, 0.14), (0.06, 0.095), (0.15, 0.162), (0.0, 1.6)
 
 
-def white_of_eye(px):
+def iris_colour(rgb, r, iris):
+    ring = (r > IRIS_RING[0]) & (r < IRIS_RING[1])
+    detail = np.clip(rgb.mean(-1) / max(float(rgb[ring].mean()), 1e-3), *IRIS_DETAIL)[..., None]
+    col = np.broadcast_to(np.array(iris[0], dtype=np.float32), rgb.shape)
+    if len(iris) > 1:
+        q = np.clip((r - IRIS_INNER[0]) / (IRIS_INNER[1] - IRIS_INNER[0]), 0, 1)
+        q = (q * q * (3 - 2 * q))[..., None]
+        col = np.array(iris[1], dtype=np.float32) * (1 - q) + col * q
+    e = np.clip((r - IRIS_EDGE[0]) / (IRIS_EDGE[1] - IRIS_EDGE[0]), 0, 1)
+    e = (e * e * (3 - 2 * e))[..., None]
+    return np.clip(col * detail, 0, 1) * (1 - e) + rgb * e
+
+
+def white_of_eye(px, iris=None):
     h, w = px.shape[:2]
     yy, xx = np.mgrid[0:h, 0:w]
     r = np.hypot((xx + 0.5) / w - 0.5, (yy + 0.5) / h - 0.5)
     rgb = px[..., :3].copy()
     lum, warm = rgb.mean(-1), rgb[..., 0] - rgb[..., 1]
+    if iris:
+        # (after the white's own light and veins are read: a blue iris's cold edge read as red veins round it)
+        rgb = iris_colour(rgb, r, iris)
     near = max(1, w // 32)
     fine = np.clip(lum / np.maximum(box_blur(lum, near), 1e-3), 0.85, 1.05)
     vein = np.clip(warm - box_blur(warm, near), 0, 0.15) * VEINS
@@ -2291,7 +2313,7 @@ def white_of_eye(px):
     return px
 
 
-paste(op, RECT['eye'], white_of_eye(load_px(os.path.join(MAPS, 'Eyes_Color.png'), RECT['eye'][2:])))
+paste(op, RECT['eye'], white_of_eye(load_px(os.path.join(MAPS, 'Eyes_Color.png'), RECT['eye'][2:]), spec.get('iris')))
 paste(op, RECT['teeth'], load_px(os.path.join(MAPS, 'Teeth_Color.png'), RECT['teeth'][2:]))
 for k in ('shirt', 'shorts'):
     x, y, w, h = RECT[k]

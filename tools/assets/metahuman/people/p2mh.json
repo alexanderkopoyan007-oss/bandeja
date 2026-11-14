@@ -20,6 +20,7 @@
  "helmet": "export/Hair_S_Coil_Helmet_LOD5.fbx",
  "helmet_cov": "export/tex/Hair_S_Coil_RootUVSeedCoverage.png",
  "maps": "dcc/MHC_p2/Maps",
+ "iris": [[0.3, 0.18, 0.08]],
  "head_bc": "export/tex/T_Head_LOD3_BC.png",
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",

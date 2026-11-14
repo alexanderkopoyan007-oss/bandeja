@@ -21,6 +21,7 @@
  "fringe": true,
  "helmet_shade": 0.62,
  "maps": "dcc/MHC_p10/Maps",
+ "iris": [[0.42, 0.48, 0.42], [0.5, 0.4, 0.22]],
  "head_bc": "export/tex/T_Head_LOD3_BC.png",
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",

@@ -21,6 +21,7 @@
  "fringe": true,
  "helmet_cov": "export/tex/Hair_S_SideSweptFringe_RootUVSeedCoverage.png",
  "maps": "dcc/MHC_p1/Maps",
+ "iris": [[0.42, 0.48, 0.53], [0.5, 0.44, 0.3]],
  "head_bc": "export/tex/T_Head_LOD3_BC.png",
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",

@@ -31,6 +31,8 @@ console.log(JSON.stringify({
   hair: groups, hair_atlas: `export/tex/${h}_CardsAtlas_Attribute.png`, hair_rgb: c.hair_rgb,
   helmet, ...(existsSync(`${src}/${cov}`) ? { helmet_cov: cov } : {}), ...(c.helmetShade ? { helmet_shade: c.helmetShade } : {}),
   maps: `dcc/MHC_${n}/Maps`,
+  // (the iris's own colour: Epic's eye texture is the same brown for all ten)
+  ...(c.iris ? { iris: c.iris } : {}),
   head_bc: 'export/tex/T_Head_LOD3_BC.png', head_brows: 'export/tex/T_Head_LOD5to7_BC.png', body_bc: 'export/tex/T_Body_BC.png',
   // (the skin's detail normals, pores and creases, on the same UVs as those colours)
   head_n: 'export/tex/T_Head_LOD3_N.png', body_n: 'export/tex/T_Body_N.png',
