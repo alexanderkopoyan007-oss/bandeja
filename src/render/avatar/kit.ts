@@ -805,6 +805,8 @@ const HAIR_HELMET_EDGE = 0.45;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;
 const LID_PLAIN = 1;
+/** The occlusion (atlas alpha) under which a lid has no shine, and over which all of it: its rim, under the eye's shell. */
+const LID_RIM: [number, number] = [0.5, 0.85];
 /** The catchlight's place in view space (the normal it shines on) and how tight it is (the cosine's power). */
 const CATCHLIGHT = vec3(-0.170, 0.170, 0.971);
 const CATCHLIGHT_SHARP = 500;
@@ -1072,10 +1074,14 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // Specular occlusion for the direct light as well: deep creases (nostrils, the ears' hollows, the corners of the
   // mouth) and the scalp under the hair don't shine (the baked occlusion is low there).
   // (dark skin shows more of its specular: the same lobe over a darker base, a little stronger)
-  m.specularIntensityNode = mix(float(1), smoothstep(0.05, 0.55, tex.w).mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
+  // (a lid's rim shines less again: the eye's shell has it in deep shade, the atlas's occlusion under LID_RIM, where the
+  // eyeball and the lashes stand over it; lit as open skin its wet edge drew a pale line under every eye, which went
+  // when the lids' shine was taken off and stayed when their colour was darkened, 14 Nov)
+  const creased = mix(smoothstep(0.05, 0.55, tex.w), smoothstep(LID_RIM[0], LID_RIM[1], tex.w), lids);
+  m.specularIntensityNode = mix(float(1), creased.mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
   m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
-    .mul(smoothstep(0.05, 0.55, tex.w)).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
+    .mul(creased).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
   m.clearcoatRoughnessNode = skinW.mul(mix(float(0.32).sub(sweat.mul(0.1)), float(NAIL_COAT_ROUGH), nail)).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
   // Cotton and polyester's soft rim.
   // (less on the shorts and skirts, which are often near black: at a grazing view the white in it turned them grey; and none

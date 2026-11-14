@@ -5060,6 +5060,12 @@ for all ten, not one each; the measure above disagrees with the eye on those two
   are 2-5 cm across and the texture's own feather is a few millimetres. Each shell vertex keeps its distance along the
   shell from the cut (`rimd`) and the coverage fades over 3 cm towards it.
 
-Not done: the lid's rim still catches a line of light on some faces; the sockets are dark under the hall's top light
+- **What was left of the line under the eye was the lid's wet shine.** With the lids' shine switched off for one still
+  the line went; with the rim's colour darkened further (the shell at 0.88) it stayed, and the eyes looked lined, so
+  the shell is back at 0.7. On a lid the shine now comes on only above an occlusion of 0.5 (`kit.ts LID_RIM`): the rim
+  under the shell has none.
+
+Not done: p7 still has a thin bright line at the foot of the eyeball (not the lid's shine: it is unchanged by the
+above); the sockets are dark under the hall's top light
 (the bounce off the court that fills them in a real hall is not drawn); every iris is the same brown.
 
