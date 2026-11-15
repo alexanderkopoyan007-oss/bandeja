@@ -1433,7 +1433,12 @@ if WARDROBE:
     for b_ in range(NBIN):
         if edge_at[b_] is None:
             edge_at[b_] = edge_at[min(have_, key=lambda h_: min(abs(h_ - b_), NBIN - abs(h_ - b_)))].copy()
-    # (smoothed round the neck: a seam's end or a lining's edge in one bin crumpled a woman's collar into steps)
+    # (smoothed round the neck: a seam's end or a lining's edge in one bin crumpled a woman's collar into steps. Its height
+    # first as the highest within 10 degrees, so that the smoothing never takes the collar under the tee's own edge where the
+    # neckline drops steeply at the front: there the tee showed between the neck and the collar)
+    zs_ = [max(edge_at[(b_ + k_) % NBIN].z for k_ in range(-2, 3)) for b_ in range(NBIN)]
+    for b_ in range(NBIN):
+        edge_at[b_].z = zs_[b_]
     for _ in range(6):
         edge_at = [(edge_at[(b_ - 1) % NBIN] + edge_at[b_] * 2 + edge_at[(b_ + 1) % NBIN]) / 4 for b_ in range(NBIN)]
 

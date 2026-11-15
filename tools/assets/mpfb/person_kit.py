@@ -717,14 +717,17 @@ def make_head_piece(body, hair, rig, eye_pts, style):
 # A collar on a garment's own neckline (make_collar `ring`): the stand's height at the back and at the front, how far off the
 # neck's skin its top is, and the leaf's reach out and fall down from the fold (plain, and more at the points). A polo's
 # collar: a stand about 3 cm at the back, 2 at the front, a leaf about 4 cm wide with points about 7 cm.
-COLLAR_STAND = (0.026, 0.016)
+COLLAR_STAND = (0.012, 0.006)
 COLLAR_HUG = 0.004
-COLLAR_REACH = (0.026, 0.016)
-COLLAR_FALL = (0.042, 0.035)
+COLLAR_REACH = (0.035, 0.02)
+COLLAR_FALL = (0.022, 0.035)
 # (and the front's opening each side of the middle, over the placket kit.ts paints, and how far the leaf's inside is held off
 # the shirt as it passes over the garment's own neckline edge, which came through it in holes)
 COLLAR_OPEN = 9
 COLLAR_CLEAR = 0.007
+# (a woman's polo has a smaller collar, on a slimmer neck: at the men's size it was a thick roll round the neck)
+COLLAR_WOMEN = 0.6
+COLLAR_WOMEN_STAND = 0.35
 
 
 def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lift=0.0045, ring=None):
@@ -777,18 +780,33 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lif
             # MetaHuman's tee it sat out on the shoulders, under the tee's own neckline, and its points stood off the chest)
             edge = ring(a)
             u = max(0.0, min(1.0, (math.cos(a) + 0.15) / 0.5))  # 1 at the front
-            zf = edge.z + COLLAR_STAND[0] * (1 - u) + COLLAR_STAND[1] * u
+            k = COLLAR_WOMEN if women else 1.0
+            zf = edge.z + (COLLAR_STAND[0] * (1 - u) + COLLAR_STAND[1] * u) * (COLLAR_WOMEN_STAND if women else 1.0)
             c = Vector((neck.x, neck.y, zf))
             hit = skin.ray_cast(c + d * 0.3, -d, 0.3)
             rf = (hit[0] - c).length if hit[0] is not None else (edge - Vector((neck.x, neck.y, edge.z))).length
-            fold = c + d * (rf + COLLAR_HUG)
+            # (and outside the garment's own edge: a tee's neckband stands further off the neck than the skin's hug, and
+            # showed as a strip of the shirt's colour between the neck and the leaf)
+            re = (Vector((edge.x, edge.y, 0)) - Vector((neck.x, neck.y, 0))).dot(d)
+            fold = c + d * max(rf + COLLAR_HUG, re + 0.003)
             stand = edge - d * 0.002 + down * 0.004
-            reach = COLLAR_REACH[0] + COLLAR_REACH[1] * point
-            fall = COLLAR_FALL[0] + COLLAR_FALL[1] * point
+            reach = (COLLAR_REACH[0] + COLLAR_REACH[1] * point) * k
+            fall = (COLLAR_FALL[0] + COLLAR_FALL[1] * point) * k
         leaf = on_shirt(fold + d * reach + down * fall, d)
-        clear = 0.002 if ring is None else COLLAR_CLEAR
-        mids = [on_shirt(fold * (1 - f) + leaf * f, d) + Vector((0, 0, clear * (1 - f)))
-                for f in (i / LEAF_STEPS for i in range(1, LEAF_STEPS))]
+        if ring is None:
+            mids = [on_shirt(fold * (1 - f) + leaf * f, d) + Vector((0, 0, 0.002 * (1 - f)))
+                    for f in (i / LEAF_STEPS for i in range(1, LEAF_STEPS))]
+        else:
+            # (the leaf rolls out from the fold and then down, a quarter round, and lies on the shirt only at its edge: laid
+            # on the shirt all the way from a fold 2.6 cm up, it fell nearly straight down and from the front the collar was
+            # a white wall round the neck, 15 Nov; anything of it under the shirt is lifted out over it)
+            def over_shirt(p):
+                q = on_shirt(p, d)
+                return q + Vector((0, 0, COLLAR_CLEAR)) if (p - q).dot((d * 0.55 + Vector((0, 0, 0.85))).normalized()) < COLLAR_CLEAR else p
+            # (a woman's lies flat from a low stand: rolled, on a tee whose neckline hugs the neck, it was a tube round it)
+            prof = (lambda f: (f, f)) if women else (lambda f: (math.sin(f * math.pi / 2), 1 - math.cos(f * math.pi / 2)))
+            mids = [over_shirt(fold + d * (reach * prof(f)[0]) + down * (fall * prof(f)[1]))
+                    for f in (i / LEAF_STEPS for i in range(1, LEAF_STEPS))]
         for k, (p, sh) in enumerate([(stand, 0.55), (fold, 1.0)] + [(m, 1.0) for m in mids] + [(leaf, 0.9)]):
             rows[k].append(len(verts))
             verts.append(tuple(p))
@@ -800,12 +818,15 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lif
     # The leaf is a fold, so its edge has thickness underneath: a row turned back in under it.
     under = []
     for j in range(cols + 1):
-        p = Vector(verts[rows[last][j]]) + Vector((0, 0, 0.004))
+        # (a thin edge on the neckline's collar: tucked 1.2 cm back, its lip read as a thick roll round the neck)
+        up_, back_ = (0.004, 0.012) if ring is None else (0.0015, 0.003)
+        p = Vector(verts[rows[last][j]]) + Vector((0, 0, up_))
         n = Vector(verts[rows[1][j]]) - Vector(verts[rows[last][j]])
-        p = p + n.normalized() * 0.012
+        p = p + n.normalized() * back_
         under.append(len(verts))
         verts.append(tuple(p))
-        shade.append(0.5)
+        # (in the shade of the leaf; on the neckline's collar not darkened, which drew a dark outline round it)
+        shade.append(0.5 if ring is None else 0.9)
     for j in range(cols):
         faces.append((rows[last][j], under[j], under[j + 1], rows[last][j + 1]))
     me = bpy.data.meshes.new('Collar')

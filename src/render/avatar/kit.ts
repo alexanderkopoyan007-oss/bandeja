@@ -974,7 +974,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const blotch = mx_noise_float(p.mul(14)).mul(0.22);
   const wet = smoothstep(0.02, 0.12, X.x.mul(shirtW).add(blotch).sub(float(1.22).sub(sweat.mul(0.92)))).mul(shirtW);
 
-  const { shirtC, shortsC, sockC, skinCut } = kitDetail(look, cut, frame, p, X, paint, asset);
+  const { shirtC, shortsC, sockC, skinCut, up: sockUp } = kitDetail(look, cut, frame, p, X, paint, asset);
   const hang = X.x.mul(shortsW);
 
   // Shoes (made to their feet by shoe.ts; bodyX: occlusion, where on the shoe (0 outsole, 0.5 midsole, 1 + cm over the
@@ -1168,7 +1168,9 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // (little on the lids: the red at their terminator drew an orange band over each eye)
   m.scatterNode = skinW.mul(float(SKIN_SCATTER).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85))).mul(float(1).sub(nail.mul(1 - NAIL_SCATTER)));
   // (the mouth too: the sky's blue on teeth turned them blue-black with the head bowed)
-  m.ambientFixNode = skinW.add(eyeW).add(mouthW);
+  // (and the sock part up on the body, a band, a visor or a polo's collar, as the baked cloth: a white collar's underside took
+  // the blue court's bounce and was violet, 15 Nov)
+  m.ambientFixNode = skinW.add(eyeW).add(mouthW).add(sockW.mul(sockUp).mul(BAKED_CLOTH_AMBIENT));
   // (the white of the eye: an iris lies behind the cornea in its own shadow, and filled with the white it shone amber.
   // Bright as well as grey: a grey-blue iris, 0.27 linear at its brightest against the white's 0.7, is as grey as a white
   // and lit as one shone out like a doll's, 14 Nov)
@@ -1400,6 +1402,8 @@ function hasHelmet(g: THREE.BufferGeometry): boolean {
 }
 
 const BAKED_CLOTH_AMBIENT = 0.8;
+/** How far over the neck joint the sock part is still a polo's collar (a band or a visor is higher). */
+const COLLAR_UP = 0.08;
 /** How far a generated person's painted folds darken and lighten the team's colour (of the garment's middle brightness). */
 const FOLD_MIN = 0.5, FOLD_MAX = 1.3;
 /** A generated person's drawn lid and lips (half sizes, m). */
@@ -1726,7 +1730,7 @@ const RACKET_HEAD_A = 0.13, RACKET_HEAD_B = 0.14, RACKET_HEAD_C = RACKET_TIP - 0
  * Anything finer than a pixel can show fades to its average, or it would shimmer at the TV camera's distance.
  */
 function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'vec3'>, X: THREE.Node<'vec4'>, paint?: Paint, asset?: PlayerAsset):
-{ shirtC: THREE.Node<'vec3'>; shortsC: THREE.Node<'vec3'>; sockC: THREE.Node<'vec3'>; skinCut: THREE.Node<'float'> } {
+{ shirtC: THREE.Node<'vec3'>; shortsC: THREE.Node<'vec3'>; sockC: THREE.Node<'vec3'>; skinCut: THREE.Node<'float'>; up: THREE.Node<'float'> } {
   const rgb = (c: number): THREE.Node<'vec3'> => { const k = new THREE.Color(c); return vec3(k.r, k.g, k.b); };
   const trim = rgb(look.trim), shirt = rgb(look.shirt);
   const ax = p.x.sub(frame.chest.x).abs(), tx = X.z, ty = X.w;
@@ -1834,8 +1838,12 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
     b = mix(b, shirt, leg);
   }
   // (a band or a visor is on the sock part's colours, up on the head)
-  const sockC = mix(rgb(look.socks), trim, step(frame.hips.y, p.y));
-  return { shirtC: s, shortsC: b, sockC, skinCut };
+  const up = step(frame.hips.y, p.y);
+  // (and a polo's collar, the sock part up to just over the neck, in the shirt's own colour, as most players' polos have it:
+  // in the trim's white, every shade across its roll showed, and on the magenta kits it read as a towel round the neck, 15 Nov)
+  const collar = frame.neck ? up.mul(step(p.y, frame.neck.y + COLLAR_UP)) : float(0);
+  const sockC = mix(mix(rgb(look.socks), trim, up), shirt, collar);
+  return { shirtC: s, shortsC: b, sockC, skinCut, up };
 }
 
 /**
