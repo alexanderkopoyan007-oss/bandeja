@@ -1402,8 +1402,6 @@ function hasHelmet(g: THREE.BufferGeometry): boolean {
 }
 
 const BAKED_CLOTH_AMBIENT = 0.8;
-/** How far over the neck joint the sock part is still a polo's collar (a band or a visor is higher). */
-const COLLAR_UP = 0.08;
 /** How far a generated person's painted folds darken and lighten the team's colour (of the garment's middle brightness). */
 const FOLD_MIN = 0.5, FOLD_MAX = 1.3;
 /** A generated person's drawn lid and lips (half sizes, m). */
@@ -1839,10 +1837,7 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   }
   // (a band or a visor is on the sock part's colours, up on the head)
   const up = step(frame.hips.y, p.y);
-  // (and a polo's collar, the sock part up to just over the neck, in the shirt's own colour, as most players' polos have it:
-  // in the trim's white, every shade across its roll showed, and on the magenta kits it read as a towel round the neck, 15 Nov)
-  const collar = frame.neck ? up.mul(step(p.y, frame.neck.y + COLLAR_UP)) : float(0);
-  const sockC = mix(mix(rgb(look.socks), trim, up), shirt, collar);
+  const sockC = mix(rgb(look.socks), trim, up);
   return { shirtC: s, shortsC: b, sockC, skinCut, up };
 }
 
