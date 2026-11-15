@@ -727,9 +727,9 @@ def make_head_piece(body, hair, rig, eye_pts, style):
 # middle at the neckline's front, so no crew neck shows between them (6.4 cm apart, the tee's ribbed band showed in the
 # gap: the owner's "still looks awful"); the leaf doesn't hang down the neck but lies out over the shoulders,
 # COLLAR_SPLAY degrees out from straight down (hung plumb, it was a ring of paper flaps standing round the neck).
-COLLAR_STAND = (0.027, 0.019)
+COLLAR_STAND = (0.023, 0.016)
 COLLAR_HUG = 0.003
-COLLAR_LEAF = (0.045, 0.055)
+COLLAR_LEAF = (0.037, 0.047)
 COLLAR_SIDE = 75
 COLLAR_V = (0.012, 0.0)
 COLLAR_FLARE = 40

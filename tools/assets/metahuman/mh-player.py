@@ -2711,8 +2711,71 @@ def grow_dist(mask, reach):
     return dist
 
 
-def garment_normals(o, w, h):
-    """`o`'s folds, seams and hems as a tangent-space normal map (RGBA, w x h, rows from the bottom) of its UV square."""
+# The folds a shirt worn in play has (Premier Padel players photographed close, 15 Nov evening; the owner: "the whole shirt
+# looks fake"): with level ripples alone, 2 mm deep, it was a smooth shell. Drag folds fan down from each armpit, over the
+# chest and back and down the sleeve (FAN_*); below the chest the shirt hangs in long folds to the hem (HANG_*), deepening
+# downwards; shorts fan from the crotch down the inside of the legs and across the front (SHORTS_*). Each fold's valley is
+# darker (the B channel, kit.ts `clothShade`): CLOTH_SHADE at SHADE_DEEP below the cloth's mean.
+FAN_DEPTH, FAN_SPACING, FAN_REACH = 0.005, 0.04, 0.13
+HANG_DEPTH, HANG_SPACING = 0.006, 0.075
+SHORTS_DEPTH, SHORTS_SPACING = 0.003, 0.035
+CLOTH_SHADE, SHADE_DEEP = 0.65, 0.006
+
+
+def _ss(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def _gj(name):
+    v = J[name]
+    return np.array([v.x, v.z, -v.y])
+
+
+def worn_folds(pos, hit, kind):
+    """Fold heights (m) over the texels' positions (x across, y up, z forward) for a shirt or shorts."""
+    x, y, z = pos[..., 0], pos[..., 1], pos[..., 2]
+    H = np.zeros(x.shape)
+    if not hit.any():
+        return H
+    # (each fold's line wanders a little, and front and back differ)
+    wig = 0.012 * np.sin(y * 23 + x * 9 + z * 5) + 0.008 * np.sin(x * 37 - y * 17)
+    back = np.where(z > 0, 0.0, 1.0)
+    if kind == 'shirt':
+        pits = []
+        for side in ('LeftArm', 'RightArm'):
+            a = _gj(side)
+            sg = 1.0 if a[0] > 0 else -1.0
+            ax, ay = a[0] - sg * 0.025, a[1] - 0.075
+            pits.append((ax, ay))
+            dx, dy = x - ax, y - ay
+            r = np.hypot(dx, dy)
+            # (the angle from straight down: from the level, its jump at half a turn ran along the armpits' line, a crease
+            # across the chest)
+            th = np.arctan2(dx, -dy)
+            ridge = np.cos(th * (2 * math.pi * 0.11 / FAN_SPACING) + wig / 0.01 + back * 1.7)
+            env = _ss(0.02, 0.07, r) * np.exp(-np.maximum(r - 0.1, 0) / FAN_REACH) * _ss(0.03, -0.02, dy)
+            H += FAN_DEPTH * ridge * env
+        half_w = min(abs(p[0]) for p in pits) - 0.02
+        chest = sum(p[1] for p in pits) / 2 - 0.05
+        hem = float(y[hit].min())
+        t = np.clip((chest - y) / max(chest - hem, 0.05), 0, 1)
+        H += (HANG_DEPTH * t ** 1.3 * np.cos(2 * math.pi * (x + wig) / HANG_SPACING + back * 2.3)
+              * (0.6 + 0.4 * np.sin(x * 29 + z * 11)) * _ss(half_w + 0.01, half_w - 0.03, np.abs(x)))
+    else:
+        hips = (_gj('LeftUpLeg') + _gj('RightUpLeg')) / 2
+        cx, cy = hips[0], hips[1] - 0.08
+        dx, dy = x - cx, y - cy
+        r = np.hypot(dx, dy)
+        th = np.arctan2(dx, -dy)
+        ridge = np.cos(th * (2 * math.pi * 0.08 / SHORTS_SPACING) + wig / 0.01 + back * 1.1)
+        H += SHORTS_DEPTH * ridge * _ss(0.015, 0.05, r) * np.exp(-np.maximum(r - 0.08, 0) / 0.1) * _ss(0.04, -0.01, dy)
+    return H * hit
+
+
+def garment_normals(o, w, h, kind='shirt'):
+    """`o`'s folds, seams and hems as a tangent-space normal map (RGBA, w x h, rows from the bottom) of its UV square;
+    in B, how much light its folds' valleys keep."""
     n = CLOTH_GRID
     hem, seam, tile = uv_lines(o, n)
     me = o.data
@@ -2756,6 +2819,11 @@ def garment_normals(o, w, h):
         k = np.array([kx, ky, kz]) / np.linalg.norm([kx, ky, kz]) * (2 * math.pi / lam)
         env *= 0.5 + 0.5 * np.sin(pos @ k + ph)
     H *= CLOTH_FOLD / sum(a for *_, a in CLOTH_WAVES) * (CLOTH_PATCH + (1 - CLOTH_PATCH) * np.sqrt(env)) * 1.6
+    H += worn_folds(pos, hit, kind)
+    # (the valleys from the folds' own heights, which are functions of the body's space and level about 0, so the shade runs
+    # on across the pattern's panels: measured against a blur in UV space, it stepped at each panel's edge, a line across
+    # the chest)
+    shade = 1 - (1 - CLOTH_SHADE) * np.clip(-H / SHADE_DEEP, 0, 1)
     # Seams: a groove, and stitching STITCH_AT to one side (both sides of the line: the panel either side has it).
     ds = grow_dist(seam, int(STITCH_AT * 2 / px_m) + 2) * px_m
     H -= SEAM_DEPTH * np.exp(-(ds / SEAM_W) ** 2)
@@ -2772,6 +2840,7 @@ def garment_normals(o, w, h):
     nrm[~hit] = (0, 0, 1)
     img = np.ones((n, n, 4), dtype=np.float32)
     img[..., :3] = nrm * 0.5 + 0.5
+    img[..., 2] = np.where(hit, shade, 1.0)
     ys = (np.arange(h) * n / h).astype(int)
     xs = (np.arange(w) * n / w).astype(int)
     say('cloth', o.name, 'texel', round(px_m * 1000, 2), 'mm; hems', int(hem.sum()), 'seams', int(seam.sum()), 'texels; covered', round(float(hit.mean()), 3))
@@ -2784,7 +2853,7 @@ cloth[..., 0] = cloth[..., 1] = 0.5
 cloth[..., 2] = cloth[..., 3] = 1
 half = CLOTH_GRID // 2
 cloth[half:, :] = garment_normals(shirt, CLOTH_GRID, half)
-cloth[:half, :] = garment_normals(shorts, CLOTH_GRID, half)
+cloth[:half, :] = garment_normals(shorts, CLOTH_GRID, half, 'shorts')
 save(cloth, os.path.join(OUT, 'cloth.webp'), 'cloth')
 
 # ---------------------------------------------------------------- neck seam normals --------------------------------------------------

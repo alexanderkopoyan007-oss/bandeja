@@ -1086,8 +1086,14 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const toothy = smoothstep(TEETH_RG[0], TEETH_RG[1], tex.x.div(tex.y.max(0.02))).mul(teethW);
   const teethLit = mix(vec3(tex.xyz.dot(LUMA)), tex.xyz, TEETH_LIFT[1]).mul(TEETH_LIFT[0]).min(TEETH_LIFT[2]);
   const mouthCol = body.mouthShaded ? mix(tex.xyz, teethLit, toothy).mul(X.x.max(0).sqrt()) : tex.xyz.mul(float(0.2).add(smoothstep(0.1, 0.4, tex.w).mul(0.8)));
-  let col: THREE.Node<'vec3'> = shirtC.mul(ao).mul(shirtW)
-    .add(shortsC.mul(aoShorts).mul(shortsW))
+  // A MetaHuman build's folds keep less light in their valleys (the cloth map's B, mh-player.py `worn_folds`; a MakeHuman
+  // suit's map, `suit-normal*.webp`, holds its normal's z there).
+  const suitUv = vec2(uv().x.sub(2 / 3).mul(3), uv().y.sub(0.5).mul(2));
+  const clothTex = body.clothNormal ? texture(body.clothNormal, suitUv) : null;
+  const shadedCloth = !!clothTex && !String(body.textures?.cloth ?? '').startsWith('suit-normal');
+  const clothShade = shadedCloth ? mix(float(1), clothTex!.z, step(0.5, uv().y)) : float(1);
+  let col: THREE.Node<'vec3'> = shirtC.mul(ao).mul(clothShade).mul(shirtW)
+    .add(shortsC.mul(aoShorts).mul(clothShade).mul(shortsW))
     .add(skinCol.mul(skinW))
     .add(eyeCol.mul(eyeW))
     .add(mouthCol.mul(mouthW))
@@ -1213,9 +1219,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
     bumped = bumped.add(uvNormal(detail, uv().mul(vec2(1.5, 1))).sub(normalView).mul(skinW)).normalize();
   }
   if (body.clothNormal) {
-    const suitUv = vec2(uv().x.sub(2 / 3).mul(3), uv().y.sub(0.5).mul(2));
     // (the suit's rectangle only: a skirt has pleats of its own)
-    const fold = texture(body.clothNormal, suitUv).xy.mul(2).sub(1).mul(step(0.5, uv().y));
+    const fold = clothTex!.xy.mul(2).sub(1).mul(step(0.5, uv().y));
     m.normalNode = mix(bumped, uvNormal(fold.mul(FOLD_DEPTH), uv()), shirtW.add(shortsW));
   } else m.normalNode = bumped;
   // (a long sleeve past where a tee's would end hangs in the modelled pose's arm, below the chest: it doesn't swing with the shirt)
