@@ -862,8 +862,13 @@ export interface PressedHair { position: Float32Array; index: THREE.BufferAttrib
 
 /** A corner of hair this far off where the cloth would hold it (m) stands free: its card comes out from under the cloth. */
 const HAIR_STANDS = 0.003;
+/** Where a hair atlas's hair ends (u: the brows' and lashes' own tone past it) and, past that u, where a MetaHuman's shell
+ * under its cards starts (v; mh-player.py RECT). */
+export const HAIR_U = 0.8, HAIR_HELMET_V = 0.75;
 /** A slid root's place past the cloth's edge (m), and how far into the cloth hair may be before it is through it (m). */
 const SLID_PAST = 0.002, THROUGH = 0.0035;
+/** The same for hair that isn't pressed (a head that is mostly volume): the cloth is 2 mm off its table, so anything past that shows on it. */
+const THROUGH_UNPRESSED = 0.001;
 /** A corner on the scalp the far side of the cloth is slid across it from no further than this past its edge (m). */
 const SLIDE_FROM = 0.025;
 /** Pressed hair is never nearer the scalp than this (m). It was 4 mm, as far out as a visor's strap is thick where the
@@ -925,6 +930,7 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHai
   const si = ag.getAttribute('skinIndex') as THREE.BufferAttribute | undefined;
   const sw = ag.getAttribute('skinWeight') as THREE.BufferAttribute | undefined;
   if (!pos || !si || !sw) return null;
+  const uv = ag.getAttribute('uv') as THREE.BufferAttribute | undefined;
   const head = asset.bone('Head');
   const n = pos.count;
   const out = new Float32Array(n * 3);
@@ -937,6 +943,7 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHai
   // owner has seen pressed as they are, would have gone under them)
   const bulk = hairBulk(asset);
   const buried = bulk > 0 ? buriedBy(f, hw, edges) : (): number => 0;
+  const loose = hw.up !== null ? bulk : 0;
   // (never closer to the scalp than HAIR_OFF: what lies on it, the brows and lashes among it, stays)
   const held = (az: number, el: number): number => Math.max(radius(t, az, el) - 0.002, radius(f.skin, az, el) + HAIR_OFF);
   let moved = 0;
@@ -959,6 +966,13 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHai
     if (r <= R) continue;
     let k = smooth(lo - 0.012, lo, on);
     if (hw.up !== null) k *= 1 - smooth(hi, hi + 0.012, on);
+    // (a head that is mostly volume isn't pressed in at all: a coil's card 3 cm deep squeezed down onto the cloth lay flat,
+    // and at the ends of a band, where it is on the hair, p8's curls became sideways streaks either side of her forehead
+    // (15 Nov). Her cards are slid and cut instead, below, which still leaves nothing through the cloth. Not under a cap, which
+    // covers the crown: cut there, 69% of her afro went)
+    // (but its shell, a smooth surface 4-8 cm off the head under the cards, still is: cut, it ended in a dark wall at
+    // the band's end)
+    if (!(uv && uv.getX(i) > HAIR_U && uv.getY(i) > HAIR_HELMET_V)) k *= 1 - loose;
     // (where the band is under the hair, the hair stands as it is, over it. Wholly or not at all: half pressed at the ends
     // of that stretch, 75 of p8's cards stood through the band)
     if (buried(az) * bulk > 0.5) { side[i] = 2; continue; }
@@ -1002,12 +1016,14 @@ export function pressHair(asset: PlayerAsset, id: string | Headwear): PressedHai
     // (one wholly past an edge can't; one wholly under the cloth only if it is long, a chord over a hollow, or not the head's)
     // (nor hair the band is under: it stands over the band)
     if (side[a] === 2 || side[b] === 2 || side[c] === 2) continue;
+    // (a head that is mostly volume isn't pressed, so its hair under the cloth's span is wherever the groom put it: any of it
+    // out past the table, however small, would be drawn over the cloth)
     if (side[a] === side[b] && side[b] === side[c]) {
       if (side[a] !== 0) continue;
-      if (mine[a] && mine[b] && mine[c] && A.fromArray(out, a * 3).distanceToSquared(B.fromArray(out, b * 3)) < 4e-4
+      if (loose === 0 && mine[a] && mine[b] && mine[c] && A.fromArray(out, a * 3).distanceToSquared(B.fromArray(out, b * 3)) < 4e-4
         && B.distanceToSquared(C.fromArray(out, c * 3)) < 4e-4 && C.distanceToSquared(A) < 4e-4) continue;
     }
-    if (!throughCloth(f, t, edges, A.fromArray(out, a * 3), B.fromArray(out, b * 3), C.fromArray(out, c * 3), v)) continue;
+    if (!throughCloth(f, t, edges, A.fromArray(out, a * 3), B.fromArray(out, b * 3), C.fromArray(out, c * 3), v, loose > 0 ? THROUGH_UNPRESSED : THROUGH)) continue;
     cut ??= (index.array as Uint16Array | Uint32Array).slice();
     cut[q + 1] = a; cut[q + 2] = a;
   }

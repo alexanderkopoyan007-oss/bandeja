@@ -17,6 +17,8 @@ const nameOf = (p: PlayerAsset): string => p.look!.name;
 const look = kitFor(0);
 /** The most of a person's hair triangles left undrawn under a head piece (the share that lies across it). */
 const CUT_MOST = 0.005;
+/** The same for hair that isn't pressed (a head that is mostly volume, under a band or a visor). */
+const CUT_LOOSE = 0.05;
 
 /**
  * A body's vertices weighted at least `min` to these bones (bind pose), without a modelled headband or visor (in the
@@ -159,7 +161,10 @@ describe('costume: fitting', () => {
       people++;
       expect(through, `${id} ${nameOf(p)}`).toBe(0);
       mostCut = Math.max(mostCut, cut / (index.count / 3));
-      expect(cut / (index.count / 3), `${id} ${nameOf(p)}: ${cut} of ${index.count / 3} not drawn`).toBeLessThan(CUT_MOST);
+      // (a head that is mostly volume isn't pressed under a band or a visor, 15 Nov: what is through the cloth is cut instead,
+      // 3.4% of p8's afro under her band and 4.5% under a visor, all of it under the cloth's span)
+      const most = bulk > 0 && HEADWEAR[id]!.up !== null ? CUT_LOOSE : CUT_MOST;
+      expect(cut / (index.count / 3), `${id} ${nameOf(p)}: ${cut} of ${index.count / 3} not drawn`).toBeLessThan(most);
     }
     expect(people).toBeGreaterThan(40);
     expect(mostCut).toBeGreaterThan(0);

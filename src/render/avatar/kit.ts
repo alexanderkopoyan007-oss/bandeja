@@ -13,7 +13,7 @@ import {
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
 import { modelledVertices, tuckInto, type KitCut, type PlayerAsset } from './asset.ts';
 import { backBody, hairOnBack } from './hairBack.ts';
-import { hairBulk } from './costume.ts';
+import { hairBulk, HAIR_HELMET_V, HAIR_U } from './costume.ts';
 import { ownedTextures } from '../dispose.ts';
 import { setTattoos, tattooed, type TattooChoice, type TattooState } from './tattoo.ts';
 import { armWeight, cutFor, patternAt, printBottom, printShirt, type Paint } from './paint.ts';
@@ -718,7 +718,6 @@ const HAIR_TILT = 0.5;
 /** Hair: the size (m) under which a pixel can't show strands; where the atlas's hair ends (u, finish-player.py RECT: brows and lashes keep their own tone); the darkest a
  * head of hair is (linear albedo); from afar, how big its lumps are (per m), how edge-on a card has to be to start thinning, the roughness, the highlight's strength and the rim's. */
 const HAIR_STRAND = 0.008;
-const HAIR_U = 0.8;
 const HAIR_FLOOR = 0.018;
 const HAIR_WARM = vec3(1.3, 0.95, 0.72);
 
@@ -824,10 +823,9 @@ const HAIR_HELMET_SPEC = 0.35;
  */
 const TUCK_SINK = 0.03;
 const TUCKED = new WeakSet<PlayerAsset>();
-/** Where the helmet's rectangle starts (v; u past HAIR_U), and how edge on (|n.v|) it has fully faded near. */
-const HAIR_HELMET_V = 0.75;
 /** The lashes' rectangle in a MetaHuman's hair atlas (v, from and to; u past HAIR_U): mh-player.py RECT `lash`. */
 const HAIR_LASH_V: [number, number] = [0.25, 0.5];
+/** How edge on (|n.v|) the helmet (costume.ts HAIR_HELMET_V) has fully faded near. */
 const HAIR_HELMET_EDGE = 0.45;
 /** How wide (mip) and how much the lids' hue comes from the skin round them. */
 const LID_MIP = 6;

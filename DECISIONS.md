@@ -5181,3 +5181,11 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
 - Shipped first as b508eb0 (band 0.5 of 3 cm, no cap): the notch under the hem from the side is in that one.
 - WebGPU allows 8 vertex buffers and a person uses all 8: an attribute of its own failed every pipeline. The value rides in
   bodyX.w as a negative (on skin w is the ears' weight on the head, 0 wherever a tuck can be).
+
+## The ends of a band on an afro (2026-11-15, owner: "push it, and keep going")
+- Seen from the front, p8's band had flat streaks of hair fanning out sideways either side of her forehead, where the band stops being on her hair and goes under it. Taken apart a step at a time (stills with the slide off, then the press off too): the press made them. Her coil cards are 3 cm deep, and squeezed down onto the cloth's table they lay flat, edge-on curls drawn as streaks.
+- So a head that is mostly volume (`hairBulk`) isn't pressed under a band or a visor (`costume.ts pressHair`, `loose`). Its cards are slid off the edges as before, and whatever is still through the cloth is cut. The cut is tighter for this unpressed hair (`THROUGH_UNPRESSED` 1 mm, since the cloth is 2 mm off its table), and small triangles wholly in the cloth's span are cut too. At 3.5 mm, specks of hair showed on the band's ends.
+- Her shell (the surface 4-8 cm out under the cards, `HAIR_U`/`HAIR_HELMET_V`, now exported from costume.ts for kit.ts) is still pressed: when it was cut, it ended in a dark wall at the band's end from the side.
+- A cap still presses: it covers the crown, and cutting there took 69% of her afro.
+- What is cut: 3.4% of her cards under the band and 4.5% under a visor, all of it inside the cloth's span (`tests/render/costume.test.ts` `CUT_LOOSE` 5%; everyone else `CUT_MOST` 0.5%). Nothing is through the cloth.
+- Sheet: tools/out/detail/band-ends-before-after.jpg. A few faint streaks remain at her right temple from the front.
