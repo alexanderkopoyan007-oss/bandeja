@@ -723,13 +723,20 @@ def make_head_piece(body, hair, rig, eye_pts, style):
 # opening, the placket kit.ts paints), and the points turn COLLAR_FLARE degrees out from straight down. The leaf lies
 # COLLAR_GAP outside the stand and the shirt. (Rolled out from a low stand, the collar was a towel round the neck; with its
 # ends taken down into the V, its points were 70s lapels: 15 Nov)
-COLLAR_STAND = (0.03, 0.022)
+# Worn (a Bullpadel polo on a man, 15 Nov evening): the ends meet over the placket's top, COLLAR_V[0] each side of the
+# middle at the neckline's front, so no crew neck shows between them (6.4 cm apart, the tee's ribbed band showed in the
+# gap: the owner's "still looks awful"); the leaf doesn't hang down the neck but lies out over the shoulders,
+# COLLAR_SPLAY degrees out from straight down (hung plumb, it was a ring of paper flaps standing round the neck).
+COLLAR_STAND = (0.027, 0.019)
 COLLAR_HUG = 0.003
-COLLAR_LEAF = (0.045, 0.05)
+COLLAR_LEAF = (0.045, 0.055)
 COLLAR_SIDE = 75
-COLLAR_V = (0.032, 0.005)
-COLLAR_FLARE = 45
+COLLAR_V = (0.012, 0.0)
+COLLAR_FLARE = 40
+COLLAR_SPLAY = 38
 COLLAR_GAP = 0.0025
+# (how far under the neckline the band inside it meets the skin, m)
+COLLAR_SEAL = 0.008
 # (a woman's polo has a smaller collar on a slimmer neck)
 COLLAR_WOMEN = 0.8
 
@@ -749,7 +756,10 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lif
     # (the leaf laid on the shirt at LEAF_STEPS places down its fall: with one between the fold and the edge, its strips cut in
     # under a shirt that curves over the shoulder, and on the women's only ragged bits of it showed)
     LEAF_STEPS = 4
-    rows = {k: [] for k in range(2 + LEAF_STEPS)}
+    # (on a garment's neckline a band first, from the skin up to the collar's stand: open, the shirt's inside showed dark
+    # between the stand and the neck, with the tee's edge in slivers across it, 15 Nov)
+    SEAL = 1 if ring is not None else 0
+    rows = {k: [] for k in range(2 + SEAL + LEAF_STEPS)}
     down = Vector((0, 0, -1))
 
     def on_shirt(p, d):
@@ -812,12 +822,19 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lif
         # The leaf: down from the fold, its points turned out at the ends, close over the stand and the shirt.
         depth = (COLLAR_LEAF[0] * (1 - e) + COLLAR_LEAF[1] * e) * k_
         fl = math.radians(COLLAR_FLARE) * e
-        way = (down * math.cos(fl) + Vector((sgn, 0, 0)) * math.sin(fl) + d * 0.25).normalized()
+        sp = math.radians(COLLAR_SPLAY)
+        lie = down * math.cos(sp) + d * math.sin(sp)
+        way = (lie * math.cos(fl) + Vector((sgn, 0, 0)) * math.sin(fl)).normalized()
         leaf = []
         for i in range(1, LEAF_STEPS + 1):
             q = outside(fold + way * (depth * i / LEAF_STEPS), COLLAR_HUG + COLLAR_GAP)
             leaf.append(over_shirt(q, d, COLLAR_GAP))
-        return [(stand, 0.55), (fold, 1.0)] + [(q, 1.0) for q in leaf[:-1]] + [(leaf[-1], 0.9)]
+        zs = edge.z - COLLAR_SEAL
+        rs = radius_at(zs, d, skin)
+        seal = Vector((neck.x, neck.y, zs)) + d * (rs + 0.0015) if rs is not None else edge - d * 0.004 + down * 0.008
+        # (round the back and sides only: at the front, between the collar's ends, it covered the throat in a dark V)
+        seal = seal * (1 - e) + stand * e
+        return [(seal, 0.85), (stand, 0.85), (fold, 1.0)] + [(q, 1.0) for q in leaf[:-1]] + [(leaf[-1], 0.9)]
 
     for j in range(cols + 1):
         t = j / cols
@@ -852,7 +869,7 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lif
             rows[k].append(len(verts))
             verts.append(tuple(p))
             shade.append(sh)
-    last = 1 + LEAF_STEPS
+    last = 1 + SEAL + LEAF_STEPS
     for k in range(last):
         for j in range(cols):
             faces.append((rows[k][j], rows[k + 1][j], rows[k + 1][j + 1], rows[k][j + 1]))
@@ -862,7 +879,7 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lif
         # (a thin edge on the neckline's collar: tucked 1.2 cm back, its lip read as a thick roll round the neck, and 3 mm back it was a black line along it)
         up_, back_ = (0.004, 0.012) if ring is None else (0.001, 0.0012)
         p = Vector(verts[rows[last][j]]) + Vector((0, 0, up_))
-        n = Vector(verts[rows[1][j]]) - Vector(verts[rows[last][j]])
+        n = Vector(verts[rows[1 + SEAL][j]]) - Vector(verts[rows[last][j]])
         p = p + n.normalized() * back_
         under.append(len(verts))
         verts.append(tuple(p))

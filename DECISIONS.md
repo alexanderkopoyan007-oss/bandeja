@@ -5211,3 +5211,10 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
   - a woman's is 0.8 the size (`COLLAR_WOMEN`).
 - The collar is the trim's colour, as on a contrast-collar polo (the Head Padel Tech's navy on grey): in the shirt's colour the right shape all but vanished into the shirt. Its turned-under edge isn't darkened. A white collar, band or visor takes the ambient's brightness, not its colour (kit.ts `ambientFixNode`, as the baked cloth, 0.8): the collar's underside took the blue court's bounce and was violet.
 - Checking it: `MH_STOP=wear MH_VIEWS=polo MH_NECK=1` renders the neck close in Blender (front and side) in about a minute; then one body built and seen in the game (`VIEW=chest:0`) before all ten.
+- Fourth pass (15 Nov evening, owner: "it still looks awful"), from a Bullpadel polo photographed on a man rather than laid flat:
+  - the ends meet over the placket's top, 1.2 cm each side of the middle at the neckline's front (`COLLAR_V`): 6.4 cm apart, the tee's ribbed band showed in the gap and the polo read as a T-shirt with a collar stuck on;
+  - the leaf lies out over the shoulders, 38 degrees off plumb (`COLLAR_SPLAY`), the points 40 degrees out (`COLLAR_FLARE`): hung straight down the neck it was a ring of paper flaps;
+  - a lower stand (2.7 cm at the back, 1.9 at the sides) and longer points (5.5 cm);
+  - a band inside the neckline, from 8 mm under it on the skin up to the stand (`COLLAR_SEAL`), round the back and sides only: open, the shirt's inside showed between the stand and the neck, with the tee's edge in slivers across it;
+  - on a polo kit.ts draws no crew rib (it showed between the ends), and the placket is the shirt's own cloth, seen by its stitching, the top flap's edge and two buttons (a white tab before);
+  - a collar's, band's or visor's inside is lifted (`PIECE_INSIDE` 2, not the body's 0.3): it lies in the head's shadow with only the hall's blue ambient, and without the light a real neck and shirt bounce into it, it was a navy hole in jagged pieces.

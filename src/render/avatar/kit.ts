@@ -695,6 +695,11 @@ const SKIRT_ROUGH = 0.62;
 const BODY_INSIDE = 0.3;
 /** The same for a skirt, a fold's own shade: a thigh pushes a skirt through itself, its back comes out in front, and at 0.3 that was a dark slash on white cloth. */
 const SKIRT_INSIDE = 0.75;
+/** The same for a piece above the hips in the sock part (a polo's collar, a band, a visor), raised over 1: its inside lies in
+ * the head's shadow with only the hall's blue ambient on it, without the light the neck and shirt bounce into a real collar,
+ * and at 0.3 or 0.7 a white collar's inside was a navy hole in jagged shadow-map pieces (at 3 it was the collar's own white,
+ * 15 Nov). */
+const PIECE_INSIDE = 2.0;
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
 const FOLD_DEPTH = 1;
 /** The skin's detail normals at their own strength (a MetaHuman's map). */
@@ -1107,7 +1112,8 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const backBand = smoothstep(float(frame.backTop ?? 9).sub(COLLAR_RIB + 0.002), float(frame.backTop ?? 9).sub(COLLAR_RIB), p.y).mul(step(p.z, nk.z - 0.02)).mul(shirtW)
     .mul(smoothstep(COLLAR_BACK + 0.002, COLLAR_BACK, collarX.abs()));
   const rib = float(0.9).add(p.x.mul(900).sin().mul(0.08));
-  col = mix(col, color(look.trim).mul(ao).mul(rib), smoothstep(0.465, 0.475, neckline).add(backBand).min(1));
+  // (not on a polo: its collar's stand is sewn on the neckline, and the tee's ribbed band showed between the collar's ends)
+  if (cut.top !== 'polo') col = mix(col, color(look.trim).mul(ao).mul(rib), smoothstep(0.465, 0.475, neckline).add(backBand).min(1));
   // Twin-needle hems on the shirt's waist and sleeves, a slim stitched line a little in from each edge; a towelling band
   // on the wrists.
   const stitched = (d: THREE.Node<'float'>): THREE.Node<'float'> => smoothstep(0.004, 0.0015, d.sub(HEM_STITCH).abs());
@@ -1131,7 +1137,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // shadow map is drawn from the same faces as ever.
   m.side = THREE.DoubleSide;
   m.shadowSide = THREE.BackSide;
-  col = col.mul(mix(mix(float(BODY_INSIDE), float(SKIRT_INSIDE), smoothstep(0, 0.1, hang)), float(1), faceDirection.mul(0.5).add(0.5)));
+  // (a collar's, a band's or a visor's underside is open cloth, not the body's inside: at 0.3 a polo's collar had a black
+  // edge all round and its far side's inside was a black hole, 15 Nov)
+  const insideK = mix(mix(float(BODY_INSIDE), float(SKIRT_INSIDE), smoothstep(0, 0.1, hang)), float(PIECE_INSIDE), sockW.mul(sockUp));
+  col = col.mul(mix(insideK, float(1), faceDirection.mul(0.5).add(0.5)));
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
@@ -1798,14 +1807,24 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
     .mul(step(armY, ty)).mul(step(0, p.x));
   const marks = chestL.add(chestR).mul(front).add(back).add(sleeve).min(1).mul(fine).mul(smoothstep(armX + 0.2, armX + 0.15, tx));
   if (!print) s = mix(s, trim, marks);
-  // A polo's placket: a strip down from the neck with two buttons.
+  // A polo's placket: a strip of the shirt's own cloth down from the collar's ends, sewn round its edge, the top flap's
+  // edge down its middle and two buttons. (In the trim it was a white tab painted on a tee: real polos' plackets are the
+  // shirt's colour, seen by their stitching and buttons; Bullpadel and Head polos worn, 15 Nov)
   if (cut.top === 'polo') {
     const nkLow = nk.y - (frame.collarDrop ?? COLLAR_DROP);
     const cx = p.x.sub(nk.x);
-    const placket = smoothstep(0.0135, 0.012, cx.abs()).mul(smoothstep(nkLow - PLACKET - 0.0015, nkLow - PLACKET, p.y)).mul(front);
-    s = mix(s, mix(shirt, trim, 0.82), placket);
-    const button = (y: number): THREE.Node<'float'> => smoothstep(0.0048, 0.0036, vec2(cx, p.y.sub(nkLow - y)).length());
-    s = mix(s, shirt, button(0.03).add(button(0.062)).mul(front).mul(fine));
+    const dy = float(nkLow).sub(p.y);
+    const inPl = smoothstep(PLACKET_W + 0.0008, PLACKET_W, cx.abs()).mul(smoothstep(PLACKET + 0.0008, PLACKET, dy)).mul(step(-0.01, dy)).mul(front);
+    // (the stitching 2.5 mm in from its sides and bottom, and the flap's edge a hair off the middle)
+    const sew = smoothstep(0.0007, 0.0002, cx.abs().sub(PLACKET_W - 0.0025).abs()).mul(step(dy, PLACKET - 0.0025))
+      .add(smoothstep(0.0007, 0.0002, dy.sub(PLACKET - 0.0025).abs()).mul(step(cx.abs(), PLACKET_W - 0.0025)))
+      .add(smoothstep(0.0009, 0.0002, cx.sub(0.003).abs()).mul(0.6)).min(1).mul(inPl);
+    const pl = shirt.mul(float(0.96).sub(sew.mul(0.22)));
+    s = mix(s, pl, inPl.mul(fine.max(0.5)));
+    const button = (y: number): THREE.Node<'float'> => smoothstep(0.0046, 0.0038, vec2(cx.sub(0.0005), dy.sub(y)).length());
+    const holes = (y: number): THREE.Node<'float'> => smoothstep(0.0009, 0.0005, vec2(cx.sub(0.0005).abs().sub(0.0013), dy.sub(y)).length());
+    s = mix(s, mix(shirt, trim, 0.55), button(0.028).add(button(0.058)).mul(front).mul(fine));
+    s = s.mul(float(1).sub(holes(0.028).add(holes(0.058)).mul(front).mul(fine).mul(0.4)));
   }
   // Shorts: the shirt's colour down the outside of the leg, a small mark over the hem; a skirt: the same colour round its hem.
   const legX = frame.legX ?? 0.09, legZ = frame.legZ ?? 0, hang = X.x;
@@ -1917,6 +1936,8 @@ const COLLAR_RIB = 0.016;
 const COLLAR_BACK = 0.08;
 const CUFF = 0.016;
 const PLACKET = 0.085;
+/** The placket's half width (m): the collar's ends sit on its edges (person_kit.py COLLAR_V). */
+const PLACKET_W = 0.0135;
 /** The side panel's half width over the ribs at the arm and at the hem; the chest's marks in from the middle and up from the Spine2 joint (m). */
 const PANEL_ARM = 0.02;
 const PANEL_HEM = 0.026;
