@@ -146,6 +146,9 @@ export interface BodyLook {
   handsMap: THREE.Texture | null;
   handsNormal: THREE.Texture | null;
   handsBox: [number, number, number, number] | null;
+  /** The mouth's shade is its own, by depth behind the lips (a MetaHuman build's face-keys.mjs: teeth, tongue and the mouth's
+   * lining carry it as their occlusion), not the atlas's, which was baked shut. */
+  mouthShaded?: boolean;
   textures: { opaque: string; alpha: string; cloth?: string; skin?: string; hands?: string; handsN?: string };
   /** The face's keys by name, in the order of every morphed mesh's influences (empty for a version-2 person). */
   morphs: string[];
@@ -673,17 +676,20 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
   geometry.setAttribute('bodyA', new THREE.BufferAttribute(pa, 4));
   geometry.setAttribute('bodyB', new THREE.BufferAttribute(pb, 4));
   // Per part, packed into one attribute (WebGPU allows 8 vertex buffers, skinning takes 5 of them): skin (lips,
-  // T-zone, eyelids, ears); eyes, shoes and socks: x = their baked occlusion; the skirt: x = how far down it, 0 at the waist
+  // T-zone, eyelids, ears); eyes, shoes, socks, teeth and tongue: x = their baked occlusion; the skirt: x = how far down it, 0 at the waist
   // to 1 at the hem, y = how far a pleat's folded edge stands out of its ring (kit.ts SKIRT_PROUD; `mask` in the file, 0 on shorts); the shirt: x = where it gets wet first, z = out from the chest and
   // w = height in the T-pose (kit.ts fills them in).
   const X = new Float32Array(n * 4);
   const ao = geometry.getAttribute('bodyAO') as THREE.BufferAttribute | undefined;
   const mk = geometry.getAttribute('skinMask') as THREE.BufferAttribute | undefined;
+  let mouthShaded = false;
   for (let v = 0; v < n; v++) {
     const c = part[v]!;
     if (c === P_SKIN && mk) for (let k = 0; k < 4; k++) X[v * 4 + k] = mk.array[v * 4 + k]!;
     else if (c === P_SHORTS && mk) { X[v * 4] = mk.array[v * 4]!; X[v * 4 + 1] = mk.array[v * 4 + 1]!; }
     else if (c === P_EYE || c === P_SHOE || c === P_SOCK) X[v * 4] = ao ? ao.array[v]! : 1;
+    // (the mouth: how deep behind the lips, a MetaHuman build's face-keys.mjs; 1 on the others, whose teeth have the atlas's)
+    else if (c === P_TEETH || c === P_TONGUE) { X[v * 4] = ao ? ao.array[v]! : 1; if (X[v * 4]! < 0.995) mouthShaded = true; }
   }
   const modelled = h.meshes.opaque.shoe;
   if (modelled) X.set(new Float32Array(buf.slice(base + modelled.x[0]!, base + modelled.x[0]! + modelled.count * 16)), modelled.first * 4);
@@ -711,7 +717,7 @@ export function parseBodyAsset(buf: ArrayBuffer, mannequin: PlayerAsset): Player
   if (face && shoes?.bodyIndex) face.bodyIndex = shoes.bodyIndex;
   const asset = assemble(h.bones, geometry, boneInverses, restWorld, clips, {
     name: h.name, kit: h.kit ?? {}, height: h.height, alphaGeometry, opaqueMap: null, alphaMap: null, clothNormal: null, skinNormal: null,
-    handsMap: null, handsNormal: null, handsBox: h.handsBox ?? null, textures: h.textures, morphs, face,
+    handsMap: null, handsNormal: null, handsBox: h.handsBox ?? null, mouthShaded, textures: h.textures, morphs, face,
     wardrobe, shoe: modelled?.fit ?? shoes?.fit ?? null, soleRef: shoes?.soleRef ?? null,
   });
   SOURCES.set(asset, { buf, mannequin });

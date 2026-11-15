@@ -603,11 +603,13 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   scatter: THREE.Node<'float'>;
   ambientFix: THREE.Node<'float'>;
   fill: THREE.Node<'float'>;
-  constructor(scatter: THREE.Node<'float'>, ambientFix: THREE.Node<'float'>, fill: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
+  directShine: THREE.Node<'float'>;
+  constructor(scatter: THREE.Node<'float'>, ambientFix: THREE.Node<'float'>, fill: THREE.Node<'float'>, directShine: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
     super(clearcoat, sheen, false, false, false, false);
     this.scatter = scatter;
     this.ambientFix = ambientFix;
     this.fill = fill;
+    this.directShine = directShine;
   }
 
   /** Skin and eyes take the ambient's brightness, not its colour: the court's probe is lit by a blue and a red floor,
@@ -652,7 +654,15 @@ class SkinLighting extends THREE.PhysicalLightingModel {
     const wrapped = ndl.add(SKIN_WRAP).div(1 + SKIN_WRAP).clamp().sub(ndl.clamp());
     const bleed = diffuseColor.rgb.mul(vec3(1.0, 0.36, 0.22)).mul(wrapped).mul(this.scatter);
     (input.reflectedLight.directDiffuse as THREE.Node<'vec3'>).addAssign(bleed.mul(input.lightColor as THREE.Node<'vec3'>).mul(1 / Math.PI));
+    // (the lamps' specular this light adds, times `directShine`: three's direct GGX takes F90 as 1 whatever the specular
+    // intensity, so a surface with its shine taken to nothing still shone white at a grazing view; an open mouth's floor,
+    // facing the roof's lamps, glowed, 15 Nov)
+    const rl = input.reflectedLight as unknown as { directSpecular: THREE.Node<'vec3'> };
+    const spec = rl.directSpecular, own = vec3(0, 0, 0).toVar();
+    rl.directSpecular = own;
     super.direct(input, builder);
+    rl.directSpecular = spec;
+    spec.addAssign(own.mul(this.directShine));
   }
 }
 const SKIN_WRAP = 0.55;
@@ -823,6 +833,13 @@ const HAIR_HELMET_SPEC = 0.35;
  */
 const TUCK_SINK = 0.03;
 const TUCKED = new WeakSet<PlayerAsset>();
+/** A MetaHuman's tongue (its own label since 15 Nov, face-keys.mjs): its wet coat and roughness. With the MakeHuman's (0.8 coat,
+ * 0.38 rough) an open mouth's tongue shone like a glass ball with a white spot on it. */
+const TONGUE_COAT = 0.1, TONGUE_ROUGH = 0.6;
+/** A shaded mouth's teeth: brightness, how much of the texture's colour is kept (the rest its grey), the brightest a
+ * channel gets; tooth-coloured texels by red over green, from [0] (none) to [1] (all). */
+const TEETH_LIFT: [number, number, number] = [1.9, 0.55, 0.8];
+const TEETH_RG: [number, number] = [1.6, 1.35];
 /** The lashes' rectangle in a MetaHuman's hair atlas (v, from and to; u past HAIR_U): mh-player.py RECT `lash`. */
 const HAIR_LASH_V: [number, number] = [0.25, 0.5];
 /** How edge on (|n.v|) the helmet (costume.ts HAIR_HELMET_V) has fully faded near. */
@@ -857,9 +874,11 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
   ambientFixNode: THREE.Node<'float'> = float(0);
   /** The ambient light's diffuse this much over (`EYE_FILL` on the eyes). */
   fillNode: THREE.Node<'float'> = float(0);
+  /** The lamps' specular kept (SkinLighting.direct): 1 but in a shaded mouth. */
+  directShineNode: THREE.Node<'float'> = float(1);
   toneBackNode: THREE.Node<'float'> = float(0);
   override setupLightingModel(): THREE.PhysicalLightingModel {
-    return new SkinLighting(this.scatterNode, this.ambientFixNode, this.fillNode, this.useClearcoat, this.useSheen);
+    return new SkinLighting(this.scatterNode, this.ambientFixNode, this.fillNode, this.directShineNode, this.useClearcoat, this.useSheen);
   }
 
   /**
@@ -900,7 +919,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const frame: KitFrame = { ...frame0, sleeveX: frame0.sleeveXOf?.[cut.top === 'polo' || !cut.top ? 'tee' : cut.top] ?? frame0.sleeveX };
   const armhole = cut.top === 'tank' || cut.top === 'sleeveless';
   // Parts (asset.ts): A = shirt, shorts, skin, socks; B = shoes, eyes, teeth, tongue. bodyX by part: skin (lips,
-  // T-zone, lids, ears); eyes, shoes, socks: x = their baked occlusion; the shirt: x = where it gets wet first.
+  // T-zone, lids, ears); eyes, shoes, socks, teeth, tongue: x = their baked occlusion; the shirt: x = where it gets wet first.
   const A = attribute<'vec4'>('bodyA', 'vec4'), B = attribute<'vec4'>('bodyB', 'vec4'), X = attribute<'vec4'>('bodyX', 'vec4');
   const shirtW = A.x, shortsW = A.y, skinW = A.z, sockW = A.w, shoeW = B.x, eyeW = B.y, teethW = B.z, tongueW = B.w;
   const mouthW = teethW.add(tongueW);
@@ -929,7 +948,11 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const nk0 = frame.neck ?? frame.chest;
   const bib = smoothstep(0.17, 0.1, p.x.sub(nk0.x).abs()).mul(smoothstep(nk0.y + 0.1, nk0.y - 0.03, p.y)).mul(skinW);
   const skinAO = mix(tex.w, max(tex.w, float(0.76)), bib);
-  const bakedAO = mix(float(1), mix(float(0.3).add(skinAO.mul(0.7)), float(0.15).add(tex.w.mul(0.85)), mouthW), skinW.add(mouthW)).mul(vAO);
+  // (a mouth with a shade of its own, by depth, `mouthShaded`, takes it in place of the atlas's, which was baked shut: its upper
+  // teeth were olive blocks in an open mouth. It must be here as well as in the colour: the occlusion is what holds back the
+  // surroundings' reflection, which at a grazing view lit the mouth's floor a pale sheet behind the teeth)
+  const mouthAO = body.mouthShaded ? X.x : float(0.15).add(tex.w.mul(0.85));
+  const bakedAO = mix(float(1), mix(float(0.3).add(skinAO.mul(0.7)), mouthAO, mouthW), skinW.add(mouthW)).mul(vAO);
   // The waistband under the shirt was in the shirt's shadow when the occlusion was baked (MakeHuman's outfit); a shirt
   // riding up as the player bends showed it as a grey band. Above the shirt's hem the shorts are lit as they show.
   // (the women's suit's bottom half is jeans: its occlusion draws a fly and pockets, which read through white shorts)
@@ -1038,7 +1061,14 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const eyeCol = vec3(tex.x, max(tex.y, tex.x.mul(0.58)), max(tex.z, tex.x.mul(0.34))).mul(0.8).mul(float(0.5).add(vAO.mul(0.5)));
   // (teeth sit at occlusion about 0.27: multiplied straight they rendered blue-grey, 100 of 239: review round 5, the
   // critic's #4. The throat, below 0.1, stays dark.)
-  const mouthCol = tex.xyz.mul(float(0.2).add(smoothstep(0.1, 0.4, tex.w).mul(0.8)));
+  // (a shaded mouth's depth is in its colour too: occlusion reaches only the indirect light, and the lamps lit the palate and
+  // the mouth's floor pale pink behind the teeth, where no shadow map is fine enough to reach. Clamped: X.x is other parts' data,
+  // which can be negative, and the root of it, times a weight of 0, is still NaN: black cracks over every face)
+  // (a MetaHuman's teeth texture is a dark tan, 164/140/118, that Epic's teeth material brightens: as drawn, an open mouth's
+  // teeth were khaki. Tooth-coloured texels only, by their red over green: the lining and tongue are twice as red)
+  const toothy = smoothstep(TEETH_RG[0], TEETH_RG[1], tex.x.div(tex.y.max(0.02))).mul(teethW);
+  const teethLit = mix(vec3(tex.xyz.dot(LUMA)), tex.xyz, TEETH_LIFT[1]).mul(TEETH_LIFT[0]).min(TEETH_LIFT[2]);
+  const mouthCol = body.mouthShaded ? mix(tex.xyz, teethLit, toothy).mul(X.x.max(0).sqrt()) : tex.xyz.mul(float(0.2).add(smoothstep(0.1, 0.4, tex.w).mul(0.8)));
   let col: THREE.Node<'vec3'> = shirtC.mul(ao).mul(shirtW)
     .add(shortsC.mul(aoShorts).mul(shortsW))
     .add(skinCol.mul(skinW))
@@ -1098,7 +1128,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const skirtW = step(0.001, hang);
   m.roughnessNode = fabric.mul(mix(float(0.88), float(SKIRT_ROUGH), skirtW).sub(wet.mul(0.25)))
     .add(skinW.mul(mix(skinRough, float(0.9), band)))
-    .add(eyeW.mul(0.2)).add(teethW.mul(0.3)).add(tongueW.mul(0.38)).add(shoeW.mul(0.45));
+    .add(eyeW.mul(0.2)).add(teethW.mul(0.3)).add(tongueW.mul(body.mouthShaded ? TONGUE_ROUGH : 0.38)).add(shoeW.mul(0.45));
   m.metalnessNode = float(0);
   // Specular occlusion for the direct light as well: deep creases (nostrils, the ears' hollows, the corners of the
   // mouth) and the scalp under the hair don't shine (the baked occlusion is low there).
@@ -1108,10 +1138,14 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // when the lids' shine was taken off and stayed when their colour was darkened, 14 Nov)
   const creased = mix(smoothstep(0.05, 0.55, tex.w), smoothstep(LID_RIM[0], LID_RIM[1], tex.w), lids);
   // (a skirt's folds shine on their crests, not in under each other: its baked shade, person_kit.py _skirt_shade)
-  m.specularIntensityNode = mix(mix(float(1), smoothstep(0.3, 0.9, tex.x), skirtW), creased.mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW));
+  // (the mouth's shine goes with its depth behind the lips too, X.x: an open mouth's tongue shone out of the dark like a
+  // glass ball. 1 on a MakeHuman build's mouth, whose shade is the atlas's)
+  const mouthShade = mix(float(1), X.x.mul(X.x).mul(X.x), mouthW);
+  m.specularIntensityNode = mix(mix(float(1), smoothstep(0.3, 0.9, tex.x), skirtW), creased.mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW)).mul(mouthShade);
+  m.directShineNode = mouthShade;
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
   m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
-    .mul(creased).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55)).add(tongueW.mul(0.8));
+    .mul(creased).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55).add(tongueW.mul(body.mouthShaded ? TONGUE_COAT : 0.8)).mul(mouthShade));
   m.clearcoatRoughnessNode = skinW.mul(mix(float(0.32).sub(sweat.mul(0.1)), float(NAIL_COAT_ROUGH), nail)).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
   // Cotton and polyester's soft rim.
   // (less on the shorts and skirts, which are often near black: at a grazing view the white in it turned them grey; and none

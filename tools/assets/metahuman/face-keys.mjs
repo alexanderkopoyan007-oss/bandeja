@@ -3,9 +3,12 @@
 // it on the game's skeleton), so its face never moved. The two faces are the same face (the MetaHuman was conformed to the
 // MakeHuman one, cast-batch.sh), so each key is laid over by place:
 //   - skin takes its move from the nearest skin of the other face (a few vertices, by distance), the lips never from across
-//     the mouth's line (the open lids are 8-9 mm apart, the faces 1-2 mm off each other: they need no such line);
+//     their parting (the MetaHuman's own, found on its lips; the open lids are 8-9 mm apart, the faces 1-2 mm off each other:
+//     they need no such line), each lip's moves smoothed along it;
+//   - the mouth's inside (the lips' insides and the lining behind them) is shared between the lips by how far round it is to
+//     each, and darkened by depth behind the lips (the shade an open mouth has);
 //   - the lower teeth, lower gum and tongue go with the jaw as one piece each (the move fitted over the other face's, as a
-//     linear map of place), the upper teeth stay; a key that parts the lips is eased until it parts them 6 mm (they are joined: PART);
+//     linear map of place), the tongue and gum dropping as the front teeth do, the upper teeth stay;
 //   - each eyeball turns about its OWN centre by the turn the other face's eyeball makes;
 //   - lashes and brows (the alpha mesh) go with the skin of their own face under them; hair stays.
 // Run after mh-player.py and before build-people.mjs (cast-batch.sh does):
@@ -113,6 +116,13 @@ for (const person of process.argv.slice(2)) {
   // (run again: the keys written last time come off first)
   if (h.keysAt !== undefined) bin = bin.subarray(0, h.keysAt);
   if (h.meshes.opaque.index0) { h.meshes.opaque.index = h.meshes.opaque.index0; h.meshes.opaque.indices = h.meshes.opaque.indices0; delete h.meshes.opaque.index0; delete h.meshes.opaque.indices0; }
+  // (a copy of its own, at offset 0: the mouth's parts and shade are written into it, and the last run's taken off again here)
+  { const own = new Uint8Array(bin.length); own.set(bin); bin = Buffer.from(own.buffer); }
+  if (h.mouthWas) {
+    const PT = new Uint8Array(bin.buffer, h.meshes.opaque.part[0], h.meshes.opaque.vertices), AO = new Float32Array(bin.buffer, h.meshes.opaque.ao[0], h.meshes.opaque.vertices);
+    for (const [v, pt, a] of h.mouthWas) { PT[v] = pt; AO[v] = a; }
+    delete h.mouthWas;
+  }
   const src = readClassic(person);
   const NK = src.keys.length;
   const hi = h.bones.indexOf('Head');
@@ -152,6 +162,41 @@ for (const person of process.argv.slice(2)) {
     if (j > jump) { jump = j; mouth = (midline[i].p[1] + midline[i + 1].p[1]) / 2; }
   }
 
+  // The MetaHuman's own parting, by the lips' rims across the mouth: the lower lip's top (facing up) and the upper's underside
+  // (facing down), front skin only. (The MakeHuman's line laid by the eyes falls on the lower lip's front.)
+  const PART_BIN = 0.003, partAt = new Map();
+  {
+    const fr = new Map(), cand = [];
+    tgt.opaque.forEach((t, v) => { if (t.part !== PART_.skin) return; const q = lay(t.p); if (Math.abs(q[0]) > LIPS_WIDE || Math.abs(q[1] - mouth) > 0.01) return; const b = Math.round(q[0] / PART_BIN); fr.set(b, Math.max(fr.get(b) ?? -1, q[2])); cand.push([b, q, t.n]); });
+    const bins = new Map();
+    for (const [b, q, n] of cand) { if (q[2] < fr.get(b) - 0.006) continue; const e = bins.get(b) ?? { top: -1, under: [] }; if (n[1] > 0.5) e.top = Math.max(e.top, q[1]); if (n[1] < -0.5) e.under.push(q[1]); bins.set(b, e); }
+    for (const [b, e] of bins) { if (e.top < 0) continue; const u = e.under.filter((y) => y >= e.top - 0.0005); if (u.length) partAt.set(b, (e.top + Math.min(...u)) / 2); }
+    if (partAt.size < 6) throw new Error(`${name}: the lips' parting found in ${partAt.size} places across the mouth`);
+    const ys = [...partAt.values()].map((y) => (y - mouth) * 1000);
+    if (process.env.DEBUG) console.log('DEBUG parting', [...partAt].sort((a, c) => a[0] - c[0]).map(([b, y]) => `${(b * PART_BIN * 1000).toFixed(0)}:${((y - mouth) * 1000).toFixed(1)}`).join(' '));
+    console.log(name, 'lips part', Math.min(...ys).toFixed(1), 'to', Math.max(...ys).toFixed(1), 'mm above the MakeHuman\'s mouth line, in', partAt.size, 'places');
+  }
+  // (the mouth's corners: past the last place the lips are found parting, either side, the cheek isn't split. Split there
+  // too, by the parting's height carried on, the open jaw tore p9's cheeks along a line from each corner)
+  const cornerL = Math.min(...partAt.keys()) * PART_BIN - PART_BIN / 2, cornerR = Math.max(...partAt.keys()) * PART_BIN + PART_BIN / 2;
+  const parting = (x) => {
+    let b = Math.round(x / PART_BIN);
+    if (partAt.has(b)) return partAt.get(b);
+    for (let d = 1; d < 30; d++) { if (partAt.has(b - d * Math.sign(x || 1))) return partAt.get(b - d * Math.sign(x || 1)); }
+    return mouth;
+  };
+  /** 1 for the lower lip's side of the parting, 0 the upper's: in the groove (where the lips lie on each other, 0.3 mm apart,
+   * so height can't tell them) by which way the skin faces, up (the lower lip's top) or down (the upper's underside);
+   * elsewhere by height. (The lips are joined at the groove's back, a seam of small triangles the whole width of the mouth:
+   * split by the MakeHuman's line instead, which fell 1-4 mm low, on the lower lip's front, the jaw pulled the lower lip in
+   * two and stretched a pink sheet over the mouth, and every key that parted the lips had to be eased to 6 mm.) */
+  const GROOVE = 0.0025;
+  const sideOf = (v) => {
+    const t = tgt.opaque[v], q = lay(t.p), p = parting(q[0]);
+    if (Math.abs(q[1] - p) < GROOVE && Math.abs(t.n[1]) > 0.02) return t.n[1] > 0 ? 1 : 0;
+    return q[1] < p ? 1 : 0;
+  };
+
   // ---------- skin from skin ----------
   if (process.env.DEBUG) {
     const bl = src.keys.indexOf('blinkL');
@@ -181,11 +226,11 @@ for (const person of process.argv.slice(2)) {
     if (t.part !== PART_.skin || t.p[1] < mT[1] - REGION / scale) return;
     const q = lay(t.p);
     if (Math.abs(q[0]) > 0.16) return;
-    const byLips = Math.abs(q[0]) < LIPS_WIDE && Math.abs(q[1] - mouth) < LIPS_TALL;
+    const byLips = q[0] > cornerL && q[0] < cornerR && Math.abs(q[1] - mouth) < LIPS_TALL;
     const best = [];
     for (const s of sSkin) {
       let d2 = (s.p[0] - q[0]) ** 2 + (s.p[1] - q[1]) ** 2 + ((s.p[2] - q[2]) * DEPTH) ** 2;
-      if (byLips && (q[1] > mouth) !== (s.p[1] > mouth)) d2 += 1e3;
+      if (byLips && !sideOf(v) !== (s.p[1] > mouth)) d2 += 1e3;
       if (best.length < NEAREST || d2 < best[best.length - 1][0]) {
         best.push([d2, s]); best.sort((a, b) => a[0] - b[0]); if (best.length > NEAREST) best.pop();
       }
@@ -206,6 +251,161 @@ for (const person of process.argv.slice(2)) {
   });
   console.log(name, 'skin', skinT.length, 'vertices take keys,', close, 'of them within', NEAR * 1000, 'mm of the MakeHuman\'s moving skin (on average', (sum / close * 1000).toFixed(1), 'mm); mouth line', (mS[1] - mouth).toFixed(3), 'm under the eyes');
 
+  // ---------- the mouth's inside ----------
+  // Skin behind the lips (the lips' insides, and the mouth's lining back to the throat) is hidden from the front by the face
+  // itself: reached from skin by the lips facing back, through skin that doesn't face forward (INSIDE_NZ) and has skin in
+  // front of it. Each of it goes with the lower lip by how far round the inside it is to it against to the upper (Dijkstra
+  // from the skin on either side): deep in (past FAR_IN from either lip) as the lower teeth do by that share, nearer the
+  // lips smoothed between what the lips do and that (harmonic), so the corners, which move a quarter of the jaw's move,
+  // don't tear from an inside that moves all of it; the groove's skin as its own lip's rim. Each lip's moves are smoothed
+  // along that lip first: its rim copies its moves from a few MakeHuman vertices each, and neighbouring rim vertices took a
+  // millimetre or more apart, so the lower lip's top came up in points as the jaw opened.
+  const INSIDE_NZ = 0.4, FAR_IN = 0.012, LIP_SMOOTH = 40;
+  // (deep in, a vertex clearly above or below the parting goes wholly with its row of teeth; within BACK_BLEND across it, shared)
+  const BACK_BLEND = 0.0005, BACK_WALL = 0.02;
+  // (skin deeper in than this round the inside from either lip is the mouth's lining, drawn as the mouth is: see below)
+  const MOUTH_LINING = 0.0025;
+  // (an open mouth's tongue lies lower than the lower teeth have gone, and in their shade: at the jaw's own move and lit as
+  // the teeth it filled the opening like an orange plate)
+  const TONGUE_DROP = 2.2, TONGUE_SHADE = 0.55;
+  const I = arr(Uint32Array, h.meshes.opaque.index);
+  const nb = new Map();
+  for (let i = 0; i < I.length; i += 3) for (let a = 0; a < 3; a++) {
+    const x = I[i + a], y = I[i + (a + 1) % 3];
+    if (!nb.has(x)) nb.set(x, new Set()); if (!nb.has(y)) nb.set(y, new Set());
+    nb.get(x).add(y); nb.get(y).add(x);
+  }
+  const inSkin = new Set(skinT);
+  const boxOf = (v) => { const q = lay(tgt.opaque[v].p); return Math.abs(q[0]) < 0.045 && q[1] - mouth < 0.024 && mouth - q[1] < 0.045 && q[2] - mS[2] < 0.03; };
+  /** The lips' front (laid z) across the mouth, in 4 mm bins. */
+  const front = new Map();
+  for (const v of skinT) { const q = lay(tgt.opaque[v].p); if (Math.abs(q[0]) < LIPS_WIDE + 0.01 && Math.abs(q[1] - mouth) < 0.006) { const b = Math.round(q[0] / 0.004); front.set(b, Math.max(front.get(b) ?? -1, q[2])); } }
+  const lipFront = (q) => { let f; for (let d = 0; d < 20 && f === undefined; d++) f = front.get(Math.round(q[0] / 0.004) - d * Math.sign(q[0] || 1)); return f ?? mS[2]; };
+  // (hidden: skin in front of it more than a millimetre, straight out of the face, +z)
+  const near = [];
+  for (let i = 0; i < I.length; i += 3) if (tgt.opaque[I[i]].part === PART_.skin && boxOf(I[i])) near.push(I[i], I[i + 1], I[i + 2]);
+  const hid = new Map();
+  const hidden = (v) => {
+    if (hid.has(v)) return hid.get(v);
+    const o = tgt.opaque[v].p;
+    let hit = false;
+    for (let i = 0; i < near.length && !hit; i += 3) {
+      if (near[i] === v || near[i + 1] === v || near[i + 2] === v) continue;
+      const a = tgt.opaque[near[i]].p, b = tgt.opaque[near[i + 1]].p, c = tgt.opaque[near[i + 2]].p;
+      const d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]); if (Math.abs(d) < 1e-12) continue;
+      const l1 = ((b[1] - c[1]) * (o[0] - c[0]) + (c[0] - b[0]) * (o[1] - c[1])) / d, l2 = ((c[1] - a[1]) * (o[0] - c[0]) + (a[0] - c[0]) * (o[1] - c[1])) / d, l3 = 1 - l1 - l2;
+      if (l1 >= 0 && l2 >= 0 && l3 >= 0 && l1 * a[2] + l2 * b[2] + l3 * c[2] > o[2] + 0.001) hit = true;
+    }
+    hid.set(v, hit);
+    return hit;
+  };
+  // (or facing out, where it is the mouth's back wall: well behind the lips. Left out, its skin kept the MakeHuman's nearest
+  // skin's moves, or none, and was stretched into a pale sheet lit as skin across every open mouth, 15 Nov)
+  const deepIn = (v) => { const q = lay(tgt.opaque[v].p); return lipFront(q) - q[2] > BACK_WALL; };
+  const inside = new Set(skinT.filter((v) => { const q = lay(tgt.opaque[v].p); return Math.abs(q[0]) < LIPS_WIDE && Math.abs(q[1] - mouth) < 0.015 && tgt.opaque[v].n[2] < -0.3 && hidden(v); }));
+  for (const queue = [...inside]; queue.length;) {
+    const v = queue.pop();
+    for (const u of nb.get(v) ?? []) if (!inside.has(u) && boxOf(u) && (tgt.opaque[u].part === PART_.tongue || (tgt.opaque[u].part === PART_.skin && (tgt.opaque[u].n[2] < INSIDE_NZ || deepIn(u)) && hidden(u)))) { inside.add(u); queue.push(u); }
+  }
+  const D = [...inside];
+  if (D.length < 200) throw new Error(`${name}: ${D.length} vertices inside the mouth is not a mouth`);
+  const seedL = [], seedU = [];
+  for (const v of inside) {
+    const q = lay(tgt.opaque[v].p);
+    if (Math.abs(q[1] - parting(q[0])) < GROOVE && Math.abs(tgt.opaque[v].n[1]) > 0.3) (sideOf(v) ? seedL : seedU).push(v);
+    for (const u of nb.get(v)) if (!inside.has(u) && inSkin.has(u)) (sideOf(u) ? seedL : seedU).push(u);
+  }
+  const len = (x, y) => { const p = tgt.opaque[x].p, q = tgt.opaque[y].p; return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
+  const round = (seeds) => {
+    const d = new Map(seeds.map((v) => [v, 0])), todo = [...new Set(seeds)];
+    while (todo.length) {
+      let bi = 0; for (let i = 1; i < todo.length; i++) if (d.get(todo[i]) < d.get(todo[bi])) bi = i;
+      const v = todo[bi]; todo[bi] = todo[todo.length - 1]; todo.pop();
+      for (const u of nb.get(v)) { if (!inside.has(u)) continue; const nd = d.get(v) + len(v, u); if (nd < (d.get(u) ?? Infinity)) { if (!d.has(u)) todo.push(u); d.set(u, nd); } }
+    }
+    return d;
+  };
+  const dU = round(seedU), dL = round(seedL), inFrom = (v) => Math.min(dU.get(v) ?? Infinity, dL.get(v) ?? Infinity);
+  const groove = new Set(D.filter((v) => { const q = lay(tgt.opaque[v].p); return inSkin.has(v) && Math.abs(q[1] - parting(q[0])) < GROOVE && Math.abs(tgt.opaque[v].n[1]) > 0.3; }));
+  // each lip smoothed along itself
+  const lipV = skinT.filter((v) => { const q = lay(tgt.opaque[v].p); return Math.abs(q[0]) < LIPS_WIDE && Math.abs(q[1] - mouth) < LIPS_TALL; });
+  const sideV = new Map(lipV.map((v) => [v, inside.has(v) ? -1 : sideOf(v)]));
+  const acc = new Float64Array(6);
+  for (let k = 0; k < NK; k++) for (let it = 0; it < LIP_SMOOTH; it++) for (const v of lipV) {
+    const sv = sideV.get(v); if (sv < 0) continue;
+    let n = 0; acc.fill(0);
+    for (const u of nb.get(v)) { if (sideV.get(u) !== sv) continue; const ou = (u * NK + k) * 6; for (let c = 0; c < 6; c++) acc[c] += out.opaque[ou + c]; n++; }
+    if (!n) continue;
+    const o = (v * NK + k) * 6; for (let c = 0; c < 6; c++) out.opaque[o + c] = 0.5 * out.opaque[o + c] + 0.5 * acc[c] / n;
+  }
+  // and the cheek past each corner smoothed across, both sides together: the MakeHuman's own mouth is wider on some faces, and
+  // its slit, copied on past the MetaHuman's corner, tore p9's cheek from the corner out as the jaw opened
+  const CHEEK_SMOOTH = 30, CHEEK_OUT = 0.018, CHEEK_TALL = 0.015;
+  const cheekV = skinT.filter((v) => { const q = lay(tgt.opaque[v].p); return !inside.has(v) && Math.abs(q[1] - mouth) < CHEEK_TALL && ((q[0] < cornerL + 0.003 && q[0] > cornerL - CHEEK_OUT) || (q[0] > cornerR - 0.003 && q[0] < cornerR + CHEEK_OUT)); });
+  for (let k = 0; k < NK; k++) for (let it = 0; it < CHEEK_SMOOTH; it++) for (const v of cheekV) {
+    let n = 0; acc.fill(0);
+    for (const u of nb.get(v)) { if (!inSkin.has(u) || inside.has(u)) continue; const ou = (u * NK + k) * 6; for (let c = 0; c < 6; c++) acc[c] += out.opaque[ou + c]; n++; }
+    if (!n) continue;
+    const o = (v * NK + k) * 6; for (let c = 0; c < 6; c++) out.opaque[o + c] = 0.5 * out.opaque[o + c] + 0.5 * acc[c] / n;
+  }
+  // the groove as its lip's rim (the nearest skin outside on its side)
+  const outside = lipV.filter((u) => !inside.has(u));
+  for (const v of groove) {
+    const sv = sideOf(v), p = tgt.opaque[v].p; let best = -1, bd = Infinity;
+    for (const u of outside) { if (sideV.get(u) !== sv) continue; const q = tgt.opaque[u].p, d = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 + (q[2] - p[2]) ** 2; if (d < bd) { bd = d; best = u; } }
+    if (best >= 0) for (let k = 0; k < NK; k++) { const o = (v * NK + k) * 6, ou = (best * NK + k) * 6; for (let c = 0; c < 6; c++) out.opaque[o + c] = out.opaque[ou + c]; }
+  }
+  // Near the lips (within FAR_IN round the inside) each vertex goes wholly with the nearer lip, smoothed only among its own
+  // side, and the triangles between the two sides are cut (below): the inside opens where the lips' insides meet. Shared out
+  // between the lips there instead, it was a sheet of skin across the open mouth, lit pale pink. Deep in, it goes with the
+  // lower teeth by its share (the back of the mouth stretches, in the dark).
+  const sTe = src.verts.filter((v) => !v.alpha && v.part === PART_.teeth && Math.hypot(...v.d[jaw].slice(0, 3)) > 0.002);
+  const free = D.filter((v) => !groove.has(v) && inFrom(v) <= FAR_IN);
+  /** Which lip a vertex goes with: 1 the lower, 0 the upper, -1 deep in (both), -2 not skin by the mouth. */
+  const sideIn = new Map();
+  // (by height against the lips' own parting, not by which lip is nearer round the surface: the lips are joined at the back, and
+  // the shortest way from the lower lip ran round the join into the upper lip's inside, which the jaw then pulled down across
+  // the open mouth as a pale sheet, 15 Nov)
+  // (but on the rim itself, within NEAR_RIM round the inside of a lip, by that lip: there the way round can't have gone round
+  // the back, and the parting's fitted height runs a little into either lip, so by height a few of the upper lip's rim went
+  // with the jaw and notched its edge, open or breathing, 15 Nov)
+  const NEAR_RIM = 0.003;
+  const below = (v) => { const q = lay(tgt.opaque[v].p); return +(q[1] < parting(q[0])); };
+  const byLip = (v) => { const u = dU.get(v) ?? Infinity, l = dL.get(v) ?? Infinity; return Math.min(u, l) <= NEAR_RIM ? +(l < u) : below(v); };
+  for (const v of D) sideIn.set(v, groove.has(v) ? sideOf(v) : inFrom(v) <= FAR_IN ? byLip(v) : -1);
+  const sideAt = (v) => sideIn.get(v) ?? (inSkin.has(v) ? sideOf(v) : -2);
+  for (let k = 0; k < NK; k++) {
+    const A = affine(sTe.map((v) => v.p), sTe.map((v) => v.d[k])), An = affine(sTe.map((v) => v.p), sTe.map((v) => v.d[k].slice(3)));
+    for (const v of D) {
+      if (groove.has(v)) continue;
+      const q = lay(tgt.opaque[v].p), u = dU.get(v) ?? Infinity, l = dL.get(v) ?? Infinity;
+      const w = sideIn.get(v) >= 0 ? sideIn.get(v) : u === Infinity && l === Infinity ? +(q[1] < parting(q[0])) : Math.min(1, Math.max(0, 0.5 + (parting(q[0]) - q[1]) / BACK_BLEND));
+      put('opaque', v, k, [...applyAffine(A, q), ...applyAffine(An, q)].map((y) => y * w));
+    }
+    for (let it = 0; it < 400; it++) for (const v of free) {
+      const o = (v * NK + k) * 6, sv = sideIn.get(v); let n = 0; acc.fill(0);
+      for (const u of nb.get(v)) { const su = sideAt(u); if (su !== sv && su !== -1) continue; const ou = (u * NK + k) * 6; for (let c = 0; c < 6; c++) acc[c] += out.opaque[ou + c]; n++; }
+      if (n) for (let c = 0; c < 6; c++) out.opaque[o + c] = acc[c] / n;
+    }
+  }
+  // the triangles between the lips' two sides, inside: cut (folded to a point; the count and anything kept per triangle stay)
+  // (and any triangle by the inside whose corners go with the jaw by shares further apart than OPEN_CUT: a lip's inside next to
+  // the lining deeper in on the other side of the parting, which drew a long pale band from the lower lip up to the upper teeth)
+  const OPEN_CUT = 0.6;
+  const shareOf = (v) => { const sv = sideAt(v); if (sv >= 0) return sv; if (sv === -2) return null; const q = lay(tgt.opaque[v].p); return Math.min(1, Math.max(0, 0.5 + (parting(q[0]) - q[1]) / BACK_BLEND)); };
+  const cutAt = [];
+  for (let i = 0; i < I.length; i += 3) {
+    let lo = false, up = false, ins = false, smin = 1, smax = 0;
+    for (let a = 0; a < 3; a++) {
+      const v = I[i + a], sv = sideAt(v); if (sv === 1) lo = true; else if (sv === 0) up = true; if (sideIn.has(v) && sideIn.get(v) >= 0) ins = true;
+      const sh = shareOf(v); if (sh !== null) { smin = Math.min(smin, sh); smax = Math.max(smax, sh); }
+    }
+    if ((lo && up && ins) || ([0, 1, 2].some((a) => inside.has(I[i + a])) && smax - smin > OPEN_CUT)) cutAt.push(i);
+  }
+  const lining = D.filter((v) => !groove.has(v) && inFrom(v) > MOUTH_LINING);
+  console.log(name, 'mouth: inside', D.length, 'skin vertices (', groove.size, 'in the groove,', free.length, 'by its lip,', D.length - groove.size - free.length, 'with the teeth;', lining.length, 'its lining);', cutAt.length, 'triangles cut where the lips\' insides meet');
+  let tongueV = new Set();
+
   if (process.env.DEBUG) {
     const bl = src.keys.indexOf('blinkL');
     const strong = sSkin.filter((v) => Math.hypot(...v.d[bl].slice(0, 3)) > 0.006);
@@ -221,12 +421,17 @@ for (const person of process.argv.slice(2)) {
   // ---------- teeth and tongue: with the jaw as one piece each ----------
   for (const part of [PART_.teeth, PART_.tongue]) {
     const s = src.verts.filter((v) => !v.alpha && v.part === part);
-    const t = tgt.opaque.map((x, v) => [x, v]).filter(([x]) => x.part === part);
+    // (the MetaHuman's part tongue is a strip joining the lips' insides at the back, moved with the inside above)
+    const t = tgt.opaque.map((x, v) => [x, v]).filter(([x, v]) => x.part === part && !inside.has(v));
     if (!s.length || !t.length) continue;
     // (the lower teeth: the ones the jaw moves; on the MetaHuman, the ones under its teeth's own gap)
     const moving = part === PART_.teeth ? s.filter((v) => Math.hypot(...v.d[jaw].slice(0, 3)) > 0.002) : s;
     // (how much of the jaw's move each vertex takes)
     let lower = t.map(([x, v]) => [x, v, 1]);
+    // (where on the jaw a piece's move is taken from: its own place, or, for the MetaHuman's tongue and lower gums when the mouth
+    // opens, no further back than the lower teeth's front, so the whole tongue drops as the lower teeth do. Turned about the
+    // jaw's hinge its back hardly moved, and it filled an open mouth to the upper teeth like a red ball.)
+    let frontZ = -Infinity;
     if (part === PART_.teeth) {
       // The two rows bite over each other (no gap in height to tell them by), but each row is its own piece of mesh, and so are
       // the gums, the tongue and the palate: a piece goes with the row its middle vertex (by height) is nearer. (The tongue
@@ -242,13 +447,17 @@ for (const person of process.argv.slice(2)) {
       const rows = list.filter((pc) => pc.hi - pc.lo < 0.03).sort((a, c) => c.n - a.n).slice(0, 2).sort((a, c) => a.y - c.y);
       if (rows.length < 2 || rows[1].y - rows[0].y < 0.004) throw new Error(`${name}: can't tell the upper teeth from the lower`);
       const yL = rows[0].y, yU = rows[1].y;
-      lower = list.filter((pc) => Math.abs(pc.y - yL) < Math.abs(pc.y - yU)).flatMap((pc) => pc.ids.map(([x, v]) => [x, v, 1]));
+      lower = list.filter((pc) => Math.abs(pc.y - yL) < Math.abs(pc.y - yU)).flatMap((pc) => pc.ids.map(([x, v]) => [x, v, 1, pc !== rows[0]]));
+      frontZ = Math.max(...rows[0].ids.map(([x]) => lay(x.p)[2]));
+      // (the tongue: of the pieces that go with the jaw, not a row, the one reaching furthest down the throat)
+      const tg = list.filter((pc) => pc !== rows[0] && Math.abs(pc.y - yL) < Math.abs(pc.y - yU)).sort((a, c) => a.lo - c.lo)[0];
+      if (tg) tongueV = new Set(tg.ids.map(([, v]) => v));
       console.log(name, 'teeth', t.length, 'vertices in', list.length, 'pieces (', list.map((pc) => pc.n).sort((a, c) => c - a).join(' '), '), the rows\' middles', ((yU - yL) * 1000).toFixed(1), 'mm apart;', lower.length, 'go with the jaw');
     }
     for (let k = 0; k < NK; k++) {
       const A = affine(moving.map((v) => v.p), moving.map((v) => v.d[k]));
       const An = affine(moving.map((v) => v.p), moving.map((v) => v.d[k].slice(3)));
-      for (const [x, v, w] of lower) { const q = lay(x.p); put('opaque', v, k, [...applyAffine(A, q), ...applyAffine(An, q)].map((y) => y * w)); }
+      for (const [x, v, w, rest] of lower) { const q = lay(x.p), qm = rest ? [q[0], q[1], Math.max(q[2], frontZ)] : q, f = tongueV.has(v) ? TONGUE_DROP : 1; put('opaque', v, k, [...applyAffine(A, qm).map((y) => y * f), ...applyAffine(An, q)].map((y) => y * w)); }
     }
   }
 
@@ -312,34 +521,27 @@ for (const person of process.argv.slice(2)) {
   });
   console.log(name, 'lashes and brows', hung, 'vertices; largest moves (mm):', largest.join(', '));
 
-  // ---------- every key, as far as joined lips let it go ----------
-  // At the face's level of detail the MetaHuman's lips are joined: a strip of small triangles runs from the upper lip's rim to
-  // the lower's, the whole width of the mouth (46-131 of them). With the jaw's whole key (the lower lip 3 cm down) the strip
-  // stretched into a pink sheet over the mouth, like a tongue hung out over the chin, and a grimace (1 cm) did the same; with
-  // the strip taken out the lips stood apart at rest and the mouth showed the teeth as the face's detail level has them (few
-  // triangles, dark), which was worse. So a key that parts the lips is scaled down, all of it, until it parts them PART at
-  // most: the strip then reads as the lips' insides. (Found as the strip: skin triangles no bigger than a lip's rim, SEAL_EDGE,
-  // that the jaw pulls SEAL_PULL apart.) A mouth that opens wants its inside built in mh-player.py: rims apart, a dark lining.
-  const PART = 0.006, SEAL_EDGE = 0.012, SEAL_PULL = 0.018;
-  const I0 = arr(Uint32Array, h.meshes.opaque.index), strip = [];
+  // ---------- a check: nothing torn ----------
+  // (small skin triangles the jaw's whole key pulls TORN apart. Until 15 Nov the lips were split by the MakeHuman's line, which
+  // fell on the lower lip, 46-131 such triangles ran the mouth's width, and every key that parted the lips was eased to 6 mm,
+  // the jaw to 0.17 of itself: open mouths stayed shut. Now a few at the corners, where the MakeHuman's own skin stretches.)
+  const TORN = 0.018, TORN_EDGE = 0.012, TORN_MOST = 24;
   const kd = (v, k) => { const o = (v * NK + k) * 6; return [out.opaque[o], out.opaque[o + 1], out.opaque[o + 2]]; };
-  const pulled = (tri, k) => Math.max(...[0, 1, 2].map((a) => { const p = kd(tri[a], k), q = kd(tri[(a + 1) % 3], k); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); }));
-  for (let i = 0; i < I0.length; i += 3) {
-    const tri = [I0[i], I0[i + 1], I0[i + 2]];
-    if (!tri.every((v) => tgt.opaque[v].part === PART_.skin)) continue;
-    const edge = Math.max(...[0, 1, 2].map((a) => { const p = tgt.opaque[tri[a]].p, q = tgt.opaque[tri[(a + 1) % 3]].p; return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); }));
-    if (edge < SEAL_EDGE && pulled(tri, jaw) > SEAL_PULL) strip.push(tri);
+  let torn = 0;
+  const cutSet = new Set(cutAt);
+  for (let i = 0; i < I.length; i += 3) {
+    if (cutSet.has(i)) continue;
+    const tri = [I[i], I[i + 1], I[i + 2]];
+    if (!tri.every((v) => tgt.opaque[v].part === PART_.skin || inside.has(v))) continue;
+    let edge = 0, pull = 0;
+    for (let a = 0; a < 3; a++) {
+      const p = tgt.opaque[tri[a]].p, q = tgt.opaque[tri[(a + 1) % 3]].p, dp = kd(tri[a], jaw), dq = kd(tri[(a + 1) % 3], jaw);
+      edge = Math.max(edge, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])); pull = Math.max(pull, Math.hypot(dp[0] - dq[0], dp[1] - dq[1], dp[2] - dq[2]));
+    }
+    if (edge < TORN_EDGE && pull > TORN) { torn++; if (process.env.DEBUG) console.log('DEBUG torn', tri.map((v) => { const q = lay(tgt.opaque[v].p); return `${inside.has(v) ? '*' : ''}${(q[0] * 1000).toFixed(0)},${((q[1] - mouth) * 1000).toFixed(1)},${((q[2] - mS[2]) * 1000).toFixed(1)} n${tgt.opaque[v].n.map((x) => x.toFixed(1)).join('/')} s${sideOf(v)} j${(kd(v, jaw)[1] * 1000).toFixed(0)}`; }).join(' | ')); }
   }
-  if (strip.length < 20 || strip.length > 400) throw new Error(`${name}: ${strip.length} triangles between the lips is not a mouth's seam`);
-  const eased = [];
-  for (let k = 0; k < NK; k++) {
-    const part = Math.max(...strip.map((tri) => pulled(tri, k)));
-    if (part <= PART) continue;
-    const f = PART / part;
-    for (const kind of ['opaque', 'alpha']) for (let v = 0, n = tgt[kind].length; v < n; v++) { const o = (v * NK + k) * 6; for (let c = 0; c < 6; c++) out[kind][o + c] *= f; }
-    eased.push(`${src.keys[k]} x${f.toFixed(2)} (parted the lips ${(part * 1000).toFixed(1)} mm)`);
-  }
-  console.log(name, 'lips joined by', strip.length, 'triangles; keys eased:', eased.join(', ') || 'none');
+  if (torn > TORN_MOST) throw new Error(`${name}: the open jaw pulls ${torn} small triangles apart (the lips' parting is wrong)`);
+  console.log(name, 'open jaw pulls', torn, 'small triangles apart');
 
   // ---------- written: the keys after everything else in body.bin ----------
   h.keysAt = bin.length;
@@ -351,6 +553,48 @@ for (const person of process.argv.slice(2)) {
     chunks.push(b); at += b.length;
   }
   h.morphs = src.keys;
+  if (cutAt.length) {
+    const I1 = I.slice();
+    for (const i of cutAt) { I1[i + 1] = I1[i]; I1[i + 2] = I1[i]; }
+    const b = Buffer.from(I1.buffer);
+    h.meshes.opaque.index0 = h.meshes.opaque.index; h.meshes.opaque.indices0 = h.meshes.opaque.indices;
+    h.meshes.opaque.index = [at, b.length];
+    chunks.push(b); at += b.length;
+  }
+  {
+    // The mouth's inside darkens with depth behind the lips (its own occlusion, as an open mouth's is): the lining is drawn as
+    // the mouth is (part teeth), and the teeth, gums, tongue and lining take an occlusion by how far behind the lips' front
+    // they are, DARK_FROM to DARK_FROM + DARK_OVER, down to DARK_MIN (kit.ts `mouthShaded` uses it in place of the atlas's,
+    // which was baked shut). Lit as skin, the open mouth's back was a bright pink wall; the tongue a glass ball.
+    const LIP_CONTACT = 0.003, LIP_FACING = 0.3, LIP_CONTACT_SHADE = 0.3;
+    const DARK_FROM = 0.009, DARK_OVER = 0.014, DARK_MIN = 0.02, LINING_SHADE = 0.6, LINING_OVER = 0.012;
+    const PT = new Uint8Array(bin.buffer, h.meshes.opaque.part[0], h.meshes.opaque.vertices), AO = new Float32Array(bin.buffer, h.meshes.opaque.ao[0], h.meshes.opaque.vertices);
+    const was = [], lined = new Set(lining);
+    for (const v of lining) { was.push([v, PT[v], AO[v]]); PT[v] = PART_.teeth; }
+    // (the tongue is a piece of the teeth's mesh: labelled a tongue, it is drawn as one, matte, kit.ts)
+    for (const v of tongueV) { was.push([v, PT[v], AO[v]]); PT[v] = PART_.tongue; }
+    // (the lips' faces that lie on each other shut: drawn as the mouth, matte and in its shade. Lit as skin, the lower lip's
+    // top faced the roof's lamps square on as the jaw opened, where no shadow map can keep the light off under the upper lip
+    // and the nose, and it was a white sheet across every open mouth, 15 Nov)
+    const contact = new Set(skinT.filter((v) => {
+      if (inside.has(v)) return false;
+      const q = lay(tgt.opaque[v].p), ny = tgt.opaque[v].n[1], sv = sideAt(v);
+      return q[0] > cornerL && q[0] < cornerR && Math.abs(q[1] - parting(q[0])) < LIP_CONTACT && ((sv === 1 && ny > LIP_FACING) || (sv === 0 && ny < -LIP_FACING));
+    }));
+    let n = 0;
+    tgt.opaque.forEach((t, v) => {
+      if (PT[v] !== PART_.teeth && PT[v] !== PART_.tongue) return;
+      const q = lay(t.p);
+      let a = Math.max(DARK_MIN, Math.min(1, 1 - (lipFront(q) - q[2] - DARK_FROM) / DARK_OVER));
+      // (the lining by how far round inside it is too: an open jaw stretches the lower lip's inside over the lower teeth, near
+      // the front in depth at rest, and it was a pale sheet in the mouth)
+      if (lined.has(v)) a = Math.min(a, Math.max(DARK_MIN, LINING_SHADE * (1 - (inFrom(v) - MOUTH_LINING) / LINING_OVER)));
+      if (!lined.has(v) && !tongueV.has(v) && !contact.has(v)) was.push([v, PT[v], AO[v]]);
+      AO[v] = Math.min(AO[v], 0.99, a * (tongueV.has(v) ? TONGUE_SHADE : 1), contact.has(v) ? LIP_CONTACT_SHADE : 1); n++;
+    });
+    h.mouthWas = was;
+    console.log(name, 'mouth shaded by depth on', n, 'vertices');
+  }
   writeFileSync(dir + 'body.bin', Buffer.concat(chunks));
   writeFileSync(dir + 'body.json', JSON.stringify(h));
 }

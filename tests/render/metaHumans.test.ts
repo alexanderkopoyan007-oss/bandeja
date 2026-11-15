@@ -229,8 +229,8 @@ describe('the MetaHuman builds', () => {
         expect(lowest).toBeGreaterThan(look.height - 0.2);
         expect(eye).toBeLessThan(1e-4);
       }
-      // The jaw (eased until the lips part 6 mm: a MetaHuman's lips are joined, face-keys.mjs PART): some teeth go down with
-      // it, some stay (the upper row).
+      // The jaw (whole since 15 Nov: face-keys.mjs splits the lips at their own parting, DECISIONS.md "Mouths that open"):
+      // some teeth go down with it, some stay (the upper row).
       const J = look.morphs.indexOf('jawOpen');
       let moved = 0, still = 0;
       for (let j = 0; j < f.verts.length; j++) if (B[f.verts[j]! * 4 + 2]! > 0.5 && move(J, j) > 0.002) moved++;
@@ -240,8 +240,11 @@ describe('the MetaHuman builds', () => {
       // The chin's skin goes with it.
       let chin = 0;
       for (let j = 0; j < f.verts.length; j++) if (A[f.verts[j]! * 4 + 2]! > 0.5) chin = Math.max(chin, move(J, j));
-      expect(chin).toBeGreaterThan(0.004);
-      expect(chin).toBeLessThan(0.012);
+      // (the whole jaw: the lower lip 2-4 cm down; it was eased to 4-12 mm while the lips were split in the wrong place)
+      expect(chin, `${look.name} chin`).toBeGreaterThan(0.018);
+      expect(chin).toBeLessThan(0.045);
+      // The mouth is shaded by its own depth behind the lips, not by the atlas's shade baked shut.
+      expect(look.mouthShaded, `${look.name} mouth shade`).toBe(true);
       // Looking left: each eyeball turns rigidly (distances within it kept) and about its own centre (every vertex stays
       // as far from the sphere's middle as it was).
       const L = look.morphs.indexOf('lookLeft');

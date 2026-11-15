@@ -27,7 +27,7 @@ await page.evaluateOnNewDocument(() => {
 });
 await page.goto(url, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__held === true, { timeout: 120000, polling: 100 });
-const t = await page.evaluate(async (T, view, faceKeys, fov) => {
+const t = await page.evaluate(async (T, view, faceKeys, fov, pick, only) => {
   const g = window.__bandeja;
   const t0 = g.sim.time;
   document.querySelectorAll('.hint, .pill').forEach((e) => { e.style.display = 'none'; });
@@ -105,10 +105,58 @@ const t = await page.evaluate(async (T, view, faceKeys, fov) => {
   }
   // (no HUD: the stills are of the bodies)
   document.getElementById('hud').style.visibility = 'hidden';
-  g.renderOnce();
+  if (only) {
+    // (ONLY=player: nothing drawn but player 0; ONLY=black: and its face mesh in plain matte black, to tell the person
+    // material's light from anything else's)
+    const ms = []; g.players[0].root.traverse((o) => { if (o.isMesh) ms.push(o); });
+    g.scene.traverse((o) => { if (o.isMesh && !ms.includes(o)) o.visible = false; });
+    if (only === 'black') {
+      let Std = null; g.scene.traverse((o) => { if (!Std && o.material?.type === 'MeshStandardNodeMaterial') Std = o.material.constructor; });
+      const face = ms.filter((o) => o.isSkinnedMesh)[1]; const b = new Std(); b.color.setRGB(0, 0, 0); b.roughness = 1; b.metalness = 0; face.material = b;
+    }
+    if (only.startsWith('strip:')) {
+      // (ONLY=strip:aoNode,sheenNode,...: the face mesh's own material with those nodes taken off; `black` takes its colour
+      // to black too)
+      const face = ms.filter((o) => o.isSkinnedMesh)[1], m = face.material.clone();
+      for (const k of only.slice(6).split(',')) { if (k === 'black') { m.colorNode = null; m.color.setRGB(0, 0, 0); } else if (k === 'lighting') m.setupLightingModel = Object.getPrototypeOf(Object.getPrototypeOf(m)).setupLightingModel; else m[k] = null; }
+      m.needsUpdate = true; face.material = m;
+    }
+    const shadeOnly = only === 'shade';
+    if (only === 'parts' || shadeOnly) {
+      // (the face mesh unlit in its own part weights: red the mouth (teeth + tongue), green the eyes, blue the skin)
+      let Basic = null; g.scene.traverse((o) => { if (!Basic && o.material?.type === 'MeshBasicNodeMaterial') Basic = o.material.constructor; });
+      const face = ms.filter((o) => o.isSkinnedMesh)[1], A = face.geometry.attributes.bodyA.array, B = face.geometry.attributes.bodyB.array, n = A.length / 4, col = new Float32Array(n * 3);
+      const X = face.geometry.attributes.bodyX.array;
+      for (let v = 0; v < n; v++) { col[v * 3] = B[v * 4 + 2] + B[v * 4 + 3]; col[v * 3 + 1] = B[v * 4 + 1]; col[v * 3 + 2] = A[v * 4 + 2]; if (shadeOnly) { const mw = B[v * 4 + 2] + B[v * 4 + 3]; col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = mw * X[v * 4]; } }
+      face.geometry.setAttribute('color', new face.geometry.attributes.position.constructor(col, 3));
+      const b = new Basic(); b.vertexColors = true; b.side = 2; face.material = b;
+    }
+  }
+  if (pick) {
+    // (PICK=1: player 0's face mesh drawn unlit with each triangle's index in its colour, 5 bits a channel (index + 1;
+    // black is everything else), with no tone mapping and no post: tools/out/sock/pick.py reads it back)
+    let Basic = null; g.scene.traverse((o) => { if (!Basic && o.material?.type === 'MeshBasicNodeMaterial') Basic = o.material.constructor; });
+    const ms = []; g.players[0].root.traverse((o) => { if (o.isSkinnedMesh) ms.push(o); });
+    const black = new Basic(); black.color.setRGB(0, 0, 0);
+    g.scene.traverse((o) => { if (o.isMesh && !ms.includes(o)) o.visible = false; });
+    ms.forEach((m, i) => {
+      if (i !== +pick) { m.material = black; return; }
+      // (one colour a triangle: its index in the face's index + 1)
+      const ng = m.geometry.toNonIndexed(), n = ng.attributes.position.count, col = new Float32Array(n * 3);
+      for (let j = 0; j < n; j++) { const k = Math.floor(j / 3) + 1; col[j * 3] = (k & 31) / 31; col[j * 3 + 1] = ((k >> 5) & 31) / 31; col[j * 3 + 2] = ((k >> 10) & 31) / 31; }
+      ng.setAttribute('color', new m.geometry.attributes.position.constructor(col, 3));
+      m.geometry = ng;
+      const b = new Basic(); b.vertexColors = true; b.side = 2; m.material = b;
+    });
+    g.renderer.toneMapping = 0;
+    await g.renderer.compileAsync(g.scene, g.cam.camera);
+    g.renderer.render(g.scene, g.cam.camera);
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    g.renderer.render(g.scene, g.cam.camera);
+  } else g.renderOnce();
   await new Promise((r) => requestAnimationFrame(() => r()));
   return [g.sim.time, t0];
-}, +T, process.env.VIEW ?? '', process.env.FACE ?? '', +(process.env.FOV ?? 0));
+}, +T, process.env.VIEW ?? '', process.env.FACE ?? '', +(process.env.FOV ?? 0), process.env.PICK ?? '', process.env.ONLY ?? '');
 await new Promise((r) => setTimeout(r, 300));
 await page.screenshot({ path: out });
 await browser.close();
