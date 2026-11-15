@@ -604,12 +604,14 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   ambientFix: THREE.Node<'float'>;
   fill: THREE.Node<'float'>;
   directShine: THREE.Node<'float'>;
-  constructor(scatter: THREE.Node<'float'>, ambientFix: THREE.Node<'float'>, fill: THREE.Node<'float'>, directShine: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
+  directDiffuse: THREE.Node<'float'>;
+  constructor(scatter: THREE.Node<'float'>, ambientFix: THREE.Node<'float'>, fill: THREE.Node<'float'>, directShine: THREE.Node<'float'>, directDiffuse: THREE.Node<'float'>, clearcoat: boolean, sheen: boolean) {
     super(clearcoat, sheen, false, false, false, false);
     this.scatter = scatter;
     this.ambientFix = ambientFix;
     this.fill = fill;
     this.directShine = directShine;
+    this.directDiffuse = directDiffuse;
   }
 
   /** Skin and eyes take the ambient's brightness, not its colour: the court's probe is lit by a blue and a red floor,
@@ -657,12 +659,18 @@ class SkinLighting extends THREE.PhysicalLightingModel {
     // (the lamps' specular this light adds, times `directShine`: three's direct GGX takes F90 as 1 whatever the specular
     // intensity, so a surface with its shine taken to nothing still shone white at a grazing view; an open mouth's floor,
     // facing the roof's lamps, glowed, 15 Nov)
-    const rl = input.reflectedLight as unknown as { directSpecular: THREE.Node<'vec3'> };
+    // (and its diffuse times `directDiffuse`: no shadow map resolves the inside of a mouth, so the lamps lit an open mouth's
+    // floor and lining facet by facet, each flat triangle its own brightness, and the inside was dark-red shards, 15 Nov)
+    const rl = input.reflectedLight as unknown as { directSpecular: THREE.Node<'vec3'>; directDiffuse: THREE.Node<'vec3'> };
     const spec = rl.directSpecular, own = vec3(0, 0, 0).toVar();
+    const diff = rl.directDiffuse, ownD = vec3(0, 0, 0).toVar();
     rl.directSpecular = own;
+    rl.directDiffuse = ownD;
     super.direct(input, builder);
     rl.directSpecular = spec;
+    rl.directDiffuse = diff;
     spec.addAssign(own.mul(this.directShine));
+    diff.addAssign(ownD.mul(this.directDiffuse));
   }
 }
 const SKIN_WRAP = 0.55;
@@ -876,9 +884,10 @@ export class PersonNodeMaterial extends THREE.MeshPhysicalNodeMaterial {
   fillNode: THREE.Node<'float'> = float(0);
   /** The lamps' specular kept (SkinLighting.direct): 1 but in a shaded mouth. */
   directShineNode: THREE.Node<'float'> = float(1);
+  directDiffuseNode: THREE.Node<'float'> = float(1);
   toneBackNode: THREE.Node<'float'> = float(0);
   override setupLightingModel(): THREE.PhysicalLightingModel {
-    return new SkinLighting(this.scatterNode, this.ambientFixNode, this.fillNode, this.directShineNode, this.useClearcoat, this.useSheen);
+    return new SkinLighting(this.scatterNode, this.ambientFixNode, this.fillNode, this.directShineNode, this.directDiffuseNode, this.useClearcoat, this.useSheen);
   }
 
   /**
@@ -951,7 +960,10 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // (a mouth with a shade of its own, by depth, `mouthShaded`, takes it in place of the atlas's, which was baked shut: its upper
   // teeth were olive blocks in an open mouth. It must be here as well as in the colour: the occlusion is what holds back the
   // surroundings' reflection, which at a grazing view lit the mouth's floor a pale sheet behind the teeth)
-  const mouthAO = body.mouthShaded ? X.x : float(0.15).add(tex.w.mul(0.85));
+  // (none on a shaded mouth's ambient: its depth darkens its colour, and the lamps' direct light is taken off it,
+  // `directDiffuseNode`; with its occlusion on the ambient too, the inside was black, and the lamps through the shadow maps
+  // lit what showed in hard-edged shards, 15 Nov)
+  const mouthAO = body.mouthShaded ? float(1) : float(0.15).add(tex.w.mul(0.85));
   const bakedAO = mix(float(1), mix(float(0.3).add(skinAO.mul(0.7)), mouthAO, mouthW), skinW.add(mouthW)).mul(vAO);
   // The waistband under the shirt was in the shirt's shadow when the occlusion was baked (MakeHuman's outfit); a shirt
   // riding up as the player bends showed it as a grey band. Above the shirt's hem the shorts are lit as they show.
@@ -1143,6 +1155,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const mouthShade = mix(float(1), X.x.mul(X.x).mul(X.x), mouthW);
   m.specularIntensityNode = mix(mix(float(1), smoothstep(0.3, 0.9, tex.x), skirtW), creased.mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW)).mul(mouthShade);
   m.directShineNode = mouthShade;
+  m.directDiffuseNode = body.mouthShaded ? mix(float(1), X.x.max(0), mouthW) : float(1);
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
   m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
     .mul(creased).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55).add(tongueW.mul(body.mouthShaded ? TONGUE_COAT : 0.8)).mul(mouthShade));

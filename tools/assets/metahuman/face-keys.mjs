@@ -566,21 +566,12 @@ for (const person of process.argv.slice(2)) {
     // the mouth is (part teeth), and the teeth, gums, tongue and lining take an occlusion by how far behind the lips' front
     // they are, DARK_FROM to DARK_FROM + DARK_OVER, down to DARK_MIN (kit.ts `mouthShaded` uses it in place of the atlas's,
     // which was baked shut). Lit as skin, the open mouth's back was a bright pink wall; the tongue a glass ball.
-    const LIP_CONTACT = 0.003, LIP_FACING = 0.3, LIP_CONTACT_SHADE = 0.3;
     const DARK_FROM = 0.009, DARK_OVER = 0.014, DARK_MIN = 0.02, LINING_SHADE = 0.6, LINING_OVER = 0.012;
     const PT = new Uint8Array(bin.buffer, h.meshes.opaque.part[0], h.meshes.opaque.vertices), AO = new Float32Array(bin.buffer, h.meshes.opaque.ao[0], h.meshes.opaque.vertices);
     const was = [], lined = new Set(lining);
     for (const v of lining) { was.push([v, PT[v], AO[v]]); PT[v] = PART_.teeth; }
     // (the tongue is a piece of the teeth's mesh: labelled a tongue, it is drawn as one, matte, kit.ts)
     for (const v of tongueV) { was.push([v, PT[v], AO[v]]); PT[v] = PART_.tongue; }
-    // (the lips' faces that lie on each other shut: drawn as the mouth, matte and in its shade. Lit as skin, the lower lip's
-    // top faced the roof's lamps square on as the jaw opened, where no shadow map can keep the light off under the upper lip
-    // and the nose, and it was a white sheet across every open mouth, 15 Nov)
-    const contact = new Set(skinT.filter((v) => {
-      if (inside.has(v)) return false;
-      const q = lay(tgt.opaque[v].p), ny = tgt.opaque[v].n[1], sv = sideAt(v);
-      return q[0] > cornerL && q[0] < cornerR && Math.abs(q[1] - parting(q[0])) < LIP_CONTACT && ((sv === 1 && ny > LIP_FACING) || (sv === 0 && ny < -LIP_FACING));
-    }));
     let n = 0;
     tgt.opaque.forEach((t, v) => {
       if (PT[v] !== PART_.teeth && PT[v] !== PART_.tongue) return;
@@ -589,8 +580,8 @@ for (const person of process.argv.slice(2)) {
       // (the lining by how far round inside it is too: an open jaw stretches the lower lip's inside over the lower teeth, near
       // the front in depth at rest, and it was a pale sheet in the mouth)
       if (lined.has(v)) a = Math.min(a, Math.max(DARK_MIN, LINING_SHADE * (1 - (inFrom(v) - MOUTH_LINING) / LINING_OVER)));
-      if (!lined.has(v) && !tongueV.has(v) && !contact.has(v)) was.push([v, PT[v], AO[v]]);
-      AO[v] = Math.min(AO[v], 0.99, a * (tongueV.has(v) ? TONGUE_SHADE : 1), contact.has(v) ? LIP_CONTACT_SHADE : 1); n++;
+      if (!lined.has(v) && !tongueV.has(v)) was.push([v, PT[v], AO[v]]);
+      AO[v] = Math.min(AO[v], 0.99, a * (tongueV.has(v) ? TONGUE_SHADE : 1)); n++;
     });
     h.mouthWas = was;
     console.log(name, 'mouth shaded by depth on', n, 'vertices');

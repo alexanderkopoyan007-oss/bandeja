@@ -123,11 +123,11 @@ const t = await page.evaluate(async (T, view, faceKeys, fov, pick, only) => {
     }
     const shadeOnly = only === 'shade';
     if (only === 'parts' || shadeOnly) {
-      // (the face mesh unlit in its own part weights: red the mouth (teeth + tongue), green the eyes, blue the skin)
+      // (the face mesh unlit in its own part weights: red the teeth (and the lining, drawn as them), green the tongue, blue the skin, white the eyes)
       let Basic = null; g.scene.traverse((o) => { if (!Basic && o.material?.type === 'MeshBasicNodeMaterial') Basic = o.material.constructor; });
       const face = ms.filter((o) => o.isSkinnedMesh)[1], A = face.geometry.attributes.bodyA.array, B = face.geometry.attributes.bodyB.array, n = A.length / 4, col = new Float32Array(n * 3);
       const X = face.geometry.attributes.bodyX.array;
-      for (let v = 0; v < n; v++) { col[v * 3] = B[v * 4 + 2] + B[v * 4 + 3]; col[v * 3 + 1] = B[v * 4 + 1]; col[v * 3 + 2] = A[v * 4 + 2]; if (shadeOnly) { const mw = B[v * 4 + 2] + B[v * 4 + 3]; col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = mw * X[v * 4]; } }
+      for (let v = 0; v < n; v++) { col[v * 3] = B[v * 4 + 2] + B[v * 4 + 1]; col[v * 3 + 1] = B[v * 4 + 3] + B[v * 4 + 1]; col[v * 3 + 2] = A[v * 4 + 2] + B[v * 4 + 1]; if (shadeOnly) { const mw = B[v * 4 + 2] + B[v * 4 + 3]; col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = mw * X[v * 4]; } }
       face.geometry.setAttribute('color', new face.geometry.attributes.position.constructor(col, 3));
       const b = new Basic(); b.vertexColors = true; b.side = 2; face.material = b;
     }
