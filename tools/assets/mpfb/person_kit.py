@@ -714,7 +714,20 @@ def make_head_piece(body, hair, rig, eye_pts, style):
 # sides) and covers its ribbed band. Every body has one (any player can choose a polo, M5 phase C step 5): on the suit's shirt
 # when that is a tee, or on the tee person_wear.make_tops built (`whole`: all of `suit` is the shirt), already pushed out, so
 # the leaf comes down to `lift` over it (the suit is pushed PUSH after its collar is made: 4.5 mm becomes 1.5).
-def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lift=0.0045):
+# A collar on a garment's own neckline (make_collar `ring`): the stand's height at the back and at the front, how far off the
+# neck's skin its top is, and the leaf's reach out and fall down from the fold (plain, and more at the points). A polo's
+# collar: a stand about 3 cm at the back, 2 at the front, a leaf about 4 cm wide with points about 7 cm.
+COLLAR_STAND = (0.026, 0.016)
+COLLAR_HUG = 0.004
+COLLAR_REACH = (0.026, 0.016)
+COLLAR_FALL = (0.042, 0.035)
+# (and the front's opening each side of the middle, over the placket kit.ts paints, and how far the leaf's inside is held off
+# the shirt as it passes over the garment's own neckline edge, which came through it in holes)
+COLLAR_OPEN = 9
+COLLAR_CLEAR = 0.007
+
+
+def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lift=0.0045, ring=None):
     from mathutils.bvhtree import BVHTree
     skin = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices],
                                 [tuple(p.vertices) for p in body.data.polygons if max(p.vertices) < N_BODY])
@@ -723,7 +736,7 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lif
     shirt = BVHTree.FromPolygons([v.co.copy() for v in sm.vertices], [tuple(p.vertices) for p in sm.polygons if p.vertices[0] in top])
     neck = rig.data.bones[P + 'Neck'].head_local.copy()
     # Round from one front point by the back to the other: `a` is the angle from straight forward (the model faces -y).
-    open_a = math.radians(26)
+    open_a = math.radians(26 if ring is None else COLLAR_OPEN)
     cols = 32
     verts, faces, shade = [], [], []
     # (the leaf laid on the shirt at LEAF_STEPS places down its fall: with one between the fold and the edge, its strips cut in
@@ -757,9 +770,24 @@ def make_collar(body, suit, rig, women, drop=0.075, curve=11.5, whole=False, lif
         point = max(0.0, 1 - min(t, 1 - t) / 0.16)  # 1 at a collar point
         reach = 0.026 + 0.014 * point
         fall = 0.03 + 0.024 * point
-        leaf = on_shirt(fold + d * reach + down * fall, d)
         stand = fold + down * 0.03 - d * 0.004
-        mids = [on_shirt(fold * (1 - f) + leaf * f, d) + Vector((0, 0, 0.002 * (1 - f)))
+        if ring is not None:
+            # (on the garment's own neckline, `ring(a)`: the stand rises from it, the fold is at the stand's top on the
+            # neck's skin, and the leaf falls back over the neckline. Guessed from the MakeHuman's neck instead, on a
+            # MetaHuman's tee it sat out on the shoulders, under the tee's own neckline, and its points stood off the chest)
+            edge = ring(a)
+            u = max(0.0, min(1.0, (math.cos(a) + 0.15) / 0.5))  # 1 at the front
+            zf = edge.z + COLLAR_STAND[0] * (1 - u) + COLLAR_STAND[1] * u
+            c = Vector((neck.x, neck.y, zf))
+            hit = skin.ray_cast(c + d * 0.3, -d, 0.3)
+            rf = (hit[0] - c).length if hit[0] is not None else (edge - Vector((neck.x, neck.y, edge.z))).length
+            fold = c + d * (rf + COLLAR_HUG)
+            stand = edge - d * 0.002 + down * 0.004
+            reach = COLLAR_REACH[0] + COLLAR_REACH[1] * point
+            fall = COLLAR_FALL[0] + COLLAR_FALL[1] * point
+        leaf = on_shirt(fold + d * reach + down * fall, d)
+        clear = 0.002 if ring is None else COLLAR_CLEAR
+        mids = [on_shirt(fold * (1 - f) + leaf * f, d) + Vector((0, 0, clear * (1 - f)))
                 for f in (i / LEAF_STEPS for i in range(1, LEAF_STEPS))]
         for k, (p, sh) in enumerate([(stand, 0.55), (fold, 1.0)] + [(m, 1.0) for m in mids] + [(leaf, 0.9)]):
             rows[k].append(len(verts))

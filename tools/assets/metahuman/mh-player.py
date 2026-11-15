@@ -1413,7 +1413,38 @@ if WARDROBE:
     sk_me.update()
     skin_all = bpy.data.objects.new('skin_all', sk_me)
     bpy.context.scene.collection.objects.link(skin_all)
-    collar = pk.make_collar(skin_all, tee, wear_rig, WOMEN, whole=True)
+    # (on the tee's own neckline: per 5 degrees round the neck, the highest open edge of the tee near it. A seam's open edges
+    # run down from the neck, and their top is the neckline too)
+    from collections import Counter as _Counter
+    nk_ = wear_rig.data.bones[pk.P + 'Neck'].head_local.copy()
+    uses_ = _Counter(k for p_ in tee.data.polygons for k in p_.edge_keys)
+    open_ = {i for k, c in uses_.items() if c == 1 for i in k}
+    NBIN = 72
+    edge_at = [None] * NBIN
+    for i in open_:
+        co_ = tee.data.vertices[i].co
+        dx_, dy_ = co_.x - nk_.x, co_.y - nk_.y
+        if math.hypot(dx_, dy_) > 0.13 or co_.z < nk_.z - 0.16:
+            continue
+        b_ = int((math.atan2(dx_, -dy_) % (2 * math.pi)) / (2 * math.pi) * NBIN) % NBIN
+        if edge_at[b_] is None or co_.z > edge_at[b_].z:
+            edge_at[b_] = co_.copy()
+    have_ = [b_ for b_ in range(NBIN) if edge_at[b_] is not None]
+    for b_ in range(NBIN):
+        if edge_at[b_] is None:
+            edge_at[b_] = edge_at[min(have_, key=lambda h_: min(abs(h_ - b_), NBIN - abs(h_ - b_)))].copy()
+    # (smoothed round the neck: a seam's end or a lining's edge in one bin crumpled a woman's collar into steps)
+    for _ in range(6):
+        edge_at = [(edge_at[(b_ - 1) % NBIN] + edge_at[b_] * 2 + edge_at[(b_ + 1) % NBIN]) / 4 for b_ in range(NBIN)]
+
+    def neckline(a_):
+        f_ = (a_ % (2 * math.pi)) / (2 * math.pi) * NBIN - 0.5
+        b0_ = math.floor(f_)
+        w_ = f_ - b0_
+        return edge_at[b0_ % NBIN].lerp(edge_at[(b0_ + 1) % NBIN], w_)
+    say("collar on the tee's neckline:", len(have_), 'of', NBIN, 'bins; height', round(min(e.z for e in edge_at) - nk_.z, 3), 'to',
+        round(max(e.z for e in edge_at) - nk_.z, 3), 'm from the neck joint')
+    collar = pk.make_collar(skin_all, tee, wear_rig, WOMEN, whole=True, ring=neckline)
     for m in list(collar.modifiers):
         collar.modifiers.remove(m)
     bpy.data.objects.remove(skin_all)
@@ -1486,7 +1517,10 @@ if os.environ.get('MH_STOP') == 'wear':
         for o, tone in parts + [(body, 'skin'), (head_skin, 'skin'), (shoes, 'white')]:
             o.hide_render = False
             dress(o, tone)
-        for tag, at, look in (('front', (0.6, -3.6, 1.25), (0, 0, 1.0)), ('side', (-3.4, -1.2, 1.25), (0, 0, 1.0))):
+        # (MH_NECK=1: the neck and collar close, from in front and from the side, instead)
+        views_ = ((('front', (0.6, -3.6, 1.25), (0, 0, 1.0)), ('side', (-3.4, -1.2, 1.25), (0, 0, 1.0))) if not os.environ.get('MH_NECK') else
+                  (('neck', (0.25, -1.1, J['Neck'].z + 0.02), (0, 0, J['Neck'].z - 0.06)), ('neckside', (-1.05, -0.45, J['Neck'].z + 0.02), (0, 0, J['Neck'].z - 0.06))))
+        for tag, at, look in views_:
             cam.location = Vector(at)
             cam.rotation_euler = (Vector(look) - cam.location).to_track_quat('-Z', 'Y').to_euler()
             scn.render.filepath = os.path.join(OUT, f'wear-{k}-{tag}.png')
