@@ -809,6 +809,16 @@ const READY_HOLD = 0.97;
  */
 const READY_REACH = 0.89;
 const READY_UP = 1.1;
+/** (16 Nov 2026, the owner on the players: "body proportions") The clips let the collarbones drop 8-17 degrees below where
+ * the body was built (30 and more mid-stroke), which put the shoulder joints 3-5 cm under the bind and read as slumped,
+ * sloping shoulders on every player. A collarbone may go no further down than this (rad) below its bind slope, measured
+ * in the chest's own frame (a lean leaves it be); raising it, as an overhead does, is the clip's own. A depressed shoulder
+ * girdle has about 10 degrees below the neutral (Kapandji), and a relaxed stance sits near the neutral. */
+const CLAV_DOWN = 0.07;
+/** CLAV_DOWN's floor eases in over this either side of it (rad). */
+const CLAV_KNEE = 0.1;
+/** How fast the floor comes and goes round strokes and serves (s). */
+const CLAV_EASE = 0.15;
 /** The shoulder height (m, standing) READY's numbers are for. */
 const READY_SHOULDER = 1.355;
 /** And the arm's length (m). */
@@ -1349,6 +1359,13 @@ export class Avatar {
   // Bones by role.
   private readonly hips: THREE.Bone;
   private readonly spine: THREE.Bone[];
+  /** The collarbones (right, left), each child's way out in its own frame, the chest's up in the collarbone's parent's
+   * frame (x, y, z a side) and the bind's slope (sin, a side): CLAV_DOWN. */
+  private readonly clav: THREE.Bone[] = [];
+  private readonly clavOut = new Float64Array(6);
+  private readonly clavUp = new Float64Array(6);
+  private readonly clavSin0 = new Float64Array(2);
+  private clavOn = 1;
   private readonly neck: THREE.Bone;
   private readonly head: THREE.Bone;
   /** Rest world rotations (model space), inverted: a bone's facing is its rotation away from these, applied to +z. */
@@ -1848,6 +1865,18 @@ export class Avatar {
     this.hips = b('Hips');
     this.spine = [b('Spine'), b('Spine1'), b('Spine2')];
     this.neck = b('Neck');
+    for (let i = 0; i < 2; i++) {
+      const sd = i === 0 ? 'Right' : 'Left', sh = b(sd + 'Shoulder'), par = sh.parent as THREE.Bone;
+      const pw = asset.restWorld[this.bones.indexOf(par)]!, pq = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().extractRotation(pw)).invert();
+      const wp = (n: string): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(asset.restWorld[asset.bone(n)]!);
+      const out = b(sd + 'Arm').position.clone().normalize();
+      const up = wp('Neck').sub(wp('Spine2')).normalize().applyQuaternion(pq);
+      const d0 = wp(sd + 'Arm').sub(wp(sd + 'Shoulder')).normalize().applyQuaternion(pq);
+      this.clav.push(sh);
+      this.clavOut[i * 3] = out.x; this.clavOut[i * 3 + 1] = out.y; this.clavOut[i * 3 + 2] = out.z;
+      this.clavUp[i * 3] = up.x; this.clavUp[i * 3 + 1] = up.y; this.clavUp[i * 3 + 2] = up.z;
+      this.clavSin0[i] = d0.dot(up);
+    }
     this.head = b('Head');
     asset.restWorld[asset.bone('Spine2')]!.decompose(v1, this.chestRestInv, v2);
     this.chestRestInv.invert();
@@ -3395,6 +3424,10 @@ export class Avatar {
     }
     // The clip pose (locomotion, reactions, the shoulder turn) carried on smoothly through any jump, before IK.
     if (this.inertial && (Avatar.inertMask & 1) !== 0) this.inertia.apply(this.bones, this.hips.position, this.inertiaSkip);
+    // (out of a stroke and the serve's routine, eased: a swing and a serve keep the clip's shoulder girdle, which their
+    // elbows are tuned on)
+    this.clavOn += ((this.addr || this.w > 0 ? 0 : 1) - this.clavOn) * (dt > 0 ? 1 - Math.exp(-dt / CLAV_EASE) : 0);
+    if (this.clavOn > 1e-3) this.holdCollarbones();
     this.root.updateMatrixWorld(true);
 
     // The server's free hand holds the ball, and goes down with it as it is pushed into the turf.
@@ -5112,6 +5145,38 @@ export class Avatar {
    * swings stay under it, so away from the shoulder it is exact), and the hand is put along it, at least ARM_MIN out.
    * Pushing straight out alone flips across the shoulder: no smooth rule pushes every point out of a ball.
    */
+  /** CLAV_DOWN: each collarbone turned back up to its floor, about the axis across its way out and the chest's up. */
+  private holdCollarbones(): void {
+    for (let i = 0; i < 2; i++) {
+      const q = this.clav[i]!.quaternion, o = i * 3;
+      const ox = this.clavOut[o]!, oy = this.clavOut[o + 1]!, oz = this.clavOut[o + 2]!;
+      const ux = this.clavUp[o]!, uy = this.clavUp[o + 1]!, uz = this.clavUp[o + 2]!;
+      // d = q o (the way out in the parent's frame)
+      const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+      const tx = 2 * (qy * oz - qz * oy), ty = 2 * (qz * ox - qx * oz), tz = 2 * (qx * oy - qy * ox);
+      const dx = ox + qw * tx + (qy * tz - qz * ty), dy = oy + qw * ty + (qz * tx - qx * tz), dz = oz + qw * tz + (qx * ty - qy * tx);
+      const e = Math.asin(Math.max(-1, Math.min(1, dx * ux + dy * uy + dz * uz)));
+      // (a soft floor: CLAV_KNEE either side of it eased in on a parabola, so a collarbone coming down slows to it rather
+      // than stopping dead: a hard stop is a pop in the motion)
+      const x = Math.asin(Math.max(-1, Math.min(1, this.clavSin0[i]!))) - CLAV_DOWN - e;
+      if (!(x > -CLAV_KNEE)) continue;
+      const lift = (x >= CLAV_KNEE ? x : ((x + CLAV_KNEE) * (x + CLAV_KNEE)) / (4 * CLAV_KNEE)) * this.clavOn;
+      if (!(lift > 1e-5)) continue;
+      let ax = dy * uz - dz * uy, ay = dz * ux - dx * uz, az = dx * uy - dy * ux;
+      const n = Math.sqrt(ax * ax + ay * ay + az * az);
+      if (n < 1e-6) continue;
+      const sh = Math.sin(lift / 2) / n;
+      ax *= sh; ay *= sh; az *= sh;
+      const aw = Math.cos(lift / 2);
+      // q = r q
+      QN[0] = aw * qx + ax * qw + ay * qz - az * qy;
+      QN[1] = aw * qy - ax * qz + ay * qw + az * qx;
+      QN[2] = aw * qz + ax * qy - ay * qx + az * qw;
+      QN[3] = aw * qw - ax * qx - ay * qy - az * qz;
+      q.fromArray(QN);
+    }
+  }
+
   private keepOff(upper: THREE.Bone, target: THREE.Vector3, dir: THREE.Vector3): void {
     const e = upper.matrixWorld.elements;
     const dx = target.x - e[12]!, dy = target.y - e[13]!, dz = target.z - e[14]!;

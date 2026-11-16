@@ -3,7 +3,7 @@
 // (game/names.ts) come from the nations a person's face fits. The generated people look the best of the roster, so
 // they are dealt first, the player's own place and then the far side's; repeating one on a court would bring back the
 // same men under new names, so the rest of the court is the others. Nothing here touches the sim: looks and voices.
-import roster from '../../data/people.json';
+import roster from '../../data/people.json' with { type: 'json' };
 import { KIT_COUNT, type SelfLook } from '../render/avatar/kit.ts';
 import { bodyNamed, isNeutral, type Proportions } from '../render/avatar/proportions.ts';
 import type { RacketColours } from '../render/avatar/racketDesign.ts';

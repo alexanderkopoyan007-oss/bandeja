@@ -9,7 +9,7 @@
 // scaled to their height. Version 3 adds per-vertex occlusion and skin regions, and the face's expression and gaze
 // keys: the opaque mesh's moving part is drawn as its own mesh with morph targets (`personMeshes`).
 import * as THREE from 'three/webgpu';
-import ROSTER from '../../../data/people.json';
+import ROSTER from '../../../data/people.json' with { type: 'json' };
 import { remakeShoes, type ShoeFit, type SoleRef } from './shoe.ts';
 
 export interface BoneDef {
