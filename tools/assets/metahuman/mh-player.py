@@ -971,6 +971,198 @@ for o in (shirt, shorts):
     o.data.update()
     say('garment off the skin:', o.name, out, 'of', len(o.data.vertices), 'vertices out to', GARMENT_OFF * 1000, 'mm')
 
+
+def smooth01(x):
+    x = np.clip(x, 0, 1)
+    return x * x * (3 - 2 * x)
+
+
+def lengthen(o, sel, z0, z1, by):
+    """Cloth `sel` stretched down: unchanged above z0, the band z0..z1 stretched by `by`, all under z1 (the hem's turned band)
+    moved down `by` whole, so the hem keeps its make. By height alone, so unsewn panels' twin vertices stay together."""
+    co = coords(o)
+    z = co[:, 2]
+    k = (z0 - z1 + by) / max(z0 - z1, 1e-3)
+    nz = np.where(z >= z0, z, np.where(z >= z1, z0 - (z0 - z) * k, z - by))
+    co[:, 2] = np.where(sel, nz, z)
+    for v, c in zip(o.data.vertices, co):
+        v.co = Vector(c)
+    o.data.update()
+
+
+def carry_weights(o, sel, co0, w0, src):
+    """Vertices `sel` (moved by `lengthen`) take the bone weights of the cloth that was nearest their new place before
+    (`co0`, `w0`; only vertices `src`): moved down by height, cloth from the waist kept the waist's weights over the hips,
+    twisted apart from the shorts under it in a turn, and they came through it as a black patch (16 Nov, p1 at 6 s)."""
+    pick = np.nonzero(src)[0]
+    tree = KDTree(len(pick))
+    for n_, i in enumerate(pick):
+        tree.insert(co0[i], n_)
+    tree.balance()
+    groups = {g.name[len(P):]: g for g in o.vertex_groups}
+    co = coords(o)
+    n_ = 0
+    for v in np.nonzero(sel)[0]:
+        u = int(pick[tree.find(co[v])[1]])
+        if u == v:
+            continue
+        for g in list(o.data.vertices[v].groups):
+            o.vertex_groups[g.group].remove([int(v)])
+        for b_, w_ in w0[u].items():
+            groups[b_].add([int(v)], w_, 'REPLACE')
+        n_ += 1
+    return n_
+
+
+def off_surface(o, tree, sel, gap):
+    """Vertices `sel` within `gap` of the surface in `tree` (or under it by less than GARMENT_DEEP) out along its normal."""
+    n_ = 0
+    for _ in range(3):
+        for v in o.data.vertices:
+            if not sel[v.index]:
+                continue
+            q, n, _, _ = tree.find_nearest(v.co)
+            if q is None:
+                continue
+            s = (v.co - q).dot(n)
+            if -GARMENT_DEEP < s < gap:
+                v.co = v.co + n * (gap - s)
+                n_ += 1
+    o.data.update()
+    return n_
+
+
+# Kit the length real padel kit is (16 Nov, the owner on the loose shirts: "looka ass"; beside them the tee stopped level
+# with the Hips joint like a crop top over the waistband, and Epic's shorts ended high on the thigh, tight as briefs). Pros'
+# tees hang to a few centimetres above the crotch, over the shorts' top, and their shorts reach to a hand above the knee
+# with legs that stand off the thigh. Men only (the women's tops end at the hips over a skirt, top_hem).
+under_rays, TEE_GAP = None, 0.010
+# (a skirt and the tight pair worn under it keep the length they had over Epic's shorts: made from the longer ones, the pair
+# reached down the thigh and the capsule a skirt clears grew past a leg's at the hip, metaHumans.test)
+UNDER_HEM = None
+if spec.get('drape'):
+    bw_s = weights(shorts)
+    sco = coords(shorts)
+    leg_dom = np.array([bool(w) and 'UpLeg' in max(w, key=w.get) for w in bw_s])
+    s_hem = float(sco[:, 2].min())
+    UNDER_HEM = s_hem
+    # The hem goes down to KNEE_ABOVE over the knee joint (the hem's turned band moved whole, the leg from
+    # SHORTS_FROM under the thigh joint stretched)
+    KNEE_ABOVE, SHORTS_FROM, SHORTS_EASE, SHORTS_INNER = 0.11, 0.10, 0.016, 0.35
+    knee_z = J['LeftLeg'].z
+    by_s = max(0.0, s_hem - (knee_z + KNEE_ABOVE))
+    z0s = J['LeftUpLeg'].z - SHORTS_FROM
+    lengthen(shorts, leg_dom & (sco[:, 2] < z0s), z0s, s_hem + 0.03, by_s)
+    n_cw_s = carry_weights(shorts, leg_dom & (sco[:, 2] < z0s), sco, bw_s, leg_dom)
+    # Stretched down, the leg keeps the upper thigh's girth over a thinner thigh and stood out like a bell (7 cm off it at the
+    # hem): first no more than SHORTS_GAP off the skin (in towards the bone's line), then the ease below.
+    # The legs stand off the thigh: out from its bone's line by SHORTS_EASE at the hem (SHORTS_INNER of it on the inside,
+    # where the other leg is), from nothing at z0s; by position alone, so twin vertices move together.
+    SHORTS_GAP = 0.022
+    n_in = 0
+    sco = coords(shorts)
+    new_hem = float(sco[:, 2].min())
+    # (judged on the cloth facing out, evened over its edges, and the hem's turned band inside it taking the pull of the
+    # nearest of that cloth: pulled by its own distance to the skin, the band moved less than the cloth over it and showed
+    # through the hem as teeth)
+    s_nrm = np.array([v.normal[:] for v in shorts.data.vertices])
+    s_ev = np.array([e.vertices[:] for e in shorts.data.edges])
+    for side in ('Left', 'Right'):
+        a_, k_j = np.array(J[side + 'UpLeg'][:]), np.array(J[side + 'Leg'][:])
+        ax_ = (k_j - a_) / np.linalg.norm(k_j - a_)
+        mine = leg_dom & (np.sign(sco[:, 0]) == np.sign(a_[0])) & (sco[:, 2] < z0s)
+        rel = sco - a_
+        rad = rel - np.outer(rel @ ax_, ax_)
+        rr = np.linalg.norm(rad, axis=1)
+        facing = mine & (rr > 0.02) & ((s_nrm * rad).sum(1) / np.maximum(rr, 1e-6) > 0.2)
+        pull = np.zeros(len(sco))
+        for v in np.nonzero(facing)[0]:
+            q, n, _, _ = skin_tree.find_nearest(Vector(sco[v]))
+            if q is not None:
+                pull[v] = max(0.0, min((Vector(sco[v]) - q).dot(n) - SHORTS_GAP, rr[v] - 0.02))
+        e_ = s_ev[facing[s_ev[:, 0]] & facing[s_ev[:, 1]]]
+        deg = np.zeros(len(sco)); np.add.at(deg, e_[:, 0], 1); np.add.at(deg, e_[:, 1], 1)
+        for _ in range(6):
+            acc = np.zeros(len(sco)); np.add.at(acc, e_[:, 0], pull[e_[:, 1]]); np.add.at(acc, e_[:, 1], pull[e_[:, 0]])
+            pull = np.where(facing & (deg > 0), 0.5 * pull + 0.5 * acc / np.maximum(deg, 1), pull)
+        rest_ = np.nonzero(mine & ~facing & (rr > 0.02))[0]
+        fi = np.nonzero(facing)[0]
+        if len(fi) and len(rest_):
+            kd = KDTree(len(fi))
+            for n_, i in enumerate(fi):
+                kd.insert(sco[i], n_)
+            kd.balance()
+            for v in rest_:
+                pull[v] = min(pull[fi[kd.find(sco[v])[1]]], rr[v] - 0.02)
+        mv = mine & (pull > 1e-5)
+        sco[mv] -= rad[mv] / rr[mv, None] * pull[mv, None]
+        n_in += int(mv.sum())
+    for side, sx in (('Left', 1.0), ('Right', -1.0)):
+        a_, k_j = np.array(J[side + 'UpLeg'][:]), np.array(J[side + 'Leg'][:])
+        ax_ = (k_j - a_) / np.linalg.norm(k_j - a_)
+        mine = leg_dom & (np.sign(sco[:, 0]) == np.sign(a_[0])) & (sco[:, 2] < z0s)
+        rel = sco - a_
+        t_ = rel @ ax_
+        rad = rel - np.outer(t_, ax_)
+        rr = np.linalg.norm(rad, axis=1)
+        outward = np.clip(rad[:, 0] * sx / np.maximum(rr, 1e-6), -1, 1)  # 1 on the outside of the leg, -1 inside
+        side_k = SHORTS_INNER + (1 - SHORTS_INNER) * 0.5 * (1 + outward)
+        push = SHORTS_EASE * smooth01((z0s - sco[:, 2]) / max(z0s - new_hem, 1e-3)) * side_k
+        mv = mine & (rr > 0.01)
+        sco[mv] += rad[mv] / rr[mv, None] * push[mv, None]
+    for v, c in zip(shorts.data.vertices, sco):
+        v.co = Vector(c)
+    shorts.data.update()
+    n_off = off_surface(shorts, skin_tree, np.ones(len(sco), bool), GARMENT_OFF)
+    say('shorts lengthened', round(by_s, 3), 'm: hem', round(s_hem, 3), '->', round(new_hem, 3), '(knee joint', round(knee_z, 3),
+        '); weights carried', n_cw_s, '; legs in to', SHORTS_GAP, 'off the skin', n_in, '; eased', SHORTS_EASE, '; kept off the skin', n_off)
+
+    # The tee's hem goes down to TEE_UNDER_THIGH under the thigh joint. The band from
+    # TEE_FROM under the arm joint (below the armpit) to the hem's turned band is stretched; then it is kept off the skin and
+    # the shorts by TEE_GAP, and the drape below hangs it.
+    TEE_UNDER_THIGH, TEE_FROM, TEE_THIGH = 0.05, 0.14, 0.3
+    sw0 = weights(shirt)
+    sco = coords(shirt)
+    trunk_dom = np.array([bool(w) and max(w, key=w.get) in ('Hips', 'Spine', 'Spine1', 'Spine2') for w in sw0])
+    t_hem = float(sco[trunk_dom, 2].min())
+    want_hem = J['LeftUpLeg'].z - TEE_UNDER_THIGH
+    by_t = max(0.0, t_hem - want_hem)
+    z0t = J['LeftArm'].z - TEE_FROM
+    lengthen(shirt, trunk_dom & (sco[:, 2] < z0t), z0t, t_hem + 0.03, by_t)
+    n_cw_t = carry_weights(shirt, trunk_dom & (sco[:, 2] < z0t), sco, sw0, trunk_dom)
+    # What it has to clear (the body without its arms, which hang by the hips, and the shorts), as rays in from outside: the
+    # hang below takes it as a floor under its radius, so the push is smoothed and the hem's lining follows it. (Pushed out
+    # along the nearest surface's normal, the lining and the cloth over it went different ways and the hem showed teeth.)
+    nb_ = len(body.data.vertices)
+    arm_v = np.array([bool(w) and any(k in max(w, key=w.get) for k in ('Arm', 'Hand')) for w in bw])
+    under_rays = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices] + [v.co.copy() for v in shorts.data.vertices],
+                                      [tuple(p.vertices) for p in body.data.polygons if not arm_v[list(p.vertices)].any()]
+                                      + [tuple(i + nb_ for i in p.vertices) for p in shorts.data.polygons])
+    # Its lower band follows the thighs a little (TEE_THIGH at the hem, from nothing at the thigh joint; the side by x, shared
+    # over the middle; the front), so a raised thigh lifts the hem instead of coming through it.
+    sco = coords(shirt)
+    f_ = TEE_THIGH * smooth01((J['LeftUpLeg'].z - sco[:, 2]) / max(J['LeftUpLeg'].z - (t_hem - by_t), 1e-3))
+    left_ = smooth01((sco[:, 0] + 0.03) / 0.06)
+    # (the front only: the back hangs from the seat whatever a thigh does, and pulled both ways over the middle it dipped in
+    # a V there when one thigh went forward)
+    fwd_ = np.sign(J['LeftToeBase'].y - J['LeftFoot'].y)
+    rel_ = sco[:, :2] - np.array((J['Spine1'].x, J['Spine1'].y))
+    front_ = smooth01((rel_[:, 1] * fwd_ / np.maximum(np.linalg.norm(rel_, axis=1), 1e-6) + 0.2) / 0.8)
+    f_ = f_ * front_
+    gl, gr = shirt.vertex_groups[P + 'LeftUpLeg'], shirt.vertex_groups[P + 'RightUpLeg']
+    n_w = 0
+    for v in shirt.data.vertices:
+        f = float(f_[v.index])
+        if f <= 1e-3 or not trunk_dom[v.index]:
+            continue
+        for g in v.groups:
+            g.weight *= (1 - f)
+        gl.add([v.index], float(f * left_[v.index]), 'ADD')
+        gr.add([v.index], float(f * (1 - left_[v.index])), 'ADD')
+        n_w += 1
+    say('tee lengthened', round(by_t, 3), 'm: hem', round(t_hem, 3), '->', round(float(coords(shirt)[trunk_dom, 2].min()), 3),
+        '(thigh joint', round(J['LeftUpLeg'].z, 3), '); weights carried', n_cw_t, '; thigh-weighted', n_w)
+
 # The shirt hangs from the chest. Epic's tee follows the body in under the pectorals and in at the waist, and lit from
 # above the men read as having a bust and a waist (7 Nov sheet: p1, p4, p5). Cloth bridges a hollow: below the armpits
 # the shirt, round the trunk, may come in no faster than DRAPE_SLOPE (m in per m down) from where it is widest above.
@@ -1028,6 +1220,17 @@ if True:
     DRAPE_FLUTES, DRAPE_FLUTE = 7, (0.006 if DRAPE_MEN else 0.005)
     ph_ = (sum(map(ord, os.path.basename(args[0]))) % 97) / 97 * 2 * np.pi
     want[idx] += DRAPE_FLUTE * k_[idx] ** 2 * 0.5 * (1 + np.sin(DRAPE_FLUTES * th[idx] + ph_ + 0.6 * np.sin(3 * th[idx])))
+    # (the longer tee over the hips and the shorts' top: no nearer them than TEE_GAP, from the rays above)
+    n_floor = 0
+    if under_rays is not None:
+        for v in idx[sco[idx, 2] < J['Hips'].z + 0.12]:
+            dx_, dy_ = float(np.cos(th[v])), float(np.sin(th[v]))
+            hit, _, _, _ = under_rays.ray_cast(Vector((ax + dx_ * 0.6, ay + dy_ * 0.6, sco[v, 2])), Vector((-dx_, -dy_, 0)), 0.6)
+            if hit is not None:
+                need = float(np.hypot(hit.x - ax, hit.y - ay)) + TEE_GAP
+                if need > want[v]:
+                    want[v] = need
+                    n_floor += 1
     # The push (not the radius) evened out over the cloth's edges, DRAPE_SMOOTH rounds of half its own and half its
     # neighbours' mean, so neighbouring bearings move together and no bin's edge shows as a step.
     out_ = np.zeros(len(r), bool); out_[idx] = True
@@ -1065,7 +1268,7 @@ if True:
     say('shirt draped from the chest:', moved, 'vertices out; mm by percentile 50/90/99/max',
         [round(float(np.percentile(push[idx], q)) * 1000, 1) for q in (50, 90, 99, 100)],
         '| most at height', round(float(sco[worst, 2] - J['Hips'].z), 3), 'm over the hips, bearing', round(float(np.degrees(th[worst]))),
-        'deg, r', round(float(r[worst]), 3), '->', round(float(want[worst]), 3))
+        'deg, r', round(float(r[worst]), 3), '->', round(float(want[worst]), 3), '| held off what is under it', n_floor)
 
 # The sleeves stand off the arm: out from the upper arm's line by SLEEVE_EASE at the sleeve's end, from nothing at
 # SLEEVE_FROM of the way down it (the shoulder seam stays where it was). Out, not scaled: the hem's turned band moves with
@@ -1279,8 +1482,8 @@ if SKIRT_STYLE:
     skirt_top, skirt_hem = shirt_hem + pk.SKIRT_TUCK, KIT['skirt'] + sole_z
 else:
     # (a skirt chosen over shorts: its hem SKIRT_BELOW under theirs, finish-player.py)
-    skirt_top, skirt_hem = shirt_hem + pk.SKIRT_TUCK, float(coords(shorts)[:, 2].min()) - pk.SKIRT_BELOW
-under = under_shell('Wear.under', float(coords(shorts)[:, 2].min()), skirt_top + 0.01) if WARDROBE else None
+    skirt_top, skirt_hem = shirt_hem + pk.SKIRT_TUCK, (UNDER_HEM if UNDER_HEM is not None else float(coords(shorts)[:, 2].min())) - pk.SKIRT_BELOW
+under = under_shell('Wear.under', UNDER_HEM if UNDER_HEM is not None else float(coords(shorts)[:, 2].min()), skirt_top + 0.01) if WARDROBE else None
 skirts = {}  # style: (object, hang); with a wardrobe both, each on its band of the atlas
 for style in ('pleated', 'aline'):
     if WARDROBE or style == SKIRT_STYLE:
