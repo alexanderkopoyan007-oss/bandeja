@@ -27,6 +27,10 @@ const BACK_CELL = 0.01;
 const BACK_GROW = 2;
 const BACK_ROUND = 0.01;
 const BACK_TOP = 0.12;
+/** How far under the map's bottom (m) a vertex is still kept, so a large triangle (the shirt's) crossing the bottom row is
+ * drawn there, clipped, and the small ones of the skin under it are not all that row sees: since the shirts hang loose
+ * (16 Nov) the skin is 3-4 cm in from the cloth at the lower back, and the last row stepped by that much. */
+const BACK_UNDER = 0.08;
 /** How far past the hair's own reach across (m) the map goes, for its swing. */
 const BACK_SWING = 0.08;
 /** A strand not modelled over the back; and a cell with no body (m, far in front: nothing is ever behind it). */
@@ -86,7 +90,7 @@ export function backBody(asset: PlayerAsset, hang: { tip: THREE.Vector3 } | null
   const keep = new Uint8Array(pos.count);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) - origin.x, y = pos.getY(i);
-    if (!on[i] || y < yLo || y > yHi || Math.abs(x) > xHalf + BACK_CELL) continue;
+    if (!on[i] || y < yLo - BACK_UNDER || y > yHi || Math.abs(x) > xHalf + BACK_CELL) continue;
     if (share(i, (b) => b === head) > 0.5 || share(i, (b) => arm.has(b)) > 0.5) continue;
     keep[i] = 1;
   }

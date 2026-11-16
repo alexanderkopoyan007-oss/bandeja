@@ -455,7 +455,9 @@ describe('kit', () => {
       expect(body.bones.length).toBe(4);
       // (the back flatter than round: deeper out to the sides than behind the spine)
       body.r.forEach((rs, k) => rs.flat().forEach((r) => expect(r, `${p.look!.name} capsule ${k}`).toBeGreaterThan(0.025)));
-      body.r.forEach((rs, k) => rs.flat().forEach((r) => expect(r, `${p.look!.name} capsule ${k}`).toBeLessThan(k < 2 ? 0.25 : 0.08)));
+      // (the back's capsules are measured over the shirt, which hangs loose since 16 Nov: p7mh's lower back is 25.3 cm out
+      // to the side)
+      body.r.forEach((rs, k) => rs.flat().forEach((r) => expect(r, `${p.look!.name} capsule ${k}`).toBeLessThan(k < 2 ? 0.27 : 0.08)));
       for (const st of [...body.r[0]!, ...body.r[1]!.slice(0, 3)]) expect(st[2]!).toBeGreaterThan(st[0]! + 0.02);
       const pos = p.look!.alphaGeometry.getAttribute('position');
       const v = new THREE.Vector3();

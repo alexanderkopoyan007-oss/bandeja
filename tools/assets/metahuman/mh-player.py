@@ -976,9 +976,16 @@ for o in (shirt, shorts):
 # the shirt, round the trunk, may come in no faster than DRAPE_SLOPE (m in per m down) from where it is widest above.
 # Seen on p1 from fixed angles (tools/mocap-view): without it the tee pinches in towards the hem and dips under the chest;
 # at 0.08 it hangs straight and boxy, as the MPFB players' plumb line (slope 0) did; 0.15 reads as a fitted sports tee.
-# The men only (spec 'drape', cast-spec.mjs): the women's tops are cut to the body, as women's padel tops are.
-if spec.get('drape'):
-    DRAPE_SLOPE, DRAPE_BINS, DRAPE_FROM, DRAPE_MIN_R, DRAPE_FACING, DRAPE_SMOOTH = 0.15, 72, 0.08, 0.04, 0.2, 8
+# Looser (16 Nov, the owner: "make them hang looser like real shirts"; the pros' tees in Premier Padel match photos stand
+# off the body below the chest and over the hips, and their sleeves stand off the arm): the slope falls (men 0.04, nearly
+# plumb from the chest; women 0.07 from the bust, where they had no drape and their tops clung to the waist), and on top
+# of the hang the cloth stands off the skin by an ease that grows from nothing at DRAPE_FROM under the arm joint to
+# DRAPE_EASE at the hem, less at the sides (DRAPE_SIDE of it: an arm hangs there). Then the sleeves (below).
+DRAPE_MEN = spec.get('drape')
+SHIRT_WELD = coords(shirt)  # (where every vertex was before the shirt is loosened: unsewn panels move together, below)
+if True:
+    DRAPE_SLOPE, DRAPE_BINS, DRAPE_FROM, DRAPE_MIN_R, DRAPE_FACING, DRAPE_SMOOTH = (0.04 if DRAPE_MEN else 0.07), 72, 0.08, 0.04, 0.2, 8
+    DRAPE_EASE, DRAPE_SIDE = (0.022 if DRAPE_MEN else 0.018), 0.6
     trunk_bones = ('Hips', 'Spine', 'Spine1', 'Spine2')
     sw_ = weights(shirt)
     sco = coords(shirt)
@@ -1010,6 +1017,17 @@ if spec.get('drape'):
             j = np.searchsorted(zs, -sco[v, 2], side='right') - 1  # the highest-first prefix down to this height
             if j >= 0:
                 want[v] = max(r[v], best[j] + DRAPE_SLOPE * sco[v, 2])
+    # the ease (a smoothstep from DRAPE_FROM under the arm joint to the hem; the sides by bearing, sin² of it from the x axis)
+    hem_lo = float(sco[on_trunk, 2].min()) if on_trunk.any() else top - 0.3
+    k_ = np.clip((top - sco[:, 2]) / max(top - hem_lo, 1e-3), 0, 1)
+    ease = DRAPE_EASE * k_ * k_ * (3 - 2 * k_) * (DRAPE_SIDE + (1 - DRAPE_SIDE) * np.sin(th) ** 2)
+    want[idx] = np.maximum(want[idx], r[idx] + ease[idx])
+    # Hung, the hem isn't a level ring: loose cloth falls in a few soft flutes, DRAPE_FLUTES round the trunk, standing out
+    # up to DRAPE_FLUTE at the hem (from nothing at the chest, k_ squared), phased per person. Without them the silhouette
+    # was a box with a ruled edge (16 Nov, Blender front view).
+    DRAPE_FLUTES, DRAPE_FLUTE = 7, (0.006 if DRAPE_MEN else 0.005)
+    ph_ = (sum(map(ord, os.path.basename(args[0]))) % 97) / 97 * 2 * np.pi
+    want[idx] += DRAPE_FLUTE * k_[idx] ** 2 * 0.5 * (1 + np.sin(DRAPE_FLUTES * th[idx] + ph_ + 0.6 * np.sin(3 * th[idx])))
     # The push (not the radius) evened out over the cloth's edges, DRAPE_SMOOTH rounds of half its own and half its
     # neighbours' mean, so neighbouring bearings move together and no bin's edge shows as a step.
     out_ = np.zeros(len(r), bool); out_[idx] = True
@@ -1048,6 +1066,41 @@ if spec.get('drape'):
         [round(float(np.percentile(push[idx], q)) * 1000, 1) for q in (50, 90, 99, 100)],
         '| most at height', round(float(sco[worst, 2] - J['Hips'].z), 3), 'm over the hips, bearing', round(float(np.degrees(th[worst]))),
         'deg, r', round(float(r[worst]), 3), '->', round(float(want[worst]), 3))
+
+# The sleeves stand off the arm: out from the upper arm's line by SLEEVE_EASE at the sleeve's end, from nothing at
+# SLEEVE_FROM of the way down it (the shoulder seam stays where it was). Out, not scaled: the hem's turned band moves with
+# the cloth over it and keeps its thickness.
+SLEEVE_EASE, SLEEVE_FROM = (0.014 if DRAPE_MEN else 0.012), 0.25
+sco = coords(shirt)
+s_dom = [max(w, key=w.get) if w else '' for w in weights(shirt)]
+for side in ('Left', 'Right'):
+    a_, e_ = J[side + 'Arm'], J[side + 'ForeArm']
+    ax_ = np.array((e_ - a_).normalized()[:])
+    sel = np.array([(side + 'Arm') in d or (side + 'ForeArm') in d for d in s_dom])
+    if not sel.any():
+        continue
+    rel = sco - np.array(a_[:])
+    t_ = rel @ ax_
+    rad = rel - np.outer(t_, ax_)
+    rr = np.linalg.norm(rad, axis=1)
+    t_end = float(np.percentile(t_[sel], 99))
+    k_ = np.clip((t_ / max(t_end, 1e-3) - SLEEVE_FROM) / (1 - SLEEVE_FROM), 0, 1)
+    push = SLEEVE_EASE * k_ * k_ * (3 - 2 * k_)
+    mv = sel & (rr > 0.01)
+    sco[mv] += rad[mv] / rr[mv, None] * push[mv, None]
+    say('sleeve stands off the arm:', side, int(mv.sum()), 'vertices; sleeve end', round(t_end, 3), 'm down the arm')
+# Unsewn panels (two rows of vertices in one place) moved apart where the hang judged them by their normals: each place
+# takes the mean of where its vertices went.
+key_ = np.round(SHIRT_WELD / 1e-5).astype(np.int64)
+_, grp = np.unique(key_, axis=0, return_inverse=True)
+grp = grp.ravel()
+acc = np.zeros((grp.max() + 1, 3)); np.add.at(acc, grp, sco)
+cnt = np.bincount(grp)
+sco = acc[grp] / cnt[grp, None]
+for v, c in zip(shirt.data.vertices, sco):
+    v.co = Vector(c)
+shirt.data.update()
+say('shirt loosened; places shared by unsewn panels', int((cnt > 1).sum()))
 # How far inside the armhole's plane the skin stays (person_kit's TANK_SKIN): the shader cuts it 2 cm in (kit.ts
 # UNDER_ARMHOLE), and a vertex removed takes its triangles with it, so at 3.5 cm the skin ended a few millimetres in, in
 # places, and the armpit showed a dark gap under the edge.
