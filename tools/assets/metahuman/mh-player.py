@@ -1273,7 +1273,9 @@ if True:
 # The sleeves stand off the arm: out from the upper arm's line by SLEEVE_EASE at the sleeve's end, from nothing at
 # SLEEVE_FROM of the way down it (the shoulder seam stays where it was). Out, not scaled: the hem's turned band moves with
 # the cloth over it and keeps its thickness.
-SLEEVE_EASE, SLEEVE_FROM = (0.014 if DRAPE_MEN else 0.012), 0.25
+SLEEVE_EASE, SLEEVE_FROM = (0.03 if DRAPE_MEN else 0.02), 0.2
+SHIRT_PRE_SLEEVE = coords(shirt)  # (long sleeves are built from the sleeves as they were: carried on from the eased ones to the
+# wrist, they ballooned over the upper arm, 16 Nov)
 sco = coords(shirt)
 s_dom = [max(w, key=w.get) if w else '' for w in weights(shirt)]
 for side in ('Left', 'Right'):
@@ -1550,6 +1552,11 @@ if WARDROBE:
     # Long sleeves: the tee's sleeves carried on to cuffs at the wrists (person_wear.make_long). New cloth takes one plain
     # place on the sleeve in the atlas.
     lo = pw.copy_of(tee, 'Wear.long')
+    if len(lo.data.vertices) == len(SHIRT_PRE_SLEEVE):
+        for v, d in zip(lo.data.vertices, weights(lo)):
+            if d and any(k in max(d, key=d.get) for k in ('LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm')):
+                v.co = Vector(SHIRT_PRE_SLEEVE[v.index])
+        lo.data.update()
     # (a plain place: the sleeve's cloth nearest halfway down the upper arm, on top)
     uvl = lo.data.uv_layers[0].data
     mid = (J['LeftArm'] + J['LeftForeArm']) / 2 + Vector((0, 0, 0.05))

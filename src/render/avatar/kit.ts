@@ -11,12 +11,13 @@ import {
   mx_noise_float, texture, uv, max, min, dot, exp, normalView, normalWorld, normalLocal, normalGeometry, diffuseColor, frontFacing, faceDirection, positionViewDirection,
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
-import { modelledVertices, tuckInto, type KitCut, type PlayerAsset } from './asset.ts';
+import { manBuild, modelledVertices, tuckInto, type KitCut, type PlayerAsset } from './asset.ts';
 import { backBody, hairOnBack } from './hairBack.ts';
 import { hairBulk, HAIR_HELMET_V, HAIR_U } from './costume.ts';
 import { ownedTextures } from '../dispose.ts';
 import { setTattoos, tattooed, type TattooChoice, type TattooState } from './tattoo.ts';
 import { armWeight, cutFor, patternAt, printBottom, printShirt, type Paint } from './paint.ts';
+import { sponsorTexture, SPONSOR_ASPECT, SPONSOR_ROW, SPONSOR_ROWS } from './sponsors.ts';
 import { FACE_T2, HANDLE_R, HANDLE_TOP, PROFILE_E, RACKET_BUTT, RACKET_TIP, RC, RC_H } from './racket.ts';
 
 export const R_SHIRT = 0, R_SHORTS = 1, R_SKIN = 2, R_HAIR = 3, R_SOCK = 4, R_SHOE = 5;
@@ -54,6 +55,8 @@ export function hemPush(lag: THREE.Vector3, sway: number, n: THREE.Vector3): THR
 }
 
 export interface KitFrame {
+  /** The lips' middle in the modelled pose (m), for a man's stubble. */
+  mouth?: THREE.Vector3;
   chest: THREE.Vector3; hips: THREE.Vector3; hemY: number; shortsHemY: number; armSpan: number; sleeveX?: number; neck?: THREE.Vector3; collarDrop?: number; collarCurve?: number; neckUv?: THREE.Vector2;
   /** A person with a wardrobe: each top's sleeve end, as sleeveX (the modelled one's is sleeveX). */
   sleeveXOf?: Record<string, number>;
@@ -1070,8 +1073,25 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const lighter = selfSkin.y.sub(1).mul(4).clamp(0, 1);
   const skinLit = mix(skinTinted, skinTinted.mul(min(float(1), float(SKIN_MAX).div(skinTinted.dot(LUMA).max(1e-4)))), lighter);
   // Tattoos (tattoo.ts), in a shader of their own only when this person has one; never on the hands or nails.
-  const ink = hasTattoo(self) ? tattooed(asset, skinLit, p, float(1).sub(inHands ?? float(0)).mul(float(1).sub(nail))) : null;
-  const skinCol = ink ? ink.col : skinLit;
+  // A man's stubble (16 Nov, the owner: "the whole player looks bad"; the men's faces, smooth from the jaw to the lip, read as
+  // women's beside pros in match photos, most of whom show a day's growth or a beard): a shadow over the jaw, chin, upper lip
+  // and lower cheeks, placed round the build's own mouth (`frame.mouth`), its edges soft, the lips left out, and up close the
+  // growth's dots, fading to their mean where a pixel covers several.
+  const M = frame.mouth;
+  const stubble = M && manBuild(body.name) ? ((): THREE.Node<'float'> => {
+    const dx = p.x.sub(M.x).abs(), dy = p.y.sub(M.y), dz = p.z.sub(M.z);
+    const topY = float(STUBBLE_LIP).add(smoothstep(0.018, 0.05, dx).mul(STUBBLE_CHEEK));
+    const area = smoothstep(topY.add(0.008), topY.sub(0.004), dy).mul(smoothstep(-STUBBLE_UNDER - 0.035, -STUBBLE_UNDER + 0.005, dy))
+      .mul(smoothstep(STUBBLE_SIDE + 0.012, STUBBLE_SIDE - 0.008, dx)).mul(smoothstep(-STUBBLE_BACK - 0.02, -STUBBLE_BACK, dz))
+      // (the lips out by an ellipse round them: the build's lip mask reaches past them in places and left pale holes)
+      .mul(smoothstep(0.92, 1.18, vec2(dx.div(STUBBLE_LIPS[0]), dy.sub(STUBBLE_LIPS[2]).div(STUBBLE_LIPS[1])).length()))
+      .mul(skinW).mul(float(1).sub(inHands ?? float(0)));
+    const dots = smoothstep(0.1, 0.45, mx_noise_float(p.mul(1300))).mul(footprintKeep(0.0015));
+    return area.mul(mix(float(STUBBLE_MEAN), float(1), dots.mul(footprintKeep(0.0015))));
+  })() : null;
+  const skinShaved = stubble ? mix(skinLit, skinLit.mul(vec3(STUBBLE_TINT[0], STUBBLE_TINT[1], STUBBLE_TINT[2])), stubble.mul(STUBBLE_DARK)) : skinLit;
+  const ink = hasTattoo(self) ? tattooed(asset, skinShaved, p, float(1).sub(inHands ?? float(0)).mul(float(1).sub(nail))) : null;
+  const skinCol = ink ? ink.col : skinShaved;
   // (the source draws a brown iris dark red: its green and blue are lifted to the red's; whites and blue or green irises
   // keep theirs)
   // (a little darker than the source, and well under the lid's shadow: at 0.74 the eyes shone out of the sockets)
@@ -1806,12 +1826,29 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   const chest = (x: number, y: number): THREE.Node<'vec2'> => vec2(p.x.sub(x), p.y.sub(frame.chest.y + y));
   const onTank = cut.top === 'tank' ? -0.012 : 0;
   const chestL = maker(chest(MARK_X, MARK_Y + onTank));
-  const chestR = word(chest(-MARK_X, MARK_Y + onTank), 0.03, 0.006, 1.3 + (cut.mark ?? 0));
-  const back = word(vec2(p.x, p.y.sub(frame.chest.y + 0.125)), 0.075, 0.012, 2.2 + (cut.mark ?? 0)).mul(step(p.z, frame.chest.z));
-  const sleeve = hole ? float(0) : word(vec2(tx.sub(armX + 0.085), p.z.sub(armZ)), 0.028, 0.0055, 0.7 + (cut.mark ?? 0))
+  // The sponsors (sponsors.ts): real words from the team's texture where there is one, each place `hx` half wide (and a quarter
+  // of that half high); without a texture (Node) the old blocks.
+  const words = sponsorTexture(look.shirt);
+  const text = (q: THREE.Node<'vec2'>, hx: number, row: number, seed: number): THREE.Node<'float'> => {
+    const hy = hx / SPONSOR_ASPECT;
+    if (!words) return word(q, hx * 0.8, hy * 0.5, seed);
+    const u = q.x.div(2 * hx).add(0.5), v = q.y.div(2 * hy).add(0.5);
+    const inside = step(0, u).mul(step(u, 1)).mul(step(0.02, v)).mul(step(v, 0.98));
+    return texture(words, vec2(u.clamp(0, 1), v.clamp(0.02, 0.98).add(row).div(SPONSOR_ROWS))).w.mul(inside);
+  };
+  const trunkOnly = smoothstep(armX - 0.01, armX - 0.04, tx);
+  const chestR = text(chest(-MARK_X, MARK_Y + onTank), SPONSOR_BREAST, SPONSOR_ROW.breast, 1.3 + (cut.mark ?? 0));
+  // (across the chest, under the marks: the main sponsor, the biggest thing on a pro's shirt)
+  const chestMain = text(chest(0, SPONSOR_CHEST_Y + onTank), SPONSOR_CHEST, SPONSOR_ROW.chest, 3.1 + (cut.mark ?? 0)).mul(trunkOnly);
+  // (the back seen from behind: its left is the body's right, so x runs the other way)
+  const back = text(vec2(p.x.negate(), p.y.sub(frame.chest.y + SPONSOR_BACK_Y)), SPONSOR_BACK, SPONSOR_ROW.back, 2.2 + (cut.mark ?? 0)).mul(step(p.z, frame.chest.z)).mul(trunkOnly);
+  // (round the outside of the upper sleeve, reading across the arm as it hangs: along -z, up the arm towards the shoulder)
+  const sleeve = hole ? float(0) : (words
+    ? text(vec2(p.z.sub(armZ).negate(), tx.sub(armX + 0.085).negate()), SPONSOR_SLEEVE, SPONSOR_ROW.sleeve, 0.7)
+    : word(vec2(tx.sub(armX + 0.085), p.z.sub(armZ)), 0.028, 0.0055, 0.7 + (cut.mark ?? 0)))
     .mul(step(armY, ty)).mul(step(0, p.x));
-  const marks = chestL.add(chestR).mul(front).add(back).add(sleeve).min(1).mul(fine).mul(smoothstep(armX + 0.2, armX + 0.15, tx));
-  if (!print) s = mix(s, trim, marks);
+  const marks = chestL.add(chestR).add(chestMain).mul(front).add(back).add(sleeve).min(1).mul(fine).mul(smoothstep(armX + 0.2, armX + 0.15, tx));
+  if (!print) s = mix(s, words ? sponsorInk(look) : trim, marks);
   // A polo's placket: a strip of the shirt's own cloth down from the collar's ends, sewn round its edge, the top flap's
   // edge down its middle and two buttons. (In the trim it was a white tab painted on a tee: real polos' plackets are the
   // shirt's colour, seen by their stitching and buttons; Bullpadel and Head polos worn, 15 Nov)
@@ -1947,6 +1984,25 @@ const PLACKET_W = 0.0135;
 const PANEL_ARM = 0.02;
 const PANEL_HEM = 0.026;
 const MARK_X = 0.082;
+/** Stubble round the mouth's middle (m): up to STUBBLE_LIP over it in the middle (the upper lip), STUBBLE_CHEEK higher on the
+ * cheeks, STUBBLE_UNDER under it (over the chin onto the throat), STUBBLE_SIDE either side (to the jaw's angle) and STUBBLE_BACK
+ * behind it; its colour multiplies the skin's by STUBBLE_TINT over STUBBLE_DARK of it where it is thickest, STUBBLE_MEAN of
+ * that between the dots (and everywhere, from afar). */
+/** The lips' ellipse kept clear: half width, half height, its middle over the mouth's (m). */
+const STUBBLE_LIPS = [0.027, 0.0125, -0.001] as const;
+const STUBBLE_LIP = 0.02, STUBBLE_CHEEK = 0.022, STUBBLE_UNDER = 0.06, STUBBLE_SIDE = 0.07, STUBBLE_BACK = 0.085;
+const STUBBLE_TINT = [0.36, 0.35, 0.37] as const, STUBBLE_DARK = 0.8, STUBBLE_MEAN = 0.72;
+/** The sponsors' places (sponsors.ts), half widths (m): across the chest (its middle SPONSOR_CHEST_Y over the chest's line, under
+ * the marks), on the right breast, over the shoulder blades, round the upper sleeve. Pros' chest sponsors run 20-26 cm. */
+const SPONSOR_CHEST = 0.14, SPONSOR_CHEST_Y = -0.03, SPONSOR_BREAST = 0.034, SPONSOR_BACK = 0.11, SPONSOR_BACK_Y = 0.06, SPONSOR_SLEEVE = 0.045;
+
+/** The sponsors' ink: the kit's second colour where it stands out from the shirt, else white on a dark shirt and near black on a light one. */
+function sponsorInk(look: KitLook): THREE.Node<'vec3'> {
+  const lum = (c: number): number => { const k = new THREE.Color(c); return 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b; };
+  const ls = lum(look.shirt), lt = lum(look.trim);
+  const c = new THREE.Color(Math.abs(lt - ls) > 0.25 ? look.trim : ls > 0.35 ? 0x15171c : 0xf4f4f2);
+  return vec3(c.r, c.g, c.b);
+}
 const MARK_Y = 0.07;
 /** How far a skirt's hem trails as a multiple of the hems' lag; how far it stands off a thigh (m); where its hem's band starts (0-1 down the skirt). */
 const SKIRT_SWING = 1.6;
@@ -2128,7 +2184,16 @@ export function personFrame(asset: PlayerAsset): KitFrame {
     }
     return Number.isFinite(lo) ? (lo + hi) / 2 : chest.z;
   };
+  // (the lips' middle: the skin the build marks as lips, over the neck)
+  // (in the modelled pose the shader's `p` is in: a MetaHuman's rest pose stands 2 cm higher, its soles lifted)
+  const gp = g.getAttribute('position').array as Float32Array;
+  let mx = 0, my = 0, mz = 0, mn = 0;
+  for (let i = 0; i < n; i++) {
+    if (A[i * 4 + 2]! < 0.5 || X[i * 4]! < 0.6 || rest[i * 3 + 1]! < neck.y) continue;
+    mx += gp[i * 3]!; my += gp[i * 3 + 1]!; mz += gp[i * 3 + 2]!; mn++;
+  }
   frame = {
+    mouth: mn >= 12 ? new THREE.Vector3(mx / mn, my / mn, mz / mn) : undefined,
     chest: chest.clone(), hips: hips.clone(), hemY: Number.isFinite(hemY) ? hemY : hips.y - 0.02,
     shortsHemY: Number.isFinite(shortsHemY) ? shortsHemY : hips.y - 0.3,
     sideZ: [midZ(hemY + 0.04), midZ(armJ.y - 0.12)],

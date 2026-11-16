@@ -268,6 +268,11 @@ const BUILDS = new Map<string, string>([...ROSTER.men, ...ROSTER.women].flatMap(
   return body ? [[p.name, body] as [string, string]] : [];
 }));
 const PERSON_OF = new Map<string, string>([...BUILDS].map(([person, build]) => [build, person]));
+const MEN = new Set<string>(ROSTER.men.flatMap((p) => [p.name, (p as { body?: string }).body ?? '']).filter(Boolean));
+/** Whether a person, or a build of one (its `look.name`), is one of the roster's men. */
+export function manBuild(name: string | undefined): boolean {
+  return !!name && MEN.has(name);
+}
 export const classicBodies = { on: false };
 /** A person's MetaHuman build's name (its file, and its `look.name`), if they have one and the old builds aren't asked for. */
 export function metaHumanOf(person: string): string | undefined {
