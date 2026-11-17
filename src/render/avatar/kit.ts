@@ -677,6 +677,28 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   }
 }
 const SKIN_WRAP = 0.55;
+/**
+ * (17 Nov, the owner's list: cloth that looks "plastic") Cloth lit as cloth, not as a smooth dielectric. A jersey's yarn is
+ * textured multifilament polyester (η 1.54, F0 0.045 at the fibre), but twisted yarn sends most of what it reflects back out
+ * through the fibres in the dye's colour, spread wide (Sadeghi et al. 2013's measured twisted polyester: lobe widths 30-60°, the
+ * volume term dye-tinted), and the knit's loops shadow and mask the surface reflection at a grazing view. One white GGX lobe
+ * (three's direct GGX takes F90 as 1) drew a satin rim down every shirt's sides. So:
+ * - the surface lobe's share (its F0 and F90 by `specularIntensity`, and the lamps' by `directShine`, which also tames F90);
+ * - the sheen in the dye's colour, sqrt(base) (Filament's cloth default), at that strength and roughness (KHR_materials_sheen's
+ *   Charlie lobe; 0.3-0.5 for a smooth synthetic knit, higher for cotton).
+ */
+const CLOTH_SPEC = 0.6, CLOTH_DIRECT_SHINE = 0.5;
+const CLOTH_SHEEN = 0.4, CLOTH_SHEEN_ROUGH = 0.6;
+/** The sheen's least brightness (its brightest channel, before CLOTH_SHEEN): black polyester still shows a soft sheen along its
+ * folds (the fibres' own surface), which a dye-tinted sheen all but took away, and dark shorts' folds went flat. Low: at 0.35 white
+ * a grazing view had turned near-black shorts grey. */
+const CLOTH_SHEEN_FLOOR = 0.25;
+/** Cloth's sheen colour (CLOTH_SHEEN) from its dye (unshaded): sqrt of it, raised to CLOTH_SHEEN_FLOOR where darker, in its own hue
+ * (navy keeps a navy sheen; only a true black's is grey). */
+function clothSheen(dye: THREE.Node<'vec3'>): THREE.Node<'vec3'> {
+  const s = dye.max(0).sqrt();
+  return s.mul(float(CLOTH_SHEEN_FLOOR).div(max(s.x, max(s.y, s.z)).max(0.02)).max(1));
+}
 /** (17 Nov, the owner's list: skin "shiny") Skin's roughness, dry and wet with sweat. Weyrich et al. 2006 measured faces' specular
  * lobe at a Torrance-Sparrow m of about 0.3-0.45 (oilier on the forehead and nose, which tzone and the coat still give): m 0.35 is
  * three's alpha 0.35, roughness 0.59. It was 0.5 (alpha 0.25), a lobe two thirds as wide, and read as a sheen over every face. */
@@ -1205,18 +1227,19 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // (the mouth's shine goes with its depth behind the lips too, X.x: an open mouth's tongue shone out of the dark like a
   // glass ball. 1 on a MakeHuman build's mouth, whose shade is the atlas's)
   const mouthShade = mix(float(1), X.x.mul(X.x).mul(X.x), mouthW);
-  m.specularIntensityNode = mix(mix(float(1), smoothstep(0.3, 0.9, tex.x), skirtW), creased.mul(float(1).add(darkSkin.mul(0.5))).mul(mix(float(1), float(SKIN_F0), skinW)), skinW.add(mouthW)).mul(mouthShade);
-  m.directShineNode = mouthShade;
+  m.specularIntensityNode = mix(mix(float(1), smoothstep(0.3, 0.9, tex.x), skirtW).mul(mix(float(1), float(CLOTH_SPEC), fabric)), creased.mul(float(1).add(darkSkin.mul(0.5))).mul(mix(float(1), float(SKIN_F0), skinW)), skinW.add(mouthW)).mul(mouthShade);
+  m.directShineNode = mouthShade.mul(mix(float(1), float(CLOTH_DIRECT_SHINE), fabric));
   m.directDiffuseNode = body.mouthShaded ? mix(float(1), X.x.max(0), mouthW) : float(1);
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
   m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
     .mul(creased).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55).add(tongueW.mul(body.mouthShaded ? TONGUE_COAT : 0.8)).mul(mouthShade));
   m.clearcoatRoughnessNode = skinW.mul(mix(float(0.32).sub(sweat.mul(0.1)), float(NAIL_COAT_ROUGH), nail)).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
-  // Cotton and polyester's soft rim.
-  // (less on the shorts and skirts, which are often near black: at a grazing view the white in it turned them grey; and none
-  // in the cloth's own creases, or a pleat's inside lit up in a lunge)
-  m.sheenNode = mix(col, vec3(1, 1, 1), mix(float(0.35), float(0.12), shortsW)).mul(fabric.mul(0.6)).mul(ao);
-  m.sheenRoughnessNode = float(0.55);
+  // Cotton and polyester's soft rim, in the dye's colour (clothSheen; at 35% white it drew a pale satin rim down a coloured shirt's
+  // sides, and turned near-black shorts grey at a grazing view), and none in the cloth's own creases, or a pleat's inside lit up
+  // in a lunge.
+  const dye = shirtC.mul(shirtW).add(shortsC.mul(shortsW)).add(sockC.mul(sockW));
+  m.sheenNode = clothSheen(dye).mul(fabric.mul(CLOTH_SHEEN)).mul(ao);
+  m.sheenRoughnessNode = float(CLOTH_SHEEN_ROUGH);
   // (little on the lids: the red at their terminator drew an orange band over each eye)
   m.scatterNode = skinW.mul(float(SKIN_SCATTER).add(ears.mul(0.9))).mul(float(1).sub(lids.mul(0.85))).mul(float(1).sub(nail.mul(1 - NAIL_SCATTER)));
   // (the mouth too: the sky's blue on teeth turned them blue-black with the head bowed)
@@ -1508,8 +1531,11 @@ function bakedMaterial(asset: PlayerAsset, look: KitLook): { material: PersonNod
   m.metalnessNode = float(0);
   m.clearcoatNode = skin.mul(float(0.05).add(sweat.mul(0.35)));
   m.clearcoatRoughnessNode = float(0.32);
-  m.sheenNode = mix(cloth, vec3(1, 1, 1), 0.3).mul(float(1).sub(skin).mul(0.6));
-  m.sheenRoughnessNode = float(0.55);
+  // (cloth as the MetaHuman builds' cloth, CLOTH_SPEC: its own small, spread surface lobe and a sheen in the dye's colour)
+  m.specularIntensityNode = mix(float(CLOTH_SPEC), float(1), skin);
+  m.directShineNode = mix(float(CLOTH_DIRECT_SHINE), float(1), skin);
+  m.sheenNode = clothSheen(cloth).mul(float(1).sub(skin).mul(CLOTH_SHEEN));
+  m.sheenRoughnessNode = float(CLOTH_SHEEN_ROUGH);
   // (flat in the creases: the bake's normals on the walls of a fold are wild, and the fold opens when the arm lifts)
   if (normalTex) m.normalNode = uvNormal(normalTex.xy.mul(2).sub(1).mul(smoothstep(0.08, 0.4, ao)), uv());
   m.scatterNode = skin.mul(SKIN_SCATTER);
@@ -1802,6 +1828,18 @@ function kitDetail(look: KitLook, cut: KitCut, frame: KitFrame, p: THREE.Node<'v
   let s = print ? printShirt(print, shirt, trim, p, { chest: frame.chest, neck: nk, hemY: frame.hemY }, asset ? armWeight(asset) : float(0))
     : pat ? mix(shirt, trim, pat) : mix(shirt, trim, panel);
   if (!pat && !print) s = s.mul(float(1).sub(panelEdge.mul(0.18)));
+  // (17 Nov, the owner's list: cloth that looks "plastic") The mesh under each arm: pros' shirts are knit with rows of holes
+  // down the sides to breathe, a shade darker where the body's shade shows through them. Each hole drawn where a pixel can hold
+  // it, and further off their average shade, so a far shirt keeps its tone and nothing shimmers.
+  if (!print) {
+    const row = p.y.div(MESH_PITCH[1]);
+    const across = p.z.div(MESH_PITCH[0]).add(row.floor().mul(0.5));
+    const d = vec2(across.fract().sub(0.5).mul(MESH_PITCH[0]), row.fract().sub(0.5).mul(MESH_PITCH[1])).length();
+    const holes = smoothstep(MESH_HOLE, MESH_HOLE * 0.6, d);
+    const mean = (Math.PI * (MESH_HOLE * 0.8) ** 2) / (MESH_PITCH[0] * MESH_PITCH[1]);
+    const zone = smoothstep(panelW.add(MESH_SIDE + 0.003), panelW.add(MESH_SIDE), dz).mul(below);
+    s = s.mul(float(1).sub(zone.mul(MESH_SHADE).mul(mix(float(mean), holes, footprintKeep(MESH_HOLE * 3)))));
+  }
   // Seams: over the shoulder, and round the sleeve's root or, on a raglan, from the neck to the armpit.
   const shoulder = line(p.z.sub(nk.z - 0.016)).mul(step(armY - 0.01, p.y)).mul(step(0.05, ax));
   let seams: THREE.Node<'float'> = float(0);
@@ -1999,6 +2037,10 @@ const PLACKET = 0.085;
 const PLACKET_W = 0.0135;
 /** The side panel's half width over the ribs at the arm and at the hem; the chest's marks in from the middle and up from the Spine2 joint (m). */
 const PANEL_ARM = 0.02;
+/** The breathing mesh down the sides: the holes' pitch across and between rows (staggered), a hole's radius, how far past the
+ * side panel it runs, and how much darker a hole is (m). Sports mesh is "micro" under 2 mm, bird's-eye 2-5 mm (mesh fabric
+ * guides); pros' shirts (Commons photos, Premier Padel) show rows of fine holes about 2-3 mm apart. */
+const MESH_PITCH = [0.0028, 0.0024] as const, MESH_HOLE = 0.0006, MESH_SIDE = 0.03, MESH_SHADE = 0.35;
 const PANEL_HEM = 0.026;
 const MARK_X = 0.082;
 /** Stubble round the mouth's middle (m): up to STUBBLE_LIP over it in the middle (the upper lip), STUBBLE_CHEEK higher on the

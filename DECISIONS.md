@@ -5260,3 +5260,22 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
 - The fix is in `kit.ts`: the skin's broad colour (the low-mip `round`) is drawn `FACE_TONE` (half) of the way to the neck's, by chroma only. Its light and shade and its detail stay the texture's, the lips are left out, and each channel moves at most `FACE_TONE_CLAMP`. Where the skin already matches the neck nothing changes. Face stills at the same frame: cheeks hue 37-39° → 45-49°, a\* 16-20 → 13.6-16.3, chroma the same.
 - Shine: skin roughness 0.5 → 0.58 (`SKIN_ROUGH`, 0.4 wet). Weyrich et al. 2006 measured faces' lobe at Torrance-Sparrow m 0.3-0.45, and m 0.35 is three's alpha 0.35, roughness 0.59. Skin also reflects 2.8% head-on (index about 1.4), not three's 4% (`SKIN_F0` 0.7). The oily T-zone and sweat coat are kept. The brightest 3% of the forehead fell 4-7%.
 - Not changed: how bright faces are. They render at L\* 33-53 in close stills, from the hall's overhead key. That is the light, not the skin, and the owner's lighting call stands.
+
+## Cloth that doesn't look plastic (2026-11-17, the owner's list: "cloth looks plastic/fake")
+- What made it plastic: one white surface highlight and a white sheen. Each shirt had three's GGX lobe at 4% with F90 hard-coded to 1 for the lamps, plus a Charlie sheen 35% white at 0.6. Down a coloured shirt's sides that drew a pale satin rim. In stills the palest tenth of a shirt's pixels was washed out (saturation 0.83-0.88 where the rest is 0.95).
+- What real jerseys do: textured multifilament polyester (η 1.54, F0 about 4.5% at the fibre). Twisted yarn sends most of its reflection back out through the fibres in the dye's colour, spread 30-60° (Sadeghi et al. 2013, measured twisted polyester). The knit's loops shadow and mask what the surface reflects at a grazing view. Pros' shirts in Commons photos (Premier Padel) are matte under arena light, with no rim, soft fold shading, and rows of fine holes down the sides.
+- Changes in `kit.ts`, on the MetaHuman/MakeHuman people and the Meshy bodies alike:
+  - **Surface lobe:** `CLOTH_SPEC` 0.6 (F0 2.4%, F90 0.6), and the lamps' share `CLOTH_DIRECT_SHINE` 0.5, the only control on three's F90 there.
+  - **Sheen:** in the dye's colour, sqrt(base) (Filament's cloth default) of the kit's unshaded colour, at `CLOTH_SHEEN` 0.4 and roughness 0.6. A dark dye's sheen is raised to `CLOTH_SHEEN_FLOOR` (0.25) in its own hue, so black shorts keep their folds, navy keeps a navy sheen, and near-black shorts don't go grey at a grazing view.
+  - **Mesh:** the breathing mesh down each side (`MESH_*`: staggered holes 2.8 × 2.4 mm, 1.2 mm across). Each hole is drawn only while a pixel is well under one (`footprintKeep` at 3 × the radius), and further off it fades to its average shade, so nothing shimmers.
+- Results, same frames:
+  - Shirt median brightness unchanged (0.036 / 0.037 / 0.076 / 0.058 linear).
+  - Shadows unchanged (p5/p50 0.30-0.38).
+  - Brightest 1% against the median: 3.00 → 2.47, 3.44 → 2.90, 2.72 → 2.55.
+  - The palest tenth keeps its colour: saturation 0.83-0.88 → 0.96-0.98.
+  - Meshy black shorts lost their brown-grey gloss and keep their folds.
+- Tried and dropped:
+  - **Filament's wrapped diffuse** (w 0.5, energy-conserving): it halves the shading's slope, so the folds went flat and shadows lifted (p5/p50 0.38 → 0.57). At w 0.25 they were still flatter. Without it the folds keep their contrast.
+  - **Small noise wrinkles over the baked folds:** they barely showed on the shirts and laid grey blotches over the white skirt.
+- A fresh-eyes review of the diff found three things, all fixed. A grey floor brought back grey dark shorts, and it greyed navy kit (it was judged on the shaded pixel). The holes were kept at 1-3 px, where they would shimmer.
+- Tests 1290/1290, typecheck clean, alloc (avatars) 6 GCs per 100k ticks. src/sim untouched.
