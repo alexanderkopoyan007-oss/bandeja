@@ -677,6 +677,12 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   }
 }
 const SKIN_WRAP = 0.55;
+/** (17 Nov, the owner's list: skin "shiny") Skin's roughness, dry and wet with sweat. Weyrich et al. 2006 measured faces' specular
+ * lobe at a Torrance-Sparrow m of about 0.3-0.45 (oilier on the forehead and nose, which tzone and the coat still give): m 0.35 is
+ * three's alpha 0.35, roughness 0.59. It was 0.5 (alpha 0.25), a lobe two thirds as wide, and read as a sheen over every face. */
+const SKIN_ROUGH = [0.58, 0.4] as const;
+/** Skin's reflectance head-on over three's 4% (ior 1.5): skin's index is about 1.4 (Tuchin), 2.8%. */
+const SKIN_F0 = 0.7;
 /** How much of that bleed skin takes. It goes with the key's strength: 0.42 was set under a key of 1.6, and at 3.0 the red alone was a lit tube's shadow side. */
 const SKIN_SCATTER = 0.22;
 /** How much of the tone map's offset skin gets back (`PersonNodeMaterial.setupOutput`): all of it turned dark skin ashen, and a little of the toe's depth is what keeps skin rich in shadow. */
@@ -719,6 +725,9 @@ const NAIL_ROUGH = 0.3, NAIL_COAT = 0.4, NAIL_COAT_ROUGH = 0.15, NAIL_SCATTER = 
 /** hands-n.webp's alpha is 1 - this x the nail (mh-player.py NAIL_ALPHA: never 0, as WebP drops the colour under a clear texel). */
 const NAIL_ALPHA = 0.5;
 const BIB_PLAIN = 0.9;
+/** How far the skin's broad colour goes towards the neck's (its chroma), and the most a channel moves either way. */
+const FACE_TONE = 0.5;
+const FACE_TONE_CLAMP = [0.75, 1.3] as const;
 /** The collar's bins across (count, m each), and how far inside the shirt's top its edge stays (m). */
 const COLLAR_BINS = 6;
 const COLLAR_MAX = 0.11;
@@ -1061,7 +1070,15 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const shade = tex.xyz.dot(LUMA).div(round.dot(LUMA).max(0.02));
   // (and the chest in the collar takes the neck's: on some skins the source's torso is another colour, and read orange)
   const neckTone = body.opaqueMap && frame.neckUv ? texture(body.opaqueMap, vec2(frame.neckUv.x, frame.neckUv.y)).level(float(4 - shift)).xyz : round;
-  const skinBase = mix(mix(tex.xyz, round.mul(shade), lids.mul(LID_PLAIN)), neckTone.mul(shade), bib.mul(BIB_PLAIN));
+  // (17 Nov, the owner's list: skin "orange"; measured, the MetaHuman faces' own texture is hue 38-41 and a* 16-18 where their
+  // bodies are hue 55, and published cheeks 50 with a* 11-15 (Xiao et al. 2017): a face is redder than an arm, by about 3 in
+  // a*, and these were twice that. The broad colour of the skin is drawn FACE_TONE of the way to the neck's, by its chroma
+  // (each channel over the luminance) only, so its light and shade and its detail (freckles, the blush in the cheeks, the
+  // lips' own red, kept apart) stay the texture's; where the skin is already the neck's colour nothing changes.)
+  const chroma = (c: THREE.Node<'vec3'>): THREE.Node<'vec3'> => c.div(c.dot(LUMA).max(1e-4));
+  const toNeck = chroma(neckTone).div(chroma(round).max(1e-3)).clamp(FACE_TONE_CLAMP[0], FACE_TONE_CLAMP[1]);
+  const skinBase = mix(mix(tex.xyz, round.mul(shade), lids.mul(LID_PLAIN)), neckTone.mul(shade), bib.mul(BIB_PLAIN))
+    .mul(mix(vec3(1, 1, 1), toNeck, float(FACE_TONE).mul(float(1).sub(lips.mul(2).clamp(0, 1))).mul(skinW)));
   // Skin isn't one even colour, and the source's millimetre texels are soft up close: blotches a few cm across, smaller
   // ones with a little red in them, and the pores' own shade (round 7, the critic: "waxy, even skin").
   const mottle = mx_noise_float(p.mul(42)).mul(0.6).add(mx_noise_float(p.mul(150)).mul(0.4));
@@ -1170,7 +1187,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
-  const skinRough = mix(mix(float(0.5), float(0.33), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07))
+  const skinRough = mix(mix(float(SKIN_ROUGH[0]), float(SKIN_ROUGH[1]), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07))
     .add(mottle.mul(0.07)).add(poreFine.mul(0.05)), float(NAIL_ROUGH), nail);
   const skirtW = step(0.001, hang);
   m.roughnessNode = fabric.mul(mix(float(0.88), float(SKIRT_ROUGH), skirtW).sub(wet.mul(0.25)))
@@ -1188,7 +1205,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   // (the mouth's shine goes with its depth behind the lips too, X.x: an open mouth's tongue shone out of the dark like a
   // glass ball. 1 on a MakeHuman build's mouth, whose shade is the atlas's)
   const mouthShade = mix(float(1), X.x.mul(X.x).mul(X.x), mouthW);
-  m.specularIntensityNode = mix(mix(float(1), smoothstep(0.3, 0.9, tex.x), skirtW), creased.mul(float(1).add(darkSkin.mul(0.5))), skinW.add(mouthW)).mul(mouthShade);
+  m.specularIntensityNode = mix(mix(float(1), smoothstep(0.3, 0.9, tex.x), skirtW), creased.mul(float(1).add(darkSkin.mul(0.5))).mul(mix(float(1), float(SKIN_F0), skinW)), skinW.add(mouthW)).mul(mouthShade);
   m.directShineNode = mouthShade;
   m.directDiffuseNode = body.mouthShaded ? mix(float(1), X.x.max(0), mouthW) : float(1);
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
