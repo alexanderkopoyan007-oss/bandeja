@@ -1,6 +1,22 @@
 // The arenas' lights, kept between matches (Phase 8).
 import * as THREE from 'three/webgpu';
+import { uniform } from 'three/tsl';
 import type { LightDef } from './arena.ts';
+
+/**
+ * (18 Nov, the owner's list: "Light on the players") The TV floods along a hall's long sides (`LightDef.gantry`), on the players
+ * only. A pro event lights the players for the cameras: FIP asks at least 1,000 lux on vertical surfaces for broadcast padel, and
+ * broadcast guidance keeps vertical light at 0.5-1.5 of the horizontal. Our roof keys stand 53-62° up, so a standing body caught
+ * about 0.37 of what the floor did (a white skirt at 0.35-0.4 of its albedo, the floor at its own; a Premier Padel photo has a
+ * white shirt at about 0.77). The floods hang on gantries all round the court, `GANTRY_ELEVATION` up, taken as an even ring
+ * (from both long sides only, the broadcast camera down the court would have seen the players' fronts unlit). Aimed at the
+ * court, they light the players and leave the dark hall, the stands and the floor's approved level as they are. Shadowless, as
+ * many floods are, but under the body's own occlusion (they reach the players through `SkinLighting.indirectDiffuse`). Their
+ * light on a surface facing up is `intensity` × sin(elevation), facing sideways about a third as much, facing down none. The
+ * colour × intensity, 0 for none.
+ */
+export const gantry = uniform(new THREE.Color(0, 0, 0));
+export const GANTRY_ELEVATION = (45 * Math.PI) / 180;
 
 /**
  * The lights are the same objects match after match. three r186 caches the bind groups of shared uniform groups (the
@@ -45,6 +61,7 @@ export function addArenaLights(group: THREE.Group, L: LightDef, crossed = false)
   hemi.groundColor.set(L.hemi.ground);
   hemi.intensity = L.hemi.intensity;
   group.add(hemi);
+  gantry.value.set(L.key.color).multiplyScalar(L.gantry?.intensity ?? 0);
   const one = (name: string, dir: number[], intensity: number): THREE.DirectionalLight => {
     const key = pooledLight(name, () => new THREE.DirectionalLight());
     key.color.set(L.key.color);

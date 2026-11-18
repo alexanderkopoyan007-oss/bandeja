@@ -5279,3 +5279,23 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
   - **Small noise wrinkles over the baked folds:** they barely showed on the shirts and laid grey blotches over the white skirt.
 - A fresh-eyes review of the diff found three things, all fixed. A grey floor brought back grey dark shorts, and it greyed navy kit (it was judged on the shaded pixel). The holes were kept at 1-3 px, where they would shimmer.
 - Tests 1290/1290, typecheck clean, alloc (avatars) 6 GCs per 100k ticks. src/sim untouched.
+
+## Players lit for the cameras (2026-11-18, the owner's list: "Light on the players")
+- The ask: strong overhead arena light that models the body, with bright shoulders and fold tops and shade under the chin, arms and belly, so players stop looking flat and pasted in.
+- Measured against a Premier Padel photo (Commons, viewed only):
+  - Real: a white shirt renders at about 0.77 of its albedo (median 0.61-0.76 linear, highlights to 0.85-0.99). Its light-to-shade ratio (p90/p10) is 1.8-2.7.
+  - Ours: the stadium floor renders at its own albedo (0.97), but a white skirt sat at 0.33 linear, highlights 0.48, and faces at L\* 31-51.
+  - Why: our roof keys stand 53-62° up, so a standing body caught about 0.37 of the light the floor did. Broadcast guidance keeps vertical light at 0.5-1.5 of horizontal, and FIP asks at least 1,000 lux vertical for TV (from secondary summaries).
+- The fix is what real halls have: TV floods on gantries all round the court (`lights.ts gantry`, `arenas.json light.gantry`), on the stadium and the final only.
+  - They are an even ring 45° up (`GANTRY_ELEVATION`). n·l averaged round the ring has a closed form, checked against a brute-force sum.
+  - A surface facing up gets the most, one facing sideways about 0.3 as much, one facing down none, so the modelling is kept.
+  - From the long sides alone, the camera down the court would have seen the players' fronts unlit.
+  - They reach only the players (`SkinLighting.indirectDiffuse`, under the body's own occlusion, without shadows), as floods aimed into the court do. So the floor, the dark hall and the stands are exactly as approved (the floor's median is unchanged to the last digit).
+  - The creator's studio switches them off while it draws. Outdoor arenas and the club hall (an open-sided covered court in daylight, whose players already sit at 0.48 and L\* 52) have none.
+- Strength 4, chosen on the stills:
+  - Tried: 30° up at 4 and 6, and 45° at 3.5 and 4.5. At 30° the light was too even (p90/p10 1.6).
+  - White skirt median 0.33 → 0.645 linear, highlights 0.48 → 0.80 (not clipped).
+  - Cheeks L\* 31-51 → 44-63, and a face's two sides still differ (54 against 44).
+  - Shirt colours median 0.036 → 0.075, with folds kept (p5/p50 0.37 → 0.40).
+- A fresh-eyes review of the diff found that the floods skipped two gates that keep dark places dark without a shadow map: an open mouth's (`directDiffuse`, 15 Nov) and the insides of collars, sleeves and skirts (back faces, kept dark by the key's shadow). The floods now pass through the mouth's gate and stop at back faces. In open-mouth close-ups the inside stays dark, with no lit facets.
+- Tests 1290/1290, typecheck clean, alloc (avatars) 6 GCs per 100k ticks. src/sim untouched.

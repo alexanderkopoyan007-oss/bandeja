@@ -11,7 +11,7 @@ import { MatchSim } from '../sim/match.ts';
 import { DT } from '../sim/core/constants.ts';
 import type { InputFrame } from '../sim/input.ts';
 import { BallView, PlayerView } from '../render/views.ts';
-import { pooledLight } from '../render/arena/lights.ts';
+import { gantry, pooledLight } from '../render/arena/lights.ts';
 import { disposeTree } from '../render/dispose.ts';
 import { loadPeople, type PlayerAsset } from '../render/avatar/asset.ts';
 import { bodyFor } from '../render/avatar/costumes.ts';
@@ -329,13 +329,22 @@ export class Studio {
     this.renderer.setAnimationLoop(null);
   }
 
+  /** The studio's own light only: the arena's TV floods (lights.ts `gantry`, on every player's material) are off while it draws. */
+  private draw(): void {
+    this.floodsKept.copy(gantry.value);
+    gantry.value.setRGB(0, 0, 0);
+    this.renderer.render(this.scene, this.camera);
+    gantry.value.copy(this.floodsKept);
+  }
+  private readonly floodsKept = new THREE.Color();
+
   /** One frame (the animation loop's; tools call it with their own clock, ms, to step it evenly). */
   frame(now = performance.now()): void {
     const dt = this.last ? Math.min(0.1, (now - this.last) / 1000) : 0;
     this.last = now;
     const sim = this.sim, view = this.view;
     if (!sim || !view) {
-      this.renderer.render(this.scene, this.camera);
+      this.draw();
       return;
     }
     let alpha = 1;
@@ -354,7 +363,7 @@ export class Studio {
     const t = sim.time - DT + alpha * DT;
     view.update(sim, sim.players[0]!, 0, alpha, t);
     this.aim(dt, now / 1000, sim);
-    this.renderer.render(this.scene, this.camera);
+    this.draw();
   }
 
   /** The camera round the player, the lights round with it. */

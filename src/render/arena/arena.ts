@@ -28,6 +28,8 @@ export interface LightDef {
   key: { color: string; intensity: number; dir: number[]; shadow: boolean; radius: number };
   hemi: { sky: string; ground: string; intensity: number };
   floods?: { intensity: number; angle: number; penumbra: number; decay: number; shadow: number };
+  /** The TV floods along the long sides, on the players only (lights.ts `gantry`), in the key's colour. */
+  gantry?: { intensity: number };
 }
 
 export interface ArenaDef {

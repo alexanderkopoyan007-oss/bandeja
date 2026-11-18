@@ -21,7 +21,8 @@
     "light": {
       "env": 0.35,
       "key": { "color": "#fff6ec", "intensity": 3.0, "dir": [0.2, 1, 0.5], "shadow": true, "radius": 2 },
-      "hemi": { "sky": "#eef1f6", "ground": "#5a3a34", "intensity": 0.45 }
+      "hemi": { "sky": "#eef1f6", "ground": "#5a3a34", "intensity": 0.45 },
+      "gantry": { "intensity": 4 }
     },
     "post": { "bloom": { "strength": 0.3, "radius": 0.5, "threshold": 3 } },
     "camera": { "swingRise": 2.5 },
@@ -145,7 +146,8 @@
     "light": {
       "env": 0.32,
       "key": { "color": "#fff6ec", "intensity": 3.3, "dir": [0.2, 1, 0.5], "shadow": true, "radius": 2 },
-      "hemi": { "sky": "#eef1f6", "ground": "#2c3448", "intensity": 0.4 }
+      "hemi": { "sky": "#eef1f6", "ground": "#2c3448", "intensity": 0.4 },
+      "gantry": { "intensity": 4 }
     },
     "post": { "bloom": { "strength": 0.32, "radius": 0.5, "threshold": 3 } },
     "camera": { "swingRise": 2.5 }

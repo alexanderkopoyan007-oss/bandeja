@@ -6,11 +6,12 @@
 // turns shinier as it sweats. Shirt and shorts hems lag the body when it accelerates.
 import * as THREE from 'three/webgpu';
 import {
-  vec2, step, sin, cos, asin, cross, select,
+  vec2, step, sin, cos, asin, acos, cross, select,
   attribute, positionGeometry, positionLocal, uniform, vec3, vec4, float, mix, smoothstep, color,
   mx_noise_float, texture, uv, max, min, dot, exp, normalView, normalWorld, normalLocal, normalGeometry, diffuseColor, frontFacing, faceDirection, positionViewDirection,
 } from 'three/tsl';
 import { heightBump, footprintKeep, uvNormal } from '../bump.ts';
+import { gantry, GANTRY_ELEVATION } from '../arena/lights.ts';
 import { manBuild, modelledVertices, tuckInto, type KitCut, type PlayerAsset } from './asset.ts';
 import { backBody, hairOnBack } from './hairBack.ts';
 import { hairBulk, HAIR_HELMET_V, HAIR_U } from './costume.ts';
@@ -624,7 +625,15 @@ class SkinLighting extends THREE.PhysicalLightingModel {
   override indirectDiffuse(builder: THREE.NodeBuilder): void {
     const c = builder.context as unknown as { irradiance: THREE.Node<'vec3'> };
     const irradiance = c.irradiance;
-    c.irradiance = this.ambient(irradiance).mul(this.fill.add(1));
+    // (and the hall's TV floods, lights.ts `gantry`: a ring of them all round at one elevation, n·l averaged round the ring,
+    // (b·acos(-b/a) + √(a² - b²)) / π with a the normal's horizontal part × cos(elevation) and b its height × sin(elevation))
+    const ny = normalWorld.y.clamp(-1, 1);
+    const ra = float(1).sub(ny.mul(ny)).max(0).sqrt().mul(Math.cos(GANTRY_ELEVATION)), rb = ny.mul(Math.sin(GANTRY_ELEVATION));
+    const ring = rb.mul(acos(rb.negate().div(ra.max(1e-4)).clamp(-1, 1))).add(ra.mul(ra).sub(rb.mul(rb)).max(0).sqrt()).div(Math.PI);
+    // (on the front faces only, and through a mouth's gate, `directDiffuse`: the insides of collars, sleeves and skirts and of an open
+    // mouth are dark because the key's shadow covers them, and these floods have no shadow)
+    const floods = gantry.mul(ring).mul(this.directDiffuse).mul(faceDirection.max(0));
+    c.irradiance = this.ambient(irradiance).mul(this.fill.add(1)).add(floods);
     super.indirectDiffuse(builder);
     c.irradiance = irradiance;
   }
