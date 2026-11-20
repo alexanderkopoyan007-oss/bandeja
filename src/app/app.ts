@@ -60,7 +60,7 @@ function idleTurn(): Promise<void> {
 
 const ARENAS: Choice[] = [
   { value: 'stadium', label: 'Arena' }, { value: 'hall', label: 'Club hall' },
-  { value: 'club-day', label: 'Club, day' }, { value: 'club-night', label: 'Club, night' },
+  { value: 'club-day', label: 'Club, day' }, { value: 'club-golden', label: 'Club, golden hour' }, { value: 'club-night', label: 'Club, night' },
 ];
 /** A venue's name, the career's secret ones too. */
 function arenaLabel(id: string): string {

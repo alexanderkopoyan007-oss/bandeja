@@ -133,7 +133,7 @@ export interface GameOptions {
   runAhead?: boolean;
   /** Sound (`?sound=0` turns it off). */
   sound?: boolean;
-  /** Arena (data/arenas.json): stadium, hall, club-day, club-night, and the career's secret club-dusk and final. */
+  /** Arena (data/arenas.json): stadium, hall, club-day, club-golden, club-night, and the career's secret club-dusk and final. */
   arena?: string;
   /** `tv`: the broadcast graphics package (ui/tv.ts) instead of the plain score bug. */
   gfx?: string;

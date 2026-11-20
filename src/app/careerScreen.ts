@@ -153,5 +153,5 @@ function pointsLine(points: readonly number[]): string {
 }
 
 function arenaName(a: string): string {
-  return a === 'club-day' ? 'the club by day' : a === 'club-night' ? 'the club at night' : a === 'club-dusk' ? 'the club at sunset' : a === 'hall' ? 'the hall' : a === 'final' ? 'the final court' : 'the stadium';
+  return a === 'club-day' ? 'the club by day' : a === 'club-golden' ? 'the club at golden hour' : a === 'club-night' ? 'the club at night' : a === 'club-dusk' ? 'the club at sunset' : a === 'hall' ? 'the hall' : a === 'final' ? 'the final court' : 'the stadium';
 }
