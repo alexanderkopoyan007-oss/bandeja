@@ -5332,3 +5332,11 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
 - Trunks: the bark's diamonds as relief (`bumpMap`), not only paint.
 - The mesh's shadow (`courtView.ts wireShadowMask`, `ArenaDef.meshShadow`, at shadow maps of 2048 and up): the fence's wire casts with stochastic coverage. At 2048 over the fitted frustum a wire is a quarter of a texel, so only its average shows (the mesh panels' shadow 12% darker); a crisp grid would need the wire projected analytically in the turf's shader. Not done.
 - Tests unchanged (1294 pass); the sim untouched.
+- Round 2 (same day, owner: "Yes, keep going"), after a review of the commit (two reviewers and a skeptic; both its findings confirmed):
+  - The bake's scenery is lit at the arena's level (`envMapIntensity` = `light.env` on the byBake materials in `bakeBegin`, back to 1 in `bakeEnd`): the first pass dropped it, so the probe saw the shade of every trunk, frond and the grass a third as bright as the frame shows it.
+  - An impostor's shadow card is pushed away from the sun by `SHADOW_PUSH` (0.55) x its height on the card, not 0.4 x its size all the way down: along the orthographic sun a point moved further than its own ray to the ground ends up under it and casts nothing, and every wood tree's shadow started 2.5-4.3 m off its trunk.
+  - The glass reflects at `light.reflect` (1 for the golden club; `env` when absent, so the other arenas are as they were): `env` 3.2 is a lift of the ambient only, and the glass showing the probe at 3.2 laid a pale haze over everything seen through it.
+  - The surround's sand down to 0.12 (the court's stays 0.48): a surround is not top-dressed and played on, and at 0.3 the sunlit pile seen low towards the sun showed only its sand and read as concrete.
+  - A soft dark disc at each trunk's foot (`grove.ts footShade`, one draw): ground under a trunk and a crown sees less sky and is trodden. Subtle on purpose.
+  - Tried and taken back: less gloss at grazing on the surround's turf (`glint`); the concrete look was the sand, not the sheen.
+  - Perf of the first pass (1726506; the foot discs add one draw), paired against main on the golden club (load 10-14 from other sessions): medium-4x p50 16.8 / 15.5 ms against main's 16.0 / 16.1, p99 25.8 / 24.8 against 26.2 / 25.7; high p50 9.4 against 9.3 / 9.7; draws 121 against 119.

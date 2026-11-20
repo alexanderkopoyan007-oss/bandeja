@@ -26,6 +26,10 @@ const CUBE_FACES: Array<[[number, number, number], [number, number, number]]> = 
 
 export interface LightDef {
   env: number;
+  /** The glass's reflections of the baked environment; `env` when absent. A level `env` raises past 1 to lift the shade
+   *  (the golden club's 3.2) is a fudge on the ambient only: a mirror shows the scene as it is, and at 3.2 the glass laid a
+   *  pale haze over everything seen through it. */
+  reflect?: number;
   key: { color: string; intensity: number; dir: number[]; shadow: boolean; radius: number;
     /** The shadow camera's half width and half height (m; default 14, 14): fitted to the court as the light sees it. */
     frustum?: number[] };
@@ -238,14 +242,15 @@ export class Arena {
       const frt = pmrem.fromEquirectangular(sky);
       this.baked.push(frt);
       const filtered = frt.texture;
-      // (a photographed sky, by day: the scenery lights the bake with its own sky, then is lit by the bake as the court is
+      // (a photographed sky, by day: the scenery lights the bake with its own sky, at the arena's level as it will be drawn
+      // (or the probe saw the shade a third as bright as the frame shows it), then is lit by the bake as the court is
       // (scene.environment, at the arena's level; bakeEnd),
       // which has the sunlit ground in it. By the sky alone the shaded side of a trunk or the fence was navy: the sky's blue
       // and nothing of the green and brown round it. The drawn skies keep their own (at night the probe sees a floodlit court.)
       const byBake = !!this.def.hdri;
       this.group.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-        if (m && m.envMap === sky) { m.envMap = filtered; if (byBake) m.userData.byBake = true; }
+        if (m && m.envMap === sky) { m.envMap = filtered; if (byBake) { m.userData.byBake = true; m.envMapIntensity = this.def.light.env; } }
       });
     }
     return { pmrem, was };
@@ -261,13 +266,13 @@ export class Arena {
     // (the photographed sky's scenery: lit by the bake from now on, having lit the bake with its own sky; bakeBegin)
     this.group.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-      if (m?.userData?.byBake) { m.envMap = null; m.needsUpdate = true; delete m.userData.byBake; }
+      if (m?.userData?.byBake) { m.envMap = null; m.envMapIntensity = 1; m.needsUpdate = true; delete m.userData.byBake; }
     });
     // The box reflections are projected onto: the hall's walls and roof, or round an outdoor club its fence line out
     // to the trees.
     const h = this.def.hall;
     const half = h ? new THREE.Vector3(h.x, h.height + 2, h.z) : new THREE.Vector3(40, 25, 45);
-    return { texture: rt.texture, at: BAKE_AT.clone(), min: new THREE.Vector3(-half.x, -0.05, -half.z), max: half, intensity: this.def.light.env };
+    return { texture: rt.texture, at: BAKE_AT.clone(), min: new THREE.Vector3(-half.x, -0.05, -half.z), max: half, intensity: this.def.light.reflect ?? this.def.light.env };
   }
 
   /**

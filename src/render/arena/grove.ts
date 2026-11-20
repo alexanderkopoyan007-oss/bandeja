@@ -97,9 +97,12 @@ function impostorMaterial(k: ImpostorKind, base: string, waits: Array<Promise<vo
     return centre.add(right.mul(c.x.mul(size))).add(vec3(0, c.y.mul(size).sub(size.mul(k.foot / k.frame)), 0));
   };
   m.positionNode = card(cameraPosition.sub(centre));
-  // (moved away from the sun by the crown's half width: along the light a shadow falls where it did, but the view card, through
-  // the crown's middle, is now in front of its own shadow card and not darkened by it; neighbours still shade it)
-  m.castShadowPositionNode = card(sunDir).sub(sunDir.mul(size.mul(0.4)));
+  // (moved away from the sun, more the higher up the card: along the orthographic sun's light a shadow falls where it did,
+  // but the view card, through the crown's middle, is now in front of its own shadow card and not darkened by it; neighbours
+  // still shade it. In proportion to the height, never by one amount: a point moved along the light by more than its own
+  // ray to the ground ends up under the ground and casts nothing, and the same 0.4 x size all the way down lifted every
+  // tree's shadow 2.5-4.3 m off its trunk. At SHADOW_PUSH x height a point drops 0.26 of its height at the golden sun.)
+  m.castShadowPositionNode = card(sunDir).sub(sunDir.mul(size.mul(positionGeometry.y).mul(SHADOW_PUSH)));
   // The view: the way the tree is seen, in the bake's azimuths (Blender's +X first, counter-clockwise from above: in three
   // that is atan2(-z, x)), less the tree's own turn.
   // In the shadow pass the card faces the sun (castShadowPositionNode), and so must the view it cuts its shadow from: that
@@ -133,8 +136,10 @@ function impostorMaterial(k: ImpostorKind, base: string, waits: Array<Promise<vo
  */
 export function buildGrove(root: THREE.Group, g: GroveDef, env: THREE.Texture | null, keyDir: THREE.Vector3, waits: Array<Promise<void>>): void {
   sunDir.value.copy(keyDir).normalize();
-  const palms = buildPalms(palmSpots(g.palms), env);
+  const spots = palmSpots(g.palms);
+  const palms = buildPalms(spots, env);
   root.add(palms.trunks, palms.fronds);
+  const feet: Foot[] = spots.map((s) => ({ x: s.x, z: s.z, r: FOOT_PALM }));
 
   const base = typeof document !== 'undefined' ? new URL('assets/arena/golden/', document.baseURI).href : 'assets/arena/golden/';
   const t = g.trees;
@@ -148,6 +153,7 @@ export function buildGrove(root: THREE.Group, g: GroveDef, env: THREE.Texture | 
     const idx: number[] = [];
     const corners = [[-0.5, 0, 0, 0], [0.5, 0, 1, 0], [-0.5, 1, 0, 1], [0.5, 1, 1, 1]] as const;
     list.forEach((tr, i) => {
+      feet.push({ x: tr.x, z: tr.z, r: FOOT_TREE * tr.s });
       for (let c = 0; c < 4; c++) {
         const v = i * 4 + c, cc = corners[c]!;
         pos[v * 3] = cc[0]; pos[v * 3 + 1] = cc[1]; pos[v * 3 + 2] = 0;
@@ -178,4 +184,41 @@ export function buildGrove(root: THREE.Group, g: GroveDef, env: THREE.Texture | 
     mesh.frustumCulled = false;
     root.add(mesh);
   });
+  root.add(footShade(feet));
+}
+
+// Where a trunk stands the ground under it sees less of the sky (the trunk and, for a tree, the crown over it) and the
+// turf is trodden and darker: without it every trunk stood on the turf as if pasted there. A soft dark disc at each foot,
+// strongest at the trunk (`FOOT_DARK`) and gone at its edge, all of them one mesh; drawn over whatever lies there (turf,
+// leaves). A palm's disc is a metre across (its trunk 0.5-0.7 m), a tree's grows with the tree.
+interface Foot { x: number; z: number; r: number }
+const SHADOW_PUSH = 0.55;
+const FOOT_PALM = 0.95, FOOT_TREE = 1.1, FOOT_DARK = 0.55;
+
+function footShade(feet: Foot[]): THREE.Mesh {
+  const n = feet.length;
+  const pos = new Float32Array(n * 12), uvs = new Float32Array(n * 8);
+  const idx: number[] = [];
+  feet.forEach((f, i) => {
+    for (let c = 0; c < 4; c++) {
+      const u = c & 1, v = c >> 1, k = i * 4 + c;
+      pos[k * 3] = f.x + (u * 2 - 1) * f.r; pos[k * 3 + 1] = 0.003; pos[k * 3 + 2] = f.z + (v * 2 - 1) * f.r;
+      uvs[k * 2] = u; uvs[k * 2 + 1] = v;
+    }
+    idx.push(i * 4, i * 4 + 2, i * 4 + 1, i * 4 + 1, i * 4 + 2, i * 4 + 3);
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(idx);
+  geo.computeBoundingSphere();
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false });
+  m.colorNode = vec3(0, 0, 0);
+  const d = uv().sub(0.5).length().mul(2);
+  const a = float(1).sub(d).max(0);
+  m.opacityNode = a.mul(a).mul(FOOT_DARK);
+  const mesh = new THREE.Mesh(geo, m);
+  mesh.name = 'grove-feet';
+  mesh.renderOrder = 1;
+  return mesh;
 }

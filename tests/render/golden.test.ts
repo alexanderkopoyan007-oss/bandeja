@@ -25,6 +25,12 @@ describe('the golden club', () => {
     for (const k of def.grove!.trees.kinds) for (const f of ['albedo', 'normal']) expect(existsSync(`public/assets/arena/golden/${k.name}-${f}.webp`)).toBe(true);
   });
 
+  it('shows the photographed scene on the glass at its own level, not the shade\'s lifted one', () => {
+    // (light.env lifts the ambient; a mirror at 3.2 laid a pale haze over everything seen through the glass)
+    expect(def.light.env).toBeGreaterThan(1);
+    expect(def.light.reflect).toBe(1);
+  });
+
   it('has its own sound, not the stadium\'s', () => {
     expect((audio as unknown as { arenas: Record<string, unknown> }).arenas['club-golden']).toBeDefined();
   });
