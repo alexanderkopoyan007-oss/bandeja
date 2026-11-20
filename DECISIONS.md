@@ -5322,3 +5322,13 @@ pressed flat over a thigh is still lit as a flute; no cloth simulation.
   - The fitted key stood 30 m out with its near plane at 2 m, cutting the crowns of trees nearer the sun than 28 m; it stands 70 m out (far 110) when the frustum is fitted.
   - In the shadow pass the card faced the sun but picked its view from the light camera's position; it picks the sun's (the pass is told by its orthographic projection).
 - Not taken: the sun disc's parallax on a 240 m dome (about 5° from the broadcast camera, out of its frame; every dome works so), a card shadowing its own far half (what a crown does), the bake's foot a few centimetres off.
+
+## The golden club, made more real (2026-11-20, owner: "ok make it better, more realistic")
+- What was least real in the stills, in order: every backlit frond and crown a black cut-out against the sky (the broadcast camera looks towards the sun); trunks, fence and far trees navy in shade; a turf too blue and clean; no air between the court and the far trees; trunks smooth as pipes.
+- Leaves let the sun through (`render/arena/foliage.ts` `FoliageMaterial`, on the palms' fronds and the trees' cards): in the lighting model's direct term, so through the shadow map, the light on a leaf's back face (35% of its colour made yellower: light through a leaf has lost more blue and red) and forward scatter near the line to the sun (pow 6). Measured leaves transmit 10-40%, most of it forward.
+- The scenery round a photographed sky is lit by the bake, not by the sky alone (`Arena.bakeBegin`/`bakeEnd`): it lights the bake with its own sky (so the probe sees lit trees), then takes `scene.environment`, which has the sunlit ground in it. By the sky alone the shaded side of a trunk or the fence was the sky's blue and nothing of the green and brown round it. The drawn skies keep their own (at night the probe sees a floodlit court).
+- Haze (`ArenaDef.haze`, `scene.fogNode`): a blue-grey that rises from 35 m to 150 m to at most 0.3, so the far trees sit back. The court (inside 20 m of every camera) has none.
+- The turf: olive (#557b3c) with more sand showing (0.48), as a played-on court in late sun is.
+- Trunks: the bark's diamonds as relief (`bumpMap`), not only paint.
+- The mesh's shadow (`courtView.ts wireShadowMask`, `ArenaDef.meshShadow`, at shadow maps of 2048 and up): the fence's wire casts with stochastic coverage. At 2048 over the fitted frustum a wire is a quarter of a texel, so only its average shows (the mesh panels' shadow 12% darker); a crisp grid would need the wire projected analytically in the turf's shader. Not done.
+- Tests unchanged (1294 pass); the sim untouched.

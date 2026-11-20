@@ -2,6 +2,7 @@
 // reflect, and what stands round the court (a stadium's stands and crowd, a club hall, an outdoor park).
 // Everything here is built once and only reads the sim (the crowd's excitement follows the rally).
 import * as THREE from 'three/webgpu';
+import { fog, positionView, vec3 } from 'three/tsl';
 import arenas from '../../../data/arenas.json' with { type: 'json' };
 import floorLooks from '../../../data/floor-looks.json' with { type: 'json' };
 import type { Court } from '../../sim/court/court.ts';
@@ -59,6 +60,10 @@ export interface ArenaDef {
   hdri?: import('./golden.ts').HdriDef;
   /** Palms and an impostor wood close round the court (render/arena/grove.ts), instead of `trees`. */
   grove?: import('./grove.ts').GroveDef;
+  /** The cage's wire mesh throws its shadow (courtView.ts `meshShadow`; only with a shadow map of 2048 or more). */
+  meshShadow?: boolean;
+  /** Haze over distance: its colour (sRGB), none nearer than `near` m, `amount` (0..1) at `far` m and beyond. */
+  haze?: { color: string; near: number; far: number; amount: number };
   /** Fallen leaves on the surround and the court (render/arena/leaves.ts). */
   leaves?: import('./leaves.ts').LeavesDef;
   trees?: { count: number; inner: number; outer: number; height: number[] };
@@ -119,6 +124,12 @@ export class Arena {
     this.group.name = 'arena';
     scene.add(this.group);
     scene.background = new THREE.Color(def.background);
+    // The air between the camera and the far trees (`haze`, the golden club): nothing up to `near`, rising to `amount` at `far`.
+    if (def.haze) {
+      const hz = def.haze, c = new THREE.Color(hz.color);
+      const d = positionView.z.negate().sub(hz.near).div(hz.far - hz.near).clamp(0, 1);
+      scene.fogNode = fog(vec3(c.r, c.g, c.b), d.mul(hz.amount));
+    } else scene.fogNode = null;
     renderer.toneMappingExposure = def.exposure;
 
     // Floor: the court (with its lines), the rim just outside the glass, the surround, the hall's floor.
@@ -227,11 +238,14 @@ export class Arena {
       const frt = pmrem.fromEquirectangular(sky);
       this.baked.push(frt);
       const filtered = frt.texture;
-      // (a photographed sky: the scenery takes the arena's ambient level too, as everything lit by the bake does)
-      const level = this.def.hdri ? this.def.light.env : null;
+      // (a photographed sky, by day: the scenery lights the bake with its own sky, then is lit by the bake as the court is
+      // (scene.environment, at the arena's level; bakeEnd),
+      // which has the sunlit ground in it. By the sky alone the shaded side of a trunk or the fence was navy: the sky's blue
+      // and nothing of the green and brown round it. The drawn skies keep their own (at night the probe sees a floodlit court.)
+      const byBake = !!this.def.hdri;
       this.group.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-        if (m && m.envMap === sky) { m.envMap = filtered; if (level !== null) m.envMapIntensity = level; }
+        if (m && m.envMap === sky) { m.envMap = filtered; if (byBake) m.userData.byBake = true; }
       });
     }
     return { pmrem, was };
@@ -244,6 +258,11 @@ export class Arena {
     b.pmrem.dispose();
     scene.environment = rt.texture;
     scene.environmentIntensity = this.def.light.env;
+    // (the photographed sky's scenery: lit by the bake from now on, having lit the bake with its own sky; bakeBegin)
+    this.group.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (m?.userData?.byBake) { m.envMap = null; m.needsUpdate = true; delete m.userData.byBake; }
+    });
     // The box reflections are projected onto: the hall's walls and roof, or round an outdoor club its fence line out
     // to the trees.
     const h = this.def.hall;

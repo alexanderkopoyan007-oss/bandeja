@@ -12,6 +12,7 @@ import {
 } from 'three/tsl';
 import { buildPalms, type PalmSpot } from './palms.ts';
 import { ownedTextures } from '../dispose.ts';
+import { FoliageMaterial } from './foliage.ts';
 
 export interface ImpostorKind {
   /** Atlas name under assets/arena/golden/ (`<name>-albedo.webp`, `<name>-normal.webp`). */
@@ -69,7 +70,7 @@ export function treeSpots(t: GroveDef['trees']): Array<Array<{ x: number; z: num
 /** The sun's direction, for the cards in the shadow pass (set by buildGrove from the key light). */
 const sunDir = uniform(new THREE.Vector3(0, 1, 0));
 
-function impostorMaterial(k: ImpostorKind, base: string, waits: Array<Promise<void>>): THREE.MeshStandardNodeMaterial {
+function impostorMaterial(k: ImpostorKind, base: string, waits: Array<Promise<void>>): FoliageMaterial {
   // (the bake waits for them: a card without its atlas reads alpha 0 and the cube would show open sky where the wood is)
   const load = (kind: string, srgb: boolean): THREE.Texture => {
     let done!: () => void;
@@ -80,7 +81,7 @@ function impostorMaterial(k: ImpostorKind, base: string, waits: Array<Promise<vo
     return t;
   };
   const albedo = load('albedo', true), normals = load('normal', false);
-  const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.85, side: THREE.DoubleSide });
+  const m = new FoliageMaterial({ roughness: 0.85, side: THREE.DoubleSide });
   // (read only through nodes: disposeTree frees them through the material's list)
   ownedTextures(m).push(albedo, normals);
   m.alphaTest = 0.45;
@@ -96,7 +97,9 @@ function impostorMaterial(k: ImpostorKind, base: string, waits: Array<Promise<vo
     return centre.add(right.mul(c.x.mul(size))).add(vec3(0, c.y.mul(size).sub(size.mul(k.foot / k.frame)), 0));
   };
   m.positionNode = card(cameraPosition.sub(centre));
-  m.castShadowPositionNode = card(sunDir);
+  // (moved away from the sun by the crown's half width: along the light a shadow falls where it did, but the view card, through
+  // the crown's middle, is now in front of its own shadow card and not darkened by it; neighbours still shade it)
+  m.castShadowPositionNode = card(sunDir).sub(sunDir.mul(size.mul(0.4)));
   // The view: the way the tree is seen, in the bake's azimuths (Blender's +X first, counter-clockwise from above: in three
   // that is atan2(-z, x)), less the tree's own turn.
   // In the shadow pass the card faces the sun (castShadowPositionNode), and so must the view it cuts its shadow from: that

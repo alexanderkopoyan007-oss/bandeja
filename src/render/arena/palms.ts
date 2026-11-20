@@ -5,6 +5,7 @@
 // drawn on a canvas below; the cut-out (`alphaTest`) is in the shadow pass too, so the sun throws the leaflets' shadows
 // across the court. Every palm is merged into two meshes (trunks, fronds): two draws, about 2,000 triangles a palm.
 import * as THREE from 'three/webgpu';
+import { FoliageMaterial } from './foliage.ts';
 
 export interface PalmSpot {
   x: number; z: number;
@@ -209,8 +210,10 @@ export function buildPalms(spots: PalmSpot[], env: THREE.Texture | null): Palms 
   fg.setAttribute('uv', new THREE.Float32BufferAttribute(FU, 2));
   fg.setAttribute('color', new THREE.Float32BufferAttribute(FC, 3));
   fg.setIndex(FI);
-  const trunks = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.95, envMap: env }));
-  const fronds = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({
+  // (the bark's own picture as its relief: the leaf bases stand out, the cracks between sink)
+  const bark = barkTexture();
+  const trunks = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ map: bark, bumpMap: bark, bumpScale: 4, roughness: 0.95, envMap: env }));
+  const fronds = new THREE.Mesh(fg, new FoliageMaterial({
     map: frondTexture(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.75, envMap: env,
   }));
   for (const m of [trunks, fronds]) { m.castShadow = true; m.receiveShadow = true; m.name = 'palms'; }

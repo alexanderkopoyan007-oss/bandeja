@@ -420,7 +420,7 @@ export class Game {
       if (this.preset.shadow > 0 && (i === 0 || arenaDetail.full)) key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
       else key.castShadow = false;
     }
-    this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base });
+    this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base, meshShadow: this.arena.def.meshShadow === true && (this.preset.shadow ?? 0) >= 2048 });
     this.scene.add(this.court.group);
     this.arena.addNeighbours(this.court.group, court);
     this.net = new NetView(this.sim.net);
