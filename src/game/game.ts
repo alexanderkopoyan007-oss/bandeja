@@ -430,7 +430,7 @@ export class Game {
     const sideX = (this.arena.def.neighbours ?? []).some((ox) => ox < 0) ? 1 : -1;
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0, sideX);
     const bl = this.arena.def.post?.bloom;
-    if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, bl, opts.look === 2 ? FILM_LOOK : undefined);
+    if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, { ...bl, grade: this.arena.def.post?.grade }, opts.look === 2 ? FILM_LOOK : undefined);
     BroadcastCamera.cutaways = opts.cutaway !== false;
     this.cam.establish = !!opts.establish;
     this.cam.setPreset(opts.camera ?? 'tv');
@@ -459,7 +459,8 @@ export class Game {
     this.scene.add(this.aimMarker);
     // Reflections and ambient light from the arena itself (without the ball and cues; the players come after it).
     const moving: THREE.Object3D[] = [this.ball.mesh, this.ball.shadow, this.ball.trail, this.ball.marker, this.aimMarker, this.net.group];
-    if (opts.deferBake) this.bakeHide = moving;
+    // (an arena still loading its sky (the golden club's photograph) bakes when it is in: bake() waits for it, and warmUp runs bake())
+    if (opts.deferBake || this.arena.pending) this.bakeHide = moving;
     else this.court.setEnvironment(this.arena.bakeEnvironment(renderer, this.scene, moving));
     // A challenge: its run, its marks on court and its line on screen; the inputs kept (six minutes) or played back.
     this.run = opts.challenge ? new ChallengeRun(opts.challenge) : null;

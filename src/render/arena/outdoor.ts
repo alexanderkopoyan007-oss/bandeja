@@ -8,6 +8,10 @@ import type { ArenaDef, ArenaPart } from './arena.ts';
 import { pooledLight } from './lights.ts';
 import { BoxBatch, mergeGeometries } from './stadium.ts';
 import { floorMaterial } from '../turf.ts';
+import { hdriDomeMaterial, loadHdriSky } from './golden.ts';
+import { buildGrove } from './grove.ts';
+import { buildLeaves } from './leaves.ts';
+import { ownedTextures } from '../dispose.ts';
 
 /** Sky as an equirectangular canvas: zenith-to-horizon gradient, the sun and its glow, broken cloud. */
 function skyTexture(def: NonNullable<ArenaDef['sky']>, night: boolean): THREE.CanvasTexture {
@@ -106,13 +110,19 @@ function crownGeometry(): THREE.BufferGeometry {
  * reflections come from the sky alone: the arena's probe sits on the court and sees it floodlit, which lit the trees
  * bright green from below at night.
  */
-export function buildScenery(root: THREE.Group, def: ArenaDef): THREE.Texture {
+export function buildScenery(root: THREE.Group, def: ArenaDef, waits?: Array<Promise<void>>): THREE.Texture {
   const night = (def.poles?.lit ?? false) === true;
-  const sky = skyTexture(def.sky!, night);
+  // (the golden club: a photographed sky, golden.ts; its sun is the key light, the disc drawn on the dome)
+  const photo = def.hdri ? loadHdriSky(def.hdri) : null;
+  if (photo) waits?.push(photo.ready);
+  const sky: THREE.Texture = photo ? photo.env : skyTexture(def.sky!, night);
   // The sky is a dome mesh, not the scene background, so the environment bake sees it with the trees in front.
   // Radius well inside the camera's far plane (300 m) from wherever a camera stands (the broadcast camera is 25 m
   // from the centre; at 300 m the far side of the dome was clipped to the background).
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(240, 48, 24), new THREE.MeshBasicMaterial({ map: sky, side: THREE.BackSide, depthWrite: false, fog: false }));
+  const domeMat = photo ? hdriDomeMaterial(photo, def.hdri!, new THREE.Vector3().fromArray(def.light.key.dir).normalize()) : new THREE.MeshBasicMaterial({ map: sky, side: THREE.BackSide, depthWrite: false, fog: false });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(240, 48, 24), domeMat);
+  // (the photograph's textures are read through nodes, and the raw env loses its last material at the bake: freed with the dome)
+  if (photo) ownedTextures(domeMat).push(photo.dome, photo.env);
   dome.renderOrder = -1;
   root.add(dome);
 
@@ -125,6 +135,11 @@ export function buildScenery(root: THREE.Group, def: ArenaDef): THREE.Texture {
   grass.receiveShadow = true;
   root.add(grass);
 
+  // The golden club: palms and an impostor wood close round the court (grove.ts), instead of the ring of drawn trees.
+  if (def.grove) {
+    buildGrove(root, def.grove, sky, new THREE.Vector3().fromArray(def.light.key.dir), waits ?? []);
+    return sky;
+  }
   // Trees: trunks and crowns, instanced, in a ring round the club.
   const tr = def.trees!;
   const rnd = (() => { let a = 1234; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; })();
@@ -155,7 +170,9 @@ export function buildScenery(root: THREE.Group, def: ArenaDef): THREE.Texture {
 
 export function buildOutdoor(root: THREE.Group, def: ArenaDef, court: Court, scene: THREE.Scene): ArenaPart {
   const night = (def.poles?.lit ?? false) === true;
-  const sky = buildScenery(root, def);
+  const waits: Array<Promise<void>> = [];
+  const sky = buildScenery(root, def, waits);
+  if (def.leaves) root.add(buildLeaves(def.leaves, court.halfW, court.halfL, def.surround.x, def.surround.z, sky));
   void scene;
 
   // A timber fence round the club.
@@ -224,7 +241,7 @@ export function buildOutdoor(root: THREE.Group, def: ArenaDef, court: Court, sce
       root.add(sp, sp.target);
     }
   }
-  return { sky };
+  return { sky, ready: waits.length ? Promise.all(waits).then(() => undefined) : undefined };
 }
 
 /**

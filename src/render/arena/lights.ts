@@ -67,13 +67,18 @@ export function addArenaLights(group: THREE.Group, L: LightDef, crossed = false)
     key.color.set(L.key.color);
     key.intensity = intensity;
     const kd = new THREE.Vector3().fromArray(dir).normalize();
-    key.position.copy(kd).multiplyScalar(30);
+    // (a fitted frustum (the golden club) has trees round it up to 40 m towards the sun whose shadows reach the court: the
+    // light stands further out, or its near plane cut their crowns)
+    const out = L.key.frustum ? 70 : 30;
+    key.position.copy(kd).multiplyScalar(out);
     key.castShadow = L.key.shadow && intensity > 0;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.bias = -0.0004;
     key.shadow.normalBias = 0.02;
     key.shadow.radius = crossed ? L.key.radius * 1.5 : L.key.radius;
-    Object.assign(key.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 2, far: 70 });
+    const fw = L.key.frustum?.[0] ?? 14, fh = L.key.frustum?.[1] ?? 14;
+    Object.assign(key.shadow.camera, { left: -fw, right: fw, top: fh, bottom: -fh, near: 2, far: out + 40 });
+    key.shadow.camera.updateProjectionMatrix();
     group.add(key);
     group.add(key.target);
     return key;

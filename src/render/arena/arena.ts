@@ -25,7 +25,9 @@ const CUBE_FACES: Array<[[number, number, number], [number, number, number]]> = 
 
 export interface LightDef {
   env: number;
-  key: { color: string; intensity: number; dir: number[]; shadow: boolean; radius: number };
+  key: { color: string; intensity: number; dir: number[]; shadow: boolean; radius: number;
+    /** The shadow camera's half width and half height (m; default 14, 14): fitted to the court as the light sees it. */
+    frustum?: number[] };
   hemi: { sky: string; ground: string; intensity: number };
   floods?: { intensity: number; angle: number; penumbra: number; decay: number; shadow: number };
   /** The TV floods along the long sides, on the players only (lights.ts `gantry`), in the key's colour. */
@@ -53,12 +55,18 @@ export interface ArenaDef {
     roofGlow?: number; lamps?: number; windows?: string; steel?: string;
   };
   sky?: { zenith: string; horizon: string; ground: string; sunDir: number[]; sun: string };
+  /** A photographed sky (render/arena/golden.ts) in place of the drawn one; `light.key` is its sun. */
+  hdri?: import('./golden.ts').HdriDef;
+  /** Palms and an impostor wood close round the court (render/arena/grove.ts), instead of `trees`. */
+  grove?: import('./grove.ts').GroveDef;
+  /** Fallen leaves on the surround and the court (render/arena/leaves.ts). */
+  leaves?: import('./leaves.ts').LeavesDef;
   trees?: { count: number; inner: number; outer: number; height: number[] };
   poles?: { height: number; heads: number; color: string; lit?: boolean; color2?: string };
   /** Other courts beside ours (their centres along x, m): empty, static, lit like ours. */
   neighbours?: number[];
   light: LightDef;
-  post?: { bloom?: { strength: number; radius: number; threshold: number } };
+  post?: { bloom?: { strength: number; radius: number; threshold: number }; grade?: import('../post.ts').Grade };
 }
 
 export const ARENA_KEYS = Object.keys(arenas).filter((k) => !k.startsWith('/'));
@@ -85,6 +93,8 @@ export interface ArenaPart {
   update?(time: number, mood: CrowdState, cam?: THREE.Vector3): void;
   /** The sky texture the scenery's materials use as their own envMap (filtered before the bake: see there). */
   sky?: THREE.Texture;
+  /** What it still loads (the bake waits for it). */
+  ready?: Promise<void>;
 }
 
 export class Arena {
@@ -99,6 +109,10 @@ export class Arena {
   readonly mood: CrowdState = { excite: 0, applause: 0, ovation: 0 };
   /** The baked environment and filtered skies (not in the scene graph): freed by dispose(). */
   private readonly baked: Array<{ dispose(): void }> = [];
+  /** Resolves when everything the arena loads is in (a photographed sky); `pending` until then. A bake before it sees an
+   * empty sky: bakeEnvironmentAsync waits for it, and whoever bakes synchronously bakes again after it (Game). */
+  ready: Promise<void> = Promise.resolve();
+  pending = false;
 
   constructor(def: ArenaDef, court: Court, scene: THREE.Scene, renderer: THREE.WebGPURenderer) {
     this.def = def;
@@ -133,6 +147,11 @@ export class Arena {
     if (def.kind === 'stadium') this.parts.push(buildStadium(this.group, def, court));
     else if (def.kind === 'hall') this.parts.push(buildHall(this.group, def, court));
     else this.parts.push(buildOutdoor(this.group, def, court, scene));
+    const waits = this.parts.map((p) => p.ready).filter((r): r is Promise<void> => !!r);
+    if (waits.length) {
+      this.pending = true;
+      this.ready = Promise.all(waits).then(() => { this.pending = false; });
+    }
     // The benches by the net outside the side glass: the stadium's padded with a backrest, a club's or a hall's
     // slatted wood (render/props.ts).
     const bx = court.halfW + (def.kind === 'stadium' ? 1.6 : 1.3);
@@ -166,6 +185,7 @@ export class Arena {
    */
   async bakeEnvironmentAsync(renderer: THREE.WebGPURenderer, scene: THREE.Scene, hide: THREE.Object3D[],
     compile: (camera: THREE.PerspectiveCamera, whole: boolean) => Promise<unknown>): Promise<EnvProbe> {
+    await this.ready;
     const b = this.bakeBegin(renderer, hide);
     // (PMREMGenerator's own target, made as fromScene makes it: three keeps a shader's build per target)
     const pm = b.pmrem as unknown as { _setSize?(n: number): void; _allocateTarget?(depth: boolean): THREE.RenderTarget };
@@ -207,9 +227,11 @@ export class Arena {
       const frt = pmrem.fromEquirectangular(sky);
       this.baked.push(frt);
       const filtered = frt.texture;
+      // (a photographed sky: the scenery takes the arena's ambient level too, as everything lit by the bake does)
+      const level = this.def.hdri ? this.def.light.env : null;
       this.group.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-        if (m && m.envMap === sky) m.envMap = filtered;
+        if (m && m.envMap === sky) { m.envMap = filtered; if (level !== null) m.envMapIntensity = level; }
       });
     }
     return { pmrem, was };

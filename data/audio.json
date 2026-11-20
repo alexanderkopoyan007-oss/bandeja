@@ -32,6 +32,11 @@
       "//room": "Outdoors the room is the cage: glass on four sides and open on top, it still rings. T20 measured in an outdoor cage (Wadman et al. 2021 Fig. 4.2.5): 0.5-1.0 s up to 250 Hz, 1.25 s at 500-1000 Hz, 0.6 s from 2 kHz. The early reflections are its glass; `wet` is set so a hit's tail falls as the waveform does in their Fig. 4.3.1. `crowdSend` and `bedSend`: the watchers, the wind and the crickets are outside it.",
       "wet": -1, "trim": -3, "crowdSend": 0.15, "bedSend": 0.1, "crowd": 8, "talkers": 6, "ambience": ["wind"], "birds": true, "neighbours": 2
     },
+    "club-golden": {
+      "room": { "rt60": [0.9, 1.25, 0.6], "xo": [350, 1500], "preDelay": 0.01, "early": [[0.014, 0.35, -0.6], [0.029, 0.35, 0.6], [0.058, 0.25, 0], [0.12, 0.1, 0.3]] },
+      "//room": "The day club's cage and air (the same outdoor cage), its birds and wind; no neighbouring courts round this one.",
+      "wet": -1, "trim": -3, "crowdSend": 0.15, "bedSend": 0.1, "crowd": 8, "talkers": 6, "ambience": ["wind"], "birds": true, "neighbours": 0
+    },
     "club-night": {
       "room": { "rt60": [0.9, 1.25, 0.6], "xo": [350, 1500], "preDelay": 0.01, "early": [[0.014, 0.35, -0.6], [0.029, 0.35, 0.6], [0.058, 0.25, 0], [0.12, 0.1, 0.3]] },
       "wet": -1, "trim": -3, "crowdSend": 0.15, "bedSend": 0.1, "crowd": 10, "talkers": 8, "ambience": ["wind", "crickets", "hum"], "neighbours": 2

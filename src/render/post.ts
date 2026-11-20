@@ -13,6 +13,25 @@ export interface PostLook {
   strength: number;
   radius: number;
   threshold: number;
+  /** An arena's own grade (data/arenas.json `post.grade`), laid on with or without the look pass. */
+  grade?: Grade;
+}
+
+/**
+ * An arena's grade, in the scene's own light before the tone mapping: the lights tinted `warm` and the shadows `cool`
+ * (multipliers, blended by brightness), saturation and contrast about middle grey (1 = none), the corners darkened (0..1).
+ * The golden club's is a late-afternoon print's: amber lights, teal shade, a little more colour.
+ */
+export interface Grade { warm: number[]; cool: number[]; saturation: number; contrast: number; vignette: number }
+
+/** The grade as nodes (`lit`: linear light before the tone mapping). */
+function graded(lit: THREE.Node<'vec3'>, g: Grade): THREE.Node<'vec3'> {
+  const luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));
+  const sat = mix(vec3(luma), lit, g.saturation);
+  const con = sat.div(0.18).max(0).pow(vec3(g.contrast)).mul(0.18);
+  const tone = con.mul(mix(vec3(g.cool[0]!, g.cool[1]!, g.cool[2]!), vec3(g.warm[0]!, g.warm[1]!, g.warm[2]!), smoothstep(0.02, 0.6, luma)));
+  const away = screenUV.sub(0.5).mul(vec2(1, 0.8)).length();
+  return tone.mul(float(1).sub(smoothstep(0.35, 0.95, away).mul(g.vignette)));
 }
 
 /**
@@ -78,7 +97,8 @@ export class Post {
     if (!film) {
       const color = scenePass.getTextureNode('output');
       const glow = bloom(color, look.strength, look.radius, look.threshold);
-      this.pipeline = new THREE.RenderPipeline(renderer, color.add(glow));
+      const lit = color.add(glow);
+      this.pipeline = new THREE.RenderPipeline(renderer, look.grade ? vec4(graded(lit.rgb, look.grade), 1) : lit);
       this.nodes = [scenePass, glow];
       return;
     }
@@ -110,12 +130,8 @@ export class Post {
     // The grade, in the scene's own light (before the tone mapping): contrast about middle grey, the shadows a little
     // cool and the lights a little warm, the corners darker.
     const lit = base.add(glow).rgb;
-    const luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));
-    const sat = mix(vec3(luma), lit, film.saturation);
-    const con = sat.div(0.18).max(0).pow(vec3(film.contrast)).mul(0.18);
-    const tone = con.mul(mix(vec3(0.94, 0.99, 1.07), vec3(1.04, 1.0, 0.95), smoothstep(0.02, 0.6, luma)));
-    const away = screenUV.sub(0.5).mul(vec2(1, 0.8)).length();
-    const framed = tone.mul(float(1).sub(smoothstep(0.35, 0.95, away).mul(film.vignette)));
+    // (an arena's own grade, the golden club's, in place of the look's general one)
+    const framed = graded(lit, look.grade ?? { warm: [1.04, 1.0, 0.95], cool: [0.94, 0.99, 1.07], saturation: film.saturation, contrast: film.contrast, vignette: film.vignette });
     // Grain after the tone mapping (in what the screen shows), new every frame, strongest in the mid-tones.
     const shown = renderOutput(vec4(framed, 1));
     const seed = screenCoordinate.xy.add(vec2(f.y.mul(37.13), f.y.mul(91.7)));
