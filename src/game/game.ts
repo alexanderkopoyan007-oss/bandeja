@@ -420,7 +420,7 @@ export class Game {
       if (this.preset.shadow > 0 && (i === 0 || arenaDetail.full)) key.shadow.mapSize.set(this.preset.shadow, this.preset.shadow);
       else key.castShadow = false;
     }
-    this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base, meshShadow: this.arena.def.meshShadow === true && (this.preset.shadow ?? 0) >= 2048 });
+    this.court = buildCourtView(court, { frame: this.arena.def.frame, base: this.arena.def.base });
     this.scene.add(this.court.group);
     this.arena.addNeighbours(this.court.group, court);
     this.net = new NetView(this.sim.net);
@@ -1178,6 +1178,8 @@ export class Game {
       const bottle = makeBottle(kit.shirt);
       bottle.position.set(bench.x + 0.38, 0, bag.position.z + 0.18);
       this.scene.add(bottle);
+      this.arena.shade(bag);
+      this.arena.shade(bottle);
     }
   }
 

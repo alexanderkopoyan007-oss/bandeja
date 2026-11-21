@@ -7,6 +7,7 @@ import arenas from '../../../data/arenas.json' with { type: 'json' };
 import floorLooks from '../../../data/floor-looks.json' with { type: 'json' };
 import type { Court } from '../../sim/court/court.ts';
 import { floorMaterial, type FloorLook } from '../turf.ts';
+import { meshShade, FENCE_CELL, FENCE_WIRE } from '../meshShade.ts';
 import type { EnvProbe } from '../courtView.ts';
 import { BENCH_TOP, BENCH_Z, buildStadium } from './stadium.ts';
 import { makeBench } from '../props.ts';
@@ -64,7 +65,7 @@ export interface ArenaDef {
   hdri?: import('./golden.ts').HdriDef;
   /** Palms and an impostor wood close round the court (render/arena/grove.ts), instead of `trees`. */
   grove?: import('./grove.ts').GroveDef;
-  /** The cage's wire mesh throws its shadow (courtView.ts `meshShadow`; only with a shadow map of 2048 or more). */
+  /** The cage's wire mesh in the sun on the floor (render/meshShade.ts; with the key's shadow on). */
   meshShadow?: boolean;
   /** Haze over distance: its colour (sRGB), none nearer than `near` m, `amount` (0..1) at `far` m and beyond. */
   haze?: { color: string; near: number; far: number; amount: number };
@@ -121,6 +122,8 @@ export class Arena {
   /** Resolves when everything the arena loads is in (a photographed sky); `pending` until then. A bake before it sees an
    * empty sky: bakeEnvironmentAsync waits for it, and whoever bakes synchronously bakes again after it (Game). */
   ready: Promise<void> = Promise.resolve();
+  /** The cage's mesh in the sun as a factor on a material's received shadow (`meshShadow` arenas; `shade`). */
+  private received: ((shadow: THREE.Node) => THREE.Node) | null = null;
   pending = false;
 
   constructor(def: ArenaDef, court: Court, scene: THREE.Scene, renderer: THREE.WebGPURenderer) {
@@ -148,9 +151,13 @@ export class Arena {
       return m;
     };
     const rig = def.kind === 'stadium';
-    plane(cd.width, cd.length, floorMaterial(def.floor, look, 0, rig), 0);
-    plane(cd.width + 0.7, cd.length + 0.7, floorMaterial({ ...def.floor, color: def.rim, line: null }, null, 0, rig), -0.002);
-    plane(def.surround.x * 2, def.surround.z * 2, floorMaterial(def.surround, null, 0, rig), -0.004);
+    const shade = def.meshShadow ? meshShade(court, def.light.key.dir, FENCE_CELL, FENCE_WIRE) : null;
+    if (shade) this.baked.push(shade.strip);
+    this.received = shade?.received ?? null;
+    const rs = this.received;
+    plane(cd.width, cd.length, floorMaterial(def.floor, look, 0, rig, rs), 0);
+    plane(cd.width + 0.7, cd.length + 0.7, floorMaterial({ ...def.floor, color: def.rim, line: null }, null, 0, rig, rs), -0.002);
+    plane(def.surround.x * 2, def.surround.z * 2, floorMaterial(def.surround, null, 0, rig, rs), -0.004);
     // (the detail pass: the hall's floor beyond the surround is sealed concrete, surface.ts)
     const hf = arenaDetail.on && def.kind !== 'outdoor' ? surfaceMaterial({ set: 'concrete', color: def.hallFloor, tile: 3 }) : new THREE.MeshStandardMaterial({ color: def.hallFloor, roughness: 0.9 });
     plane(400, 400, hf, -0.006);
@@ -165,7 +172,7 @@ export class Arena {
     const waits = this.parts.map((p) => p.ready).filter((r): r is Promise<void> => !!r);
     if (waits.length) {
       this.pending = true;
-      this.ready = Promise.all(waits).then(() => { this.pending = false; });
+      this.ready = Promise.all(waits).then(() => { this.pending = false; this.shade(this.group); });
     }
     // The benches by the net outside the side glass: the stadium's padded with a backrest, a club's or a hall's
     // slatted wood (render/props.ts).
@@ -176,6 +183,27 @@ export class Arena {
       b.position.set(-bx, 0, z);
       this.group.add(b);
     }
+    this.shade(this.group);
+  }
+
+  /**
+   * Put the cage's mesh in the sun (render/meshShade.ts) on everything under `root` that takes shadows and has no
+   * received-shadow node of its own: the leaves, benches, palms and wood, and the game's bags and bottles. A leaf lying on
+   * the gridded turf was otherwise brighter than the turf under it. Only materials built for this arena (all of these are
+   * made per build: a material shared with other arenas must never carry this arena's strip). The players and the ball
+   * have none: their materials outlive the arena.
+   */
+  shade(root: THREE.Object3D): void {
+    const rs = this.received;
+    if (!rs) return;
+    root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.receiveShadow) return;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        const nm = mat as THREE.NodeMaterial;
+        if (nm.receivedShadowNode == null) { nm.receivedShadowNode = rs as unknown as () => THREE.Node; nm.needsUpdate = true; }
+      }
+    });
   }
 
   /**

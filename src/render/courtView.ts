@@ -2,6 +2,7 @@
 // frame (posts, rails, door frames, clamps) and the net. Rendering only reads the sim.
 // Draw calls stay low: glass and mesh are each one merged mesh, the whole frame is one instanced mesh.
 import * as THREE from 'three/webgpu';
+import { FENCE_CELL, FENCE_WIRE } from './meshShade.ts';
 import {
   uv, vec2, vec3, float, fract, min, max, fwidth, smoothstep, mix, saturate, color, length, positionWorld, cameraPosition,
   normalWorld, normalize, dot, abs, pow, texture, pmremTexture, reflectVector,
@@ -56,30 +57,6 @@ export interface CourtLook {
   frame: string;
   /** The steel the glass stands on (panoramic courts show it as a pale line round the court). */
   base: string;
-  /** The wire mesh throws its shadow (the golden club: a low sun lays the mesh's grid across the turf). */
-  meshShadow?: boolean;
-}
-
-/**
- * The wire mesh in the shadow pass: each shadow-map texel kept with the chance that wire covers it (the wire's own
- * anti-aliased coverage at that texel's size, falling to the mesh's average where the cells are smaller than a texel),
- * tested against a hash of where it is. Where the map resolves the cells (a 4.5 cm diamond is 4-7 texels of the golden
- * club's fitted map) the grid shows; where it can't, the soft shadow filter averages it to the mesh's true shade (12%
- * of the light stopped by 2.8 mm wire), not to a moiré or to nothing.
- */
-function wireShadowMask(cell: number, wire: number): THREE.Node<'bool'> {
-  const p = uv().div(cell);
-  const q = vec2(p.x.add(p.y), p.x.sub(p.y)).mul(0.70710678);
-  const f = fract(q);
-  const d = min(f, f.oneMinus());
-  const wn = (wire / cell) * 1.41421356;
-  const fw = fwidth(q);
-  const cov = vec2(1, 1).sub(smoothstep(float(wn * 0.5).sub(fw), float(wn * 0.5).add(fw), d));
-  const avg = 1 - (1 - wn) * (1 - wn);
-  const far = saturate(max(fw.x, fw.y).mul(2.5).sub(0.6));
-  const c = mix(max(cov.x, cov.y), float(avg), far);
-  const h = fract(positionWorld.x.mul(127.1).add(positionWorld.y.mul(311.7)).add(positionWorld.z.mul(74.7)).sin().mul(43758.5453));
-  return c.greaterThan(h);
 }
 
 /** The arena's baked environment and where it was captured, for parallax-corrected reflections. */
@@ -124,12 +101,9 @@ export function buildCourtView(court: Court, look: CourtLook = { frame: '#1b1e21
   g.add(glassMesh);
 
   // Welded mesh: rhomboid holes about 6 cm across the diagonal (FIP: 5-7.08 cm), 2.8 mm wire.
-  const fence = mesh.mesh(wireMaterial(0.045, 0.0028, true, 0x202326, 1, 0, true));
+  const fence = mesh.mesh(wireMaterial(FENCE_CELL, FENCE_WIRE, true, 0x202326, 1, 0, true));
   fence.renderOrder = 2;
-  if (look.meshShadow) {
-    fence.castShadow = true;
-    (fence.material as THREE.MeshBasicNodeMaterial).maskShadowNode = wireShadowMask(0.045, 0.0028);
-  }
+  // (its shadow in the sun is drawn by the floor itself, render/meshShade.ts: no shadow map resolves the wires)
   g.add(fence);
 
   // Steel frame: posts, rails, door frames and glass clamps, all one instanced mesh.

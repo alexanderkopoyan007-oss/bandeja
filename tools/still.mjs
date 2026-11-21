@@ -1,6 +1,6 @@
 // The same frame of an autoplay match every time: the game is held at its start and stepped by hand, 1/60 s a frame,
 // to sim time T, then shot without the HUD. For before/after stills of a look change between builds (`?cam=` for close
-// cameras; VIEW=waist:N, skirt:N, chest:N, body:N, feet:N or face:N[:metres up], in front of player N, head:N[:degrees round], skirt:N[:degrees round]; FACE=blinkL:1,jawOpen:0.6 holds those face keys on (FOV=8 with face:N:-0.012 is the eyes at 3x)
+// cameras; VIEW=at:x,y,z:x,y,z (a fixed camera), waist:N, skirt:N, chest:N, body:N, feet:N or face:N[:metres up], in front of player N, head:N[:degrees round], skirt:N[:degrees round]; FACE=blinkL:1,jawOpen:0.6 holds those face keys on (FOV=8 with face:N:-0.012 is the eyes at 3x)
 // that player, the rest at 0). Bodies can still differ a little between runs; judge a look, not a pose.
 //   bash tools/one-chrome.sh node tools/still.mjs <url> <out.png> <T seconds> [w] [h]
 import puppeteer from 'puppeteer-core';
@@ -40,10 +40,10 @@ const t = await page.evaluate(async (T, view, faceKeys, fov, pick, only) => {
   // VIEW=waist:N, chest:N or feet:N: the camera in front of player N's body (1.2 m; the feet 0.75 m, from above), a little to one side.
   if (view) {
     const [kind, n, lift = '0', turn = '0'] = view.split(':');
-    const r = g.players[+n].root, c = g.cam.camera;
+    const r = g.players[+n]?.root ?? { rotation: { y: 0 } }, c = g.cam.camera;
     const fx = Math.sin(r.rotation.y), fz = Math.cos(r.rotation.y), y = kind === 'chest' ? 1.3 : kind === 'feet' ? 0.08 : kind === 'skirt' ? 0.8 : 0.95;
     const d = kind === 'feet' ? 0.95 : kind === 'body' ? 2.6 : kind === 'skirt' ? 1.05 : 1.2;  // (body:N: all of them, from 2.6 m)
-    const av = g.players[+n].avatar;
+    const av = g.players[+n]?.avatar;
     if (kind === 'head' && av) {
       // (head:N[:degrees round]: the whole head and its hair from 0.8 m, turned round the head's own up)
       av.root.updateMatrixWorld(true);
@@ -68,6 +68,11 @@ const t = await page.evaluate(async (T, view, faceKeys, fov, pick, only) => {
       c.up.set(0, 1, 0);
       c.lookAt(at[0], at[1] - 0.12, at[2]);
       c.updateMatrixWorld();
+    } else if (kind === 'at') {
+      // (at:x,y,z:x,y,z: a fixed camera at the first point looking at the second, lens FOV or 40 deg; the scenery close up)
+      const [pos, tgt] = [n, lift].map((v) => v.split(',').map(Number));
+      c.fov = fov || 40; c.near = 0.05; c.updateProjectionMatrix();
+      c.position.set(pos[0], pos[1], pos[2]); c.up.set(0, 1, 0); c.lookAt(tgt[0], tgt[1], tgt[2]); c.updateMatrixWorld();
     } else if (kind === 'face' && av) {
       // (in the head's own frame, so a bowed head is still seen from in front: 0.42 m off the face along the Head bone's
       // forward, a narrow lens, aimed between the eyes and the mouth)

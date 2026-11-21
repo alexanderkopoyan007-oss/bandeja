@@ -151,7 +151,7 @@
     "meshShadow": true,
     "haze": { "color": "#c9d2d8", "near": 35, "far": 150, "amount": 0.3 },
     "//haze": "Late-afternoon air: the court (within 35 m of the broadcast camera) clear, the wood behind it up to about 10% towards the horizon's colour, 30% at 150 m (0.35 from 26 m greyed the far end like fog).",
-    "//meshShadow": "The low sun lays the mesh's grid across the turf (the reel's courts show it): cut out of the shadow pass by its own coverage, where the shadow map resolves the 4.5 cm cells.",
+    "//meshShadow": "The low sun lays the mesh's grid across the turf (the reel's courts show it). Drawn by the floor itself (render/meshShade.ts): each point's ray to the sun through the walls' mesh, the wires blurred by the sun's disc at their distance, so the grid is sharp beside mesh that comes down to the floor and the high strips give their average. No shadow map resolves 2.8 mm wire (the 2048 cut-out only ever showed the average).",
     "leaves": { "surround": 2400, "court": 260, "size": [0.08, 0.16] },
     "//leaves": "Dry leaves off the wood, crowded against the foot of the cage outside (falling off over about 1.6 m) and within half a metre of the walls inside, most in the corners.",
     "trees": { "count": 90, "inner": 30, "outer": 75, "height": [7, 16] },

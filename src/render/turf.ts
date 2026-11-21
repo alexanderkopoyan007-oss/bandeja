@@ -124,7 +124,7 @@ function wearAt(p: THREE.Node<'vec2'>): F {
  * surround). Court geometry in metres, world space: the floor must be drawn in court coordinates. `rigLit`: the detail
  * pass's fall-off of light beyond the court (an indoor arena's).
  */
-export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: number; serviceZ: number; centreExt: number; lineW: number } | null, originX = 0, rigLit = false): THREE.MeshStandardNodeMaterial {
+export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: number; serviceZ: number; centreExt: number; lineW: number } | null, originX = 0, rigLit = false, received: ((shadow: THREE.Node) => THREE.Node) | null = null): THREE.MeshStandardNodeMaterial {
   const [dTex, mTex] = textures();
   const m = new THREE.MeshStandardNodeMaterial();
   // Court coordinates (a neighbour court stands originX along x).
@@ -193,5 +193,7 @@ export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: nu
   m.colorNode = col;
   m.roughnessNode = float(look.roughness).sub(graze.mul(0.25)).add(sheen).clamp(0.3, 1);
   m.metalnessNode = float(0);
+  // (the cage's mesh in the sun, render/meshShade.ts: on the sun's light only)
+  if (received) m.receivedShadowNode = received as unknown as () => THREE.Node;
   return m;
 }
