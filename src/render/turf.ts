@@ -191,7 +191,9 @@ export function floorMaterial(look: FloorLook, court: { halfW: number; halfL: nu
     col = mix(col, lineC, line);
   }
   m.colorNode = col;
-  m.roughnessNode = float(look.roughness).sub(graze.mul(0.25)).add(sheen).clamp(0.3, 1);
+  // The court's fibres are top-dressed, brushed and played smooth: seen low they glint. The surround (no lines) is long
+  // pile no one plays on: a little (seen low towards a low sun the court's glint was a pale grey sheet that read as concrete).
+  m.roughnessNode = float(look.roughness).sub(graze.mul(court ? 0.25 : 0.1)).add(sheen).clamp(0.3, 1);
   m.metalnessNode = float(0);
   // (the cage's mesh in the sun, render/meshShade.ts: on the sun's light only)
   if (received) m.receivedShadowNode = received as unknown as () => THREE.Node;

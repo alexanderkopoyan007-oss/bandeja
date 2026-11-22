@@ -2,7 +2,7 @@
 // reflect, and what stands round the court (a stadium's stands and crowd, a club hall, an outdoor park).
 // Everything here is built once and only reads the sim (the crowd's excitement follows the rally).
 import * as THREE from 'three/webgpu';
-import { fog, positionView, vec3 } from 'three/tsl';
+import { cameraPosition, dot, fog, mix, positionView, positionWorld, vec3 } from 'three/tsl';
 import arenas from '../../../data/arenas.json' with { type: 'json' };
 import floorLooks from '../../../data/floor-looks.json' with { type: 'json' };
 import type { Court } from '../../sim/court/court.ts';
@@ -68,7 +68,7 @@ export interface ArenaDef {
   /** The cage's wire mesh in the sun on the floor (render/meshShade.ts; with the key's shadow on). */
   meshShadow?: boolean;
   /** Haze over distance: its colour (sRGB), none nearer than `near` m, `amount` (0..1) at `far` m and beyond. */
-  haze?: { color: string; near: number; far: number; amount: number };
+  haze?: { color: string; near: number; far: number; amount: number; sun?: string; glow?: number };
   /** Fallen leaves on the surround and the court (render/arena/leaves.ts). */
   leaves?: import('./leaves.ts').LeavesDef;
   trees?: { count: number; inner: number; outer: number; height: number[] };
@@ -135,7 +135,17 @@ export class Arena {
     if (def.haze) {
       const hz = def.haze, c = new THREE.Color(hz.color);
       const d = positionView.z.negate().sub(hz.near).div(hz.far - hz.near).clamp(0, 1);
-      scene.fogNode = fog(vec3(c.r, c.g, c.b), d.mul(hz.amount));
+      let col: THREE.Node<'vec3'> = vec3(c.r, c.g, c.b);
+      // Air scatters forward: looking towards a low sun the haze is its warm light, away from it the sky's (`sun`, `glow`:
+      // the power of the cosine to the sun, how narrow the warm glow is).
+      if (hz.sun) {
+        const sc = new THREE.Color(hz.sun), L = def.light.key.dir;
+        const Ln = new THREE.Vector3(L[0], L[1], L[2]).normalize();
+        const view = positionWorld.sub(cameraPosition).normalize();
+        const toSun = dot(view, vec3(Ln.x, Ln.y, Ln.z)).max(0).pow(hz.glow ?? 4);
+        col = mix(col, vec3(sc.r, sc.g, sc.b), toSun);
+      }
+      scene.fogNode = fog(col, d.mul(hz.amount));
     } else scene.fogNode = null;
     renderer.toneMappingExposure = def.exposure;
 

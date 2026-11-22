@@ -77,30 +77,60 @@ function frondTexture(): THREE.CanvasTexture {
   return t;
 }
 
-/** The trunk's bark: rows of old leaf bases, diamonds offset row to row, cracks between, greyer up the trunk. */
+/**
+ * The trunk's bark: a date palm's old leaf bases, cut off flat and weathered grey (photographs of Canary Island date
+ * palms in parks: grey-brown, the diamonds low relief and only a little paler than the trunk between them, never the
+ * orange of a fresh cut, which is only under the crown: the trunk's vertex colours). Each scar is a wide diamond with a
+ * shadowed upper lip (the cut stands out from the trunk below it), a paler lower lip, and grain in it; fine speckle
+ * (lichen, dust) over everything. The same picture is the relief (`bumpMap`): the cuts stand out, the lips sink.
+ */
 function barkTexture(): THREE.CanvasTexture {
-  const S = 256;
+  const S = 512;
   const c = document.createElement('canvas');
   c.width = S; c.height = S;
   const g = c.getContext('2d')!;
-  g.fillStyle = 'rgb(92,78,62)';
+  g.fillStyle = 'rgb(84,78,70)';
   g.fillRect(0, 0, S, S);
   const r = rng(5);
   const rows = 8, cols = 6;
+  const rgb = (v: number, w: number, k: number): string => `rgb(${Math.round(v * k)},${Math.round(w * k)},${Math.round(v * 0.86 * k)})`;
   for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) {
-    const cx = ((i + (j % 2) * 0.5) / cols) * S, cy = (j / rows) * S;
-    const w = (S / cols) * 0.55, h = (S / rows) * 0.62;
-    const k = 0.85 + r() * 0.35;
-    g.fillStyle = `rgb(${Math.round(150 * k)},${Math.round(126 * k)},${Math.round(98 * k)})`;
-    for (const dx of [-S, 0, S]) {
-      g.beginPath();
-      g.moveTo(cx + dx - w, cy);
-      g.lineTo(cx + dx, cy - h * 0.4);
-      g.lineTo(cx + dx + w, cy);
-      g.lineTo(cx + dx, cy + h * 0.6);
-      g.closePath();
-      g.fill();
+    const cx = ((i + (j % 2) * 0.5 + (r() - 0.5) * 0.08) / cols) * S, cy = ((j + (r() - 0.5) * 0.1) / rows) * S;
+    const w = (S / cols) * (0.5 + r() * 0.08), h = (S / rows) * (0.55 + r() * 0.1);
+    const k = 0.9 + r() * 0.22;
+    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+      const x = cx + dx, y = cy + dy;
+      if (x < -w * 2 || x > S + w * 2 || y < -h * 2 || y > S + h * 2) continue;
+      const diamond = (sx: number, sy: number): void => {
+        g.beginPath();
+        g.moveTo(x - w * sx, y);
+        g.lineTo(x, y - h * 0.42 * sy);
+        g.lineTo(x + w * sx, y);
+        g.lineTo(x, y + h * 0.58 * sy);
+        g.closePath();
+      };
+      // the shadow under the cut's upper edge, then the scar, then its pale lower lip
+      g.fillStyle = rgb(52, 48, k * 0.9); diamond(1.04, 1.12); g.fill();
+      g.fillStyle = rgb(116, 108, k); diamond(0.96, 0.98); g.fill();
+      g.save(); diamond(0.96, 0.98); g.clip();
+      g.fillStyle = rgb(124, 116, k * (0.94 + r() * 0.08));
+      g.beginPath(); g.ellipse(x, y + h * 0.42, w * 0.7, h * 0.2, 0, 0, Math.PI * 2); g.fill();
+      // the cut's fibres, running across
+      g.strokeStyle = 'rgba(60,54,46,0.35)';
+      g.lineWidth = 1;
+      for (let q = 0; q < 7; q++) {
+        const yy = y - h * 0.3 + q * h * 0.12 + (r() - 0.5) * 3;
+        g.beginPath(); g.moveTo(x - w, yy); g.lineTo(x + w, yy + (r() - 0.5) * 4); g.stroke();
+      }
+      g.restore();
     }
+  }
+  // speckle: dust, lichen (a little green-grey), dark pits
+  for (let q = 0; q < 9000; q++) {
+    const t = r();
+    g.fillStyle = t < 0.45 ? `rgba(150,146,132,${0.15 + r() * 0.2})` : t < 0.6 ? `rgba(120,128,104,${0.2 + r() * 0.2})` : `rgba(40,36,30,${0.15 + r() * 0.25})`;
+    const z = 1 + r() * 2.5;
+    g.fillRect(r() * S, r() * S, z, z);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -139,7 +169,7 @@ export interface Palms { trunks: THREE.Mesh; fronds: THREE.Mesh }
  * The palms, merged. `env`: the scenery's envMap (the sky; the court's probe sees nothing of them that matters).
  */
 export function buildPalms(spots: PalmSpot[], env: THREE.Texture | null): Palms {
-  const TP: number[] = [], TN: number[] = [], TU: number[] = [], TI: number[] = [];
+  const TP: number[] = [], TN: number[] = [], TU: number[] = [], TC: number[] = [], TI: number[] = [];
   const FP: number[] = [], FN: number[] = [], FU: number[] = [], FC: number[] = [], FI: number[] = [];
   const up = new THREE.Vector3(0, 1, 0);
   for (const sp of spots) {
@@ -156,6 +186,17 @@ export function buildPalms(spots: PalmSpot[], env: THREE.Texture | null): Palms 
       rad.push(R * foot * head * (1 + 0.03 * Math.sin(s * sp.height * 11)));
     }
     tube(pts, rad, 10, TP, TN, TU, TI);
+    // The trunk's colour up its height, on the bark's grey: earth splashed up the foot, the leaf bases cut most recently
+    // (the top metre under the crown) still the warm brown of fresh fibre, a palm a little lighter or browner than the next.
+    // (its own stream: the crown's draws stay as they were)
+    const rc = rng(sp.seed ^ 0x5bd1e995), k0 = 0.9 + rc() * 0.2, warm = rc() * 0.08;
+    for (let k = 0; k <= rings; k++) {
+      const s = k / rings, y = s * sp.height;
+      const foot = 1 - 0.24 * Math.exp(-y / 0.35);
+      const fresh = THREE.MathUtils.smoothstep(y, sp.height - 1.4, sp.height - 0.2);
+      const cr = k0 * foot * (1 + warm + fresh * 0.5), cg = k0 * foot * (1 + fresh * 0.14), cb = k0 * foot * (1 - warm - fresh * 0.2);
+      for (let q = 0; q <= 10; q++) TC.push(cr, cg, cb);
+    }
     // The crown: fronds from the top in a spiral (the phyllotaxis' 137.5 degrees), the higher ones younger and upright.
     const top = pts[rings]!;
     const n = 24 + Math.floor(r() * 9);
@@ -203,6 +244,7 @@ export function buildPalms(spots: PalmSpot[], env: THREE.Texture | null): Palms 
   tg.setAttribute('position', new THREE.Float32BufferAttribute(TP, 3));
   tg.setAttribute('normal', new THREE.Float32BufferAttribute(TN, 3));
   tg.setAttribute('uv', new THREE.Float32BufferAttribute(TU, 2));
+  tg.setAttribute('color', new THREE.Float32BufferAttribute(TC, 3));
   tg.setIndex(TI);
   const fg = new THREE.BufferGeometry();
   fg.setAttribute('position', new THREE.Float32BufferAttribute(FP, 3));
@@ -212,7 +254,7 @@ export function buildPalms(spots: PalmSpot[], env: THREE.Texture | null): Palms 
   fg.setIndex(FI);
   // (the bark's own picture as its relief: the leaf bases stand out, the cracks between sink)
   const bark = barkTexture();
-  const trunks = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ map: bark, bumpMap: bark, bumpScale: 4, roughness: 0.95, envMap: env }));
+  const trunks = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ map: bark, bumpMap: bark, bumpScale: 4, roughness: 0.95, vertexColors: true, envMap: env }));
   const fronds = new THREE.Mesh(fg, new FoliageMaterial({
     map: frondTexture(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.75, envMap: env,
   }));
