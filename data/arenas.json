@@ -134,8 +134,8 @@
     "//kind": "The look pass's club (owner, 20 Nov: graphics like a padel game's reel): a park club late in the afternoon, a photographed sky (Poly Haven rustig_koppie_puresky, CC0) whose sun is the key light, trees close round the court throwing their shadows across it. Not matched to a reference photo: a look of our own, built to the owner's request.",
     "exposure": 1.0,
     "background": "#3d6fb0",
-    "floor": { "kind": "turf", "color": "#4f7c46", "sand": "#bba57c", "sandAmount": 0.48, "line": "#f1f2ee", "roll": 4, "roughness": 0.93 },
-    "surround": { "kind": "turf", "color": "#395c38", "sand": "#8a7a5c", "sandAmount": 0.12, "line": null, "roll": 0, "roughness": 0.95, "x": 14, "z": 18 },
+    "floor": { "kind": "turf", "color": "#66816a", "sand": "#c9bea2", "sandAmount": 0.7, "line": "#f1f2ee", "roll": 4, "roughness": 0.93 },
+    "surround": { "kind": "turf", "color": "#4a6647", "sand": "#8a7a5c", "sandAmount": 0.12, "line": null, "roll": 0, "roughness": 0.95, "x": 14, "z": 18 },
     "//surround": "Dark green turf round the court, a little sandy and worn (the reel's clubs, club-night). Sand 0.12, not the court's: a surround is not top-dressed and played on, and at 0.3 the sunlit pile seen low towards the sun showed only its sand, beige as concrete.",
     "rim": "#3f7d3d",
     "hallFloor": "#5f7a45",
@@ -150,7 +150,7 @@
     },
     "//grove": "Palms in a row 4 m outside each side glass from the far end to 8 m short of the near one, and three behind the far end (the near end is the broadcast camera's: 7.6 m up, 25 m out; a palm there stood across the picture), 6.5-9.5 m; behind them a wood of 70 impostor trees (olive and broadleaf, tools/assets/golden/impostor.py, 1.3-2x the bake's 3.4-5 m) outside the surround, none in a 32 m wide lane from the near end to 36 m out. The sun is behind the far right corner, so the right-hand palms throw their shadows across the court.",
     "camera": { "play": "court" },
-    "garden": { "wall": { "height": 0.85, "thick": 0.4, "inset": 0.8 }, "houses": { "count": 9, "ring": [46, 72] } },
+    "garden": { "wall": { "height": 0.85, "thick": 0.4, "inset": 0.8 }, "houses": { "count": 9, "ring": [46, 72] }, "flowers": { "count": 1500, "depth": 0.9 } },
     "meshShadow": true,
     "haze": { "color": "#b9c6d2", "sun": "#e6c79a", "glow": 3, "near": 35, "far": 150, "amount": 0.18 },
     "//haze": "Late-afternoon air: the court (within 35 m of the broadcast camera) clear, the wood behind it up to about 10% towards the horizon's colour, 30% at 150 m (0.35 from 26 m greyed the far end like fog). Its colour is the light the air scatters: towards the low sun (behind the far end) the sun's own warm light, a narrow glow (cos^3), away from it the sky's blue-grey; one flat grey read as fog.",
@@ -168,7 +168,7 @@
       "hemi": { "sky": "#9db8dc", "ground": "#4d5a3c", "intensity": 0 },
       "//hemi": "None: the baked environment (the photographed sky, the sunlit turf) is the ambient light, at 3.2 times the photograph's level: the bare sky lit the shade 11 times less than the sun (the turf in shade measured at 1/29 of the sun with env 1, 1/14 with env 2, 1/9 with 3.2, tone-mapped), and the shade under the palms went black; a club has walls, trees and ground round it that the pure sky has not, and photographs of courts in low sun show the shade at a fifth to a sixth of the sun."
     },
-    "post": { "bloom": { "strength": 0.3, "radius": 0.5, "threshold": 4 }, "grade": { "warm": [1.16, 1.0, 0.76], "cool": [0.92, 0.99, 1.06], "saturation": 1.08, "contrast": 1.2, "vignette": 0.24 }, "film": { "shutter": 0, "grain": 0.03 } }
+    "post": { "bloom": { "strength": 0.3, "radius": 0.5, "threshold": 4 }, "grade": { "warm": [1.16, 1.0, 0.76], "cool": [0.92, 0.99, 1.06], "saturation": 1.0, "contrast": 1.2, "vignette": 0.24 }, "film": { "shutter": 0, "grain": 0.03 } }
   },
   "final": {
     "name": "Final court (indoor, TV)",

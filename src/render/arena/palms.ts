@@ -54,7 +54,7 @@ function frondTexture(): THREE.CanvasTexture {
     const w = (s < 0.2 ? 2.2 : 5.5) * (0.8 + r() * 0.4) * (TEX_H / 1024);
     const shade = 0.82 + r() * 0.3;
     const gr = g.createLinearGradient(0, y0, x1, y1);
-    const base = [70, 98, 50], tip = [138, 134, 72]; // (date palms' leaflets are a grey, waxy green, yellower out to the tips)
+    const base = [92, 104, 56], tip = [166, 148, 78]; // (date palms' leaflets: a dull olive, yellower out to the tips, gold where the evening sun is on them)
     const col = (k: number, t: number[]): string => `rgb(${Math.round(t[0]! * k)},${Math.round(t[1]! * k)},${Math.round(t[2]! * k)})`;
     gr.addColorStop(0, col(shade, base));
     gr.addColorStop(1, col(shade, tip));
@@ -216,8 +216,8 @@ export function buildPalms(spots: PalmSpot[], env: THREE.Texture | null): Palms 
       // The frond's colour over the leaflet texture: green while young, then yellower towards straw-orange as it ages (the
       // reel's backlit crowns glow orange in their lower half), a dead one dry tan to brown.
       const tint = 0.85 + r() * 0.3;
-      const yel = THREE.MathUtils.smoothstep(age, 0.3, 1) * (0.6 + r() * 0.4);
-      const tr = age > 1 ? (2.1 + r() * 0.5) * 0.8 : tint * (1 + yel * 1.15), tg = age > 1 ? (1.25 + r() * 0.2) * 0.8 : tint * (1 + yel * 0.2), tb = age > 1 ? (0.85 + r() * 0.2) * 0.8 : tint * (1 - yel * 0.45);
+      const yel = THREE.MathUtils.smoothstep(age, 0.12, 0.9) * (0.7 + r() * 0.3);
+      const tr = age > 1 ? (2.1 + r() * 0.5) * 0.8 : tint * (1 + yel * 1.5), tg = age > 1 ? (1.25 + r() * 0.2) * 0.8 : tint * (1 + yel * 0.32), tb = age > 1 ? (0.85 + r() * 0.2) * 0.8 : tint * (1 - yel * 0.5);
       const rowsBase = FP.length / 3;
       for (let k = 0; k <= segs; k++) {
         const s = k / segs;
