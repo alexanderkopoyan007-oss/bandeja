@@ -3,7 +3,7 @@
 // crown of 24-32 feather fronds 3-4.5 m long, the upper ones standing up, the lower ones bowed down by their weight. A
 // frond is its rachis and two rows of leaflets set in a V (the keel up), drawn as two strips cut out by a leaflet texture
 // drawn on a canvas below; the cut-out (`alphaTest`) is in the shadow pass too, so the sun throws the leaflets' shadows
-// across the court. Every palm is merged into two meshes (trunks, fronds): two draws, about 2,000 triangles a palm.
+// across the court. Every palm is merged into two meshes (trunks, fronds): two draws, about 2,500 triangles a palm.
 import * as THREE from 'three/webgpu';
 import { FoliageMaterial } from './foliage.ts';
 
@@ -54,7 +54,7 @@ function frondTexture(): THREE.CanvasTexture {
     const w = (s < 0.2 ? 2.2 : 5.5) * (0.8 + r() * 0.4) * (TEX_H / 1024);
     const shade = 0.82 + r() * 0.3;
     const gr = g.createLinearGradient(0, y0, x1, y1);
-    const base = [62, 98, 40], tip = [124, 132, 58];
+    const base = [70, 98, 50], tip = [138, 134, 72]; // (date palms' leaflets are a grey, waxy green, yellower out to the tips)
     const col = (k: number, t: number[]): string => `rgb(${Math.round(t[0]! * k)},${Math.round(t[1]! * k)},${Math.round(t[2]! * k)})`;
     gr.addColorStop(0, col(shade, base));
     gr.addColorStop(1, col(shade, tip));
@@ -199,19 +199,25 @@ export function buildPalms(spots: PalmSpot[], env: THREE.Texture | null): Palms 
     }
     // The crown: fronds from the top in a spiral (the phyllotaxis' 137.5 degrees), the higher ones younger and upright.
     const top = pts[rings]!;
-    const n = 24 + Math.floor(r() * 9);
-    for (let f = 0; f < n; f++) {
-      const age = f / (n - 1); // 0 the youngest (upright) .. 1 the oldest (bowed)
+    // (a crown carries 30-40 green fronds, and under them a skirt of dead ones hanging against the trunk until they are
+    // cut or fall: `dead` more, age past 1, coloured straw to brown and hung almost straight down)
+    const n = 30 + Math.floor(r() * 11), dead = 5 + Math.floor(r() * 6);
+    for (let f = 0; f < n + dead; f++) {
+      const age = f < n ? f / (n - 1) : 1 + (f - n + 1) / dead; // 0 the youngest (upright) .. 1 the oldest green .. 2 dead
       const az = f * 2.39996 + r() * 0.3;
-      const elev = THREE.MathUtils.lerp(1.15, -0.25, age) + (r() - 0.5) * 0.25;
-      const len = (3.0 + r() * 1.5) * (age > 0.85 ? 0.8 : 1);
-      const droop = THREE.MathUtils.lerp(0.35, 1.5, age); // how much the frond bows over its length (rad)
-      const W = 0.75 + r() * 0.2; // leaflet reach either side (m)
+      const elev = age <= 1 ? THREE.MathUtils.lerp(1.15, -0.25, age) + (r() - 0.5) * 0.25 : -1.05 - r() * 0.35;
+      const len = (3.0 + r() * 1.5) * (age > 1 ? 0.6 : age > 0.85 ? 0.8 : 1);
+      const droop = age <= 1 ? THREE.MathUtils.lerp(0.35, 1.5, age) : 0.15; // how much the frond bows over its length (rad)
+      const W = (0.75 + r() * 0.2) * (age > 1 ? 0.55 : 1); // leaflet reach either side (m; a dead frond's fold in)
       const keel = 0.45; // the V: leaflets rise this much (rad) from the frond's flat
       const segs = 12;
       const dir = new THREE.Vector3(), side = new THREE.Vector3(), nrm = new THREE.Vector3(), p = top.clone().addScaledVector(up, 0.2);
       const hz = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
+      // The frond's colour over the leaflet texture: green while young, then yellower towards straw-orange as it ages (the
+      // reel's backlit crowns glow orange in their lower half), a dead one dry tan to brown.
       const tint = 0.85 + r() * 0.3;
+      const yel = THREE.MathUtils.smoothstep(age, 0.3, 1) * (0.6 + r() * 0.4);
+      const tr = age > 1 ? (2.1 + r() * 0.5) * 0.8 : tint * (1 + yel * 1.15), tg = age > 1 ? (1.25 + r() * 0.2) * 0.8 : tint * (1 + yel * 0.2), tb = age > 1 ? (0.85 + r() * 0.2) * 0.8 : tint * (1 - yel * 0.45);
       const rowsBase = FP.length / 3;
       for (let k = 0; k <= segs; k++) {
         const s = k / segs;
@@ -229,7 +235,7 @@ export function buildPalms(spots: PalmSpot[], env: THREE.Texture | null): Palms 
           const n2 = nrm.clone().addScaledVector(side, -sgn * 0.35).normalize();
           FN.push(n2.x, n2.y, n2.z, n2.x, n2.y, n2.z);
           FU.push(0, s, 1, s);
-          FC.push(tint, tint, tint, tint, tint, tint);
+          FC.push(tr, tg, tb, tr, tg, tb);
         }
       }
       for (let k = 0; k < segs; k++) for (let h = 0; h < 2; h++) {

@@ -10,6 +10,7 @@ import { BoxBatch, mergeGeometries } from './stadium.ts';
 import { floorMaterial } from '../turf.ts';
 import { hdriDomeMaterial, loadHdriSky } from './golden.ts';
 import { buildGrove } from './grove.ts';
+import { buildGarden } from './garden.ts';
 import { buildLeaves } from './leaves.ts';
 import { ownedTextures } from '../dispose.ts';
 
@@ -186,6 +187,8 @@ export function buildOutdoor(root: THREE.Group, def: ArenaDef, court: Court, sce
   fenceMesh.receiveShadow = true;
   fenceMesh.castShadow = true;
   root.add(fenceMesh);
+  // (the golden club's garden inside it and the village past the wood: garden.ts)
+  if (def.garden) buildGarden(root, def.garden, fx, fz, sky);
 
   // Floodlight poles on the side mesh near each end, two LED heads each aimed into the court.
   const po = def.poles!;

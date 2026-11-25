@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { arenaDef } from '../../src/render/arena/arena.ts';
 import { half } from '../../src/render/arena/golden.ts';
 import { palmSpots, treeSpots } from '../../src/render/arena/grove.ts';
+import { playCameraOf } from '../../src/app/options.ts';
 import audio from '../../data/audio.json' with { type: 'json' };
 
 /** A half float's bits back to a number. */
@@ -20,8 +21,8 @@ describe('the golden club', () => {
     expect(def.hdri && existsSync(`public/${def.hdri.src}`)).toBe(true);
     const d = def.light.key.dir;
     expect(Math.hypot(d[0]!, d[1]!, d[2]!)).toBeCloseTo(1, 3);
-    // the photograph's sun is 28.3 degrees up (tools/assets/golden/sky.py)
-    expect((Math.asin(d[1]!) * 180) / Math.PI).toBeCloseTo(28.3, 1);
+    // the photograph's sun is 11.4 degrees up (hilly_terrain_01_puresky since round 5; tools/assets/golden/sky.py)
+    expect((Math.asin(d[1]!) * 180) / Math.PI).toBeCloseTo(11.4, 1);
     for (const k of def.grove!.trees.kinds) for (const f of ['albedo', 'normal']) expect(existsSync(`public/assets/arena/golden/${k.name}-${f}.webp`)).toBe(true);
   });
 
@@ -55,5 +56,24 @@ describe('the golden club', () => {
       const inside = Math.abs(t.x) < g.trees.keepOut[0]! && t.z > -g.trees.keepOut[1]! && t.z < g.trees.keepOut[2]!;
       expect(inside).toBe(false);
     }
+  });
+
+  it('has shrubs in a bed along its wall, and a camera on the court by default (round 5)', () => {
+    const g = def.grove!, sh = g.shrubs!, w = def.garden!.wall!;
+    const all = treeSpots(g.trees, sh), plain = treeSpots(g.trees);
+    // the wood's trees are where they were without the shrubs (their own random stream)
+    for (let k = 0; k < plain.length; k++) expect(all[k]!.slice(0, plain[k]!.length)).toEqual(plain[k]);
+    const shrubs = all.flatMap((l, k) => l.slice(plain[k]!.length));
+    expect(shrubs.length).toBe(sh.count);
+    const wallX = def.surround.x + 3 - w.inset - w.thick / 2, wallZ = def.surround.z + 3 - w.inset - w.thick / 2;
+    for (const t of shrubs) {
+      // outside the surround's turf, inside the wall, sunk under the ground
+      expect(Math.abs(t.x) > def.surround.x || Math.abs(t.z) > def.surround.z).toBe(true);
+      expect(Math.abs(t.x) <= wallX && Math.abs(t.z) <= wallZ).toBe(true);
+      expect(t.y!).toBeLessThan(0);
+    }
+    expect(playCameraOf('club-golden', 'tv')).toBe('court');
+    expect(playCameraOf('club-golden', 'side')).toBe('side'); // a camera the player chose stays
+    expect(playCameraOf('club-day', 'tv')).toBe('tv');
   });
 });

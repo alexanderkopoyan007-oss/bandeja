@@ -43,7 +43,8 @@ export interface LightDef {
 export interface ArenaDef {
   name: string;
   /** The broadcast camera's climb (m) at the middle of the change-of-ends swing (default 0). */
-  camera?: { swingRise?: number };
+  /** `play`: the camera a match here starts on when the player kept the default (options.ts playCameraOf). */
+  camera?: { swingRise?: number; play?: string };
   kind: 'stadium' | 'hall' | 'outdoor';
   exposure: number;
   background: string;
@@ -71,12 +72,16 @@ export interface ArenaDef {
   haze?: { color: string; near: number; far: number; amount: number; sun?: string; glow?: number };
   /** Fallen leaves on the surround and the court (render/arena/leaves.ts). */
   leaves?: import('./leaves.ts').LeavesDef;
+  /** A stone wall inside the fence and a village past the wood (render/arena/garden.ts; the golden club). */
+  garden?: import('./garden.ts').GardenDef;
   trees?: { count: number; inner: number; outer: number; height: number[] };
   poles?: { height: number; heads: number; color: string; lit?: boolean; color2?: string };
   /** Other courts beside ours (their centres along x, m): empty, static, lit like ours. */
   neighbours?: number[];
   light: LightDef;
-  post?: { bloom?: { strength: number; radius: number; threshold: number }; grade?: import('../post.ts').Grade };
+  /** `film`: the look pass's camera (render/post.ts FilmLook: occlusion, the shutter's smear, grain) on this arena alone,
+   * over FILM_LOOK, without the stadium's rig or the haze `?look=2` brings (the golden club, round 5). */
+  post?: { bloom?: { strength: number; radius: number; threshold: number }; grade?: import('../post.ts').Grade; film?: Partial<import('../post.ts').FilmLook> };
 }
 
 export const ARENA_KEYS = Object.keys(arenas).filter((k) => !k.startsWith('/'));

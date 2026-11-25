@@ -430,7 +430,10 @@ export class Game {
     const sideX = (this.arena.def.neighbours ?? []).some((ox) => ox < 0) ? 1 : -1;
     this.cam = new BroadcastCamera(innerWidth && innerHeight ? innerWidth / innerHeight : 16 / 9, this.arena.def.camera?.swingRise ?? 0, sideX);
     const bl = this.arena.def.post?.bloom;
-    if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, { ...bl, grade: this.arena.def.post?.grade }, opts.look === 2 ? FILM_LOOK : undefined);
+    // (an arena's own film look, over the look pass's: on Ultra only. Its occlusion draws the scene a second time, and on
+    // the golden club that cost 3.5 ms a frame at the 4x laptop proxy and on High at 2x, where High lost 120 Hz.)
+    const film = opts.look === 2 ? FILM_LOOK : this.arena.def.post?.film && this.preset.name === 'Ultra' ? { ...FILM_LOOK, ...this.arena.def.post.film } : undefined;
+    if (bl && opts.bloom !== false && this.preset.bloom) this.post = new Post(renderer, this.scene, this.cam.camera, { ...bl, grade: this.arena.def.post?.grade }, film);
     BroadcastCamera.cutaways = opts.cutaway !== false;
     this.cam.establish = !!opts.establish;
     this.cam.setPreset(opts.camera ?? 'tv');
@@ -1447,9 +1450,9 @@ export class Game {
     if (showing) this.replayCam.aim(this.cam.camera, view, rp.hitter, rp.angle, this.ball.mesh.position, frameDt * rp.speed);
     else if (reeling) this.cam.update(rl.sim, team, this.ball.mesh.position, now / 1000);
     else this.cam.update(this.sim, team, this.ball.mesh.position, now / 1000);
-    // The look pass's replay lens: sharp from the hitter to the ball (whichever is nearer first), a metre to spare
+    // The look pass's replay lens (and an arena's own film look's): sharp from the hitter to the ball (whichever is nearer first), a metre to spare
     // either end, eased (a cut jumps to it); out again in play.
-    if (this.post && this.opts.look === 2) {
+    if (this.post && (this.opts.look === 2 || (this.arena.def.post?.film && this.preset.name === 'Ultra'))) {
       if (showing || this.opts.lens) {
         const c = this.cam.camera, b = this.ball.mesh.position, e = c.matrixWorld.elements;
         const along = (x: number, y: number, z: number): number => -((x - c.position.x) * e[8]! + (y - c.position.y) * e[9]! + (z - c.position.z) * e[10]!);

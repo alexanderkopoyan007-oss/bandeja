@@ -29,6 +29,10 @@ export interface GroveDef {
   /** `count` trees in the box x, z (half sizes) outside `keepOut` (half width, far end, near end): the court, its surround
    * and, at the near end, the broadcast camera's way to the court. */
   trees: { kinds: ImpostorKind[]; count: number; x: number[]; z: number[]; scale: number[]; keepOut: number[] };
+  /** Shrubs in a bed along the garden wall (round 5): `count` of the wood's own cards, small (`scale`) and sunk by `sink` of
+   * their height so the trunk is under the ground and only the crown shows, in a band `depth` m deep inside the lines
+   * |x| = `x` and |z| = `z`. They join the wood's meshes: no draw of their own. */
+  shrubs?: { count: number; x: number; z: number; depth: number; scale: number[]; sink: number };
 }
 
 function rng(seed: number): () => number {
@@ -53,9 +57,9 @@ export function palmSpots(p: GroveDef['palms']): PalmSpot[] {
 }
 
 /** Where the wood's trees stand, by kind: in the box `x`, `z` outside `keepOut`. */
-export function treeSpots(t: GroveDef['trees']): Array<Array<{ x: number; z: number; s: number; yaw: number; tint: number }>> {
+export function treeSpots(t: GroveDef['trees'], sh?: GroveDef['shrubs']): Array<Array<{ x: number; z: number; s: number; yaw: number; tint: number; y?: number }>> {
   const r = rng(77);
-  const per: Array<Array<{ x: number; z: number; s: number; yaw: number; tint: number }>> = t.kinds.map(() => []);
+  const per: Array<Array<{ x: number; z: number; s: number; yaw: number; tint: number; y?: number }>> = t.kinds.map(() => []);
   let placed = 0, tries = 0;
   while (placed < t.count && tries++ < t.count * 50) {
     const x = (r() * 2 - 1) * t.x[1]!, z = (r() * 2 - 1) * t.z[1]!;
@@ -63,6 +67,19 @@ export function treeSpots(t: GroveDef['trees']): Array<Array<{ x: number; z: num
     const k = Math.floor(r() * t.kinds.length);
     per[k]!.push({ x, z, s: t.scale[0]! + (t.scale[1]! - t.scale[0]!) * r(), yaw: r() * Math.PI * 2, tint: 0.85 + r() * 0.25 });
     placed++;
+  }
+  if (sh) {
+    // (their own stream: the wood's trees stay where they were)
+    const q = rng(4243), lx = 2 * sh.x, lz = 2 * sh.z;
+    for (let i = 0; i < sh.count; i++) {
+      // round the bed's line by length, so each side gets its share
+      const u = q() * 2 * (lx + lz), d = q() * sh.depth;
+      const x = u < lx ? u - sh.x : u < lx + lz ? sh.x - d : u < 2 * lx + lz ? sh.x - (u - lx - lz) : -sh.x + d;
+      const z = u < lx ? sh.z - d : u < lx + lz ? u - lx - sh.z : u < 2 * lx + lz ? -sh.z + d : sh.z - (u - 2 * lx - lz);
+      const k = Math.floor(q() * t.kinds.length);
+      const s = sh.scale[0]! + (sh.scale[1]! - sh.scale[0]!) * q();
+      per[k]!.push({ x, z, s, yaw: q() * Math.PI * 2, tint: 0.8 + q() * 0.3, y: -s * t.kinds[k]!.frame * sh.sink });
+    }
   }
   return per;
 }
@@ -143,7 +160,7 @@ export function buildGrove(root: THREE.Group, g: GroveDef, env: THREE.Texture | 
 
   const base = typeof document !== 'undefined' ? new URL('assets/arena/golden/', document.baseURI).href : 'assets/arena/golden/';
   const t = g.trees;
-  const per = treeSpots(t);
+  const per = treeSpots(t, g.shrubs);
   t.kinds.forEach((k, ki) => {
     const list = per[ki]!;
     if (!list.length) return;
@@ -158,7 +175,7 @@ export function buildGrove(root: THREE.Group, g: GroveDef, env: THREE.Texture | 
         const v = i * 4 + c, cc = corners[c]!;
         pos[v * 3] = cc[0]; pos[v * 3 + 1] = cc[1]; pos[v * 3 + 2] = 0;
         uvs[v * 2] = cc[2]; uvs[v * 2 + 1] = cc[3];
-        cen[v * 3] = tr.x; cen[v * 3 + 1] = 0; cen[v * 3 + 2] = tr.z;
+        cen[v * 3] = tr.x; cen[v * 3 + 1] = tr.y ?? 0; cen[v * 3 + 2] = tr.z;
         size[v] = k.frame * tr.s; yaw[v] = tr.yaw; tint[v] = tr.tint;
       }
       idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3);

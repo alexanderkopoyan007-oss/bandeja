@@ -10,8 +10,8 @@
 import * as THREE from 'three/webgpu';
 import { diffuseColor, normalView, positionViewDirection, pow, vec3, float } from 'three/tsl';
 
-const TRANSMIT = 0.35, FORWARD = 0.6, FORWARD_POWER = 6;
-const THROUGH = [1.0, 1.15, 0.45] as const;
+const TRANSMIT = 0.4, FORWARD = 1.1, FORWARD_POWER = 4;
+const THROUGH = [1.12, 1.1, 0.4] as const;
 
 class FoliageLighting extends THREE.PhysicalLightingModel {
   override direct(input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder): void {

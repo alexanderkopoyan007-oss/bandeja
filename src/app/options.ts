@@ -44,6 +44,14 @@ export function roofOf(arena: string): number {
   return a.hall?.height ?? Infinity;
 }
 
+/** An arena's own camera for play when the player has kept the default (TV): the golden club is filmed from the court,
+ * behind you, as the reel it was built from (`camera.play` in data/arenas.json). */
+export function playCameraOf(arena: string, chosen: CameraPreset): CameraPreset {
+  if (chosen !== 'tv') return chosen;
+  const a = (arenaData as unknown as Record<string, { camera?: { play?: string } }>)[arena];
+  return (a?.camera?.play as CameraPreset | undefined) ?? chosen;
+}
+
 function ballFor(asked: string | null, altitudeM: number): BallName {
   if (asked === 'standard' || asked === 'altitude') return asked;
   return altitudeM > 1000 ? 'altitude' : 'standard';
@@ -128,7 +136,7 @@ export function optionsFromUrl(params: URLSearchParams, avatar: PlayerAsset | nu
     closeCam: params.get('cam') ?? undefined,
     closeCamPlayer: num('camp', 0),
     // (the look pass's own camera is the one on the court, behind you, unless one is asked for)
-    camera: cameraOf(params.get('camera') ?? (num('look', 0) === 2 ? 'court' : null)),
+    camera: cameraOf(params.get('camera') ?? (num('look', 0) === 2 ? 'court' : num('autoplay', 0) ? null : playCameraOf(params.get('arena') ?? 'stadium', 'tv'))),
     replays: params.get('replays') !== '0',
     avatar,
     // ?quality=auto: High with the dynamic resolution on, as the menus' Auto (perf runs measure it this way).
@@ -214,7 +222,7 @@ export function optionsFromSetup(setup: MatchSetup, s: Settings, seed: number, a
     look: params.get('look') === '2' ? 2 : 0,
     cutaway: params.get('cutaway') !== '0',
     // (the look pass's own camera is the one on the court; the title's match keeps the broadcast's)
-    camera: params.get('look') === '2' && !attract && s.camera === 'tv' ? 'court' : s.camera,
+    camera: params.get('look') === '2' && !attract && s.camera === 'tv' ? 'court' : attract ? s.camera : playCameraOf(setup.arena, s.camera),
     replays: s.replays,
     mouseAim: s.mouseAim,
     runAhead: true,
