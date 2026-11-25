@@ -742,6 +742,10 @@ const SKIRT_INSIDE = 0.75;
 const PIECE_INSIDE = 2.0;
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
 const FOLD_DEPTH = 1;
+/** How much of their own red the lips keep against the face's tone (FACE_TONE), and their wet coat. Kept whole (1) with a
+ * 0.25 coat, every man's lips were a glossy lipstick pink beside a face drawn back to the neck's colour (25 Nov, set beside
+ * the reel's players): they take half the face's correction now, and a coat closer to dry skin's. */
+const LIP_KEEP = 0.5, LIP_COAT = 0.12;
 /** The skin's detail normals at their own strength (a MetaHuman's map). */
 const SKIN_DETAIL = 0.6;
 /** The hands' at their full strength: at the sources' resolution (hands-n.webp) the knuckles' creases and the nails' edges are
@@ -1109,7 +1113,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   const chroma = (c: THREE.Node<'vec3'>): THREE.Node<'vec3'> => c.div(c.dot(LUMA).max(1e-4));
   const toNeck = chroma(neckTone).div(chroma(round).max(1e-3)).clamp(FACE_TONE_CLAMP[0], FACE_TONE_CLAMP[1]);
   const skinBase = mix(mix(tex.xyz, round.mul(shade), lids.mul(LID_PLAIN)), neckTone.mul(shade), bib.mul(BIB_PLAIN))
-    .mul(mix(vec3(1, 1, 1), toNeck, float(FACE_TONE).mul(float(1).sub(lips.mul(2).clamp(0, 1))).mul(skinW)));
+    .mul(mix(vec3(1, 1, 1), toNeck, float(FACE_TONE).mul(float(1).sub(lips.mul(2).clamp(0, 1).mul(LIP_KEEP))).mul(skinW)));
   // Skin isn't one even colour, and the source's millimetre texels are soft up close: blotches a few cm across, smaller
   // ones with a little red in them, and the pores' own shade (round 7, the critic: "waxy, even skin").
   const mottle = mx_noise_float(p.mul(42)).mul(0.6).add(mx_noise_float(p.mul(150)).mul(0.4));
@@ -1218,7 +1222,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   m.colorNode = col;
   m.aoNode = bakedAO;
   const darkSkin = smoothstep(0.4, 0.12, tex.y).mul(skinW);
-  const skinRough = mix(mix(float(SKIN_ROUGH[0]), float(SKIN_ROUGH[1]), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.14)).sub(lids.mul(0.12)).sub(tzone.mul(0.07))
+  const skinRough = mix(mix(float(SKIN_ROUGH[0]), float(SKIN_ROUGH[1]), sweat).sub(darkSkin.mul(0.06)).sub(lips.mul(0.08)).sub(lids.mul(0.12)).sub(tzone.mul(0.07))
     .add(mottle.mul(0.07)).add(poreFine.mul(0.05)), float(NAIL_ROUGH), nail);
   const skirtW = step(0.001, hang);
   m.roughnessNode = fabric.mul(mix(float(0.88), float(SKIRT_ROUGH), skirtW).sub(wet.mul(0.25)))
@@ -1240,7 +1244,7 @@ export function personMaterial(asset: PlayerAsset, look: KitLook, paint?: Paint,
   m.directShineNode = mouthShade.mul(mix(float(1), float(CLOTH_DIRECT_SHINE), fabric));
   m.directDiffuseNode = body.mouthShaded ? mix(float(1), X.x.max(0), mouthW) : float(1);
   // The second lobe: skin's oil and sweat, the cornea, the wet mouth.
-  m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(0.25)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
+  m.clearcoatNode = skinW.mul(float(0.05).add(sweat.mul(0.35)).add(tzone.mul(0.12)).add(lips.mul(LIP_COAT)).add(lids.mul(0.3)).add(nail.mul(NAIL_COAT)))
     .mul(creased).add(eyeW.mul(CORNEA).mul(smoothstep(EYE_WET[0], EYE_WET[1], X.x))).add(teethW.mul(0.55).add(tongueW.mul(body.mouthShaded ? TONGUE_COAT : 0.8)).mul(mouthShade));
   m.clearcoatRoughnessNode = skinW.mul(mix(float(0.32).sub(sweat.mul(0.1)), float(NAIL_COAT_ROUGH), nail)).add(eyeW.mul(0.03)).add(mouthW.mul(0.12));
   // Cotton and polyester's soft rim, in the dye's colour (clothSheen; at 35% white it drew a pale satin rim down a coloured shirt's

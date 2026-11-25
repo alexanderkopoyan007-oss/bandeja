@@ -9,7 +9,7 @@
  "outfit": "export/MHC_p6_Outfits.fbx",
  "outfit_lod": 1,
  "hair": [
-  "export/Hair_S_BrushCut_CardsMesh_Group0_LOD3.fbx"
+  "export/Hair_S_BrushCut_CardsMesh_Group0_LOD1.fbx"
  ],
  "hair_atlas": "export/tex/Hair_S_BrushCut_CardsAtlas_Attribute.png",
  "hair_rgb": [
@@ -19,7 +19,13 @@
  ],
  "helmet": "export/Hair_S_BrushCut_Helmet_LOD5.fbx",
  "maps": "dcc/MHC_p6/Maps",
- "iris": [[0.27, 0.17, 0.09]],
+ "iris": [
+  [
+   0.27,
+   0.17,
+   0.09
+  ]
+ ],
  "head_bc": "export/tex/T_Head_LOD3_BC.png",
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",

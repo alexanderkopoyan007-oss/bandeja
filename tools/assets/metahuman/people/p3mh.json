@@ -9,7 +9,7 @@
  "outfit": "export/MHC_p3_Outfits.fbx",
  "outfit_lod": 1,
  "hair": [
-  "export/Hair_S_Clean_CardsMesh_Group0_LOD3.fbx"
+  "export/Hair_S_Clean_CardsMesh_Group0_LOD1.fbx"
  ],
  "hair_atlas": "export/tex/Hair_S_Clean_CardsAtlas_Attribute.png",
  "hair_rgb": [
@@ -20,7 +20,18 @@
  "helmet": "export/Hair_S_Clean_Helmet_LOD5.fbx",
  "helmet_cov": "export/tex/Hair_S_Clean_RootUVSeedCoverage.png",
  "maps": "dcc/MHC_p3/Maps",
- "iris": [[0.42, 0.44, 0.28], [0.52, 0.38, 0.16]],
+ "iris": [
+  [
+   0.42,
+   0.44,
+   0.28
+  ],
+  [
+   0.52,
+   0.38,
+   0.16
+  ]
+ ],
  "head_bc": "export/tex/T_Head_LOD3_BC.png",
  "head_brows": "export/tex/T_Head_LOD5to7_BC.png",
  "body_bc": "export/tex/T_Body_BC.png",
